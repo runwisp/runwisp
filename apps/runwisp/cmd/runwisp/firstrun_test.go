@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostartfake"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostarttest"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cutover"
@@ -237,7 +238,7 @@ var cronScanWithJobs = config.CronScan{
 // stubFirstRunOffer replaces the host probe with a cutover over fakes, keeping the
 // WriteConfig the caller threaded in — so the scaffold the plan writes is the real
 // one, compose detection and all.
-func stubFirstRunOffer(t *testing.T, inst *fakeTakeoverInstaller) {
+func stubFirstRunOffer(t *testing.T, inst *autostartfake.Installer) {
 	t.Helper()
 	prev := offerFirstRunCutover
 	t.Cleanup(func() { offerFirstRunCutover = prev })
@@ -278,7 +279,7 @@ func stubFirstRunOffer(t *testing.T, inst *fakeTakeoverInstaller) {
 // crontabs would stop every job on the box.
 func TestPromptAndScaffold_CutoverAcceptedScaffoldsThenInstalls(t *testing.T) {
 	stubCronScan(t, cronScanWithJobs, true)
-	inst := &fakeTakeoverInstaller{cronUnit: "cron.service", cronActive: true, t: t}
+	inst := newTakeoverInstaller()
 	stubFirstRunOffer(t, inst)
 
 	path := filepath.Join(t.TempDir(), "runwisp.toml")
@@ -288,8 +289,8 @@ func TestPromptAndScaffold_CutoverAcceptedScaffoldsThenInstalls(t *testing.T) {
 
 	assert.True(t, installed, "the caller must attach to the service, not spawn its own daemon")
 	assert.FileExists(t, path)
-	assert.Equal(t, 1, inst.installs)
-	assert.True(t, inst.configAtInstall, "the config must exist by the time Install runs")
+	assert.Equal(t, 1, inst.Installs())
+	assert.True(t, inst.ConfigAtInstall, "the config must exist by the time Install runs")
 }
 
 // One question, every consequence — including boot persistence. Masking cron in
@@ -297,7 +298,7 @@ func TestPromptAndScaffold_CutoverAcceptedScaffoldsThenInstalls(t *testing.T) {
 // double-firing for nothing firing at all.
 func TestPromptAndScaffold_CutoverPromptNamesAllThreeEffects(t *testing.T) {
 	stubCronScan(t, cronScanWithJobs, true)
-	inst := &fakeTakeoverInstaller{cronUnit: "cron.service", cronActive: true, t: t}
+	inst := newTakeoverInstaller()
 	stubFirstRunOffer(t, inst)
 
 	path := filepath.Join(t.TempDir(), "runwisp.toml")
@@ -315,7 +316,7 @@ func TestPromptAndScaffold_CutoverPromptNamesAllThreeEffects(t *testing.T) {
 // Declining the offer declines the whole first run: no config, no unit, no mask.
 func TestPromptAndScaffold_CutoverDeclinedWritesNothing(t *testing.T) {
 	stubCronScan(t, cronScanWithJobs, true)
-	inst := &fakeTakeoverInstaller{cronUnit: "cron.service", cronActive: true, t: t}
+	inst := newTakeoverInstaller()
 	stubFirstRunOffer(t, inst)
 
 	path := filepath.Join(t.TempDir(), "runwisp.toml")
@@ -325,7 +326,7 @@ func TestPromptAndScaffold_CutoverDeclinedWritesNothing(t *testing.T) {
 	require.Error(t, err)
 	assert.False(t, installed)
 	assert.NoFileExists(t, path)
-	assert.Zero(t, inst.installs)
+	assert.Zero(t, inst.Installs())
 }
 
 // The cutover's config step must write the scaffold the first run would have
@@ -333,7 +334,7 @@ func TestPromptAndScaffold_CutoverDeclinedWritesNothing(t *testing.T) {
 // both, off the one question already on screen.
 func TestPromptAndScaffold_CutoverScaffoldStillImportsCompose(t *testing.T) {
 	stubCronScan(t, cronScanWithJobs, true)
-	inst := &fakeTakeoverInstaller{cronUnit: "cron.service", cronActive: true, t: t}
+	inst := newTakeoverInstaller()
 	stubFirstRunOffer(t, inst)
 
 	dir := t.TempDir()

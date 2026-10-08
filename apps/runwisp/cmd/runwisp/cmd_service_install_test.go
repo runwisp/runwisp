@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostartfake"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostarttest"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
@@ -52,25 +53,10 @@ func TestPreflightDaemon_PortFree(t *testing.T) {
 	assert.False(t, stale)
 }
 
-// statusInstaller stubs the one Installer method the port preflight uses.
-// Everything else panics: reaching it would mean the preflight grew a
-// dependency this test is not describing.
-type statusInstaller struct {
-	autostart.Installer
-	st  autostart.Status
-	err error
-}
-
-func (s statusInstaller) Status(context.Context, autostart.InstallOptions) (autostart.Status, error) {
-	return s.st, s.err
-}
-
-func (s statusInstaller) SupportsPasswordDropIn() bool { return true }
-
 // noStatusInstaller fails the test if the unit is probed at all — the answer for
 // a port holder that isn't ours can't depend on it, and asking costs systemctl
 // round-trips.
-type noStatusInstaller struct{ autostart.Installer }
+type noStatusInstaller struct{ *autostartfake.Installer }
 
 func (noStatusInstaller) Status(context.Context, autostart.InstallOptions) (autostart.Status, error) {
 	panic("unit state must not be probed for a port holder that is not ours")
@@ -110,7 +96,7 @@ func TestPreflightDaemon_OwnServiceHoldingThePortIsNotAConflict(t *testing.T) {
 	dataDir := t.TempDir()
 	port := runwispOnPort(t, model.InstanceInfo{App: server.AppName, Pid: 4242, DataDir: dataDir})
 	opts := autostart.InstallOptions{Port: port, DataDir: dataDir, System: true}
-	installer := statusInstaller{st: autostart.Status{
+	installer := &autostartfake.Installer{Stat: autostart.Status{
 		Installed: true, Running: true,
 		UnitConfigHash: "same", ExpectedConfigHash: "same",
 	}}
@@ -127,7 +113,7 @@ func TestPreflightDaemon_ReportsStaleSettingsForRunningService(t *testing.T) {
 	dataDir := t.TempDir()
 	port := runwispOnPort(t, model.InstanceInfo{App: server.AppName, Pid: 4242, DataDir: dataDir})
 	opts := autostart.InstallOptions{Port: port, DataDir: dataDir, System: true}
-	installer := statusInstaller{st: autostart.Status{
+	installer := &autostartfake.Installer{Stat: autostart.Status{
 		Installed: true, Running: true,
 		UnitConfigHash: "old", ExpectedConfigHash: "new",
 	}}
@@ -144,7 +130,7 @@ func TestPreflightDaemon_HandStartedDaemonRefusesWithStopHint(t *testing.T) {
 	dataDir := t.TempDir()
 	port := runwispOnPort(t, model.InstanceInfo{App: server.AppName, Pid: 4242, DataDir: dataDir})
 	opts := autostart.InstallOptions{Port: port, DataDir: dataDir, System: true}
-	installer := statusInstaller{st: autostart.Status{Installed: true}}
+	installer := &autostartfake.Installer{Stat: autostart.Status{Installed: true}}
 
 	_, err := preflightDaemon(context.Background(), installer, opts, Flags{Host: "127.0.0.1"})
 	require.Error(t, err)
@@ -159,7 +145,7 @@ func TestPreflightDaemon_UnknownUnitStateRefuses(t *testing.T) {
 	dataDir := t.TempDir()
 	port := runwispOnPort(t, model.InstanceInfo{App: server.AppName, Pid: 7, DataDir: dataDir})
 	opts := autostart.InstallOptions{Port: port, DataDir: dataDir, System: true}
-	installer := statusInstaller{err: errors.New("systemctl exploded")}
+	installer := &autostartfake.Installer{StatErr: errors.New("systemctl exploded")}
 
 	_, err := preflightDaemon(context.Background(), installer, opts, Flags{Host: "127.0.0.1"})
 	require.Error(t, err)
@@ -186,17 +172,6 @@ func TestPreflightDaemon_RunwispOnAnotherDataDirRefuses(t *testing.T) {
 	assert.Contains(t, err.Error(), "another RunWisp daemon")
 }
 
-// planInstaller stubs the two Installer methods a --dry-run reaches: the plan it
-// prints, and the unit state the port preflight consults.
-type planInstaller struct {
-	statusInstaller
-	plan autostart.Plan
-}
-
-func (p planInstaller) ComputePlan(context.Context, autostart.InstallOptions) (autostart.Plan, error) {
-	return p.plan, nil
-}
-
 // A dry run used to return before the port preflight, so it printed a clean plan
 // for an install that would stop before writing anything — and the case it hid is
 // exactly the one `runwisp takeover` has a recovery path for.
@@ -204,9 +179,9 @@ func TestInspectServiceInstall_DryRunSurfacesAHandStartedDaemon(t *testing.T) {
 	dataDir := t.TempDir()
 	port := runwispOnPort(t, model.InstanceInfo{App: server.AppName, Pid: 4242, DataDir: dataDir})
 	opts := autostart.InstallOptions{Port: port, DataDir: dataDir, System: true}
-	installer := planInstaller{
-		statusInstaller: statusInstaller{st: autostart.Status{Installed: true}},
-		plan:            autostart.Plan{Kind: autostart.PlanInstall, Reason: "no unit yet"},
+	installer := &autostartfake.Installer{
+		Stat: autostart.Status{Installed: true},
+		Plan: autostart.Plan{Kind: autostart.PlanInstall, Reason: "no unit yet"},
 	}
 
 	stdout := &bytes.Buffer{}
@@ -218,15 +193,6 @@ func TestInspectServiceInstall_DryRunSurfacesAHandStartedDaemon(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Plan:", "the plan still prints — the conflict is extra, not instead")
 }
 
-// renderInstaller answers --print and nothing else: any other call lands on the
-// nil embedded Installer and panics, which is the assertion.
-type renderInstaller struct {
-	autostart.Installer
-	body []byte
-}
-
-func (r renderInstaller) Render(autostart.InstallOptions) ([]byte, error) { return r.body, nil }
-
 // --print stays byte-clean for piping into a unit file, so it must not reach the
 // preflight: a note (or a refusal) in the middle of the output would corrupt it.
 func TestInspectServiceInstall_PrintNeverConsultsThePort(t *testing.T) {
@@ -236,26 +202,12 @@ func TestInspectServiceInstall_PrintNeverConsultsThePort(t *testing.T) {
 
 	stdout := &bytes.Buffer{}
 	err := inspectServiceInstall(newInstallTestCmd(stdout, &bytes.Buffer{}),
-		renderInstaller{body: []byte("[Unit]\n")}, opts,
+		&autostartfake.Installer{Body: []byte("[Unit]\n")}, opts,
 		installRequest{Print: true}, Flags{Host: "127.0.0.1"})
 
 	require.NoError(t, err)
 	assert.Equal(t, "[Unit]\n", stdout.String())
 }
-
-// noDropInInstaller answers --dry-run's plan and reports no password drop-in
-// support (the launchd case) — anything else panics on the nil
-// embedded Installer.
-type noDropInInstaller struct {
-	autostart.Installer
-	plan autostart.Plan
-}
-
-func (n noDropInInstaller) ComputePlan(context.Context, autostart.InstallOptions) (autostart.Plan, error) {
-	return n.plan, nil
-}
-
-func (n noDropInInstaller) SupportsPasswordDropIn() bool { return false }
 
 // A dry run used to always describe a password drop-in whenever auth was on,
 // even on an OS (launchd, or one with no installer at all) where the real
@@ -264,7 +216,7 @@ func (n noDropInInstaller) SupportsPasswordDropIn() bool { return false }
 func TestInspectServiceInstall_DryRunWithoutDropInSupportShowsManualHint(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "")
 	t.Setenv("RUNWISP_AUTH", "")
-	installer := noDropInInstaller{plan: autostart.Plan{Kind: autostart.PlanInstall, Reason: "no unit yet"}}
+	installer := &autostartfake.Installer{NoDropIn: true, Plan: autostart.Plan{Kind: autostart.PlanInstall, Reason: "no unit yet"}}
 	opts := autostart.InstallOptions{Port: 0}
 
 	stdout := &bytes.Buffer{}
@@ -775,44 +727,6 @@ func TestResolveDataDirInteractive_UnknownActionFallsThrough(t *testing.T) {
 	assert.Equal(t, "/fallthrough", path)
 }
 
-// pwInstaller is a minimal Installer that records EnsurePasswordDropIn/
-// WriteEnvDropIn/Restart so ensureServiceEnv's env-gating and print behavior
-// can be asserted without touching a real init system.
-type pwInstaller struct {
-	autostart.Installer // nil embed: only the methods below are exercised
-
-	path           string
-	wrote          bool
-	ensureErr      error
-	ensureCalled   bool
-	ensurePassword string
-
-	envPath   string
-	envChange autostart.DropInChange
-	envErr    error
-	envCalled bool
-	envVars   map[string]string
-
-	restarts int
-}
-
-func (p *pwInstaller) EnsurePasswordDropIn(_ context.Context, _ autostart.InstallOptions, password string) (string, bool, error) {
-	p.ensureCalled = true
-	p.ensurePassword = password
-	return p.path, p.wrote, p.ensureErr
-}
-
-func (p *pwInstaller) WriteEnvDropIn(_ context.Context, _ autostart.InstallOptions, _ string, vars map[string]string) (string, autostart.DropInChange, error) {
-	p.envCalled = true
-	p.envVars = vars
-	return p.envPath, p.envChange, p.envErr
-}
-
-func (p *pwInstaller) Restart(context.Context, autostart.InstallOptions) error {
-	p.restarts++
-	return nil
-}
-
 // #251 regression: RUNWISP_AUTH (and any other RUNWISP_*) used to be silently
 // dropped on install — a systemd unit / launchd plist never inherits the
 // install shell's environment. capturedServiceEnv is what ensureServiceEnv
@@ -842,16 +756,16 @@ func TestCapturedServiceEnv_CapturesRunwispVarsExcludesMarkerAndOthers(t *testin
 func TestEnsureServiceEnv_PersistsOperatorSuppliedPasswordViaEnvDropIn(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "hunter2")
 	t.Setenv("RUNWISP_AUTH", "")
-	inst := &pwInstaller{envPath: "/etc/systemd/system/runwisp.service.d/runwisp-env.conf", envChange: autostart.DropInWritten}
+	inst := &autostartfake.Installer{EnvPath: "/etc/systemd/system/runwisp.service.d/runwisp-env.conf", EnvChange: autostart.DropInWritten}
 	var out bytes.Buffer
 	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
 
-	require.True(t, inst.envCalled)
-	assert.Equal(t, "hunter2", inst.envVars["RUNWISP_PASSWORD"])
-	assert.False(t, inst.ensureCalled, "an operator-supplied password rides the env drop-in, not the generated-password fallback")
-	assert.Equal(t, 1, inst.restarts, "must restart so the daemon picks up the new environment")
+	require.True(t, inst.EnvCalled)
+	assert.Equal(t, "hunter2", inst.EnvVars["RUNWISP_PASSWORD"])
+	assert.False(t, inst.EnsureCalled, "an operator-supplied password rides the env drop-in, not the generated-password fallback")
+	assert.Equal(t, 1, inst.Restarts, "must restart so the daemon picks up the new environment")
 	assert.NotContains(t, out.String(), "hunter2", "must not echo the operator's secret back")
-	assert.Contains(t, out.String(), inst.envPath)
+	assert.Contains(t, out.String(), inst.EnvPath)
 }
 
 // #251: RUNWISP_AUTH=off used to only get a "does not carry" warning. It now
@@ -861,13 +775,13 @@ func TestEnsureServiceEnv_PersistsOperatorSuppliedPasswordViaEnvDropIn(t *testin
 func TestEnsureServiceEnv_AuthOffStillCapturedNoPasswordFallback(t *testing.T) {
 	t.Setenv("RUNWISP_AUTH", "off")
 	t.Setenv("RUNWISP_PASSWORD", "")
-	inst := &pwInstaller{}
+	inst := &autostartfake.Installer{}
 	var out bytes.Buffer
 	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
 
-	require.True(t, inst.envCalled)
-	assert.Equal(t, "off", inst.envVars["RUNWISP_AUTH"])
-	assert.False(t, inst.ensureCalled, "no password boundary means no password to set")
+	require.True(t, inst.EnvCalled)
+	assert.Equal(t, "off", inst.EnvVars["RUNWISP_AUTH"])
+	assert.False(t, inst.EnsureCalled, "no password boundary means no password to set")
 	assert.NotContains(t, out.String(), "does not carry into the managed service",
 		"RUNWISP_AUTH now rides the env drop-in, so the old warning is stale")
 }
@@ -880,44 +794,44 @@ func TestEnsureServiceEnv_AuthOffStillCapturedNoPasswordFallback(t *testing.T) {
 func TestEnsureServiceEnv_WarnsLoudlyWhenEnvRemoved(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "")
 	t.Setenv("RUNWISP_AUTH", "")
-	inst := &pwInstaller{
-		envPath:   "/etc/systemd/system/runwisp.service.d/runwisp-env.conf",
-		envChange: autostart.DropInRemoved,
+	inst := &autostartfake.Installer{
+		EnvPath:   "/etc/systemd/system/runwisp.service.d/runwisp-env.conf",
+		EnvChange: autostart.DropInRemoved,
 	}
 	var out bytes.Buffer
 	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
 
 	assert.Contains(t, out.String(), "WARNING")
-	assert.Contains(t, out.String(), inst.envPath)
+	assert.Contains(t, out.String(), inst.EnvPath)
 	assert.NotContains(t, out.String(), "Saved your RUNWISP_* environment",
 		"a removed drop-in must never be reported as saved")
-	assert.Equal(t, 1, inst.restarts, "the daemon must restart to pick up the reverted environment")
+	assert.Equal(t, 1, inst.Restarts, "the daemon must restart to pick up the reverted environment")
 }
 
 func TestEnsureServiceEnv_GeneratesPasswordPrintsAndRestarts(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "")
 	t.Setenv("RUNWISP_AUTH", "")
-	inst := &pwInstaller{path: "/etc/systemd/system/runwisp.service.d/password.conf", wrote: true}
+	inst := &autostartfake.Installer{EnsurePath: "/etc/systemd/system/runwisp.service.d/password.conf", EnsureWrote: true}
 	var out bytes.Buffer
 	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
 
-	require.True(t, inst.ensureCalled)
-	assert.NotEmpty(t, inst.ensurePassword, "a fresh password must be generated")
-	assert.Equal(t, 1, inst.restarts, "must restart so the daemon picks up the drop-in")
-	assert.Contains(t, out.String(), inst.ensurePassword, "the generated password is printed once")
-	assert.Contains(t, out.String(), inst.path)
+	require.True(t, inst.EnsureCalled)
+	assert.NotEmpty(t, inst.EnsurePassword, "a fresh password must be generated")
+	assert.Equal(t, 1, inst.Restarts, "must restart so the daemon picks up the drop-in")
+	assert.Contains(t, out.String(), inst.EnsurePassword, "the generated password is printed once")
+	assert.Contains(t, out.String(), inst.EnsurePath)
 }
 
 func TestEnsureServiceEnv_SkipsRestartWhenNothingChanged(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "")
 	t.Setenv("RUNWISP_AUTH", "")
-	// wrote=false with a non-empty path means an existing password drop-in was
+	// EnsureWrote=false with a non-empty path means an existing password drop-in was
 	// left alone; envChange=DropInUnchanged (default) means the env drop-in already
 	// matched — neither needs a restart.
-	inst := &pwInstaller{path: "/etc/systemd/system/runwisp.service.d/password.conf", wrote: false}
+	inst := &autostartfake.Installer{EnsurePath: "/etc/systemd/system/runwisp.service.d/password.conf", EnsureWrote: false}
 	var out bytes.Buffer
 	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
 
-	assert.Zero(t, inst.restarts, "nothing changed — no restart needed")
+	assert.Zero(t, inst.Restarts, "nothing changed — no restart needed")
 	assert.NotContains(t, out.String(), manualPasswordHint, "a working drop-in needs no manual hint")
 }
