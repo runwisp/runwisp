@@ -178,14 +178,7 @@ func processAlive(pid int, pidPath string) bool {
 	if _, err := os.Stat(pidPath); os.IsNotExist(err) {
 		return false
 	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	if proc.Signal(syscall.Signal(0)) != nil {
-		return false
-	}
-	return datadir.PidFileLocked(pidPath)
+	return datadir.ProcessAlive(pid) && datadir.PidFileLocked(pidPath)
 }
 
 // daemonLogDrainer tails the daemon's log file incrementally, emitting each

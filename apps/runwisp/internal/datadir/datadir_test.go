@@ -11,6 +11,17 @@ import (
 	"testing"
 )
 
+// TestProcessAlive pins the pid guard (pid 0 means "every process in my group"
+// to kill(2), so a zeroed pidfile must not read as live) and the EPERM case:
+// pid 1 is root's, so an unprivileged caller gets EPERM, yet it exists.
+func TestProcessAlive(t *testing.T) {
+	for pid, want := range map[int]bool{os.Getpid(): true, 1: true, 0: false, -1: false, 999999999: false} {
+		if got := ProcessAlive(pid); got != want {
+			t.Errorf("ProcessAlive(%d) = %v, want %v", pid, got, want)
+		}
+	}
+}
+
 // TestEnsureDir_TightensPreExistingPerms guards the regression where EnsureDir
 // relied solely on os.MkdirAll, which never chmods an already-existing directory
 // — so a data dir created out-of-band at 0755 (e.g. a Docker bind-mount) kept

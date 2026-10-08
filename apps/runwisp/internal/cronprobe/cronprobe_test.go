@@ -130,16 +130,6 @@ func TestProbe(t *testing.T) {
 	})
 }
 
-// TestProcessAlive pins the pid guard. pid 0 means "every process in my group" to
-// kill(2), so passing it through would report a live crond on any box with a
-// zeroed or truncated pidfile.
-func TestProcessAlive(t *testing.T) {
-	assert.True(t, processAlive(os.Getpid()))
-	assert.False(t, processAlive(0))
-	assert.False(t, processAlive(-1))
-	assert.False(t, processAlive(999999999))
-}
-
 // TestProbe_SystemctlWithoutSystemd is the WSL / container case: systemctl is on
 // PATH but systemd is not PID 1, so it reports every unit inactive while a crond
 // started some other way is running. Trusting it released the hold and let both

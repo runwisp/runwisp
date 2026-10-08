@@ -113,6 +113,16 @@ func TestProcessAlive_PresentAndAlive(t *testing.T) {
 	assert.True(t, processAlive(os.Getpid(), filepath.Join(lockedDir, "daemon.pid")))
 }
 
+// TestProcessAlive_OtherUsersDaemon: a daemon running as another user (pid 1
+// stands in: it is root's, so signal 0 from an unprivileged test gets EPERM)
+// still exists, so a held PID-file lock must report it alive rather than let
+// stop/restart treat it as gone.
+func TestProcessAlive_OtherUsersDaemon(t *testing.T) {
+	lockedDir := t.TempDir()
+	writeLivePidFile(t, lockedDir)
+	assert.True(t, processAlive(1, filepath.Join(lockedDir, "daemon.pid")))
+}
+
 func TestProcessAlive_PresentButDead(t *testing.T) {
 	dir := t.TempDir()
 	pidPath := filepath.Join(dir, "pid")

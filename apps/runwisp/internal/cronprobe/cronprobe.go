@@ -13,14 +13,13 @@
 package cronprobe
 
 import (
-	"errors"
 	"os"
 	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 
+	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/importer"
 )
 
@@ -128,21 +127,9 @@ func pidRunning() bool {
 		if err != nil {
 			continue
 		}
-		if processAlive(pid) {
+		if datadir.ProcessAlive(pid) {
 			return true
 		}
 	}
 	return false
-}
-
-// processAlive checks liveness with signal 0, which the kernel refuses to
-// actually deliver but still reports ESRCH for a pid that doesn't exist. Used
-// instead of a /proc/<pid> stat because /proc doesn't exist on macOS, and this
-// package runs on both.
-func processAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
 }
