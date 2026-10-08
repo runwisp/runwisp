@@ -1437,7 +1437,7 @@ func TestOpenLogSearch_NoTask_NoOverlay(t *testing.T) {
 
 func TestHandleLogSearchKey_EscClosesOverlay(t *testing.T) {
 	m := newTestModel(nil)
-	ls := logsearch.New(m.client, "task-x")
+	ls := logsearch.New(m.streams.client, "task-x")
 	m.logSearch = &ls
 
 	newM, cmd := m.handleLogSearchKey(keyMsgSpecial(tea.KeyEsc))
@@ -1452,7 +1452,7 @@ func TestHandleLogSearchKey_EscClosesOverlay(t *testing.T) {
 
 func TestHandleLogSearchKey_ForwardsKey(t *testing.T) {
 	m := newTestModel(nil)
-	ls := logsearch.New(m.client, "task-x")
+	ls := logsearch.New(m.streams.client, "task-x")
 	m.logSearch = &ls
 
 	// Tab toggles regex inside the overlay, which its mode line shows.
@@ -1468,7 +1468,7 @@ func TestHandleLogSearchKey_ForwardsKey(t *testing.T) {
 
 func TestHandleLogSearchSelect_OpensRunWhenNotAlreadyOpen(t *testing.T) {
 	m := newTestModel(nil)
-	ls := logsearch.New(m.client, "task-x")
+	ls := logsearch.New(m.streams.client, "task-x")
 	m.logSearch = &ls
 
 	newM, cmd := m.handleLogSearchSelect(logsearch.SelectMsg{TaskName: "task-x", RunID: "r-other", Line: 42})
@@ -1486,7 +1486,7 @@ func TestHandleLogSearchSelect_OpensRunWhenNotAlreadyOpen(t *testing.T) {
 
 func TestHandleLogSearchSelect_JumpsInPlaceIfSameRunOpen(t *testing.T) {
 	m := newTestModel(nil)
-	ls := logsearch.New(m.client, "task-x")
+	ls := logsearch.New(m.streams.client, "task-x")
 	m.logSearch = &ls
 	ev := execlist.NewExecView(&model.Run{ID: "r-here", TaskName: "task-x"})
 	m.execView = &ev

@@ -555,7 +555,7 @@ func (m Model) openLogSearch() (tea.Model, tea.Cmd) {
 	if taskName == "" {
 		return m, nil
 	}
-	ls := logsearch.New(m.client, taskName)
+	ls := logsearch.New(m.streams.client, taskName)
 	m.logSearch = &ls
 	return m, nil
 }

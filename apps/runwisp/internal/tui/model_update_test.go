@@ -1123,7 +1123,6 @@ func TestHandleReloadResult_ErrorFlashes(t *testing.T) {
 
 func TestHandleReloadResult_SuccessRebuildsSidebar(t *testing.T) {
 	m := newTestModel([]model.Task{{Name: "old"}})
-	m.client = newDummyClient()
 	info := &model.DaemonInfo{Tasks: []model.Task{{Name: "fresh"}}, ConfigStale: false}
 	updated, _ := m.handleReloadResult(uikit.ReloadResultMsg{
 		Result: &model.ReloadResult{Added: []string{"fresh"}, Removed: []string{"old"}},

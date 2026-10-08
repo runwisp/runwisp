@@ -80,7 +80,6 @@ type Model struct {
 	// the scheduler. taskZones memoises per-task [tasks.*] timezone lookups.
 	loc       *time.Location
 	taskZones map[string]*time.Location
-	client    *apiclient.Client
 
 	// Home page cursor for interactive fields (-1 = not in header area).
 	homeCursor int
@@ -165,7 +164,6 @@ func NewModel(cfg TUIConfig) Model {
 		info:             cfg.Info,
 		loc:              uikit.ResolveLocation(cfg.Info.Timezone),
 		taskZones:        make(map[string]*time.Location),
-		client:           cfg.Client,
 		homeCursor:       -1,
 		mouse:            mouseState{homeHover: -1},
 		frame:            new(string),
@@ -551,12 +549,7 @@ func (m *Model) openRunByID(runID string) tea.Cmd {
 	if run := m.execWindow.FindRun(runID); run != nil {
 		return m.openExecView(run)
 	}
-	client := m.client
-	ctx := m.streams.streamCtx
-	return func() tea.Msg {
-		run, err := client.GetRun(ctx, runID)
-		return uikit.OpenRunMsg{Run: run, RunID: runID, Err: err}
-	}
+	return m.streams.FetchRun(runID)
 }
 
 // activateHomeField performs the primary action for the currently selected home field:

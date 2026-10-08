@@ -413,7 +413,7 @@ func TestOpenRunByID_DeletedRunReportsNotFound(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(srv.Close)
 	m := newTestModel(nil)
-	m.client = apiclient.New(srv.URL, "")
+	m.streams.client = apiclient.New(srv.URL, "")
 
 	cmd := m.openRunByID("r-gone")
 	if cmd == nil {
