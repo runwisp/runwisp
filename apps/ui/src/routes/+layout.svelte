@@ -22,6 +22,12 @@
 
     let { children } = $props();
 
+    function disconnectStores() {
+        runUpdatesStore.disconnect();
+        notificationStore.disconnect();
+        systemStore.disconnect();
+    }
+
     $effect(() => {
         // Best-effort: preload route JS so a click still navigates when the
         // daemon (which serves the chunks) has since gone down.
@@ -30,11 +36,7 @@
 
         void authStore.load();
 
-        return () => {
-            runUpdatesStore.disconnect();
-            notificationStore.disconnect();
-            systemStore.disconnect();
-        };
+        return disconnectStores;
     });
 
     $effect(() => {
@@ -44,9 +46,7 @@
             // unauthenticated) re-runs this effect into this branch. Without
             // tearing the stores down here they keep applying SSE-pushed state
             // underneath the auth modal until the whole page unmounts.
-            runUpdatesStore.disconnect();
-            notificationStore.disconnect();
-            systemStore.disconnect();
+            disconnectStores();
             return;
         }
 

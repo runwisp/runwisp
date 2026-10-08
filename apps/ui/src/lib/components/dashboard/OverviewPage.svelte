@@ -2,7 +2,6 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import type { MetricsSample } from "$lib/api";
     import OverviewHero from "./OverviewHero.svelte";
     import SystemResourcesPanel from "./SystemResourcesPanel.svelte";
     import OverviewSidePanels from "./OverviewSidePanels.svelte";
@@ -53,7 +52,6 @@
         runningRuns,
         totalRuns,
         tasks,
-        metricsHistory,
         onViewAllRuns,
         onTaskClick,
         onRunClick,
@@ -64,7 +62,6 @@
         runningRuns: Run[];
         totalRuns: number;
         tasks: Task[];
-        metricsHistory: MetricsSample[];
         onViewAllRuns: () => void;
         onTaskClick: (taskName: string) => void;
         onRunClick: (taskName: string, runId: string) => void;
@@ -160,7 +157,7 @@
         </div>
 
         <div class="flex flex-col gap-5">
-            <SystemResourcesPanel {stats} {metricsHistory} />
+            <SystemResourcesPanel {stats} metricsHistory={systemStore.metricsHistory} />
 
             <RecentActivityPanel
                 {recentActivity}
