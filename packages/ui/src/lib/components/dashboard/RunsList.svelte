@@ -684,7 +684,6 @@
             ? 'border-outline bg-surface-raised shadow-sm'
             : 'border-transparent hover:border-outline-hover hover:bg-surface-sunken'}"
         onclick={() => selectRun(run.id)}
-        onkeydown={(e) => e.key === "Enter" && selectRun(run.id)}
     >
         {#if showTaskName}
             <!-- Cross-task /runs variant: the same readout language as the task
