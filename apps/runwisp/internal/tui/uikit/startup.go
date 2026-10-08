@@ -43,7 +43,6 @@ type StartupInfo struct {
 	// so the operator can verify it out-of-band against what a remote client
 	// pins on first connect. Empty when serving plain HTTP.
 	TLSFingerprint string
-	UsingDemo      bool
 	Capabilities   []model.CapInfo
 	Tasks          []model.Task
 	Timezone       string
@@ -56,7 +55,6 @@ type StartupInfo struct {
 	AuthDisabled bool
 
 	StationEnabled bool
-	WebUIDisabled  bool
 	// ServiceManaged is true when the daemon runs under systemd / launchd.
 	// The quit dialog then drops its "Shut Down" option in favour of a
 	// `runwisp stop` hint, so the TUI never fights the service manager.

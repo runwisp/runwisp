@@ -143,12 +143,6 @@ func TestNextCronRun_ResultShapes(t *testing.T) {
 	})
 }
 
-func TestFields_NoWebUI(t *testing.T) {
-	info := uikit.StartupInfo{WebUIDisabled: true, Port: 9477}
-	fields := Fields(info, false)
-	assert.Empty(t, fields)
-}
-
 func TestFields_NoPort(t *testing.T) {
 	info := uikit.StartupInfo{Port: 0}
 	fields := Fields(info, false)
@@ -236,14 +230,6 @@ func TestRenderHeader_StationConnected(t *testing.T) {
 	}
 	header, _ := RenderHeader(info, false, 80, -1, -1)
 	assert.Contains(t, header, "Station connected")
-}
-
-func TestRenderHeader_WebUIDisabled(t *testing.T) {
-	info := uikit.StartupInfo{
-		WebUIDisabled: true,
-	}
-	header, _ := RenderHeader(info, false, 80, -1, -1)
-	assert.Contains(t, header, "Web UI disabled")
 }
 
 func TestRenderHeader_ConfigStale(t *testing.T) {

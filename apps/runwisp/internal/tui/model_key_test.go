@@ -638,7 +638,6 @@ func TestHandleKeyUpHome_HomeCursorNegativeWithFields(t *testing.T) {
 	m := newTestModel(nil)
 	// Set up info so Fields() returns something
 	m.info.Port = 8080
-	m.info.WebUIDisabled = false
 	m.homeCursor = -1
 
 	newM, cmd, handled := handleKeyUpHome(m)
@@ -655,7 +654,6 @@ func TestHandleKeyUpHome_HomeCursorNegativeWithFields(t *testing.T) {
 func TestHandleKeyUpHome_HomeCursorPositiveDecrement(t *testing.T) {
 	m := newTestModel(nil)
 	m.info.Port = 8080
-	m.info.WebUIDisabled = false
 	m.homeCursor = 1
 
 	newM, _, handled := handleKeyUpHome(m)
@@ -674,7 +672,6 @@ func TestHandleKeyDown_MainPanelHomeCursorGte0(t *testing.T) {
 	m.focusMainPanel()
 	m.homeCursor = 0
 	m.info.Port = 8080
-	m.info.WebUIDisabled = false
 
 	// handleKeyDownHome: cursor at 0, fields has items
 	_, _, handled := handleKeyDown(m, keyMsgSpecial(tea.KeyDown))
@@ -689,7 +686,6 @@ func TestHandleKeyDownHome_LastFieldResetsCursor(t *testing.T) {
 	m := newTestModel(nil)
 	// Only FieldWebUI (no launchTicket, no password)
 	m.info.Port = 8080
-	m.info.WebUIDisabled = false
 	// Set cursor to last field index
 	m.homeCursor = 0 // WebUI is only field (index 0)
 

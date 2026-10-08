@@ -199,7 +199,6 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		TLSFingerprint: tlsCfg.Fingerprint,
 
 		Fingerprint:    cfg.Fingerprint,
-		UsingDemo:      cfg.UsingDemo,
 		Capabilities:   daemonInfo.Capabilities,
 		Tasks:          daemonInfo.Tasks,
 		Timezone:       daemonInfo.ResolvedTimezone,
@@ -461,9 +460,6 @@ func logStartupSummary(info uikit.StartupInfo) {
 	if info.Timezone != "" {
 		slog.Info("scheduler timezone", "timezone", info.Timezone, "source", info.TimezoneSource)
 	}
-	if info.UsingDemo {
-		slog.Warn("no runwisp.toml found — running built-in demo task; create runwisp.toml to define your own tasks")
-	}
 	// The TTY banner and the TUI header both surface the ephemeral password, so
 	// only the headless path — every container, every systemd unit — could
 	// otherwise come up with a login nobody can perform and say nothing about
@@ -488,9 +484,6 @@ func logStartupSummary(info uikit.StartupInfo) {
 	}
 	for _, w := range info.ScheduleWarnings {
 		slog.Warn("schedule warning", "detail", w)
-	}
-	if info.WebUIDisabled {
-		slog.Info("web UI disabled (no password in station-only mode)")
 	}
 	// AuthDisabled needs no line here: logSecurityWarnings already emits the
 	// WARN (and the stderr banner) in every mode before this summary runs.

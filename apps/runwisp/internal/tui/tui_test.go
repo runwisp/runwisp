@@ -222,16 +222,6 @@ func TestPrintStartupTo_WithTimezoneNoSource(t *testing.T) {
 	assert.Contains(t, out, "UTC")
 }
 
-func TestPrintStartupTo_WithUsingDemo(t *testing.T) {
-	var buf bytes.Buffer
-	printStartupTo(&buf, uikit.StartupInfo{
-		Version:   "0.0.0-test",
-		UsingDemo: true,
-	})
-	out := buf.String()
-	assert.Contains(t, out, "demo task")
-}
-
 func TestPrintStartupTo_WithCrashedRuns(t *testing.T) {
 	var buf bytes.Buffer
 	printStartupTo(&buf, uikit.StartupInfo{
@@ -250,16 +240,6 @@ func TestPrintStartupTo_WithCatchUpTriggered(t *testing.T) {
 	})
 	out := buf.String()
 	assert.Contains(t, out, "3 catch-up runs")
-}
-
-func TestPrintStartupTo_WebUIDisabled(t *testing.T) {
-	var buf bytes.Buffer
-	printStartupTo(&buf, uikit.StartupInfo{
-		Version:       "0.0.0-test",
-		WebUIDisabled: true,
-	})
-	out := buf.String()
-	assert.Contains(t, out, "Web UI disabled")
 }
 
 func TestPrintStartupTo_WithListenURL(t *testing.T) {

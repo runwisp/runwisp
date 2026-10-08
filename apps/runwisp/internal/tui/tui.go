@@ -128,11 +128,6 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 	printCapabilitiesSection(w, info.Capabilities)
 	printTasksSection(w, info.Tasks)
 
-	if info.UsingDemo {
-		fmt.Fprintf(w, "  %s\n", yellowSt.Render("No config found — running with built-in demo task"))
-		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Create runwisp.toml to define your own tasks (see github.com/runwisp/runwisp)"))
-		fmt.Fprintln(w)
-	}
 	if info.CrashedRuns > 0 {
 		fmt.Fprintf(w, "  %s\n",
 			yellowSt.Render(fmt.Sprintf("Marked %d crashed runs from previous session", info.CrashedRuns)),
@@ -168,9 +163,7 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 		fmt.Fprintln(w)
 	}
 
-	if info.WebUIDisabled {
-		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Web UI disabled (no password in station-only mode)"))
-	} else if info.ListenURL != "" {
+	if info.ListenURL != "" {
 		fmt.Fprintf(w, "  Listening on %s\n", cyanBold.Render(info.ListenURL))
 	}
 	if info.Headless {

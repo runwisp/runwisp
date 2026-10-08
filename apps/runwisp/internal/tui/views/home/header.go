@@ -34,7 +34,7 @@ const PasswordMaskWidth = 22
 // hasLaunchTicket indicates whether the one-click browser open action is available.
 func Fields(info uikit.StartupInfo, hasLaunchTicket bool) []Field {
 	var fields []Field
-	if !info.WebUIDisabled && info.Port > 0 {
+	if info.Port > 0 {
 		if hasLaunchTicket {
 			fields = append(fields, FieldOpenWebUI)
 		}
@@ -76,9 +76,6 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 		Background(uikit.ColorBgLight).
 		Foreground(uikit.ColorTextMuted)
 	var parts []string
-	if info.WebUIDisabled {
-		parts = append(parts, muted.Render("Web UI disabled"))
-	}
 	if info.StationEnabled {
 		parts = append(parts, muted.Render("Station connected"))
 	}
