@@ -374,13 +374,10 @@ func TestHandleLogReplayRequest_TransientError(t *testing.T) {
 	assert.Equal(t, StationErrorKindTransient, ce.Kind)
 }
 
-// TestInboundHandler_FreshHandlerGetters covers the "zero-state" getters:
-// LogDir/Uploader propagate from construction; the listener queries return
-// false because no listener was registered yet.
-func TestInboundHandler_FreshHandlerGetters(t *testing.T) {
+// TestInboundHandler_FreshHandlerListeners: the listener queries return false
+// because no listener was registered yet.
+func TestInboundHandler_FreshHandlerListeners(t *testing.T) {
 	h := newTestInboundHandler()
-	assert.Equal(t, "/tmp/logs", h.LogDir())
-	assert.NotNil(t, h.Uploader())
 	assert.False(t, h.IsLogListener("exec-1"), "no listener registered → must be false")
 	assert.NotPanics(t, func() { h.RemoveLogListener("exec-1") }, "removing an absent listener must be a no-op")
 }

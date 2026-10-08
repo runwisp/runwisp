@@ -156,8 +156,8 @@ func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run, update pr
 	b.flushLogBatch(executionID)
 	b.tracker.QueueUpdate(update, b.sendReady)
 
-	logFilePath := logutil.ResolveRunLogPath(b.handler.LogDir(), run.TaskName, run.ID, run.CreatedAt)
-	result, err := b.handler.Uploader().Archive(ctx, executionID, logFilePath)
+	logFilePath := logutil.ResolveRunLogPath(b.handler.logDir, run.TaskName, run.ID, run.CreatedAt)
+	result, err := b.handler.uploader.Archive(ctx, executionID, logFilePath)
 	switch {
 	case err != nil:
 		slog.Warn("log archival failed; archive coordinates not reported", "executionId", executionID, "err", err)

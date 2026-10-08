@@ -9,8 +9,7 @@ import (
 )
 
 // connectionManager owns the active WebSocket session and outbound message
-// dispatch. Extracted from Client to separate connection state from business
-// logic.
+// dispatch.
 type connectionManager struct {
 	tracker *ExecutionTracker
 

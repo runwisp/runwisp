@@ -81,13 +81,6 @@ func (h *InboundHandler) HandleAgentRestart() error {
 	return nil
 }
 
-// LogDir returns the daemon's log directory; used by EventBridge to resolve
-// per-run log file paths during terminal archival.
-func (h *InboundHandler) LogDir() string { return h.logDir }
-
-// Uploader returns the configured archival coordinator (may be nil).
-func (h *InboundHandler) Uploader() *LogUploader { return h.uploader }
-
 // HandleExecutionDispatch validates and triggers a dispatched execution.
 // ack is invoked exactly once as soon as the dispatch is accepted (valid and
 // either fresh or a recognized duplicate), before the run is triggered —

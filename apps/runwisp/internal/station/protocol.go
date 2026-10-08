@@ -85,8 +85,8 @@ func NewExecutionUpdateMessage(executionID string, status protocol.ExecutionStat
 }
 
 // NewLogLinesMessage builds a coalesced batch of live line events for one
-// execution. Same per-line payload as NewLogLineMessage, grouped so a burst
-// ships as a single frame. lines must be in ascending n order.
+// execution, so a burst ships as a single frame. lines must be in ascending n
+// order.
 func NewLogLinesMessage(executionID string, lines []protocol.LinesItem) protocol.LogLinesMessage {
 	v, s := newEnvelopeFields()
 	return protocol.LogLinesMessage{
