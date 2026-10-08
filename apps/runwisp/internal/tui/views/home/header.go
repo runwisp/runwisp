@@ -224,11 +224,8 @@ func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, p
 	lineCount++
 
 	schedule := "manual"
-	switch {
-	case task != nil && task.Kind.IsService():
-		schedule = fmt.Sprintf("service x%d", task.Instances)
-	case task != nil && task.Cron != "":
-		schedule = task.Cron
+	if task != nil {
+		schedule = uikit.ScheduleLabel(task)
 	}
 	held := task != nil && task.HeldBy != model.HeldByNothing
 	schedInfo := "  Schedule: " + schedule

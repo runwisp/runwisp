@@ -187,15 +187,7 @@ func printTasksSection(w io.Writer, tasks []model.Task) {
 		if i == last {
 			prefix = "└─"
 		}
-		var schedule string
-		switch {
-		case task.Kind.IsService():
-			schedule = fmt.Sprintf("service x%d", task.Instances)
-		case task.Cron != "":
-			schedule = task.Cron
-		default:
-			schedule = "manual"
-		}
+		schedule := uikit.ScheduleLabel(&task)
 		dots := strings.Repeat("·", max(2, taskPad-len(task.Name)))
 		fmt.Fprintf(w, "  %s %s %s %s\n",
 			dimStyle.Render(prefix),

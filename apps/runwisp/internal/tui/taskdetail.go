@@ -181,11 +181,7 @@ func (d *TaskDetailDialog) kindRows(add func(label, value string)) {
 		return
 	}
 	add("Kind", "task")
-	schedule := "manual"
-	if task.Cron != "" {
-		schedule = task.Cron
-	}
-	add("Schedule", schedule)
+	add("Schedule", uikit.ScheduleLabel(task))
 	if d.paused {
 		add("Next run", "paused")
 	} else {

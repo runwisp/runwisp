@@ -389,15 +389,7 @@ func (v *InfoView) renderTasksSection(w int) []string {
 	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 
 	for _, task := range v.info.Tasks {
-		var sched string
-		switch {
-		case task.Kind.IsService():
-			sched = fmt.Sprintf("service x%d", task.Instances)
-		case task.Cron != "":
-			sched = task.Cron
-		default:
-			sched = "manual"
-		}
+		sched := uikit.ScheduleLabel(&task)
 		name := uikit.OnBg(uikit.ColorBg, uikit.ColorTextBright).Bold(true).Render(task.Name)
 		schedStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted).Render(sched)
 		line := bgIndent() + name + bgIndent() + schedStyle

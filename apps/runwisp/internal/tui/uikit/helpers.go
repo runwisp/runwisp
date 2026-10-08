@@ -69,6 +69,18 @@ func ResolveLocation(name string) *time.Location {
 	return loc
 }
 
+// ScheduleLabel is how a task's trigger reads in lists and headers: "service
+// x2", its cron expression, or "manual".
+func ScheduleLabel(t *model.Task) string {
+	switch {
+	case t.Kind.IsService():
+		return fmt.Sprintf("service x%d", t.Instances)
+	case t.Cron != "":
+		return t.Cron
+	}
+	return "manual"
+}
+
 // FormatTimestamp renders a timestamp as "2006-01-02 15:04:05" in loc. A nil loc
 // means the process zone.
 func FormatTimestamp(t time.Time, loc *time.Location) string {
