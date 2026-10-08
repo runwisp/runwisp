@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 
@@ -28,7 +29,7 @@ func (c *Client) ListNotifications(ctx context.Context, limit int, before string
 		path = path + "?" + encoded
 	}
 	var page server.NotificationsListBody
-	if err := c.doJSON(ctx, "GET", path, nil, &page); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &page); err != nil {
 		return server.NotificationsListBody{}, err
 	}
 	return page, nil
@@ -37,25 +38,25 @@ func (c *Client) ListNotifications(ctx context.Context, limit int, before string
 // MarkAllNotificationsRead stamps every currently-unread row as read using the
 // server's clock.
 func (c *Client) MarkAllNotificationsRead(ctx context.Context) error {
-	return c.doJSON(ctx, "POST", "/api/notifications/read", nil, nil)
+	return c.doJSON(ctx, http.MethodPost, "/api/notifications/read", nil, nil)
 }
 
 // MarkNotificationRead stamps a single notification as read.
 func (c *Client) MarkNotificationRead(ctx context.Context, id string) error {
-	return c.doJSON(ctx, "POST", "/api/notifications/"+url.PathEscape(id)+"/read", nil, nil)
+	return c.doJSON(ctx, http.MethodPost, "/api/notifications/"+url.PathEscape(id)+"/read", nil, nil)
 }
 
 // MarkNotificationUnread clears the read marker on a single notification so it
 // re-enters the unread set.
 func (c *Client) MarkNotificationUnread(ctx context.Context, id string) error {
-	return c.doJSON(ctx, "POST", "/api/notifications/"+url.PathEscape(id)+"/unread", nil, nil)
+	return c.doJSON(ctx, http.MethodPost, "/api/notifications/"+url.PathEscape(id)+"/unread", nil, nil)
 }
 
 // UnreadNotificationCount returns the number of notifications with read_at IS
 // NULL.
 func (c *Client) UnreadNotificationCount(ctx context.Context) (int64, error) {
 	var resp server.NotificationUnreadBody
-	if err := c.doJSON(ctx, "GET", "/api/notifications/unread-count", nil, &resp); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, "/api/notifications/unread-count", nil, &resp); err != nil {
 		return 0, err
 	}
 	return resp.Count, nil

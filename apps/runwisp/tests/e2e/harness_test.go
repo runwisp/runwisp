@@ -613,7 +613,7 @@ func waitForRunCount(t testing.TB, client *apiclient.Client, taskName string, ex
 	var lastTotal int64
 
 	for time.Now().Before(deadline) {
-		_, total, err := client.ListRunsByTask(t.Context(), taskName, apiclient.RunsParams{Limit: 20})
+		_, total, err := client.ListRuns(t.Context(), apiclient.RunsParams{TaskName: taskName, Limit: 20})
 		require.NoError(t, err)
 		lastTotal = total
 		if total >= expectedTotal {

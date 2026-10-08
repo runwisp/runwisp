@@ -50,7 +50,7 @@ retry_attempts = 0
 
 	var unhealthy model.Run
 	require.Eventually(t, func() bool {
-		runs, _, err := client.ListRunsByTask(t.Context(), "api", apiclient.RunsParams{Status: string(model.ReasonUnhealthy)})
+		runs, _, err := client.ListRuns(t.Context(), apiclient.RunsParams{TaskName: "api", Status: string(model.ReasonUnhealthy)})
 		if err != nil || len(runs) == 0 {
 			return false
 		}

@@ -128,7 +128,7 @@ func buildStatusDoc(ctx context.Context, client *apiclient.Client) statusJSONDoc
 // lastRunOf fetches a task's most recent run (default sort is created_at desc),
 // or nil when the task has never run or the fetch fails.
 func lastRunOf(ctx context.Context, client *apiclient.Client, taskName string) *model.Run {
-	runs, _, err := client.ListRunsByTask(ctx, taskName, apiclient.RunsParams{Limit: 1})
+	runs, _, err := client.ListRuns(ctx, apiclient.RunsParams{TaskName: taskName, Limit: 1})
 	if err != nil || len(runs) == 0 {
 		return nil
 	}

@@ -126,7 +126,7 @@ manual_trigger = false
 // how many instances/runs a service or task currently has in flight.
 func activeRuns(t *testing.T, client *apiclient.Client, taskName string) []model.Run {
 	t.Helper()
-	runs, _, err := client.ListRunsByTask(t.Context(), taskName, apiclient.RunsParams{Status: "running"})
+	runs, _, err := client.ListRuns(t.Context(), apiclient.RunsParams{TaskName: taskName, Status: "running"})
 	require.NoError(t, err)
 	return runs
 }

@@ -105,7 +105,7 @@ func waitForEndedRun(t testing.TB, client *apiclient.Client, taskName string) mo
 
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		runs, _, err := client.ListRunsByTask(t.Context(), taskName, apiclient.RunsParams{Limit: 1})
+		runs, _, err := client.ListRuns(t.Context(), apiclient.RunsParams{TaskName: taskName, Limit: 1})
 		require.NoError(t, err)
 		if len(runs) > 0 && runs[0].Status == model.PhaseEnded {
 			return runs[0]
