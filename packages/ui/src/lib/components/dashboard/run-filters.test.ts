@@ -27,6 +27,7 @@ import {
     isExitCodeExprValid,
     exitCodeChipLabel,
     runFilterParams,
+    filterChipLabel,
     type StatusBucket,
     type RunsListFilters,
 } from "./run-filters.js";
@@ -327,5 +328,27 @@ describe("runFilterParams", () => {
 
     it("ignores an unparseable exit-code expression", () => {
         expect(runFilterParams({ ...emptyRunFilters(), exitCode: "12a" })).toEqual({});
+    });
+});
+
+describe("filterChipLabel", () => {
+    it("labels each dimension", () => {
+        const f = base({
+            statuses: ["failed"],
+            taskName: "backup",
+            triggeredBy: "cron",
+            exitCode: ">100",
+            createdAfter: "2026-01-01T00:00:00Z",
+        });
+        expect(filterChipLabel(f, "status")).toBe(statusChipLabel(["failed"]));
+        expect(filterChipLabel(f, "task")).toBe("backup");
+        expect(filterChipLabel(f, "triggeredBy")).toBe("Trigger: " + triggerDescription("cron"));
+        expect(filterChipLabel(f, "exitCode")).toBe("Exit >100");
+        expect(filterChipLabel(f, "retries")).toBe("Retries only");
+        expect(filterChipLabel(f, "time")).toMatch(/^Since /);
+    });
+
+    it("has no time label without bounds", () => {
+        expect(filterChipLabel(base(), "time")).toBe("");
     });
 });

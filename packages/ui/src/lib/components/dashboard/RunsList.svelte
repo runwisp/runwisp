@@ -19,23 +19,21 @@
     import type { RunMotion } from "../../utils/run-motion.js";
     import EmptyState from "../EmptyState.svelte";
     import RunFilterPopover from "./RunFilterPopover.svelte";
-    import { displayStatus, type Run, type RunSelector, type RunStatus } from "@runwisp/common";
+    import { displayStatus, type Run, type RunSelector } from "@runwisp/common";
     import { RUN_STATUS_CONFIG } from "./status-config.js";
     import {
         activeDimensions,
         clearDimension,
-        statusChipLabel,
-        triggerDescription,
+        filterChipLabel,
         runFilterParams,
-        exitCodeChipLabel,
-        isWholeDay,
         type RunsListFilters,
         type FilterDimension,
     } from "./run-filters.js";
     import {
-        runDuration,
         formatTriggeredByLabel,
         runRetryLabel,
+        runRowReadout,
+        highlightParts,
         instanceSuffix,
     } from "./run-helpers.js";
     import {
@@ -43,7 +41,6 @@
         formatFullDateTime,
         formatTimeHM,
         formatDayMonth,
-        formatCalendarDate,
     } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
@@ -143,41 +140,6 @@
     const matchedRuns = $derived(
         outputMatches ? items.filter((r: Run) => outputMatches.has(r.id)) : [],
     );
-
-    // Split the matching line into [before, match, after] around the first
-    // occurrence of the query, windowed to keep the match in view, mirrors the
-    // artifact's snippet. Rendered as plain text spans (Svelte auto-escapes), so
-    // no untrusted HTML ever reaches the DOM.
-    interface HighlightParts {
-        before: string;
-        match: string;
-        after: string;
-    }
-
-    function highlightParts(text: string, query: string): HighlightParts {
-        const q = query.trim();
-        const idx = q ? text.toLowerCase().indexOf(q.toLowerCase()) : -1;
-        if (idx === -1) return { before: text, match: "", after: "" };
-        const start = Math.max(0, idx - 14);
-        const lead = start > 0 ? "…" : "";
-        const windowed = text.slice(start);
-        const fi = windowed.toLowerCase().indexOf(q.toLowerCase());
-        return {
-            before: lead + windowed.slice(0, fi),
-            match: windowed.slice(fi, fi + q.length),
-            after: windowed.slice(fi + q.length),
-        };
-    }
-
-    // Right-hand mono readout on a task-rail row: live / queued / exit N / dur.
-    function rowRightLabel(run: Run, displayed: RunStatus): string {
-        if (run.status === "running") return "live";
-        if (run.status === "pending") return "queued";
-        if (displayed === "failed" || displayed === "crashed") {
-            return "exit " + String(run.exitCode);
-        }
-        return runDuration(run) ?? "—";
-    }
 
     const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
         count: 0,
@@ -306,35 +268,8 @@
     const filterChips = $derived(
         activeDimensions(filters)
             .filter((dim) => dim !== "task" || showTask)
-            .map((dim) => ({ dimension: dim, label: chipLabel(dim) })),
+            .map((dim) => ({ dimension: dim, label: filterChipLabel(filters, dim) })),
     );
-
-    function chipLabel(dim: FilterDimension): string {
-        switch (dim) {
-            case "status":
-                return statusChipLabel(filters.statuses);
-            case "time":
-                return timeChipLabel();
-            case "task":
-                return filters.taskName ?? "";
-            case "triggeredBy":
-                return "Trigger: " + triggerDescription(filters.triggeredBy ?? "");
-            case "exitCode":
-                return exitCodeChipLabel(filters.exitCode);
-            case "retries":
-                return "Retries only";
-        }
-    }
-
-    function timeChipLabel(): string {
-        const after = filters.createdAfter;
-        const before = filters.createdBefore;
-        if (isWholeDay(after, before) && after) return `On ${formatCalendarDate(after)}`;
-        if (after && before) return `${formatDateTime(after)} – ${formatDateTime(before)}`;
-        if (after) return `Since ${formatDateTime(after)}`;
-        if (before) return `Before ${formatDateTime(before)}`;
-        return "";
-    }
 
     function removeChip(dim: FilterDimension) {
         filters = clearDimension(filters, dim);
@@ -721,7 +656,7 @@
                     class="shrink-0 self-start pt-0.5 font-mono text-[11.5px] text-on-surface-faint tabular-nums"
                     title={retry ?? undefined}
                 >
-                    {rowRightLabel(run, dstatus)}
+                    {runRowReadout(run, dstatus)}
                 </span>
             </div>
         {:else}
@@ -751,7 +686,7 @@
                     class="shrink-0 font-mono text-[11.5px] text-on-surface-faint tabular-nums"
                     title={retry ?? undefined}
                 >
-                    {rowRightLabel(run, dstatus)}
+                    {runRowReadout(run, dstatus)}
                 </span>
             </div>
             {#if match}

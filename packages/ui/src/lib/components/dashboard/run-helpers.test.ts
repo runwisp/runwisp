@@ -7,6 +7,8 @@ import {
     runStartDelay,
     runVerdict,
     runEndMarker,
+    runRowReadout,
+    highlightParts,
     formatTriggeredByLabel,
     runRetryLabel,
     runUsageLabel,
@@ -178,5 +180,43 @@ describe("instanceSuffix", () => {
     it("maps the stored 0-based slot to a 1-based suffix", () => {
         expect(instanceSuffix(1, 3)).toBe("#2");
         expect(instanceSuffix(2, 3)).toBe("#3");
+    });
+});
+
+describe("runRowReadout", () => {
+    const ended = { startedAt: "2026-01-01T00:00:00Z", endedAt: "2026-01-01T00:00:02Z" };
+
+    it("shows live, queued and the exit code of a failure", () => {
+        expect(runRowReadout({ ...ended, status: "running", exitCode: 0 }, "running")).toBe("live");
+        expect(runRowReadout({ ...ended, status: "pending", exitCode: 0 }, "pending")).toBe(
+            "queued",
+        );
+        expect(runRowReadout({ ...ended, status: "ended", exitCode: 3 }, "failed")).toBe("exit 3");
+    });
+
+    it("falls back to the duration, or a dash when it never started", () => {
+        expect(runRowReadout({ ...ended, status: "ended", exitCode: 0 }, "succeeded")).toBe("2s");
+        expect(runRowReadout({ status: "ended", exitCode: 0 }, "missed")).toBe("—");
+    });
+});
+
+describe("highlightParts", () => {
+    it("returns the whole line when nothing matches", () => {
+        expect(highlightParts("hello", "zzz")).toEqual({ before: "hello", match: "", after: "" });
+        expect(highlightParts("hello", "  ")).toEqual({ before: "hello", match: "", after: "" });
+    });
+
+    it("splits around a case-insensitive match", () => {
+        expect(highlightParts("an ERROR here", "error")).toEqual({
+            before: "an ",
+            match: "ERROR",
+            after: " here",
+        });
+    });
+
+    it("windows a long lead-in with an ellipsis", () => {
+        const parts = highlightParts("x".repeat(40) + "needle", "needle");
+        expect(parts.before).toBe("…" + "x".repeat(14));
+        expect(parts.match).toBe("needle");
     });
 });

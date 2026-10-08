@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { TRIGGERS, type Trigger } from "@runwisp/common";
+import { formatCalendarDate, formatDateTime } from "../../utils/format.js";
 import { TRIGGER_LABELS } from "./run-helpers.js";
 import { RUN_STATUS_CONFIG } from "./status-config.js";
 
@@ -344,4 +345,31 @@ export function runFilterParams(f: RunsListFilters): RunFilterParams {
 /** Chip label for an active exit-code filter, e.g. `Exit >100 <150`. */
 export function exitCodeChipLabel(expr: string | undefined): string {
     return `Exit ${(expr ?? "").trim()}`;
+}
+
+function timeChipLabel(f: RunsListFilters): string {
+    const { createdAfter: after, createdBefore: before } = f;
+    if (isWholeDay(after, before) && after) return `On ${formatCalendarDate(after)}`;
+    if (after && before) return `${formatDateTime(after)} – ${formatDateTime(before)}`;
+    if (after) return `Since ${formatDateTime(after)}`;
+    if (before) return `Before ${formatDateTime(before)}`;
+    return "";
+}
+
+/** Label of the chip shown for an active filter dimension. */
+export function filterChipLabel(f: RunsListFilters, dim: FilterDimension): string {
+    switch (dim) {
+        case "status":
+            return statusChipLabel(f.statuses);
+        case "time":
+            return timeChipLabel(f);
+        case "task":
+            return f.taskName ?? "";
+        case "triggeredBy":
+            return "Trigger: " + triggerDescription(f.triggeredBy ?? "");
+        case "exitCode":
+            return exitCodeChipLabel(f.exitCode);
+        case "retries":
+            return "Retries only";
+    }
 }
