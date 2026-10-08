@@ -19,23 +19,13 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
-// --- Palette ---
-
-var (
-	yellow   = lipgloss.Color("#FBBF24")
-	cyan     = lipgloss.Color("#06B6D4")
-	dimGray  = lipgloss.Color("#6B7280")
-	darkGray = lipgloss.Color("#374151")
-)
-
 var (
 	brandMark = lipgloss.NewStyle().Foreground(uikit.ColorSecondary).Bold(true)
 	brandText = lipgloss.NewStyle().Foreground(uikit.ColorPrimary).Bold(true)
-	dimStyle  = lipgloss.NewStyle().Foreground(dimGray)
-	dotStyle  = lipgloss.NewStyle().Foreground(darkGray)
+	dimStyle  = lipgloss.NewStyle().Foreground(uikit.ColorTextMuted)
 	greenMark = lipgloss.NewStyle().Foreground(uikit.ColorSecondary)
-	yellowSt  = lipgloss.NewStyle().Foreground(yellow)
-	cyanBold  = lipgloss.NewStyle().Foreground(cyan).Bold(true)
+	yellowSt  = lipgloss.NewStyle().Foreground(uikit.ColorWarning)
+	cyanBold  = lipgloss.NewStyle().Foreground(uikit.ColorRunning).Bold(true)
 	boldStyle = lipgloss.NewStyle().Bold(true)
 )
 
@@ -210,7 +200,7 @@ func printTasksSection(w io.Writer, tasks []model.Task) {
 		fmt.Fprintf(w, "  %s %s %s %s\n",
 			dimStyle.Render(prefix),
 			boldStyle.Render(task.Name),
-			dotStyle.Render(dots),
+			dimStyle.Render(dots),
 			dimStyle.Render(schedule),
 		)
 	}
@@ -245,7 +235,7 @@ func printDotField(w io.Writer, label, value string) {
 	dots := strings.Repeat("·", max(1, fieldPad-len(label)))
 	fmt.Fprintf(w, "  %s %s %s\n",
 		dimStyle.Render(label),
-		dotStyle.Render(dots),
+		dimStyle.Render(dots),
 		value,
 	)
 }

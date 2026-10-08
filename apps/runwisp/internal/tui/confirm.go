@@ -236,7 +236,7 @@ func (d *ConfirmDialog) renderButtonLines(innerWidth int, titleStr, msgStr strin
 	if d.selected == 0 || yesHover {
 		bg := uikit.ColorError
 		if yesHover {
-			bg = lipgloss.Color("#f99aae")
+			bg = uikit.ColorErrorHover
 		}
 		yesStyle = yesStyle.Background(bg).Foreground(uikit.ColorWhite)
 	} else {
@@ -246,7 +246,7 @@ func (d *ConfirmDialog) renderButtonLines(innerWidth int, titleStr, msgStr strin
 	if d.selected == 1 || noHover {
 		bg := uikit.ColorPrimary
 		if noHover {
-			bg = lipgloss.Color("#6b85f0")
+			bg = uikit.ColorPrimaryHover
 		}
 		noStyle = noStyle.Background(bg).Foreground(uikit.ColorWhite)
 	} else {

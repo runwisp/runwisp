@@ -36,6 +36,10 @@ var (
 	ColorPending       = lipgloss.Color("#bb9af7")
 	ColorWhite         = lipgloss.Color("#ffffff")
 	ColorTextDim       = lipgloss.Color("#a8b2d8")
+
+	ColorPrimaryHover = lipgloss.Color("#6b85f0")
+	ColorErrorHover   = lipgloss.Color("#f99aae")
+	ColorWarningHover = lipgloss.Color("#ebc580")
 )
 
 var (
@@ -176,19 +180,19 @@ var (
 			Padding(0, 1)
 
 	BtnRunNowHoverStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("#6b85f0")).
+				Background(ColorPrimaryHover).
 				Foreground(ColorWhite).
 				Bold(true).
 				Padding(0, 1)
 
 	BtnStopHoverStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("#f99aae")).
+				Background(ColorErrorHover).
 				Foreground(ColorWhite).
 				Bold(true).
 				Padding(0, 1)
 
 	BtnRetryHoverStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("#ebc580")).
+				Background(ColorWarningHover).
 				Foreground(ColorBg).
 				Bold(true).
 				Padding(0, 1)
