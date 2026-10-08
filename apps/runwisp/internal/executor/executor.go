@@ -545,7 +545,7 @@ func writeCommittedLines(writer *LogWriter, stream string, texts []string) ([]in
 }
 
 func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task *model.Task, run *model.Run, matcher *outputMatcher, stream string) {
-	executionID := config.OrDefault(run.ExecutionID, "")
+	executionID := model.OrDefault(run.ExecutionID, "")
 	nowMs := func() int64 { return r.clock().UnixMilli() }
 
 	// publishCommitted sees each successfully written line's redacted text, so
@@ -623,7 +623,7 @@ func (r *RoutingExecutor) publishLine(task *model.Task, run *model.Run, stream, 
 	r.eventBus.Publish(events.EventLogLine, events.LogLineEvent{
 		TaskName:    task.Name,
 		RunID:       run.ID,
-		ExecutionID: config.OrDefault(run.ExecutionID, ""),
+		ExecutionID: model.OrDefault(run.ExecutionID, ""),
 		LineNum:     lineNum,
 		Timestamp:   r.clock().UnixMilli(),
 		Stream:      stream,

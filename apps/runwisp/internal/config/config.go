@@ -1375,20 +1375,6 @@ const (
 	DefaultStopSignal = "SIGTERM"
 )
 
-// OrDefault returns *p, or fallback when p is nil. For RestartAttempts, nil
-// only reaches a runtime consumer for a *model.Task built without going
-// through Load (a test literal, a station ephemeral dispatch task) — never for
-// one that loaded from TOML, which Load's defaulting pass always resolves to
-// a concrete pointer. A missing value must fall back to the protective
-// built-in default, not to 0 ("give up on the first failure") or any other
-// literal — 0 is meaningful only when the operator wrote it.
-func OrDefault[T any](p *T, fallback T) T {
-	if p == nil {
-		return fallback
-	}
-	return *p
-}
-
 // ApplyDefaults fills in zero-valued fields with sensible defaults. The
 // scheduler timezone, in particular, falls back to the host's system zone
 // when the operator left [daemon] timezone unset — so a fresh install

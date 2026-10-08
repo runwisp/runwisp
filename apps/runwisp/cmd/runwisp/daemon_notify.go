@@ -13,6 +13,7 @@ import (
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel"
 	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
@@ -156,7 +157,7 @@ func initNotify(
 		coalescerCfg := inapp.CoalescerConfig{
 			// The in-app coalescer always applies a window: nil/zero falls back to
 			// its built-in default. coalesce_window = "0s" only disables outbound.
-			Window:        config.OrDefault(notifyCfg.CoalesceWindow, 0),
+			Window:        model.OrDefault(notifyCfg.CoalesceWindow, 0),
 			CoalesceLimit: notifyCfg.CoalesceLimit,
 		}
 		coalescer := inapp.NewCoalescer(db, hub, time.Now, coalescerCfg, logger)
@@ -175,7 +176,7 @@ func initNotify(
 	// applies its own 1h default when the window is zero.
 	outboundCoalesce := notifyCfg.CoalesceWindow == nil || *notifyCfg.CoalesceWindow > 0
 	coalesceCfg := coalesce.Config{
-		Window:        config.OrDefault(notifyCfg.CoalesceWindow, 0),
+		Window:        model.OrDefault(notifyCfg.CoalesceWindow, 0),
 		CoalesceLimit: notifyCfg.CoalesceLimit,
 	}
 

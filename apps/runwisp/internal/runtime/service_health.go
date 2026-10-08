@@ -42,7 +42,7 @@ func (m *defaultTaskManager) watchRun(ctx context.Context, task *model.Task, run
 		Probe:        probe,
 		Schedule:     probeSchedule{schedule, probe.Timezone == "", m},
 		Started:      *run.StartedAt,
-		HealthyAfter: config.OrDefault(task.HealthyAfter, config.DefaultHealthyAfter),
+		HealthyAfter: model.OrDefault(task.HealthyAfter, config.DefaultHealthyAfter),
 		Now:          m.clock,
 		Sleep:        health.Sleep,
 		Check: func(ctx context.Context) executor.ProbeResult {

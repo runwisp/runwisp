@@ -82,7 +82,7 @@ func ShouldRetry(task *model.Task, run *model.Run) bool {
 // back to config.DefaultRetryDelay; an explicit zero (retry_delay = "0s") is
 // honored literally so a retry fires with no delay.
 func ComputeRetryDelay(task *model.Task, attempt int) time.Duration {
-	base := config.OrDefault(task.RetryDelay, config.DefaultRetryDelay)
+	base := model.OrDefault(task.RetryDelay, config.DefaultRetryDelay)
 	return computeBackoff(task.RetryBackoff, base, attempt, retryDelayCap)
 }
 
@@ -108,7 +108,7 @@ func RestartDelay(task *model.Task, attempt int, reason *model.EndReason) time.D
 // honored literally, including through backoff — see computeBackoff's
 // overflow guard, which must not treat a legitimate zero delay as overflow.
 func computeRestartDelay(task *model.Task, attempt int) time.Duration {
-	base := config.OrDefault(task.RestartDelay, config.DefaultRestartDelay)
+	base := model.OrDefault(task.RestartDelay, config.DefaultRestartDelay)
 	if attempt <= 0 {
 		return base
 	}
