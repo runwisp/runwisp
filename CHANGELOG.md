@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The TUI shows run durations the same way notifications do (`3m 4s`, `12s`), and runs started in the last 30 seconds read `just now`.
+- A daemon bound to any loopback address, such as `127.0.0.2` or `::1`, is treated as local: it serves plain HTTP by default and skips the exposed-address warning.
+
+### Fixed
+
+- Pressing Enter on a run in the Web UI runs list selects it once instead of twice.
+
 ## [1.5.1] - 2026-10-08
 
 ### Added
