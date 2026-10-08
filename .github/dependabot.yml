@@ -1,0 +1,10 @@
+# Keeps the SHA-pinned actions current; one grouped PR a month.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories: ["/", "/.github/actions/*"]
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
