@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -66,7 +67,7 @@ func TestDispatcher_DeliversMatchingActions(t *testing.T) {
 	channels := map[string]Channel{channel.id: channel}
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"a"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, channels, 8, time.Now, sink, nil)
+	d := newDispatcher(router, channels, 8, time.Now, sink, slog.Default())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -98,7 +99,7 @@ func TestDispatcher_PermanentFailureSurfacedToSink(t *testing.T) {
 	channels := map[string]Channel{a.id: a}
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slack:ops"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, channels, 8, time.Now, sink, nil)
+	d := newDispatcher(router, channels, 8, time.Now, sink, slog.Default())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -132,7 +133,7 @@ func TestDispatcher_ContextCancelDoesNotSurfaceFailure(t *testing.T) {
 	channels := map[string]Channel{a.id: a}
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slow"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, channels, 4, time.Now, sink, nil)
+	d := newDispatcher(router, channels, 4, time.Now, sink, slog.Default())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	d.startWorkers(ctx)
@@ -166,7 +167,7 @@ func TestDispatcher_RedactErrorPreservesCancelDetection(t *testing.T) {
 	channels := map[string]Channel{a.id: a}
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slack:ops"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, channels, 4, time.Now, sink, nil)
+	d := newDispatcher(router, channels, 4, time.Now, sink, slog.Default())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	d.startWorkers(ctx)
@@ -199,7 +200,7 @@ func TestDispatcher_HTTPTimeoutNotMisclassifiedAsShutdown(t *testing.T) {
 	channels := map[string]Channel{a.id: a}
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slack:ops"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, channels, 8, time.Now, sink, nil)
+	d := newDispatcher(router, channels, 8, time.Now, sink, slog.Default())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -239,7 +240,7 @@ func TestDispatcher_DropsOldestWhenQueueFull(t *testing.T) {
 	sink := &recordingFailureSink{}
 	// Capacity 1: with the first event held by the worker plus one queued,
 	// any further dispatch must evict the oldest queued event.
-	d := newDispatcher(router, channels, 1, time.Now, sink, nil)
+	d := newDispatcher(router, channels, 1, time.Now, sink, slog.Default())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -284,7 +285,7 @@ func TestNewDispatcher_QueueSizeFallback(t *testing.T) {
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"a"}}}, channels)
 
 	// queueSize=0 must fall back to 256; nil logger must fall back to slog.Default.
-	d := newDispatcher(router, channels, 0, time.Now, nil, nil)
+	d := newDispatcher(router, channels, 0, time.Now, nil, slog.Default())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -315,7 +316,7 @@ func TestDispatcher_ExecuteOneWithNilFailures_LogsOnly(t *testing.T) {
 	channels := map[string]Channel{a.id: a}
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"noSink"}}}, channels)
 	// nil failures sink: error must be logged, not forwarded
-	d := newDispatcher(router, channels, 8, time.Now, nil, nil)
+	d := newDispatcher(router, channels, 8, time.Now, nil, slog.Default())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -354,7 +355,7 @@ func TestDispatcher_CycleGuard_DeliveryFailedDoesNotReRoute(t *testing.T) {
 	// if the synthetic event ever re-entered dispatch. It must not.
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slack:ops"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, channels, 8, time.Now, sink, nil)
+	d := newDispatcher(router, channels, 8, time.Now, sink, slog.Default())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -390,7 +391,7 @@ func TestDispatcher_UnknownActionID_Skipped(t *testing.T) {
 	ghost := &executeChannel{id: "ghost"}
 	channels := map[string]Channel{} // intentionally empty
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"ghost"}}}, channels)
-	d := newDispatcher(router, channels, 8, time.Now, nil, nil)
+	d := newDispatcher(router, channels, 8, time.Now, nil, slog.Default())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	d.startWorkers(ctx)

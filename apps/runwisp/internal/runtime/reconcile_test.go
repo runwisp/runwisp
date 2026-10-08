@@ -364,6 +364,7 @@ func TestReconcile_SettingsHookGatesTimezoneAndCommit(t *testing.T) {
 		Scheduler:  sched,
 		Manager:    mgr,
 		Snapshot:   config.NewSnapshot(path, base, time.Now()),
+		Now:        time.Now,
 		Settings: func(_, _ *config.Config) ([]string, func(), error) {
 			if hookErr != nil {
 				return nil, nil, hookErr
@@ -412,6 +413,7 @@ func TestReconcile_UnsetTimezoneKeepsBootZone(t *testing.T) {
 		Registry:   NewTaskRegistry(tasksByName(base)),
 		Manager:    mgr,
 		Snapshot:   config.NewSnapshot(path, base, time.Now()),
+		Now:        time.Now,
 	})
 
 	t.Setenv("TZ", "Asia/Tokyo") // the host zone moves under the daemon
@@ -449,6 +451,7 @@ func TestReconcile_CronHoldWatcherFollowsIncludeCron(t *testing.T) {
 		Manager:    &recordingManager{},
 		DB:         newHoldCatchupDB(),
 		Snapshot:   config.NewSnapshot(path, base, time.Now()),
+		Now:        time.Now,
 	})
 	watching := func() bool {
 		r.mu.Lock()

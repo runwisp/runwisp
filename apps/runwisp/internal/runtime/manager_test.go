@@ -1299,18 +1299,6 @@ func TestGetActiveRuns_KnownTaskReturnsCopy(t *testing.T) {
 	assert.Len(t, jm.GetActiveRuns("task1"), 1)
 }
 
-// TestNewTaskManager_NilClockFallsBackToTimeNow guards the nil-clock branch,
-// which production code must never rely on but exists as a defensive default.
-func TestNewTaskManager_NilClockFallsBackToTimeNow(t *testing.T) {
-	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), nil)
-	defer jm.Shutdown()
-
-	dm, ok := jm.(*defaultTaskManager)
-	require.True(t, ok)
-	require.NotNil(t, dm.clock)
-	assert.WithinDuration(t, time.Now(), dm.clock(), time.Second)
-}
-
 func TestGetActiveRunCount_UnknownTaskIsZero(t *testing.T) {
 	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
 	assert.Equal(t, 0, jm.GetActiveRunCount("unknown"))

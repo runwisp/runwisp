@@ -52,7 +52,7 @@ type Reconciler struct {
 // ReconcilerDeps wires a Reconciler. Baseline is the config the daemon booted
 // with (the current live set); the reconciler replaces it after each successful
 // reload. Snapshot is re-pinned on success so config_stale reflects the applied
-// config. Settings and Now may be nil; NewReconciler defaults Now to time.Now.
+// config. Settings may be nil.
 type ReconcilerDeps struct {
 	ConfigPath string
 	Baseline   *config.Config
@@ -77,10 +77,6 @@ type SettingsHook func(old, updated *config.Config) (keys []string, commit func(
 
 // NewReconciler wires a reconciler from its dependencies.
 func NewReconciler(deps ReconcilerDeps) *Reconciler {
-	now := deps.Now
-	if now == nil {
-		now = time.Now
-	}
 	return &Reconciler{
 		configPath: deps.ConfigPath,
 		registry:   deps.Registry,
@@ -89,7 +85,7 @@ func NewReconciler(deps ReconcilerDeps) *Reconciler {
 		db:         deps.DB,
 		snapshot:   deps.Snapshot,
 		settings:   deps.Settings,
-		now:        now,
+		now:        deps.Now,
 		baseline:   deps.Baseline,
 	}
 }

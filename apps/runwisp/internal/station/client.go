@@ -64,8 +64,7 @@ type Dependencies struct {
 	SystemStats func() model.SystemStats
 	// Now is the wall-clock source used by sub-components that persist
 	// timestamps (currently only the log uploader). Production wires
-	// time.Now; tests inject a fixed clock for deterministic fixtures. nil
-	// falls back to time.Now.
+	// time.Now; tests inject a fixed clock for deterministic fixtures.
 	Now func() time.Time
 }
 

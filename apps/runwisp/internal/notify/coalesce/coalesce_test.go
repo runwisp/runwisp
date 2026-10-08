@@ -20,7 +20,7 @@ import (
 
 func TestCoalesce_ID_DelegatesToInner(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
-	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 10}, testutil.NewFakeClock(time.Unix(0, 0)).Now, nil, nil)
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 10}, testutil.NewFakeClock(time.Unix(0, 0)).Now, slog.Default(), nil)
 	defer c.Close(context.Background())
 	if c.ID() != "slack-ops" {
 		t.Fatalf("expected ID=slack-ops, got %q", c.ID())
@@ -38,7 +38,7 @@ func failEvent(taskName string) *notify.Event {
 func TestCoalesce_FirstEventForwarded(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
-	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 10}, clock.Now, nil, nil)
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 10}, clock.Now, slog.Default(), nil)
 	defer c.Close(context.Background())
 
 	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
@@ -53,7 +53,7 @@ func TestCoalesce_FirstEventForwarded(t *testing.T) {
 func TestCoalesce_RepeatsSuppressedWithinWindow(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
-	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 100}, clock.Now, nil, nil)
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 100}, clock.Now, slog.Default(), nil)
 	defer c.Close(context.Background())
 
 	for i := 0; i < 5; i++ {
@@ -71,7 +71,7 @@ func TestCoalesce_RepeatsSuppressedWithinWindow(t *testing.T) {
 func TestCoalesce_CoalesceLimitTriggersSummary(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
-	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 3}, clock.Now, nil, nil)
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 3}, clock.Now, slog.Default(), nil)
 	defer c.Close(context.Background())
 
 	for i := 0; i < 4; i++ {
@@ -92,7 +92,7 @@ func TestCoalesce_CoalesceLimitTriggersSummary(t *testing.T) {
 func TestCoalesce_DifferentFingerprintsDoNotInterfere(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
-	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 10}, clock.Now, nil, nil)
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 10}, clock.Now, slog.Default(), nil)
 	defer c.Close(context.Background())
 
 	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
@@ -108,7 +108,7 @@ func TestCoalesce_DifferentFingerprintsDoNotInterfere(t *testing.T) {
 func TestCoalesce_NewWindowAfterExpiry(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
-	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 100}, clock.Now, nil, nil)
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 100}, clock.Now, slog.Default(), nil)
 	defer c.Close(context.Background())
 
 	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
@@ -156,7 +156,7 @@ func withManualTimers(c *Channel) *testutil.ManualTimers {
 func TestCoalesce_WindowCloseSummary(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
-	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, clock.Now, nil, nil)
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, clock.Now, slog.Default(), nil)
 	defer c.Close(context.Background())
 	mt := withManualTimers(c)
 
@@ -186,7 +186,7 @@ func TestCoalesce_WindowCloseSummary(t *testing.T) {
 func TestCoalesce_EventAfterWindowCloseForwardsImmediately(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
-	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, clock.Now, nil, nil)
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, clock.Now, slog.Default(), nil)
 	defer c.Close(context.Background())
 	mt := withManualTimers(c)
 
@@ -210,7 +210,7 @@ func TestCoalesce_EventAfterWindowCloseForwardsImmediately(t *testing.T) {
 // further deliveries after shutdown.
 func TestCoalesce_CloseStopsTimers(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
-	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, testutil.NewFakeClock(time.Unix(0, 0)).Now, nil, nil)
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, testutil.NewFakeClock(time.Unix(0, 0)).Now, slog.Default(), nil)
 	mt := withManualTimers(c)
 
 	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
@@ -239,7 +239,7 @@ func TestCoalesce_CloseStopsTimers(t *testing.T) {
 func TestCoalesce_CloseRacingTimerFlushStillSends(t *testing.T) {
 	for range 200 {
 		inner := testutil.NewFakeChannel("slack-ops")
-		c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, testutil.NewFakeClock(time.Unix(0, 0)).Now, nil, nil)
+		c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, testutil.NewFakeClock(time.Unix(0, 0)).Now, slog.Default(), nil)
 		mt := withManualTimers(c)
 
 		require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
@@ -272,7 +272,7 @@ func TestCoalesce_WindowCloseFailureReportsInApp(t *testing.T) {
 	inner.Err = errors.New("webhook 500") // every delivery, including the summary, fails
 	sink := &recordingFailureSink{}
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
-	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, clock.Now, nil, sink)
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, clock.Now, slog.Default(), sink)
 	defer c.Close(context.Background())
 	mt := withManualTimers(c)
 
@@ -307,7 +307,7 @@ func TestTimerFlush_ConcurrentWithCloseNoPanic(t *testing.T) {
 
 	for i := 0; i < iterations; i++ {
 		inner := testutil.NewFakeChannel("slack-ops")
-		c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, testutil.NewFakeClock(time.Unix(0, 0)).Now, nil, nil)
+		c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, testutil.NewFakeClock(time.Unix(0, 0)).Now, slog.Default(), nil)
 		withManualTimers(c)
 
 		// Two events arm a window-close timer with a non-empty pending state, so
@@ -407,7 +407,7 @@ func (b *blockingChannel) Closed() bool {
 // drop the final summary.
 func TestCoalesce_CloseWaitsForSlowInFlightSummary(t *testing.T) {
 	inner := newBlockingChannel("slack-ops")
-	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, testutil.NewFakeClock(time.Unix(0, 0)).Now, nil, nil)
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, testutil.NewFakeClock(time.Unix(0, 0)).Now, slog.Default(), nil)
 	mt := withManualTimers(c)
 
 	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
@@ -458,7 +458,7 @@ func TestSummarize_NonNilExtra(t *testing.T) {
 
 func TestTimerFlush_EmptyState(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
-	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1}, time.Now, nil, nil)
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1}, time.Now, slog.Default(), nil)
 	defer c.Close(context.Background())
 	c.timerFlush("nonexistent-key")
 	assert.Empty(t, inner.Received())

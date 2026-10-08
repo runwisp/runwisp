@@ -154,9 +154,6 @@ func (m *defaultTaskManager) location() *time.Location {
 // production wires time.Now, tests inject a fake to keep run timestamps
 // deterministic.
 func NewTaskManager(exec executor.Executor, bus *events.Bus, clock func() time.Time) TaskManager {
-	if clock == nil {
-		clock = time.Now
-	}
 	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 	m := &defaultTaskManager{
 		executor:       exec,

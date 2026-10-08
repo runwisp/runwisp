@@ -41,9 +41,6 @@ func newDispatcher(router *Router, channels map[string]Channel, queueSize int, c
 	if queueSize <= 0 {
 		queueSize = DefaultActionQueueSize
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
 	queues := make(map[string]chan *Event, len(channels))
 	for id := range channels {
 		queues[id] = make(chan *Event, queueSize)

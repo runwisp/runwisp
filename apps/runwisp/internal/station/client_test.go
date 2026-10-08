@@ -82,6 +82,7 @@ func newTestEnv(t *testing.T, wsHandler wsHandlerFunc) *testEnv {
 		EventBus:     bus,
 		LocalTasks:   nil,
 		LogDir:       t.TempDir(),
+		Now:          time.Now,
 		Availability: executor.Availability{},
 	})
 	require.NoError(t, err)
@@ -758,6 +759,7 @@ func TestNewClient_SkipsNilLocalTask(t *testing.T) {
 		EventBus:    bus,
 		LocalTasks:  registry,
 		LogDir:      t.TempDir(),
+		Now:         time.Now,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, client)
@@ -790,6 +792,7 @@ func TestSnapshotForSync_ReflectsLiveReload(t *testing.T) {
 		EventBus:    bus,
 		LocalTasks:  registry,
 		LogDir:      t.TempDir(),
+		Now:         time.Now,
 	})
 	require.NoError(t, err)
 

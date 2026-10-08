@@ -57,9 +57,6 @@ type uploadEntry struct {
 // source for persisted dispatch records; production passes time.Now, tests
 // inject a fixed clock to keep persistence fixtures deterministic.
 func NewLogUploader(repo storage.PendingLogUploadRepository, runRepo ExternalRunGetter, logDir string, now func() time.Time) *LogUploader {
-	if now == nil {
-		now = time.Now
-	}
 	return &LogUploader{
 		repo:       repo,
 		runRepo:    runRepo,
