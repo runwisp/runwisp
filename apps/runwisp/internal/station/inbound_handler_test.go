@@ -9,11 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 func newTestInboundHandler() *InboundHandler {
@@ -38,7 +40,7 @@ func (f *stubRunRepo) GetRunByExecutionID(_ context.Context, _ string) (*model.R
 		return nil, f.getErr
 	}
 	if f.run == nil {
-		return nil, ErrNotFound
+		return nil, storage.ErrNotFound
 	}
 	return f.run, nil
 }
@@ -288,7 +290,7 @@ func TestHandleExecutionStop_EmptyID(t *testing.T) {
 }
 
 func TestHandleExecutionStop_NotFound(t *testing.T) {
-	repo := &stubRunRepo{getErr: ErrNotFound}
+	repo := &stubRunRepo{getErr: storage.ErrNotFound}
 	runner := &fakeTaskRunner{}
 	h := newDispatchInboundHandler(runner, repo, executor.Availability{})
 
@@ -347,7 +349,7 @@ func TestHandleLogReplayRequest_EmptyID(t *testing.T) {
 }
 
 func TestHandleLogReplayRequest_NotFound(t *testing.T) {
-	repo := &stubRunRepo{getErr: ErrNotFound}
+	repo := &stubRunRepo{getErr: storage.ErrNotFound}
 	h := newDispatchInboundHandler(nil, repo, executor.Availability{})
 
 	chunk, err := h.HandleLogReplayRequest(context.Background(), protocol.LogReplayRequestMessage{

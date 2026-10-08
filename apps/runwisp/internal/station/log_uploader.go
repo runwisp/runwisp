@@ -166,7 +166,7 @@ func (u *LogUploader) RecoverOrphans(ctx context.Context, emit func(executionID 
 func (u *LogUploader) recoverOrphanRecord(ctx context.Context, rec model.PendingLogUpload, emit func(executionID string, result LogUploaderResult)) {
 	run, runErr := u.runRepo.GetRunByExecutionID(ctx, rec.ExecutionID)
 	if runErr != nil {
-		if errors.Is(runErr, ErrNotFound) {
+		if errors.Is(runErr, storage.ErrNotFound) {
 			slog.Info("dropping orphan log upload row: run not found", "executionId", rec.ExecutionID)
 			u.forget(ctx, rec.ExecutionID)
 			return

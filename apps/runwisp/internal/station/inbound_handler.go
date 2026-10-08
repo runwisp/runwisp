@@ -15,6 +15,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // InboundHandler processes inbound WebSocket messages, encapsulating
@@ -211,7 +212,7 @@ func (h *InboundHandler) HandleExecutionStop(ctx context.Context, message protoc
 
 	run, runErr := h.runRepo.GetRunByExecutionID(ctx, executionID)
 	if runErr != nil {
-		if errors.Is(runErr, ErrNotFound) {
+		if errors.Is(runErr, storage.ErrNotFound) {
 			return &StationError{Kind: StationErrorKindUnknownExecution, Message: "execution not found"}
 		}
 		return &StationError{Kind: StationErrorKindTransient, Message: "failed to inspect execution for stop", Err: runErr}
@@ -235,7 +236,7 @@ func (h *InboundHandler) HandleLogReplayRequest(ctx context.Context, message pro
 
 	run, err := h.runRepo.GetRunByExecutionID(ctx, executionID)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
+		if errors.Is(err, storage.ErrNotFound) {
 			// Unknown execution ≠ end of log: a viewer can attach before the
 			// dispatch reaches this daemon (row just inserted station-side).
 			// Claiming final here made the station SSE handler end the stream
@@ -269,7 +270,7 @@ func (h *InboundHandler) HandleLogSearchRequest(ctx context.Context, message pro
 
 	run, err := h.runRepo.GetRunByExecutionID(ctx, executionID)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
+		if errors.Is(err, storage.ErrNotFound) {
 			return NewLogSearchChunkMessage(message.RequestID, executionID, nil, 0, true), nil
 		}
 		return NewLogSearchChunkMessage(message.RequestID, executionID, nil, 0, true),

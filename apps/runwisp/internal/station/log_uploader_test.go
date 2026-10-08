@@ -14,9 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 type fakePendingRepo struct {
@@ -69,7 +71,7 @@ type fakeRunRepo struct {
 func (r *fakeRunRepo) GetRunByExecutionID(_ context.Context, id string) (*model.Run, error) {
 	run, ok := r.byExt[id]
 	if !ok {
-		return nil, ErrNotFound
+		return nil, storage.ErrNotFound
 	}
 	return run, nil
 }
