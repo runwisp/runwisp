@@ -86,7 +86,7 @@ export type { FetchLogsFn, LogEvent, LogSlice } from "./log-console/types.js";
 export { default as RunDetailPanel } from "./components/dashboard/RunDetailPanel.svelte";
 export { default as RunsList } from "./components/dashboard/RunsList.svelte";
 export { default as RunFilterPopover } from "./components/dashboard/RunFilterPopover.svelte";
-export type { RunOutputMatch } from "./components/dashboard/RunsList.svelte";
+export type { RunOutputMatch } from "./components/dashboard/types.js";
 export {
     activeFilterCount,
     emptyRunFilters,

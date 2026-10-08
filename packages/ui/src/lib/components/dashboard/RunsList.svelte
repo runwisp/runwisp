@@ -1,14 +1,6 @@
 <!-- SPDX-FileCopyrightText: PoppyCake, s.r.o. -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-<script lang="ts" module>
-    /** A single output-search hit surfaced under its run in the history rail. */
-    export interface RunOutputMatch {
-        line: number;
-        text: string;
-    }
-</script>
-
 <script lang="ts">
     import { Clock, ArrowUpDown, X, Square, Trash, RotateCw } from "@lucide/svelte";
     import { untrack } from "svelte";
@@ -19,8 +11,10 @@
     import type { RunMotion } from "../../utils/run-motion.js";
     import EmptyState from "../EmptyState.svelte";
     import RunFilterPopover from "./RunFilterPopover.svelte";
-    import { displayStatus, type Run, type RunSelector } from "@runwisp/common";
-    import { RUN_STATUS_CONFIG } from "./status-config.js";
+    import RunListSkeleton from "./RunListSkeleton.svelte";
+    import RunRow from "./RunRow.svelte";
+    import type { RunOutputMatch } from "./types.js";
+    import type { Run, RunSelector } from "@runwisp/common";
     import {
         activeDimensions,
         clearDimension,
@@ -29,19 +23,8 @@
         type RunsListFilters,
         type FilterDimension,
     } from "./run-filters.js";
-    import {
-        formatTriggeredByLabel,
-        runRetryLabel,
-        runRowReadout,
-        highlightParts,
-        instanceSuffix,
-    } from "./run-helpers.js";
-    import {
-        formatDateTime,
-        formatFullDateTime,
-        formatTimeHM,
-        formatDayMonth,
-    } from "../../utils/format.js";
+    import { instanceSuffix } from "./run-helpers.js";
+    import { formatDateTime } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
 
@@ -452,7 +435,7 @@
             <!-- Output-search results: the rail filters to runs that printed the
                  query, each annotated with the matching line. -->
             {#if outputSearchPending}
-                {@render skeletonRows("Searching output")}
+                <RunListSkeleton label="Searching output" {showTaskName} />
             {:else if matchedRuns.length === 0}
                 <div class="px-4 py-8 text-center text-xs leading-relaxed text-on-surface-muted">
                     No output matches
@@ -466,17 +449,13 @@
                             {#if bulkActions}
                                 {@render rowCheckboxOverlay(run)}
                             {/if}
-                            {@render runRowButton(
-                                run,
-                                selectedRunId === run.id,
-                                outputMatches?.get(run.id),
-                            )}
+                            {@render runRow(run, outputMatches?.get(run.id))}
                         </div>
                     {/each}
                 </div>
             {/if}
         {:else if items.length === 0 && loading}
-            {@render skeletonRows("Loading runs")}
+            <RunListSkeleton label="Loading runs" {showTaskName} />
         {:else if items.length === 0}
             <EmptyState
                 title={emptyText}
@@ -517,7 +496,7 @@
                             {#if bulkActions}
                                 {@render rowCheckboxOverlay(run)}
                             {/if}
-                            {@render runRowButton(run, selectedRunId === run.id, undefined)}
+                            {@render runRow(run, undefined)}
                         </div>
                     {/if}
                 {/each}
@@ -525,61 +504,6 @@
         {/if}
     </div>
 </div>
-
-<!-- Status dot. With bulk actions on it fades out, on row hover, or whenever a
-     selection exists, so the row checkbox can take its place over it. -->
-<!-- Placeholders shaped like this list's run rows (same padding, dot, text
-     and right readout), while a search or the first page is in flight. -->
-{#snippet skeletonRows(label: string)}
-    <div class="flex flex-col gap-0.5" role="status" aria-busy="true" aria-label={label}>
-        {#each [0, 1, 2, 3, 4, 5] as i (i)}
-            <div
-                class="rounded-[3px] border border-transparent {showTaskName
-                    ? 'p-3'
-                    : 'px-3 py-[11px]'}"
-            >
-                <div class="flex items-center {showTaskName ? 'gap-2.5' : 'gap-[11px]'}">
-                    <span class="size-[9px] shrink-0 animate-pulse rounded-full bg-outline-hover"
-                    ></span>
-                    {#if showTaskName}
-                        <span class="flex min-w-0 flex-1 flex-col gap-1.5 py-0.5">
-                            <span
-                                class="h-3 animate-pulse rounded-[3px] bg-outline-hover"
-                                style:width="{62 - (i % 3) * 12}%"
-                            ></span>
-                            <span class="h-2 w-2/5 animate-pulse rounded-[3px] bg-outline-hover"
-                            ></span>
-                        </span>
-                        <span
-                            class="h-2.5 w-9 shrink-0 animate-pulse self-start rounded-[3px] bg-outline-hover"
-                        ></span>
-                    {:else}
-                        <span
-                            class="h-3 animate-pulse rounded-[3px] bg-outline-hover"
-                            style:width="{58 - (i % 3) * 8}%"
-                        ></span>
-                        <span
-                            class="ml-auto h-2.5 w-9 shrink-0 animate-pulse rounded-[3px] bg-outline-hover"
-                        ></span>
-                    {/if}
-                </div>
-            </div>
-        {/each}
-    </div>
-{/snippet}
-
-{#snippet statusDot(colorClass: string, running: boolean)}
-    <span
-        class="{colorClass} size-[9px] shrink-0 rounded-full bg-current ring-[3px] ring-current/20 {running
-            ? 'animate-pulse'
-            : ''} {bulkActions
-            ? selectionActive
-                ? 'opacity-0'
-                : 'group-hover/row:opacity-0'
-            : ''}"
-        aria-hidden="true"
-    ></span>
-{/snippet}
 
 <!-- Row checkbox: sits over the status dot (which fades out beneath it) so the
      row keeps the artifact's geometry. Lives in the row wrapper (not the button)
@@ -604,109 +528,16 @@
     </label>
 {/snippet}
 
-{#snippet runRowButton(run: Run, isActive: boolean, match: RunOutputMatch | undefined)}
-    {@const dstatus = displayStatus(run.status, run.endReason)}
-    {@const config = RUN_STATUS_CONFIG[dstatus]}
-    {@const running = run.status === "running"}
-    {@const spine = config.solidDot}
-    {@const startedAt = run.startedAt ?? run.createdAt}
-    {@const retry = runRetryLabel(run)}
-    {@const suffix = instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}
-    <button
-        class="btn-scale group relative w-full rounded-[3px] border text-left select-none {showTaskName
-            ? 'p-3'
-            : 'px-3 py-[11px]'} {isActive
-            ? 'border-outline bg-surface-raised shadow-sm'
-            : 'border-transparent hover:border-outline-hover hover:bg-surface-sunken'}"
-        onclick={() => selectRun(run.id)}
-    >
-        {#if showTaskName}
-            <!-- Cross-task /runs variant: the same readout language as the task
-                 rail, status dot, status-colored outcome, mono right readout,
-                 with the task name carried as the primary. -->
-            <div class="flex items-center gap-2.5">
-                {@render statusDot(config.color, running)}
-                <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span class="flex items-center gap-1.5">
-                        <span class="truncate font-mono text-[13px] font-semibold text-on-surface">
-                            {run.taskName}{#if suffix}<span class="text-on-surface-muted"
-                                    >{suffix}</span
-                                >{/if}
-                        </span>
-                        <span class="shrink-0 text-on-surface-faint">·</span>
-                        <span
-                            class="shrink-0 font-mono text-[12px] font-semibold capitalize {config.color}"
-                            >{dstatus}</span
-                        >
-                    </span>
-                    <span
-                        class="flex min-w-0 items-center gap-1.5 font-mono text-2xs text-on-surface-faint"
-                        title={formatFullDateTime(startedAt)}
-                    >
-                        <span class="truncate">{formatDateTime(startedAt)}</span>
-                        <span class="shrink-0">· {formatTriggeredByLabel(run.triggeredBy)}</span>
-                        {#if retry}
-                            <span class="shrink-0 rounded bg-surface-sunken px-1 font-mono"
-                                >{retry}</span
-                            >
-                        {/if}
-                    </span>
-                </span>
-                <span
-                    class="shrink-0 self-start pt-0.5 font-mono text-[11.5px] text-on-surface-faint tabular-nums"
-                    title={retry ?? undefined}
-                >
-                    {runRowReadout(run, dstatus)}
-                </span>
-            </div>
-        {:else}
-            <!-- Task-rail variant (artifact ".run"): a single dense line,
-                 time · date · outcome, with a mono exit/duration readout.
-                 leading-tight matches the artifact's ~1.2 line-height so the
-                 (descender-less) text optically centers instead of riding high
-                 inside Tailwind's default 1.5 line box. -->
-            <div class="flex items-center gap-[11px] leading-tight">
-                {@render statusDot(config.color, running)}
-                <span class="flex min-w-0 flex-1 items-center gap-1.5 truncate">
-                    <span
-                        class="font-mono text-[12.5px] font-semibold tracking-tight text-on-surface tabular-nums"
-                        title={formatFullDateTime(startedAt)}
-                    >
-                        {formatTimeHM(startedAt)} · {formatDayMonth(startedAt)}
-                    </span>
-                    <span class="text-on-surface-faint">·</span>
-                    <span class="font-mono text-[12.5px] font-semibold capitalize {config.color}"
-                        >{dstatus}</span
-                    >
-                    {#if suffix}
-                        <span class="font-mono text-2xs text-on-surface-faint">{suffix}</span>
-                    {/if}
-                </span>
-                <span
-                    class="shrink-0 font-mono text-[11.5px] text-on-surface-faint tabular-nums"
-                    title={retry ?? undefined}
-                >
-                    {runRowReadout(run, dstatus)}
-                </span>
-            </div>
-            {#if match}
-                {@const hl = highlightParts(match.text, outputQuery)}
-                <div
-                    class="mt-1.5 truncate rounded-[3px] border border-outline-faint bg-surface-sunken px-2 py-1 font-mono text-2xs text-on-surface-muted"
-                >
-                    {hl.before}<mark
-                        class="rounded-[3px] bg-primary-soft px-0.5 text-primary-soft-text"
-                        >{hl.match}</mark
-                    >{hl.after}
-                </div>
-            {/if}
-        {/if}
-
-        <div
-            class="absolute inset-y-2 left-[-6px] w-[3px] rounded-[3px] {spine} {isActive
-                ? 'opacity-100'
-                : 'opacity-0'}"
-            aria-hidden="true"
-        ></div>
-    </button>
+{#snippet runRow(run: Run, match: RunOutputMatch | undefined)}
+    <RunRow
+        {run}
+        active={selectedRunId === run.id}
+        suffix={instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}
+        {showTaskName}
+        {match}
+        {outputQuery}
+        {bulkActions}
+        {selectionActive}
+        onselect={selectRun}
+    />
 {/snippet}
