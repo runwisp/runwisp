@@ -116,7 +116,7 @@ func taskLabels(task model.Task) []labelPair {
 }
 
 func writeHelpType(w io.Writer, name, metricType, help string) {
-	fmt.Fprintf(w, "# HELP %s %s\n", name, escapeHelp(help))
+	fmt.Fprintf(w, "# HELP %s %s\n", name, helpEscaper.Replace(help))
 	fmt.Fprintf(w, "# TYPE %s %s\n", name, metricType)
 }
 
@@ -134,7 +134,7 @@ func writeSample(w io.Writer, name string, labels []labelPair, value float64) {
 		}
 		sb.WriteString(l.name)
 		sb.WriteString(`="`)
-		sb.WriteString(escapeLabelValue(l.value))
+		sb.WriteString(labelValueEscaper.Replace(l.value))
 		sb.WriteByte('"')
 	}
 	sb.WriteByte('}')
@@ -145,46 +145,10 @@ func formatFloat(v float64) string {
 	return strconv.FormatFloat(v, 'g', -1, 64)
 }
 
-// escapeLabelValue escapes the three characters OpenMetrics requires for
+// labelValueEscaper escapes the three characters OpenMetrics requires for
 // label values: backslash, double quote, and newline.
-func escapeLabelValue(s string) string {
-	if !strings.ContainsAny(s, "\\\"\n") {
-		return s
-	}
-	var sb strings.Builder
-	sb.Grow(len(s) + 4)
-	for _, r := range s {
-		switch r {
-		case '\\':
-			sb.WriteString(`\\`)
-		case '"':
-			sb.WriteString(`\"`)
-		case '\n':
-			sb.WriteString(`\n`)
-		default:
-			sb.WriteRune(r)
-		}
-	}
-	return sb.String()
-}
+var labelValueEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
 
-// escapeHelp escapes backslash and newline in HELP text (double quotes are
+// helpEscaper escapes backslash and newline in HELP text (double quotes are
 // allowed unescaped in HELP per the OpenMetrics spec).
-func escapeHelp(s string) string {
-	if !strings.ContainsAny(s, "\\\n") {
-		return s
-	}
-	var sb strings.Builder
-	sb.Grow(len(s) + 2)
-	for _, r := range s {
-		switch r {
-		case '\\':
-			sb.WriteString(`\\`)
-		case '\n':
-			sb.WriteString(`\n`)
-		default:
-			sb.WriteRune(r)
-		}
-	}
-	return sb.String()
-}
+var helpEscaper = strings.NewReplacer(`\`, `\\`, "\n", `\n`)
