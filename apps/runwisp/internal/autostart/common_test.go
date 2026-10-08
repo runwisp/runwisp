@@ -27,6 +27,8 @@ func TestHostDescription_AllBranches(t *testing.T) {
 		"":          "loopback only",
 		"127.0.0.1": "loopback only",
 		"localhost": "loopback only",
+		"::1":       "loopback only",
+		"127.0.0.2": "loopback only",
 		"0.0.0.0":   "ALL INTERFACES — accessible from the network",
 		"::":        "ALL INTERFACES — accessible from the network",
 		"10.0.0.5":  "10.0.0.5",

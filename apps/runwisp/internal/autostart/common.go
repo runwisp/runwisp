@@ -10,15 +10,18 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/runwisp/runwisp/apps/runwisp/internal/netguard"
 )
 
 // hostDescription renders bind hosts as a one-line annotation for the
 // install banner, so the operator immediately knows whether the unit
 // will expose the daemon to the network.
 func hostDescription(host string) string {
-	switch host {
-	case "127.0.0.1", "localhost", "":
+	if host == "" || netguard.IsLoopbackHost(host) {
 		return "loopback only"
+	}
+	switch host {
 	case "0.0.0.0", "::":
 		return "ALL INTERFACES — accessible from the network"
 	default:

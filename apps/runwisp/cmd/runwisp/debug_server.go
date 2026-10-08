@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"log/slog"
+
+	"github.com/runwisp/runwisp/apps/runwisp/internal/netguard"
 )
 
 // DebugAddrEnv names the env var that opts into the pprof debug server, e.g.
@@ -86,12 +88,5 @@ func (d *debugServer) Close() {
 // interfaces), 0.0.0.0, or any routable IP does not.
 func isLoopbackAddr(addr string) bool {
 	host, _, err := net.SplitHostPort(addr)
-	if err != nil || host == "" {
-		return false
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return err == nil && netguard.IsLoopbackHost(host)
 }

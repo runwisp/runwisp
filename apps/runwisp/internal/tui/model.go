@@ -5,7 +5,6 @@ package tui
 
 import (
 	"fmt"
-	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -13,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/netguard"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/home"
@@ -645,14 +645,7 @@ func isInsecureRemoteURL(base string) bool {
 	if err != nil || u.Scheme != "http" {
 		return false
 	}
-	host := u.Hostname()
-	if host == "localhost" {
-		return false
-	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		return false
-	}
-	return true
+	return !netguard.IsLoopbackHost(u.Hostname())
 }
 
 func (m *Model) logActionResult(action, taskName string, err error) {

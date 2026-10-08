@@ -92,3 +92,15 @@ func mustParseCIDRs(cidrs ...string) []*net.IPNet {
 	}
 	return out
 }
+
+// IsLoopbackHost reports whether host names this machine only: "localhost" or
+// a loopback IP literal (127.0.0.0/8, ::1). The empty string is not loopback:
+// as a listener bind address it means every interface. A caller that treats
+// "" as a default (e.g. "use 127.0.0.1") must say so itself.
+func IsLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
