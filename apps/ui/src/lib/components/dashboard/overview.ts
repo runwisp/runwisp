@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { displayStatus, type RunStatus, type Run, type Task } from "@runwisp/common";
+import { hasCron } from "$lib/utils/task";
 
 export type OverviewTaskState =
     "attention" | "running" | "paused" | "scheduled" | "manual" | "idle";
@@ -42,7 +43,7 @@ export function buildTaskOverviews(
         const lastRun = activeRun ?? recentRunsByTask.get(task.name);
         const lastStatus = lastRun ? displayStatus(lastRun.status, lastRun.endReason) : undefined;
         const nextRunMs = toTimestamp(task.nextRunAt);
-        const isApiOnly = task.manualTrigger && !task.cron;
+        const isApiOnly = task.manualTrigger && !hasCron(task);
 
         let state: OverviewTaskState = "idle";
         if (activeRun) {

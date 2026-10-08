@@ -31,7 +31,8 @@
         formatTaskTriggerLabel,
         taskTriggerIsHumanizedCron,
     } from "./overview-format.js";
-    import { taskIcon, taskTriggerTooltip } from "$lib/utils/task-icon";
+    import { isService } from "@runwisp/common";
+    import { hasCron, taskIcon, taskTriggerTooltip } from "$lib/utils/task";
 
     type BadgeTone = "default" | "primary" | "success" | "warning" | "danger" | "info";
 
@@ -263,7 +264,7 @@
                                         sourceFile={task.task.sourceFile}
                                     />
                                 {/if}
-                                {#if task.task.kind === "service"}
+                                {#if isService(task.task.kind)}
                                     <Badge variant="info" size="sm">
                                         {formatTaskTriggerLabel(task)}
                                     </Badge>
@@ -331,7 +332,7 @@
                                     >
                                         Trigger
                                     </p>
-                                    {#if task.task.cron && task.task.kind !== "service"}
+                                    {#if hasCron(task.task) && !isService(task.task.kind)}
                                         <Tooltip
                                             content={taskTriggerTooltip(task.task)}
                                             position="left"

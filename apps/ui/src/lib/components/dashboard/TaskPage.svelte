@@ -21,8 +21,7 @@
     import { createRunSelection } from "$lib/utils/run-selection.svelte";
     import { HistoryRail } from "$lib/utils/history-rail.svelte";
     import ParamForm from "./ParamForm.svelte";
-    import { taskInstanceCount } from "./instance-count";
-    import { isServiceStopped } from "./service-control";
+    import { isServiceStopped, taskInstanceCount } from "$lib/utils/task";
 
     let {
         task,

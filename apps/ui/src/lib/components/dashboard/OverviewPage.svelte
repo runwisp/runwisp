@@ -17,7 +17,7 @@
         type OverviewTaskSortKey,
         type TaskOverview,
     } from "./overview.js";
-    import { instanceCountResolver } from "./instance-count.js";
+    import { instanceCountResolver } from "$lib/utils/task";
     import { TickingNow, PageContainer, Card } from "@runwisp/ui";
     import type { DaemonStats, RunMotion } from "@runwisp/ui";
     import type { Run, Task } from "@runwisp/common";

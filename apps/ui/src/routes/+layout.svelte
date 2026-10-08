@@ -18,7 +18,7 @@
     import AuthModal from "$lib/components/AuthModal.svelte";
     import AppLayout from "$lib/layouts/AppLayout.svelte";
     import { ToastContainer } from "@runwisp/ui";
-    import { taskIcon } from "$lib/utils/task-icon";
+    import { taskIcon } from "$lib/utils/task";
 
     let { children } = $props();
 

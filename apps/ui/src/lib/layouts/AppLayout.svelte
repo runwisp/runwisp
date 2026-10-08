@@ -25,7 +25,7 @@
     import TaskScheduleChip from "$lib/components/TaskScheduleChip.svelte";
     import TaskUsage from "$lib/components/TaskUsage.svelte";
     import { headerSearchStore, systemStore } from "$lib/stores";
-    import { showScheduleChip } from "$lib/utils/task-schedule";
+    import { showScheduleChip } from "$lib/utils/task";
     import { StoredFlag } from "$lib/utils/stored-flag.svelte";
     import { ThemeToggle, Logo, Heading } from "@runwisp/ui";
     import type { Task } from "@runwisp/common";
