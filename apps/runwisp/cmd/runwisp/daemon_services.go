@@ -407,11 +407,8 @@ func orderServicesForStart(tasksMap map[string]*model.Task) []*model.Task {
 // priority/name spawn order as the tiebreak. depends_on is validated acyclic,
 // so the DFS always terminates.
 func orderServicesForStop(tasksMap map[string]*model.Task) []*model.Task {
-	start := topoStartOrder(tasksMap)
-	stop := make([]*model.Task, len(start))
-	for i, t := range start {
-		stop[len(start)-1-i] = t
-	}
+	stop := topoStartOrder(tasksMap)
+	slices.Reverse(stop)
 	return stop
 }
 
