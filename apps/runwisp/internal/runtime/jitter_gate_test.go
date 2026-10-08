@@ -146,8 +146,6 @@ func (e *stepExecutor) Execute(ctx context.Context, _ *model.Task, run *model.Ru
 	}
 }
 
-func (e *stepExecutor) Availability() executor.Availability { return executor.Availability{} }
-
 // release unblocks the run with the given ID, creating the rendezvous channel
 // first if Execute has not reached it yet.
 func (e *stepExecutor) release(runID string) { close(e.gate(runID)) }

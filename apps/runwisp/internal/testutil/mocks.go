@@ -193,10 +193,6 @@ func cancelledResult(err error) *executor.ExecuteResult {
 	}
 }
 
-func (m *MockExecutor) Availability() executor.Availability {
-	return executor.Availability{}
-}
-
 // GateExecutor is a deterministic executor.Executor for concurrency tests.
 // Each Execute call announces its run ID on a channel and then blocks until
 // the test releases it (or the run's context is cancelled). This lets a test
@@ -240,8 +236,6 @@ func (g *GateExecutor) Execute(ctx context.Context, _ *model.Task, run *model.Ru
 		return cancelledResult(ctx.Err())
 	}
 }
-
-func (g *GateExecutor) Availability() executor.Availability { return executor.Availability{} }
 
 // WaitStarted blocks until a run reports it has begun executing, returning its
 // ID. It fails the test on timeout so a wiring bug surfaces as a clear failure

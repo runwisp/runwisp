@@ -607,8 +607,6 @@ func (s *stuckExecutor) SetOnProcessStarted(cb func(runID string, forceKill func
 	s.onStarted = cb
 }
 
-func (s *stuckExecutor) Availability() executor.Availability { return executor.Availability{} }
-
 func (s *stuckExecutor) Execute(_ context.Context, _ *model.Task, run *model.Run) *executor.ExecuteResult {
 	released := make(chan struct{})
 	if s.onStarted != nil {

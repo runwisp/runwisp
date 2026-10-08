@@ -33,7 +33,6 @@ const (
 
 type Executor interface {
 	Execute(ctx context.Context, task *model.Task, run *model.Run) *ExecuteResult
-	Availability() Availability
 }
 
 type ExecuteResult struct {

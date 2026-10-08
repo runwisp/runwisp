@@ -32,8 +32,6 @@ type probeExecutor struct {
 
 func (e *probeExecutor) SetRunWatcher(w executor.RunWatcher) { e.watcher = w }
 
-func (e *probeExecutor) Availability() executor.Availability { return executor.Availability{} }
-
 func (e *probeExecutor) Execute(ctx context.Context, task *model.Task, run *model.Run) *executor.ExecuteResult {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
