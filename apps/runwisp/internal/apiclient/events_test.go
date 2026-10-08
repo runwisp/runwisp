@@ -4,11 +4,41 @@
 package apiclient
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestReadSSEFrames(t *testing.T) {
+	body := "id: 7\nevent: run.created\ndata: {\"a\":1}\n\n" +
+		": ping comment\nretry: 100\n\n" + // no data: not a frame
+		"event: multi\ndata: one\ndata: two\n\n" +
+		"event: cut\ndata: unterminated" // no blank line: never completed
+
+	var got []sseFrame
+	require.NoError(t, readSSEFrames(strings.NewReader(body), func(f sseFrame) bool {
+		got = append(got, f)
+		return true
+	}))
+	assert.Equal(t, []sseFrame{
+		{event: "run.created", id: "7", data: `{"a":1}`},
+		{event: "multi", data: "one\ntwo"},
+	}, got)
+}
+
+func TestStreamRunEvents_RateLimited(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	_, err := New(srv.URL, "").StreamRunEvents(t.Context(), "")
+	require.ErrorIs(t, err, ErrRateLimited)
+}
 
 func TestParseLogStreamFrame(t *testing.T) {
 	t.Run("empty event name parses as line", func(t *testing.T) {

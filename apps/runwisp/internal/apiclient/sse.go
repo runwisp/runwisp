@@ -4,11 +4,18 @@
 package apiclient
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+)
+
+const (
+	ssePrefixEvent = "event: "
+	ssePrefixData  = "data: "
+	ssePrefixID    = "id: "
 )
 
 // doSSE performs a GET request expecting an SSE stream.
@@ -18,27 +25,46 @@ func (c *Client) doSSE(ctx context.Context, path string) (*http.Response, error)
 	if err != nil {
 		return nil, fmt.Errorf("create SSE request: %w", err)
 	}
-
 	req.Header.Set("Accept", "text/event-stream")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
+	return c.send(c.streamClient, req)
+}
 
-	resp, err := c.streamClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("SSE connection failed: %w", err)
-	}
+// sseFrame is one complete SSE event: the lines up to a blank line, with
+// multi-line data joined by "\n".
+type sseFrame struct {
+	event, id, data string
+}
 
-	if resp.StatusCode == http.StatusUnauthorized {
-		resp.Body.Close()
-		return nil, ErrUnauthorized
-	}
+// readSSEFrames reads SSE frames from body and hands each one carrying data to
+// emit until the body ends or emit returns false. id:/event:/data: lines are
+// folded into the frame; retry:, comments and unknown lines are ignored. It
+// returns the read error, if any.
+func readSSEFrames(body io.Reader, emit func(sseFrame) bool) error {
+	scanner := bufio.NewScanner(body)
+	// A backfill burst can carry up to a 64 KiB log line plus JSON overhead;
+	// 256 KiB is a comfortable headroom.
+	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 
-	if resp.StatusCode != http.StatusOK {
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-		resp.Body.Close()
-		return nil, &HTTPStatusError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(errBody))}
+	var frame sseFrame
+	var data []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		switch {
+		case line == "":
+			if len(data) > 0 {
+				frame.data = strings.Join(data, "\n")
+				if !emit(frame) {
+					return nil
+				}
+			}
+			frame, data = sseFrame{}, data[:0]
+		case strings.HasPrefix(line, ssePrefixID):
+			frame.id = strings.TrimPrefix(line, ssePrefixID)
+		case strings.HasPrefix(line, ssePrefixEvent):
+			frame.event = strings.TrimPrefix(line, ssePrefixEvent)
+		case strings.HasPrefix(line, ssePrefixData):
+			data = append(data, strings.TrimPrefix(line, ssePrefixData))
+		}
 	}
-
-	return resp, nil
+	return scanner.Err()
 }

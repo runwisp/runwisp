@@ -181,11 +181,17 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body io.Rea
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	return c.send(c.httpClient, req)
+}
+
+// send attaches the session token, performs req on hc, and maps a non-2xx
+// response to ErrUnauthorized, ErrRateLimited or an *HTTPStatusError.
+func (c *Client) send(hc *http.Client, req *http.Request) (*http.Response, error) {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}

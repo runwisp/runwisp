@@ -4,21 +4,13 @@
 package apiclient
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/server/logstream"
-)
-
-const (
-	ssePrefixEvent = "event: "
-	ssePrefixData  = "data: "
-	ssePrefixID    = "id: "
 )
 
 // StreamRunEvents opens an SSE connection to the unified /api/events/stream feed and
@@ -84,74 +76,30 @@ func (c *Client) StreamLogLines(ctx context.Context, runID string, fromLine int6
 	}
 
 	ch := make(chan LogStreamMsg, 64)
-	go c.streamLogLinesLoop(ctx, resp.Body, ch)
+	go streamLogLinesLoop(ctx, resp.Body, ch)
 	return ch, nil
 }
 
-func (c *Client) streamLogLinesLoop(ctx context.Context, body io.ReadCloser, ch chan<- LogStreamMsg) {
+func streamLogLinesLoop(ctx context.Context, body io.ReadCloser, ch chan<- LogStreamMsg) {
 	defer close(ch)
 	defer body.Close()
 
-	scanner := bufio.NewScanner(body)
-	// SSE data lines for backfill burst can carry up to a 64 KiB log
-	// line plus JSON overhead; 256 KiB is a comfortable headroom.
-	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
-
-	acc := logStreamFrameAccumulator{}
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			if msg, ok := acc.flush(); ok {
-				sendLogStreamMsg(ctx, ch, msg)
-			}
-			continue
+	send := func(msg LogStreamMsg) bool {
+		select {
+		case ch <- msg:
+			return true
+		case <-ctx.Done():
+			return false
 		}
-		acc.consume(line)
 	}
-	if err := scanner.Err(); err != nil {
-		sendLogStreamMsg(ctx, ch, LogStreamMsg{Kind: LogStreamMsgKindErr, ErrValue: err})
-	}
-}
-
-// logStreamFrameAccumulator buffers the event:/data: lines of a single SSE
-// frame until a blank line completes it.
-type logStreamFrameAccumulator struct {
-	event     string
-	dataParts []string
-}
-
-// consume folds one non-blank SSE line into the in-progress frame, ignoring
-// id:/retry:/comment/unknown lines.
-func (a *logStreamFrameAccumulator) consume(line string) {
-	switch {
-	case strings.HasPrefix(line, "id: "):
-	case strings.HasPrefix(line, ssePrefixEvent):
-		a.event = strings.TrimPrefix(line, ssePrefixEvent)
-	case strings.HasPrefix(line, ssePrefixData):
-		a.dataParts = append(a.dataParts, strings.TrimPrefix(line, ssePrefixData))
-	}
-	// retry: / : (comment) / unknown — ignore.
-}
-
-// flush parses the buffered frame into a LogStreamMsg, resets the accumulator,
-// and reports whether a deliverable message was produced.
-func (a *logStreamFrameAccumulator) flush() (LogStreamMsg, bool) {
-	defer func() {
-		a.event = ""
-		a.dataParts = a.dataParts[:0]
-	}()
-	if len(a.dataParts) == 0 {
-		return LogStreamMsg{}, false
-	}
-	data := strings.Join(a.dataParts, "\n")
-	return parseLogStreamFrame(a.event, data)
-}
-
-// sendLogStreamMsg delivers msg on ch unless ctx is cancelled first.
-func sendLogStreamMsg(ctx context.Context, ch chan<- LogStreamMsg, msg LogStreamMsg) {
-	select {
-	case ch <- msg:
-	case <-ctx.Done():
+	err := readSSEFrames(body, func(f sseFrame) bool {
+		if msg, ok := parseLogStreamFrame(f.event, f.data); ok {
+			return send(msg)
+		}
+		return true
+	})
+	if err != nil {
+		send(LogStreamMsg{Kind: LogStreamMsgKindErr, ErrValue: err})
 	}
 }
 
@@ -207,47 +155,21 @@ type SSEEvent struct {
 // RunStreamEvent is an SSEEvent from the unified /api/events/stream endpoint.
 type RunStreamEvent = SSEEvent
 
-// simpleSSELoop is the shared parse loop for SSE streams that deliver
-// single-line data frames. It reads lines from body, pairs id:/event:/data:
-// into SSEEvent values, and sends them on ch until the body closes or ctx
-// cancels.
+// simpleSSELoop sends every named SSE frame from body on ch until the body
+// closes or ctx cancels. Unnamed frames are dropped.
 func simpleSSELoop(ctx context.Context, body io.ReadCloser, ch chan<- SSEEvent) {
 	defer close(ch)
 	defer body.Close()
 
-	scanner := bufio.NewScanner(body)
-	var eventType, eventID string
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if strings.HasPrefix(line, ssePrefixID) {
-			eventID = strings.TrimPrefix(line, ssePrefixID)
-			continue
+	_ = readSSEFrames(body, func(f sseFrame) bool {
+		if f.event == "" {
+			return true
 		}
-
-		if strings.HasPrefix(line, ssePrefixEvent) {
-			eventType = strings.TrimPrefix(line, ssePrefixEvent)
-			continue
+		select {
+		case ch <- SSEEvent{Type: f.event, ID: f.id, Data: json.RawMessage(f.data)}:
+			return true
+		case <-ctx.Done():
+			return false
 		}
-
-		if strings.HasPrefix(line, ssePrefixData) {
-			data := strings.TrimPrefix(line, ssePrefixData)
-			if eventType != "" {
-				select {
-				case ch <- SSEEvent{Type: eventType, ID: eventID, Data: json.RawMessage(data)}:
-				case <-ctx.Done():
-					return
-				}
-				eventType = ""
-				eventID = ""
-			}
-			continue
-		}
-
-		if line == "" {
-			eventType = ""
-			eventID = ""
-		}
-	}
+	})
 }
