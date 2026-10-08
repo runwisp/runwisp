@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-10-08
+
 ### Added
 
 - **Homebrew**: `brew install runwisp/tap/runwisp` installs RunWisp on macOS and Linux, and the tap updates with every release. `runwisp service install` from a Homebrew install keeps working after `brew upgrade`.
@@ -961,7 +963,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.5.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.5.1...main
+[1.5.1]: https://github.com/runwisp/runwisp/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/runwisp/runwisp/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/runwisp/runwisp/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/runwisp/runwisp/compare/v1.3.0...v1.3.1
