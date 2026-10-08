@@ -78,7 +78,7 @@ func PromotableNames(cfg *config.Config) []string {
 // It refuses an unknown name (*UnknownEntryError) and a name that is already
 // native (*NotStagedError) rather than silently skipping it: the operator named
 // something specific and deserves to hear why it didn't happen.
-func Select(cfg *config.Config, layout Layout, names []string, all bool) ([]string, error) {
+func Select(cfg *config.Config, names []string, all bool) ([]string, error) {
 	if all {
 		return PromotableNames(cfg), nil
 	}
@@ -149,7 +149,7 @@ type PromoteResult struct {
 // the staging file's residue, and is nil when nothing staged was selected — a
 // cron-only promotion must not rewrite a file it isn't touching.
 func PreviewBlocks(layout Layout, names []string, cfg *config.Config) (remaining []byte, blocks []Block, err error) {
-	stagedSel, cronSel := splitByProvenance(names, layout, cfg)
+	stagedSel, cronSel := splitByProvenance(names, cfg)
 
 	for _, name := range cronSel {
 		text, _ := cfg.CronBlockTOML(name)
@@ -179,13 +179,11 @@ func PreviewBlocks(layout Layout, names []string, cfg *config.Config) (remaining
 // name the config can't classify falls through to the staging path, which is the
 // behaviour that predates cron sources and the one whose failure mode is a clear
 // "no such block in the staging file".
-func splitByProvenance(names []string, layout Layout, cfg *config.Config) (staged, cron []string) {
+func splitByProvenance(names []string, cfg *config.Config) (staged, cron []string) {
 	for _, name := range names {
-		if cfg != nil {
-			if _, ok := cfg.CronBlockTOML(name); ok {
-				cron = append(cron, name)
-				continue
-			}
+		if _, ok := cfg.CronBlockTOML(name); ok {
+			cron = append(cron, name)
+			continue
 		}
 		staged = append(staged, name)
 	}
@@ -207,7 +205,7 @@ func Promote(req PromoteRequest) (PromoteResult, error) {
 		return res, nil
 	}
 
-	_, cronNames := splitByProvenance(req.Names, req.Layout, req.Config)
+	_, cronNames := splitByProvenance(req.Names, req.Config)
 	var cronEdits map[string][]byte
 	if len(cronNames) > 0 {
 		commentOuts, edits, err := PlanCronCommentOuts(cronNames, req.Config, req.Layout.RootPath)

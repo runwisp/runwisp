@@ -90,7 +90,7 @@ func runPromote(cmd *cobra.Command, args []string, f Flags, opts promoteOpts) er
 		return err
 	}
 
-	names, err := configedit.Select(cfg, layout, args, opts.all)
+	names, err := configedit.Select(cfg, args, opts.all)
 	if err != nil {
 		return promoteSelectError(err, f.CfgFile)
 	}

@@ -94,13 +94,11 @@ func snapshotInputs(path string, cfg *Config) snapshotPins {
 	if abs, err := filepath.Abs(path); err == nil {
 		pins.root = abs
 	}
-	if cfg != nil {
-		paths = append(paths, cfg.watchFiles...)
-		pins.globs = cfg.includeGlobs
-		pins.bootMatched = slices.Sorted(slices.Values(cfg.includeFiles))
-		pins.cronGlobs = cfg.cronGlobs
-		pins.bootCron = slices.Sorted(slices.Values(cfg.cronMatched))
-	}
+	paths = append(paths, cfg.watchFiles...)
+	pins.globs = cfg.includeGlobs
+	pins.bootMatched = slices.Sorted(slices.Values(cfg.includeFiles))
+	pins.cronGlobs = cfg.cronGlobs
+	pins.bootCron = slices.Sorted(slices.Values(cfg.cronMatched))
 
 	seen := make(map[string]struct{}, len(paths))
 	pins.files = make([]fileDigest, 0, len(paths))

@@ -222,7 +222,7 @@ func TestSnapshot_MissingFileAppearingIsStale(t *testing.T) {
 	path := filepath.Join(dir, "runwisp.toml")
 	// Snapshot a path that does not exist (station mode boots without a
 	// runwisp.toml); the file showing up later must read as a change.
-	snap := NewSnapshot(path, nil, time.Now())
+	snap := NewSnapshot(path, &Config{}, time.Now())
 	require.False(t, snap.Stale())
 
 	require.NoError(t, os.WriteFile(path, []byte("[tasks.t]\nrun = \"echo hi\"\n"), 0o600))
