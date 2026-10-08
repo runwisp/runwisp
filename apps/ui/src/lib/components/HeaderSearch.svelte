@@ -12,7 +12,7 @@
 
     let inputEl = $state<HTMLInputElement | null>(null);
 
-    // ⌘ on Apple, Ctrl elsewhere — show the shortcut the operator actually
+    // ⌘ on Apple, Ctrl elsewhere, show the shortcut the operator actually
     // presses. navigator.userAgent never changes, so this is a one-time read,
     // not a reactive effect.
     const isMac = /mac|iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -67,7 +67,7 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 {#if headerSearchStore.active && headerSearchStore.spec}
-    <!-- Quiet at rest, lifts on focus: the whole pill is the focus surface —
+    <!-- Quiet at rest, lifts on focus: the whole pill is the focus surface,
          its border warms to the ring, a soft ring hugs it, it floats up off the
          bar, and the icon tints to primary. The input's own focus outline is
          suppressed (below) so the pill reads as one control, not two rings. -->

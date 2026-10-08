@@ -8,7 +8,7 @@
     import { connectionStore } from "$lib/stores";
 
     // If the daemon is unreachable the likely cause is a failed dynamic import
-    // on navigation — show the polished disconnect UX rather than a raw 500.
+    // on navigation, show the polished disconnect UX rather than a raw 500.
     let showConnectionLost = $derived(connectionStore.status !== "connected");
 
     // Once the daemon is back, reload so SvelteKit can fetch the missing route

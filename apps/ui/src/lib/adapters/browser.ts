@@ -42,8 +42,8 @@ export const browserAuthEventBus = {
 /**
  * Auth-aware SSE factory. The browser session is authenticated solely by the
  * HttpOnly session cookie, so it opens the stream with `withCredentials: true`
- * to send that cookie. The JWT is never held in JS-readable storage — that is
- * the whole point of the cookie being HttpOnly — so there is no Bearer path here.
+ * to send that cookie. The JWT is never held in JS-readable storage, that is
+ * the whole point of the cookie being HttpOnly, so there is no Bearer path here.
  */
 export const browserAuthEventSourceFactory: EventSourceFactory = (url) => {
     return new EventSourcePolyfill(url, { withCredentials: true });

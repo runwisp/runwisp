@@ -6,14 +6,14 @@ import type { Run, RunSelector } from "@runwisp/common";
 
 // The subset of the toast options this module inspects. @runwisp/ui doesn't
 // export its ToastOptions type, so describe the captured-argument shape locally
-// — this keeps reading the recorded Undo action type-safe.
+// to keep reading the recorded Undo action type-safe.
 interface CapturedToastOptions {
     duration?: number;
     action?: { label: string; onClick: () => void };
 }
 
 // Hoisted so the (hoisted) vi.mock factory below can close over them. Typed with
-// the toast signature so reading captured call args stays type-safe — and
+// the toast signature so reading captured call args stays type-safe, and
 // referencing these plain fns in assertions avoids the unbound-method lint that
 // `toast.success` (a class method) would trip.
 const toastMocks = vi.hoisted(() => ({

@@ -20,7 +20,7 @@
     let visible = $derived(systemStore.configStale && !dismissed);
 
     // The banner itself clears reactively once the daemon's next config.stale
-    // SSE tick reports fresh state (see system.svelte.ts) — no extra refetch here.
+    // SSE tick reports fresh state (see system.svelte.ts), no extra refetch here.
     async function handleReload() {
         reloading = true;
         try {

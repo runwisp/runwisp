@@ -173,7 +173,7 @@ export const runsApi = {
         return { runs: runs.items ?? [], total: runs.total };
     },
 
-    // Fetch one run by its (globally unique) ULID — no task name needed. Lets
+    // Fetch one run by its (globally unique) ULID, no task name needed. Lets
     // the cross-task /runs view restore a deep-linked run that isn't on the
     // currently loaded page.
     getById: async (runId: string) => {

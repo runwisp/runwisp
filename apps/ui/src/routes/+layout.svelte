@@ -54,7 +54,7 @@
         void taskStore.loadIfNeeded();
         void notificationStore.init();
         // Seed system identity + stats once, then ride the shared app-event
-        // stream for live cpu/mem/uptime and config-staleness — no polling.
+        // stream for live cpu/mem/uptime and config-staleness, no polling.
         void systemStore.init();
     });
 

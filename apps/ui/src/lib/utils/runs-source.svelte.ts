@@ -30,7 +30,7 @@ export interface RunsSource {
     /**
      * Re-fetch the first page with the current filters, replacing the list. For
      * resyncing after a genuine SSE reconnect whose gap outlived the server's
-     * replay buffer — it delivers true DB state, not a mask over live counts.
+     * replay buffer, it delivers true DB state, not a mask over live counts.
      */
     refresh(): void;
     upsert(run: Run): void;
@@ -72,7 +72,7 @@ function filtersEqual(a: RunsListFilters | null, b: RunsListFilters): boolean {
     );
 }
 
-// Narrow a free string to a known Trigger (or undefined) without a cast — the
+// Narrow a free string to a known Trigger (or undefined) without a cast, the
 // query param type is the trigger union, so a plain string won't assign.
 function asTrigger(value: string | undefined): Trigger | undefined {
     return TRIGGERS.find((t) => t === value);
@@ -115,7 +115,7 @@ function matchesTimeRange(run: Run, after?: string, before?: string): boolean {
 }
 
 // Exit-code gating mirrors the server's inclusive [min, max] range. In-flight
-// runs carry exitCode 0, so a positive lower bound drops them — exactly as the
+// runs carry exitCode 0, so a positive lower bound drops them, exactly as the
 // server query would.
 function matchesExitCode(run: Run, range: ExitCodeRange): boolean {
     if (range.min !== undefined && run.exitCode < range.min) return false;
@@ -164,7 +164,7 @@ export function createRunsSource(): RunsSource {
     const done = $derived(currentFilters !== null && items.length >= total);
 
     // A live upsert() or remove() can mutate `items` while a page request is in
-    // flight, shifting every later run's true server-side rank — forward on an
+    // flight, shifting every later run's true server-side rank, forward on an
     // insert, back on a removal. Either way the page fetched at `offset` no
     // longer lines up with what's already loaded: applying it directly would
     // re-deliver an already-loaded run (rank shifted forward) or silently skip
@@ -270,7 +270,7 @@ export function createRunsSource(): RunsSource {
         } else if (items.length >= total) {
             // Ascending (oldest-first): a new run is always the newest overall,
             // i.e. the very last item. Only safe to append directly once every
-            // earlier page is already loaded — otherwise it would visually sit
+            // earlier page is already loaded, otherwise it would visually sit
             // ahead of older, not-yet-loaded runs that belong before it.
             items = [...items, run];
         }

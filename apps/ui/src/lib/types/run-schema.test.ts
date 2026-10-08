@@ -7,9 +7,9 @@ import { parseRunUpdate } from "./index";
 
 describe("parseRunUpdate", () => {
     // runSchema (module-private) is piped through z.custom<Run>() rather than
-    // typed as z.ZodType<Run> — Zod's `.optional()` types a field as
+    // typed as z.ZodType<Run>, Zod's `.optional()` types a field as
     // `T | undefined`, which this project's exactOptionalPropertyTypes then
-    // rejects against Run's `field?: T` — so z.custom sidesteps a mismatch
+    // rejects against Run's `field?: T`, so z.custom sidesteps a mismatch
     // that isn't real drift. That means TypeScript won't catch runSchema
     // falling behind the generated Run type on its own: this fixture is typed
     // as Run with every optional field populated, so a field added to Run

@@ -21,13 +21,13 @@
     const CUSTOM_OPTION = "\u0000custom";
 
     // The form supplies *values* for parameters declared in runwisp.toml. It
-    // never defines them — kinds, keys, choices and defaults all come from the
+    // never defines them, kinds, keys, choices and defaults all come from the
     // task definition. We mirror the daemon's resolve rules client-side so the
     // operator gets immediate feedback, but the daemon validates again.
     //
     // The emitted map is tri-state per key: a string passes that value (incl.
     // ""), `null` explicitly omits the parameter (the daemon does not re-inject
-    // the default). The form is authoritative — it emits every declared key —
+    // the default). The form is authoritative, it emits every declared key,
     // so a cleared field omits rather than silently falling back to the default.
     let {
         params,
@@ -39,7 +39,7 @@
         // Seed values to pre-fill the form with (e.g. "Run again" reuses a prior
         // run's params). A present string wins over the declared default; a
         // missing key (or `null`, or no seed at all) falls back to the default.
-        // Remount the form to re-seed — vals are captured once at construction.
+        // Remount the form to re-seed, vals are captured once at construction.
         initial?: Record<string, string | null> | null;
         value?: Record<string, string | null>;
         valid?: boolean;
@@ -115,9 +115,9 @@
     }
 
     function includeHint(p: TaskParam): string {
-        if (!isIncluded(p)) return "Omitted (not passed) — include";
-        if ((vals[p.key] ?? "") === "") return "Passing empty string — omit";
-        return "Passing value — omit";
+        if (!isIncluded(p)) return "Omitted (not passed): include";
+        if ((vals[p.key] ?? "") === "") return "Passing empty string: omit";
+        return "Passing value: omit";
     }
 
     function fieldError(p: TaskParam): string {

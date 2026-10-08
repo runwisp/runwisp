@@ -120,7 +120,7 @@
         >
             <div class="flex flex-col items-center gap-3 text-center">
                 <!-- The canonical brand lockup (same as the app nav): bare teal
-                     mark beside the wordmark in the body sans at 700 — brand
+                     mark beside the wordmark in the body sans at 700, brand
                      voice, deliberately out of the mono chrome. -->
                 <div class="flex items-center gap-1">
                     <Logo size="lg" />

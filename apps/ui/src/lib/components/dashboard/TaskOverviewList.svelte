@@ -187,7 +187,7 @@
     {#if taskOverviews.length === 0}
         <EmptyState
             title="No tasks configured yet"
-            description="Tasks are defined in your runwisp.toml — the daemon never edits them for you. Add one and restart the daemon:"
+            description="Tasks are defined in your runwisp.toml; the daemon never edits them for you. Add one and restart the daemon:"
             icon={Box}
         >
             {#snippet actions()}

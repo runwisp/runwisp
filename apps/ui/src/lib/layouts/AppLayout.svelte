@@ -183,7 +183,7 @@
             ? 'translate-x-0'
             : '-translate-x-full'} {sidebarHidden.current ? 'lg:hidden 3xl:flex' : ''}"
     >
-        <!-- Brand — the same lockup as the website nav: teal mark at 21px,
+        <!-- Brand, the same lockup as the website nav: teal mark at 21px,
              wordmark in the body sans at 700. Brand voice, not chrome, so it
              deliberately stays out of the mono. -->
         <div class="flex h-[52px] items-center gap-[9px] border-b border-outline px-5">

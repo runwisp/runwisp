@@ -72,7 +72,7 @@ interface RunActionsOptions {
     getItems: () => Run[];
     /** Splice runs out of the local list immediately (optimistic). */
     onOptimisticRemove: (ids: string[]) => void;
-    /** Splice runs back in — undo, or rollback after a failed delete. */
+    /** Splice runs back in, undo, or rollback after a failed delete. */
     onOptimisticRestore: (runs: Run[]) => void;
     /** Notified with the removed ids so a page can drop a now-stale selection. */
     onRemoved?: (removedIds: Set<string>) => void;
@@ -80,7 +80,7 @@ interface RunActionsOptions {
 
 /**
  * Bulk run operations (delete/cancel/re-run) with optimistic local updates,
- * undo toasts, and error rollback — identical across the cross-task /runs view
+ * undo toasts, and error rollback, identical across the cross-task /runs view
  * and a task's detail page, so it lives here once. The caller owns the run list
  * and selection; this owns the API calls and the toast choreography.
  */
@@ -111,7 +111,7 @@ export function createRunActions(opts: RunActionsOptions) {
     async function undoDelete(selector: RunSelector, snapshot: Run[]) {
         try {
             await runsApi.bulkRestore(selector);
-            // Restore optimistically — SSE run.updated will also splice them
+            // Restore optimistically, SSE run.updated will also splice them
             // back in if not already.
             opts.onOptimisticRestore(snapshot);
         } catch (err) {

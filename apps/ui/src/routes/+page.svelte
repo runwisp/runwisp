@@ -107,7 +107,7 @@
                 isRunning,
             );
 
-            // A new run means the scheduler advanced that task's nextRunAt —
+            // A new run means the scheduler advanced that task's nextRunAt,
             // refetch tasks so "Up next" and next-run columns stay current.
             // (tasks.changed is already handled by the layout.)
             // Pointless when the local scheduler is inactive (station mode):
@@ -191,7 +191,7 @@
         try {
             dashState.metricsHistory = await systemApi.getMetricsHistory();
         } catch {
-            // silent — metrics history is secondary
+            // silent, metrics history is secondary
         }
     }
 

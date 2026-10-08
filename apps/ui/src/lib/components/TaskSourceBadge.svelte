@@ -24,7 +24,7 @@
     );
 
     // Display-only: the badge says where the task came from and names the CLI
-    // that graduates it. Nothing here writes TOML — only the CLI does.
+    // that graduates it. Nothing here writes TOML, only the CLI does.
     const tooltip = $derived(
         `Defined in ${origin}, not native TOML yet. ` +
             `It runs like any other task; \`runwisp promote ${name}\` moves it into runwisp.toml.`,

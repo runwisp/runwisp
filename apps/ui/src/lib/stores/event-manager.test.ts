@@ -6,7 +6,7 @@ import { EventManager } from "./event-manager";
 import { SSE_CONFIG } from "$lib/config/constants";
 import type { SSEStream } from "$lib/adapters/browser";
 
-// A fake EventSource that fires nothing on its own — the test decides when
+// A fake EventSource that fires nothing on its own, the test decides when
 // `onopen`/`onerror` happen, so we can exercise the "created but never opened"
 // stall window.
 class ControllableEventSource implements SSEStream {
@@ -92,7 +92,7 @@ describe("EventManager stall detection", () => {
         mgr.subscribe("system", () => {});
         es.error();
         // Up to (but not into) the reconnect, the original stall timer must have
-        // been cancelled — an error is not a stall. (The later reconnect, which
+        // been cancelled, an error is not a stall. (The later reconnect, which
         // also never opens, will legitimately stall; that's covered elsewhere.)
         vi.advanceTimersByTime(SSE_CONFIG.RECONNECT_DELAY - 1);
 

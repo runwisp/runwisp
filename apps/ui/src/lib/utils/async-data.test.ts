@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 // Stub $lib/api so importing AsyncData doesn't pull in the REST/SSE modules
-// (and their zod schemas) — we only need AuthRequiredError's identity.
+// (and their zod schemas), we only need AuthRequiredError's identity.
 vi.mock("$lib/api", () => ({
     AuthRequiredError: class AuthRequiredError extends Error {},
 }));
@@ -32,7 +32,7 @@ describe("AsyncData", () => {
         await p2;
         expect(ad.data).toBe("fresh");
 
-        // The stale first fetch resolves only now — it must not clobber "fresh".
+        // The stale first fetch resolves only now, it must not clobber "fresh".
         resolveFirst("stale");
         await p1;
         expect(ad.data).toBe("fresh");

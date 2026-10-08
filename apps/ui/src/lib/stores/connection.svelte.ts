@@ -73,7 +73,7 @@ function createConnectionStore() {
 
     function markConnected() {
         // Only fire reconnect listeners when we've actually recovered from a
-        // previous successful connection — not on the very first success.
+        // previous successful connection, not on the very first success.
         const wasDown = Boolean(lastConnectedAt) && status !== "connected";
         status = "connected";
         lastConnectedAt = Date.now();
@@ -114,8 +114,8 @@ function createConnectionStore() {
         retryAttempts = 0;
         // A stall recovers on its own: the browser opens the queued EventSource
         // once a connection slot frees, firing `open` → reportSourceUp →
-        // markConnected. So no fetch-ping retry here — a ping could reach the
-        // daemon and wrongly flip us to "connected" while no live events flow —
+        // markConnected. So no fetch-ping retry here, a ping could reach the
+        // daemon and wrongly flip us to "connected" while no live events flow,
         // and no "down for" tick, because we are not down.
         cancelRetry();
         stopTick();
@@ -136,7 +136,7 @@ function createConnectionStore() {
             return true;
         } catch (err) {
             if (err instanceof AuthRequiredError) {
-                // Server responded (just needs auth) — it's reachable.
+                // Server responded (just needs auth), it's reachable.
                 markConnected();
                 return true;
             }
@@ -175,8 +175,8 @@ function createConnectionStore() {
         } else if (upSources.size === 0) {
             // No live source left, but another is stalled (waiting for a
             // connection slot): reflect "updates paused" rather than keeping the
-            // stale prior status. Latent today — the per-domain cap that
-            // populates stalledSources isn't reached with only two streams — but
+            // stale prior status. Latent today, the per-domain cap that
+            // populates stalledSources isn't reached with only two streams, but
             // it strands the UI on "connected" once a third stream is added.
             markStalled();
         }

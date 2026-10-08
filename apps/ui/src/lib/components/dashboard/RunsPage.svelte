@@ -88,7 +88,7 @@
 
 <!-- Card-less, full-bleed: the history rail and detail panel fill the content
      area edge-to-edge (cancelling AppLayout's p-6), divided only by the rail's
-     right border — the same chrome-less frame as a task's detail page. -->
+     right border, the same chrome-less frame as a task's detail page. -->
 <div class="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col md:flex-row">
     {#if panes.list}
         <RunsList

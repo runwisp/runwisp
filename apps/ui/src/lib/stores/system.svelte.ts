@@ -79,7 +79,7 @@ function createSystemStore() {
             startedAt = Number.isNaN(started) ? 0 : started;
         } catch (err) {
             if (err instanceof AuthRequiredError) return;
-            // silent — system stats are secondary
+            // silent, system stats are secondary
         }
     }
 

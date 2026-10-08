@@ -161,7 +161,7 @@ describe("connectionStore.reportSourceStalled", () => {
         connectionStore.markConnected();
     }
 
-    it("enters 'stalled' — distinct from 'disconnected' — when a source stalls", () => {
+    it("enters 'stalled', distinct from 'disconnected', when a source stalls", () => {
         connectionStore.reportSourceStalled("a");
         expect(connectionStore.status).toBe("stalled");
         // A stall is not a network outage: no error text, no retry scheduled.
@@ -195,7 +195,7 @@ describe("connectionStore.reportSourceStalled", () => {
 
     // Regression: when the last live source goes down but a sibling is
     // still stalled (waiting for a connection slot), the store must reflect
-    // "stalled" — not strand the UI on its prior "connected" status. Before the
+    // "stalled", not strand the UI on its prior "connected" status. Before the
     // fix reportSourceDown only handled the all-empty case, so this transition
     // was silently dropped.
     it("shows 'stalled' when the last live source goes down while another is stalled", () => {

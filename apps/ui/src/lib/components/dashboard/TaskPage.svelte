@@ -80,7 +80,7 @@
         initialHighlightLine?: number | null;
         selectRunId?: string | null;
         // True when the deep-linked run id (initialRunId) was fetched and doesn't
-        // exist under this task — surfaces a "not found" panel instead of quietly
+        // exist under this task, surfaces a "not found" panel instead of quietly
         // falling back to the running/newest run under a dead URL.
         runNotFound?: boolean;
         // True while the deep-linked run (initialRunId) is being fetched because
@@ -107,7 +107,7 @@
     let runParamsValid = $state(true);
     const taskParams = $derived(task.parameters ?? []);
     const hasParams = $derived(taskParams.length > 0);
-    // The Run modal only needs a body when there's something to show — the
+    // The Run modal only needs a body when there's something to show, the
     // concurrency warning or the parameter form. Passing `children`
     // conditionally keeps Modal from rendering an empty padded band otherwise.
     const showRunBody = $derived(concurrencyReached || (hasParams && confirmOpen));
@@ -115,7 +115,7 @@
     // Seed values for the Run modal's parameter form: null = start from the
     // task defaults ("Run"); a prior run's params = pre-fill from it ("Run
     // again"). `runFormSeq` keys the form so each open (or a reset) re-mounts
-    // it and re-seeds — ParamForm captures its values once at construction.
+    // it and re-seeds, ParamForm captures its values once at construction.
     let runSeed = $state<Record<string, string | null> | null>(null);
     let runFormSeq = $state(0);
 
@@ -147,7 +147,7 @@
     let outputSearchSeq = 0;
     // The query most recently handed to the search. While the live header query
     // is ahead of it (mid-type, inside the header's debounce) the search counts
-    // as pending even though no request has fired — keeps the rail in its
+    // as pending even though no request has fired, keeps the rail in its
     // searching state instead of flashing stale results.
     let lastDispatched = $state("");
 
@@ -230,7 +230,7 @@
         onSelectRun: (id) => onSelectRun?.(id),
     });
 
-    // A run can always be *triggered* — at max concurrency it queues (the modal
+    // A run can always be *triggered*, at max concurrency it queues (the modal
     // says so), so concurrency must not gate the button, only its warning.
     // Disabled only when the task forbids API triggering or a trigger is mid-flight.
     const runTriggerable = $derived(!taskIsService && task.manualTrigger && !triggering);
