@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { Clock, ArrowUpDown, X, Square, Trash, RotateCw } from "@lucide/svelte";
+    import { Clock, ArrowUpDown, Square, Trash, RotateCw } from "@lucide/svelte";
     import { untrack } from "svelte";
     import { createVirtualizer } from "@tanstack/svelte-virtual";
     import Button from "../Button.svelte";
@@ -10,19 +10,13 @@
     import type { RunMotion } from "../../utils/run-motion.js";
     import EmptyState from "../EmptyState.svelte";
     import { BulkSelection } from "./bulk-selection.svelte.js";
+    import RunFilterChips from "./RunFilterChips.svelte";
     import RunFilterPopover from "./RunFilterPopover.svelte";
     import RunListSkeleton from "./RunListSkeleton.svelte";
     import RunRow from "./RunRow.svelte";
     import type { RunOutputMatch } from "./types.js";
     import type { Run, RunSelector } from "@runwisp/common";
-    import {
-        activeDimensions,
-        clearDimension,
-        filterChipLabel,
-        runFilterParams,
-        type RunsListFilters,
-        type FilterDimension,
-    } from "./run-filters.js";
+    import { runFilterParams, type RunsListFilters } from "./run-filters.js";
     import { instanceSuffix } from "./run-helpers.js";
     import { formatDateTime } from "../../utils/format.js";
 
@@ -203,18 +197,6 @@
         return filter;
     }
 
-    // Active-filter chips for the header row. `task` only chips on the
-    // cross-task view; everywhere else the task name is the page scope.
-    const filterChips = $derived(
-        activeDimensions(filters)
-            .filter((dim) => dim !== "task" || showTask)
-            .map((dim) => ({ dimension: dim, label: filterChipLabel(filters, dim) })),
-    );
-
-    function removeChip(dim: FilterDimension) {
-        filters = clearDimension(filters, dim);
-    }
-
     function emitBulk(handler: BulkHandler | undefined, predicate: (r: Run) => boolean) {
         if (!handler) return;
         const affected = selectedRuns.filter(predicate);
@@ -364,29 +346,8 @@
         {/if}
     </div>
 
-    {#if showFilters && filterChips.length > 0}
-        <!-- Active-filter chips. Rendered only when filters are set, so the
-             header stays clean when empty; each chip's X clears its dimension.
-             The filter controls themselves live in the popover above. -->
-        <div
-            class="flex shrink-0 flex-wrap gap-1 border-b border-outline-faint bg-surface-sunken px-3 py-2"
-        >
-            {#each filterChips as chip (chip.dimension)}
-                <span
-                    class="inline-flex items-center gap-1 rounded-[3px] border border-primary-soft-border bg-primary-soft py-0.5 pr-1 pl-2 font-mono text-2xs font-medium text-primary-soft-text"
-                >
-                    {chip.label}
-                    <button
-                        type="button"
-                        onclick={() => removeChip(chip.dimension)}
-                        class="flex size-3.5 items-center justify-center rounded-[3px] text-primary-soft-text/70 hover:bg-primary/15 hover:text-primary-soft-text"
-                        aria-label="Remove {chip.label} filter"
-                    >
-                        <X size={11} />
-                    </button>
-                </span>
-            {/each}
-        </div>
+    {#if showFilters}
+        <RunFilterChips bind:filters {showTask} />
     {/if}
 
     <div bind:this={scrollElement} class="min-h-0 flex-1 overflow-y-auto p-2">
