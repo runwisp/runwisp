@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A daemon installed with `runwisp service install` is no longer killed by systemd or launchd partway through a long shutdown. Run `runwisp service install` again to update an existing install.
 - A stopped service offers **Start** instead of **Restart** in the Web UI and the TUI after a page reload, in other tabs, and when you reopen one of its runs.
 - `max_queued = 0` means no run waits in line, as documented, instead of quietly becoming the default of 100.
+- Failed actions in the Web UI, such as a rejected config reload, show the daemon's reason instead of a bare status code.
+- Tasks whose names differ only in punctuation, like `db-backup` and `db.backup`, no longer share a sidebar highlight or page header in the Web UI.
+- Editing an `env_file` written as `~/...` marks the config as changed.
+- The TUI opens a single-instance service's new run when it starts while you are viewing that task.
+- The TUI colours run statuses the same everywhere: timeouts, start failures and unhealthy runs show as failures, and a status cut short in a narrow terminal keeps its colour.
+- The TUI picks up a new `timezone` after `runwisp reload`.
+- `runwisp stop` and `runwisp restart` no longer treat a daemon running as another user as already stopped.
+
+### Security
+
+- `runwisp tui --url` pins the daemon's TLS certificate on first connect, like `runwisp run --url`, and refuses to connect if it changes.
 
 ## [1.5.0] - 2026-10-07
 
