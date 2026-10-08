@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { relative } from "./format-time";
-
 interface RhythmInput {
     count: number;
     createdAt: Date | string;
@@ -11,10 +9,38 @@ interface RhythmInput {
     now?: Date;
 }
 
-const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
-const WEEK_MS = 7 * DAY_MS;
-const MONTH_MS = 30 * DAY_MS;
+const SECOND = 1000;
+const MINUTE = 60 * SECOND;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+const WEEK = 7 * DAY;
+const MONTH = 30 * DAY;
+const YEAR = 365 * DAY;
+
+/**
+ * Returns a short human-readable phrase for the difference between `date` and
+ * `now`. Mirrors `RelativeTime()` in `apps/runwisp/internal/tui/uikit/helpers.go`:
+ * when changing thresholds here, update both implementations and
+ * __rhythm_vectors.json.
+ */
+export function relative(date: Date | string, now: Date = new Date()): string {
+    const t = typeof date === "string" ? new Date(date) : date;
+    if (Number.isNaN(t.getTime())) return "";
+
+    const d = now.getTime() - t.getTime();
+    if (d < 30 * SECOND) return "just now";
+    if (d < MINUTE) return `${Math.floor(d / SECOND).toString()}s ago`;
+    if (d < HOUR) return `${Math.floor(d / MINUTE).toString()}m ago`;
+    if (d < DAY) return `${Math.floor(d / HOUR).toString()}h ago`;
+    if (d < 2 * DAY) return "yesterday";
+    if (d < MONTH) return `${Math.floor(d / DAY).toString()}d ago`;
+    if (d < YEAR) {
+        const months = Math.floor(d / MONTH);
+        return months <= 1 ? "1mo ago" : `${months.toString()}mo ago`;
+    }
+    const years = Math.floor(d / YEAR);
+    return years <= 1 ? "1y ago" : `${years.toString()}y ago`;
+}
 
 /**
  * Order of rules matters; the first match wins. `notification-rhythm.test.ts`
@@ -29,16 +55,16 @@ export function phrase(input: RhythmInput): string {
     }
 
     const occ = input.occurrences.map((v) => new Date(v));
-    if (allWithin(occ, now, HOUR_MS)) {
+    if (allWithin(occ, now, HOUR)) {
         return `${input.count.toString()}× in the last hour, latest ${relative(last, now)}`;
     }
-    if (allWithin(occ, now, DAY_MS)) {
+    if (allWithin(occ, now, DAY)) {
         return `${input.count.toString()}× today, latest ${relative(last, now)}`;
     }
 
     const created = new Date(input.createdAt);
     const span = now.getTime() - created.getTime();
-    if (span >= WEEK_MS) {
+    if (span >= WEEK) {
         return `${input.count.toString()}× since ${relative(created, now)}, latest ${relative(last, now)}`;
     }
     return `${input.count.toString()}× over ${formatSpan(span)}, latest ${relative(last, now)}`;
@@ -110,14 +136,13 @@ function allWithin(occ: Date[], now: Date, windowMs: number): boolean {
 }
 
 function formatSpan(ms: number): string {
-    if (ms < 60 * 60 * 1000) return `${Math.floor(ms / (60 * 1000)).toString()}m`;
-    if (ms < 24 * 60 * 60 * 1000) return `${Math.floor(ms / (60 * 60 * 1000)).toString()}h`;
-    if (ms < 7 * 24 * 60 * 60 * 1000)
-        return `${Math.floor(ms / (24 * 60 * 60 * 1000)).toString()}d`;
-    if (ms < MONTH_MS) {
-        const weeks = Math.floor(ms / WEEK_MS);
+    if (ms < HOUR) return `${Math.floor(ms / MINUTE).toString()}m`;
+    if (ms < DAY) return `${Math.floor(ms / HOUR).toString()}h`;
+    if (ms < WEEK) return `${Math.floor(ms / DAY).toString()}d`;
+    if (ms < MONTH) {
+        const weeks = Math.floor(ms / WEEK);
         return weeks <= 1 ? "1 week" : `${weeks.toString()} weeks`;
     }
-    const months = Math.floor(ms / MONTH_MS);
+    const months = Math.floor(ms / MONTH);
     return months <= 1 ? "1 month" : `${months.toString()} months`;
 }
