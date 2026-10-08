@@ -1366,7 +1366,10 @@ func WaitIdle(ctx context.Context, r TaskRunner, taskName string) error {
 	return nil
 }
 
-// StopTask implements TaskRunner.StopTask. Idempotent, mirroring StopService.
+// StopTask cancels every active run of a non-service task and discards
+// anything still queued, so nothing starts back up right behind the stop. The
+// cron schedule is untouched. Returns an error for an unknown task or a service
+// (use StopService for those). Idempotent, mirroring StopService.
 // Cancelled runs end with ReasonStopped, which is outside retry eligibility
 // (see runtime/retry.IsFailedExecution), so a stop never races its own
 // automatic re-run.
@@ -1432,8 +1435,9 @@ func (m *defaultTaskManager) Shutdown() {
 	m.ShutdownWithDeadline(0)
 }
 
-// BeginShutdown refuses every new run from here on and leaves active runs
-// alone. Idempotent.
+// BeginShutdown refuses every new run from here on (triggers, retries, queued
+// runs, held jittered fires) and leaves active runs alone. The daemon calls it
+// before stopping services; ShutdownWithDeadline calls it too. Idempotent.
 func (m *defaultTaskManager) BeginShutdown() {
 	m.isShutdown.Store(true)
 	// Cancel before the wg drain so any goroutine parked in waitForDelay exits

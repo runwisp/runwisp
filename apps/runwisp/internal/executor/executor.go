@@ -337,9 +337,8 @@ func (m *outputMatcher) pattern() string {
 	return ""
 }
 
-// callback (when wired) and the event bus. logPath is the freshly resolved
-// callback and event bus when each is wired. logPath is the freshly resolved
-// on-disk log file; the executor carries it on the event envelope (not the
+// notifyRunUpdated reports a run state change to the onUpdate callback (when
+// wired) and the event bus. logPath is the freshly resolved on-disk log file; the executor carries it on the event envelope (not the
 // Run row, which is never persisted with a log path) so station and notify
 // subscribers can locate the captured output.
 func (r *RoutingExecutor) notifyRunUpdated(run *model.Run, logPath string) {

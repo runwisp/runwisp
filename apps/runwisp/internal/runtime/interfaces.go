@@ -10,73 +10,30 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// TaskRunner is the subset of TaskManager consumed by the station and server packages.
-// Using this interface instead of the concrete implementation makes those packages
-// testable without a real executor, event bus, or database.
+// TaskRunner is the subset of TaskManager consumed by the server package, the
+// scheduler, and the boot helpers (catch-up, run_on_start), so they can be
+// tested without a real executor, event bus, or database. Method contracts are
+// documented on defaultTaskManager.
 type TaskRunner interface {
 	TriggerRunWithOptions(taskName string, options TriggerRunOptions) (*model.Run, error)
-	// ScheduleJitteredRun submits a jittered cron fire to the work-conserving
-	// gate. tick is backdated onto the run's CreatedAt so the start delay reads
-	// as jitter; slot is the deadline (latest the start may slip) and doubles as
-	// the gate's release order; window is the free-check horizon. The scheduler
-	// calls this instead of TriggerRunWithOptions when a task carries a jitter window.
 	ScheduleJitteredRun(taskName string, tick, slot time.Time, window time.Duration)
 	GetTask(taskName string) (*model.Task, bool)
 	UpsertTask(task *model.Task)
-	// MutateTask atomically reads, mutates, and re-installs a task's live
-	// definition under a single lock acquisition — unlike a caller-side
-	// GetTask+UpsertTask pair, a concurrent reload touching the same task
-	// cannot land in between and be silently clobbered. found is false (mutate
-	// is never called) if the task is not currently registered by name.
 	MutateTask(taskName string, mutate func(*model.Task) error) (found bool, err error)
 	TerminateRun(runID string) error
 	TerminateRunByExecutionID(executionID string) error
-	// RecordSkippedFiring persists a run that was suppressed before the
-	// executor started — currently used by the scheduler to log DST wall-clock
-	// duplicates with end_reason = "dst_skipped".
 	RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error
-	// RecordMissedRun persists one terminal end_reason = "missed" run as the
-	// browsable record of a downtime gap, then publishes a failure-level event
-	// carrying reason as the human sentence. scheduledAt is the latest missed
-	// tick and becomes the row's CreatedAt — the anchor that prevents
-	// re-alerting on the next restart. Used by missed-tick catch-up.
 	RecordMissedRun(taskName string, scheduledAt time.Time, reason string) error
-	// GetActiveRunCount reports how many runs for the given task are currently
-	// in flight. Unknown tasks return 0.
 	GetActiveRunCount(taskName string) int
-	// GetActiveRuns snapshots the runs currently in flight for the given task
-	// (copies, safe to read). Unknown tasks return nil.
 	GetActiveRuns(taskName string) []*ActiveRun
-	// StopTask cancels every active run of a non-service task and discards
-	// anything still queued, so nothing starts back up right behind the stop.
-	// The task's cron schedule is untouched — TOML stays the source of truth
-	// for scheduling, and only in-flight/queued executions are cut short.
-	// Returns an error for an unknown task or a service (use StopService for
-	// those).
 	StopTask(taskName string) error
 
-	// --- service supervision (driven at daemon boot and by station) ---
-
-	// ListServiceTasks returns copies of every registered service task, so the
-	// station integration can fold daemon-supervised services into tasks.sync.
+	// Service supervision, driven at daemon boot, by REST, and by station.
 	ListServiceTasks() []*model.Task
-	// StartServiceInstances brings a service up to its desired instance count.
-	// Idempotent no-op on an operator-stopped service. Driven both at daemon
-	// boot and by a station service:apply/control message.
 	StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error
-	// StartService clears a service's operator-stop flag and any FATAL
-	// instances, then brings it up to its desired instance count — the
-	// un-stop counterpart to StopService. Unlike StartServiceInstances alone,
-	// this un-parks a service StopService stopped.
 	StartService(taskName string) error
-	// StopService marks a service as operator-stopped (in-memory only, cleared
-	// on daemon restart) and cancels every live instance. The supervisor will
-	// not refill slots until StartService or RestartServiceInstances is called.
 	StopService(taskName string) error
 	RestartServiceInstances(taskName string) error
-	// ServiceSnapshot returns the current supervisor view of a service task
-	// (rollup state, desired/running counts, per-instance slots). The bool is
-	// false for an unknown task or one that isn't a service.
 	ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool)
 }
 
@@ -85,37 +42,13 @@ type TaskRunner interface {
 type TaskManager interface {
 	TaskRunner
 	BindPersistenceHook(hook RunPersistenceHook)
-	// RemoveTask drops a task on reload: it stops the queue drain, cancels
-	// service instances (cron runs drain), and deletes the task's state once no
-	// run is in flight.
 	RemoveTask(taskName string)
 	LoadPendingRuns(runs []model.Run) PendingRunsResult
-	// RecycleServiceInstances picks up a reload-changed service definition
-	// without the operator-restart semantics of RestartServiceInstances: a
-	// stopped (or never-autostarted) service, and any FATAL instance, is left
-	// untouched. Used only by the reconciler.
 	RecycleServiceInstances(taskName string) error
-	// ServiceHealthy reports whether a service has at least one healthy
-	// instance — its health_check passed, or without one it has been running
-	// for at least healthy_after. The live readiness signal depends_on boot
-	// gating waits on. Non-services report false.
 	ServiceHealthy(taskName string) bool
-	// SetDaemonLocation sets the [daemon] timezone health check crons without
-	// a timezone of their own run in. nil means time.Local.
 	SetDaemonLocation(loc *time.Location)
-	// WaitServiceHealthy blocks until ServiceHealthy is true, the context is
-	// cancelled, or the service can no longer reach healthy without operator
-	// intervention. It returns nil only when the service became healthy.
 	WaitServiceHealthy(ctx context.Context, taskName string) error
-	// BeginShutdown stops new runs from starting (triggers, retries, queued
-	// runs, held jittered fires) while active runs keep going. The daemon calls
-	// it before stopping services; ShutdownWithDeadline calls it too.
 	BeginShutdown()
-	// Shutdown cancels every active run and waits for all goroutines to
-	// drain. Equivalent to ShutdownWithDeadline(0).
 	Shutdown()
-	// ShutdownWithDeadline cancels every active run and waits up to the
-	// supplied deadline for goroutines to exit. Survivors are SIGKILLed and
-	// recorded with end_reason = "daemon_stopped".
 	ShutdownWithDeadline(deadline time.Duration)
 }
