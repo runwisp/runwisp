@@ -445,8 +445,8 @@ jobs:
 
   # Regenerate Formula/runwisp.rb in runwisp/homebrew-tap from the published
   # tarballs. Stable releases only, so `brew install` never picks up an rc.
-  # HOMEBREW_TAP_TOKEN is a fine-grained PAT with contents:write on the tap;
-  # without it the job leaves a notice and the release carries on.
+  # HOMEBREW_TAP_TOKEN is a fine-grained PAT with contents:write on the tap.
+  # Without it the job fails, so a stale tap shows up as a red release run.
   homebrew-tap:
     if: github.event_name == 'release' && !contains(github.event.release.tag_name, '-')
     name: Update Homebrew tap
@@ -457,25 +457,24 @@ jobs:
       HAS_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
       TAG: ${{ github.event.release.tag_name }}
     steps:
-      - name: Skip without HOMEBREW_TAP_TOKEN
+      - name: Require HOMEBREW_TAP_TOKEN
         if: env.HAS_TAP_TOKEN != 'true'
-        run: echo "::notice::HOMEBREW_TAP_TOKEN is not set; skipping the Homebrew tap update."
+        run: |
+          echo "::error::HOMEBREW_TAP_TOKEN is not set or empty; the Homebrew tap was not updated."
+          exit 1
 
       - uses: actions/checkout@v6
-        if: env.HAS_TAP_TOKEN == 'true'
         with:
           ref: ${{ github.event.release.tag_name }}
           sparse-checkout: packaging/homebrew
 
       - uses: actions/checkout@v6
-        if: env.HAS_TAP_TOKEN == 'true'
         with:
           repository: runwisp/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
 
       - name: Generate and push the formula
-        if: env.HAS_TAP_TOKEN == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
