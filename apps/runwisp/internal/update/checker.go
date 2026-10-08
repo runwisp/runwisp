@@ -133,14 +133,12 @@ func installSource() string {
 	if s := os.Getenv("RUNWISP_INSTALL_SOURCE"); s != "" {
 		return s
 	}
-	exe, err := os.Executable()
-	if err != nil {
-		return "other"
+	if exe, err := os.Executable(); err == nil {
+		if exe, err = filepath.EvalSymlinks(exe); err == nil {
+			return sourceOfBinary(exe)
+		}
 	}
-	if exe, err = filepath.EvalSymlinks(exe); err != nil {
-		return "other"
-	}
-	return sourceOfBinary(exe)
+	return "other"
 }
 
 // sourceOfBinary classifies the resolved binary path when no env var says.
