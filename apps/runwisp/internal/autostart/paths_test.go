@@ -108,16 +108,21 @@ func TestResolveBinary_SymlinkResolution(t *testing.T) {
 }
 
 func TestResolveBinary_HomebrewKegUsesOptPath(t *testing.T) {
-	p, _, err := ResolveBinary(ResolveBinaryOptions{
-		ExecutablePath: "/opt/homebrew/bin/runwisp",
-		EvalSymlinks: func(string) (string, error) {
-			return "/opt/homebrew/Cellar/runwisp/1.2.0/bin/runwisp", nil
-		},
-		HomeDir: "/Users/alice",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, "/opt/homebrew/opt/runwisp/bin/runwisp", p,
-		"a versioned Cellar path is removed by brew upgrade; the opt symlink is stable")
+	// bin/ is the pre-1.5.2 formula layout; libexec/ is the current one, where
+	// bin/runwisp is a symlink to libexec/runwisp beside its .runwisp-source.
+	for keg, want := range map[string]string{
+		"/opt/homebrew/Cellar/runwisp/1.2.0/bin/runwisp":     "/opt/homebrew/opt/runwisp/bin/runwisp",
+		"/opt/homebrew/Cellar/runwisp/1.5.2/libexec/runwisp": "/opt/homebrew/opt/runwisp/libexec/runwisp",
+	} {
+		p, _, err := ResolveBinary(ResolveBinaryOptions{
+			ExecutablePath: "/opt/homebrew/bin/runwisp",
+			EvalSymlinks:   func(string) (string, error) { return keg, nil },
+			HomeDir:        "/Users/alice",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, want, p,
+			"a versioned Cellar path is removed by brew upgrade; the opt symlink is stable")
+	}
 }
 
 func TestResolveDataDir(t *testing.T) {
