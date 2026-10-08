@@ -2,55 +2,28 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { untrack } from "svelte";
     import {
-        Hash,
-        Check,
         Terminal as TerminalIcon,
-        Download,
-        Trash,
         Play,
-        Square,
         MousePointerClick,
-        RotateCw,
-        RefreshCcw,
-        ChevronDown,
         ArrowLeft,
         PanelLeftClose,
         PanelLeftOpen,
-        SlidersHorizontal,
-        Maximize2,
-        Minimize2,
-        TextWrap,
         SearchX,
     } from "@lucide/svelte";
-    import Button from "../Button.svelte";
     import EmptyState from "../EmptyState.svelte";
-    import Kbd from "../Kbd.svelte";
     import LogConsole from "../LogConsole.svelte";
-    import Popover from "../Popover.svelte";
     import Tooltip from "../Tooltip.svelte";
-    import { portal } from "../../actions/portal.js";
     import { prefersReducedMotion } from "../../actions/row-motion.js";
     import type { RunMotion } from "../../utils/run-motion.js";
-    import { isLogEvent, type LogEvent, type LogSlice } from "../../log-console/types.js";
-    import { formatBytes, formatClockTime, formatCalendarDate } from "../../utils/format.js";
-    import { formatShortId } from "../../utils/id.js";
-    import { isTypingTarget } from "../../utils/typing-target.js";
+    import type { LogEvent, LogSlice } from "../../log-console/types.js";
     import { TickingNow } from "../../utils/ticking-now.svelte.js";
-    import { CopyFeedback } from "../../utils/clipboard.svelte.js";
     import { displayStatus, type ResourceUsage, type Run } from "@runwisp/common";
+    import RunActions from "./RunActions.svelte";
+    import RunConsoleFrame from "./RunConsoleFrame.svelte";
+    import RunFacts from "./RunFacts.svelte";
     import { RUN_STATUS_CONFIG } from "./status-config.js";
-    import {
-        runDuration,
-        runStartDelay,
-        runVerdict,
-        formatTriggeredByLabel,
-        runRetryLabel,
-        runUsageLabel,
-        runLogDownloadUrl,
-        instanceSuffix,
-    } from "./run-helpers.js";
+    import { runDuration, runVerdict, instanceSuffix } from "./run-helpers.js";
 
     let {
         run,
@@ -174,167 +147,7 @@
         if (run?.status !== "running") return;
         return durationTicker.start();
     });
-
-    const TAIL_LINES = 1000;
-
-    let logConsole = $state<{ onStream: (event: LogEvent) => void } | null>(null);
-
-    // Message from the most recent seed-fetch failure (session expiry, daemon
-    // restart mid-request, ...), surfaced to LogConsole instead of letting a
-    // failed fetch render as an indistinguishable blank "no output" pane.
-    let logFetchError = $state<string | null>(null);
-
-    // Derive a stable scalar so the effect only re-runs when the id actually
-    // changes, not on every run object reference swap from SSE array updates.
-    let runId = $derived(run?.id);
-
-    // The run whose seed fetch has settled. Until it matches the shown run the
-    // console says it's loading, not "No output yet".
-    let seededRunId = $state<string | null>(null);
-
-    // Fetches the batched tail page a run's console opens on (see the effect
-    // below) and paints it into the console. Resolves the line the live
-    // stream should resume from, or null when there's nothing left to stream
-    // (the run already ended, or the caller cancelled while we were waiting).
-    // A failed fetch still falls back to an SSE tail backfill from scratch,
-    // it does not stop the console from live-tailing, but records the
-    // failure so LogConsole can show it instead of looking like a quiet run.
-    async function seedConsoleTail(
-        id: string,
-        isCancelled: () => boolean,
-    ): Promise<{ fromLine: number } | null> {
-        try {
-            const seed = await fetchLogs(id, -TAIL_LINES, -1);
-            if (isCancelled()) return null;
-            if (!isLogEvent(seed)) return { fromLine: -TAIL_LINES };
-            if (logConsole) logConsole.onStream(seed);
-            return seed.finished // ended run: nothing live to follow
-                ? null
-                : { fromLine: seed.sizeLines > 0 ? seed.sizeLines : -TAIL_LINES };
-        } catch (err) {
-            if (isCancelled()) return null;
-            logFetchError = err instanceof Error ? err.message : "Failed to load logs";
-            return { fromLine: -TAIL_LINES };
-        }
-    }
-
-    $effect(() => {
-        const id = runId;
-        if (!id) return;
-
-        const stream = streamLogs;
-        if (!stream) {
-            seededRunId = id;
-            return;
-        }
-
-        logFetchError = null;
-
-        let cleanup: (() => void) | undefined;
-        let cancelled = false;
-
-        untrack(() => {
-            void (async () => {
-                // Paint the tail in one batched page so the console opens
-                // already at the newest output, instead of replaying 1000
-                // backfill lines over SSE and visibly scrolling down to reach
-                // the end. The live stream then picks up after the seeded tail
-                // (its disk backfill from that anchor closes the fetch↔stream
-                // race, and the daemon dedupes anything already shown).
-                const seeded = await seedConsoleTail(id, () => cancelled);
-                if (cancelled) return;
-                seededRunId = id;
-                if (!seeded) return;
-                cleanup = stream(
-                    id,
-                    (event: LogEvent) => {
-                        if (logConsole) logConsole.onStream(event);
-                    },
-                    { fromLine: seeded.fromLine },
-                );
-            })();
-        });
-
-        return () => {
-            cancelled = true;
-            if (cleanup) cleanup();
-        };
-    });
-
-    // Maximize the console to a full-bleed overlay. The console wrapper is
-    // never remounted, `maximizePortal` relocates the *live* node to <body>
-    // (escaping any transformed/blurred ancestor that would otherwise trap a
-    // position:fixed child) and moves it back on restore, so the SSE stream,
-    // scroll position, and the {#key run.id} mount all survive the toggle.
-    let consoleMaximized = $state(false);
-    // Wrap long console lines instead of horizontally scrolling them. Owned
-    // here so the toolbar toggle and the <LogConsole> share one source of truth.
-    let consoleWrap = $state(false);
-
-    // A run going away (deselect) tears down the console; drop the overlay too.
-    $effect(() => {
-        if (!run) consoleMaximized = false;
-    });
-
-    // Inline-confirm popover for delete, and a transient "Copied" on the run-id chip.
-    let confirmDeleteOpen = $state(false);
-    // Dropdown half of the Run split button (the "reuse parameters" variant).
-    let runMenuOpen = $state(false);
-    const runIdCopy = new CopyFeedback(1200);
-
-    function handleConsoleKeydown(event: KeyboardEvent) {
-        if (!run) return;
-        if (event.key === "Escape" && consoleMaximized) {
-            consoleMaximized = false;
-            return;
-        }
-        // `F` toggles focus mode, the way a media player does, but never while
-        // the operator is typing into a field (search box, etc.).
-        if (
-            (event.key === "f" || event.key === "F") &&
-            !event.metaKey &&
-            !event.ctrlKey &&
-            !event.altKey
-        ) {
-            if (isTypingTarget(event.target)) return;
-            event.preventDefault();
-            consoleMaximized = !consoleMaximized;
-        }
-    }
-
-    function maximizePortal(node: HTMLElement, active: boolean) {
-        const anchor = document.createComment("maximized-console");
-        function moveOut() {
-            const parent = node.parentNode;
-            if (parent && parent !== document.body) {
-                parent.insertBefore(anchor, node);
-                document.body.appendChild(node);
-            }
-        }
-        function moveBack() {
-            const parent = anchor.parentNode;
-            if (parent) {
-                parent.insertBefore(node, anchor);
-                anchor.remove();
-            }
-        }
-        if (active) moveOut();
-        return {
-            update(next: boolean) {
-                if (next) moveOut();
-                else moveBack();
-            },
-            destroy() {
-                // Mirror the `portal` action: if still parked on <body>, remove
-                // the node so Svelte's own teardown doesn't leak it there.
-                if (node.parentNode === document.body) node.remove();
-                anchor.remove();
-            },
-        };
-    }
 </script>
-
-<svelte:window onkeydown={handleConsoleKeydown} />
 
 {#if run}
     {@const status = displayStatus(run.status, run.endReason)}
@@ -344,12 +157,6 @@
         run,
         run.status === "running" ? durationTicker.now.getTime() : undefined,
     )}
-    {@const startDelay = runStartDelay(run)}
-    {@const startedAt = run.startedAt ?? run.createdAt}
-    {@const retry = runRetryLabel(run)}
-    {@const usage = runUsageLabel(run)}
-    {@const live = run.status === "running" ? getLiveUsage(run.id) : undefined}
-    {@const paramEntries = run.params ? Object.entries(run.params) : []}
     {@const suffix = instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}
     {@const spine = config.solidDot}
     {@const isRunning = run.status === "running"}
@@ -357,18 +164,6 @@
          "succeeded", while a non-zero code is the first thing to triage on. -->
     {@const showCode = status === "failed"}
     {@const verdict = runVerdict(status)}
-    {@const endLabel =
-        status === "stopped"
-            ? "run stopped by operator"
-            : status === "daemon_stopped"
-              ? "daemon stopped mid-run"
-              : status === "timeout"
-                ? "run timed out"
-                : "end of output"}
-    {@const endTone =
-        status === "stopped" || status === "daemon_stopped" || status === "timeout"
-            ? "warn"
-            : "muted"}
     {@const alarm = config.alarm}
     <!-- The panel: a status spine runs the full left edge across both the header
          readout and the console below, hugging the rail divider (artifact
@@ -482,359 +277,35 @@
                             </h2>
                         </Tooltip>
 
-                        <!-- Facts: when it happened and what shaped it. Queue wait,
-                         retries and parameters are absent on an ordinary run and
-                         appear inline the moment they exist. -->
-                        <div
-                            class="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11.5px] text-on-surface-faint tabular-nums"
-                        >
-                            <!-- No hover-for-the-full-timestamp here: the date sits
-                             right beside the clock time, so a tooltip could only
-                             repeat it. The line wraps at narrow widths instead of
-                             dropping the date and hiding it behind a hover. -->
-                            <span data-testid="run-started" class="text-on-surface-muted"
-                                >{run.startedAt ? formatClockTime(run.startedAt) : "—"}</span
-                            >
-                            <span class="text-outline-hover" aria-hidden="true">·</span>
-                            <span>{formatCalendarDate(startedAt)}</span>
-                            <span class="text-outline-hover" aria-hidden="true">·</span>
-                            <span>via {formatTriggeredByLabel(run.triggeredBy).toLowerCase()}</span>
-                            {#if startDelay}
-                                <span class="text-outline-hover" aria-hidden="true">·</span>
-                                <span
-                                    class="text-warning-soft-text"
-                                    title="Waited between its scheduled tick and actually starting"
-                                    >{startDelay} queued</span
-                                >
-                            {/if}
-                            {#if retry}
-                                <span class="text-outline-hover" aria-hidden="true">·</span>
-                                <span class="inline-flex items-center gap-1">
-                                    <RotateCw size={11} />
-                                    retry #{run.retryAttempt}{#if run.retryOfRunId}&nbsp;of
-                                        {formatShortId(run.retryOfRunId)}{/if}
-                                </span>
-                            {/if}
-                            {#if paramEntries.length > 0}
-                                <span class="text-outline-hover" aria-hidden="true">·</span>
-                                <Popover placement="bottom-start">
-                                    {#snippet trigger()}
-                                        <span
-                                            class="inline-flex cursor-pointer items-center gap-1 border-b border-dotted border-outline-hover text-on-surface-muted hover:text-primary"
-                                        >
-                                            <SlidersHorizontal size={11} />
-                                            {paramEntries.length}
-                                            {paramEntries.length === 1 ? "parameter" : "parameters"}
-                                        </span>
-                                    {/snippet}
-                                    <div class="max-w-md min-w-48">
-                                        <span
-                                            class="font-mono text-xs font-semibold tracking-[0.14em] text-on-surface-faint uppercase"
-                                            >Parameters</span
-                                        >
-                                        <dl
-                                            class="mt-2 grid max-h-72 grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 overflow-y-auto"
-                                        >
-                                            {#each paramEntries as [key, value] (key)}
-                                                <dt class="font-mono text-xs text-on-surface-muted">
-                                                    {key}
-                                                </dt>
-                                                <dd
-                                                    class="font-mono text-xs font-medium break-all text-on-surface"
-                                                >
-                                                    {value}
-                                                </dd>
-                                            {/each}
-                                        </dl>
-                                    </div>
-                                </Popover>
-                            {/if}
-                            {#if live}
-                                <span class="text-outline-hover" aria-hidden="true">·</span>
-                                <span
-                                    data-testid="run-live-usage"
-                                    class="text-on-surface-muted"
-                                    title="Live CPU (100% = one core) and memory of the run's processes"
-                                    >CPU {Math.round(live.cpuPercent)}% · {formatBytes(
-                                        live.memoryBytes,
-                                    )}</span
-                                >
-                            {/if}
-                            {#if usage}
-                                <span class="text-outline-hover" aria-hidden="true">·</span>
-                                <span
-                                    data-testid="run-usage"
-                                    title="Peak memory and CPU time of the run's processes"
-                                    >{usage}</span
-                                >
-                            {/if}
-                            <!-- Run-id chip: click to copy the full ULID. Last, because
-                             it is the fact you reach for least and the only one you
-                             interact with. -->
-                            <button
-                                type="button"
-                                onclick={() => void runIdCopy.copy(run.id)}
-                                title="Copy run ID"
-                                class="inline-flex items-center gap-1 rounded-[3px] border border-outline-faint bg-surface-sunken px-1.5 text-on-surface-faint hover:border-outline-hover hover:text-primary"
-                            >
-                                {#if runIdCopy.copied}
-                                    <Check size={11} class="text-success-surface" />Copied
-                                {:else}
-                                    <Hash size={11} />{run.id}
-                                {/if}
-                            </button>
-                        </div>
+                        <RunFacts {run} live={isRunning ? getLiveUsage(run.id) : undefined} />
                     </div>
 
-                    <!-- Actions: run (split) / service lifecycle ·
-                     stop · download · delete (delete behind an inline confirm) -->
-                    <div class="flex flex-wrap items-center gap-2">
-                        {#if onStopService || onRestartService}
-                            <!-- Service lifecycle replaces the run control.
-                             Restart is always available (it cancels + respawns
-                             all instances in one call); Stop appears only while
-                             the service is running. Each still confirms, so
-                             neither fires accidentally. -->
-                            {#if onRestartService}
-                                <button
-                                    type="button"
-                                    onclick={() => onRestartService()}
-                                    disabled={serviceBusy}
-                                    title={serviceStopped
-                                        ? "Starts the service"
-                                        : "Cancels and respawns every instance"}
-                                    class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[3px] border border-primary-soft-border bg-surface-raised px-3 font-mono text-sm font-medium text-primary hover:bg-primary-soft active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                    {#if serviceStopped}
-                                        <Play size={15} fill="currentColor" stroke="none" />
-                                    {:else}
-                                        <RefreshCcw size={15} />
-                                    {/if}
-                                    <span class="@max-xs:hidden"
-                                        >{serviceStopped ? "Start" : "Restart"}</span
-                                    >
-                                </button>
-                            {/if}
-                            {#if !serviceStopped && onStopService}
-                                <button
-                                    type="button"
-                                    onclick={() => onStopService()}
-                                    disabled={serviceBusy}
-                                    title="Stops the service for the rest of the daemon's lifetime"
-                                    class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[3px] border border-danger-soft-border bg-surface-raised px-3 font-mono text-sm font-medium text-danger-surface hover:bg-danger-soft active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                    <Square size={15} fill="currentColor" stroke="none" />
-                                    <span class="@max-xs:hidden">Stop</span>
-                                </button>
-                            {/if}
-                        {:else}
-                            {#if onRun}
-                                <!-- Split button: Run (defaults) + an arrow for the
-                                 reuse-parameters variant, shown only when there is one. -->
-                                <div
-                                    class="inline-flex overflow-hidden rounded-[3px] border border-primary-soft-border"
-                                >
-                                    <button
-                                        type="button"
-                                        onclick={() => onRun()}
-                                        title="Run this task now with default options"
-                                        class="inline-flex h-9 cursor-pointer items-center gap-1.5 bg-surface-raised px-3 font-mono text-sm font-medium text-primary hover:bg-primary-soft active:translate-y-px"
-                                    >
-                                        <Play size={15} fill="currentColor" stroke="none" />
-                                        <span class="@max-xs:hidden">Run</span>
-                                    </button>
-                                    {#if onRunAgain}
-                                        <Popover bind:open={runMenuOpen} placement="bottom-end">
-                                            {#snippet trigger()}
-                                                <span
-                                                    class="flex h-9 cursor-pointer items-center border-l border-primary-soft-border bg-surface-raised px-2 text-primary hover:bg-primary-soft"
-                                                    title="More run options"
-                                                    aria-label="More run options"
-                                                >
-                                                    <ChevronDown size={15} />
-                                                </span>
-                                            {/snippet}
-                                            <button
-                                                type="button"
-                                                onclick={() => {
-                                                    runMenuOpen = false;
-                                                    onRunAgain?.();
-                                                }}
-                                                class="flex w-56 items-start gap-2.5 text-left"
-                                            >
-                                                <RotateCw
-                                                    size={15}
-                                                    class="mt-0.5 shrink-0 text-on-surface-muted"
-                                                />
-                                                <span class="flex flex-col">
-                                                    <span
-                                                        class="font-mono text-sm font-medium text-on-surface"
-                                                        >Run again</span
-                                                    >
-                                                    <span class="text-xs text-on-surface-muted"
-                                                        >Reuse this run's parameters</span
-                                                    >
-                                                </span>
-                                            </button>
-                                        </Popover>
-                                    {/if}
-                                </div>
-                            {/if}
-                            {#if isRunning && onStop}
-                                <button
-                                    type="button"
-                                    onclick={() => onStop(run.id)}
-                                    class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[3px] border border-danger-soft-border bg-surface-raised px-3 font-mono text-sm font-medium text-danger-surface hover:bg-danger-soft active:translate-y-px"
-                                >
-                                    <Square size={15} fill="currentColor" stroke="none" />
-                                    <span class="@max-xs:hidden">Stop</span>
-                                </button>
-                            {/if}
-                        {/if}
-                        <a
-                            href={runLogDownloadUrl(run.id)}
-                            download="{run.taskName}-{run.id}.log"
-                            class="inline-flex items-center justify-center rounded-[3px] border border-outline-faint bg-surface-raised p-2 text-on-surface-muted hover:border-outline-hover hover:bg-surface-sunken hover:text-primary"
-                            title="Download the full log (rotated and current parts as one file)"
-                            aria-label="Download log"
-                        >
-                            <Download size={15} />
-                        </a>
-                        {#if canDelete}
-                            <Popover bind:open={confirmDeleteOpen} placement="bottom-end">
-                                {#snippet trigger()}
-                                    <span
-                                        class="flex cursor-pointer items-center justify-center rounded-[3px] border border-outline-faint bg-surface-raised p-2 text-on-surface-muted hover:border-danger-soft-border hover:bg-danger-soft hover:text-danger-surface"
-                                        title="Delete this run"
-                                        aria-label="Delete run"
-                                    >
-                                        <Trash size={15} />
-                                    </span>
-                                {/snippet}
-                                <div class="w-60">
-                                    <div class="font-mono text-sm font-semibold text-on-surface">
-                                        Delete this run?
-                                    </div>
-                                    <div class="mt-1 text-xs leading-relaxed text-on-surface-muted">
-                                        Its captured output is removed from disk. This can't be
-                                        undone.
-                                    </div>
-                                    <div class="mt-3 flex justify-end gap-2">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onclick={() => (confirmDeleteOpen = false)}
-                                        >
-                                            Cancel
-                                        </Button>
-                                        <Button
-                                            variant="danger"
-                                            size="sm"
-                                            onclick={() => {
-                                                confirmDeleteOpen = false;
-                                                onDelete?.(run.id);
-                                            }}
-                                        >
-                                            Delete run
-                                        </Button>
-                                    </div>
-                                </div>
-                            </Popover>
-                        {/if}
-                    </div>
+                    <RunActions
+                        runId={run.id}
+                        taskName={run.taskName}
+                        {isRunning}
+                        {canDelete}
+                        {serviceStopped}
+                        {serviceBusy}
+                        {onRun}
+                        {onRunAgain}
+                        {onStop}
+                        {onStopService}
+                        {onRestartService}
+                        {onDelete}
+                    />
                 </div>
             </div>
         </div>
 
-        <!-- Console hero, maximizes to a full-bleed overlay via portal -->
-        {#if consoleMaximized}
-            <div
-                use:portal
-                class="console-backdrop fixed inset-0 z-40 bg-backdrop backdrop-blur-sm"
-                onclick={() => (consoleMaximized = false)}
-                role="presentation"
-            ></div>
-        {/if}
-        <div
-            use:maximizePortal={consoleMaximized}
-            class={consoleMaximized
-                ? "console-zoom fixed inset-3 z-50 flex flex-col overflow-hidden rounded-[4px] bg-[var(--rw-con-bg)] shadow-2xl ring-1 ring-[var(--rw-con-gutter)] sm:inset-6"
-                : "ml-1 flex min-h-[300px] flex-1 flex-col overflow-hidden border-t border-[var(--rw-con-gutter)] bg-[var(--rw-con-bg)]"}
-        >
-            <div
-                class="@container flex shrink-0 items-center justify-between gap-3 border-b border-[var(--rw-con-gutter)] bg-[var(--rw-con-panel)] px-3.5 py-[9px] font-mono text-[11.5px] text-[var(--rw-con-dim)]"
-            >
-                <div class="flex min-w-0 items-center gap-3">
-                    {#if consoleMaximized}
-                        <!-- Focus-mode identity: which run is filling the screen -->
-                        <span class="flex min-w-0 items-center gap-2">
-                            <span class="h-2 w-2 shrink-0 rounded-full {spine}"></span>
-                            <span class="truncate font-medium text-[var(--rw-con-text)]">
-                                {run.taskName}{suffix}
-                            </span>
-                            <span class="text-[var(--rw-con-gutter)]">·</span>
-                            <span class="font-semibold capitalize {config.color}">{status}</span>
-                        </span>
-                    {:else}
-                        <span
-                            class="flex items-center gap-2 font-semibold whitespace-nowrap text-[var(--rw-con-text)]"
-                        >
-                            <TerminalIcon size={14} class="opacity-70" />
-                            Console output
-                        </span>
-                        <span class="hidden text-[var(--rw-con-gutter)] @lg:inline"
-                            >stdout + stderr</span
-                        >
-                    {/if}
-                </div>
-                <div class="flex shrink-0 items-center gap-3">
-                    <button
-                        type="button"
-                        onclick={() => (consoleWrap = !consoleWrap)}
-                        class="flex cursor-pointer items-center gap-1.5 rounded-[3px] px-2 py-1 hover:bg-[var(--rw-con-gutter)]/30 hover:text-[var(--rw-con-text)] {consoleWrap
-                            ? 'text-[var(--rw-con-text)]'
-                            : 'text-[var(--rw-con-dim)]'}"
-                        title={consoleWrap ? "Unwrap lines" : "Wrap long lines"}
-                        aria-pressed={consoleWrap}
-                        aria-label="Toggle line wrapping"
-                    >
-                        <TextWrap size={13} />
-                        <span class="hidden @sm:inline">Wrap</span>
-                    </button>
-                    <button
-                        type="button"
-                        onclick={() => (consoleMaximized = !consoleMaximized)}
-                        class="flex cursor-pointer items-center gap-1.5 rounded-[3px] px-2 py-1 text-[var(--rw-con-dim)] hover:bg-[var(--rw-con-gutter)]/30 hover:text-[var(--rw-con-text)]"
-                        title={consoleMaximized ? "Restore console (Esc)" : "Maximize console · F"}
-                        aria-label={consoleMaximized ? "Restore console" : "Maximize console"}
-                    >
-                        {#if consoleMaximized}
-                            <Minimize2 size={13} />
-                            <Kbd keys="Esc" size="xs" tone="console" />
-                        {:else}
-                            <Maximize2 size={13} />
-                            Expand
-                        {/if}
-                    </button>
-                </div>
-            </div>
-            {#key run.id}
-                <LogConsole
-                    bind:this={logConsole}
-                    fetchLogs={(f: number, t: number) => fetchLogs(run.id, f, t)}
-                    fetchLineHistory={fetchLineHistory
-                        ? (n: number) => fetchLineHistory(run.id, n)
-                        : undefined}
-                    bind:wrap={consoleWrap}
-                    class="min-h-0 flex-1"
-                    {highlightLine}
-                    {endLabel}
-                    {endTone}
-                    error={logFetchError}
-                    loading={seededRunId !== run.id}
-                />
-            {/key}
-        </div>
+        <RunConsoleFrame
+            {run}
+            {suffix}
+            {fetchLogs}
+            {streamLogs}
+            {fetchLineHistory}
+            {highlightLine}
+        />
     </div>
 {:else if loading && !notFound}
     <!-- Loading: the panel's own frame (verdict header over the console) with
@@ -903,34 +374,6 @@
         background: color-mix(in srgb, var(--rw-oc) 7%, var(--color-surface-raised));
     }
 
-    /* Gentle fade for the maximize backdrop; disabled under reduced motion. */
-    .console-backdrop {
-        animation: console-backdrop-in 150ms;
-    }
-    @keyframes console-backdrop-in {
-        from {
-            opacity: 0;
-        }
-        to {
-            opacity: 1;
-        }
-    }
-
-    /* The console zooms up as it takes over the viewport. */
-    .console-zoom {
-        animation: console-zoom-in 260ms cubic-bezier(0.33, 0.05, 0.2, 1);
-    }
-    @keyframes console-zoom-in {
-        from {
-            opacity: 0.4;
-            transform: scale(0.96);
-        }
-        to {
-            opacity: 1;
-            transform: none;
-        }
-    }
-
     /* Living spine: a light sweep travels down the edge while a run is in flight. */
     .spine-flow {
         overflow: hidden;
@@ -958,8 +401,6 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
-        .console-backdrop,
-        .console-zoom,
         .spine-flow::after {
             animation: none;
         }

@@ -6,6 +6,7 @@ import {
     runDuration,
     runStartDelay,
     runVerdict,
+    runEndMarker,
     formatTriggeredByLabel,
     runRetryLabel,
     runUsageLabel,
@@ -18,6 +19,18 @@ describe("runLogDownloadUrl", () => {
         expect(runLogDownloadUrl("01J0000000000000000000000A")).toBe(
             "/api/runs/01J0000000000000000000000A/log/raw",
         );
+    });
+});
+
+describe("runEndMarker", () => {
+    it("warns only for ends the operator or daemon caused", () => {
+        expect(runEndMarker("stopped")).toEqual({
+            label: "run stopped by operator",
+            tone: "warn",
+        });
+        expect(runEndMarker("daemon_stopped").tone).toBe("warn");
+        expect(runEndMarker("timeout").label).toBe("run timed out");
+        expect(runEndMarker("failed")).toEqual({ label: "end of output", tone: "muted" });
     });
 });
 

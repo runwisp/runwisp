@@ -35,6 +35,23 @@ export function runVerdict(status: RunStatus): RunVerdict {
     return RUN_VERDICTS[status];
 }
 
+export interface RunEndMarker {
+    label: string;
+    tone: "muted" | "warn";
+}
+
+// The line closing a run's console output; only abnormal ends are worth a warning tone.
+const RUN_END_MARKERS: Partial<Record<RunStatus, RunEndMarker>> = {
+    stopped: { label: "run stopped by operator", tone: "warn" },
+    daemon_stopped: { label: "daemon stopped mid-run", tone: "warn" },
+    timeout: { label: "run timed out", tone: "warn" },
+};
+const DEFAULT_END_MARKER: RunEndMarker = { label: "end of output", tone: "muted" };
+
+export function runEndMarker(status: RunStatus): RunEndMarker {
+    return RUN_END_MARKERS[status] ?? DEFAULT_END_MARKER;
+}
+
 export function runDuration(
     run: Pick<Run, "startedAt" | "endedAt">,
     now: number = Date.now(),
