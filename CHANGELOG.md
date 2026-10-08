@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Homebrew**: `brew install runwisp/tap/runwisp` installs RunWisp on macOS and Linux, and the tap updates with every release. `runwisp service install` from a Homebrew install keeps working after `brew upgrade`.
+
 ### Fixed
 
 - `runwisp restart --attach` follows only the new runs, and `runwisp logs` and `--attach` report a stopped run as `run ended` instead of `run failed`.
@@ -33,9 +37,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - `runwisp tui --url` pins the daemon's TLS certificate on first connect, like `runwisp run --url`, and refuses to connect if it changes.
-
-### Security
-
 - Each GitHub release also carries its signed build provenance as `runwisp.intoto.jsonl`.
 
 ## [1.5.0] - 2026-10-07

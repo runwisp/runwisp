@@ -40,7 +40,8 @@ A few things it checks:
 
 - **The binary stays put.** The unit points at the binary you ran. A binary in
   `/tmp` or the `go run` cache is refused. Put it somewhere permanent like
-  `/usr/local/bin`.
+  `/usr/local/bin`. A Homebrew install points at `opt/runwisp`, which
+  survives `brew upgrade`.
 - **The config is safe to run as root.** For the system service, the config
   file must be owned by root and not writable by group or others.
 - **Nothing else holds the data directory.** Stop a daemon you started by hand
