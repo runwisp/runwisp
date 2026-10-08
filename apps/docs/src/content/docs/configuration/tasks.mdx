@@ -161,6 +161,7 @@ one after another.
 
 ```toml title="runwisp.toml"
 [tasks.hourly-roll]
+# ...
 cron       = "0 * * * *"
 catch_up   = 24
 on_overlap = "queue"
@@ -180,6 +181,7 @@ starts on time.
 
 ```toml title="runwisp.toml"
 [tasks.nightly-report]
+# ...
 cron   = "0 3 * * *"
 jitter = "30m"  # start may slip up to 30m while other jittered runs are busy
 ```
@@ -196,6 +198,7 @@ time.
 
 ```toml title="runwisp.toml"
 [tasks.eu-market-open]
+# ...
 cron     = "0 9 * * 1-5"
 timezone = "Europe/Bratislava"
 ```
@@ -211,6 +214,7 @@ What happens when the task is triggered while already at
 
 ```toml title="runwisp.toml"
 [tasks.queue-drain]
+# ...
 cron       = "*/10 * * * *"
 on_overlap = "skip"
 ```
@@ -230,6 +234,7 @@ How many runs of this task may be active at once. At the limit,
 
 ```toml title="runwisp.toml"
 [tasks.thumbnailer]
+# ...
 max_concurrent = 4
 ```
 
@@ -243,6 +248,7 @@ trigger that finds every slot busy records `queue_full` right away.
 
 ```toml title="runwisp.toml"
 [tasks.ingest]
+# ...
 on_overlap = "queue"
 max_queued = 500
 ```
@@ -259,6 +265,7 @@ recorded as `timeout`. `"0s"` turns off a `[defaults]` timeout.
 
 ```toml title="runwisp.toml"
 [tasks.queue-drain]
+# ...
 cron    = "*/10 * * * *"
 timeout = "9m"
 ```
@@ -275,6 +282,7 @@ the retries.
 
 ```toml title="runwisp.toml"
 [tasks.flaky-fetch]
+# ...
 retry_attempts = 3
 retry_delay    = "2s"
 ```
@@ -289,6 +297,7 @@ The wait before the first retry. Used only when
 
 ```toml title="runwisp.toml"
 [tasks.flaky-fetch]
+# ...
 retry_attempts = 3
 retry_delay    = "5s"
 ```
@@ -301,6 +310,7 @@ How [`retry_delay`](#retry_delay) grows across attempts.
 
 ```toml title="runwisp.toml"
 [tasks.flaky-fetch]
+# ...
 retry_attempts = 4
 retry_delay    = "2s"
 retry_backoff  = "exponential"  # 2s, 4s, 8s, 16s
@@ -362,12 +372,15 @@ Which run outcomes count as a failure.
 
 ```toml title="runwisp.toml"
 [tasks.web]
+# ...
 failures = ["-missed"]              # stop paging on a missed tick
 
 [tasks.rsync]
+# ...
 failures = ["timeout", "23", "24"]  # only these exits fail
 
 [tasks.report]
+# ...
 failures = ['+output:(?i)error']    # also fail when a line says "error"
 ```
 
@@ -410,6 +423,8 @@ failures = ['+output:ERROR']
 Add several tokens to fail on any of them:
 
 ```toml title="runwisp.toml"
+[tasks.report]
+# ...
 failures = ['+output:(?i)\berror\b', '+output:^Traceback']
 ```
 

@@ -117,6 +117,7 @@ When an instance is started again after it exits.
 
 ```toml title="runwisp.toml"
 [services.worker]
+# ...
 restart = "on_failure"
 ```
 
@@ -140,6 +141,7 @@ never waits.
 
 ```toml title="runwisp.toml"
 [services.flaky]
+# ...
 restart_delay = "2s"
 ```
 
@@ -156,6 +158,7 @@ check instead, and `0` is rejected.
 
 ```toml title="runwisp.toml"
 [services.api-worker]
+# ...
 healthy_after = "2m"
 ```
 
@@ -169,6 +172,7 @@ after the first failed start.
 
 ```toml title="runwisp.toml"
 [services.flaky]
+# ...
 restart_attempts = 2
 ```
 
@@ -181,6 +185,7 @@ upper limit.
 
 ```toml title="runwisp.toml"
 [services.flaky]
+# ...
 restart_backoff = "exponential"
 ```
 
@@ -262,6 +267,8 @@ To check inside a running compose container, set `compose_file` and
 takes nothing from the service:
 
 ```toml title="runwisp.toml"
+# ...
+
 [services.api.health_check]
 run             = "curl -fsS http://127.0.0.1:8080/healthz"
 compose_file    = "./compose.yaml"
@@ -283,6 +290,7 @@ manually stopped `autostart = true` service starts again.
 
 ```toml title="runwisp.toml"
 [services.migration-runner]
+# ...
 autostart = false
 ```
 
@@ -296,9 +304,11 @@ doesn't wait for a service to be ready. For that, use
 
 ```toml title="runwisp.toml"
 [services.db]
+# ...
 priority = 0
 
 [services.api]
+# ...
 priority = 10
 ```
 
@@ -349,6 +359,7 @@ The longest an instance may run. After that it is stopped and recorded as
 
 ```toml title="runwisp.toml"
 [services.report-server]
+# ...
 timeout = "24h"
 ```
 
@@ -362,6 +373,7 @@ and (with `restart = "on_failure"`) cause a restart. Same syntax as on tasks; se
 
 ```toml title="runwisp.toml"
 [services.web]
+# ...
 failures = ["-missed"]
 ```
 

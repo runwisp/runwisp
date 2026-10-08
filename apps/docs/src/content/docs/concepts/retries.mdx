@@ -61,6 +61,7 @@ later waits stay the same or grow:
 
 ```toml title="runwisp.toml"
 [tasks.flaky-fetch]
+# ...
 retry_attempts = 4
 retry_delay    = "10s"
 retry_backoff  = "exponential"   # waits 10s, 20s, 40s, 80s

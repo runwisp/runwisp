@@ -4,6 +4,7 @@ What happens when a run's log reaches [`log_max_size`](/configuration/tasks/#log
 
 ```toml title="runwisp.toml"
 [tasks.backup-db]
+# ...
 log_max_size = "50mb"
 log_on_full  = "drop_old"
 ```

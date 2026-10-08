@@ -6,6 +6,7 @@ Anything still running after [`graceful_stop`](/configuration/tasks/#graceful_st
 
 ```toml title="runwisp.toml"
 [tasks.queue-drain]
+# ...
 stop_signal   = "SIGINT"
 graceful_stop = "10s"
 ```

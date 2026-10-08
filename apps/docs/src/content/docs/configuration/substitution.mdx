@@ -84,6 +84,8 @@ BACKUP_BUCKET = "s3://prod-backups"
 Write `$${` for a literal `${`:
 
 ```toml title="runwisp.toml"
+[tasks.report]
+# ...
 description = "template is $${VAR}"   # → template is ${VAR}
 ```
 

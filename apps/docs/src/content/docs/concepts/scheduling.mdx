@@ -62,6 +62,7 @@ whole daemon, or per task:
 timezone = "Europe/Bratislava"   # every task without its own timezone
 
 [tasks.nightly-backup]
+# ...
 cron     = "30 2 * * *"
 timezone = "Atlantic/Faroe"      # this task only
 ```
@@ -93,6 +94,7 @@ run when the daemon starts again:
 
 ```toml title="runwisp.toml"
 [tasks.metrics-rollup]
+# ...
 cron     = "*/15 * * * *"
 catch_up = 1      # default: run the most recent missed one
 ```
@@ -120,6 +122,7 @@ For a task that is expected to miss runs (a laptop that's off at night), take
 
 ```toml title="runwisp.toml"
 [tasks.daytime-sync]
+# ...
 cron     = "*/30 9-17 * * 1-5"
 failures = ["-missed"]   # still recorded, but not a failure and no alert
 ```
@@ -135,10 +138,12 @@ out:
 
 ```toml title="runwisp.toml"
 [tasks.backup-a]
+# ...
 cron   = "0 3 * * *"
 jitter = "30m"
 
 [tasks.backup-b]
+# ...
 cron   = "0 3 * * *"
 jitter = "30m"
 ```

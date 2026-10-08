@@ -137,9 +137,11 @@ type        = "slack"
 webhook_url = "${SLACK_URL}"
 
 [tasks.nightly-db-backup]
+# ...
 notify = ["slack:#ops"]
 
 [tasks.weekly-deploy]
+# ...
 notify = ["slack:#deploys"]
 ```
 
@@ -158,6 +160,7 @@ The missed run is still recorded; it doesn't alert:
 
 ```toml title="runwisp.toml"
 [tasks.daytime-sync]
+# ...
 cron     = "*/30 9-17 * * 1-5"
 notify   = ["slack-ops"]
 failures = ["-missed"]
