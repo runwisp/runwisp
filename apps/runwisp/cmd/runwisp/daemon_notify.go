@@ -259,7 +259,7 @@ func buildInappRenderer() (render.Renderer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load inapp template: %w", err)
 	}
-	return render.NewTemplateRenderer("inapp", body, "text/plain", render.DefaultTitle, render.TemplateContext{})
+	return render.NewTemplateRenderer("inapp", body, render.DefaultTitle, render.TemplateContext{})
 }
 
 func buildOutboundChannels(specs []channel.NotifierSpec, outboundCoalesce bool, coalesceCfg coalesce.Config, logger *slog.Logger, failureSink notify.SyntheticIngester) ([]notify.Channel, error) {

@@ -41,7 +41,7 @@ func TestTelegram_PostsForm(t *testing.T) {
 
 	ch, err := New(Config{
 		ID: "oncall", BotToken: "abc:xyz", ChatID: "-1001",
-		Renderer: testutil.NewTestRenderer(t, "telegram", "text/html"), APIBase: srv.URL,
+		Renderer: testutil.NewTestRenderer(t, "telegram"), APIBase: srv.URL,
 		Transport: newFastTransport(),
 	})
 	require.NoError(t, err)
@@ -67,7 +67,7 @@ func TestTelegram_HonorsBodyRetryAfter(t *testing.T) {
 
 	ch, err := New(Config{
 		ID: "oncall", BotToken: "abc:xyz", ChatID: "-1001",
-		Renderer: testutil.NewTestRenderer(t, "telegram", "text/html"), APIBase: srv.URL,
+		Renderer: testutil.NewTestRenderer(t, "telegram"), APIBase: srv.URL,
 		Transport: newFastTransport(),
 	})
 	require.NoError(t, err)
@@ -88,7 +88,7 @@ func TestTelegram_SendsRenderedBody(t *testing.T) {
 
 	ch, err := New(Config{
 		ID: "oncall", BotToken: "abc:xyz", ChatID: "-1001",
-		Renderer: testutil.NewTestRenderer(t, "telegram", "text/html"), APIBase: srv.URL,
+		Renderer: testutil.NewTestRenderer(t, "telegram"), APIBase: srv.URL,
 		Transport: newFastTransport(),
 	})
 	require.NoError(t, err)
@@ -104,7 +104,7 @@ func TestTelegram_SendsRenderedBody(t *testing.T) {
 func TestTelegram_RedactsTokenInError(t *testing.T) {
 	ch, err := New(Config{
 		ID: "oncall", BotToken: "TOPSECRET:Z", ChatID: "-1001",
-		Renderer: testutil.NewTestRenderer(t, "telegram", "text/html"), APIBase: "http://127.0.0.1:1",
+		Renderer: testutil.NewTestRenderer(t, "telegram"), APIBase: "http://127.0.0.1:1",
 		Transport: newFastTransport(),
 	})
 	require.NoError(t, err)
@@ -117,7 +117,7 @@ func TestTelegram_RedactsTokenInError(t *testing.T) {
 func TestTelegram_ChannelInterface(t *testing.T) {
 	ch, err := New(Config{
 		ID: "oncall", BotToken: "abc:xyz", ChatID: "-1001",
-		Renderer: testutil.NewTestRenderer(t, "telegram", "text/html"), Transport: newFastTransport(),
+		Renderer: testutil.NewTestRenderer(t, "telegram"), Transport: newFastTransport(),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "oncall", ch.ID())

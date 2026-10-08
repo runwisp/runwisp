@@ -35,7 +35,7 @@ func TestWebhook_PostsJSON(t *testing.T) {
 	ch, err := New(Config{
 		ID:        "my-hook",
 		URL:       srv.URL,
-		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Renderer:  testutil.NewTestRenderer(t, "webhook"),
 		Transport: testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
@@ -65,7 +65,7 @@ func TestWebhook_FieldsOverrideRenderedKeys(t *testing.T) {
 	ch, err := New(Config{
 		ID:        "my-hook",
 		URL:       srv.URL,
-		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Renderer:  testutil.NewTestRenderer(t, "webhook"),
 		Transport: testutil.NewFastTransport(),
 		Fields:    map[string]string{"task": "overridden", "topic": "<alerts>"},
 	})
@@ -96,7 +96,7 @@ func TestWebhook_CustomHeadersSent(t *testing.T) {
 			"Authorization": "Bearer secret-token",
 			"X-Custom":      "custom-value",
 		},
-		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Renderer:  testutil.NewTestRenderer(t, "webhook"),
 		Transport: testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
@@ -119,7 +119,7 @@ func TestWebhook_NoHeadersOK(t *testing.T) {
 	ch, err := New(Config{
 		ID:        "my-hook",
 		URL:       srv.URL,
-		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Renderer:  testutil.NewTestRenderer(t, "webhook"),
 		Transport: testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
@@ -141,7 +141,7 @@ func TestWebhook_RetriesOn5xxThenFails(t *testing.T) {
 	ch, err := New(Config{
 		ID:        "my-hook",
 		URL:       srv.URL,
-		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Renderer:  testutil.NewTestRenderer(t, "webhook"),
 		Transport: testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
@@ -164,7 +164,7 @@ func TestWebhook_PermanentOn4xxNoRetries(t *testing.T) {
 	ch, err := New(Config{
 		ID:        "my-hook",
 		URL:       srv.URL,
-		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Renderer:  testutil.NewTestRenderer(t, "webhook"),
 		Transport: testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
@@ -180,7 +180,7 @@ func TestWebhook_RedactsURLInError(t *testing.T) {
 	ch, err := New(Config{
 		ID:        "my-hook",
 		URL:       "http://127.0.0.1:1/hooks/B0XXXSECRET",
-		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Renderer:  testutil.NewTestRenderer(t, "webhook"),
 		Transport: testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
@@ -197,7 +197,7 @@ func TestWebhook_IDAndClose(t *testing.T) {
 	ch, err := New(Config{
 		ID:        "my-hook",
 		URL:       "http://example.com",
-		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Renderer:  testutil.NewTestRenderer(t, "webhook"),
 		Transport: testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)

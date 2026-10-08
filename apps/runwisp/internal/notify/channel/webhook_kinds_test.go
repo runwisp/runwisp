@@ -241,7 +241,7 @@ func pushoverAt(t *testing.T, url string) notify.Channel {
 	cfg := webhookConfig(NotifierSpec{ID: "po", Type: "pushover", Token: "apptoken", User: "userkey"})
 	require.Equal(t, pushoverEndpoint, cfg.URL)
 	cfg.URL = url
-	cfg.Renderer = notifytest.NewTestRenderer(t, "pushover", "application/json")
+	cfg.Renderer = notifytest.NewTestRenderer(t, "pushover")
 	cfg.Transport = notifytest.NewFastTransport()
 	ch, err := webhook.New(cfg)
 	require.NoError(t, err)

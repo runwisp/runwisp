@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -80,25 +81,13 @@ type NotifierSpec struct {
 	RenderContext render.TemplateContext
 }
 
-// contentTypes maps every supported notifier type to the MIME type of its
-// rendered payload; a type missing here is unknown.
-var contentTypes = map[string]string{
-	"slack":    "application/json",
-	"discord":  "application/json",
-	"ntfy":     "application/json",
-	"gotify":   "application/json",
-	"pushover": "application/json",
-	"webhook":  "application/json",
-	"telegram": "text/html",
-	"smtp":     "text/html",
-	"sendmail": "text/plain",
-}
+// notifierTypes lists every notifier type Build accepts.
+var notifierTypes = []string{"slack", "discord", "ntfy", "gotify", "pushover", "webhook", "telegram", "smtp", "sendmail"}
 
 // Build turns a NotifierSpec into a notify.Channel. Inapp is built separately
 // since it needs the Coalescer/Hub deps.
 func Build(spec NotifierSpec) (notify.Channel, error) {
-	contentType, ok := contentTypes[spec.Type]
-	if !ok {
+	if !slices.Contains(notifierTypes, spec.Type) {
 		return nil, fmt.Errorf("unknown notifier type %q (id=%s)", spec.Type, spec.ID)
 	}
 	body := spec.Template
@@ -108,7 +97,7 @@ func Build(spec NotifierSpec) (notify.Channel, error) {
 			return nil, err
 		}
 	}
-	r, err := render.NewTemplateRenderer(spec.Type+":"+spec.ID, body, contentType, render.DefaultTitle, spec.RenderContext)
+	r, err := render.NewTemplateRenderer(spec.Type+":"+spec.ID, body, render.DefaultTitle, spec.RenderContext)
 	if err != nil {
 		return nil, err
 	}

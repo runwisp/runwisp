@@ -41,13 +41,12 @@ func NewFastTransport() *notify.HTTPProvider {
 }
 
 // NewTestRenderer builds a TemplateRenderer from the default template for the
-// given channel kind. contentType varies by channel (e.g. "application/json"
-// for slack/discord/webhook, "text/html" for telegram).
-func NewTestRenderer(t *testing.T, kind, contentType string) render.Renderer {
+// given channel kind.
+func NewTestRenderer(t *testing.T, kind string) render.Renderer {
 	t.Helper()
 	body, err := render.LoadDefaultTemplate(kind)
 	require.NoError(t, err)
-	r, err := render.NewTemplateRenderer(kind+":test", body, contentType, render.DefaultTitle, render.TemplateContext{})
+	r, err := render.NewTemplateRenderer(kind+":test", body, render.DefaultTitle, render.TemplateContext{})
 	require.NoError(t, err)
 	return r
 }

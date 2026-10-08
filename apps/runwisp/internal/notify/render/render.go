@@ -20,14 +20,10 @@ import (
 	"github.com/runwisp/runwisp/internal/notify"
 )
 
-// RenderedMessage carries the output of a Renderer. Title and Body are the
-// canonical fields; ContentType labels the body's MIME type.
+// RenderedMessage carries the output of a Renderer.
 type RenderedMessage struct {
-	ContentType string
-	Body        []byte
-	Subject     string
-	Title       string
-	Metadata    map[string]string
+	Body  []byte
+	Title string
 }
 
 // Renderer turns a notify.Event into a provider-specific message.
@@ -49,12 +45,11 @@ type TemplateContext struct {
 	OutputTail  func(logPath string, maxLines, maxBytes int) string
 }
 
-// TemplateRenderer is the workhorse: a parsed text/template plus a content
-// type label. Most providers wrap one of these.
+// TemplateRenderer is the workhorse: a parsed text/template plus a title
+// function. Most providers wrap one of these.
 type TemplateRenderer struct {
-	tmpl        *template.Template
-	contentType string
-	titleFn     func(*notify.Event) string
+	tmpl    *template.Template
+	titleFn func(*notify.Event) string
 }
 
 // NewTemplateRenderer parses src under name and returns a Renderer using the
@@ -63,12 +58,12 @@ type TemplateRenderer struct {
 // the funcMap closures, exposing per-daemon helpers (runURL, taskURL,
 // outputTail, fingerprint) to the template; the in-app renderer passes the
 // zero TemplateContext.
-func NewTemplateRenderer(name, src, contentType string, titleFn func(*notify.Event) string, ctx TemplateContext) (*TemplateRenderer, error) {
+func NewTemplateRenderer(name, src string, titleFn func(*notify.Event) string, ctx TemplateContext) (*TemplateRenderer, error) {
 	t, err := template.New(name).Funcs(funcMap(ctx)).Parse(src)
 	if err != nil {
 		return nil, fmt.Errorf("parse template %q: %w", name, err)
 	}
-	return &TemplateRenderer{tmpl: t, contentType: contentType, titleFn: titleFn}, nil
+	return &TemplateRenderer{tmpl: t, titleFn: titleFn}, nil
 }
 
 func (r *TemplateRenderer) Render(ev *notify.Event) (RenderedMessage, error) {
@@ -81,9 +76,8 @@ func (r *TemplateRenderer) Render(ev *notify.Event) (RenderedMessage, error) {
 		title = r.titleFn(ev)
 	}
 	return RenderedMessage{
-		ContentType: r.contentType,
-		Body:        buf.Bytes(),
-		Title:       title,
+		Body:  buf.Bytes(),
+		Title: title,
 	}, nil
 }
 
