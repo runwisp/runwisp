@@ -3,67 +3,37 @@
 
 <script lang="ts">
     import { untrack } from "svelte";
-    import type { Run } from "@runwisp/common";
-    import type { LogEvent, RunMotion, RunsListFilters } from "@runwisp/ui";
+    import type { RunsListFilters } from "@runwisp/ui";
     import { RunsList, RunDetailPanel } from "@runwisp/ui";
     import { headerSearchStore, systemStore, taskStore } from "$lib/stores";
+    import type { LiveRuns } from "$lib/utils/live-runs.svelte";
     import { createRunSelection } from "$lib/utils/run-selection.svelte";
     import { HistoryRail } from "$lib/utils/history-rail.svelte";
+    import { instanceCountResolver } from "$lib/utils/task";
 
     let {
-        items,
-        total,
-        loading = false,
+        live,
         filters = $bindable(),
-        onLoadMore,
-        onOptimisticRemove,
-        onOptimisticRestore,
-        fetchLogs,
-        streamLogs,
-        fetchLineHistory,
-        getInstanceCount = () => 1,
-        motion,
-        initialRunId = null,
-        runNotFound = false,
-        runPending = false,
+        initialRunId,
         onSelectRun,
     }: {
-        items: Run[];
-        total: number;
-        loading?: boolean;
+        live: LiveRuns;
         filters: RunsListFilters;
-        onLoadMore: () => void;
-        onOptimisticRemove: (ids: string[]) => void;
-        onOptimisticRestore: (runs: Run[]) => void;
-        getInstanceCount?: (taskName: string) => number;
-        // Runs that arrived or were removed live moments ago; they animate.
-        motion: RunMotion;
-        initialRunId?: string | null;
-        // The deep-linked run was fetched and doesn't exist.
-        runNotFound?: boolean;
-        // The deep-linked run is still being fetched; the panel holds on loading.
-        runPending?: boolean;
+        initialRunId: string | null;
         // Reports explicit picks (not the auto-fallback) so the URL can mirror them.
-        onSelectRun?: (runId: string | null) => void;
-        fetchLogs: (runId: string, from: number, to: number) => Promise<LogEvent>;
-        streamLogs: (
-            runId: string,
-            onEvent: (event: LogEvent) => void,
-            initialState?: { fromLine: number },
-        ) => () => void;
-        fetchLineHistory: (runId: string, lineNum: number) => Promise<string[][]>;
+        onSelectRun: (runId: string | null) => void;
     } = $props();
 
+    const getInstanceCount = $derived(instanceCountResolver(taskStore.items));
+
     const rail = new HistoryRail(untrack(() => !!initialRunId));
+    // `live` and `onSelectRun` are fixed for the page's lifetime.
+    // svelte-ignore state_referenced_locally
     const selection = createRunSelection({
-        getItems: () => items,
+        live,
         getInitialRunId: () => initialRunId,
-        getRunNotFound: () => runNotFound,
-        getRunPending: () => runPending,
-        onOptimisticRemove: (ids) => onOptimisticRemove(ids),
-        onOptimisticRestore: (runs) => onOptimisticRestore(runs),
         onSeeded: () => rail.picked(),
-        onSelectRun: (id) => onSelectRun?.(id),
+        onSelectRun,
     });
 
     // The header search filters this list by task name or run ID.
@@ -87,11 +57,11 @@
 <div class="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col md:flex-row">
     {#if panes.list}
         <RunsList
-            {items}
-            {total}
-            {loading}
+            items={live.source.items}
+            total={live.source.total}
+            loading={live.loading}
             bind:filters
-            {onLoadMore}
+            onLoadMore={() => live.source.loadMore()}
             selectedRunId={selection.selectedRunId}
             onselect={(id) => {
                 selection.userSelectedRunId = id;
@@ -109,16 +79,14 @@
             onBulkDelete={selection.handleBulkDelete}
             onBulkRerun={selection.handleBulkRerun}
             {getInstanceCount}
-            {motion}
+            motion={live.source.motion}
         />
     {/if}
 
     {#if panes.detail}
         <RunDetailPanel
             run={selection.selectedRun}
-            {fetchLogs}
-            {streamLogs}
-            {fetchLineHistory}
+            {...live.logSession}
             showTaskName
             onDelete={selection.deleteSingle}
             onBack={rail.phone ? rail.back : undefined}
@@ -126,9 +94,9 @@
             listVisible={panes.list}
             {getInstanceCount}
             getLiveUsage={(id) => systemStore.runUsage(id)}
-            {motion}
+            motion={live.source.motion}
             notFound={selection.deepLinkMissing}
-            loading={(loading && items.length === 0) || selection.deepLinkPending}
+            loading={(live.loading && live.source.items.length === 0) || selection.deepLinkPending}
         />
     {/if}
 </div>

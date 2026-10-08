@@ -1,19 +1,13 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import type { Run } from "@runwisp/common";
 import { createRunActions } from "./run-actions";
+import type { LiveRuns } from "./live-runs.svelte";
 
 interface RunSelectionOptions {
-    getItems: () => Run[];
+    live: LiveRuns;
     /** The deep-linked run id from the URL, if any. */
     getInitialRunId: () => string | null;
-    /** The deep-linked run was fetched and doesn't exist. */
-    getRunNotFound: () => boolean;
-    /** The deep-linked run is still being fetched. */
-    getRunPending: () => boolean;
-    onOptimisticRemove: (ids: string[]) => void;
-    onOptimisticRestore: (runs: Run[]) => void;
     /** With no explicit pick, fall back to a running run before the newest. */
     preferRunning?: boolean;
     /** A run picked from outside the list (e.g. one just triggered). */
@@ -31,6 +25,7 @@ interface RunSelectionOptions {
  * component init (it registers effects).
  */
 export function createRunSelection(opts: RunSelectionOptions) {
+    const { source, deepLink } = opts.live;
     let userSelectedRunId = $state<string | null>(null);
 
     // The deep-linked run genuinely doesn't exist: its id is the current URL
@@ -38,18 +33,18 @@ export function createRunSelection(opts: RunSelectionOptions) {
     // a "not found" panel rather than silently falling back to another run
     // while the URL still points at the dead id.
     const deepLinkMissing = $derived(
-        opts.getRunNotFound() &&
+        deepLink.notFound &&
             userSelectedRunId !== null &&
             userSelectedRunId === opts.getInitialRunId() &&
-            !opts.getItems().some((r) => r.id === userSelectedRunId),
+            !source.items.some((r) => r.id === userSelectedRunId),
     );
 
     const deepLinkPending = $derived(
-        opts.getRunPending() && userSelectedRunId === opts.getInitialRunId(),
+        deepLink.pending && userSelectedRunId === opts.getInitialRunId(),
     );
 
     const selectedRunId = $derived.by(() => {
-        const items = opts.getItems();
+        const items = source.items;
         if (userSelectedRunId && items.some((r) => r.id === userSelectedRunId)) {
             return userSelectedRunId;
         }
@@ -61,7 +56,7 @@ export function createRunSelection(opts: RunSelectionOptions) {
         return items[0]?.id ?? null;
     });
 
-    const selectedRun = $derived(opts.getItems().find((r) => r.id === selectedRunId));
+    const selectedRun = $derived(source.items.find((r) => r.id === selectedRunId));
 
     // Seed from the deep link (on load and on later URL changes) and from an
     // outside pick. These must stay before the report effect: on the first
@@ -86,9 +81,13 @@ export function createRunSelection(opts: RunSelectionOptions) {
     });
 
     const actions = createRunActions({
-        getItems: opts.getItems,
-        onOptimisticRemove: opts.onOptimisticRemove,
-        onOptimisticRestore: opts.onOptimisticRestore,
+        getItems: () => source.items,
+        onOptimisticRemove: (ids) => {
+            for (const id of ids) source.remove(id);
+        },
+        onOptimisticRestore: (runs) => {
+            for (const run of runs) source.upsert(run);
+        },
         onRemoved: (ids) => {
             if (userSelectedRunId && ids.has(userSelectedRunId)) userSelectedRunId = null;
         },
