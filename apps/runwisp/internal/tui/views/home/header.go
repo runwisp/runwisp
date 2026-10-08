@@ -300,7 +300,6 @@ func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, p
 	btnLineY := lineCount
 	b.WriteString(uikit.PadLine(schedLine, w, uikit.ColorBgLight))
 	b.WriteString("\n")
-	lineCount++
 
 	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
