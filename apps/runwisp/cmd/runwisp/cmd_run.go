@@ -231,12 +231,10 @@ func finishExecJSON(ctx context.Context, w io.Writer, client *apiclient.Client, 
 	return writeJSON(w, newExecJSONDoc(taskName, final))
 }
 
-// connectRemote establishes a pinned client against a remote daemon: it health
-// -checks the daemon (surfacing a cert-pin mismatch or unreachability with the
-// same guidance run --url gives), then reuses a cached session token or logs
-// in via CHAP if the caller supplies a password. Shared by run --url and the
-// stop/restart/start --url control commands.
-func connectRemote(ctx context.Context, baseURL, password string) (*apiclient.Client, error) {
+// dialRemote returns a pinned client for a remote daemon after a health check,
+// surfacing a cert-pin mismatch or unreachability with the same guidance on
+// every --url command. It does not authenticate.
+func dialRemote(ctx context.Context, baseURL, password string) (*apiclient.Client, error) {
 	client := apiclient.NewPinned(baseURL, password, certPinStore{})
 
 	// Health is a public endpoint — probe it before auth so an unreachable
@@ -250,16 +248,26 @@ func connectRemote(ctx context.Context, baseURL, password string) (*apiclient.Cl
 		}
 		return nil, remoteUnreachableError(baseURL, err)
 	}
+	return client, nil
+}
+
+// connectRemote dials a remote daemon (see dialRemote), then reuses a cached
+// session token or logs in via CHAP if the caller supplies a password. Shared
+// by run --url and the stop/restart/start --url control commands.
+func connectRemote(ctx context.Context, baseURL, password string) (*apiclient.Client, error) {
+	client, err := dialRemote(ctx, baseURL, password)
+	if err != nil {
+		return nil, err
+	}
 
 	// Optimistically reuse a cached session; an expired token surfaces as a
 	// 401 on the first real call, which the caller re-authenticates and retries.
 	if cached := loadCachedToken(baseURL); cached != "" {
 		client.SetToken(cached)
+		return client, nil
 	}
-	if !client.IsAuthenticated() {
-		if err := authenticateRemote(ctx, client, baseURL, password); err != nil {
-			return nil, err
-		}
+	if err := authenticateRemote(ctx, client, baseURL, password); err != nil {
+		return nil, err
 	}
 	return client, nil
 }
@@ -304,13 +312,18 @@ func authenticateRemote(ctx context.Context, client *apiclient.Client, baseURL, 
 		return remoteAuthRequiredError(baseURL)
 	}
 	if err := client.Authenticate(ctx); err != nil {
-		if authErr := remoteAuthError(err, baseURL); authErr != nil {
-			return authErr
-		}
-		return fmt.Errorf("authenticate with %s: %w", baseURL, err)
+		return remoteLoginError(err, baseURL)
 	}
 	storeCachedToken(baseURL, client.Token())
 	return nil
+}
+
+// remoteLoginError maps a failed CHAP login to its user-facing error.
+func remoteLoginError(err error, baseURL string) error {
+	if authErr := remoteAuthError(err, baseURL); authErr != nil {
+		return authErr
+	}
+	return fmt.Errorf("authenticate with %s: %w", baseURL, err)
 }
 
 // withSessionRetry runs call, re-authenticating once and retrying if a cached
