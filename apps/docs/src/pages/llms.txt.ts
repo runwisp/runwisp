@@ -35,9 +35,6 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
             "getting-started/first-service",
             "getting-started/failures",
             "getting-started/server",
-            "getting-started/docker",
-            "getting-started/web-ui-tour",
-            "getting-started/tui-tour",
         ],
     },
     {
@@ -49,6 +46,8 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
             "concepts/retries",
             "concepts/parameters",
             "concepts/logs",
+            "getting-started/web-ui-tour",
+            "getting-started/tui-tour",
             "notifications",
             "notifications/providers/slack",
             "notifications/providers/discord",
@@ -75,8 +74,9 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
         ],
     },
     {
-        label: "Operations",
+        label: "Production",
         slugs: [
+            "getting-started/docker",
             "operations/autostart",
             "operations/reload",
             "operations/auth",

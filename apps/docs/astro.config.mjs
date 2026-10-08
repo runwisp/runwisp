@@ -138,10 +138,9 @@ export default defineConfig({
             // theme-tokens.css @imports the webfonts it names, so the font
             // stack is declared in exactly one place for every consumer.
             customCss: ["@runwisp/ui/theme-tokens.css", "./src/styles/theme-bridge.css"],
-            // Symfony-style layout: Getting Started (install, first run), Guides
-            // (one page per feature, explanation + examples), Reference (every
-            // key and command, lookup only). A fact lives on one page; the rest
-            // link to it. Merge into an existing page before adding one.
+            // Symfony-style layout, see STYLE.md. Starlight builds prev/next
+            // links from this order, so Getting Started reads as a path. Keep
+            // src/pages/llms.txt.ts SECTIONS and the index.mdx map in step.
             sidebar: [
                 { label: "Welcome", link: "/" },
                 {
@@ -152,9 +151,6 @@ export default defineConfig({
                         { label: "Running a service", slug: "getting-started/first-service" },
                         { label: "Handling failures", slug: "getting-started/failures" },
                         { label: "Running on a server", slug: "getting-started/server" },
-                        { label: "Running in Docker", slug: "getting-started/docker" },
-                        { label: "Web UI", slug: "getting-started/web-ui-tour" },
-                        { label: "TUI", slug: "getting-started/tui-tour" },
                     ],
                 },
                 {
@@ -166,6 +162,8 @@ export default defineConfig({
                         { label: "Failures, retries & timeouts", slug: "concepts/retries" },
                         { label: "Parameters", slug: "concepts/parameters" },
                         { label: "Run logs", slug: "concepts/logs" },
+                        { label: "Web UI", slug: "getting-started/web-ui-tour" },
+                        { label: "TUI", slug: "getting-started/tui-tour" },
                         {
                             label: "Notifications",
                             items: [
@@ -206,8 +204,9 @@ export default defineConfig({
                     ],
                 },
                 {
-                    label: "Operations",
+                    label: "Production",
                     items: [
+                        { label: "Running in Docker", slug: "getting-started/docker" },
                         { label: "Autostart", slug: "operations/autostart" },
                         { label: "Reload & restart", slug: "operations/reload" },
                         { label: "Authentication", slug: "operations/auth" },

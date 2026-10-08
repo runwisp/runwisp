@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Overlapping runs
-description: What happens when a task is started while it's already running, how to choose between queue, skip, and kill, and when to raise max_concurrent.
+description: What happens when a task is started while it's already running (the job of flock or a lock file under cron), how to choose between queue, skip, and kill, and when to raise max_concurrent.
 ---
 
 Sometimes a task is started while its last run is still going: a slow run meets
