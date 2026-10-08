@@ -126,20 +126,32 @@ func (c *Checker) finishCheck() {
 // installSource reports how this binary was installed. The same
 // release binary ships through every channel, so it can't be baked in at build
 // time: the Docker image and npm wrapper set RUNWISP_INSTALL_SOURCE
-// (docker / npm / npx), and get.runwisp.com writes "script" to a
-// .runwisp-source file next to the binary. Anything else is "other".
+// (docker / npm / npx), get.runwisp.com writes "script" to a .runwisp-source
+// file next to the binary, and Homebrew is recognised by its Cellar path.
+// Anything else is "other".
 func installSource() string {
 	if s := os.Getenv("RUNWISP_INSTALL_SOURCE"); s != "" {
 		return s
 	}
 	if exe, err := os.Executable(); err == nil {
 		if exe, err = filepath.EvalSymlinks(exe); err == nil {
-			if b, err := os.ReadFile(filepath.Join(filepath.Dir(exe), ".runwisp-source")); err == nil {
-				if s := strings.TrimSpace(string(b)); s != "" {
-					return s
-				}
-			}
+			return sourceOfBinary(exe)
 		}
+	}
+	return "other"
+}
+
+// sourceOfBinary classifies the resolved binary path when no env var says.
+func sourceOfBinary(exe string) string {
+	if b, err := os.ReadFile(filepath.Join(filepath.Dir(exe), ".runwisp-source")); err == nil {
+		if s := strings.TrimSpace(string(b)); s != "" {
+			return s
+		}
+	}
+	// brew always installs into <prefix>/Cellar/<formula>/<version>/bin, on
+	// macOS and Linuxbrew alike, and links it from <prefix>/bin.
+	if strings.Contains(filepath.ToSlash(exe), "/Cellar/runwisp/") {
+		return "homebrew"
 	}
 	return "other"
 }

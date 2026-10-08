@@ -60,7 +60,7 @@ tasks:
       - 'asyncapi:generate'
       - '~:sqlc-generate'
     inputs:
-      - '@globs(go)'
+      - '@group(go)'
       - 'scripts/generate-openapi.sh'
     outputs:
       - 'openapi.json'
@@ -73,7 +73,7 @@ tasks:
       - 'web-ui:build'
     inputs:
       - 'scripts/sync-ui-dist.sh'
-      - '@globs(ui_src)'
+      - '@group(ui_src)'
     outputs:
       - 'internal/ui/dist'
 
@@ -86,9 +86,9 @@ tasks:
       - '~:sqlc-generate'
       - 'asyncapi:generate'
     inputs:
-      - '@globs(go)'
-      - '@globs(embeds)'
-      - '@globs(ui_src)'
+      - '@group(go)'
+      - '@group(embeds)'
+      - '@group(ui_src)'
       - 'scripts/build.sh'
       - 'scripts/metadata.sh'
       - '/CHANGELOG.md'
@@ -115,7 +115,7 @@ tasks:
       - '~:sqlc-generate'
       - 'asyncapi:generate'
     inputs:
-      - '@globs(go)'
+      - '@group(go)'
       - 'tests/**/*.go'
       - 'scripts/check-go.sh'
       - 'scripts/lint-go.sh'
