@@ -6,7 +6,7 @@
 # tool stays out of go.mod (its dependency tree is enormous).
 set -euo pipefail
 
-GOLANGCI_VERSION="v2.12.2"
+GOLANGCI_VERSION="v2.14.0"
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd "${script_dir}/.."
