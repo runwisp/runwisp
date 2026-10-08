@@ -69,13 +69,14 @@ export function buildTaskOverviews(
 }
 
 export function countTaskOverviews(taskOverviews: TaskOverview[]): OverviewTaskCounts {
+    const count = (filter: OverviewTaskFilter) =>
+        taskOverviews.filter((task) => matchesFilter(task, filter)).length;
     return {
-        all: taskOverviews.length,
-        attention: taskOverviews.filter((task) => task.state === "attention").length,
-        running: taskOverviews.filter((task) => task.state === "running").length,
-        scheduled: taskOverviews.filter((task) => task.nextRunMs !== undefined).length,
-        manual: taskOverviews.filter((task) => task.isApiOnly && task.nextRunMs === undefined)
-            .length,
+        all: count("all"),
+        attention: count("attention"),
+        running: count("running"),
+        scheduled: count("scheduled"),
+        manual: count("manual"),
     };
 }
 
