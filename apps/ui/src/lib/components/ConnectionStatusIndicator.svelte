@@ -17,8 +17,7 @@
         label: string;
         container: string;
         title: string;
-        labelColor: string;
-        subtitleColor: string;
+        color: string;
         tone: StatusDotTone;
         pulse: boolean;
     }
@@ -28,8 +27,7 @@
             label: "Connected",
             container: "bg-surface-sunken/50 border-outline-faint",
             title: "Connected to the runner API",
-            labelColor: "text-on-surface-muted",
-            subtitleColor: "text-on-surface-muted",
+            color: "text-on-surface-muted",
             tone: "success",
             pulse: true,
         },
@@ -37,8 +35,7 @@
             label: "Connecting",
             container: "bg-warning-soft/70 border-warning-soft-border",
             title: "Attempting to reach the runner API",
-            labelColor: "text-warning-soft-text",
-            subtitleColor: "text-warning-soft-text",
+            color: "text-warning-soft-text",
             tone: "warning",
             pulse: true,
         },
@@ -46,17 +43,16 @@
             label: "Offline",
             container: "bg-danger-soft/70 border-danger-soft-border hover:bg-danger-soft",
             title: "Click to retry connecting to the runner API",
-            labelColor: "text-danger-soft-text",
-            subtitleColor: "text-danger-soft-text",
+            color: "text-danger-soft-text",
             tone: "danger",
             pulse: false,
         },
         stalled: {
-            label: "Updates paused",
+            // Label and title come from stalledCopy, which depends on tab sharing.
+            label: "",
             container: "bg-warning-soft/70 border-warning-soft-border",
             title: "",
-            labelColor: "text-warning-soft-text",
-            subtitleColor: "text-warning-soft-text",
+            color: "text-warning-soft-text",
             tone: "warning",
             pulse: false,
         },
@@ -86,8 +82,8 @@
 {#snippet body()}
     <StatusDot tone={theme.tone} pulse={theme.pulse} />
     <div class="flex min-w-0 flex-col">
-        <span class="font-mono text-xs font-medium {theme.labelColor}">{theme.label}</span>
-        <span class="flex items-center gap-1 font-mono text-2xs {theme.subtitleColor}">
+        <span class="font-mono text-xs font-medium {theme.color}">{theme.label}</span>
+        <span class="flex items-center gap-1 font-mono text-2xs {theme.color}">
             <span class="truncate">{subtitle}</span>
             {#if status === "connected" && systemStore.updateAvailable}
                 <Popover placement="top" class="shrink-0 leading-none">

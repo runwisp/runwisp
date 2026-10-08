@@ -16,7 +16,7 @@
 
     const RECENT_RUN_LIMIT = 16;
     const RUNNING_RUN_LIMIT = 8;
-    const TASKS_REFRESH_DEBOUNCE_MS = 1000;
+    const TASKS_REFRESH_DELAY_MS = 1000;
 
     const isRunning = (run: Run) => run.status === "running";
 
@@ -153,14 +153,14 @@
 
     let tasksRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-    // Trailing debounce so a burst of simultaneous cron fires coalesces into
-    // a single /api/tasks refetch.
+    // The first event arms a timer and later ones inside the window ride on it,
+    // so a burst of simultaneous cron fires costs a single /api/tasks refetch.
     function scheduleTasksRefresh() {
         if (tasksRefreshTimer) return;
         tasksRefreshTimer = setTimeout(() => {
             tasksRefreshTimer = null;
             void taskStore.refresh();
-        }, TASKS_REFRESH_DEBOUNCE_MS);
+        }, TASKS_REFRESH_DELAY_MS);
     }
 
     async function handleTaskClick(taskName: string) {

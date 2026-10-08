@@ -12,7 +12,7 @@ export interface RunVerdict {
 }
 
 // The run's outcome as a verb phrase, read as one sentence: "succeeded in 933ms".
-const RUN_VERDICTS: Record<RunStatus, RunVerdict> = {
+export const RUN_VERDICTS: Record<RunStatus, RunVerdict> = {
     succeeded: { verb: "succeeded in", timed: true },
     failed: { verb: "failed after", timed: true },
     crashed: { verb: "crashed after", timed: true },
@@ -30,10 +30,6 @@ const RUN_VERDICTS: Record<RunStatus, RunVerdict> = {
     dst_skipped: { verb: "skipped", timed: false },
     queue_full: { verb: "skipped", timed: false },
 };
-
-export function runVerdict(status: RunStatus): RunVerdict {
-    return RUN_VERDICTS[status];
-}
 
 export interface RunEndMarker {
     label: string;

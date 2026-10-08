@@ -23,7 +23,7 @@
     import RunConsoleFrame from "./RunConsoleFrame.svelte";
     import RunFacts from "./RunFacts.svelte";
     import { RUN_STATUS_CONFIG } from "./status-config.js";
-    import { runDuration, runVerdict, instanceSuffix } from "./run-helpers.js";
+    import { runDuration, RUN_VERDICTS, instanceSuffix } from "./run-helpers.js";
 
     let {
         run,
@@ -163,7 +163,7 @@
     <!-- A code is worth the ink only when it is news: `exit 0` restates
          "succeeded", while a non-zero code is the first thing to triage on. -->
     {@const showCode = status === "failed"}
-    {@const verdict = runVerdict(status)}
+    {@const verdict = RUN_VERDICTS[status]}
     {@const alarm = config.alarm}
     <!-- The panel: a status spine runs the full left edge across both the header
          readout and the console below, hugging the rail divider (artifact

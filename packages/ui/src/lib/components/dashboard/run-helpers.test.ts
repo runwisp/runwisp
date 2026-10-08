@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
     runDuration,
     runStartDelay,
-    runVerdict,
+    RUN_VERDICTS,
     runEndMarker,
     runRowReadout,
     highlightParts,
@@ -36,20 +36,20 @@ describe("runEndMarker", () => {
     });
 });
 
-describe("runVerdict", () => {
+describe("RUN_VERDICTS", () => {
     it("phrases a timed outcome so a duration reads after it", () => {
-        expect(runVerdict("succeeded")).toEqual({ verb: "succeeded in", timed: true });
-        expect(runVerdict("failed")).toEqual({ verb: "failed after", timed: true });
+        expect(RUN_VERDICTS.succeeded).toEqual({ verb: "succeeded in", timed: true });
+        expect(RUN_VERDICTS.failed).toEqual({ verb: "failed after", timed: true });
     });
 
     it("marks statuses that never produced a duration as untimed", () => {
         // These end without ever running, so the caller renders the verb alone
         // rather than "skipped after —".
-        expect(runVerdict("missed").timed).toBe(false);
-        expect(runVerdict("skipped").timed).toBe(false);
-        expect(runVerdict("dst_skipped").timed).toBe(false);
-        expect(runVerdict("queue_full").timed).toBe(false);
-        expect(runVerdict("pending").timed).toBe(false);
+        expect(RUN_VERDICTS.missed.timed).toBe(false);
+        expect(RUN_VERDICTS.skipped.timed).toBe(false);
+        expect(RUN_VERDICTS.dst_skipped.timed).toBe(false);
+        expect(RUN_VERDICTS.queue_full.timed).toBe(false);
+        expect(RUN_VERDICTS.pending.timed).toBe(false);
     });
 });
 
