@@ -11,6 +11,7 @@ package update
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -221,7 +222,7 @@ func (c *Checker) fetch(ctx context.Context) (checkResponse, error) {
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return checkResponse{}, &statusError{code: res.StatusCode}
+		return checkResponse{}, errors.New("unexpected status " + http.StatusText(res.StatusCode))
 	}
 
 	var body checkResponse
@@ -230,10 +231,6 @@ func (c *Checker) fetch(ctx context.Context) (checkResponse, error) {
 	}
 	return body, nil
 }
-
-type statusError struct{ code int }
-
-func (e *statusError) Error() string { return "unexpected status " + http.StatusText(e.code) }
 
 // IsRelease reports whether current looks like a published release rather than a
 // dev build. The build default is "0.0.0-dev"; any 0.0.0 base (with or without a
