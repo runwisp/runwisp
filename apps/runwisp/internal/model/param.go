@@ -5,6 +5,7 @@ package model
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -223,6 +224,16 @@ func PointerValues(m map[string]string) map[string]*string {
 		out[k] = &vv
 	}
 	return out
+}
+
+// EnvOverlay is the environment a run of t adds on top of the process it runs
+// in: env, then secrets, then the env-kind params resolved for the run.
+func (t *Task) EnvOverlay(params map[string]string) map[string]string {
+	env := map[string]string{}
+	maps.Copy(env, t.Env)
+	maps.Copy(env, t.Secrets)
+	maps.Copy(env, ParamEnvLayer(t.Parameters, params))
+	return env
 }
 
 // ParamEnvLayer returns the env-kind parameters as a KEY=VALUE overlay map,

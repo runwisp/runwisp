@@ -147,6 +147,16 @@ type ConfigExecution struct {
 
 func (e *ConfigExecution) ExecType() string { return "config" }
 
+// --- SDK execution ---
+
+// SDKExecution runs the unit in the app connected over the daemon's local
+// socket, which serves it under the unit's name, instead of a process RunWisp
+// starts. It comes from a unit's `sdk` key only: it is absent from
+// executionFactories, so the station peer can't dispatch into an app.
+type SDKExecution struct{}
+
+func (e *SDKExecution) ExecType() string { return "sdk" }
+
 // --- Compose execution ---
 
 // ComposeMode is how a compose-backed task is executed. Each value names the

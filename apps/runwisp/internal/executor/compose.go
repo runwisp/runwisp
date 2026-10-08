@@ -482,16 +482,14 @@ func composeContainerName(project, service string, idx int) string {
 // param env layer is applied last so manual intent wins (collisions are
 // rejected at config load, so order is immaterial in valid configs).
 func composeMergedEnv(task *model.Task, run *model.Run, instanceIndex int) map[string]string {
-	merged := map[string]string{
-		"RUNWISP_INSTANCE_INDEX": strconv.Itoa(instanceIndex),
-	}
-	maps.Copy(merged, task.Env)
-	maps.Copy(merged, task.Secrets)
 	var runParams map[string]string
 	if run != nil {
 		runParams = run.Params
 	}
-	maps.Copy(merged, model.ParamEnvLayer(task.Parameters, runParams))
+	merged := map[string]string{
+		"RUNWISP_INSTANCE_INDEX": strconv.Itoa(instanceIndex),
+	}
+	maps.Copy(merged, task.EnvOverlay(runParams))
 	return merged
 }
 

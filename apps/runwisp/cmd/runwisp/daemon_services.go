@@ -17,6 +17,7 @@ import (
 
 	"log/slog"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apphost"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/bootid"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
@@ -36,6 +37,7 @@ type daemonServices struct {
 	DB               *storage.SQLiteDatabase
 	EventBus         *events.Bus
 	Executor         *executor.RoutingExecutor
+	Apps             *apphost.Host
 	Usage            *procstat.Sampler
 	TaskManager      runtime.TaskManager
 	Tasks            *runtime.TaskRegistry
@@ -85,7 +87,8 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db *storage.SQLi
 	eventBus := events.NewEventBus()
 
 	usage := procstat.New()
-	exec := initExecutor(cfg.Config, eventBus, f.LogDir(), cfg.Fingerprint, usage)
+	apps := apphost.New()
+	exec := initExecutor(cfg.Config, eventBus, f.LogDir(), cfg.Fingerprint, usage, apps)
 
 	taskManager, tasksMap := initTaskManager(cfg, db, exec, eventBus)
 	// Single guarded owner of the live task set. Boot-only helpers below still
@@ -147,6 +150,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db *storage.SQLi
 		DB:                  db,
 		EventBus:            eventBus,
 		Executor:            exec,
+		Apps:                apps,
 		Usage:               usage,
 		TaskManager:         taskManager,
 		Tasks:               tasks,
@@ -274,7 +278,8 @@ func runMissedTickCatchUp(tasksMap map[string]*model.Task, taskManager runtime.T
 
 // initExecutor builds the routing executor. sampler may be nil (one-shot CLI
 // runs, which display no resource usage).
-func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint string, sampler *procstat.Sampler) *executor.RoutingExecutor {
+// sdk serves sdk units; nil where no app can connect (`runwisp run`).
+func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint string, sampler *procstat.Sampler, sdk executor.Backend) *executor.RoutingExecutor {
 	dockerBackend := executor.NewLazyContainerBackend()
 	composeBackend := executor.NewLazyComposeBackend(fingerprint)
 
@@ -287,6 +292,7 @@ func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint 
 		HasLocalTasks:          len(cfg.Tasks) > 0,
 		Docker:                 dockerBackend,
 		Compose:                composeBackend,
+		SDK:                    sdk,
 		MinFreeDisk:            minFreeDisk,
 		Sampler:                sampler,
 	})

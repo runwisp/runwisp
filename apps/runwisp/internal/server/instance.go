@@ -27,14 +27,19 @@ func (srv *Server) humaGetInstance(ctx context.Context, _ *struct{}) (*InstanceO
 	if !isLocalCtx(ctx) {
 		return nil, huma.Error403Forbidden("instance endpoint is only available locally (Unix socket or loopback)")
 	}
+	source := "file"
+	if srv.appConfig {
+		source = "app"
+	}
 	return &InstanceOutput{Body: model.InstanceInfo{
-		App:         AppName,
-		Version:     version.Version,
-		Fingerprint: srv.stats.GetDaemonInfo().Fingerprint,
-		Pid:         os.Getpid(),
-		DataDir:     srv.dataDir,
-		ConfigPath:  srv.configPath,
-		SocketPath:  srv.socketPath,
+		App:          AppName,
+		Version:      version.Version,
+		Fingerprint:  srv.stats.GetDaemonInfo().Fingerprint,
+		Pid:          os.Getpid(),
+		DataDir:      srv.dataDir,
+		ConfigPath:   srv.configPath,
+		ConfigSource: source,
+		SocketPath:   srv.socketPath,
 	}}, nil
 }
 

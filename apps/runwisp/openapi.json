@@ -439,6 +439,13 @@
           "configPath": {
             "type": "string"
           },
+          "configSource": {
+            "enum": [
+              "file",
+              "app"
+            ],
+            "type": "string"
+          },
           "dataDir": {
             "type": "string"
           },
@@ -463,6 +470,7 @@
           "pid",
           "dataDir",
           "configPath",
+          "configSource",
           "socketPath"
         ],
         "type": "object"
@@ -2415,6 +2423,10 @@
     }
   },
   "info": {
+    "license": {
+      "identifier": "Apache-2.0",
+      "name": "Apache-2.0"
+    },
     "title": "RunWisp API",
     "version": "dev"
   },

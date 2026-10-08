@@ -6,6 +6,7 @@ description: "Every key accepted by a [tasks.<name>] table: cron, run, on_overla
 ---
 
 import Run from "./shared/_run.mdx";
+import Sdk from "./shared/_sdk.mdx";
 import Description from "./shared/_description.mdx";
 import Group from "./shared/_group.mdx";
 import ManualTrigger from "./shared/_manual_trigger.mdx";
@@ -67,6 +68,10 @@ run = "..."
 ### run
 
 <Run />
+
+### sdk
+
+<Sdk />
 
 ### description
 
@@ -640,4 +645,4 @@ The config fails to load with any of these:
   [`depends_on`](/configuration/services/#depends_on). A task uses
   [`retry_attempts`](#retry_attempts) instead of restarts.
 - A name already used by a `[services.*]` entry.
-- An empty or missing [`run`](#run) (unless [`compose_file`](#compose_file) is set).
+- An empty or missing [`run`](#run) (unless [`compose_file`](#compose_file) or [`sdk`](#sdk) is set).

@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://docs.runwisp.com/config.schema.json",
+  "$comment": "SPDX-FileCopyrightText: PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0",
   "title": "runwisp.toml",
   "description": "Configuration for RunWisp, a cron daemon + process supervisor. runwisp.toml is the sole source of truth for task definitions; the REST API and Web UI are read-only + trigger. Full reference: https://docs.runwisp.com/agents/reference.md",
   "type": "object",
@@ -202,7 +203,7 @@
     },
     "task": {
       "type": "object",
-      "description": "A run-to-exit task ([tasks.<name>]). Requires run (unless compose_file).",
+      "description": "A run-to-exit task ([tasks.<name>]). Requires run, unless compose_file or sdk is set.",
       "allOf": [{ "$ref": "#/$defs/unitCommon" }],
       "unevaluatedProperties": false,
       "properties": {
@@ -230,6 +231,7 @@
         "compose_file": { "type": "string", "description": "Run a compose service instead of run=." },
         "compose_service": { "type": "string", "description": "Which compose service; requires compose_file. Default = task name." },
         "compose_mode": { "$ref": "#/$defs/composeUnitMode" },
+        "sdk": { "type": "boolean", "default": false, "description": "Run the unit in the app that defines it through an SDK, instead of run=. SDKs set it. Not combinable with run, compose_file, shell, umask, user, env_base, working_dir, stop_signal." },
         "notify": { "type": "array", "items": { "type": "string" }, "description": "Notifier ids (or \"id:override\", or \"inapp\") to page when this unit's `failures` policy classifies a run as a failure. Non-failure outcomes (a success ping, a timeout-only escalation) use an explicit [[route]] instead." },
         "params": { "type": "array", "items": { "$ref": "#/$defs/param" }, "description": "Per-execution inputs ([tasks.*.params])." },
         "hook_tokens": { "$ref": "#/$defs/hookTokens" }
@@ -256,6 +258,7 @@
         "compose_file": { "type": "string" },
         "compose_service": { "type": "string" },
         "compose_mode": { "$ref": "#/$defs/composeUnitMode" },
+        "sdk": { "type": "boolean", "default": false, "description": "Run the unit in the app that defines it through an SDK, instead of run=. SDKs set it. Not combinable with run, compose_file, shell, umask, user, env_base, working_dir, stop_signal." },
         "notify": { "type": "array", "items": { "type": "string" } },
         "instances": { "type": "integer", "minimum": 1, "maximum": 64, "default": 1, "description": "Parallel instances." },
         "restart_delay": { "$ref": "#/$defs/duration", "description": "Delay before a restart. Default 1s." },

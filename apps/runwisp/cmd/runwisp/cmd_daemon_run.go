@@ -99,7 +99,8 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		return err
 	}
 
-	cfg, err := loadDaemonConfig(context.Background(), db, mode, f)
+	src := configSource(f)
+	cfg, err := loadDaemonConfig(context.Background(), db, mode, src)
 	if err != nil {
 		_ = db.Close()
 		return err
@@ -121,7 +122,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 
 	// Pin the on-disk identity of runwisp.toml + env_files so /api/daemon can
 	// report config_stale and every surface can prompt for a reload.
-	configSnap := config.NewSnapshot(f.CfgFile, cfg.Config, time.Now())
+	configSnap := config.NewSnapshot(src.Path(), cfg.Config, time.Now())
 
 	svc, err := initDaemonServices(context.Background(), cfg, db, mode, f)
 	if err != nil {
@@ -144,9 +145,13 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		fingerprint: cfg.Fingerprint,
 		updates:     updateChecker,
 	}
-	reconciler, reloadFn := newReconciler(mode, cfg, svc, f, configSnap, settings.prepare)
+	reconciler, reloadFn := newReconciler(mode, cfg, svc, src, configSnap, settings.prepare)
 	if reconciler != nil {
 		defer reconciler.WatchCronHolds(cronprobe.Probe)()
+	}
+	doc, fromApp := src.(*config.DocumentSource)
+	if fromApp && reloadFn != nil {
+		serveAppConfig(svc.Apps, doc, reloadFn)
 	}
 
 	srv, err := server.New(server.Options{
@@ -160,6 +165,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		Port:              f.Port,
 		DataDir:           absPathOrFallback(f.DataDir),
 		ConfigPath:        absPathOrFallback(f.CfgFile),
+		AppConfig:         fromApp,
 		SocketPath:        localAPISocketPath(f),
 		LogDir:            f.LogDir(),
 		EventBus:          svc.EventBus,
@@ -180,6 +186,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		TLSCert:           tlsCfg.CertPath,
 		TLSKey:            tlsCfg.KeyPath,
 		Reload:            reloadFn,
+		Apps:              svc.Apps,
 	})
 	if err != nil {
 		return err
@@ -278,20 +285,20 @@ func rerouteLogsToStderrOnError(err *error) {
 // SIGHUP. Standalone only: station mode has no local scheduler to reconcile, so
 // it returns (nil, nil), leaving POST /api/daemon/reload reporting "not available in
 // this mode".
-func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Flags, snap *config.Snapshot, settings runtime.SettingsHook) (*runtime.Reconciler, func() (model.ReloadResult, error)) {
+func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, src config.Source, snap *config.Snapshot, settings runtime.SettingsHook) (*runtime.Reconciler, func() (model.ReloadResult, error)) {
 	if mode != modeStandalone {
 		return nil, nil
 	}
 	r := runtime.NewReconciler(runtime.ReconcilerDeps{
-		ConfigPath: f.CfgFile,
-		Baseline:   cfg.Config,
-		Registry:   svc.Tasks,
-		Scheduler:  svc.Scheduler,
-		Manager:    svc.TaskManager,
-		DB:         svc.DB,
-		Snapshot:   snap,
-		Settings:   settings,
-		Now:        time.Now,
+		Source:    src,
+		Baseline:  cfg.Config,
+		Registry:  svc.Tasks,
+		Scheduler: svc.Scheduler,
+		Manager:   svc.TaskManager,
+		DB:        svc.DB,
+		Snapshot:  snap,
+		Settings:  settings,
+		Now:       time.Now,
 	})
 	// The `failures` policy lives on model.Task, so Reconcile() swaps it into the
 	// live registry and every run terminating afterwards is classified under the
@@ -421,11 +428,13 @@ func exitNonZero(fatalCh chan<- error, cause error) error {
 	case fatalCh <- cause:
 	default:
 	}
-	p, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		return err
-	}
-	return p.Signal(syscall.SIGTERM)
+	return signalSelfTerm()
+}
+
+// signalSelfTerm sends this process SIGTERM so it shuts down through the
+// ordinary signal path.
+func signalSelfTerm() error {
+	return syscall.Kill(os.Getpid(), syscall.SIGTERM)
 }
 
 // emitStartupBanner picks between the fancy multi-section TTY banner and the

@@ -104,6 +104,7 @@ RunWisp can start from the configuration you already have:
 - [Import crontab](https://docs.runwisp.com/coming-from/cron/#convert-by-hand).
 - [Import supervisord](https://docs.runwisp.com/coming-from/supervisord/)
 - [Import docker compose](https://docs.runwisp.com/coming-from/docker-compose/).
+- [Swap node-cron for `@runwisp/node`](https://docs.runwisp.com/coming-from/node-cron/).
 
 <div align="center">
 <img alt="RunWisp terminal UI showing tasks, live output, and run controls over SSH" src="apps/docs/src/assets/screenshots/tui-demo.webp" width="780">
@@ -169,7 +170,7 @@ _Richard Popelis, lead developer_
 
 The RunWisp daemon and web UI are licensed under GPL-3.0-or-later. Basically, do what you want but if you distribute a modified version, you must keep it open under the same license. See [LICENSE](LICENSE).
 
-Shared libraries under `packages/` use Apache-2.0 instead. See [LICENSE-APACHE](LICENSE-APACHE) and the license file in each package.
+Shared libraries under `packages/`, the config JSON Schema and the OpenAPI description use Apache-2.0 instead. See [LICENSE-APACHE](LICENSE-APACHE) and the license file in each package.
 
 ---
 

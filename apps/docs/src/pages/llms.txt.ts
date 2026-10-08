@@ -60,6 +60,7 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
         ],
     },
     { label: "Examples", slugs: ["recipes/backup", "recipes/healthcheck"] },
+    { label: "SDKs", slugs: ["sdk", "sdk/javascript"] },
     {
         label: "Migrating from cron, supervisord, systemd, or docker-compose",
         slugs: [
@@ -68,6 +69,7 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
             "coming-from/supervisord",
             "coming-from/systemd",
             "coming-from/docker-compose",
+            "coming-from/node-cron",
         ],
     },
     {

@@ -13,6 +13,7 @@ projects:
   docs: 'apps/docs'
   ui: 'packages/ui'
   common: 'packages/common'
+  node: 'packages/node'
   asyncapi: 'packages/asyncapi'
   eslint-config: 'packages/eslint-config'
   typescript-config: 'packages/typescript-config'

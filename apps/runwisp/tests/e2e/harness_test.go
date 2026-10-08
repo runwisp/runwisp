@@ -7,6 +7,7 @@ package e2e
 
 import (
 	"bytes"
+	"math/rand/v2"
 	"net"
 	"os"
 	"os/exec"
@@ -248,16 +249,30 @@ func startDaemon(t *testing.T, projectDir, binaryPath, configPath string) *daemo
 func startDaemonOn(t *testing.T, projectDir, binaryPath, configPath, dataDir string, port int) *daemonProcess {
 	t.Helper()
 
+	return launchDaemon(t, projectDir, binaryPath, configPath, dataDir, port, nil)
+}
+
+// launchDaemon boots `runwisp daemon`; a non-nil appDoc runs it with `--app`,
+// the config document on its stdin.
+func launchDaemon(t *testing.T, projectDir, binaryPath, configPath, dataDir string, port int, appDoc []byte) *daemonProcess {
+	t.Helper()
+
 	baseURL := "http://127.0.0.1:" + strconv.Itoa(port)
 
 	output := &lockedBuffer{}
-	cmd := exec.Command(
-		binaryPath,
+	args := []string{
 		"--config", configPath,
 		"--data", dataDir,
 		"--port", strconv.Itoa(port),
 		"daemon",
-	)
+	}
+	if appDoc != nil {
+		args = append(args, "--app")
+	}
+	cmd := exec.Command(binaryPath, args...)
+	if appDoc != nil {
+		cmd.Stdin = bytes.NewReader(appDoc)
+	}
 	cmd.Dir = projectDir
 	cmd.Env = subprocEnv("TERM=xterm-256color")
 	cmd.Stdout = output
@@ -626,17 +641,23 @@ func waitForRunCount(t testing.TB, client *apiclient.Client, taskName string, ex
 	return lastTotal
 }
 
+// reserveTCPPort picks a free port below the kernel's ephemeral range (Linux
+// 32768+, macOS 49152+). An ephemeral port freed here can be handed to any
+// outgoing connection before the daemon binds it; one below the range can't.
 func reserveTCPPort(t testing.TB) int {
 	t.Helper()
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer listener.Close()
-
-	addr, ok := listener.Addr().(*net.TCPAddr)
-	require.True(t, ok)
-
-	return addr.Port
+	for range 100 {
+		port := 20000 + rand.IntN(12000) //nolint:gosec // test port choice, not security
+		listener, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
+		if err != nil {
+			continue
+		}
+		_ = listener.Close()
+		return port
+	}
+	require.FailNow(t, "no free TCP port in 20000-31999")
+	return 0
 }
 
 func killProcessGroup(pid int, signal syscall.Signal) error {

@@ -10,10 +10,11 @@ tasks:
   generate:
     # Ordered: common:generate-api reads the openapi.json that runwisp:openapi
     # writes; that edge can't be a task dep (see common/moon.yml).
-    description: 'Regenerate sqlc + AsyncAPI + openapi.json + common API types.'
+    description: 'Regenerate sqlc + AsyncAPI + openapi.json + common API and node config types.'
     deps:
       - 'runwisp:openapi'
       - 'common:generate-api'
+      - 'node:generate-config'
     options:
       cache: false
       runDepsInParallel: false
@@ -24,6 +25,7 @@ tasks:
       - 'web-ui:format'
       - 'docs:format'
       - 'ui:format'
+      - 'node:format'
     options:
       cache: false
 
@@ -50,6 +52,7 @@ tasks:
       - 'docs:build'
       - 'ui:check'
       - 'common:check'
+      - 'node:check'
       - 'asyncapi:check'
     options:
       cache: false

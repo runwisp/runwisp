@@ -114,11 +114,12 @@ secrets_file:        path         — dotenv file merged beneath secrets; only t
 
 ### [tasks.&lt;name&gt;] (run-to-exit)
 
-Required: the table + [`run`](/configuration/tasks/#run) (unless [`compose_file`](/configuration/tasks/#compose_file), where [`run`](/configuration/tasks/#run) is optional and selects [`compose_mode`](/configuration/tasks/#compose_mode)). `restart`, [`restart_attempts`](/configuration/services/#restart_attempts), and [`instances`](/configuration/services/#instances) are rejected on tasks (use `[services.*]`); a task re-runs a failed run via `retry_*`.
+Required: the table + [`run`](/configuration/tasks/#run) (unless [`compose_file`](/configuration/tasks/#compose_file), where [`run`](/configuration/tasks/#run) is optional and selects [`compose_mode`](/configuration/tasks/#compose_mode), or [`sdk`](/configuration/tasks/#sdk)). `restart`, [`restart_attempts`](/configuration/services/#restart_attempts), and [`instances`](/configuration/services/#instances) are rejected on tasks (use `[services.*]`); a task re-runs a failed run via `retry_*`.
 
 ```
 group:             string =Tasks   — UI grouping label
 description:        string          — human description
+sdk:               bool =false      — tasks + services; run the unit in the SDK app connected over the local socket that defines it, instead of run (SDKs set it); rejects run, compose_file, shell, umask, user, env_base, working_dir, stop_signal; fails the run when no app is connected
 cron:              string          — 5- or 6-field cron (optional leading seconds); also @hourly, @every 1h30m; omit => manual-only
 timezone:          IANA string      — per-task TZ override (else [daemon] timezone)
 jitter:            dur              — cap how far this cron task's start may slip; needs cron (inherits [defaults])
@@ -300,9 +301,9 @@ runwisp                      — no subcommand: attach TUI to running daemon, el
                                install the system service, mask cron) and the caller attaches to the systemd
                                daemon instead of spawning its own. When the take-over isn't possible the prompt
                                says so and offers the plain scaffold; those jobs are then held (see include_cron)
-runwisp daemon               — start headless daemon (no TUI)
+runwisp daemon               — start headless daemon (no TUI); --app reads the config as a JSON document on stdin instead of runwisp.toml (what SDKs run)
 runwisp tui                  — attach a TUI to a running daemon
-runwisp validate             — validate runwisp.toml without starting anything; --json for the structured document (see above)
+runwisp validate             — validate runwisp.toml without starting anything; --json for the structured document (see above); --app validates a JSON document on stdin
 runwisp list                 — list configured tasks and schedules; --json for a machine-readable document
 runwisp status               — is the daemon alive?; --json for daemon health + every task's last run (+ pausedAt when its schedule is paused); human output lists paused schedules
 runwisp run <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive

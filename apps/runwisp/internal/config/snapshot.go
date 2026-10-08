@@ -84,12 +84,15 @@ func (s *Snapshot) Refresh(path string, cfg *Config, now time.Time) {
 	s.loadedAt = now
 }
 
-// snapshotInputs hashes runwisp.toml plus every included TOML file and
-// referenced env_file, and records the include globs and what they matched so
-// Stale can re-evaluate the patterns later.
+// snapshotInputs hashes runwisp.toml (unless an app supplied the config) plus
+// every included TOML file and referenced env_file, and records the include
+// globs and what they matched so Stale can re-evaluate the patterns later.
 func snapshotInputs(path string, cfg *Config) snapshotPins {
 	var pins snapshotPins
-	paths := []string{path}
+	var paths []string
+	if !cfg.fromDocument {
+		paths = append(paths, path)
+	}
 	pins.root = path
 	if abs, err := filepath.Abs(path); err == nil {
 		pins.root = abs

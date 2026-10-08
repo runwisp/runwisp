@@ -1,0 +1,343 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: JavaScript SDK
+description: Schedule tasks from Node.js with @runwisp/node. Every run is recorded with its output, exit code and duration, and shown in the web UI.
+head:
+    - tag: title
+      content: "RunWisp JavaScript SDK (@runwisp/node): scheduled tasks you can see"
+---
+
+`@runwisp/node` schedules tasks from your Node.js app. Your callbacks run in the
+app. RunWisp records every run with its output, exit code and duration. See
+[SDKs](/sdk/) for how it works.
+
+Coming from node-cron? `@runwisp/node` also has node-cron's API. See
+[From node-cron](/coming-from/node-cron/).
+
+## Install
+
+```bash
+npm install @runwisp/node
+```
+
+It needs Node.js 20 or later on Linux, macOS or WSL. The `runwisp` binary comes
+with it as a dependency.
+
+## Define a task
+
+```ts
+import { RunWisp } from "@runwisp/node";
+
+const runwisp = new RunWisp();
+
+runwisp.task("nightly-backup", { cron: "0 3 * * *" }, async () => {
+    console.log("dumping the database");
+});
+```
+
+On the first task, the app starts RunWisp and prints where to find it:
+
+```
+RunWisp dashboard: http://127.0.0.1:9477, password: npx runwisp password --data .runwisp
+```
+
+Without a [`password`](#password) option, RunWisp picks a new password on each
+start. The app never prints it. Run the command from the notice to see it.
+
+The task name is the task's name in RunWisp, and its run history is kept under
+it. Use 1 to 100 of `a-z A-Z 0-9 . _ : -`.
+
+RunWisp keeps its database, run logs and socket in `./.runwisp`. Add it to
+`.gitignore`.
+
+## Task options
+
+The second argument takes [`[tasks.*]`](/configuration/tasks/) keys, with the
+same names. Durations are strings like `"30s"` or `"1h30m"`. The options are
+typed, so your editor completes them.
+
+```ts
+runwisp.task(
+    "nightly-backup",
+    {
+        cron: "0 3 * * *",
+        jitter: "5m",
+        timeout: "30m",
+        retry_attempts: 3,
+        retry_delay: "1m",
+        keep_runs: 50,
+        notify: ["slack"],
+    },
+    async () => {
+        await backup();
+    },
+);
+```
+
+The callback runs the task ([`sdk`](/configuration/tasks/#sdk)), so keys for a
+shell command, such as `run` or `shell`, are rejected. Without `cron`, the
+task runs only when you start it from the web UI, the TUI or the CLI.
+
+`task()` throws right away if RunWisp would reject the options.
+
+## Services
+
+A service is a callback that keeps running. RunWisp restarts it when it returns
+or throws, and stops it through `signal`. The options are
+[`[services.*]`](/configuration/services/) keys.
+
+```ts
+runwisp.service("queue-worker", { restart_delay: "5s" }, async ({ signal }) => {
+    while (!signal.aborted) await processNextJob(signal);
+});
+```
+
+## Notifiers and the rest of the config
+
+Pass anything else a `runwisp.toml` holds as `config`, with the same keys:
+[`notifiers`](/notifications/), [`route`](/configuration/routes/),
+[`defaults`](/configuration/defaults/), [`daemon`](/configuration/daemon/),
+[`storage`](/configuration/storage/), and tasks that run a shell command.
+
+```ts
+const runwisp = new RunWisp({
+    config: {
+        defaults: { keep_runs: 100 },
+        notifiers: {
+            slack: { type: "slack", webhook_url: process.env.SLACK_WEBHOOK_URL },
+        },
+        tasks: {
+            "vacuum-db": { cron: "0 4 * * 0", run: "psql app -c 'VACUUM'" },
+        },
+    },
+});
+```
+
+Relative paths resolve against the app's working directory. A change that
+[needs a restart](/operations/reload/#what-needs-a-restart) restarts RunWisp.
+
+## Environment and parameters
+
+A task's [`env`](/configuration/tasks/#env), [`secrets`](/configuration/tasks/#secrets)
+and env [parameters](/configuration/tasks/#params) reach the callback as
+`env`, and every parameter as `params`. `process.env` is not changed.
+
+```ts
+runwisp.task(
+    "send-digest",
+    { cron: "0 8 * * *", params: [{ env: "DRY_RUN", default: "0" }] },
+    async ({ env }) => {
+        await sendDigest({ dryRun: env.DRY_RUN === "1" });
+    },
+);
+```
+
+## Output and failures
+
+`console.log`, `console.info` and `console.debug` inside a task go to the run's
+stdout, and `console.warn` and `console.error` to its stderr. They still print
+to the app's console too. Output written to `process.stdout` directly, as some
+loggers do, is not captured.
+
+A thrown error or rejected promise fails the run with exit code 1 and the stack
+trace in its log. When the callback returns, the run succeeds with exit code 0.
+If a task crashes the app, the stack trace also goes to the log of every run
+that was in progress.
+
+## Stop a run
+
+When a run is stopped from the web UI, or hits its `timeout`, the callback's
+`signal` is aborted. Pass it to whatever supports an `AbortSignal`:
+
+```ts
+runwisp.task("sync", { cron: "*/15 * * * *", timeout: "10m" }, async ({ signal }) => {
+    const res = await fetch("https://api.example.com/export", { signal });
+    await save(await res.json());
+});
+```
+
+What the callback prints while it stops still goes to the run's log. A callback
+that ignores `signal` keeps running in the app after RunWisp gives up on it
+([`graceful_stop`](/configuration/tasks/#graceful_stop) later). The next run then
+waits for it to finish, or is skipped with `on_overlap: "skip"`, so the task
+never runs twice at once.
+
+## Pause and remove a task
+
+`task()` returns a [task handle](#task-handle):
+
+```ts
+const sync = runwisp.task("sync", { cron: "*/15 * * * *" }, runSync);
+
+sync.stop(); // unscheduled: runs only when started by hand
+sync.start(); // scheduled again
+sync.destroy(); // removed from RunWisp
+```
+
+A removed task's past runs stay until [retention](/configuration/tasks/#keep_runs)
+removes them.
+
+## Several copies of the app
+
+Copies that share a data directory share one RunWisp, so each run happens once.
+The first copy runs every task and gives RunWisp its config. The others wait,
+and one of them takes over as soon as it leaves. When copies run different
+versions of the app, RunWisp shows the tasks of the copy that runs them.
+
+In one process, `new RunWisp()` returns the same instance for the same data
+directory, so each file can create its own. Their options must match, and only
+the first can pass `config`.
+
+## When the app stops
+
+`await runwisp.close()` waits for running tasks and stops the services. If
+another copy of the app is running, it takes over. Otherwise RunWisp stops.
+
+When the last copy exits without `close()`, Ctrl-C included, RunWisp stops 10
+seconds later, so an app that restarts finds it still running. Runs that were in
+progress fail with `the app disconnected`. A run that fires while no copy is
+running fails with `no app is connected`.
+
+## Unit tests
+
+Pass `enabled: false`, or set `RUNWISP_NODE=off`, to start nothing. Tasks still
+register, and `task.execute()` runs the callback:
+
+```ts
+const runwisp = new RunWisp({ enabled: false });
+const backup = runwisp.task("nightly-backup", { cron: "0 3 * * *" }, runBackup);
+
+await backup.execute();
+```
+
+## Reference
+
+### `new RunWisp(options)`
+
+Every option is optional.
+
+```ts
+const runwisp = new RunWisp({
+    data: "./.runwisp",
+    port: 9477,
+    password: process.env.RUNWISP_PASSWORD,
+});
+```
+
+#### data
+
+**type**: `string` **default**: `RUNWISP_DATA`, else `./.runwisp` (`/var/lib/runwisp` as root)
+
+Data directory: database, run logs and socket.
+
+#### port
+
+**type**: `number` **default**: `RUNWISP_PORT`, else `9477`, or the next free
+port if 9477 is taken
+
+Web UI port. A port picked this way is saved in the data directory, so the
+address stays the same across restarts.
+
+#### host
+
+**type**: `string` **default**: `RUNWISP_HOST`, else `127.0.0.1`
+
+Web UI bind address.
+
+#### password
+
+**type**: `string` **default**: `RUNWISP_PASSWORD`
+
+Web UI password. Without one, RunWisp picks a new one on each start.
+
+#### auth
+
+**type**: `boolean` **default**: `true`
+
+`false` turns the login off, like `RUNWISP_AUTH=off`. See
+[Authentication](/operations/auth/).
+
+#### binary
+
+**type**: `string` **default**: the `runwisp` npm package, else `runwisp` on `PATH`
+
+Path to the `runwisp` binary.
+
+#### log
+
+**type**: `{ info, warn, error } | false` **default**: `console`
+
+Where the dashboard notice and warnings go. `false` silences them.
+
+#### config
+
+**type**: `object` **default**: `{}`
+
+The rest of a `runwisp.toml`, with the same keys. See
+[Notifiers and the rest of the config](#notifiers-and-the-rest-of-the-config).
+
+#### enabled
+
+**type**: `boolean` **default**: `true`, or `false` if `RUNWISP_NODE=off`
+
+`false` starts nothing. Tasks still register and `execute()` runs them.
+
+### RunWisp methods
+
+| Member                           | Description                                                                                                                       |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `task(name, options, fn)`        | Registers a task with [task options](#task-options) and starts it. Returns a task handle.                                         |
+| `service(name, options, fn)`     | Registers a [service](#services).                                                                                                 |
+| `schedule(cron, fn, options?)`   | node-cron's `schedule`. See [From node-cron](/coming-from/node-cron/).                                                            |
+| `createTask(cron, fn, options?)` | node-cron's `createTask`: like `schedule`, but unscheduled until `start()`.                                                       |
+| `validate(cron)`                 | `true` if RunWisp accepts the cron expression.                                                                                    |
+| `getTasks()`                     | A `Map` of task name to task handle.                                                                                              |
+| `getTask(name)`                  | The task handle, or `undefined`.                                                                                                  |
+| `start()`                        | Starts RunWisp now instead of on the first task. Rejects with RunWisp's error if it can't.                                        |
+| `close()`                        | Stops serving tasks once running ones return, and stops RunWisp unless another copy of the app uses it. `shutdown()` is the same. |
+| `url`                            | The web UI address.                                                                                                               |
+
+### Task handle
+
+| Member              | Description                                                                     |
+| ------------------- | ------------------------------------------------------------------------------- |
+| `id`, `name`        | The task's name in RunWisp.                                                     |
+| `start()`           | Resumes the task.                                                               |
+| `stop()`            | Pauses the task.                                                                |
+| `destroy()`         | Removes the task from RunWisp.                                                  |
+| `execute()`         | Runs the callback now, in the app. Not recorded in RunWisp.                     |
+| `getStatus()`       | `"idle"`, `"running"`, `"stopped"` or `"destroyed"`.                            |
+| `getNextRun()`      | The next scheduled run as a `Date`, or `null` while stopped or without `cron`.  |
+| `msToNext()`        | Milliseconds until `getNextRun()`, or `null`.                                   |
+| `isBusy()`          | `true` while the callback runs in this copy of the app.                         |
+| `lastRun()`         | `{ date, result?, error? }` of the last run in this copy of the app, or `null`. |
+| `getPattern()`      | The cron expression, or `""` without `cron`.                                    |
+| `on`, `off`, `once` | Listen to [events](#events).                                                    |
+
+### Callback context
+
+The callback gets one argument:
+
+| Field       | Description                                                                                                             |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `signal`    | `AbortSignal`, aborted when the run is stopped or times out.                                                            |
+| `env`       | The run's [environment](#environment-and-parameters). Empty for `execute()`.                                            |
+| `params`    | The run's [parameters](#environment-and-parameters). Empty for `execute()`.                                             |
+| `date`      | When the callback started, as a `Date`.                                                                                 |
+| `task`      | The task handle.                                                                                                        |
+| `execution` | `{ id, reason, startedAt, finishedAt?, result?, error? }`. `reason` is `"scheduled"` or `"invoked"` (from `execute()`). |
+
+### Events
+
+Listeners get the [callback context](#callback-context).
+
+| Event                  | When                                                       |
+| ---------------------- | ---------------------------------------------------------- |
+| `task:started`         | `start()` was called.                                      |
+| `task:stopped`         | `stop()` was called.                                       |
+| `task:destroyed`       | The task was removed.                                      |
+| `execution:started`    | The callback started.                                      |
+| `execution:finished`   | The callback returned. `execution.result` holds its value. |
+| `execution:failed`     | The callback threw. `error` holds the error.               |
+| `execution:maxReached` | node-cron's `maxExecutions` was reached.                   |

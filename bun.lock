@@ -131,6 +131,22 @@
         "typescript-eslint": "^8.65.0",
       },
     },
+    "packages/node": {
+      "name": "@runwisp/node",
+      "version": "0.0.0",
+      "dependencies": {
+        "runwisp": "^1.3.1",
+      },
+      "devDependencies": {
+        "@runwisp/eslint-config": "workspace:*",
+        "@runwisp/typescript-config": "workspace:*",
+        "@types/node": "^26.6.4",
+        "eslint": "^10.12.0",
+        "openapi-typescript": "^7.13.0",
+        "typescript": "6.0.3",
+        "vitest": "^5.0.3",
+      },
+    },
     "packages/typescript-config": {
       "name": "@runwisp/typescript-config",
       "version": "0.0.0",
@@ -719,9 +735,19 @@
 
     "@runwisp/common": ["@runwisp/common@workspace:packages/common"],
 
+    "@runwisp/darwin-arm64": ["@runwisp/darwin-arm64@1.4.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-XB3482vqRZh7Ujri1LP4t9HOGTl8a9zPuvZsHO037/uRyMHGgC8ifr1c/CXbse3exP0VYhWIQgnHDWoXsODE2w=="],
+
+    "@runwisp/darwin-x64": ["@runwisp/darwin-x64@1.4.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-8Lh4uzAuMb+I7PQN1QZiyMHWhctLyq2oV6Bs2qLu66+/4srdFLu8fXAHO/k1XLUCJEkPy8duifBxUVNzmPraQA=="],
+
     "@runwisp/docs": ["@runwisp/docs@workspace:apps/docs"],
 
     "@runwisp/eslint-config": ["@runwisp/eslint-config@workspace:packages/eslint-config"],
+
+    "@runwisp/linux-arm64": ["@runwisp/linux-arm64@1.4.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-j6J3ppE0xy2TqcN6FhCNcpQ4rCUleIwOuoRcQUKjHccCvD6vt077kJSyjaOjeC4xmu6rFuNRydChnmBV2RwhZw=="],
+
+    "@runwisp/linux-x64": ["@runwisp/linux-x64@1.4.0", "", { "os": "linux", "cpu": "x64" }, "sha512-9Jz2ppP7FZBMuE8k6hlI+MT2o/mUUBIc72I+r553ER4Lp19Pp1XPP3peoghuRf4g1roIsQM2npAh6DixpnFw8w=="],
+
+    "@runwisp/node": ["@runwisp/node@workspace:packages/node"],
 
     "@runwisp/typescript-config": ["@runwisp/typescript-config@workspace:packages/typescript-config"],
 
@@ -1938,6 +1964,8 @@
     "rolldown": ["rolldown@1.2.12", "", { "dependencies": { "@oxc-project/types": "=0.152.0", "@rolldown/pluginutils": "^1.0.0" }, "optionalDependencies": { "@rolldown/binding-android-arm-eabi": "1.2.12", "@rolldown/binding-android-arm64": "1.2.12", "@rolldown/binding-darwin-arm64": "1.2.12", "@rolldown/binding-darwin-x64": "1.2.12", "@rolldown/binding-freebsd-x64": "1.2.12", "@rolldown/binding-linux-arm-gnueabihf": "1.2.12", "@rolldown/binding-linux-arm64-gnu": "1.2.12", "@rolldown/binding-linux-arm64-musl": "1.2.12", "@rolldown/binding-linux-ppc64-gnu": "1.2.12", "@rolldown/binding-linux-s390x-gnu": "1.2.12", "@rolldown/binding-linux-x64-gnu": "1.2.12", "@rolldown/binding-linux-x64-musl": "1.2.12", "@rolldown/binding-openharmony-arm64": "1.2.12", "@rolldown/binding-win32-arm64-msvc": "1.2.12", "@rolldown/binding-win32-x64-msvc": "1.2.12" }, "bin": { "rolldown": "./bin/cli.mjs" } }, "sha512-8wafseiaG80xmXSfqidUNqZcylTlhmPZZt+za2m+js2sFZ8dTNlhIOV2WcbIPx2hgwPBJpEUGFAMZ9bgBBLTSQ=="],
 
     "run-applescript": ["run-applescript@7.1.0", "", {}, "sha512-DPe5pVFaAsinSaV6QjQ6gdiedWDcRCbUuiQfQa2wmWV7+xC9bGulGI8+TdRmoFkAPaBXk8CrAbnlY2ISniJ47Q=="],
+
+    "runwisp": ["runwisp@1.4.0", "", { "optionalDependencies": { "@runwisp/darwin-arm64": "1.4.0", "@runwisp/darwin-x64": "1.4.0", "@runwisp/linux-arm64": "1.4.0", "@runwisp/linux-x64": "1.4.0" }, "bin": { "runwisp": "bin/runwisp" } }, "sha512-ahRia2PjHY6et0DfaiBOLDzRKGzUhA9JSVGU7aRKwYb+zdVzf/r/fhF7j038QDUkM9MzbyJznQd2dUoCM67Chg=="],
 
     "s.color": ["s.color@0.0.15", "", {}, "sha512-AUNrbEUHeKY8XsYr/DYpl+qk5+aM+DChopnWOPEzn8YKzOhv4l2zH6LzZms3tOZP3wwdOyc0RmTciyi46HLIuA=="],
 

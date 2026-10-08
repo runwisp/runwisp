@@ -408,6 +408,74 @@ jobs:
         working-directory: npm/runwisp
         run: npm publish --access public --tag "${NPM_TAG}" --provenance
 
+  # Unlike the other workspace packages, @runwisp/node ships compiled dist/
+  # (Node won't strip types inside node_modules) and pins the runwisp binary
+  # package of the same release, so it publishes after it, from a full checkout.
+  npm-publish-node:
+    if: github.event_name == 'release'
+    name: Publish @runwisp/node
+    needs: npm-publish-runwisp
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Build
+        working-directory: packages/node
+        run: |
+          bun scripts/generate-config.ts
+          bunx tsc -p tsconfig.build.json
+
+      - name: Compute version and dist-tag
+        id: version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${TAG#v}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [[ "${VERSION}" == *-* ]]; then
+            prerelease="${VERSION#*-}"
+            echo "NPM_TAG=${prerelease%%.*}" >> "$GITHUB_OUTPUT"
+          else
+            echo "NPM_TAG=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stamp version and the runwisp dependency
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        working-directory: packages/node
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = process.env.VERSION;
+            pkg.dependencies.runwisp = process.env.VERSION;
+            delete pkg.devDependencies;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Publish
+        env:
+          NPM_TAG: ${{ steps.version.outputs.NPM_TAG }}
+        working-directory: packages/node
+        run: npm publish --access public --tag "${NPM_TAG}" --provenance
+
   deploy-docs:
     # Cloudflare Pages builds/deploys the docs site from its Git integration.
     # Its production branch is `docs-release` (not `main`), so the docs only go

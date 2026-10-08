@@ -685,7 +685,10 @@ type InstanceInfo struct {
 	Pid         int    `json:"pid"`
 	DataDir     string `json:"dataDir"`
 	ConfigPath  string `json:"configPath"`
-	SocketPath  string `json:"socketPath"`
+	// ConfigSource is "app" when an app supplies the config (`daemon --app`)
+	// and ConfigPath only anchors its relative paths; "file" otherwise.
+	ConfigSource string `json:"configSource" enum:"file,app"`
+	SocketPath   string `json:"socketPath"`
 }
 
 // TaskComposeRef identifies the compose file and service backing a task.

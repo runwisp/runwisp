@@ -281,6 +281,9 @@ func (srv *Server) setupRoutes() error {
 
 	// Create huma API after all global middleware is registered (chi requirement)
 	config := huma.DefaultConfig("RunWisp API", version.Version)
+	// The API description is Apache-2.0, unlike the daemon, so the Apache
+	// packages/* (and any client) may generate types from it.
+	config.Info.License = &huma.License{Name: "Apache-2.0", Identifier: "Apache-2.0"}
 	config.Servers = []*huma.Server{{URL: fmt.Sprintf("%s://localhost:%d", srv.scheme, srv.port)}}
 	srv.api = humachi.New(srv.router, config)
 
@@ -300,6 +303,19 @@ func (srv *Server) setupRoutes() error {
 		// need isolation bind a dedicated [daemon] metrics_listen (etcd's
 		// --listen-metrics-urls model) or front it with a reverse proxy.
 		srv.router.Get("/metrics", srv.handleOpenMetrics)
+	}
+
+	// App connections. Gated on the Unix socket itself, not the auth group: an
+	// app runs handler code with the daemon's trust, which neither a JWT nor
+	// RUNWISP_AUTH=off may grant over TCP.
+	if srv.apps != nil {
+		srv.router.Get("/api/local/app", func(w http.ResponseWriter, r *http.Request) {
+			if !IsLocalTrusted(r) {
+				http.Error(w, "app connections are only accepted on the Unix socket", http.StatusForbidden)
+				return
+			}
+			srv.apps.ServeHTTP(w, r)
+		})
 	}
 
 	// Public auth status endpoint. No rate limit (nothing to flood — it only

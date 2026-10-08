@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Migrating to RunWisp
-description: Move to RunWisp from cron, supervisord, systemd, or docker-compose. RunWisp reads or converts your existing config.
+description: Move to RunWisp from cron, supervisord, systemd, docker-compose, or node-cron. RunWisp reads or converts your existing config.
 head:
     - tag: title
-      content: "Migrate to RunWisp from cron, supervisord, systemd, or docker-compose"
+      content: "Migrate to RunWisp from cron, supervisord, systemd, docker-compose, or node-cron"
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -33,6 +33,11 @@ coming from:
         title="From docker-compose"
         description="Run the services in an existing compose file, without editing it."
         href="/coming-from/docker-compose/"
+    />
+    <LinkCard
+        title="From node-cron"
+        description="Keep your schedule() calls and see every run in the web UI."
+        href="/coming-from/node-cron/"
     />
 </CardGrid>
 

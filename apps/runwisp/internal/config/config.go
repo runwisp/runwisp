@@ -27,7 +27,23 @@ import (
 // Load reads, decodes, defaults, and validates a runwisp.toml file, merging in
 // any files pulled via [daemon].include.
 func Load(path string) (*Config, error) {
-	cfg, dirs, err := loadWithIncludes(path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+	root, err := parseWire(data, filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
+	return load(path, root)
+}
+
+// load is everything after the root document is decoded, shared by Load and
+// LoadDocument so a config behaves the same whichever way it arrived. path is
+// the root config's location: relative paths resolve against its directory
+// and errors name it.
+func load(path string, root *tomlConfig) (*Config, error) {
+	cfg, dirs, err := loadWithIncludes(path, root)
 	if err != nil {
 		return nil, err
 	}
@@ -331,11 +347,18 @@ func gracefulStopWarnings(cfg *Config) []string {
 // stops short of building the model so loadWithIncludes can decode each file
 // against its own dir, then merge before the single build pass.
 func parseWire(data []byte, baseDir string) (*tomlConfig, error) {
+	return decodeWire(data, baseDir, true)
+}
+
+// decodeWire is parseWire for any TOML text. located says whether line and
+// column positions mean anything to the reader: they don't for TOML generated
+// from a JSON document, so its errors name the key path instead.
+func decodeWire(data []byte, baseDir string, located bool) (*tomlConfig, error) {
 	var raw tomlConfig
 	dec := toml.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&raw); err != nil {
-		return nil, formatDecodeError(err)
+		return nil, formatDecodeError(err, located)
 	}
 	if err := expandConfig(&raw, baseDir, os.LookupEnv); err != nil {
 		return nil, err

@@ -6,6 +6,7 @@ description: "Long-running processes: instances, restarts, health checks, boot o
 ---
 
 import Run from "./shared/_run.mdx";
+import Sdk from "./shared/_sdk.mdx";
 import Description from "./shared/_description.mdx";
 import Group from "./shared/_group.mdx";
 import ManualTrigger from "./shared/_manual_trigger.mdx";
@@ -60,6 +61,10 @@ run = "/usr/local/bin/worker"
 ### run
 
 <Run />
+
+### sdk
+
+<Sdk />
 
 ### description
 
@@ -510,5 +515,5 @@ instance goes [FATAL](#when-a-service-cant-start-fatal).
   [`max_concurrent`](/configuration/tasks/#max_concurrent),
   [`max_queued`](/configuration/tasks/#max_queued): use [`instances`](#instances).
 - A name already used by a `[tasks.*]` entry.
-- An empty or missing [`run`](#run) (unless [`compose_file`](#compose_file) is set).
+- An empty or missing [`run`](#run) (unless [`compose_file`](#compose_file) or [`sdk`](#sdk) is set).
 - [`instances`](#instances) outside `1` to `64`.

@@ -93,6 +93,7 @@ type Options struct {
 	HasLocalTasks          bool
 	Docker                 Backend // container backend; nil when Docker is unavailable
 	Compose                Backend // compose backend; nil when docker compose is unavailable
+	SDK                    Backend // sdk backend (apps on the local socket); nil outside the daemon
 	MinFreeDisk            int64   // minimum free disk space in bytes; 0 = disabled
 	// Clock is the wall-clock source for captured-output timestamps (system
 	// lines and the per-line timestamp index). nil defaults to time.Now;
@@ -130,6 +131,9 @@ func New(opts Options) *RoutingExecutor {
 	}
 	if opts.Compose != nil {
 		backends["compose"] = opts.Compose
+	}
+	if opts.SDK != nil {
+		backends["sdk"] = opts.SDK
 	}
 
 	// Always dispatchable: config-backed dispatch when local tasks exist.

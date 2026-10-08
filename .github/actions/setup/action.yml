@@ -1,7 +1,7 @@
 # Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: GPL-3.0-or-later
 
 name: Set up toolchains
-description: Go with a per-job cache, bun, and the installed JS dependencies.
+description: Go with a per-job cache, Node, bun, and the installed JS dependencies.
 
 inputs:
   go:
@@ -49,6 +49,12 @@ runs:
           .bin
         key: go-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum', 'apps/runwisp/scripts/sqlc-generate.sh', 'apps/runwisp/scripts/lint-go.sh', 'apps/runwisp/scripts/check-go.sh') }}
         restore-keys: go-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-
+
+    # packages/node's e2e runs a TypeScript app fixture with the node on PATH,
+    # which needs built-in type stripping (Node 22.18+).
+    - uses: actions/setup-node@v6
+      with:
+        node-version: '24'
 
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       with:

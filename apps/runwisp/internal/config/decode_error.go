@@ -40,33 +40,37 @@ func keyPath(key toml.Key) string {
 // position travels with the message. The strict-mode message in the upstream
 // library doesn't surface the field name; we walk the wrapped DecodeError
 // list to pull it out.
-func formatDecodeError(err error) error {
+func formatDecodeError(err error, located bool) error {
 	var strict *toml.StrictMissingError
 	if errors.As(err, &strict) {
 		// Surface every unknown key as its own located error so `validate --json`
 		// reports all offending sites, not just the first. Each message carries
 		// its own line/column/key.
 		if len(strict.Errors) > 0 {
-			located := make([]error, 0, len(strict.Errors))
+			errs := make([]error, 0, len(strict.Errors))
 			for i := range strict.Errors {
 				de := strict.Errors[i]
-				row, col := de.Position()
-				located = append(located, &LocatedError{
-					Msg:    fmt.Sprintf("failed to parse config file:%s", formatOneStrictMissing(de)),
+				row, col := position(de, located)
+				errs = append(errs, &LocatedError{
+					Msg:    fmt.Sprintf("failed to parse config file:%s", formatOneStrictMissing(de, located)),
 					Key:    keyPath(de.Key()),
 					Line:   row,
 					Column: col,
 				})
 			}
-			return errors.Join(located...)
+			return errors.Join(errs...)
 		}
-		return &LocatedError{Msg: fmt.Sprintf("failed to parse config file:%s", formatStrictMissing(strict))}
+		return &LocatedError{Msg: "failed to parse config file:"}
 	}
 	var decode *toml.DecodeError
 	if errors.As(err, &decode) {
-		row, col := decode.Position()
+		row, col := position(*decode, located)
+		msg := fmt.Sprintf("failed to parse config file: %s", decode.Error())
+		if !located && len(decode.Key()) > 0 {
+			msg += " at " + keyPath(decode.Key())
+		}
 		return &LocatedError{
-			Msg:    fmt.Sprintf("failed to parse config file: %s", decode.Error()),
+			Msg:    msg,
 			Key:    keyPath(decode.Key()),
 			Line:   row,
 			Column: col,
@@ -75,19 +79,19 @@ func formatDecodeError(err error) error {
 	return fmt.Errorf("failed to parse config file: %w", err)
 }
 
-func formatStrictMissing(s *toml.StrictMissingError) string {
-	var b strings.Builder
-	for _, de := range s.Errors {
-		b.WriteString(formatOneStrictMissing(de))
+// position is the error's line and column, or 0, 0 when they point into TOML
+// the operator never saw.
+func position(de toml.DecodeError, located bool) (row, col int) {
+	if !located {
+		return 0, 0
 	}
-	return b.String()
+	return de.Position()
 }
 
 // formatOneStrictMissing renders a single unknown-key decode error, including
 // the leading "\n  " indent, a did-you-mean suggestion, and a section hint when
-// available. Shared by the aggregate message and the per-key located errors so
-// both read identically.
-func formatOneStrictMissing(de toml.DecodeError) string {
+// available.
+func formatOneStrictMissing(de toml.DecodeError, located bool) string {
 	key := de.Key()
 	field := keyTail(key)
 	var candidates []string
@@ -98,11 +102,15 @@ func formatOneStrictMissing(de toml.DecodeError) string {
 	if seg, cands, ok := unknownKeyInfo(key); ok {
 		field, candidates = seg, cands
 	}
-	row, col := de.Position()
+	at := keyPath(key)
+	if located {
+		row, col := de.Position()
+		at = fmt.Sprintf("line %d:%d", row, col)
+	}
 	var b strings.Builder
 	b.WriteString("\n  ")
 	if field != "" {
-		fmt.Fprintf(&b, "unknown key %q at line %d:%d", field, row, col)
+		fmt.Fprintf(&b, "unknown key %q at %s", field, at)
 		if suggestion := textutil.Closest(field, candidates); suggestion != "" {
 			fmt.Fprintf(&b, " (did you mean %q?)", suggestion)
 		}

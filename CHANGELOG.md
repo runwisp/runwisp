@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `@runwisp/node`: an npm package that runs node-cron tasks under RunWisp, so every run is recorded with its output and exit code and shown in the web UI. Swap the import and keep your `schedule()` calls, or define tasks and services with every `runwisp.toml` key. See [From node-cron](https://docs.runwisp.com/coming-from/node-cron/).
+- Tasks and services take `sdk = true`, which runs them in an app that defines them through an SDK instead of a shell command, and `runwisp daemon --app` reads its config from such an app.
+
 ## [1.5.1] - 2026-10-08
 
 ### Added

@@ -39,7 +39,7 @@ type daemonConfig struct {
 	NoAuth            bool
 }
 
-func loadDaemonConfig(ctx context.Context, configRepo *storage.SQLiteDatabase, mode daemonMode, f Flags) (*daemonConfig, error) {
+func loadDaemonConfig(ctx context.Context, configRepo *storage.SQLiteDatabase, mode daemonMode, src config.Source) (*daemonConfig, error) {
 	// Fingerprint resolution priority: an env override (not persisted), then the
 	// DB (canonical store), then a freshly generated one persisted for next boot.
 	fp, err := resolveFingerprint(ctx, configRepo)
@@ -57,7 +57,7 @@ func loadDaemonConfig(ctx context.Context, configRepo *storage.SQLiteDatabase, m
 		}
 	}
 
-	cfg, err := loadConfigFile(f.CfgFile, stationCfg.Enabled)
+	cfg, err := loadConfig(src, stationCfg.Enabled)
 	if err != nil {
 		return nil, err
 	}
@@ -183,18 +183,9 @@ func resolveFingerprint(ctx context.Context, configRepo *storage.SQLiteDatabase)
 	return fp, nil
 }
 
-func loadConfigFile(path string, stationEnabled bool) (*config.Config, error) {
-	cfg, err := config.Load(path)
+func loadConfig(src config.Source, stationEnabled bool) (*config.Config, error) {
+	cfg, err := src.Load()
 	if err == nil {
-		// A root daemon executes whatever the config says; re-assert the file
-		// (and its includes) are not reachable through a user-writable path or a
-		// repointable symlink before trusting it. No-op when unprivileged.
-		if terr := config.AssertPrivilegedConfigTrust(cfg, path); terr != nil {
-			return nil, terr
-		}
-		if perr := config.ApplyTrustedProxiesEnv(cfg); perr != nil {
-			return nil, perr
-		}
 		return cfg, nil
 	}
 
@@ -211,5 +202,5 @@ func loadConfigFile(path string, stationEnabled bool) (*config.Config, error) {
 		return cfg, nil
 	}
 
-	return nil, noConfigError(path)
+	return nil, noConfigError(src.Path())
 }

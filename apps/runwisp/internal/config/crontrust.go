@@ -63,6 +63,15 @@ func assertPrivilegedConfigTrust(cfg *Config, rootPath string, euid int) error {
 	if err := AssertFileTrusted(rootPath, "the config file"); err != nil {
 		return err
 	}
+	return assertIncludesTrusted(cfg, euid)
+}
+
+// assertIncludesTrusted is assertPrivilegedConfigTrust for a config with no
+// root file on disk: an app's document still pulls includes from disk.
+func assertIncludesTrusted(cfg *Config, euid int) error {
+	if euid != 0 || runningInContainer() {
+		return nil
+	}
 	for _, inc := range cfg.includeFiles {
 		if err := AssertFileTrusted(inc, "the included config file"); err != nil {
 			return err

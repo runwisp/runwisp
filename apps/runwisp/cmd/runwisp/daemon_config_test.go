@@ -7,6 +7,7 @@ import (
 	"crypto/pbkdf2"
 	"crypto/sha256"
 	"encoding/base64"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,14 +30,14 @@ run = "echo hi"
 	return path
 }
 
-func TestLoadConfigFile_MissingWithStationReturnsDefaults(t *testing.T) {
-	cfg, err := loadConfigFile("/this/does/not/exist/runwisp.toml", true)
+func TestLoadConfig_MissingWithStationReturnsDefaults(t *testing.T) {
+	cfg, err := loadConfig(config.FileSource("/this/does/not/exist/runwisp.toml"), true)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 }
 
-func TestLoadConfigFile_MissingWithoutStationErrors(t *testing.T) {
-	_, err := loadConfigFile("/this/does/not/exist/runwisp.toml", false)
+func TestLoadConfig_MissingWithoutStationErrors(t *testing.T) {
+	_, err := loadConfig(config.FileSource("/this/does/not/exist/runwisp.toml"), false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no runwisp.toml")
 
@@ -48,7 +49,7 @@ func TestLoadConfigFile_MissingWithoutStationErrors(t *testing.T) {
 	assert.Contains(t, ufe.details, "docs.runwisp.com")
 }
 
-// loadDaemonConfig integrates loadConfigFile + fingerprint resolution +
+// loadDaemonConfig integrates loadConfig + fingerprint resolution +
 // resolvePassword + deriveJWTSecret. We exercise the standalone path with a
 // stable RUNWISP_PASSWORD so PasswordEphemeral is deterministic.
 func TestLoadDaemonConfig_StandaloneWithStablePassword(t *testing.T) {
@@ -61,7 +62,7 @@ func TestLoadDaemonConfig_StandaloneWithStablePassword(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	cfg, err := loadDaemonConfig(t.Context(), db, modeStandalone, f)
+	cfg, err := loadDaemonConfig(t.Context(), db, modeStandalone, config.FileSource(f.CfgFile))
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 
@@ -84,7 +85,7 @@ func TestLoadDaemonConfig_StandaloneEphemeralPassword(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	cfg, err := loadDaemonConfig(t.Context(), db, modeStandalone, f)
+	cfg, err := loadDaemonConfig(t.Context(), db, modeStandalone, config.FileSource(f.CfgFile))
 	require.NoError(t, err)
 	assert.True(t, cfg.PasswordEphemeral)
 	assert.NotEmpty(t, cfg.Password)
@@ -100,7 +101,7 @@ func TestLoadDaemonConfig_MissingTOMLInStandaloneErrors(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	_, err = loadDaemonConfig(t.Context(), db, modeStandalone, f)
+	_, err = loadDaemonConfig(t.Context(), db, modeStandalone, config.FileSource(f.CfgFile))
 	assert.Error(t, err)
 }
 
@@ -114,11 +115,11 @@ func TestLoadDaemonConfig_FingerprintPersistsAcrossCalls(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	first, err := loadDaemonConfig(t.Context(), db, modeStandalone, f)
+	first, err := loadDaemonConfig(t.Context(), db, modeStandalone, config.FileSource(f.CfgFile))
 	require.NoError(t, err)
 	require.NotEmpty(t, first.Fingerprint)
 
-	second, err := loadDaemonConfig(t.Context(), db, modeStandalone, f)
+	second, err := loadDaemonConfig(t.Context(), db, modeStandalone, config.FileSource(f.CfgFile))
 	require.NoError(t, err)
 	assert.Equal(t, first.Fingerprint, second.Fingerprint,
 		"fingerprint persisted to DB on first call must be returned on subsequent calls")

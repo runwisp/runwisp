@@ -5,6 +5,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"reflect"
@@ -31,14 +32,14 @@ import (
 // run_on_start firing. The reconciler owns one mutex so a CLI reload and a
 // SIGHUP can't interleave.
 type Reconciler struct {
-	configPath string
-	registry   *TaskRegistry
-	scheduler  *Scheduler
-	manager    TaskManager
-	db         storage.RunRepository
-	snapshot   *config.Snapshot
-	settings   SettingsHook
-	now        func() time.Time
+	source    config.Source
+	registry  *TaskRegistry
+	scheduler *Scheduler
+	manager   TaskManager
+	db        storage.RunRepository
+	snapshot  *config.Snapshot
+	settings  SettingsHook
+	now       func() time.Time
 
 	mu       sync.Mutex // serialises reloads
 	baseline *config.Config
@@ -54,15 +55,15 @@ type Reconciler struct {
 // reload. Snapshot is re-pinned on success so config_stale reflects the applied
 // config. Settings may be nil.
 type ReconcilerDeps struct {
-	ConfigPath string
-	Baseline   *config.Config
-	Registry   *TaskRegistry
-	Scheduler  *Scheduler
-	Manager    TaskManager
-	DB         storage.RunRepository
-	Snapshot   *config.Snapshot
-	Settings   SettingsHook
-	Now        func() time.Time
+	Source    config.Source
+	Baseline  *config.Config
+	Registry  *TaskRegistry
+	Scheduler *Scheduler
+	Manager   TaskManager
+	DB        storage.RunRepository
+	Snapshot  *config.Snapshot
+	Settings  SettingsHook
+	Now       func() time.Time
 }
 
 // SettingsHook prepares the daemon-wide (non-task) side of a reload: notifiers
@@ -78,19 +79,20 @@ type SettingsHook func(old, updated *config.Config) (keys []string, commit func(
 // NewReconciler wires a reconciler from its dependencies.
 func NewReconciler(deps ReconcilerDeps) *Reconciler {
 	return &Reconciler{
-		configPath: deps.ConfigPath,
-		registry:   deps.Registry,
-		scheduler:  deps.Scheduler,
-		manager:    deps.Manager,
-		db:         deps.DB,
-		snapshot:   deps.Snapshot,
-		settings:   deps.Settings,
-		now:        deps.Now,
-		baseline:   deps.Baseline,
+		source:    deps.Source,
+		registry:  deps.Registry,
+		scheduler: deps.Scheduler,
+		manager:   deps.Manager,
+		db:        deps.DB,
+		snapshot:  deps.Snapshot,
+		settings:  deps.Settings,
+		now:       deps.Now,
+		baseline:  deps.Baseline,
 	}
 }
 
-// Reconcile re-reads runwisp.toml and brings the live task set in line with it.
+// Reconcile re-loads the config source (runwisp.toml, or an app's document)
+// and brings the live daemon in line with it.
 // It returns the diff that was applied, or an error (leaving the live set
 // untouched) when the new config fails to load/validate, changes a setting
 // that requires a full restart, or carries settings the daemon can't apply.
@@ -98,20 +100,10 @@ func (r *Reconciler) Reconcile() (model.ReloadResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	newCfg, err := config.Load(r.configPath)
-	if err == nil {
-		// Boot applied the env override too (loadConfigFile); without it here
-		// every reload would see trusted_proxies change while the env pins it.
-		err = config.ApplyTrustedProxiesEnv(newCfg)
-	}
+	// The source loads exactly as it did at boot, privileged trust check and
+	// env overrides included, so a reload sees no difference boot didn't.
+	newCfg, err := r.source.Load()
 	if err != nil {
-		return model.ReloadResult{}, fmt.Errorf("reload rejected: %w", err)
-	}
-
-	// Re-assert the privileged trust check on every reload: the file the root
-	// daemon is about to take task definitions from must still be unreachable
-	// through a user-writable path or repointable symlink. No-op when unprivileged.
-	if err := config.AssertPrivilegedConfigTrust(newCfg, r.configPath); err != nil {
 		return model.ReloadResult{}, fmt.Errorf("reload rejected: %w", err)
 	}
 
@@ -165,7 +157,7 @@ func (r *Reconciler) Reconcile() (model.ReloadResult, error) {
 	result.Warnings = append(config.Warnings(newCfg), applyWarnings...)
 
 	r.baseline = newCfg
-	r.snapshot.Refresh(r.configPath, newCfg, r.now())
+	r.snapshot.Refresh(r.source.Path(), newCfg, r.now())
 	r.syncCronWatcher()
 
 	slog.Info("Configuration reloaded",
@@ -541,6 +533,10 @@ func restartOnly(d config.Daemon) config.Daemon {
 	return d
 }
 
+// ErrRestartRequired marks a reload rejected because it changes a setting only
+// a restart applies.
+var ErrRestartRequired = errors.New("requires `runwisp restart`")
+
 func nonReloadableErr(section string) error {
-	return fmt.Errorf("reload rejected: %s changed; requires `runwisp restart`", section)
+	return fmt.Errorf("reload rejected: %s changed; %w", section, ErrRestartRequired)
 }

@@ -42,6 +42,10 @@ type Config struct {
 	includeFiles []string
 	includeGlobs []string
 	watchFiles   []string
+	// fromDocument marks a config an app supplied (LoadDocument): its root
+	// path only anchors relative paths and is never read, so Snapshot doesn't
+	// hash it.
+	fromDocument bool
 
 	// cronFiles are the absolute paths of the crontabs read as live task sources
 	// via [daemon].include_cron at this load, in the order they were merged.

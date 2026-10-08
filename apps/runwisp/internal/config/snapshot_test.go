@@ -53,6 +53,24 @@ func TestSnapshot_DeletedConfigIsStale(t *testing.T) {
 	assert.True(t, snap.Stale())
 }
 
+// An app's config never reads the file at its anchor path, so editing a
+// runwisp.toml that happens to sit there is not a pending change. Files the
+// document points at still are.
+func TestSnapshot_AppDocumentIgnoresAnchorFile(t *testing.T) {
+	dir := t.TempDir()
+	path := writeSnapshotConfig(t, dir, "[tasks.t]\nrun = \"echo hi\"\n")
+	envPath := filepath.Join(dir, "secrets.env")
+	require.NoError(t, os.WriteFile(envPath, []byte("TOKEN=one\n"), 0o600))
+	cfg, err := LoadDocument(path, []byte(`{"tasks":{"app":{"run":"true","env_file":"secrets.env"}}}`))
+	require.NoError(t, err)
+	snap := NewSnapshot(path, cfg, time.Now())
+
+	require.NoError(t, os.WriteFile(path, []byte("[tasks.t]\nrun = \"echo bye\"\n"), 0o600))
+	assert.False(t, snap.Stale())
+	require.NoError(t, os.WriteFile(envPath, []byte("TOKEN=two\n"), 0o600))
+	assert.True(t, snap.Stale())
+}
+
 func TestSnapshot_EditedEnvFileIsStale(t *testing.T) {
 	dir := t.TempDir()
 	envPath := filepath.Join(dir, "secrets.env")
