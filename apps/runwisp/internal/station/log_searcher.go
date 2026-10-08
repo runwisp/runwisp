@@ -29,10 +29,12 @@ type logSearchParams struct {
 // filters by a matcher instead of a line window, reusing the same logsearch
 // engine the daemon's local REST search uses (logsearch.ScanRun).
 //
-// more reports whether the hit budget was reached before EOF — i.e. the run
+// exhausted is false when the hit budget was reached before EOF, i.e. the run
 // still has unscanned bytes the caller can page into via nextLine. A nil run
 // yields no hits and exhausted=true: there is nothing on disk to scan (the
-// dispatch may not have reached this daemon, or the run was deleted).
+// dispatch may not have reached this daemon, or the run was deleted). Errors
+// are *StationError: a malformed query is a validation error, a scan failure
+// is transient.
 func searchExecutionLog(ctx context.Context, run *model.Run, logDir string, p logSearchParams) (hits []protocol.HitsItem, nextLine int64, exhausted bool, err error) {
 	if run == nil {
 		return nil, 0, true, nil
@@ -49,7 +51,7 @@ func searchExecutionLog(ctx context.Context, run *model.Run, logDir string, p lo
 	}
 	found, more, serr := logsearch.ScanRun(ctx, ref, matcher, int(p.limit), p.fromLine)
 	if serr != nil {
-		return nil, 0, false, serr
+		return nil, 0, false, &StationError{Kind: StationErrorKindTransient, Message: "failed to search execution logs", Err: serr}
 	}
 
 	hits = make([]protocol.HitsItem, len(found))

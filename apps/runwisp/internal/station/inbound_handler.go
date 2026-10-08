@@ -283,13 +283,7 @@ func (h *InboundHandler) HandleLogSearchRequest(ctx context.Context, message pro
 		fromLine:      message.FromLine,
 	})
 	if searchErr != nil {
-		// A malformed regex is a validation error; anything else is transient.
-		kind := StationErrorKindTransient
-		if ce, ok := searchErr.(*StationError); ok {
-			kind = ce.Kind
-		}
-		return NewLogSearchChunkMessage(message.RequestID, executionID, nil, 0, true),
-			&StationError{Kind: kind, Message: searchErr.Error()}
+		return NewLogSearchChunkMessage(message.RequestID, executionID, nil, 0, true), searchErr
 	}
 
 	return NewLogSearchChunkMessage(message.RequestID, executionID, hits, nextLine, exhausted), nil
