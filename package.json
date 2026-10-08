@@ -51,6 +51,10 @@
     "@sveltejs/kit>cookie": "0.7.2",
     "webapi-parser>ajv": "6.15.0",
     "ramldt2jsonschema>json-schema-migrate": "2.0.0",
-    "@redocly/openapi-core>js-yaml": "4.3.2"
+    "@redocly/openapi-core>js-yaml": "4.3.2",
+    "http-cache-semantics": "4.3.0",
+    "postcss-selector-parser": "7.1.6",
+    "smol-toml": "1.9.0",
+    "source-map-js": "1.2.2"
   }
 }
