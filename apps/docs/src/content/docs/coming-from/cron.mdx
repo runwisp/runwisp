@@ -139,7 +139,7 @@ MAILTO=ops@example.com
 
 you get:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup]
 description = "Nightly database backup"
 cron = "30 2 * * *"
@@ -208,7 +208,7 @@ sudo mv /etc/cron.d/myjobs /root/myjobs.crontab.backup
 `crontab -r` deletes your whole crontab without asking. Take the backup first.
 :::
 
-You can move jobs one at a time. Just never leave a job enabled in both cron
+You can move jobs one at a time. Never leave a job enabled in both cron
 and RunWisp.
 
 ## Staging and promoting

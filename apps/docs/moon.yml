@@ -37,11 +37,12 @@ tasks:
         # Not split types/lint: eslint needs the .astro/types.d.ts that `astro check` generates.
         # `~:links` dep means moon runs the link check as part of this task —
         # it also gives `links` its own cache key and lets it be run on its own.
-        description: "astro check, then prettier --check + eslint + docs link check."
+        description: "astro check, then prettier --check + eslint + docs link check + prose lint."
         script: "bun scripts/sync-openapi.ts && bunx --bun astro check && prettier --check . && eslint ."
         deps:
             - "runwisp:openapi"
             - "~:links"
+            - "~:lint-prose"
         inputs:
             - "**/*"
             - "/apps/runwisp/openapi.json"
@@ -73,6 +74,15 @@ tasks:
             - "/README.md"
             - "/SECURITY.md"
             - "/scripts/install.sh"
+
+    lint-prose:
+        # The mechanical rules of STYLE.md: banned words, em dashes, and TOML
+        # blocks without a file name.
+        description: "Lint docs prose against STYLE.md."
+        command: "bun scripts/lint-prose.ts"
+        inputs:
+            - "src/content/docs/**/*"
+            - "scripts/lint-prose.ts"
 
     format:
         command: "prettier --write ."

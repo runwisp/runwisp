@@ -11,7 +11,7 @@ head:
 RunWisp can serve a `/metrics` endpoint in OpenMetrics 1.0 text format. It's off
 by default. Turn it on in `runwisp.toml` and restart the daemon:
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 metrics_enabled = true
 ```
@@ -85,7 +85,7 @@ Pick the setup that matches how the daemon is reachable:
   reach `/metrics`.
 - **Web UI on the network, metrics local.** Serve metrics on their own address:
 
-    ```toml
+    ```toml title="runwisp.toml"
     [daemon]
     metrics_listen = "127.0.0.1:9478"
     ```

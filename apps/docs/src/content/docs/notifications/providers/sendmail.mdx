@@ -14,7 +14,7 @@ Use it when the machine already sends mail. If it doesn't, the
 [SMTP notifier](/notifications/providers/smtp/) talks to Gmail, SES, or another
 server directly.
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.mta]
 type = "sendmail"
 from = "runwisp@example.com"
@@ -45,7 +45,7 @@ order. Every common mail system installs one of these.
 
 Set `sendmail_path` to use a specific program:
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.mta]
 type          = "sendmail"
 from          = "runwisp@example.com"

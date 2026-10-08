@@ -8,7 +8,7 @@ bash for arrays or `pipefail`.
 With [`compose_file`](/configuration/tasks/#compose_file), `run` is optional: it runs your command in
 the service's container (see [`compose_mode`](/configuration/tasks/#compose_mode)).
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-db]
 run = "pg_dump app | gzip > /backups/app.sql.gz"
 ```

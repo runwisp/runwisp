@@ -13,7 +13,7 @@ MySQL, SQLite, or anything you can back up from a shell script.
 
 ## The task
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-postgres]
 group       = "Backups"
 description = "Nightly logical dump of the production database"
@@ -89,7 +89,7 @@ failed dump alert separately.
 A backup you've never restored is only a hope. Restore last night's dump into a
 scratch database every morning:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-restore-test]
 group       = "Backups"
 description = "Restore last night's dump into a scratch DB and run a smoke query"

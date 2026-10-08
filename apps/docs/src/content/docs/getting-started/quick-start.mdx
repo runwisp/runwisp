@@ -103,7 +103,7 @@ read them instead; see [From cron](/coming-from/cron/).
 
 The starter file has one task and two commented examples:
 
-```toml
+```toml title="runwisp.toml"
 # runwisp.toml
 # Docs: https://docs.runwisp.com/configuration/overview/
 
@@ -176,7 +176,7 @@ login off, see [Authentication](/operations/auth/).
 
 Replace `[tasks.hello]` with your own commands:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-db]
 cron       = "0 2 * * *"      # every day at 02:00
 on_overlap = "skip"           # skip a run if the last one is still going

@@ -8,7 +8,7 @@ description: Send RunWisp notifications to a Telegram chat, group, or channel th
 The Telegram notifier sends messages through a Telegram bot. One bot token and
 one `chat_id` point at one destination: a direct chat, a group, or a channel.
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.tg-oncall]
 type      = "telegram"
 bot_token = "${TG_BOT_TOKEN}"

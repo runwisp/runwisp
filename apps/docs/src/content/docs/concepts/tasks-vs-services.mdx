@@ -10,7 +10,7 @@ a health probe. A **service** is meant to stay up: a queue worker, an agent, a
 server. If the command exits on its own when it's done, it's a task. If it runs
 until you stop it, it's a service.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-db]
 cron = "0 3 * * *"
 run  = "pg_dump app | gzip > /backups/app.sql.gz"

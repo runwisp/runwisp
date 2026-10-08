@@ -287,7 +287,7 @@ Starts one or more tasks or services on a running daemon. A target is a task
 name, a service name, or a quoted shell glob matched against both (`'*'` for
 everything). For a service, this un-parks it (clearing a `runwisp stop` or a
 give-up) and fills empty instance slots; already-running instances are left
-alone. For a task, this triggers a run — unless one is already active or
+alone. For a task, this triggers a run, unless one is already active or
 queued, in which case it's a no-op. It never prints a run ID; use
 `runwisp run --detach` when you need one.
 
@@ -311,8 +311,8 @@ With no argument, restarts the daemon. Needed for settings a reload can't apply
 restart goes through systemd or launchd.
 
 With one or more targets (task names, service names, or quoted globs matched
-against both), restarts just those without touching the daemon. For a
-service, every instance is bounced — starting one that was stopped. For a
+against both), restarts only those without touching the daemon. For a
+service, every instance is bounced, starting one that was stopped. For a
 task, the active run is cancelled, RunWisp waits for it to actually end, then
 triggers exactly one fresh run. A glob silently skips a target locked with
 `manual_trigger = false`; naming one directly is rejected.
@@ -338,12 +338,12 @@ With no argument, stops the daemon. Running tasks get
 Installed as a service, the stop goes through systemd or launchd; the unit stays
 enabled.
 
-With one or more targets — task names, service names, quoted globs matched
-against both, or a run ID — stops just those; the daemon keeps running. For a
+With one or more targets (task names, service names, quoted globs matched
+against both, or a run ID), stops only those; the daemon keeps running. For a
 service, every live instance is cancelled and its slots stop refilling until a
 `runwisp start`/`restart` or a daemon restart. For a task, the active run is
 cancelled and anything queued is dropped, but its cron schedule keeps firing
-(use [`runwisp pause`](#runwisp-pause) to skip it). A run ID stops just that
+(use [`runwisp pause`](#runwisp-pause) to skip it). A run ID stops only that
 run, wherever it came from.
 
 | Flag         | Description                                                                                                                                           |

@@ -15,7 +15,7 @@ Sizes use `b`, `kb`, `mb`, `gb`, `tb` (any case), with optional fractions
 
 ## Keys
 
-```toml
+```toml title="runwisp.toml"
 [storage]
 max_size       = "5gb"
 min_free_space = "500mb"
@@ -28,7 +28,7 @@ min_free_space = "500mb"
 The total size of all log files (`.log` and their `.log.meta` files). The
 database and other files in the data directory don't count.
 
-```toml
+```toml title="runwisp.toml"
 [storage]
 max_size = "5gb"
 ```
@@ -54,7 +54,7 @@ max_size = "5gb"
 The free space to keep on the partition that holds the data directory. It
 never stops the daemon from starting.
 
-```toml
+```toml title="runwisp.toml"
 [storage]
 min_free_space = "500mb"
 ```

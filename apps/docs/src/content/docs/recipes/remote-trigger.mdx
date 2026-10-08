@@ -136,7 +136,7 @@ A deploy hook is a task with no `cron` that your CI starts after a build. Every
 deploy is stored as a run with its output and exit code, and anyone can re-run
 it from the Web UI or TUI.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.deploy-app]
 group       = "Deploys"
 description = "Pull the new image, migrate, restart"

@@ -17,13 +17,13 @@ under Docker. For a walkthrough, see
 The smallest block imports every service from the compose file next to
 `runwisp.toml`:
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 ```
 
 All block keys:
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 file         = "./docker-compose.yml"   # default: auto-discovered next to runwisp.toml
 services     = ["api", "worker"]         # keep only these; "-db" drops one instead; omit to import all
@@ -46,7 +46,7 @@ Path to the compose file. When unset, RunWisp looks in the `runwisp.toml`
 directory for `compose.yaml`, `compose.yml`, `docker-compose.yaml`, then
 `docker-compose.yml` (the same order `docker compose` uses).
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 file = "./docker-compose.yml"
 ```
@@ -63,7 +63,7 @@ Which compose services to import.
 - A name that doesn't exist (for example, one hidden behind an inactive
   [profile](#profiles)) is an error.
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 services = ["api", "worker"]
 ```
@@ -74,7 +74,7 @@ services = ["api", "worker"]
 
 How the compose file maps to RunWisp. See [Import strategies](#import-strategies).
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 import = "stack"
 ```
@@ -90,7 +90,7 @@ Possible values:
 
 The Web UI and TUI sidebar group for every imported service.
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 group = "myapp"
 ```
@@ -101,7 +101,7 @@ group = "myapp"
 
 The compose project name (`docker compose -p`).
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 project_name = "myapp"
 ```
@@ -117,7 +117,7 @@ its profile here.
 The profiles are applied first, then the [`services`](#services) filter picks
 from the result:
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 profiles = ["workers"]  # makes the profiled services visible
 services = ["worker"]   # then keep only this one
@@ -140,7 +140,7 @@ docker compose --profile workers config --services
 
 Env files for the compose command itself (`docker compose --env-file`).
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 env_file = ["./.env.prod"]
 ```
@@ -152,7 +152,7 @@ env_file = ["./.env.prod"]
 The directory the `docker compose` command runs in. It doesn't change the
 container's working directory.
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 working_dir = "/opt/myapp"
 ```
@@ -164,7 +164,7 @@ working_dir = "/opt/myapp"
 Whether starting a service also starts its compose `depends_on` services. With
 `false`, RunWisp passes `--no-deps`.
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 with_deps = true
 ```
@@ -175,7 +175,7 @@ with_deps = true
 
 When to pull the image before a start.
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 pull = "always"
 ```
@@ -189,7 +189,7 @@ Possible values: `missing`, `always`, `never`.
 The RunWisp name of each imported service. With `import = "services"` it must
 contain `{service}`, otherwise all names would be the same.
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 name_format = "{alias}-{service}"
 ```
@@ -199,7 +199,7 @@ name_format = "{alias}-{service}"
 `[compose.<alias>.defaults]` sets override keys once for every imported service.
 A per-service sub-table still wins.
 
-```toml
+```toml title="runwisp.toml"
 [compose.stack]
 services = ["worker-a", "worker-b", "worker-c"]
 
@@ -233,7 +233,7 @@ A `[compose.<alias>.<service>]` sub-table sets RunWisp keys for one compose
 service. The name must be a compose service that passed the
 [`services`](#services) filter.
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 file = "./docker-compose.yml"
 
@@ -354,7 +354,7 @@ containers.
 A `[services.*]` or `[tasks.*]` table can run one compose service without a
 `[compose.*]` block:
 
-```toml
+```toml title="runwisp.toml"
 # Long-running service from a compose file:
 [services.api]
 compose_file    = "./docker-compose.yml"
@@ -375,7 +375,7 @@ command inside the service's running container (`docker compose exec`). No new
 container is started, and the command gets that container's env, code, and
 credentials.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.laravel-schedule]
 cron            = "* * * * *"
 compose_file    = "/srv/myapp/compose.yaml"

@@ -5,13 +5,13 @@
 
 ## 🎯 PRODUCT VISION (read this first — it outranks everything below)
 
-RunWisp replaces **crond + supervisord** with one small Go binary that a single developer can drop on a VPS, a Raspberry Pi, or into a Docker image and immediately see *what ran, when, why it failed, and what it printed*.
+RunWisp replaces **crond + supervisord** with one small Go binary that a single developer can drop on a VPS, a Raspberry Pi, or into a Docker image and immediately see _what ran, when, why it failed, and what it printed_.
 
 **Prime directives** (in priority order; when they conflict, the higher one wins):
 
 1. **Failures stay visible.** Every run has an exit code, duration, timestamps, and captured output — persisted, browsable, and streamable. Prefer changes that make failures easier to see.
-2. **One binary, zero runtime deps.** No Python, Node, external DB, systemd, or sidecars required to run RunWisp. SQLite and the web UI are *embedded*. Do not add runtime deps; prefer a vendored Go lib over a service.
-3. **TOML is the sole source of truth.** `runwisp.toml` defines every task. The REST API and Web UI are **read-only + trigger** — they never mutate task definitions. Schema changes are user-visible breaking changes; treat the TOML surface as an API. Never add a feature that *requires* the UI or API to configure.
+2. **One binary, zero runtime deps.** No Python, Node, external DB, systemd, or sidecars required to run RunWisp. SQLite and the web UI are _embedded_. Do not add runtime deps; prefer a vendored Go lib over a service.
+3. **TOML is the sole source of truth.** `runwisp.toml` defines every task. The REST API and Web UI are **read-only + trigger** — they never mutate task definitions. Schema changes are user-visible breaking changes; treat the TOML surface as an API. Never add a feature that _requires_ the UI or API to configure.
 4. **Local-first, offline-complete.** The daemon must work fully offline. Any network integration (`internal/station/`) is strictly optional — no feature may degrade when it's disabled or unreachable.
 5. **Built for the individual and the small team.** Every core capability ships in the binary: scheduling, supervision, observability, web UI, TUI, REST. No artificial limits, no feature flags gating basics.
 6. **Boring in prod.** Predictable resource use, graceful shutdown, recoverable state after crash or kill -9. Prefer a simple mechanism that's easy to reason about over a clever one that saves 5%.
@@ -26,7 +26,7 @@ RunWisp replaces **crond + supervisord** with one small Go binary that a single 
 - **Enterprise identity systems** — CHAP + JWT answers "does this operator control this daemon?". SSO, directory integration, org/team modeling, fine-grained RBAC policies are outside the daemon's scope.
 - **Long-horizon analytics / reporting** — retention is per-task and bounded. Anything that needs cross-task, cross-instance, or indefinite history lives outside the daemon.
 
-When in doubt, ask: *"Does this help **one** operator run **their** tasks on **one** machine better?"* If no, it probably doesn't belong in `apps/runwisp`.
+When in doubt, ask: _"Does this help **one** operator run **their** tasks on **one** machine better?"_ If no, it probably doesn't belong in `apps/runwisp`.
 
 ## 🧭 INVARIANTS (violating any of these is a bug, regardless of what a test says)
 
@@ -138,14 +138,13 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
 ## 🤖 AGENT EXECUTION RULES
 
 1. **Validation**: `bun run ci` is the **only** validation command you must run — it chains generate → format → check → latest-deps check → test → test-e2e (build is covered via `test-e2e`'s binary dependency). Run it from repo root before wrapping up any session that touched code. Don't bother with `bun run build` / `bun run test` / `bun run check` / `bun run generate` individually unless you're iterating on a single stage — `bun run ci` supersedes them. Tasks are moon targets (`moon run <project>:<task>`); moon caches each task by input hash, so re-runs are cheap.
-2. **TOML schema changes require**: docs (`apps/docs/src/content/docs/configuration/`), the JSON Schema (`apps/runwisp/internal/config/config.schema.json` — `TestSchemaCoversWireTags` fails until every new `toml` tag is covered), the agent reference (`apps/docs/src/agents/reference.md`), OpenAPI (`apps/runwisp/openapi.json` via `bun run generate`), `CHANGELOG.md`, and the README config reference if user-visible.
+2. **TOML schema changes require**: docs (`apps/docs/src/content/docs/configuration/`), the JSON Schema (`apps/runwisp/internal/config/config.schema.json` — `TestSchemaCoversWireTags` fails until every new `toml` tag is covered), the agent reference (`apps/docs/src/agents/reference.md`), OpenAPI (`apps/runwisp/openapi.json` via `bun run generate`), `CHANGELOG.md`, the README config reference if user-visible, and a `**since**` marker on the new key (see `apps/docs/STYLE.md`).
 3. **AsyncAPI changes**: edit `packages/asyncapi/asyncapi.yaml` first, then `bun run generate`, then consume the regenerated types in `internal/generated/protocol/`. Never the other way round.
 4. **User-facing changes** require a `CHANGELOG.md` entry. Keep entries short — one or two sentences naming what changed. Add a docs link only when the entry doesn't stand on its own (a rename that needs the migration path, a config key whose full behavior lives elsewhere) — not as a default reflex on every bullet; most entries need no link at all. The changelog is for **product-visible changes only** — never log docs edits, README/site copy, internal refactors, test or CI changes, or other work the user can't observe in the product. This includes fixes scoped to `internal/station/` or the control-plane protocol: the control plane isn't publicly accessible yet, so a changelog entry describing it would only confuse operators reading the daemon's own release notes.
-5. **Docs voice (`apps/docs/`)**: modeled on the Symfony docs. Three page types: **Getting started** (install, first run), **Guides** (one page per feature, smallest working example first, then common → rare), **Reference** (every key/command, terse, lookup-only; `configuration/tasks.mdx` is the exemplar: one heading per key, `**type**`/`**default**`, one-line description, one example). Rules:
-   - Second person, present tense, short sentences, plain words. No marketing, no rhetorical questions, no internal doctrine ("Prime Directive"), no em dashes.
-   - Code first: lead a section with TOML or shell where you can. Explain *why* only when it changes what the operator does.
-   - **One fact, one home.** Key semantics and defaults live in `configuration/*`; guides link to the anchor and never restate type/default. Reload vs restart → `operations/reload`; password/CHAP/`RUNWISP_AUTH` → `operations/auth`; failure model → `configuration/tasks#failures`; `import --write`/staging/`promote` → `coming-from/cron`; notifier secrets/routing/testing → `notifications/`; CLI flags → `reference/cli`.
-   - Edge cases and internals go last on a page, or get cut if an operator never acts on them. At most ~2 admonitions per page. Merge into an existing page before adding a new one.
-   The reference details belong in docs, not the changelog.
+5. **Docs voice (`apps/docs/`)**: modeled on the Symfony docs. Follow [`apps/docs/STYLE.md`](apps/docs/STYLE.md) (page types, one fact one home, banned words, code-block and version-marker rules); `docs:lint-prose` enforces the mechanical parts. The essentials:
+   - Three page types: **Getting started** (a numbered path), **Guides** (one page per feature, smallest working example first, then common → rare), **Reference** (every key/command, terse; `configuration/tasks.mdx` is the exemplar).
+   - **One fact, one home.** Key semantics and defaults live in `configuration/*`; guides link to the anchor and never restate type/default.
+   - Second person, present tense, plain words, no em dashes. Merge into an existing page before adding a new one.
+     The reference details belong in docs, not the changelog.
 6. **Stop and ask** when Prime Directives / Non-Goals / Invariants don't resolve a judgment call. Do not silently pick a direction that might violate the vision.
 7. **Semver from 1.0.** Breaking the TOML schema, REST API, or on-disk layout requires a major version bump plus a CHANGELOG migration note. Within a major line, keep rejecting wrong shapes with clear errors — no silent back-compat shims, no "tolerate old shape" — but don't break gratuitously.

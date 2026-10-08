@@ -11,7 +11,7 @@ alerts. It works with the public `ntfy.sh` server or one you host yourself.
 
 [ntfy]: https://ntfy.sh
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.phone]
 type  = "ntfy"
 topic = "runwisp-7f3kq9"
@@ -34,7 +34,7 @@ like a secret.
 
 On your own server, lock the topic down and give RunWisp a token:
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.phone]
 type  = "ntfy"
 url   = "https://ntfy.example.com"

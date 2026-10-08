@@ -4,7 +4,7 @@ Notifier ids to alert when a run counts as a failure (see
 [`failures`](/configuration/tasks/#failures)). A missed run is a failure by
 default, so it alerts here too.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-db]
 notify = ["slack-ops"]
 ```

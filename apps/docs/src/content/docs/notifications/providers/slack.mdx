@@ -9,7 +9,7 @@ The Slack notifier posts to a channel through a Slack [incoming webhook][iw].
 
 [iw]: https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.slack-ops]
 type        = "slack"
 webhook_url = "${SLACK_OPS_URL}"

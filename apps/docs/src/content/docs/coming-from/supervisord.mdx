@@ -41,7 +41,7 @@ numprocs=4
 
 you get:
 
-```toml
+```toml title="runwisp.toml"
 [services.web]
 run = "/usr/bin/gunicorn app:app"
 working_dir = "/srv/app"
@@ -87,7 +87,7 @@ sudo supervisorctl reread && sudo supervisorctl update
 ```
 
 When nothing is left, `sudo systemctl disable --now supervisor` stops
-supervisord itself. You can move a few programs at a time; just never leave
+supervisord itself. You can move a few programs at a time, but never leave
 one enabled in both.
 
 ## How the pieces map

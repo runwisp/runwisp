@@ -4,7 +4,7 @@ How long a stopping run has to exit after [`stop_signal`](/configuration/tasks/#
 RunWisp SIGKILLs it. Used on timeout, `on_overlap = "kill"`, manual stop, and
 daemon shutdown. `"0s"` kills at once.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.queue-drain]
 graceful_stop = "30s"
 ```

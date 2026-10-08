@@ -9,7 +9,7 @@ Sometimes a task is started while its last run is still going: a slow run meets
 the next cron time, or someone clicks **Run** twice.
 [`on_overlap`](/configuration/tasks/#on_overlap) decides what happens.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.health-probe]
 cron       = "* * * * *"
 on_overlap = "skip"   # default is "queue"
@@ -18,7 +18,7 @@ run        = "curl -sf https://example.com/health"
 
 By default a task runs one copy at a time
 ([`max_concurrent`](/configuration/tasks/#max_concurrent) is `1`). While there is
-a free slot, a new run just starts. `on_overlap` only matters when all slots are
+a free slot, a new run starts at once. `on_overlap` only matters when all slots are
 taken.
 
 ## Choosing a policy
@@ -29,7 +29,7 @@ The default. The new run waits and starts when the running one finishes. Runs
 start in the order they arrived, whether they came from cron, the CLI, the Web
 UI, or the API.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.process-uploads]
 cron = "*/5 * * * *"
 run  = "/usr/local/bin/process"
@@ -48,7 +48,7 @@ it's full, the new run is recorded as `queue_full` and dropped. If you see
 The new run is dropped and recorded as `skipped` (exit code `-1`). The running
 one carries on.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.pg-dump]
 cron       = "0 * * * *"
 on_overlap = "skip"
@@ -62,7 +62,7 @@ By default a skipped run is not a failure, so it doesn't send notifications and
 doesn't count toward the failure rate ([`failures`](/configuration/tasks/#failures)
 can add `skipped` to change that). It is never retried, whatever `failures`
 says. It still shows up in the history under its own status, so a task that
-keeps overlapping is easy to spot.
+keeps overlapping stands out.
 
 A manual start that gets skipped tells you so: the CLI, Web UI, and API report
 that the run was skipped.
@@ -74,7 +74,7 @@ stopped run gets [`stop_signal`](/configuration/tasks/#stop_signal) and
 [`graceful_stop`](/configuration/tasks/#graceful_stop) to exit, and is recorded
 as `stopped`, the same as a manual stop. A stopped run is never retried.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.rebuild-index]
 on_overlap = "kill"
 run        = "/usr/local/bin/rebuild-index"
@@ -89,7 +89,7 @@ Raise [`max_concurrent`](/configuration/tasks/#max_concurrent) to let several
 runs of the same task go at once. `on_overlap` applies only once all of them are
 busy.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.thumbnail-render]
 cron           = "* * * * *"
 max_concurrent = 4

@@ -9,7 +9,7 @@ Give a task a [`cron`](/configuration/tasks/#cron) expression and RunWisp starts
 it on that schedule. Every scheduled start becomes a run in the history, with
 its exit code and output.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.heartbeat]
 cron = "*/5 * * * *"
 run  = "/usr/local/bin/heartbeat"
@@ -57,7 +57,7 @@ expressions run at second `:00`.
 Cron expressions use the host's timezone unless you set one. Set it for the
 whole daemon, or per task:
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 timezone = "Europe/Bratislava"   # every task without its own timezone
 
@@ -91,7 +91,7 @@ When the daemon was down (a reboot, a deploy, a crash), scheduled runs didn't
 happen. [`catch_up`](/configuration/tasks/#catch_up) decides how many of them
 run when the daemon starts again:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.metrics-rollup]
 cron     = "*/15 * * * *"
 catch_up = 1      # default: run the most recent missed one
@@ -118,7 +118,7 @@ to, and the alert always reports the full count.
 For a task that is expected to miss runs (a laptop that's off at night), take
 `missed` out of its [`failures`](/configuration/tasks/#failures):
 
-```toml
+```toml title="runwisp.toml"
 [tasks.daytime-sync]
 cron     = "*/30 9-17 * * 1-5"
 failures = ["-missed"]   # still recorded, but not a failure and no alert
@@ -133,7 +133,7 @@ When many tasks share a start time (say, `0 3 * * *`), they all start at the
 same second. [`jitter`](/configuration/tasks/#jitter) lets RunWisp spread them
 out:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-a]
 cron   = "0 3 * * *"
 jitter = "30m"

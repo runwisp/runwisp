@@ -32,7 +32,7 @@ going.
 
 One runaway script shouldn't fill the disk, so each run's log has a size limit:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.bulky-job]
 cron         = "0 4 * * *"
 run          = "/usr/local/bin/bulky.sh"
@@ -56,7 +56,7 @@ For limits across all tasks (total log size and free disk space), see
 Old runs and their logs are deleted by a cleanup that runs every hour. Set a
 count, an age, or both:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.metrics]
 cron      = "* * * * *"
 run       = "/usr/local/bin/metrics.sh"
@@ -133,7 +133,7 @@ earlier part that's still on disk and the current part, as one file.
 ## Searching
 
 Search looks through the log files of a task's runs, newest run first. There's
-no index to build or wait for; a bigger search just takes longer, so results come
+no index to build or wait for; a bigger search takes longer, so results come
 in pages.
 
 <Tabs syncKey="surface">

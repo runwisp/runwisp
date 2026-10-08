@@ -43,7 +43,7 @@ WantedBy=multi-user.target
 
 you get:
 
-```toml
+```toml title="runwisp.toml"
 [services.tempoledger]
 description = "Tempo Ledger API"
 run = "/usr/local/bin/bun run start"
@@ -76,7 +76,7 @@ sudo systemctl disable --now myapp.service
 ```
 
 `--now` stops it immediately; `disable` keeps it from starting on boot. You can
-move a few units at a time; just never leave one enabled in both. There is no
+move a few units at a time, but never leave one enabled in both. There is no
 `takeover` for systemd units.
 
 ## How the pieces map

@@ -7,7 +7,7 @@ lock it to its schedule (or, on a service, to supervisor-only restarts):
 hides its controls, the station trigger is refused.
 [Hooks](/operations/auth/#hooks) still work.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-db]
 manual_trigger = false
 ```

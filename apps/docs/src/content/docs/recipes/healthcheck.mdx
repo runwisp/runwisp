@@ -6,7 +6,7 @@ description: An HTTP health check every 5 minutes with RunWisp. Skips on overlap
 ---
 
 A health check is a `curl` on a schedule. The settings around it decide how
-quickly you hear about an outage and how much noise a flaky service makes.
+soon you hear about an outage and how much noise a flaky service makes.
 
 To check a service RunWisp runs itself, and restart it when the check keeps
 failing, use its [`health_check`](/configuration/services/#health_check)
@@ -14,7 +14,7 @@ instead.
 
 ## The task
 
-```toml
+```toml title="runwisp.toml"
 [tasks.healthcheck-api]
 group          = "Health checks"
 description    = "External probe of the public API every 5 minutes"
@@ -82,7 +82,7 @@ keeping its default `["inapp"]`.
 
 ## Probing internal services
 
-Probe something that uses the service, not just its port. A database that
+Probe something that uses the service, not only its port. A database that
 accepts connections but refuses queries passes a port check. For Postgres:
 
 ```bash
@@ -93,7 +93,7 @@ PGPASSWORD="$HEALTHCHECK_PG_PWD" psql --host=db.internal --username=healthcheck 
 `pg_isready` is cheaper if you only need to know the server accepts connections.
 
 When all you can check is an open port (a device you can't log in to), `nc` is
-fine. Just don't treat it as more than that:
+fine, but don't treat it as more than that:
 
 ```bash
 nc -zw5 host.internal 5432 || { echo "host.internal:5432 not reachable"; exit 1; }

@@ -9,7 +9,7 @@ When a run fails, RunWisp shows it in the bell in the Web UI and the TUI. Add a
 channel to also send it to Slack, Discord, Telegram, ntfy, Gotify, Pushover,
 email, or a webhook.
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.slack-ops]
 type        = "slack"
 webhook_url = "${SLACK_OPS_URL}"
@@ -37,7 +37,7 @@ a restart. The bell needs no network. To turn it off, set
 Each channel is a `[notifiers.<id>]` block. The id is the name you use to refer
 to it; the `type` picks the provider:
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.tg-oncall]
 type      = "telegram"
 bot_token = "${TG_BOT_TOKEN}"
@@ -95,7 +95,7 @@ Put [`notify`](/configuration/tasks/#notify) on the task or service. Its
 failures go to those channels, plus everything in `global_notifiers` (the bell,
 by default):
 
-```toml
+```toml title="runwisp.toml"
 [services.payments-api]
 run    = "/usr/local/bin/payments-api"
 notify = ["slack-ops", "tg-oncall"]
@@ -106,7 +106,7 @@ notify = ["slack-ops", "tg-oncall"]
 [`global_notifiers`](/configuration/notify/#global_notifiers) lists channels
 that get every failure, from every task:
 
-```toml
+```toml title="runwisp.toml"
 [notify]
 global_notifiers = ["inapp", "slack-ops"]   # bell + Slack for everything
 ```
@@ -116,7 +116,7 @@ global_notifiers = ["inapp", "slack-ops"]   # bell + Slack for everything
 `notify` only sends failures. To match tasks by name, or to send successes,
 timeouts only, or other outcomes, write a [`[[route]]`](/configuration/routes/):
 
-```toml
+```toml title="runwisp.toml"
 [[route]]
 match     = { task = "deploy-*", kinds = ["succeeded"] }
 notifiers = ["slack-ops"]
@@ -131,7 +131,7 @@ Write `"<id>:<target>"` to reuse a channel's credentials with a different
 target: a Slack channel or user, a Telegram chat id, or an email address for
 `smtp` and `sendmail`:
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.slack]
 type        = "slack"
 webhook_url = "${SLACK_URL}"
@@ -154,9 +154,9 @@ A scheduled run missed while the daemon was down
 goes to the same channels as the task's other failures, with nothing to set up.
 
 For a task that's expected to miss runs, take `missed` out of its `failures`.
-The missed run is still recorded; it just doesn't alert:
+The missed run is still recorded; it doesn't alert:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.daytime-sync]
 cron     = "*/30 9-17 * * 1-5"
 notify   = ["slack-ops"]
@@ -167,7 +167,7 @@ failures = ["-missed"]
 
 Add a task that always fails, pointed at the channel:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.notify-test]
 run    = "echo 'testing notifications' >&2; exit 1"
 notify = ["slack-ops"]

@@ -8,7 +8,7 @@ description: When a run counts as a failure, how to retry failed task runs with 
 A task can try again when it fails, and can be stopped when it runs too long.
 Both are set per task:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.publish-feed]
 cron           = "*/15 * * * *"
 run            = "/usr/local/bin/publish.sh"
@@ -59,7 +59,7 @@ run it retries.
 retry. [`retry_backoff`](/configuration/tasks/#retry_backoff) decides whether
 later waits stay the same or grow:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.flaky-fetch]
 retry_attempts = 4
 retry_delay    = "10s"
@@ -83,7 +83,7 @@ retry chain usually sends one message, not one per attempt.
 
 [`timeout`](/configuration/tasks/#timeout) is the longest one attempt may run:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.heavy-job]
 cron    = "0 3 * * *"
 run     = "/usr/local/bin/heavy-job.sh"

@@ -15,7 +15,7 @@ before the config file is read.
 
 ## Keys
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 shutdown_timeout = "10s"
 timezone         = "Europe/Bratislava"
@@ -50,7 +50,7 @@ then tasks, and each step gets the full `shutdown_timeout`.
   `shutdown_timeout`, run `runwisp service install` again so it waits the new
   amount.
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 shutdown_timeout = "30s"
 ```
@@ -63,7 +63,7 @@ The IANA zone used to read [`cron`](/configuration/tasks/#cron) for every task
 that doesn't set its own [`timezone`](/configuration/tasks/#timezone). An
 unknown zone name is rejected at load.
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 timezone = "Europe/Bratislava"
 ```
@@ -81,7 +81,7 @@ the form `<external_url>/tasks/<task>/<id>`.
 - The daemon never connects to this URL.
 - When unset, notifications leave out the link.
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 external_url = "https://runwisp.example.com"
 ```
@@ -97,7 +97,7 @@ month. Nothing is sent unless you press Submit, and then only your rating,
 optional note, and RunWisp version. Set `false` to keep RunWisp fully
 offline.
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 check_updates = false
 ```
@@ -115,7 +115,7 @@ How the HTTP server does TLS. The bind address comes from `--host`.
 | `tls = "auto"`         | HTTP                                 | HTTPS, self-signed certificate |
 | `tls_cert` + `tls_key` | HTTPS, your certificate              | HTTPS, your certificate        |
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 tls = "auto"
 ```
@@ -144,7 +144,7 @@ Turns on the OpenMetrics endpoint at `/metrics` (for Prometheus, Grafana Agent,
 OpenTelemetry). It is off by default because the metrics show task names and the
 daemon version. See [Metrics](/operations/metrics/) for the metric list.
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 metrics_enabled = true
 ```
@@ -163,7 +163,7 @@ keep metrics on loopback while the Web UI is public.
 - This listener is always plain HTTP. Keep it on loopback or a private
   interface.
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 metrics_listen = "127.0.0.1:9478"
 ```
@@ -181,7 +181,7 @@ Reverse proxies (nginx, Caddy, Traefik, Cloudflare Tunnel) whose
 - The `RUNWISP_TRUSTED_PROXIES` env var (comma-separated) overrides this key.
 - See [Reverse proxies](/operations/auth/#reverse-proxies).
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 trusted_proxies = ["127.0.0.1/32", "10.0.0.0/8"]
 ```
@@ -198,7 +198,7 @@ trigger tasks defined in `runwisp.toml`.
   like any other run.
 - They run with the daemon's privileges. Enable this only if you need it.
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 allow_station_dispatch = true
 ```
@@ -209,14 +209,12 @@ allow_station_dispatch = true
 
 Extra TOML files to merge into the config, so you can split tasks across files.
 
-```toml
-# runwisp.toml
+```toml title="runwisp.toml"
 [daemon]
 include = ["conf.d/*.toml", "services/*.toml"]
 ```
 
-```toml
-# conf.d/backups.toml
+```toml title="conf.d/backups.toml"
 [tasks.nightly-backup]
 cron = "0 3 * * *"
 run  = "/opt/backup.sh"
@@ -241,7 +239,7 @@ run  = "/opt/backup.sh"
 Real crontabs to load as tasks. RunWisp reads these files and never writes them.
 Every job becomes a task with captured output, run history, and a page in the UI.
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 include_cron = [
   "/etc/crontab",

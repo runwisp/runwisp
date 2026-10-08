@@ -5,7 +5,7 @@ Tokens that let CI or a webhook control this unit over a
 for this unit only. Load them with `${VAR}` or `${file:...}` so they stay out of
 the file. Tokens are never shown in the API or Web UI.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.deploy]
 run         = "./deploy.sh"
 hook_tokens = [

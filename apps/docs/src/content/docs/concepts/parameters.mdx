@@ -12,7 +12,7 @@ customer to export, which date to start from, whether this is a dry run. You
 declare them on the task with [`params`](/configuration/tasks/#params), and the
 Web UI, TUI, CLI, and REST API all show a form for them.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.export-org-data]
 run = "/usr/local/bin/export.sh"
 params = [

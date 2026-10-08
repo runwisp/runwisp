@@ -12,7 +12,7 @@ has an HTML part and a plain-text part, so it reads well in Gmail and in `mutt`.
 If the machine already sends mail with a local MTA, the
 [sendmail notifier](/notifications/providers/sendmail/) needs less setup.
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.email-ops]
 type     = "smtp"
 host     = "smtp.example.com"
@@ -52,7 +52,7 @@ To send one task's mail to another address through the same server, use
         Gmail needs an [app password](https://myaccount.google.com/apppasswords);
         it rejects your normal password over SMTP.
 
-        ```toml
+        ```toml title="runwisp.toml"
         [notifiers.email-ops]
         type     = "smtp"
         host     = "smtp.gmail.com"
@@ -66,7 +66,7 @@ To send one task's mail to another address through the same server, use
     <TabItem label="SendGrid">
         The username is always `apikey`; the password is your API key.
 
-        ```toml
+        ```toml title="runwisp.toml"
         [notifiers.email-ops]
         type     = "smtp"
         host     = "smtp.sendgrid.net"
@@ -81,7 +81,7 @@ To send one task's mail to another address through the same server, use
         Create SMTP credentials in the SES console under **SMTP settings**. Your IAM
         password doesn't work here.
 
-        ```toml
+        ```toml title="runwisp.toml"
         [notifiers.email-ops]
         type     = "smtp"
         host     = "email-smtp.eu-west-1.amazonaws.com"
@@ -95,7 +95,7 @@ To send one task's mail to another address through the same server, use
     <TabItem label="Mailgun / Postmark">
         Use your region's host and the credentials they give you.
 
-        ```toml
+        ```toml title="runwisp.toml"
         # Mailgun
         [notifiers.email-ops]
         type     = "smtp"
@@ -107,7 +107,7 @@ To send one task's mail to another address through the same server, use
         password = "${MAILGUN_PASSWORD}"
         ```
 
-        ```toml
+        ```toml title="runwisp.toml"
         # Postmark
         [notifiers.email-ops]
         type     = "smtp"
@@ -123,7 +123,7 @@ To send one task's mail to another address through the same server, use
         A server on the same machine, without login or TLS. `tls_mode = "off"` only
         works without `username` and `password`.
 
-        ```toml
+        ```toml title="runwisp.toml"
         [notifiers.email-local]
         type     = "smtp"
         host     = "127.0.0.1"

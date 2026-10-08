@@ -8,7 +8,7 @@ description: Pull values from environment variables or files into any string in 
 Any string value in `runwisp.toml` can take its value from the daemon's
 environment or from a file:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup]
 cron        = "${BACKUP_CRON}"          # from the daemon's environment
 description = "backs up ${REGION}"      # works inside a longer string
@@ -62,7 +62,7 @@ environment, including [`env`](/configuration/tasks/#env),
 [`secrets`](/configuration/tasks/#secrets), and
 [`secrets_file`](/configuration/tasks/#secrets_file):
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup]
 run = "backup.sh --bucket ${BACKUP_BUCKET}"   # the shell expands this
 
@@ -83,7 +83,7 @@ BACKUP_BUCKET = "s3://prod-backups"
 
 Write `$${` for a literal `${`:
 
-```toml
+```toml title="runwisp.toml"
 description = "template is $${VAR}"   # → template is ${VAR}
 ```
 
@@ -95,7 +95,7 @@ description = "template is $${VAR}"   # → template is ${VAR}
 
 ## Worked example
 
-```toml
+```toml title="runwisp.toml"
 [tasks.export]
 cron = "${EXPORT_CRON}"
 run  = "/usr/local/bin/export"
