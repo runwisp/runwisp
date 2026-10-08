@@ -118,7 +118,7 @@ func NewContainerBackend(ctx context.Context) (*ContainerBackend, error) {
 			lastErr = fmt.Errorf("daemon at %s unreachable: %w", sock, err)
 			continue
 		}
-		return &ContainerBackend{docker: cli, builder: &ImageBuilder{docker: cli}}, nil
+		return newContainerBackend(cli), nil
 	}
 
 	if lastErr != nil {
@@ -139,12 +139,11 @@ func tryDockerClient(ctx context.Context) (*ContainerBackend, error) {
 		return nil, fmt.Errorf("docker daemon unreachable: %w", err)
 	}
 
-	return &ContainerBackend{docker: cli, builder: &ImageBuilder{docker: cli}}, nil
+	return newContainerBackend(cli), nil
 }
 
-// NewContainerBackendFromClient creates a ContainerBackend from an existing Docker client.
-// Primarily useful in tests.
-func NewContainerBackendFromClient(docker dockerClient) *ContainerBackend {
+// newContainerBackend wraps a connected Docker client; the image builder shares it.
+func newContainerBackend(docker dockerClient) *ContainerBackend {
 	return &ContainerBackend{docker: docker, builder: &ImageBuilder{docker: docker}}
 }
 
