@@ -103,7 +103,7 @@ func TestStreamManager_FetchOlderLogs_RunsAndReturnsLoadedMsg(t *testing.T) {
 	assert.Equal(t, "run", loaded.RunID)
 	assert.EqualValues(t, 42, loaded.Total)
 	require.Len(t, loaded.Lines, 1)
-	assert.EqualValues(t, 5, loaded.FirstLine)
+	assert.EqualValues(t, 5, loaded.Lines[0].N)
 }
 
 func TestStreamManager_FetchOlderLogs_ServerErrorReturnsDebugMsg(t *testing.T) {

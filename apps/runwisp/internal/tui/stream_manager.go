@@ -179,14 +179,9 @@ func (sm *StreamManager) FetchOlderLogs(runID string, beforeLine, count int64) t
 		if err != nil {
 			return uikit.DebugLogMsg{Message: "Failed to load older logs: " + err.Error()}
 		}
-		first := startLine
-		if len(page.Lines) > 0 {
-			first = page.Lines[0].N
-		}
 		return uikit.LogOlderLoadedMsg{
 			RunID:          runID,
 			Lines:          page.Lines,
-			FirstLine:      first,
 			Total:          page.TotalLines,
 			FirstAvailable: page.FirstAvailable,
 		}

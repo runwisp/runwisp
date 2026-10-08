@@ -171,10 +171,9 @@ type ExecWindowFetchedMsg struct {
 
 // LogOlderLoadedMsg delivers the result of a scroll-up REST page fetch.
 type LogOlderLoadedMsg struct {
-	RunID     string
-	Lines     []server.LogLineEntry
-	FirstLine int64
-	Total     int64
+	RunID string
+	Lines []server.LogLineEntry
+	Total int64
 	// FirstAvailable is the lowest line the server still holds (a rotated log
 	// has dropped everything below it).
 	FirstAvailable int64

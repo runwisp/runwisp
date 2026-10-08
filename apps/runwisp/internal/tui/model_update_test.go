@@ -598,10 +598,9 @@ func TestHandleLogOlderLoaded_PrependsLinesAndUpdatesTotal(t *testing.T) {
 	m.execView.LoadingOlder = true
 
 	m.handleLogOlderLoaded(uikit.LogOlderLoadedMsg{
-		RunID:     "r-1",
-		Lines:     []server.LogLineEntry{{N: 0, Text: "first", Stream: "stdout"}},
-		FirstLine: 0,
-		Total:     42,
+		RunID: "r-1",
+		Lines: []server.LogLineEntry{{N: 0, Text: "first", Stream: "stdout"}},
+		Total: 42,
 	})
 	if m.execView.LoadingOlder {
 		t.Fatal("LoadingOlder must be cleared once the page arrives")
@@ -629,7 +628,7 @@ func TestHandleLogOlderLoaded_RotatedLogDoesNotDuplicateLines(t *testing.T) {
 		page = append(page, server.LogLineEntry{N: n, Stream: "stdout", Text: fmt.Sprintf("l%d", n)})
 	}
 	m.handleLogOlderLoaded(uikit.LogOlderLoadedMsg{
-		RunID: "r-1", Lines: page, FirstLine: 250, Total: 350, FirstAvailable: 250,
+		RunID: "r-1", Lines: page, Total: 350, FirstAvailable: 250,
 	})
 
 	pane := m.execView.Pane
