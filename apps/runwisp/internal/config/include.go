@@ -16,7 +16,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
-// loadWithIncludes loads the root config and any files pulled in via
+// loadWithIncludes merges the decoded root config with any files pulled in via
 // [daemon].include, returning the merged result as a Config plus an entrySources
 // map so later path resolution honors each entry's origin file.
 //
@@ -30,19 +30,11 @@ import (
 //   - singleton tables ([daemon], [storage], [defaults], [notify]) may appear
 //     only in the root — setting one in an included file is a hard error;
 //   - included files may not themselves include (flat-only).
-func loadWithIncludes(path string) (*Config, entrySources, error) {
+func loadWithIncludes(path string, root *tomlConfig) (*Config, entrySources, error) {
 	rootDir := filepath.Dir(path)
 	rootAbs, err := filepath.Abs(path)
 	if err != nil {
 		rootAbs = path
-	}
-	rootData, err := os.ReadFile(path)
-	if err != nil {
-		return nil, entrySources{}, fmt.Errorf("failed to read config file: %w", err)
-	}
-	root, err := parseWire(rootData, rootDir)
-	if err != nil {
-		return nil, entrySources{}, err
 	}
 
 	src := entrySources{root: rootDir, byName: map[string]string{}}

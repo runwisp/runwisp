@@ -77,7 +77,7 @@ func TestInitExecutor_BuildsExecutorWithEventBus(t *testing.T) {
 	}
 	config.ApplyDefaults(cfg)
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus, f.LogDir(), "", nil)
+	exec := initExecutor(cfg, bus, f.LogDir(), "", nil, nil)
 	require.NotNil(t, exec)
 	avail := exec.Availability()
 	// HTTP requires the allow_station_dispatch opt-in (not set here); Config flips
@@ -97,7 +97,7 @@ func TestInitTaskManager_PopulatesTasksMap(t *testing.T) {
 	config.ApplyDefaults(cfg)
 
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus, f.LogDir(), "", nil)
+	exec := initExecutor(cfg, bus, f.LogDir(), "", nil, nil)
 	dc := &daemonConfig{Config: cfg}
 
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
@@ -155,7 +155,7 @@ func TestResumePendingRuns_EmptyDBReturnsEmptySummary(t *testing.T) {
 	cfg := &config.Config{}
 	config.ApplyDefaults(cfg)
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus, f.LogDir(), "", nil)
+	exec := initExecutor(cfg, bus, f.LogDir(), "", nil, nil)
 	dc := &daemonConfig{Config: cfg}
 	tm, _ := initTaskManager(dc, db, exec, bus)
 
@@ -172,7 +172,7 @@ func TestStartServiceInstances_SkipsNonServiceTasks(t *testing.T) {
 	}
 	config.ApplyDefaults(cfg)
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus, f.LogDir(), "", nil)
+	exec := initExecutor(cfg, bus, f.LogDir(), "", nil, nil)
 	dc := &daemonConfig{Config: cfg}
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
 
@@ -192,7 +192,7 @@ func TestBuildDaemonInfo_PopulatesTaskList(t *testing.T) {
 	config.ApplyDefaults(cfg)
 
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus, f.LogDir(), "", nil)
+	exec := initExecutor(cfg, bus, f.LogDir(), "", nil, nil)
 	dc := &daemonConfig{
 		Config:      cfg,
 		Fingerprint: "fp-test",
@@ -316,7 +316,7 @@ func TestBuildDaemonInfo_SchedulingActiveReflectsScheduler(t *testing.T) {
 	config.ApplyDefaults(cfg)
 
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus, f.LogDir(), "", nil)
+	exec := initExecutor(cfg, bus, f.LogDir(), "", nil, nil)
 	dc := &daemonConfig{Config: cfg, Fingerprint: "fp-test"}
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
 

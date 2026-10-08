@@ -1,0 +1,11 @@
+**type**: `boolean` **default**: `false`
+
+Runs the unit in the app that defines it through an [SDK](/sdk/), instead of a
+shell command. The SDK sets it for you on every task and service you define in
+code. The app's callback gets the unit's `env`, `secrets` and
+[params](/configuration/tasks/#params), and what it prints becomes the run's
+log.
+
+A unit with `sdk` can't also set `run`, `compose_file`, `shell`, `umask`,
+`user`, `env_base`, `working_dir` or `stop_signal`. If no app is connected when
+the unit fires, the run fails.

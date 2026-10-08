@@ -1,0 +1,75 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+language: "typescript"
+layer: "library"
+
+tasks:
+    generate-config:
+        # A plain file input, not a task dep on runwisp: that would cycle the
+        # project graph, as for common:generate-api.
+        description: "Generate the config types from runwisp.toml's JSON Schema."
+        command: "bun scripts/generate-config.ts"
+        inputs:
+            - "scripts/generate-config.ts"
+            - "/apps/runwisp/internal/config/config.schema.json"
+        outputs:
+            - "src/generated/config.ts"
+
+    build:
+        description: "Compile to dist/ (JS + .d.ts) for publishing."
+        command: "tsc -p tsconfig.build.json"
+        deps:
+            - "~:generate-config"
+        inputs:
+            - "src/**/*"
+            - "tsconfig.json"
+            - "tsconfig.build.json"
+            - "package.json"
+        outputs:
+            - "dist"
+
+    check-types:
+        command: "tsc --noEmit"
+        deps:
+            - "~:generate-config"
+        inputs:
+            - "src/**/*"
+            - "e2e/**/*"
+            - "scripts/**/*"
+            - "tsconfig.json"
+            - "package.json"
+
+    check-lint:
+        command: "eslint ."
+        deps:
+            - "~:generate-config"
+        inputs:
+            - "**/*"
+
+    check:
+        command: "noop"
+        deps:
+            - "~:check-types"
+            - "~:check-lint"
+            - "~:build"
+
+    format:
+        command: "prettier --write ."
+        options:
+            cache: false
+
+    test-e2e:
+        # Unit tests run with coverage in web-ui:test (apps/ui/vitest.config.ts);
+        # these drive the real runwisp binary.
+        description: "vitest e2e against the built runwisp binary."
+        command: "vitest run"
+        env:
+            RUNWISP_NODE_TEST_BINARY: "$workspaceRoot/apps/runwisp/runwisp"
+        deps:
+            - "runwisp:build"
+            - "~:generate-config"
+        inputs:
+            - "src/**/*"
+            - "e2e/**/*"
+            - "vitest.config.ts"

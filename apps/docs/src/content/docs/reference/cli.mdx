@@ -82,6 +82,10 @@ Starts the daemon in the foreground with no TUI. Use it under Docker, systemd,
 or any init system. Exits non-zero if the config is missing, instead of
 prompting.
 
+| Flag    | Description                                                                                                                                                                   |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--app` | Read the config as a JSON document on stdin instead of `runwisp.toml`, with the same keys. [SDKs](/sdk/) start the daemon this way. It stops 10 seconds after the app leaves. |
+
 ### `runwisp tui`
 
 ```bash
@@ -108,9 +112,10 @@ Loads and checks `runwisp.toml` exactly like daemon startup, then prints a
 summary (task and service counts, the timezone) and any warnings. Starts
 nothing. Exits non-zero on an invalid config.
 
-| Flag     | Description                                     |
-| -------- | ----------------------------------------------- |
-| `--json` | Print one JSON document instead of the summary. |
+| Flag     | Description                                                      |
+| -------- | ---------------------------------------------------------------- |
+| `--json` | Print one JSON document instead of the summary.                  |
+| `--app`  | Check a JSON document on stdin, as `runwisp daemon --app` would. |
 
 Parse errors in JSON carry the exact location:
 

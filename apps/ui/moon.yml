@@ -89,6 +89,7 @@ tasks:
             - "test/**/*"
             - "vitest.config.ts"
             - "scripts/rewrite-lcov-paths.ts"
+            - "/packages/node/src/**/*"
         outputs:
             - "coverage"
         options:

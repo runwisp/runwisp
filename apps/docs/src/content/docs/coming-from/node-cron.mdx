@@ -1,0 +1,84 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: From node-cron
+description: Swap node-cron for @runwisp/node and keep your schedule() calls. Every run is recorded with its output, exit code and duration, and shown in the web UI.
+head:
+    - tag: title
+      content: "Migrate from node-cron to RunWisp: see what ran, when, and why it failed"
+---
+
+`@runwisp/node` runs your node-cron tasks under RunWisp. Your callbacks still
+run inside your app. RunWisp schedules them and records every run with its
+output, exit code and duration.
+
+## Swap the import
+
+```bash
+npm install @runwisp/node
+```
+
+```ts
+// import cron from "node-cron";
+import { RunWisp } from "@runwisp/node";
+
+const cron = new RunWisp();
+
+cron.schedule(
+    "0 3 * * *",
+    async () => {
+        console.log("dumping the database");
+    },
+    { name: "nightly-backup" },
+);
+```
+
+The app starts RunWisp on the first task and prints the dashboard address. See
+the [JavaScript SDK](/sdk/javascript/#define-a-task) for the password, the data
+directory and [every option](/sdk/javascript/#new-runwispoptions).
+
+Give every task a `name`. It's the task's name in RunWisp, and its run history
+is kept under it. Without one, a name is derived from the task's code, so it
+changes when the code does.
+
+## What stays the same
+
+`schedule`, `createTask`, `validate`, `getTasks`, `getTask` and the returned
+task (`start`, `stop`, `destroy`, `execute`, `getStatus`, `getNextRun`, events)
+work as in node-cron 4. The cron syntax is RunWisp's, which also accepts a
+seconds field. See [cron](/configuration/tasks/#cron).
+
+| node-cron option                                    | Under RunWisp                                                                                                                                                               |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                                              | The task's name in RunWisp.                                                                                                                                                 |
+| `timezone`                                          | [`timezone`](/configuration/tasks/#timezone).                                                                                                                               |
+| `noOverlap`                                         | [`on_overlap = "skip"`](/configuration/tasks/#on_overlap). Without it, runs overlap as in node-cron, up to [`max_concurrent = 1024`](/configuration/tasks/#max_concurrent). |
+| `executeTimeout`                                    | [`timeout`](/configuration/tasks/#timeout): the run is stopped and fails.                                                                                                   |
+| `maxExecutions`                                     | Kept: the task is destroyed after that many runs.                                                                                                                           |
+| `distributed`, `runCoordinator`, `distributedLease` | Ignored. Each run happens once per data directory.                                                                                                                          |
+| `maxRandomDelay`                                    | Ignored. Use `jitter` with `task()`.                                                                                                                                        |
+
+## What changes
+
+- **Output is recorded.** `console` output inside a task goes to the run's
+  log, and still prints to the app's console. See
+  [Output and failures](/sdk/javascript/#output-and-failures).
+- **Failures are recorded.** A thrown error or rejected promise fails the run
+  with exit code 1 and the stack trace in its log.
+- **`stop()` unschedules the task in RunWisp**, and `start()` schedules it
+  again. A stopped task stays in the dashboard and runs only when started by
+  hand.
+- **`destroy()` removes the task.** Its past runs stay until
+  [retention](/configuration/tasks/#keep_runs) removes them.
+- **`execute()` runs the callback in the app** and isn't recorded. Use the
+  dashboard's Run button for a recorded run.
+- **Missed runs are not caught up**, as in node-cron.
+- **A file path instead of a callback** (node-cron's background tasks) is not
+  supported.
+
+## Go further
+
+Use [`task()`](/sdk/javascript/#task-options) for RunWisp's own task options:
+retries, jitter, catch-up and more. Running several copies of the app and what
+happens when it stops are covered in the
+[JavaScript SDK](/sdk/javascript/#several-copies-of-the-app) guide.

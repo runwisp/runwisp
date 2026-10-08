@@ -45,6 +45,7 @@ type Server struct {
 	port       int
 	dataDir    string
 	configPath string
+	appConfig  bool
 	logDir     string
 	eventBus   *events.Bus
 	// appEvents is the single bus consumer behind the /api/events/stream SSE feed. It
@@ -97,6 +98,7 @@ type Server struct {
 	// outside standalone mode (station mode has no local scheduler to reconcile),
 	// in which case POST /api/daemon/reload reports the operation is unavailable.
 	reload func() (model.ReloadResult, error)
+	apps   http.Handler
 	// shutdownCtx is cancelled by Shutdown so SSE handlers (via withShutdown)
 	// exit; http.Server.Shutdown never cancels a handler's request context.
 	shutdownCtx    context.Context
@@ -116,6 +118,7 @@ type Options struct {
 	Port                int
 	DataDir             string // Resolved data directory; disclosed via GET /api/daemon/identity (local only)
 	ConfigPath          string // Resolved runwisp.toml path; disclosed via GET /api/daemon/identity (local only)
+	AppConfig           bool   // The config comes from an app (`daemon --app`); ConfigPath only anchors it
 	SocketPath          string // Unix socket path for local CLI/TUI; empty disables socket listener
 	LogDir              string
 	EventBus            *events.Bus
@@ -138,6 +141,7 @@ type Options struct {
 	TLSCert             string                                // PEM cert path; when set with TLSKey the main listener serves HTTPS
 	TLSKey              string                                // PEM key path; paired with TLSCert
 	Reload              func() (model.ReloadResult, error)    // Reconciles the live task set against runwisp.toml; nil disables POST /api/daemon/reload
+	Apps                http.Handler                          // Serves app connections (sdk units) on the Unix socket only; nil disables GET /api/local/app
 }
 
 func neverStale() bool { return false }
@@ -170,6 +174,7 @@ func New(opts Options) (*Server, error) {
 		port:              opts.Port,
 		dataDir:           opts.DataDir,
 		configPath:        opts.ConfigPath,
+		appConfig:         opts.AppConfig,
 		socketPath:        opts.SocketPath,
 		tlsCert:           opts.TLSCert,
 		tlsKey:            opts.TLSKey,
@@ -183,6 +188,7 @@ func New(opts Options) (*Server, error) {
 		metricsEnabled:    opts.MetricsEnabled,
 		metricsListen:     opts.MetricsListen,
 		reload:            opts.Reload,
+		apps:              opts.Apps,
 		ready:             make(chan struct{}),
 	}
 	s.trustedProxies.Store(&trustedProxies)

@@ -1,0 +1,53 @@
+{
+    "name": "@runwisp/node",
+    "description": "node-cron compatible scheduler backed by RunWisp: every run is recorded with its output, exit code and duration, and shown in a web UI.",
+    "type": "module",
+    "version": "0.0.0",
+    "license": "Apache-2.0",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/runwisp/runwisp.git",
+        "directory": "packages/node"
+    },
+    "homepage": "https://docs.runwisp.com/sdk/javascript/",
+    "bugs": {
+        "url": "https://github.com/runwisp/runwisp/issues"
+    },
+    "keywords": [
+        "cron",
+        "node-cron",
+        "scheduler",
+        "job",
+        "background-jobs",
+        "cron-history",
+        "dashboard",
+        "runwisp"
+    ],
+    "engines": {
+        "node": ">=20"
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "files": [
+        "dist"
+    ],
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        }
+    },
+    "dependencies": {
+        "runwisp": "^1.3.1"
+    },
+    "devDependencies": {
+        "@runwisp/eslint-config": "workspace:*",
+        "@runwisp/typescript-config": "workspace:*",
+        "@types/node": "^26.6.4",
+        "eslint": "^10.12.0",
+        "openapi-typescript": "^7.13.0",
+        "typescript": "6.0.3",
+        "vitest": "^5.0.3"
+    }
+}

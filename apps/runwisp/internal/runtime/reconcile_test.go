@@ -358,13 +358,13 @@ func TestReconcile_SettingsHookGatesTimezoneAndCommit(t *testing.T) {
 	committed, committedBeforeApply := false, false
 	mgr := &recordingManager{}
 	r := NewReconciler(ReconcilerDeps{
-		ConfigPath: path,
-		Baseline:   base,
-		Registry:   NewTaskRegistry(tasks),
-		Scheduler:  sched,
-		Manager:    mgr,
-		Snapshot:   config.NewSnapshot(path, base, time.Now()),
-		Now:        time.Now,
+		Source:    config.FileSource(path),
+		Baseline:  base,
+		Registry:  NewTaskRegistry(tasks),
+		Scheduler: sched,
+		Manager:   mgr,
+		Snapshot:  config.NewSnapshot(path, base, time.Now()),
+		Now:       time.Now,
 		Settings: func(_, _ *config.Config) ([]string, func(), error) {
 			if hookErr != nil {
 				return nil, nil, hookErr
@@ -408,12 +408,12 @@ func TestReconcile_UnsetTimezoneKeepsBootZone(t *testing.T) {
 
 	mgr := &recordingManager{}
 	r := NewReconciler(ReconcilerDeps{
-		ConfigPath: path,
-		Baseline:   base,
-		Registry:   NewTaskRegistry(tasksByName(base)),
-		Manager:    mgr,
-		Snapshot:   config.NewSnapshot(path, base, time.Now()),
-		Now:        time.Now,
+		Source:   config.FileSource(path),
+		Baseline: base,
+		Registry: NewTaskRegistry(tasksByName(base)),
+		Manager:  mgr,
+		Snapshot: config.NewSnapshot(path, base, time.Now()),
+		Now:      time.Now,
 	})
 
 	t.Setenv("TZ", "Asia/Tokyo") // the host zone moves under the daemon
@@ -445,13 +445,13 @@ func TestReconcile_CronHoldWatcherFollowsIncludeCron(t *testing.T) {
 	base, err := config.Load(path)
 	require.NoError(t, err)
 	r := NewReconciler(ReconcilerDeps{
-		ConfigPath: path,
-		Baseline:   base,
-		Registry:   NewTaskRegistry(tasksByName(base)),
-		Manager:    &recordingManager{},
-		DB:         newHoldCatchupDB(),
-		Snapshot:   config.NewSnapshot(path, base, time.Now()),
-		Now:        time.Now,
+		Source:   config.FileSource(path),
+		Baseline: base,
+		Registry: NewTaskRegistry(tasksByName(base)),
+		Manager:  &recordingManager{},
+		DB:       newHoldCatchupDB(),
+		Snapshot: config.NewSnapshot(path, base, time.Now()),
+		Now:      time.Now,
 	})
 	watching := func() bool {
 		r.mu.Lock()

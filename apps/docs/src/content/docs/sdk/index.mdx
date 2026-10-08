@@ -1,0 +1,44 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: SDKs
+description: Define RunWisp tasks in your app's code. Your callbacks run in your app, and RunWisp schedules them and records every run.
+head:
+    - tag: title
+      content: "RunWisp SDKs: define scheduled tasks in your app's code"
+---
+
+An SDK lets you define tasks in your app's code instead of `runwisp.toml`.
+Your callbacks run inside your app. RunWisp schedules them and records every
+run with its output, exit code and duration, in the same web UI, TUI and CLI as
+any other task.
+
+| Language   | Package         | Guide                              |
+| ---------- | --------------- | ---------------------------------- |
+| JavaScript | `@runwisp/node` | [JavaScript SDK](/sdk/javascript/) |
+
+## How it works
+
+- The SDK starts `runwisp daemon --app` and gives it your tasks as its config:
+  one [`[tasks.*]`](/configuration/tasks/) entry per task, with
+  [`sdk`](/configuration/tasks/#sdk) set. There is
+  no `runwisp.toml`. When your tasks change, the SDK sends the new config and
+  RunWisp applies it like a [reload](/operations/reload/).
+- When a task fires, RunWisp asks the app to run its callback. What the
+  callback prints becomes the run's log, and a thrown error fails the run.
+- Task options are `[tasks.*]` keys with the same names, so the
+  [configuration reference](/configuration/tasks/) applies as is. The rest of a
+  `runwisp.toml`, such as notifiers and routes, goes in the SDK's config
+  option.
+- Several copies of the app that share a data directory share one daemon. Each
+  run happens once, in one of the copies. The daemon stops when the last copy
+  is gone.
+
+## Next to a RunWisp you already run
+
+The SDK starts its own daemon, with its own data directory, web UI and
+password. It doesn't add tasks to a daemon that runs your `runwisp.toml`, and
+refuses a data directory that such a daemon uses. If the default port (9477) is
+taken, the SDK uses the next free one.
+
+SDKs run on Linux, macOS and WSL, like RunWisp itself.

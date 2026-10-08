@@ -26,10 +26,13 @@ import (
 // individual subcommand files don't each declare their own globals.
 type Flags struct {
 	CfgFile string
-	DataDir string
-	Socket  string
-	Host    string
-	Port    int
+	// ConfigDoc is the config an app supplied as JSON on stdin (`--app`),
+	// standing in for CfgFile; nil means CfgFile on disk is the config.
+	ConfigDoc []byte
+	DataDir   string
+	Socket    string
+	Host      string
+	Port      int
 
 	// logLevelRaw and logFormatRaw hold the raw CLI flag values; PersistentPreRunE
 	// resolves them (with RUNWISP_LOG_LEVEL / RUNWISP_LOG_FORMAT env fallbacks)

@@ -11,7 +11,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var validateJSON bool
+var (
+	validateJSON bool
+	validateApp  bool
+)
 
 var validateCmd = &cobra.Command{
 	Use:   "validate",
@@ -21,7 +24,11 @@ var validateCmd = &cobra.Command{
   runwisp validate -c ./deploy/runwisp.toml
   runwisp validate --json   # machine-readable; errors carry key/line/column`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runValidate(cmd.OutOrStdout(), flags, validateJSON)
+		f, err := withAppDocument(flags, cmd.InOrStdin(), validateApp)
+		if err != nil {
+			return err
+		}
+		return runValidate(cmd.OutOrStdout(), f, validateJSON)
 	},
 	SilenceErrors: true,
 	SilenceUsage:  true,
@@ -29,9 +36,11 @@ var validateCmd = &cobra.Command{
 
 func init() {
 	validateCmd.Flags().BoolVar(&validateJSON, "json", false, "emit a machine-readable JSON document to stdout instead of the human summary")
+	validateCmd.Flags().BoolVar(&validateApp, "app", false, appFlagUsage)
 }
 
-// runValidate loads and validates f.CfgFile. On success it prints a
+// runValidate loads and validates f.CfgFile, or the document standing in for
+// it under `--app`. On success it prints a
 // short ✓ summary to w and returns nil; on failure it returns a userFacing
 // error so main.go renders the message in the same style as other CLI
 // errors. The summary covers the values an operator most often wants to
@@ -41,7 +50,13 @@ func init() {
 // With asJSON, w receives a single validateJSONDoc instead (valid=false on
 // failure, still returning the error so the exit code stays non-zero).
 func runValidate(w io.Writer, f Flags, asJSON bool) error {
-	cfg, err := config.Load(f.CfgFile)
+	var cfg *config.Config
+	var err error
+	if f.ConfigDoc != nil {
+		cfg, err = config.LoadDocument(f.CfgFile, f.ConfigDoc)
+	} else {
+		cfg, err = config.Load(f.CfgFile)
+	}
 	if err != nil {
 		if asJSON {
 			// Emit the error document to stdout so an agent never has to parse

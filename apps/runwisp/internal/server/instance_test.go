@@ -40,9 +40,26 @@ func TestInstance_SocketReturnsIdentity(t *testing.T) {
 	assert.Equal(t, AppName, body.App)
 	assert.Equal(t, "/tmp/rw-data", body.DataDir)
 	assert.Equal(t, "/tmp/rw-data/runwisp.toml", body.ConfigPath)
+	assert.Equal(t, "file", body.ConfigSource)
 	assert.Equal(t, "/tmp/rw-data/runwisp.sock", body.SocketPath)
 	assert.Equal(t, "fp-test", body.Fingerprint)
 	assert.NotZero(t, body.Pid)
+}
+
+// An app checks configSource before taking over a daemon on its data dir, so a
+// runwisp.toml daemon at the same path is never mistaken for its own.
+func TestInstance_ReportsAppConfig(t *testing.T) {
+	s, _, _, _ := setupServerWithOpts(t, func(o *Options) { o.AppConfig = true })
+
+	req := httptest.NewRequest("GET", "/api/daemon/identity", nil)
+	req = req.WithContext(context.WithValue(req.Context(), localTrustedKey{}, true))
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var body model.InstanceInfo
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+	assert.Equal(t, "app", body.ConfigSource)
 }
 
 func TestInstance_LoopbackTCPReturnsIdentity(t *testing.T) {

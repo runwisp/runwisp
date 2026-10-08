@@ -93,6 +93,10 @@ type taskServiceWireCore struct {
 	ComposeService string `toml:"compose_service,omitempty"`
 	ComposeMode    string `toml:"compose_mode,omitempty"`
 
+	// SDK runs the unit in the app connected over the local socket, which
+	// serves it under the unit's name, instead of a process. See applySDK.
+	SDK bool `toml:"sdk,omitempty"`
+
 	// Failures declares which outcomes count as a failure for this task: a list of
 	// EndReason names and/or exit-code tokens ("42", "1-23"). nil means "unset"
 	// (inherit [defaults], then the built-in default) — distinct from an explicit
@@ -355,7 +359,38 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 	if err := w.applyComposeBackend(&task, name, label); err != nil {
 		return model.Task{}, err
 	}
+	if err := w.applySDK(&task, name, label); err != nil {
+		return model.Task{}, err
+	}
 	return task, nil
+}
+
+// applySDK routes the unit to the connected app when `sdk` is set. The
+// keys that only shape a process RunWisp starts are rejected next to it, while
+// their explicit values are still visible (ApplyDefaults later fills in shell).
+func (w *taskServiceWireCore) applySDK(task *model.Task, name, label string) error {
+	if !w.SDK {
+		return nil
+	}
+	for _, k := range []struct {
+		key string
+		set bool
+	}{
+		{"run", w.Run != ""},
+		{"compose_file", w.ComposeFile != ""},
+		{"shell", w.Shell != ""},
+		{"umask", w.Umask != ""},
+		{"user", w.User != ""},
+		{"env_base", w.EnvBase != ""},
+		{"working_dir", w.WorkingDir != ""},
+		{"stop_signal", w.StopSignal != ""},
+	} {
+		if k.set {
+			return fmt.Errorf("%s %q sets both sdk and %s; %s applies only to a process RunWisp starts", label, name, k.key, k.key)
+		}
+	}
+	task.ExecutionDef = &model.SDKExecution{}
+	return nil
 }
 
 // applyComposeBackend routes the task through the compose backend when

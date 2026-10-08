@@ -194,6 +194,13 @@ export default defineConfig({
                     ],
                 },
                 {
+                    label: "SDKs",
+                    items: [
+                        { label: "Overview", slug: "sdk" },
+                        { label: "JavaScript", slug: "sdk/javascript" },
+                    ],
+                },
+                {
                     label: "Migrating",
                     items: [
                         { label: "Overview", slug: "coming-from" },
@@ -201,6 +208,7 @@ export default defineConfig({
                         { label: "From supervisord", slug: "coming-from/supervisord" },
                         { label: "From systemd", slug: "coming-from/systemd" },
                         { label: "From docker-compose", slug: "coming-from/docker-compose" },
+                        { label: "From node-cron", slug: "coming-from/node-cron" },
                     ],
                 },
                 {
