@@ -1529,3 +1529,35 @@ func TestSidebarFilterCtrlC_OpensQuitConfirm(t *testing.T) {
 		t.Fatal("expected ctrl+c in the sidebar filter to open the quit confirm")
 	}
 }
+
+// TestStoppedServiceOffersStartFromDaemonState is the regression for a stopped
+// service offering Restart: the stopped flag lived only in the TUI's memory,
+// so reopening the run (or restarting the TUI) lost it. It now comes from the
+// daemon's /api/tasks poll.
+func TestStoppedServiceOffersStartFromDaemonState(t *testing.T) {
+	m := newTestModel([]model.Task{{Name: "svc", Kind: model.KindService}})
+	run := &model.Run{ID: "r-svc", TaskName: "svc", Status: model.PhaseEnded}
+	m.openExecView(run)
+	if m.execView.Action() == execlist.ActionRestartService {
+		t.Fatal("precondition: a service not reported stopped offers Stop")
+	}
+
+	updated, _ := m.Update(uikit.TaskStateMsg{Stopped: map[string]bool{"svc": true}})
+	m = updated.(Model)
+	if m.execView.Action() != execlist.ActionRestartService {
+		t.Fatal("an open run of a service the daemon reports stopped must offer Start")
+	}
+
+	m.closeExecView()
+	m.openExecView(run)
+	if m.execView.Action() != execlist.ActionRestartService {
+		t.Fatal("reopening a stopped service's run must offer Start")
+	}
+
+	updated, _ = m.handleRestartService(uikit.RestartServiceMsg{TaskName: "svc"})
+	m = updated.(Model)
+	m.openExecView(run)
+	if m.execView.Action() == execlist.ActionRestartService {
+		t.Fatal("after a restart the service is running again and must not offer Start")
+	}
+}

@@ -160,7 +160,7 @@ export interface paths {
         };
         /**
          * Stream live application events
-         * @description Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, task-list changes (a schedule paused or resumed, a reload applied), and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.
+         * @description Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, task-list changes (a schedule paused or resumed, a service stopped or started, a reload applied), and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.
          */
         get: operations["streamAppEvents"];
         put?: never;
@@ -1622,7 +1622,7 @@ export interface components {
             maxConcurrent?: number;
             /**
              * Format: int64
-             * @description Maximum runs that can wait when on_overlap = queue
+             * @description Maximum runs that can wait when on_overlap = queue; 0 means none wait, so a trigger that finds every slot busy is dropped as queue_full
              */
             maxQueued?: number;
             name: string;
@@ -1823,7 +1823,7 @@ export interface components {
             maxConcurrent?: number;
             /**
              * Format: int64
-             * @description Maximum runs that can wait when on_overlap = queue
+             * @description Maximum runs that can wait when on_overlap = queue; 0 means none wait, so a trigger that finds every slot busy is dropped as queue_full
              */
             maxQueued?: number;
             name: string;
@@ -1887,6 +1887,8 @@ export interface components {
             runOnStartMode?: "daemon" | "boot";
             /** @description Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values are not. */
             secretsFile?: string;
+            /** @description For services: true while the service is stopped (by an operator, or never started because autostart = false) and the daemon will not respawn it until it is started. Absent for running or restarting services and for tasks. */
+            serviceStopped?: boolean;
             /** @description Absolute path to the shell interpreter for run scripts; defaults to /bin/sh */
             shell?: string;
             /**

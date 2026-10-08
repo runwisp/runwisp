@@ -222,6 +222,7 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 	ev.Loc = m.loc
 	ev.TaskIsService = m.isService(run.TaskName)
 	ev.InstanceCount = m.serviceInstances(run.TaskName)
+	ev.SetServiceStopped(m.info.StoppedServices[run.TaskName])
 	ev.Usage = m.runUsage(run.ID)
 	mainW, mainH := m.mainSize()
 	ev.SetSize(mainW, mainH)

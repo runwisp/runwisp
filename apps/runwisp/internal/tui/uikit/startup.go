@@ -78,6 +78,10 @@ type StartupInfo struct {
 	// TaskUsage maps each task with a measured running process to its live
 	// CPU and memory use. Kept current by the same /api/tasks poll.
 	TaskUsage map[string]model.ResourceUsage
+	// StoppedServices holds each service the daemon reports stopped (by an
+	// operator, or not autostarted), so its runs offer Start rather than Stop.
+	// Kept current by the same /api/tasks poll.
+	StoppedServices map[string]bool
 	// RunUsage maps each measured running run (by ID) to its live CPU and
 	// memory use. Fed by the event stream's system samples.
 	RunUsage map[string]model.ResourceUsage

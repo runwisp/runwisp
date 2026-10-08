@@ -10,7 +10,16 @@ import {
     runRetryLabel,
     runUsageLabel,
     instanceSuffix,
+    runLogDownloadUrl,
 } from "./run-helpers.js";
+
+describe("runLogDownloadUrl", () => {
+    it("points at the daemon's raw log route", () => {
+        expect(runLogDownloadUrl("01J0000000000000000000000A")).toBe(
+            "/api/runs/01J0000000000000000000000A/log/raw",
+        );
+    });
+});
 
 describe("runVerdict", () => {
     it("phrases a timed outcome so a duration reads after it", () => {

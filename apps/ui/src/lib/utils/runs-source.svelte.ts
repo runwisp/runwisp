@@ -11,6 +11,7 @@ import {
     type ExitCodeRange,
     type RunsListFilters,
 } from "@runwisp/ui";
+import { SvelteSet } from "svelte/reactivity";
 import { runsApi } from "$lib/api";
 
 const PAGE_SIZE = 50;
@@ -33,6 +34,12 @@ export interface RunsSource {
      */
     refresh(): void;
     upsert(run: Run): void;
+    /**
+     * Show a run fetched on its own (a deep link past the loaded pages) at the
+     * end of the list. It already counts toward `total`, and the page that
+     * holds it later takes it over instead of listing it twice.
+     */
+    reveal(run: Run): void;
     remove(runId: string): void;
     /**
      * Runs that arrived (in flight, via upsert(): a trigger or a scheduled
@@ -146,6 +153,13 @@ export function createRunsSource(): RunsSource {
     let currentFilters = $state<RunsListFilters | null>(null);
     let fetchToken = 0;
     const motion = new RunMotion();
+    // Revealed runs not yet reached by a page fetch. They sit in `items` but
+    // not at their server rank, so they're left out of the next page offset.
+    const revealed = new SvelteSet<string>();
+
+    function pagedCount(): number {
+        return items.length - revealed.size;
+    }
 
     const done = $derived(currentFilters !== null && items.length >= total);
 
@@ -163,12 +177,17 @@ export function createRunsSource(): RunsSource {
         expectedLength: number,
     ): void {
         if (replace) {
+            revealed.clear();
             items = res.runs;
         } else if (items.length !== expectedLength) {
-            void fetchPage(items.length, false);
+            void fetchPage(pagedCount(), false);
             return;
         } else {
-            items = [...items, ...res.runs];
+            const pageIds = res.runs.map((r) => r.id);
+            const paged = items.filter((r) => !revealed.has(r.id));
+            const pending = items.filter((r) => revealed.has(r.id) && !pageIds.includes(r.id));
+            for (const id of pageIds) revealed.delete(id);
+            items = [...paged, ...res.runs, ...pending];
         }
         total = res.total;
     }
@@ -199,6 +218,7 @@ export function createRunsSource(): RunsSource {
         if (filtersEqual(currentFilters, next)) return;
         currentFilters = { ...next };
         motion.clear();
+        revealed.clear();
         items = [];
         total = 0;
         void fetchPage(0, true);
@@ -207,7 +227,7 @@ export function createRunsSource(): RunsSource {
     function loadMore(): void {
         if (loading || !currentFilters) return;
         if (items.length >= total) return;
-        void fetchPage(items.length, false);
+        void fetchPage(pagedCount(), false);
     }
 
     function refresh(): void {
@@ -225,6 +245,7 @@ export function createRunsSource(): RunsSource {
         const next = [...items];
         if (!matchesFilters(run, f)) {
             motion.markRemoved(run.id);
+            revealed.delete(run.id);
             next.splice(idx, 1);
             items = next;
             if (total > 0) total -= 1;
@@ -256,6 +277,18 @@ export function createRunsSource(): RunsSource {
         total += 1;
     }
 
+    function reveal(run: Run): void {
+        const f = currentFilters;
+        if (!f) return;
+        if (items.some((r) => r.id === run.id)) {
+            upsert(run);
+            return;
+        }
+        if (!matchesFilters(run, f)) return;
+        revealed.add(run.id);
+        items = [...items, run];
+    }
+
     function upsert(run: Run): void {
         const f = currentFilters;
         if (!f) return;
@@ -271,6 +304,7 @@ export function createRunsSource(): RunsSource {
         // same id; decrementing on the second (idx === -1) call would drift the
         // count below the true total and can prematurely mark the list "done".
         if (idx === -1) return;
+        revealed.delete(runId);
         motion.markRemoved(runId);
         const next = [...items];
         next.splice(idx, 1);
@@ -304,6 +338,7 @@ export function createRunsSource(): RunsSource {
         loadMore,
         refresh,
         upsert,
+        reveal,
         remove,
         motion,
     };

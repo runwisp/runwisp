@@ -99,7 +99,7 @@ func runStop(cmd *cobra.Command, args []string, f Flags, attach bool) error {
 		return nil
 	}
 
-	if err := shutdownDaemonWait(stopWaitTimeout(f), f); err != nil {
+	if err := shutdownDaemonWait(stopWaitTimeout(f.CfgFile), f); err != nil {
 		return err
 	}
 	fmt.Fprintln(out, "Daemon stopped.")
@@ -114,7 +114,7 @@ func stopViaService(out io.Writer, installer autostart.Installer, opts autostart
 		return err
 	}
 	if pid, err := datadir.ReadPidFile(f.DataDir); err == nil {
-		if err := waitForProcessExit(pid, stopWaitTimeout(f), f.DataDir); err != nil {
+		if err := waitForProcessExit(pid, stopWaitTimeout(f.CfgFile), f.DataDir); err != nil {
 			return err
 		}
 	}

@@ -370,14 +370,15 @@ func serviceState(cmd *cobra.Command, f Flags, local bool) (autostart.Installer,
 }
 
 // stopWaitTimeout returns how long to wait for the daemon to exit after
-// SIGTERM: the configured [daemon] shutdown_timeout plus headroom for
-// process teardown, floored at 15s when the config is unreadable or the
-// timeout is short.
-func stopWaitTimeout(f Flags) time.Duration {
-	const floor = 15 * time.Second
-	cfg, err := config.Load(f.CfgFile)
-	if err != nil {
-		return floor
+// SIGTERM: the daemon's own shutdownBudget for [daemon] shutdown_timeout (the
+// default when the config is unreadable) plus headroom for process teardown,
+// floored at 15s. `service install` bakes the same value into the unit as the
+// service manager's stop timeout.
+func stopWaitTimeout(cfgPath string) time.Duration {
+	const teardownMargin = 2 * time.Second
+	timeout := config.DefaultDaemonShutdown
+	if cfg, err := config.Load(cfgPath); err == nil {
+		timeout = cfg.Daemon.ShutdownTimeout
 	}
-	return max(cfg.Daemon.ShutdownTimeout+5*time.Second, floor)
+	return max(shutdownBudget(timeout)+teardownMargin, 15*time.Second)
 }

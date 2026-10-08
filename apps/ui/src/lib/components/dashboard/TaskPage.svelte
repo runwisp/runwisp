@@ -22,6 +22,7 @@
     import { HistoryRail } from "$lib/utils/history-rail.svelte";
     import ParamForm from "./ParamForm.svelte";
     import { taskInstanceCount } from "./instance-count";
+    import { isServiceStopped } from "./service-control";
 
     let {
         task,
@@ -35,7 +36,6 @@
         concurrencyReached = false,
         triggering = false,
         restarting = false,
-        serviceStopped = false,
         stoppingService = false,
         onRun,
         onStop,
@@ -63,7 +63,6 @@
         concurrencyReached?: boolean;
         triggering?: boolean;
         restarting?: boolean;
-        serviceStopped?: boolean;
         stoppingService?: boolean;
         onRun: (params?: Record<string, string | null>) => void;
         onStop?: (runId: string) => void;
@@ -236,6 +235,7 @@
     // stopped/restarted from here at all, rather than run-triggered. false
     // locks it to its restart policy until a runwisp.toml edit + reload.
     const serviceControllable = $derived(taskIsService && (task.manualTrigger ?? true));
+    const serviceStopped = $derived(isServiceStopped(task));
 
     // In station mode the station owns scheduling/dispatch; triggering here is the
     // operator's "run it here, now" escape hatch against the local runner.
@@ -445,7 +445,7 @@
 <AlertDialog
     bind:open={stopServiceConfirmOpen}
     title="Stop Service"
-    description={`Stop ${task.name}? The daemon will not restart it until you click Restart or the daemon itself restarts.`}
+    description={`Stop ${task.name}? The daemon will not restart it until you click Start or the daemon itself restarts.`}
     confirmLabel="Stop Now"
     confirmVariant="danger"
     confirmIcon={Square}

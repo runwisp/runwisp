@@ -7,8 +7,48 @@ package sqlcdb
 
 import (
 	"context"
+	"strings"
 	"time"
 )
+
+const bumpTaskLastRun = `-- name: BumpTaskLastRun :exec
+UPDATE task_registrations SET last_run_at = ?1
+WHERE task_name = ?2
+  AND (last_run_at IS NULL OR last_run_at < ?1)
+`
+
+type BumpTaskLastRunParams struct {
+	CreatedAt *time.Time `json:"created_at"`
+	TaskName  string     `json:"task_name"`
+}
+
+// Only moves forward: a backdated row (a missed tick, a jittered run) must not
+// pull the anchor back behind a run already recorded.
+func (q *Queries) BumpTaskLastRun(ctx context.Context, arg BumpTaskLastRunParams) error {
+	_, err := q.db.ExecContext(ctx, bumpTaskLastRun, arg.CreatedAt, arg.TaskName)
+	return err
+}
+
+const deleteTaskRegistrationsExcept = `-- name: DeleteTaskRegistrationsExcept :exec
+DELETE FROM task_registrations WHERE task_name NOT IN (/*SLICE:keep*/?)
+`
+
+// Forgets every task that left the config (first-seen time, last run, pause),
+// so one that comes back starts fresh. Its runs are kept.
+func (q *Queries) DeleteTaskRegistrationsExcept(ctx context.Context, keep []string) error {
+	query := deleteTaskRegistrationsExcept
+	var queryParams []interface{}
+	if len(keep) > 0 {
+		for _, v := range keep {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:keep*/?", strings.Repeat(",?", len(keep))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:keep*/?", "NULL", 1)
+	}
+	_, err := q.db.ExecContext(ctx, query, queryParams...)
+	return err
+}
 
 const ensureTaskRegistered = `-- name: EnsureTaskRegistered :exec
 
@@ -29,7 +69,7 @@ func (q *Queries) EnsureTaskRegistered(ctx context.Context, arg EnsureTaskRegist
 }
 
 const getTaskRegistration = `-- name: GetTaskRegistration :one
-SELECT task_name, first_seen_at, paused_at, resumed_at FROM task_registrations WHERE task_name = ?
+SELECT task_name, first_seen_at, paused_at, resumed_at, last_run_at FROM task_registrations WHERE task_name = ?
 `
 
 func (q *Queries) GetTaskRegistration(ctx context.Context, taskName string) (TaskRegistration, error) {
@@ -40,6 +80,7 @@ func (q *Queries) GetTaskRegistration(ctx context.Context, taskName string) (Tas
 		&i.FirstSeenAt,
 		&i.PausedAt,
 		&i.ResumedAt,
+		&i.LastRunAt,
 	)
 	return i, err
 }

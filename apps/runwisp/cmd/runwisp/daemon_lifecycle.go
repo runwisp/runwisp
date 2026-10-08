@@ -110,9 +110,34 @@ func requestSelfRestart(allowStationDispatch bool, fatalCh chan<- error) error {
 	return nil
 }
 
-// drainKillMargin is the safety-net slack added on top of the task manager's
-// own shutdown deadline, covering the force-kill and the reaping of survivors.
-const drainKillMargin = 5 * time.Second
+const (
+	// inputDrainTimeout bounds the input layer (HTTP handlers, station link).
+	inputDrainTimeout = 3 * time.Second
+	// fallbackTaskTimeout stands in for an unset [daemon] shutdown_timeout to
+	// keep developer setups responsive.
+	fallbackTaskTimeout = 3 * time.Second
+	// drainKillMargin is the safety-net slack added on top of the task
+	// manager's own shutdown deadline, covering the force-kill and the reaping
+	// of survivors.
+	drainKillMargin = 5 * time.Second
+)
+
+// effectiveTaskTimeout is the [daemon] shutdown_timeout gracefulShutdown
+// actually applies.
+func effectiveTaskTimeout(taskTimeout time.Duration) time.Duration {
+	if taskTimeout <= 0 {
+		return fallbackTaskTimeout
+	}
+	return taskTimeout
+}
+
+// shutdownBudget is the longest gracefulShutdown can take for a given
+// [daemon] shutdown_timeout: the input drain, then the service stop pass
+// (one timeout), then the cron/task-manager drain (another timeout plus the
+// kill margin). `runwisp stop`/`restart` size their wait from it.
+func shutdownBudget(taskTimeout time.Duration) time.Duration {
+	return inputDrainTimeout + 2*effectiveTaskTimeout(taskTimeout) + drainKillMargin
+}
 
 // gracefulShutdown tears down all daemon subsystems in two layers. The input
 // layer (HTTP server, station connection) drains under a short fixed deadline
@@ -139,17 +164,11 @@ func gracefulShutdown(cancelStation context.CancelFunc, stationWG *sync.WaitGrou
 	// nil receiver when the pprof endpoint was never enabled — Close handles it.
 	svc.DebugServer.Close()
 
-	inputCtx, cancelInput := context.WithTimeout(context.Background(), 3*time.Second)
+	inputCtx, cancelInput := context.WithTimeout(context.Background(), inputDrainTimeout)
 	defer cancelInput()
 	waitInput(inputCtx, stationWG, srv)
 
-	taskTimeout := time.Duration(svc.TaskShutdownTimeout.Load())
-	if taskTimeout <= 0 {
-		// Operator hasn't configured one — fall back to the historical 3s
-		// to keep developer setups responsive.
-		taskTimeout = 3 * time.Second
-	}
-	waitDrain(svc, taskTimeout)
+	waitDrain(svc, effectiveTaskTimeout(time.Duration(svc.TaskShutdownTimeout.Load())))
 }
 
 // waitInput waits for the request-accepting layer to quiesce: HTTP server
@@ -179,8 +198,9 @@ func waitInput(ctx context.Context, stationWG *sync.WaitGroup, srv *server.Serve
 	awaitOrLog(ctx, &wg, "input layer")
 }
 
-// waitDrain stops worker subsystems. Order within is irrelevant — they don't
-// call into each other — but they all share one deadline. The task manager
+// waitDrain stops worker subsystems: the scheduler first, then services in
+// dependency order, then notifications and the task manager under one shared
+// deadline (they don't call into each other). The task manager
 // drain is bounded by taskTimeout so survivors get SIGKILLed and recorded as
 // ReasonDaemonStopped if their per-task graceful_stop overruns.
 func waitDrain(svc *daemonServices, taskTimeout time.Duration) {
@@ -190,6 +210,17 @@ func waitDrain(svc *daemonServices, taskTimeout time.Duration) {
 	} else {
 		slog.Info("stopping scheduler", "timeout", taskTimeout)
 	}
+
+	// No new cron firings from here on: a tick during a slow service stop
+	// would start a run only for the drain below to kill it. Stop returns once
+	// the cron loop has halted and any tick already firing has handed off its
+	// run; in-flight runs keep going and drain below.
+	if svc.Scheduler != nil {
+		svc.Scheduler.Stop()
+	}
+	// Nor any other new run: a held jittered fire, a retry or a queued run
+	// would otherwise start while services stop.
+	svc.TaskManager.BeginShutdown()
 
 	// Tear services down in reverse-dependency order before the bulk drain, so
 	// a dependent stops before the services it relies on. ShutdownWithDeadline
@@ -208,13 +239,6 @@ func waitDrain(svc *daemonServices, taskTimeout time.Duration) {
 
 	var wg sync.WaitGroup
 
-	if svc.Scheduler != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			svc.Scheduler.Stop()
-		}()
-	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()

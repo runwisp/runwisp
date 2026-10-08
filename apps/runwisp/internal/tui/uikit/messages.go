@@ -119,12 +119,13 @@ type SchedulePauseMsg struct {
 }
 
 // TaskStateMsg delivers live per-task state from a fresh /api/tasks read:
-// the tasks whose cron schedule is paused and the live usage of running ones,
-// both keyed by name.
+// the tasks whose cron schedule is paused, the live usage of running ones, and
+// the services that are stopped, all keyed by name.
 type TaskStateMsg struct {
-	Paused map[string]time.Time
-	Usage  map[string]model.ResourceUsage
-	Err    error
+	Paused  map[string]time.Time
+	Usage   map[string]model.ResourceUsage
+	Stopped map[string]bool
+	Err     error
 }
 
 // QuitAction specifies what should happen to the daemon when the TUI exits.

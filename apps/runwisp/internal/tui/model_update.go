@@ -205,6 +205,10 @@ func (m Model) dispatchActionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.info.PausedTasks = msg.Paused
 			m.info.TaskUsage = msg.Usage
 			m.infoView.SetTaskUsage(msg.Usage)
+			m.info.StoppedServices = msg.Stopped
+			if m.execView != nil && m.execView.Run != nil {
+				m.execView.SetServiceStopped(msg.Stopped[m.execView.Run.TaskName])
+			}
 		}
 		return m, nil, true
 	case uikit.BulkActionMsg:
@@ -640,6 +644,7 @@ func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea
 	if msg.Err != nil {
 		return m, m.dialogs.FlashError("Restart failed: "+msg.Err.Error(), 6*time.Second)
 	}
+	m.setServiceStopped(msg.TaskName, false)
 	if m.execView == nil || m.execView.Run == nil || m.execView.Run.TaskName != msg.TaskName {
 		return m, nil
 	}
@@ -659,10 +664,24 @@ func (m Model) handleStopService(msg uikit.StopServiceMsg) (tea.Model, tea.Cmd) 
 	if msg.Err != nil {
 		return m, m.dialogs.FlashError("Stop failed: "+msg.Err.Error(), 6*time.Second)
 	}
+	m.setServiceStopped(msg.TaskName, true)
 	if m.execView != nil && m.execView.Run != nil && m.execView.Run.TaskName == msg.TaskName {
 		m.execView.SetServiceStopped(true)
 	}
 	return m, nil
+}
+
+// setServiceStopped records an operator stop/start ahead of the next
+// /api/tasks poll, so a run opened in between shows the right action.
+func (m *Model) setServiceStopped(taskName string, stopped bool) {
+	if !stopped {
+		delete(m.info.StoppedServices, taskName)
+		return
+	}
+	if m.info.StoppedServices == nil {
+		m.info.StoppedServices = make(map[string]bool)
+	}
+	m.info.StoppedServices[taskName] = true
 }
 
 func (m Model) handleReconnectLog(msg uikit.ReconnectLogMsg) (tea.Model, tea.Cmd) {

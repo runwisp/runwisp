@@ -24,7 +24,7 @@ func TestBuildRunFilterArgs_EmptyFilterDisablesEveryGate(t *testing.T) {
 	assert.Nil(t, args.ExitCodeMin)
 	assert.Nil(t, args.ExitCodeMax)
 	assert.Nil(t, args.RetriesOnly)
-	assert.Equal(t, "", args.SearchPattern)
+	assert.Equal(t, "", args.SearchTerm)
 }
 
 func TestBuildRunFilterArgs_StatusSetRendering(t *testing.T) {
@@ -91,24 +91,24 @@ func TestBuildRunFilterArgs_TaskNameFillsTaskNameFilter(t *testing.T) {
 	assert.Equal(t, "task1", args.TaskNameFilter)
 }
 
-func TestBuildRunFilterArgs_SearchBuildsLikePattern(t *testing.T) {
-	args := buildRunFilterArgs(model.RunFilter{Search: "foo"})
-	assert.Equal(t, "foo", args.SearchFilter)
-	assert.Equal(t, "%foo%", args.SearchPattern)
+func TestBuildRunFilterArgs_SearchBuildsLowercaseTerm(t *testing.T) {
+	args := buildRunFilterArgs(model.RunFilter{Search: "Foo"})
+	assert.Equal(t, "Foo", args.SearchFilter)
+	assert.Equal(t, "foo", args.SearchTerm)
 }
 
-func TestBuildRunFilterArgs_SearchStripsLikeWildcards(t *testing.T) {
-	// `%` and `_` are LIKE metacharacters — strip them so a user typing
-	// them doesn't get an accidental wildcard match.
-	args := buildRunFilterArgs(model.RunFilter{Search: "%a_b%"})
-	assert.Equal(t, "%a_b%", args.SearchFilter, "gate keeps the raw input")
-	assert.Equal(t, "%ab%", args.SearchPattern)
+func TestBuildRunFilterArgs_SearchKeepsWildcardCharsLiteral(t *testing.T) {
+	// The term is matched as a literal substring, so `%` and `_` are kept
+	// as typed rather than stripped or treated as wildcards.
+	args := buildRunFilterArgs(model.RunFilter{Search: "%A_b%"})
+	assert.Equal(t, "%A_b%", args.SearchFilter, "gate keeps the raw input")
+	assert.Equal(t, "%a_b%", args.SearchTerm)
 }
 
 func TestBuildRunFilterArgs_SearchTruncatedToMaxLength(t *testing.T) {
 	long := strings.Repeat("a", maxSearchQueryLength+50)
 	args := buildRunFilterArgs(model.RunFilter{Search: long})
-	assert.Len(t, args.SearchPattern, maxSearchQueryLength+2, "pattern is truncated body wrapped in %%")
+	assert.Len(t, args.SearchTerm, maxSearchQueryLength, "term is truncated")
 }
 
 func TestBuildRunFilterArgs_SearchTruncationRespectsUTF8Boundary(t *testing.T) {
@@ -118,7 +118,7 @@ func TestBuildRunFilterArgs_SearchTruncationRespectsUTF8Boundary(t *testing.T) {
 	long := strings.Repeat("中", 40)
 	args := buildRunFilterArgs(model.RunFilter{Search: long})
 
-	assert.True(t, utf8.ValidString(args.SearchPattern), "search pattern must not split a multi-byte rune")
+	assert.True(t, utf8.ValidString(args.SearchTerm), "search pattern must not split a multi-byte rune")
 }
 
 func TestExceptIDsForSlice_EmptyInputYieldsSentinelOnly(t *testing.T) {

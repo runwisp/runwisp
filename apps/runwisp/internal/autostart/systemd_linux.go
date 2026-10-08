@@ -134,7 +134,7 @@ func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, string, erro
 	if data, err := os.ReadFile(opts.Binary); err == nil {
 		binarySHA = hashContent(data)
 	}
-	configHash := SettingsHash(opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port)
+	configHash := SettingsHash(opts)
 	params := SystemdParams{
 		Binary:         opts.Binary,
 		Config:         opts.Config,
@@ -146,6 +146,7 @@ func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, string, erro
 		ConfigHash:     configHash,
 		BinarySHA:      binarySHA,
 		System:         opts.System,
+		StopTimeout:    opts.StopTimeout,
 		MaskedCronUnit: opts.maskedCronUnit,
 		CronPriorState: opts.cronPriorState,
 	}
@@ -804,7 +805,7 @@ func (s *systemdInstaller) populateUnitStatus(ctx context.Context, opts InstallO
 	st.UnitConfigHash = parsed.configHash
 	st.ExpectedBinarySHA = parsed.binarySHA
 	st.Installed = parsed.managed
-	st.ExpectedConfigHash = SettingsHash(opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port)
+	st.ExpectedConfigHash = SettingsHash(opts)
 	// Only probe cron when this instance's own marker says it took
 	// it over — an operator who never asks for a take-over pays
 	// zero extra systemctl calls for this row.

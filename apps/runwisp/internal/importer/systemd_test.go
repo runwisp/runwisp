@@ -306,3 +306,11 @@ func TestSystemdExecStartShellMetacharactersAreQuoted(t *testing.T) {
 		}
 	}
 }
+
+// TestSystemdCommentInsideContinuationIsSkipped: systemd drops a comment line
+// even in the middle of a continued directive (systemd.syntax(7)), so a flag
+// commented out of a multi-line ExecStart stays out of the imported command.
+func TestSystemdCommentInsideContinuationIsSkipped(t *testing.T) {
+	res := parseUnit(t, "[Service]\nExecStart=/bin/app \\\n  --port=3000 \\\n#  --inspect \\\n;  --trace \\\n  --verbose\n")
+	mustContain(t, res.TOML(), `run = "/bin/app --port=3000 --verbose"`)
+}

@@ -82,12 +82,9 @@ func (m *MockRunRepository) GetPendingRuns(ctx context.Context) ([]model.Run, er
 	return args.Get(0).([]model.Run), args.Error(1)
 }
 
-func (m *MockRunRepository) GetLastRunByTask(ctx context.Context, taskName string) (*model.Run, error) {
-	args := m.Called(ctx, taskName)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*model.Run), args.Error(1)
+func (m *MockRunRepository) ForgetTaskRegistrationsExcept(ctx context.Context, keep []string) error {
+	args := m.Called(ctx, keep)
+	return args.Error(0)
 }
 
 func (m *MockRunRepository) GetRunSummary(ctx context.Context) (*model.RunSummary, error) {

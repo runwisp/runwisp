@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `runwisp restart --attach` follows only the new runs, and `runwisp logs` and `--attach` report a stopped run as `run ended` instead of `run failed`.
+- The **Download log** button in the Web UI saves the run's log again instead of failing.
+- Opening a link to an older run in the Web UI no longer adds one to the run count or skips a run when you scroll further down the list.
+- A restart no longer reports missed runs and re-runs a cron task whose run history was deleted by `keep_runs`, `keep_for`, `max_size` or by hand.
+- A cron task you remove from the config and later add back starts fresh, instead of reporting the time it was gone as missed runs and re-running them.
+- Searching runs for a task name with `_` in it finds that task.
+- `runwisp import systemd` skips a comment line inside a multi-line `ExecStart`, as systemd does, instead of adding it to the command.
+- `runwisp import supervisord` reads keys indented under their section as separate keys, as supervisord does, instead of folding them into the previous value.
+- `runwisp stop` and `runwisp restart` wait for the whole shutdown, services and then tasks, instead of reporting a still-exiting daemon as stuck.
+- No new run starts while the daemon is stopping its services at shutdown, including cron, retries, queued runs and jittered runs.
+- A daemon installed with `runwisp service install` is no longer killed by systemd or launchd partway through a long shutdown. Run `runwisp service install` again to update an existing install.
+- A stopped service offers **Start** instead of **Restart** in the Web UI and the TUI after a page reload, in other tabs, and when you reopen one of its runs.
+- `max_queued = 0` means no run waits in line, as documented, instead of quietly becoming the default of 100.
 
 ## [1.5.0] - 2026-10-07
 

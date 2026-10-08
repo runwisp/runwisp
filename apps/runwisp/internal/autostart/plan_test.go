@@ -6,6 +6,7 @@ package autostart
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/autostart/autostarttest"
 	"github.com/stretchr/testify/assert"
@@ -117,18 +118,27 @@ func TestClassifyUninstall_HandWritten_ForceUninstalls(t *testing.T) {
 	assert.Equal(t, PlanUninstall, plan.Kind)
 }
 
+var hashOpts = InstallOptions{
+	Binary: "/usr/bin/runwisp", Config: "/etc/runwisp.toml", DataDir: "/var/lib/runwisp",
+	Host: "127.0.0.1", Port: 9477, StopTimeout: 30 * time.Second,
+}
+
 func TestSettingsHash_Stable(t *testing.T) {
-	a := SettingsHash("/usr/bin/runwisp", "/etc/runwisp.toml", "/var/lib/runwisp", "127.0.0.1", 9477)
-	b := SettingsHash("/usr/bin/runwisp", "/etc/runwisp.toml", "/var/lib/runwisp", "127.0.0.1", 9477)
+	a := SettingsHash(hashOpts)
+	b := SettingsHash(hashOpts)
 	assert.Equal(t, a, b)
 	// Twelve hex chars.
 	assert.Len(t, a, 12)
 }
 
 func TestSettingsHash_Sensitive(t *testing.T) {
-	base := SettingsHash("/usr/bin/runwisp", "/etc/runwisp.toml", "/var/lib/runwisp", "127.0.0.1", 9477)
-	alt := SettingsHash("/usr/bin/runwisp", "/etc/runwisp.toml", "/var/lib/runwisp", "127.0.0.1", 9478)
-	assert.NotEqual(t, base, alt, "different port must produce different hash")
+	base := SettingsHash(hashOpts)
+	alt := hashOpts
+	alt.Port = 9478
+	assert.NotEqual(t, base, SettingsHash(alt), "different port must produce different hash")
+	alt = hashOpts
+	alt.StopTimeout = 130 * time.Second
+	assert.NotEqual(t, base, SettingsHash(alt), "a new stop timeout must mark the unit as drifted")
 }
 
 func TestExtractMarkers(t *testing.T) {

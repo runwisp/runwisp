@@ -216,7 +216,7 @@
         "timeout": { "$ref": "#/$defs/duration", "description": "Per-attempt cap (inherits [defaults])." },
         "graceful_stop": { "$ref": "#/$defs/duration", "description": "Grace before SIGKILL on stop. Default 5s." },
         "max_concurrent": { "type": "integer", "minimum": 1, "maximum": 1024, "default": 1, "description": "Concurrent run cap." },
-        "max_queued": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 100, "description": "Queued-run depth." },
+        "max_queued": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 100, "description": "Queued-run depth. 0 = no queue: a trigger that finds every slot busy records queue_full." },
         "on_overlap": { "$ref": "#/$defs/onOverlap", "default": "queue" },
         "retry_attempts": { "type": "integer", "minimum": 0, "maximum": 100, "default": 0, "description": "Retries after a failed attempt. Fires only when the reason is also classified as a failure by `failures`." },
         "retry_delay": { "$ref": "#/$defs/duration", "description": "Delay between retries. Default 5s." },

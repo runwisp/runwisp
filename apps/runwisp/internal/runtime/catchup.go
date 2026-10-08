@@ -6,6 +6,8 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 
 	"log/slog"
@@ -30,12 +32,20 @@ type CatchUpResult struct {
 // (never seen before and its registration couldn't be read back) and must be
 // skipped by RunMissedTickCatchUp. errs counts registration/lookup failures.
 //
+// tasks must be the whole config: registrations of tasks not in it are
+// forgotten first, so a task that was removed and later comes back anchors at
+// this boot instead of reporting its whole absence as missed.
+//
 // Call this before the scheduler starts and before RunStartupTasks fires: both
 // can create a run for this boot, which would then masquerade as "the last run"
 // and hide the downtime gap. RunMissedTickCatchUp runs later, once notify has
 // subscribed, so the alert is not lost.
 func SnapshotCatchupAnchors(ctx context.Context, db storage.RunRepository, tasks map[string]*model.Task, now time.Time) (anchors map[string]time.Time, errs int) {
 	anchors = make(map[string]time.Time, len(tasks))
+	if err := db.ForgetTaskRegistrationsExcept(ctx, slices.Collect(maps.Keys(tasks))); err != nil {
+		slog.Warn("Failed to forget registrations of removed tasks", "err", err)
+		errs++
+	}
 	for _, task := range tasks {
 		// Detection ignores the re-run policy, so even catch_up = 0 records and
 		// alerts on the gap. Only tasks whose schedule is ours count: a service
@@ -178,36 +188,26 @@ func catchupOneTask(parser cron.ScheduleParser, task *model.Task, runner TaskRun
 }
 
 // resolveCatchupAnchor returns the time to use as the catch-up anchor point:
-// the last run time, or the first-seen registration time if no runs exist,
-// moved forward to the last schedule resume when that is later (a paused
-// window is the operator's choice, not missed ticks). A task whose schedule is
-// paused right now owes nothing and is skipped.
+// the latest of the task's first-seen time, its last run (remembered on the
+// registration even after retention deletes the row), and its last schedule
+// resume (a paused window is the operator's choice, not missed ticks). A task
+// whose schedule is paused right now owes nothing and is skipped, as is one
+// with no registration.
 // Returns (anchor, true, 0) on success or (zero, false, 1) on error/skip.
 func resolveCatchupAnchor(ctx context.Context, db storage.RunRepository, task *model.Task) (time.Time, bool, int) {
-	lastRun, err := db.GetLastRunByTask(ctx, task.Name)
-	if err != nil {
-		slog.Warn("Failed to query last run for catch-up", "task", task.Name, "err", err)
-		return time.Time{}, false, 1
-	}
 	reg, err := db.GetTaskRegistration(ctx, task.Name)
 	if err != nil {
 		slog.Warn("Failed to query task registration for catch-up", "task", task.Name, "err", err)
 		return time.Time{}, false, 1
 	}
-	if reg != nil && reg.PausedAt != nil {
+	if reg == nil || reg.PausedAt != nil {
 		return time.Time{}, false, 0
 	}
-	var anchor time.Time
-	switch {
-	case lastRun != nil:
-		anchor = lastRun.CreatedAt
-	case reg != nil:
-		anchor = reg.FirstSeenAt
-	default:
-		return time.Time{}, false, 0
-	}
-	if reg != nil && reg.ResumedAt != nil && reg.ResumedAt.After(anchor) {
-		anchor = *reg.ResumedAt
+	anchor := reg.FirstSeenAt
+	for _, floor := range []*time.Time{reg.LastRunAt, reg.ResumedAt} {
+		if floor != nil && floor.After(anchor) {
+			anchor = *floor
+		}
 	}
 	return anchor, true, 0
 }

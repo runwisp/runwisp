@@ -88,7 +88,8 @@ func statusSet(csv string) (set any, sawFailure bool) {
 // (never nil): the SQL OR-branch `match_failure = 1 AND is_failure = 1` widens
 // the status gate to the run's failure classification, composing with an empty
 // status set (Failed selected alone still filters). The search input is
-// truncated and stripped of LIKE wildcards before SearchPattern is built.
+// truncated and lowercased into SearchTerm, a literal substring the SQL
+// matches case-insensitively, so `_` (valid in task names) matches itself.
 func buildRunFilterArgs(f model.RunFilter) sqlcdb.CountRunsFilteredParams {
 	statusSetArg, sawFailure := statusSet(f.Status)
 	var matchFailure int64
@@ -116,9 +117,7 @@ func buildRunFilterArgs(f model.RunFilter) sqlcdb.CountRunsFilteredParams {
 			}
 			s = s[:cut]
 		}
-		s = strings.ReplaceAll(s, "%", "")
-		s = strings.ReplaceAll(s, "_", "")
-		args.SearchPattern = "%" + s + "%"
+		args.SearchTerm = strings.ToLower(s)
 	}
 	return args
 }
@@ -128,8 +127,9 @@ func buildRunFilterArgs(f model.RunFilter) sqlcdb.CountRunsFilteredParams {
 // list is empty. sqlc.slice on an empty []string renders `NOT IN (NULL)`,
 // which evaluates to NULL for every row — equivalent to "exclude
 // everything", the opposite of the intent. The empty-string sentinel never
-// matches a real ULID, so the NOT IN then matches all rows; for non-empty
-// ExceptIDs the sentinel is harmless.
+// matches a real ULID (or task name, for ForgetTaskRegistrationsExcept), so
+// the NOT IN then matches all rows; for non-empty ExceptIDs the sentinel is
+// harmless.
 func exceptIDsForSlice(ids []string) []string {
 	out := make([]string, 0, len(ids)+1)
 	out = append(out, "")

@@ -464,3 +464,13 @@ func TestSupervisordAutorestartMapsToRestartPolicy(t *testing.T) {
 		t.Errorf("autorestart=sometimes should be reported, got %+v", allNotes(res))
 	}
 }
+
+// Keys indented by the same amount are separate keys, as in ConfigParser: only
+// a line indented further than its key continues the value.
+func TestSupervisordIndentedKeysAreNotContinuations(t *testing.T) {
+	in := "[program:web]\n  command=/usr/bin/web\n  environment=A=\"1\",\n    B=\"2\"\n  autostart=false\n"
+	out := parseSup(t, in).TOML()
+	mustContain(t, out, `run = "/usr/bin/web"`)
+	mustContain(t, out, `B = "2"`)
+	mustContain(t, out, "autostart = false")
+}

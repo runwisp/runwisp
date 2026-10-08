@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"strings"
+	"time"
 
 	"github.com/pmezard/go-difflib/difflib"
 )
@@ -50,10 +51,19 @@ func stripGeneratedHashes(body []byte) []byte {
 // SettingsHash returns the deterministic hash baked into the unit
 // header. It is computed over the *settings*, not the rendered file,
 // so adding a comment line does not flip the value.
-func SettingsHash(binary, config, dataDir, host string, port int) string {
-	repr := fmt.Sprintf("bin=%s\nconfig=%s\ndata=%s\nhost=%s\nport=%d\n",
-		binary, config, dataDir, host, port)
+func SettingsHash(opts InstallOptions) string {
+	repr := fmt.Sprintf("bin=%s\nconfig=%s\ndata=%s\nhost=%s\nport=%d\nstop=%d\n",
+		opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port, stopSeconds(opts.StopTimeout))
 	return hashContent([]byte(repr))
+}
+
+// stopSeconds renders a stop timeout in whole seconds, rounded up. Unset falls
+// back to 30s: systemd reads TimeoutStopSec=0 as "wait forever".
+func stopSeconds(d time.Duration) int {
+	if d <= 0 {
+		return 30
+	}
+	return int((d + time.Second - 1) / time.Second)
 }
 
 // parsedUnit is what extractMarkers returns.

@@ -53,10 +53,13 @@ type RunRepository interface {
 	DeleteRunsByIDs(ctx context.Context, ids []string) error
 	MarkCrashedRuns(ctx context.Context) (int64, error)
 	GetPendingRuns(ctx context.Context) ([]model.Run, error)
-	GetLastRunByTask(ctx context.Context, taskName string) (*model.Run, error)
 	GetRunSummary(ctx context.Context) (*model.RunSummary, error)
 	EnsureTaskRegistered(ctx context.Context, taskName string, firstSeen time.Time) error
 	GetTaskRegistration(ctx context.Context, taskName string) (*model.TaskRegistration, error)
+	// ForgetTaskRegistrationsExcept deletes the registration (first-seen
+	// time, last run, schedule pause) of every task not named in keep, so a
+	// task that left the config starts fresh if it comes back. Runs are kept.
+	ForgetTaskRegistrationsExcept(ctx context.Context, keep []string) error
 	// GetTaskBootID returns the boot a run_on_start = "boot" task last fired
 	// in, or "" when it never has.
 	GetTaskBootID(ctx context.Context, taskName string) (string, error)
@@ -152,8 +155,27 @@ func New(dbPath string) (Database, error) {
 	return &SQLiteDatabase{db: db, q: sqlcdb.New(db)}, nil
 }
 
+// CreateRun inserts run and, in the same transaction, moves its task's
+// registration last_run_at forward. Catch-up anchors on that timestamp, so it
+// must outlive the row: retention or an operator may delete the run later.
 func (db *SQLiteDatabase) CreateRun(ctx context.Context, run *model.Run) error {
-	return db.q.CreateRun(ctx, runToCreateParams(run))
+	tx, err := db.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	qtx := db.q.WithTx(tx)
+	params := runToCreateParams(run)
+	if err := qtx.CreateRun(ctx, params); err != nil {
+		return err
+	}
+	if err := qtx.BumpTaskLastRun(ctx, sqlcdb.BumpTaskLastRunParams{
+		CreatedAt: &params.CreatedAt,
+		TaskName:  params.TaskName,
+	}); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (db *SQLiteDatabase) UpdateRun(ctx context.Context, run *model.Run) error {
@@ -217,7 +239,7 @@ func (db *SQLiteDatabase) QueryRuns(ctx context.Context, q RunQuery) ([]model.Ru
 		StatusSet:         filter.StatusSet,
 		TaskNameFilter:    filter.TaskNameFilter,
 		SearchFilter:      filter.SearchFilter,
-		SearchPattern:     filter.SearchPattern,
+		SearchTerm:        filter.SearchTerm,
 		CreatedAfter:      filter.CreatedAfter,
 		CreatedBefore:     filter.CreatedBefore,
 		TriggeredByFilter: filter.TriggeredByFilter,
@@ -287,7 +309,7 @@ func (db *SQLiteDatabase) SoftDeleteRuns(ctx context.Context, sel model.RunSelec
 			StatusSet:         args.StatusSet,
 			TaskNameFilter:    args.TaskNameFilter,
 			SearchFilter:      args.SearchFilter,
-			SearchPattern:     args.SearchPattern,
+			SearchTerm:        args.SearchTerm,
 			CreatedAfter:      args.CreatedAfter,
 			CreatedBefore:     args.CreatedBefore,
 			TriggeredByFilter: args.TriggeredByFilter,
@@ -323,7 +345,7 @@ func (db *SQLiteDatabase) RestoreRuns(ctx context.Context, sel model.RunSelector
 			StatusSet:         args.StatusSet,
 			TaskNameFilter:    args.TaskNameFilter,
 			SearchFilter:      args.SearchFilter,
-			SearchPattern:     args.SearchPattern,
+			SearchTerm:        args.SearchTerm,
 			CreatedAfter:      args.CreatedAfter,
 			CreatedBefore:     args.CreatedBefore,
 			TriggeredByFilter: args.TriggeredByFilter,
@@ -355,7 +377,7 @@ func (db *SQLiteDatabase) ResolveSelectorIDs(ctx context.Context, sel model.RunS
 			StatusSet:         args.StatusSet,
 			TaskNameFilter:    args.TaskNameFilter,
 			SearchFilter:      args.SearchFilter,
-			SearchPattern:     args.SearchPattern,
+			SearchTerm:        args.SearchTerm,
 			CreatedAfter:      args.CreatedAfter,
 			CreatedBefore:     args.CreatedBefore,
 			TriggeredByFilter: args.TriggeredByFilter,
@@ -445,17 +467,6 @@ func (db *SQLiteDatabase) GetPendingRuns(ctx context.Context) ([]model.Run, erro
 	return runsFromRows(rows), nil
 }
 
-func (db *SQLiteDatabase) GetLastRunByTask(ctx context.Context, taskName string) (*model.Run, error) {
-	row, err := db.q.GetLastRunByTask(ctx, taskName)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return runPtrFromRow(row), nil
-}
-
 func (db *SQLiteDatabase) EnsureTaskRegistered(ctx context.Context, taskName string, firstSeen time.Time) error {
 	return db.q.EnsureTaskRegistered(ctx, sqlcdb.EnsureTaskRegisteredParams{
 		TaskName:    taskName,
@@ -476,7 +487,13 @@ func (db *SQLiteDatabase) GetTaskRegistration(ctx context.Context, taskName stri
 		FirstSeenAt: r.FirstSeenAt,
 		PausedAt:    r.PausedAt,
 		ResumedAt:   r.ResumedAt,
+		LastRunAt:   r.LastRunAt,
 	}, nil
+}
+
+func (db *SQLiteDatabase) ForgetTaskRegistrationsExcept(ctx context.Context, keep []string) error {
+	// Task names are never empty, so the sentinel never keeps a real row.
+	return db.q.DeleteTaskRegistrationsExcept(ctx, exceptIDsForSlice(keep))
 }
 
 func (db *SQLiteDatabase) PauseTaskSchedule(ctx context.Context, taskName string, at time.Time) error {

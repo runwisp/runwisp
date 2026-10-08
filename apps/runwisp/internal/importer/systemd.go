@@ -128,9 +128,13 @@ func foldSystemdLines(r io.Reader) ([]string, error) {
 	inCont := false
 	for sc.Scan() {
 		payload := strings.TrimRight(sc.Text(), " \t")
-		// A comment line is never continued, even when it ends in a backslash.
+		// A comment line is never continued, even when it ends in a backslash,
+		// and inside a continuation systemd skips it altogether.
 		trimmed := strings.TrimSpace(payload)
-		comment := !inCont && (strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, ";"))
+		comment := strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, ";")
+		if comment && inCont {
+			continue
+		}
 		cont := !comment && strings.HasSuffix(payload, "\\")
 		payload = strings.TrimRight(strings.TrimSuffix(payload, "\\"), " \t")
 		if inCont {

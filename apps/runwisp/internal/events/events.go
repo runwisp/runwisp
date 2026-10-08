@@ -93,7 +93,8 @@ type ConfigStaleEvent struct {
 }
 
 // TasksChangedEvent fires when the live task list's state changes outside a
-// run: a schedule pause/resume or an applied reload. It carries nothing;
+// run: a schedule pause/resume, a service stopped or started by an operator,
+// or an applied reload. It carries nothing;
 // dashboards refetch /api/tasks on it.
 type TasksChangedEvent struct{}
 

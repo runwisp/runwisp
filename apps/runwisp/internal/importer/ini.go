@@ -55,6 +55,7 @@ type iniParser struct {
 	sections []iniSection
 	cur      *iniSection
 	lastKey  string
+	indent   int // leading whitespace of lastKey's line; a continuation is indented further
 	blanks   int // blank lines since lastKey's value; kept if the value goes on
 }
 
@@ -70,9 +71,10 @@ func (p *iniParser) feed(raw string) {
 		p.blanks++ // like ConfigParser, a blank line alone doesn't end a value
 		return
 	}
-	// Continuation: indented line that isn't a new section/comment and we have a
-	// key in flight.
-	if p.isContinuation(raw, trimmed) {
+	// Continuation: a line indented further than the key in flight that isn't a
+	// new section. Keys indented alike are separate keys, as in ConfigParser.
+	indent := len(raw) - len(strings.TrimLeft(raw, " \t"))
+	if p.isContinuation(indent, trimmed) {
 		p.cur.values[p.lastKey] += strings.Repeat("\n", p.blanks+1) + trimmed
 		p.blanks = 0
 		return
@@ -86,6 +88,7 @@ func (p *iniParser) feed(raw string) {
 		return // stray key before any section header
 	}
 	p.addKeyValue(trimmed)
+	p.indent = indent
 }
 
 // stripInlineComment drops a trailing `;` or `#` comment the way supervisord's
@@ -100,8 +103,8 @@ func stripInlineComment(line string) string {
 	return line
 }
 
-func (p *iniParser) isContinuation(raw, trimmed string) bool {
-	return (raw[0] == ' ' || raw[0] == '\t') && p.lastKey != "" && p.cur != nil &&
+func (p *iniParser) isContinuation(indent int, trimmed string) bool {
+	return indent > p.indent && p.lastKey != "" && p.cur != nil &&
 		!strings.HasPrefix(trimmed, "[")
 }
 

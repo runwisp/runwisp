@@ -6,6 +6,7 @@ package autostart
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -211,4 +212,22 @@ func TestRenderSystemdUnit_RoundTripsManagedMarker(t *testing.T) {
 	assert.True(t, parsed.managed)
 	assert.Equal(t, "0011223344ff", parsed.configHash)
 	assert.Equal(t, "ffeeddccbbaa", parsed.binarySHA)
+}
+
+// The service manager must wait as long as the daemon's own shutdown can take.
+// A fixed TimeoutStopSec=30s (and launchd's 20s default) SIGKILLed a daemon
+// still draining runs under a longer [daemon] shutdown_timeout.
+func TestRender_StopTimeoutFollowsShutdownBudget(t *testing.T) {
+	unit, err := RenderSystemdUnit(SystemdParams{Binary: "/b", StopTimeout: 130 * time.Second})
+	require.NoError(t, err)
+	assert.Contains(t, string(unit), "TimeoutStopSec=130s\n")
+
+	plist, err := RenderLaunchdPlist(LaunchdParams{Binary: "/b", StopTimeout: 130 * time.Second})
+	require.NoError(t, err)
+	assert.Contains(t, string(plist), "<key>ExitTimeOut</key>\n    <integer>130</integer>")
+
+	// Unset never renders 0, which systemd reads as "wait forever".
+	unit, err = RenderSystemdUnit(SystemdParams{Binary: "/b"})
+	require.NoError(t, err)
+	assert.Contains(t, string(unit), "TimeoutStopSec=30s\n")
 }

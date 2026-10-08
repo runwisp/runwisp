@@ -403,7 +403,8 @@ type ConfigStaleSSEEvent struct {
 }
 
 // TasksChangedSSEEvent tells clients to refetch /api/tasks (a schedule was
-// paused or resumed, or a reload was applied); maps to the `tasks.changed`
+// paused or resumed, a service was stopped or started, or a reload was
+// applied); maps to the `tasks.changed`
 // event name. It carries no payload.
 type TasksChangedSSEEvent struct{}
 

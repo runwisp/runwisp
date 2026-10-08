@@ -5,13 +5,15 @@ package model
 
 import "time"
 
-// TaskResponse extends a Task with its live schedule state: the next scheduled
-// run time, and when an operator paused the cron schedule (if they did).
+// TaskResponse extends a Task with its live state: the next scheduled run
+// time, when an operator paused the cron schedule (if they did), and whether a
+// service is stopped.
 type TaskResponse struct {
 	Task
-	NextRunAt *time.Time     `json:"nextRunAt,omitempty"`
-	PausedAt  *time.Time     `json:"pausedAt,omitempty" doc:"When an operator paused this task's cron schedule (POST /api/tasks/{taskName}/pause); absent when not paused. A paused task has no nextRunAt."`
-	Usage     *ResourceUsage `json:"usage,omitempty" doc:"Live CPU and memory use of the task's running shell runs; absent when none is running or measured."`
+	NextRunAt      *time.Time     `json:"nextRunAt,omitempty"`
+	PausedAt       *time.Time     `json:"pausedAt,omitempty" doc:"When an operator paused this task's cron schedule (POST /api/tasks/{taskName}/pause); absent when not paused. A paused task has no nextRunAt."`
+	ServiceStopped bool           `json:"serviceStopped,omitempty" doc:"For services: true while the service is stopped (by an operator, or never started because autostart = false) and the daemon will not respawn it until it is started. Absent for running or restarting services and for tasks."`
+	Usage          *ResourceUsage `json:"usage,omitempty" doc:"Live CPU and memory use of the task's running shell runs; absent when none is running or measured."`
 }
 
 // ResourceUsage is the live CPU and memory use of a task's running processes,

@@ -34,6 +34,14 @@ func runCatchUp(ctx context.Context, db storage.RunRepository, tasks map[string]
 	return RunMissedTickCatchUp(tasks, runner, now, loc, anchors, errs)
 }
 
+// newCatchupDB is a mock repository that accepts SnapshotCatchupAnchors'
+// forgetting of removed tasks, which these scenarios don't exercise.
+func newCatchupDB() *testutil.MockRunRepository {
+	db := new(testutil.MockRunRepository)
+	db.On("ForgetTaskRegistrationsExcept", mock.Anything, mock.Anything).Return(nil)
+	return db
+}
+
 func catchupTask(catchUp int) *model.Task {
 	return &model.Task{
 		Name:          "my-task",
@@ -264,7 +272,7 @@ func TestCountMissedTicks_DSTFallbackDuplicateNotDoubleCounted(t *testing.T) {
 
 func TestRunMissedTickCatchUp(t *testing.T) {
 	t.Run("policy=latest triggers one run", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC) // 4 missed ticks
@@ -280,8 +288,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		}
 
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
-		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), nil)
+		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(&model.TaskRegistration{TaskName: "my-task", LastRunAt: &lastRun.CreatedAt}, nil)
 		runner.On("TriggerRunWithOptions", "my-task", TriggerRunOptions{TriggeredBy: model.TriggeredByCron}).Return(&model.Run{}, nil)
 		runner.On("RecordMissedRun", "my-task", mock.Anything, mock.Anything).Return(nil)
 
@@ -292,7 +299,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 	})
 
 	t.Run("policy=all triggers all missed runs", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC) // 4 missed ticks
@@ -308,8 +315,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		}
 
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
-		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), nil)
+		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(&model.TaskRegistration{TaskName: "my-task", LastRunAt: &lastRun.CreatedAt}, nil)
 		runner.On("TriggerRunWithOptions", "my-task", TriggerRunOptions{TriggeredBy: model.TriggeredByCron}).Return(&model.Run{}, nil)
 		runner.On("RecordMissedRun", "my-task", mock.Anything, mock.Anything).Return(nil)
 
@@ -326,7 +332,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		// midnight cron pinned to New York fires at 05:00 UTC (EST, UTC-5 in
 		// January); evaluated in UTC it would fire at 00:00 UTC — a different
 		// instant that yields a different missed count over the same window.
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		// Window straddles the offset so the two zones disagree on the count:
@@ -344,8 +350,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		tasks := map[string]*model.Task{"my-task": task}
 
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
-		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), nil)
+		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(&model.TaskRegistration{TaskName: "my-task", LastRunAt: &lastRun.CreatedAt}, nil)
 		runner.On("TriggerRunWithOptions", "my-task", TriggerRunOptions{TriggeredBy: model.TriggeredByCron}).Return(&model.Run{}, nil)
 		runner.On("RecordMissedRun", "my-task", mock.Anything, mock.Anything).Return(nil)
 
@@ -359,7 +364,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 	t.Run("policy=skip records the gap but triggers nothing", func(t *testing.T) {
 		// Detection is independent of the re-run policy: skip alerts on the
 		// miss (one browsable row + notification) while re-firing nothing.
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC) // 4 missed ticks
@@ -373,8 +378,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		}
 
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
-		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), nil)
+		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(&model.TaskRegistration{TaskName: "my-task", LastRunAt: &lastRun.CreatedAt}, nil)
 		runner.On("RecordMissedRun", "my-task", mock.Anything, mock.Anything).Return(nil)
 
 		result := runCatchUp(context.Background(), db, tasks, runner, now, time.UTC)
@@ -386,7 +390,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 	})
 
 	t.Run("never-run task first startup has no catch-up", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC)
@@ -399,7 +403,6 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		// returns that same timestamp so countMissedTicks yields zero.
 		reg := &model.TaskRegistration{TaskName: "my-task", FirstSeenAt: now}
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(nil, nil)
 		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(reg, nil)
 
 		result := runCatchUp(context.Background(), db, tasks, runner, now, time.UTC)
@@ -410,7 +413,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 	})
 
 	t.Run("never-run task catches up with policy=latest on subsequent restart", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC)
@@ -422,7 +425,6 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 
 		reg := &model.TaskRegistration{TaskName: "my-task", FirstSeenAt: firstSeen}
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(nil, nil)
 		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(reg, nil)
 		runner.On("TriggerRunWithOptions", "my-task", TriggerRunOptions{TriggeredBy: model.TriggeredByCron}).Return(&model.Run{}, nil)
 		runner.On("RecordMissedRun", "my-task", mock.Anything, mock.Anything).Return(nil)
@@ -434,7 +436,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 	})
 
 	t.Run("never-run task catches up all missed ticks with policy=all on subsequent restart", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC)
@@ -446,7 +448,6 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 
 		reg := &model.TaskRegistration{TaskName: "my-task", FirstSeenAt: firstSeen}
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(nil, nil)
 		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(reg, nil)
 		runner.On("TriggerRunWithOptions", "my-task", TriggerRunOptions{TriggeredBy: model.TriggeredByCron}).Return(&model.Run{}, nil)
 		runner.On("RecordMissedRun", "my-task", mock.Anything, mock.Anything).Return(nil)
@@ -458,7 +459,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 	})
 
 	t.Run("catch_up caps the backfill", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC) // 12 missed ticks at */5
@@ -473,8 +474,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		tasks := map[string]*model.Task{"my-task": task}
 
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
-		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), nil)
+		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(&model.TaskRegistration{TaskName: "my-task", LastRunAt: &lastRun.CreatedAt}, nil)
 		runner.On("TriggerRunWithOptions", "my-task", TriggerRunOptions{TriggeredBy: model.TriggeredByCron}).Return(&model.Run{}, nil)
 		runner.On("RecordMissedRun", "my-task", mock.Anything, mock.Anything).Return(nil)
 
@@ -489,7 +489,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		// stops at the display floor instead of walking all of them, the re-run
 		// caps at catch_up, and the recorded gap is reported honestly as
 		// "at least N+" rather than understated.
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)
@@ -505,8 +505,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		tasks := map[string]*model.Task{"my-task": task}
 
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
-		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), nil)
+		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(&model.TaskRegistration{TaskName: "my-task", LastRunAt: &lastRun.CreatedAt}, nil)
 		runner.On("TriggerRunWithOptions", "my-task", TriggerRunOptions{TriggeredBy: model.TriggeredByCron}).Return(&model.Run{}, nil)
 		runner.On("RecordMissedRun", "my-task", mock.Anything, mock.MatchedBy(func(reason string) bool {
 			return strings.Contains(reason, "at least") && strings.Contains(reason, "+")
@@ -524,7 +523,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		// maxCount-th tick — so a rapid restart doesn't re-count and re-alert the
 		// same gap. policy=skip is the exposed case: it triggers no catch-up run
 		// whose CreatedAt=now would otherwise advance the anchor.
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)
@@ -539,8 +538,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		tasks := map[string]*model.Task{"my-task": task}
 
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
-		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), nil)
+		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(&model.TaskRegistration{TaskName: "my-task", LastRunAt: &lastRun.CreatedAt}, nil)
 		runner.On("RecordMissedRun", "my-task", mock.MatchedBy(func(anchor time.Time) bool {
 			return anchor.Equal(now)
 		}), mock.Anything).Return(nil)
@@ -553,7 +551,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 	})
 
 	t.Run("catch_up above the backlog backfills everything", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC) // 12 missed ticks at */5
@@ -568,8 +566,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		tasks := map[string]*model.Task{"my-task": task}
 
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
-		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), nil)
+		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(&model.TaskRegistration{TaskName: "my-task", LastRunAt: &lastRun.CreatedAt}, nil)
 		runner.On("TriggerRunWithOptions", "my-task", TriggerRunOptions{TriggeredBy: model.TriggeredByCron}).Return(&model.Run{}, nil)
 		runner.On("RecordMissedRun", "my-task", mock.Anything, mock.Anything).Return(nil)
 
@@ -580,7 +577,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 	})
 
 	t.Run("EnsureTaskRegistered error increments errors", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC)
@@ -598,7 +595,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 	})
 
 	t.Run("invalid cron expression is treated as a catch-up error", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC)
@@ -611,27 +608,8 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
 		// A valid anchor, so SnapshotCatchupAnchors doesn't skip the task before
 		// RunMissedTickCatchUp ever reaches the cron parse this test targets.
-		db.On("GetLastRunByTask", mock.Anything, "my-task").
-			Return(&model.Run{CreatedAt: now.Add(-time.Hour)}, nil)
-		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), nil)
-
-		result := runCatchUp(context.Background(), db, tasks, runner, now, time.UTC)
-		assert.Equal(t, 0, result.Triggered)
-		assert.Equal(t, 1, result.Errors)
-		runner.AssertNotCalled(t, "TriggerRunWithOptions")
-	})
-
-	t.Run("GetLastRunByTask error is surfaced via resolveCatchupAnchor", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
-		runner := new(mockTaskRunner)
-
-		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC)
-		tasks := map[string]*model.Task{
-			"my-task": catchupTask(1),
-		}
-
-		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return((*model.Run)(nil), assert.AnError)
+		db.On("GetTaskRegistration", mock.Anything, "my-task").
+			Return(&model.TaskRegistration{TaskName: "my-task", FirstSeenAt: now.Add(-time.Hour)}, nil)
 
 		result := runCatchUp(context.Background(), db, tasks, runner, now, time.UTC)
 		assert.Equal(t, 0, result.Triggered)
@@ -640,7 +618,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 	})
 
 	t.Run("GetTaskRegistration error is surfaced via resolveCatchupAnchor", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC)
@@ -649,7 +627,6 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		}
 
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return((*model.Run)(nil), nil)
 		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), assert.AnError)
 
 		result := runCatchUp(context.Background(), db, tasks, runner, now, time.UTC)
@@ -658,8 +635,8 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		runner.AssertNotCalled(t, "TriggerRunWithOptions")
 	})
 
-	t.Run("missing registration with no last run skips silently", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+	t.Run("missing registration skips silently", func(t *testing.T) {
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC)
@@ -668,18 +645,17 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		}
 
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return((*model.Run)(nil), nil)
 		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), nil)
 
 		result := runCatchUp(context.Background(), db, tasks, runner, now, time.UTC)
 		assert.Equal(t, 0, result.Triggered)
 		assert.Equal(t, 0, result.Errors,
-			"missing registration with no prior run isn't an error — the task simply has no anchor yet")
+			"missing registration isn't an error — the task simply has no anchor yet")
 		runner.AssertNotCalled(t, "TriggerRunWithOptions")
 	})
 
 	t.Run("TriggerRun failure counts as a catch-up error", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC) // 4 missed ticks
@@ -694,8 +670,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		}
 
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
-		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), nil)
+		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(&model.TaskRegistration{TaskName: "my-task", LastRunAt: &lastRun.CreatedAt}, nil)
 		runner.On("RecordMissedRun", "my-task", mock.Anything, mock.Anything).Return(nil)
 		runner.On("TriggerRunWithOptions", "my-task", TriggerRunOptions{TriggeredBy: model.TriggeredByCron}).Return((*model.Run)(nil), assert.AnError)
 
@@ -705,7 +680,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 	})
 
 	t.Run("no missed ticks no trigger", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 10, 3, 0, 0, time.UTC) // 0 missed ticks
@@ -721,8 +696,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		}
 
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
-		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), nil)
+		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(&model.TaskRegistration{TaskName: "my-task", LastRunAt: &lastRun.CreatedAt}, nil)
 
 		result := runCatchUp(context.Background(), db, tasks, runner, now, time.UTC)
 
@@ -732,7 +706,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 	})
 
 	t.Run("records one missed row anchored at the latest tick with the detected count", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC) // 4 missed ticks at */5
@@ -744,8 +718,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		tasks := map[string]*model.Task{"my-task": catchupTask(1)}
 
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
-		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), nil)
+		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(&model.TaskRegistration{TaskName: "my-task", LastRunAt: &lastRun.CreatedAt}, nil)
 		runner.On("TriggerRunWithOptions", "my-task", TriggerRunOptions{TriggeredBy: model.TriggeredByCron}).Return(&model.Run{}, nil)
 
 		var gotTick time.Time
@@ -767,7 +740,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 	})
 
 	t.Run("capped reason reports the full detected count, not the trigger count", func(t *testing.T) {
-		db := new(testutil.MockRunRepository)
+		db := newCatchupDB()
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC) // 12 missed ticks at */5
@@ -781,8 +754,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		tasks := map[string]*model.Task{"my-task": task}
 
 		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
-		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
-		db.On("GetTaskRegistration", mock.Anything, "my-task").Return((*model.TaskRegistration)(nil), nil)
+		db.On("GetTaskRegistration", mock.Anything, "my-task").Return(&model.TaskRegistration{TaskName: "my-task", LastRunAt: &lastRun.CreatedAt}, nil)
 		runner.On("TriggerRunWithOptions", "my-task", TriggerRunOptions{TriggeredBy: model.TriggeredByCron}).Return(&model.Run{}, nil)
 
 		var gotReason string

@@ -45,8 +45,8 @@ func (d *holdCatchupDB) EnsureTaskRegistered(_ context.Context, name string, fir
 	return nil
 }
 
-func (d *holdCatchupDB) GetLastRunByTask(context.Context, string) (*model.Run, error) {
-	return nil, nil
+func (d *holdCatchupDB) ForgetTaskRegistrationsExcept(context.Context, []string) error {
+	return nil
 }
 
 func (d *holdCatchupDB) GetTaskRegistration(_ context.Context, name string) (*model.TaskRegistration, error) {

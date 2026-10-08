@@ -144,6 +144,10 @@ type InstallOptions struct {
 	Host    string
 	// System requests a system-wide unit (Linux only, advanced).
 	System bool
+	// StopTimeout is how long the service manager waits for the daemon to
+	// exit before it SIGKILLs it: the daemon's whole shutdown budget for the
+	// config's [daemon] shutdown_timeout.
+	StopTimeout time.Duration
 	// Force overrides PlanConflict on install.
 	Force bool
 	// TakeOverCron requests that ComputePlan/Install also stop and mask

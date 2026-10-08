@@ -26,7 +26,7 @@ SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
 `
 
 type CountRunsFilteredParams struct {
@@ -40,7 +40,7 @@ type CountRunsFilteredParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 }
 
 func (q *Queries) CountRunsFiltered(ctx context.Context, arg CountRunsFilteredParams) (int64, error) {
@@ -55,7 +55,7 @@ func (q *Queries) CountRunsFiltered(ctx context.Context, arg CountRunsFilteredPa
 		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
-		arg.SearchPattern,
+		arg.SearchTerm,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -142,37 +142,6 @@ func (q *Queries) DeleteRunsByIDs(ctx context.Context, ids []string) error {
 	}
 	_, err := q.db.ExecContext(ctx, query, queryParams...)
 	return err
-}
-
-const getLastRunByTask = `-- name: GetLastRunByTask :one
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms FROM runs WHERE task_name = ? AND deleted_at IS NULL
-ORDER BY created_at DESC LIMIT 1
-`
-
-func (q *Queries) GetLastRunByTask(ctx context.Context, taskName string) (Run, error) {
-	row := q.db.QueryRowContext(ctx, getLastRunByTask, taskName)
-	var i Run
-	err := row.Scan(
-		&i.ID,
-		&i.ExecutionID,
-		&i.TaskName,
-		&i.Status,
-		&i.EndReason,
-		&i.ExitCode,
-		&i.StartedAt,
-		&i.EndedAt,
-		&i.TriggeredBy,
-		&i.CreatedAt,
-		&i.RetryAttempt,
-		&i.RetryOfRunID,
-		&i.InstanceIndex,
-		&i.ParamsJson,
-		&i.DeletedAt,
-		&i.IsFailure,
-		&i.PeakMemoryBytes,
-		&i.CpuTimeMs,
-	)
-	return i, err
 }
 
 const getPendingRuns = `-- name: GetPendingRuns :many
@@ -356,7 +325,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
 ORDER BY created_at ASC LIMIT ?13 OFFSET ?12
 `
 
@@ -371,7 +340,7 @@ type QueryRunsCreatedAtAscParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 	RowsOffset        int64       `json:"rows_offset"`
 	RowsLimit         int64       `json:"rows_limit"`
 }
@@ -408,7 +377,7 @@ func (q *Queries) QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreate
 		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
-		arg.SearchPattern,
+		arg.SearchTerm,
 		arg.RowsOffset,
 		arg.RowsLimit,
 	)
@@ -467,7 +436,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
 ORDER BY created_at DESC LIMIT ?13 OFFSET ?12
 `
 
@@ -482,7 +451,7 @@ type QueryRunsCreatedAtDescParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 	RowsOffset        int64       `json:"rows_offset"`
 	RowsLimit         int64       `json:"rows_limit"`
 }
@@ -519,7 +488,7 @@ func (q *Queries) QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreat
 		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
-		arg.SearchPattern,
+		arg.SearchTerm,
 		arg.RowsOffset,
 		arg.RowsLimit,
 	)
@@ -578,7 +547,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
 ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) ASC LIMIT ?13 OFFSET ?12
 `
 
@@ -593,7 +562,7 @@ type QueryRunsDurationAscParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 	RowsOffset        int64       `json:"rows_offset"`
 	RowsLimit         int64       `json:"rows_limit"`
 }
@@ -630,7 +599,7 @@ func (q *Queries) QueryRunsDurationAsc(ctx context.Context, arg QueryRunsDuratio
 		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
-		arg.SearchPattern,
+		arg.SearchTerm,
 		arg.RowsOffset,
 		arg.RowsLimit,
 	)
@@ -689,7 +658,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
 ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) DESC LIMIT ?13 OFFSET ?12
 `
 
@@ -704,7 +673,7 @@ type QueryRunsDurationDescParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 	RowsOffset        int64       `json:"rows_offset"`
 	RowsLimit         int64       `json:"rows_limit"`
 }
@@ -741,7 +710,7 @@ func (q *Queries) QueryRunsDurationDesc(ctx context.Context, arg QueryRunsDurati
 		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
-		arg.SearchPattern,
+		arg.SearchTerm,
 		arg.RowsOffset,
 		arg.RowsLimit,
 	)
@@ -800,7 +769,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
 ORDER BY exit_code ASC LIMIT ?13 OFFSET ?12
 `
 
@@ -815,7 +784,7 @@ type QueryRunsExitCodeAscParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 	RowsOffset        int64       `json:"rows_offset"`
 	RowsLimit         int64       `json:"rows_limit"`
 }
@@ -852,7 +821,7 @@ func (q *Queries) QueryRunsExitCodeAsc(ctx context.Context, arg QueryRunsExitCod
 		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
-		arg.SearchPattern,
+		arg.SearchTerm,
 		arg.RowsOffset,
 		arg.RowsLimit,
 	)
@@ -911,7 +880,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
 ORDER BY exit_code DESC LIMIT ?13 OFFSET ?12
 `
 
@@ -926,7 +895,7 @@ type QueryRunsExitCodeDescParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 	RowsOffset        int64       `json:"rows_offset"`
 	RowsLimit         int64       `json:"rows_limit"`
 }
@@ -963,7 +932,7 @@ func (q *Queries) QueryRunsExitCodeDesc(ctx context.Context, arg QueryRunsExitCo
 		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
-		arg.SearchPattern,
+		arg.SearchTerm,
 		arg.RowsOffset,
 		arg.RowsLimit,
 	)
@@ -1022,7 +991,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
 ORDER BY COALESCE(started_at, created_at) ASC, created_at ASC LIMIT ?13 OFFSET ?12
 `
 
@@ -1037,7 +1006,7 @@ type QueryRunsStartAtAscParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 	RowsOffset        int64       `json:"rows_offset"`
 	RowsLimit         int64       `json:"rows_limit"`
 }
@@ -1074,7 +1043,7 @@ func (q *Queries) QueryRunsStartAtAsc(ctx context.Context, arg QueryRunsStartAtA
 		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
-		arg.SearchPattern,
+		arg.SearchTerm,
 		arg.RowsOffset,
 		arg.RowsLimit,
 	)
@@ -1133,7 +1102,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
 ORDER BY COALESCE(started_at, created_at) DESC, created_at DESC LIMIT ?13 OFFSET ?12
 `
 
@@ -1148,7 +1117,7 @@ type QueryRunsStartAtDescParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 	RowsOffset        int64       `json:"rows_offset"`
 	RowsLimit         int64       `json:"rows_limit"`
 }
@@ -1185,7 +1154,7 @@ func (q *Queries) QueryRunsStartAtDesc(ctx context.Context, arg QueryRunsStartAt
 		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
-		arg.SearchPattern,
+		arg.SearchTerm,
 		arg.RowsOffset,
 		arg.RowsLimit,
 	)
@@ -1244,7 +1213,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
 ORDER BY status ASC LIMIT ?13 OFFSET ?12
 `
 
@@ -1259,7 +1228,7 @@ type QueryRunsStatusAscParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 	RowsOffset        int64       `json:"rows_offset"`
 	RowsLimit         int64       `json:"rows_limit"`
 }
@@ -1296,7 +1265,7 @@ func (q *Queries) QueryRunsStatusAsc(ctx context.Context, arg QueryRunsStatusAsc
 		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
-		arg.SearchPattern,
+		arg.SearchTerm,
 		arg.RowsOffset,
 		arg.RowsLimit,
 	)
@@ -1355,7 +1324,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
 ORDER BY status DESC LIMIT ?13 OFFSET ?12
 `
 
@@ -1370,7 +1339,7 @@ type QueryRunsStatusDescParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 	RowsOffset        int64       `json:"rows_offset"`
 	RowsLimit         int64       `json:"rows_limit"`
 }
@@ -1407,7 +1376,7 @@ func (q *Queries) QueryRunsStatusDesc(ctx context.Context, arg QueryRunsStatusDe
 		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
-		arg.SearchPattern,
+		arg.SearchTerm,
 		arg.RowsOffset,
 		arg.RowsLimit,
 	)
@@ -1466,7 +1435,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
 ORDER BY task_name ASC LIMIT ?13 OFFSET ?12
 `
 
@@ -1481,7 +1450,7 @@ type QueryRunsTaskNameAscParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 	RowsOffset        int64       `json:"rows_offset"`
 	RowsLimit         int64       `json:"rows_limit"`
 }
@@ -1518,7 +1487,7 @@ func (q *Queries) QueryRunsTaskNameAsc(ctx context.Context, arg QueryRunsTaskNam
 		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
-		arg.SearchPattern,
+		arg.SearchTerm,
 		arg.RowsOffset,
 		arg.RowsLimit,
 	)
@@ -1577,7 +1546,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
 ORDER BY task_name DESC LIMIT ?13 OFFSET ?12
 `
 
@@ -1592,7 +1561,7 @@ type QueryRunsTaskNameDescParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 	RowsOffset        int64       `json:"rows_offset"`
 	RowsLimit         int64       `json:"rows_limit"`
 }
@@ -1629,7 +1598,7 @@ func (q *Queries) QueryRunsTaskNameDesc(ctx context.Context, arg QueryRunsTaskNa
 		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
-		arg.SearchPattern,
+		arg.SearchTerm,
 		arg.RowsOffset,
 		arg.RowsLimit,
 	)
