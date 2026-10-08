@@ -18,7 +18,6 @@
     import AuthModal from "$lib/components/AuthModal.svelte";
     import AppLayout from "$lib/layouts/AppLayout.svelte";
     import { ToastContainer } from "@runwisp/ui";
-    import { toTaskPageId } from "$lib/utils/task-id";
     import { taskIcon } from "$lib/utils/task-icon";
 
     let { children } = $props();
@@ -63,18 +62,17 @@
         const path = $page.url.pathname;
         if (path === "/") return "overview";
         if (path.startsWith("/runs")) return "runs";
-        if (path.startsWith("/tasks/")) {
-            const parts = path.split("/");
-            return parts[2] ? toTaskPageId(parts[2]) : "";
-        }
         return "";
     });
 
-    let activeTask = $derived(taskStore.items.find((t) => toTaskPageId(t.name) === activePage));
+    let activeTaskName = $derived(
+        $page.url.pathname.startsWith("/tasks/") ? $page.params.id : undefined,
+    );
+
+    let activeTask = $derived(taskStore.items.find((t) => t.name === activeTaskName));
 
     let navTasks = $derived(
         taskStore.items.map((t) => ({
-            id: toTaskPageId(t.name),
             name: t.name,
             group: t.group ?? "Tasks",
             icon: taskIcon(t),
@@ -115,6 +113,7 @@
 {#if isAuthenticated}
     <AppLayout
         {activePage}
+        {activeTaskName}
         {activeTask}
         tasks={navTasks}
         tasksLoading={!taskStore.loaded && !taskStore.loadFailed}

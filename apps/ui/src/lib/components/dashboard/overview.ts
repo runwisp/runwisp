@@ -3,15 +3,13 @@
 
 import { displayStatus, type RunStatus, type Run, type Task } from "@runwisp/common";
 
-export type TaskWithId = Task & { id: string };
-
 export type OverviewTaskState =
     "attention" | "running" | "paused" | "scheduled" | "manual" | "idle";
 export type OverviewTaskFilter = "all" | "attention" | "running" | "scheduled" | "manual";
 export type OverviewTaskSortKey = "attention" | "last_activity" | "next_run" | "name";
 
 export interface TaskOverview {
-    task: TaskWithId;
+    task: Task;
     lastRun: Run | undefined;
     lastStatus: RunStatus | undefined;
     state: OverviewTaskState;
@@ -32,7 +30,7 @@ const TASK_STATE_ORDER: Record<OverviewTaskState, number> = {
 const LOWEST_PRIORITY_TIME = -1;
 
 export function buildTaskOverviews(
-    tasks: TaskWithId[],
+    tasks: Task[],
     recentRuns: Run[],
     runningRuns: Run[],
 ): TaskOverview[] {

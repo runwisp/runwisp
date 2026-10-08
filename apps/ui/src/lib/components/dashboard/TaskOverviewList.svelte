@@ -217,7 +217,7 @@
         />
     {:else}
         <div class="space-y-2">
-            {#each filteredTasks as task (task.task.id)}
+            {#each filteredTasks as task (task.task.name)}
                 {@const taskState = getTaskStateConfig(task.state)}
                 {@const lastStatusConfig = task.lastStatus
                     ? RUN_STATUS_CONFIG[task.lastStatus]

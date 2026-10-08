@@ -80,7 +80,7 @@
             </div>
         {:else}
             <div class="mt-4 space-y-2">
-                {#each attentionTasks as task (task.task.id)}
+                {#each attentionTasks as task (task.task.name)}
                     {@const statusConfig = task.lastStatus && RUN_STATUS_CONFIG[task.lastStatus]}
 
                     <TaskCard accent="danger" onclick={() => viewTask(task.task.name)}>
@@ -191,7 +191,7 @@
                 </div>
             {:else}
                 <div class="mt-4 space-y-2">
-                    {#each visibleUpcoming as task (task.task.id)}
+                    {#each visibleUpcoming as task (task.task.name)}
                         <TaskCard accent="aurora" onclick={() => viewTask(task.task.name)}>
                             <div class="flex items-start justify-between gap-2">
                                 <div class="@container min-w-0 flex-1">

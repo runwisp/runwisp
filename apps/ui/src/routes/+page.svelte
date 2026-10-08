@@ -10,7 +10,6 @@
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi, tasksApi, systemApi, systemEventSchema, type MetricsSample } from "$lib/api";
     import { runUpdatesStore, systemStore, taskStore, appEventStream } from "$lib/stores";
-    import { toTaskPageId } from "$lib/utils/task-id";
     import { mergeRecentRuns, mergeRunningRuns, upsertRun } from "$lib/utils/overview-runs";
     import { sortByCreatedAtDesc } from "$lib/utils/sort";
     import { safeParseJSON } from "$lib/utils/parse";
@@ -209,7 +208,7 @@
         recentRuns={dashState.recentRuns}
         runningRuns={dashState.runningRuns}
         totalRuns={dashState.totalRuns}
-        tasks={taskStore.items.map((t) => ({ id: toTaskPageId(t.name), ...t }))}
+        tasks={taskStore.items}
         metricsHistory={dashState.metricsHistory}
         onViewAllRuns={() => goto(resolve("/runs"))}
         onTaskClick={handleTaskClick}

@@ -2,19 +2,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import type { Run } from "@runwisp/common";
+import type { Run, Task } from "@runwisp/common";
 import {
     buildTaskOverviews,
     countTaskOverviews,
     filterTaskOverviews,
     sortRunsByStartDesc,
-    type TaskWithId,
     type TaskOverview,
 } from "./overview";
 
-function makeTask(name: string, overrides: Partial<TaskWithId> = {}): TaskWithId {
+function makeTask(name: string, overrides: Partial<Task> = {}): Task {
     return {
-        id: name,
         name,
         manualTrigger: false,
         autostart: true,

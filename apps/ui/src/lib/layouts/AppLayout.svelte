@@ -32,16 +32,19 @@
 
     let {
         activePage,
+        activeTaskName,
         activeTask,
         tasks = [],
         tasksLoading = false,
         children,
     }: {
+        /** "overview", "runs", or "" (task pages are identified by activeTaskName). */
         activePage: string;
+        /** The task name in the open task page's URL, if any. */
+        activeTaskName?: string | undefined;
         /** The task whose detail page is open, if any. */
         activeTask?: Task | undefined;
         tasks?: {
-            id: string;
             name: string;
             group?: string;
             icon: Component;
@@ -144,6 +147,7 @@
     <!-- eslint-disable svelte/no-navigation-without-resolve -->
     <a
         {href}
+        aria-current={active ? "page" : undefined}
         use:registerFirstLink={first}
         class="group flex items-center gap-3 rounded-[3px] px-3 py-2 font-mono text-sm font-medium {active
             ? 'bg-primary-soft text-primary-soft-text'
@@ -236,10 +240,10 @@
                         {group.name}
                     </div>
                     <nav class="mb-2 space-y-0.5">
-                        {#each group.tasks as task (task.id)}
+                        {#each group.tasks as task (task.name)}
                             {@render navLink(
                                 resolve(`/tasks/${task.name}`),
-                                activePage === task.id,
+                                task.name === activeTaskName,
                                 task.icon,
                                 task.name,
                             )}
@@ -253,10 +257,10 @@
                     Tasks
                 </div>
                 <nav class="mb-8 space-y-0.5">
-                    {#each tasks as task (task.id)}
+                    {#each tasks as task (task.name)}
                         {@render navLink(
                             resolve(`/tasks/${task.name}`),
-                            activePage === task.id,
+                            task.name === activeTaskName,
                             task.icon,
                             task.name,
                         )}
@@ -317,7 +321,7 @@
                     </span>
                 {:else}
                     <span class="font-mono font-semibold text-on-surface capitalize"
-                        >{activePage.replace("task_", "").replace(/_/g, " ")}</span
+                        >{activeTaskName ?? activePage}</span
                     >
                 {/if}
             </div>

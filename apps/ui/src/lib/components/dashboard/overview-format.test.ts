@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { Run, Task } from "@runwisp/common";
 import { formatTriggeredByLabel } from "@runwisp/ui";
-import type { TaskOverview, TaskWithId } from "./overview.js";
+import type { TaskOverview } from "./overview.js";
 import {
     formatCompactCount,
     formatRunDurationLabel,
@@ -15,9 +15,8 @@ import {
     taskTriggerIsHumanizedCron,
 } from "./overview-format";
 
-function makeTask(overrides: Partial<Task> = {}): TaskWithId {
+function makeTask(overrides: Partial<Task> = {}): Task {
     return {
-        id: "task-id-1",
         name: "my-task",
         manualTrigger: false,
         autostart: true,

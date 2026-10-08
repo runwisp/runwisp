@@ -63,7 +63,7 @@
         recentRuns?: Run[];
         runningRuns?: Run[];
         totalRuns?: number;
-        tasks?: (Task & { id: string })[];
+        tasks?: Task[];
         metricsHistory?: MetricsSample[];
         onViewAllRuns: () => void;
         onTaskClick: (taskName: string) => void;

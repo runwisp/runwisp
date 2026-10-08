@@ -44,6 +44,23 @@ test.describe("dashboard", () => {
         ).toHaveCount(0);
     });
 
+    test("keeps tasks whose names differ only in punctuation apart", async ({
+        authenticatedPage: page,
+    }) => {
+        await page.goto("/");
+        await expect(page.getByRole("button", { name: /twin-task/ })).toBeVisible();
+        await expect(page.getByRole("button", { name: /twin\.task/ })).toBeVisible();
+
+        await page.goto("/tasks/twin.task");
+        await expect(page.getByRole("heading", { name: "twin.task", level: 1 })).toBeVisible();
+        const sidebar = page.locator("#app-sidebar");
+        await expect(sidebar.locator('[aria-current="page"]')).toHaveCount(1);
+        await expect(sidebar.getByRole("link", { name: "twin.task", exact: true })).toHaveAttribute(
+            "aria-current",
+            "page",
+        );
+    });
+
     test("displays system stats section", async ({ authenticatedPage: page }) => {
         await page.goto("/");
 
