@@ -215,6 +215,51 @@ func TestGracefulShutdown_SlowServiceStopStillWaitsForKill(t *testing.T) {
 	}
 }
 
+// cronDuringServiceStopManager has a service that takes the whole stop window
+// and records any cron trigger that arrives while it is stopping.
+type cronDuringServiceStopManager struct {
+	runtime.TaskManager
+	stopping           atomic.Bool
+	firedWhileStopping atomic.Int32
+}
+
+func (m *cronDuringServiceStopManager) StopService(string) error {
+	m.stopping.Store(true)
+	return nil
+}
+func (m *cronDuringServiceStopManager) GetActiveRunCount(string) int       { return 1 }
+func (m *cronDuringServiceStopManager) ShutdownWithDeadline(time.Duration) {}
+func (m *cronDuringServiceStopManager) TriggerRunWithOptions(string, runtime.TriggerRunOptions) (*model.Run, error) {
+	if m.stopping.Load() {
+		m.firedWhileStopping.Add(1)
+	}
+	return &model.Run{}, nil
+}
+
+// TestGracefulShutdown_NoCronFiringWhileServicesStop: the scheduler used to be
+// stopped only after the service stop pass, so a cron tick during a slow
+// service stop started a run that the drain then killed.
+func TestGracefulShutdown_NoCronFiringWhileServicesStop(t *testing.T) {
+	svc := minimalServices(t)
+	tm := &cronDuringServiceStopManager{TaskManager: svc.TaskManager}
+	svc.TaskManager = tm
+	tasks := map[string]*model.Task{
+		"web":  {Name: "web", Kind: model.KindService},
+		"tick": {Name: "tick", Cron: "@every 1s"},
+	}
+	svc.Tasks = runtime.NewTaskRegistry(tasks)
+	svc.Scheduler = runtime.NewScheduler(tm, tasks, time.UTC, nil)
+	_, err := svc.Scheduler.Start()
+	require.NoError(t, err)
+	// The service stop spans the first tick (1s after Start).
+	svc.TaskShutdownTimeout.Store(int64(1500 * time.Millisecond))
+
+	var stationWG sync.WaitGroup
+	gracefulShutdown(func() {}, &stationWG, svc, nil)
+
+	assert.Zero(t, tm.firedWhileStopping.Load(), "cron fired while services were stopping")
+}
+
 func TestGracefulShutdown_NoSrvNoStation(t *testing.T) {
 	svc := minimalServices(t)
 
@@ -372,4 +417,32 @@ func TestRequestSelfRestart_ExitsNonZeroForServiceManager(t *testing.T) {
 		}
 	})
 	assert.ErrorIs(t, err, errRestartRequested)
+}
+
+// orderRecordingManager records the order of shutdown calls.
+type orderRecordingManager struct {
+	runtime.TaskManager
+	calls []string
+}
+
+func (m *orderRecordingManager) BeginShutdown() { m.calls = append(m.calls, "begin") }
+func (m *orderRecordingManager) StopService(string) error {
+	m.calls = append(m.calls, "stop-service")
+	return nil
+}
+func (m *orderRecordingManager) GetActiveRunCount(string) int       { return 0 }
+func (m *orderRecordingManager) ShutdownWithDeadline(time.Duration) {}
+
+// TestWaitDrain_RefusesNewRunsBeforeStoppingServices: stopping the scheduler
+// alone left held jittered fires, retries and queued runs free to start while
+// services stopped.
+func TestWaitDrain_RefusesNewRunsBeforeStoppingServices(t *testing.T) {
+	svc := minimalServices(t)
+	rec := &orderRecordingManager{TaskManager: svc.TaskManager}
+	svc.TaskManager = rec
+	svc.Tasks = runtime.NewTaskRegistry(map[string]*model.Task{"web": {Name: "web", Kind: model.KindService}})
+
+	waitDrain(svc, 100*time.Millisecond)
+
+	assert.Equal(t, []string{"begin", "stop-service"}, rec.calls)
 }

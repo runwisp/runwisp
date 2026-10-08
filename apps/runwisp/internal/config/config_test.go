@@ -518,7 +518,7 @@ func TestValidate(t *testing.T) {
 					Name:          "task1",
 					Run:           "echo hello",
 					MaxConcurrent: 1,
-					MaxQueued:     MaxQueuedCap + 1,
+					MaxQueued:     intPtr(MaxQueuedCap + 1),
 					OnOverlap:     model.PolicyQueue,
 				}},
 			},
@@ -648,7 +648,7 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, 25, *defaulted.KeepRuns)
 	assert.Equal(t, 14*24*time.Hour, defaulted.KeepFor)
 	assert.Equal(t, DefaultGracefulStop, defaulted.GracefulStopValue())
-	assert.Equal(t, DefaultMaxQueued, defaulted.MaxQueued)
+	assert.Equal(t, model.DefaultMaxQueued, defaulted.MaxQueuedValue())
 
 	overridden := cfg.Tasks[1]
 	assert.Equal(t, 5, overridden.MaxConcurrent)
@@ -1529,11 +1529,11 @@ func TestValidate_MoreCases(t *testing.T) {
 					Name:          "t1",
 					Run:           "echo hi",
 					MaxConcurrent: 1,
-					MaxQueued:     -1,
+					MaxQueued:     intPtr(-1),
 					OnOverlap:     model.PolicyQueue,
 				}},
 			},
-			wantErr: "max_queued",
+			wantErr: "invalid max_queued for task t1: must be 0 or more",
 		},
 		{
 			name: "negative retry_attempts",
@@ -1871,7 +1871,28 @@ run            = "echo hi"
 		task := cfg.Tasks[0]
 		assert.Equal(t, 8*time.Second, task.GracefulStopValue())
 		assert.Equal(t, 4, task.MaxConcurrent)
-		assert.Equal(t, 50, task.MaxQueued)
+		assert.Equal(t, 50, task.MaxQueuedValue())
+	})
+
+	// max_queued = 0 is a real value (no waiting line), not "unset": it must
+	// not be silently rewritten to the default the way an omitted key is.
+	t.Run("max_queued = 0 keeps no queue, omitted takes the default", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.none]
+max_queued = 0
+run        = "echo hi"
+
+[tasks.unset]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		byName := map[string]*model.Task{}
+		for i := range cfg.Tasks {
+			byName[cfg.Tasks[i].Name] = &cfg.Tasks[i]
+		}
+		assert.Equal(t, 0, byName["none"].MaxQueuedValue())
+		assert.Equal(t, model.DefaultMaxQueued, byName["unset"].MaxQueuedValue())
 	})
 
 	t.Run("healthy_after parses on services and inherits from defaults", func(t *testing.T) {

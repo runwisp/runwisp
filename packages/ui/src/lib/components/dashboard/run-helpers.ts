@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Run, RunStatus } from "@runwisp/common";
+import type { APIPaths, Run, RunStatus } from "@runwisp/common";
 import { formatBytes, formatDuration } from "../../utils/format.js";
 
 export interface RunVerdict {
@@ -81,6 +81,14 @@ export function instanceSuffix(instanceIndex: number, instanceCount: number): st
         return `#${String(instanceIndex + 1)}`;
     }
     return "";
+}
+
+// Typed against the generated paths so a route rename fails the build.
+const RAW_LOG_PATH: keyof APIPaths = "/api/runs/{runId}/log/raw";
+
+/** The full log of a run as one plain-text download. */
+export function runLogDownloadUrl(runId: string): string {
+    return RAW_LOG_PATH.replace("{runId}", encodeURIComponent(runId));
 }
 
 /** Human label for why a run fired (the `triggeredBy` source). */

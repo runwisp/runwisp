@@ -37,12 +37,18 @@ include          = ["conf.d/*.toml"]
 
 How long the daemon waits for running tasks and services to exit on shutdown.
 After that, it SIGKILLs what is left.
+Cron schedules stop firing as soon as shutdown begins. Services stop first,
+then tasks, and each step gets the full `shutdown_timeout`.
 
 - Each unit's [`graceful_stop`](/configuration/tasks/#graceful_stop) must fit
   inside this. If one is longer, the daemon warns about it by name at boot, and
   at shutdown the unit may be killed before its own grace window ends.
 - To fix the warning, raise `shutdown_timeout` or lower that unit's
   `graceful_stop`.
+- Under [`runwisp service install`](/operations/autostart/), systemd or launchd
+  waits long enough for the whole shutdown. After you change
+  `shutdown_timeout`, run `runwisp service install` again so it waits the new
+  amount.
 
 ```toml
 [daemon]

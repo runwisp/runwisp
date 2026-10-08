@@ -109,8 +109,7 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 	case model.PolicySkip:
 		return actionRejected, fmt.Errorf("task already running, skipping (policy: skip)")
 	case model.PolicyQueue:
-		maxQueued := ts.task.MaxQueued
-		if maxQueued > 0 && len(ts.queue) >= maxQueued {
+		if maxQueued := ts.task.MaxQueuedValue(); len(ts.queue) >= maxQueued {
 			return actionQueueFull, fmt.Errorf("queue full (%d pending) for task %s", maxQueued, ts.task.Name)
 		}
 		ts.queue = append(ts.queue, queuedRun{run: run})

@@ -107,6 +107,10 @@ type TaskManager interface {
 	// cancelled, or the service can no longer reach healthy without operator
 	// intervention. It returns nil only when the service became healthy.
 	WaitServiceHealthy(ctx context.Context, taskName string) error
+	// BeginShutdown stops new runs from starting (triggers, retries, queued
+	// runs, held jittered fires) while active runs keep going. The daemon calls
+	// it before stopping services; ShutdownWithDeadline calls it too.
+	BeginShutdown()
 	// Shutdown cancels every active run and waits for all goroutines to
 	// drain. Equivalent to ShutdownWithDeadline(0).
 	Shutdown()

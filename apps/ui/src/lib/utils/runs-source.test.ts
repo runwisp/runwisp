@@ -210,6 +210,38 @@ describe("createRunsSource", () => {
 
         expect(src.items.map((r) => r.id)).toEqual(["r5", "r3", "r2"]);
     });
+
+    // A deep link to a run past the loaded page (a notification link to an
+    // older run) fetches it on its own and shows it ahead of its page. The run
+    // is already counted in `total`, and the next page must still start right
+    // after the loaded prefix and not deliver it a second time.
+    it("reveals a deep-linked run without counting it twice or breaking pagination", async () => {
+        const src = createRunsSource();
+        const r5 = makeRun("r5", { createdAt: "2026-06-22T12:05:00.000Z" });
+        const r4 = makeRun("r4", { createdAt: "2026-06-22T12:04:00.000Z" });
+        const r3 = makeRun("r3", { createdAt: "2026-06-22T12:03:00.000Z" });
+        const r2 = makeRun("r2", { createdAt: "2026-06-22T12:02:00.000Z" });
+        const r1 = makeRun("r1", { createdAt: "2026-06-22T12:01:00.000Z" });
+        vi.mocked(runsApi.getAll).mockResolvedValueOnce({ runs: [r5, r4, r3], total: 5 });
+        src.setFilters(baseFilters());
+        await vi.waitFor(() => {
+            expect(src.loaded).toBe(true);
+        });
+
+        src.reveal(r1);
+        expect(src.items.map((r) => r.id)).toEqual(["r5", "r4", "r3", "r1"]);
+        expect(src.total).toBe(5);
+        expect(src.done).toBe(false);
+
+        vi.mocked(runsApi.getAll).mockResolvedValueOnce({ runs: [r2, r1], total: 5 });
+        src.loadMore();
+        expect(runsApi.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 3 }));
+        await vi.waitFor(() => {
+            expect(src.items.map((r) => r.id)).toEqual(["r5", "r4", "r3", "r2", "r1"]);
+        });
+        expect(src.total).toBe(5);
+        expect(src.done).toBe(true);
+    });
 });
 
 // A live SSE row is merged through `upsert`, which re-evaluates the active

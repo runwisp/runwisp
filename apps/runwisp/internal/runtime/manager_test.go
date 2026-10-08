@@ -182,7 +182,7 @@ func TestPolicyQueueDropsAtCap(t *testing.T) {
 	jm, exec, _ := newGatedManager(t)
 
 	task := testTask("task1", model.PolicyQueue, 1)
-	task.MaxQueued = 1
+	task.MaxQueued = intPtr(1)
 	jm.UpsertTask(task)
 
 	first, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
@@ -200,6 +200,27 @@ func TestPolicyQueueDropsAtCap(t *testing.T) {
 	dropped, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.Error(t, err, "third firing should be rejected")
 	assert.Contains(t, err.Error(), "queue full")
+	assert.Equal(t, model.PhaseEnded, dropped.Status)
+	require.NotNil(t, dropped.EndReason)
+	assert.Equal(t, model.ReasonQueueFull, *dropped.EndReason)
+}
+
+// TestPolicyQueueZeroMaxQueuedDropsOverlap pins max_queued = 0: no run waits
+// in line, so a firing that finds every slot busy is recorded as queue_full
+// right away instead of queueing behind an unbounded (or default) cap.
+func TestPolicyQueueZeroMaxQueuedDropsOverlap(t *testing.T) {
+	jm, exec, _ := newGatedManager(t)
+
+	task := testTask("task1", model.PolicyQueue, 1)
+	task.MaxQueued = intPtr(0)
+	jm.UpsertTask(task)
+
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
+	require.NoError(t, err)
+	exec.WaitStarted(t)
+
+	dropped, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
+	require.Error(t, err, "an overlapping firing must not queue when max_queued = 0")
 	assert.Equal(t, model.PhaseEnded, dropped.Status)
 	require.NotNil(t, dropped.EndReason)
 	assert.Equal(t, model.ReasonQueueFull, *dropped.EndReason)
@@ -1816,4 +1837,37 @@ func TestTerminalEventFollowsPersistedTerminalRow(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("no terminal event was published")
 	}
+}
+
+// TestServiceStopStatePublishesTasksChanged pins the live signal dashboards
+// refetch /api/tasks on: an operator stop or start flips the service's stopped
+// state, and that flip (and only the flip) publishes tasks.changed.
+func TestServiceStopStatePublishesTasksChanged(t *testing.T) {
+	jm, exec, eb := newTestManager(t)
+	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0}).Maybe()
+
+	var changed atomic.Int32
+	eb.Subscribe(events.EventTasksChanged, func(events.Event) { changed.Add(1) })
+
+	jm.UpsertTask(&model.Task{
+		Name:          "svc",
+		Kind:          model.KindService,
+		Run:           "echo hi",
+		Restart:       model.RestartNever,
+		MaxConcurrent: 1,
+		OnOverlap:     model.PolicySkip,
+		Autostart:     true,
+	})
+
+	require.NoError(t, jm.StopService("svc"))
+	assert.Equal(t, int32(1), changed.Load(), "stopping a running service publishes")
+	require.NoError(t, jm.StopService("svc"))
+	assert.Equal(t, int32(1), changed.Load(), "stopping a stopped service changes nothing")
+
+	require.NoError(t, jm.StartService("svc"))
+	assert.Equal(t, int32(2), changed.Load(), "starting a stopped service publishes")
+
+	require.NoError(t, jm.StopService("svc"))
+	require.NoError(t, jm.RestartServiceInstances("svc"))
+	assert.Equal(t, int32(4), changed.Load(), "restarting a stopped service publishes")
 }

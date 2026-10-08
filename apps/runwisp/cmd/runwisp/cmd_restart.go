@@ -91,7 +91,7 @@ func runRestart(cmd *cobra.Command, args []string, f Flags, attach bool) error {
 	}
 
 	if isDaemonRunning(f) {
-		if err := shutdownDaemonWait(stopWaitTimeout(f), f); err != nil {
+		if err := shutdownDaemonWait(stopWaitTimeout(f.CfgFile), f); err != nil {
 			return err
 		}
 	} else {

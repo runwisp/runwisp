@@ -470,7 +470,7 @@ func (srv *Server) registerAppStreamSSE(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/events/stream",
 		Summary:     "Stream live application events",
-		Description: "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, task-list changes (a schedule paused or resumed, a reload applied), and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.",
+		Description: "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, task-list changes (a schedule paused or resumed, a service stopped or started, a reload applied), and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.",
 		Tags:        []string{"Runs"},
 		Errors:      []int{http.StatusServiceUnavailable},
 		Middlewares: srv.streamGate(api, nil),

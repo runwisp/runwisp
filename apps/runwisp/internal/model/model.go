@@ -111,7 +111,7 @@ type Task struct {
 	StopSignal    string            `toml:"-"                       json:"stopSignal,omitempty" enum:"SIGTERM,SIGINT,SIGQUIT,SIGHUP,SIGKILL,SIGUSR1,SIGUSR2" doc:"Signal sent to stop a run before SIGKILL; defaults to SIGTERM"`
 	Restart       RestartPolicy     `toml:"restart,omitempty"       json:"restart,omitempty" enum:"never,always,on_failure" doc:"For services: whether and when an instance is restarted (defaults to always). Tasks re-run a failed run via retry_* instead."`
 	MaxConcurrent int               `toml:"max_concurrent,omitempty" json:"maxConcurrent,omitempty" doc:"Maximum overlapping runs allowed for this task"`
-	MaxQueued     int               `toml:"max_queued,omitempty"    json:"maxQueued,omitempty" doc:"Maximum runs that can wait when on_overlap = queue"`
+	MaxQueued     *int              `toml:"max_queued,omitempty"    json:"maxQueued,omitempty" doc:"Maximum runs that can wait when on_overlap = queue; 0 means none wait, so a trigger that finds every slot busy is dropped as queue_full"`
 	OnOverlap     ConcurrencyPolicy `toml:"on_overlap,omitempty"    json:"onOverlap,omitempty" enum:"queue,skip,kill" doc:"How overlapping runs are handled"`
 
 	Instances int `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running instances"`
@@ -309,6 +309,13 @@ const DefaultCatchUp = 1
 // back to DefaultCatchUp when unset. Config-loaded tasks always have it resolved
 // by ApplyDefaults; nil only occurs for tasks built outside config.Load.
 func (t *Task) CatchUpValue() int { return derefOr(t.CatchUp, DefaultCatchUp) }
+
+// DefaultMaxQueued is the built-in max_queued applied when the key is omitted.
+const DefaultMaxQueued = 100
+
+// MaxQueuedValue returns how many runs may wait when on_overlap = "queue",
+// falling back to DefaultMaxQueued when unset. 0 means no run waits.
+func (t *Task) MaxQueuedValue() int { return derefOr(t.MaxQueued, DefaultMaxQueued) }
 
 // RetryDelayValue returns the configured base retry delay, or 0 when unset. Note
 // the 5s builtin fallback lives in retry.ComputeRetryDelay, which reads the
@@ -690,4 +697,8 @@ type TaskRegistration struct {
 	// ResumedAt is the last time a pause was lifted; missed-tick catch-up
 	// anchors no earlier than this so a paused window never counts as missed.
 	ResumedAt *time.Time
+	// LastRunAt is the newest CreatedAt of any run the task had, kept even
+	// after retention or an operator deletes that run, so catch-up never
+	// anchors further back than the task actually ran.
+	LastRunAt *time.Time
 }

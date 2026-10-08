@@ -30,7 +30,7 @@ WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
   AND id NOT IN (sqlc.slice('except_ids'))
 RETURNING id, task_name, created_at;
 
@@ -57,7 +57,7 @@ WHERE deleted_at IS NOT NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
   AND id NOT IN (sqlc.slice('except_ids'))
 RETURNING id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
@@ -88,6 +88,6 @@ WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
   AND (sqlc.arg(bulk_status_filter) IS NULL OR status = sqlc.arg(bulk_status_filter))
   AND id NOT IN (sqlc.slice('except_ids'));

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 	"text/template"
+	"time"
 )
 
 //go:embed templates/*.tmpl
@@ -33,6 +34,8 @@ type SystemdParams struct {
 	// time-sync.target so a boot-time clock step lands before scheduling
 	// starts on an RTC-less box).
 	System bool
+	// StopTimeout becomes TimeoutStopSec (see InstallOptions.StopTimeout).
+	StopTimeout time.Duration
 	// MaskedCronUnit, when non-empty, is recorded as a
 	// # runwisp-masked-cron: <unit> marker line — the standing record of
 	// which cron unit this install has masked, so uninstall knows it may
@@ -71,6 +74,8 @@ type LaunchdParams struct {
 	// Label is the per-instance launchd label baked into the plist
 	// (e.g. "com.runwisp.daemon.bright-falcon").
 	Label string
+	// StopTimeout becomes ExitTimeOut (see InstallOptions.StopTimeout).
+	StopTimeout time.Duration
 }
 
 // RenderSystemdUnit returns the rendered runwisp.service body. Every
@@ -127,6 +132,7 @@ var templateFuncs = template.FuncMap{
 	"sysq":   systemdExecArg,
 	"sysexe": systemdExecPath,
 	"xml":    xmlEscape,
+	"secs":   stopSeconds,
 }
 
 // systemdEscape escapes the characters that are special inside a systemd

@@ -14,6 +14,7 @@ import (
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -486,4 +487,39 @@ func TestReconcile_CronHoldWatcherFollowsIncludeCron(t *testing.T) {
 
 	stop()
 	assert.False(t, watching(), "stop must shut the watcher down")
+}
+
+// TestReconcile_RemovedTaskStartsFreshWhenReAdded is the reload half of the
+// removed-task regression (see TestSnapshotCatchupAnchors_RemovedTaskStartsFresh):
+// removing a task by reload forgets its registration, so adding it back by a
+// later reload anchors catch-up at that reload, not at the task's old history.
+func TestReconcile_RemovedTaskStartsFreshWhenReAdded(t *testing.T) {
+	ctx := context.Background()
+	db, err := storage.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	task := &model.Task{Name: "nightly", Cron: "0 3 * * *", Run: "a"}
+	old := taskSet(task)
+	firstSeen := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, db.EnsureTaskRegistered(ctx, task.Name, firstSeen))
+	require.NoError(t, db.CreateRun(ctx, &model.Run{
+		ID: "run-1", TaskName: task.Name, Status: model.PhaseEnded,
+		TriggeredBy: model.TriggeredByCron, CreatedAt: firstSeen.Add(time.Hour),
+	}))
+
+	now := firstSeen.Add(2 * time.Hour)
+	r := &Reconciler{registry: NewTaskRegistry(old), manager: &recordingManager{}, db: db, now: func() time.Time { return now }}
+	none := taskSet()
+	r.apply(config.DiffTasks(old, none), old, none)
+
+	now = firstSeen.AddDate(0, 1, 0)
+	back := taskSet(task) // the registry deleted from old
+	r.apply(config.DiffTasks(none, back), none, back)
+
+	reg, err := db.GetTaskRegistration(ctx, task.Name)
+	require.NoError(t, err)
+	require.NotNil(t, reg)
+	assert.True(t, now.Equal(reg.FirstSeenAt), "first_seen_at = %v, want the re-adding reload %v", reg.FirstSeenAt, now)
+	assert.Nil(t, reg.LastRunAt)
 }

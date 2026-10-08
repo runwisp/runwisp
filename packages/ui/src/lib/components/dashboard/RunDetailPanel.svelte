@@ -47,6 +47,7 @@
         formatTriggeredByLabel,
         runRetryLabel,
         runUsageLabel,
+        runLogDownloadUrl,
         instanceSuffix,
     } from "./run-helpers.js";
 
@@ -717,9 +718,7 @@
                             {/if}
                         {/if}
                         <a
-                            href="/api/tasks/{encodeURIComponent(
-                                run.taskName,
-                            )}/runs/{encodeURIComponent(run.id)}/log/raw"
+                            href={runLogDownloadUrl(run.id)}
                             download="{run.taskName}-{run.id}.log"
                             class="inline-flex items-center justify-center rounded-[3px] border border-outline-faint bg-surface-raised p-2 text-on-surface-muted hover:border-outline-hover hover:bg-surface-sunken hover:text-primary"
                             title="Download the full log (rotated and current parts as one file)"

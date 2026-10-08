@@ -406,6 +406,33 @@ func TestJitterGate_ShutdownAbandonsPending(t *testing.T) {
 	exec.noMoreStarts(t)
 }
 
+// TestBeginShutdown_StopsNewRunsAndKeepsActive: the daemon stops services
+// before it drains tasks, and a held jittered fire used to start a run during
+// that window. BeginShutdown drops held fires and refuses triggers while the
+// runs already in flight keep going.
+func TestBeginShutdown_StopsNewRunsAndKeepsActive(t *testing.T) {
+	clk := testutil.NewClock(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
+	jm, exec, mt, _ := newJitterTestManager(t, clk.Now)
+	jm.UpsertTask(testTask("a", model.PolicySkip, 1))
+	jm.UpsertTask(testTask("b", model.PolicySkip, 1))
+
+	tick := clk.Now()
+	jm.ScheduleJitteredRun("a", tick, tick, 30*time.Minute)
+	_ = exec.waitStarted(t)
+	jm.ScheduleJitteredRun("b", tick, tick.Add(10*time.Minute), 30*time.Minute)
+	require.Equal(t, 1, mt.pending(), "b is held")
+
+	jm.BeginShutdown()
+
+	mt.fireAll()
+	assert.Equal(t, 0, jm.GetActiveRunCount("b"), "the held fire is dropped")
+	_, err := jm.TriggerRunWithOptions("b", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
+	require.ErrorIs(t, err, errShuttingDown)
+	assert.Equal(t, 1, jm.GetActiveRunCount("a"), "the run in flight is left to the drain")
+	exec.noMoreStarts(t)
+	jm.Shutdown()
+}
+
 // gateInflightIDs snapshots the gate's in-flight run IDs under its lock.
 func gateInflightIDs(g *jitterGate) map[string]bool {
 	g.mu.Lock()

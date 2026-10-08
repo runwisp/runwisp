@@ -102,13 +102,17 @@ func seedAnchorRun(t *testing.T, dataDir, taskName string, offset time.Duration)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
+	// Register first, as the daemon does at boot: CreateRun records the run as
+	// the task's last run only on an existing registration.
+	at := time.Now().Add(offset)
+	require.NoError(t, db.EnsureTaskRegistered(context.Background(), taskName, at))
 	require.NoError(t, db.CreateRun(context.Background(), &model.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    taskName,
 		Status:      model.PhaseEnded,
 		EndReason:   model.EndReasonPtr(model.ReasonSuccess),
 		TriggeredBy: model.TriggeredByCron,
-		CreatedAt:   time.Now().Add(offset),
+		CreatedAt:   at,
 	}))
 }
 

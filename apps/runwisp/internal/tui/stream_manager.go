@@ -279,7 +279,8 @@ func (sm *StreamManager) FetchDaemonInfo() tea.Cmd {
 
 // FetchTaskState returns a command that reads the live per-task state
 // /api/daemon doesn't carry: which cron schedules are paused (from the CLI or
-// the Web UI too) and each running task's CPU and memory use.
+// the Web UI too), which services are stopped, and each running task's CPU
+// and memory use.
 func (sm *StreamManager) FetchTaskState() tea.Cmd {
 	client := sm.client
 	ctx := sm.streamCtx
@@ -290,7 +291,11 @@ func (sm *StreamManager) FetchTaskState() tea.Cmd {
 		}
 		paused := make(map[string]time.Time)
 		usage := make(map[string]model.ResourceUsage)
+		stopped := make(map[string]bool)
 		for _, t := range tasks {
+			if t.ServiceStopped {
+				stopped[t.Name] = true
+			}
 			if t.PausedAt != nil {
 				paused[t.Name] = *t.PausedAt
 			}
@@ -298,7 +303,7 @@ func (sm *StreamManager) FetchTaskState() tea.Cmd {
 				usage[t.Name] = *t.Usage
 			}
 		}
-		return uikit.TaskStateMsg{Paused: paused, Usage: usage}
+		return uikit.TaskStateMsg{Paused: paused, Usage: usage, Stopped: stopped}
 	}
 }
 

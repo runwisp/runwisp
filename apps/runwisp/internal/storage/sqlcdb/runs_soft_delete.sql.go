@@ -27,7 +27,7 @@ WHERE deleted_at IS NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
   AND (?12 IS NULL OR status = ?12)
   AND id NOT IN (/*SLICE:except_ids*/?)
 `
@@ -43,7 +43,7 @@ type ResolveSelectorIDsByFilterParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 	BulkStatusFilter  interface{} `json:"bulk_status_filter"`
 	ExceptIds         []string    `json:"except_ids"`
 }
@@ -67,7 +67,7 @@ func (q *Queries) ResolveSelectorIDsByFilter(ctx context.Context, arg ResolveSel
 	queryParams = append(queryParams, arg.RetriesOnly)
 	queryParams = append(queryParams, arg.TaskNameFilter)
 	queryParams = append(queryParams, arg.SearchFilter)
-	queryParams = append(queryParams, arg.SearchPattern)
+	queryParams = append(queryParams, arg.SearchTerm)
 	queryParams = append(queryParams, arg.BulkStatusFilter)
 	if len(arg.ExceptIds) > 0 {
 		for _, v := range arg.ExceptIds {
@@ -169,7 +169,7 @@ WHERE deleted_at IS NOT NULL
   AND (?7 IS NULL OR exit_code <= ?7)
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
-  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
   AND id NOT IN (/*SLICE:except_ids*/?)
 RETURNING id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
@@ -188,7 +188,7 @@ type RestoreRunsByFilterParams struct {
 	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
+	SearchTerm        string      `json:"search_term"`
 	ExceptIds         []string    `json:"except_ids"`
 }
 
@@ -205,7 +205,7 @@ func (q *Queries) RestoreRunsByFilter(ctx context.Context, arg RestoreRunsByFilt
 	queryParams = append(queryParams, arg.RetriesOnly)
 	queryParams = append(queryParams, arg.TaskNameFilter)
 	queryParams = append(queryParams, arg.SearchFilter)
-	queryParams = append(queryParams, arg.SearchPattern)
+	queryParams = append(queryParams, arg.SearchTerm)
 	if len(arg.ExceptIds) > 0 {
 		for _, v := range arg.ExceptIds {
 			queryParams = append(queryParams, v)
@@ -372,7 +372,7 @@ WHERE deleted_at IS NULL
   AND (?9 IS NULL OR exit_code <= ?9)
   AND (?10 IS NULL OR retry_attempt > 0)
   AND (?11 IS NULL OR task_name = ?11)
-  AND (?12 IS NULL OR (task_name LIKE ?13 OR id LIKE ?13))
+  AND (?12 IS NULL OR (instr(lower(task_name), ?13) > 0 OR instr(lower(id), ?13) > 0))
   AND id NOT IN (/*SLICE:except_ids*/?)
 RETURNING id, task_name, created_at
 `
@@ -390,7 +390,7 @@ type SoftDeleteRunsByFilterParams struct {
 	RetriesOnly       interface{}    `json:"retries_only"`
 	TaskNameFilter    interface{}    `json:"task_name_filter"`
 	SearchFilter      interface{}    `json:"search_filter"`
-	SearchPattern     string         `json:"search_pattern"`
+	SearchTerm        string         `json:"search_term"`
 	ExceptIds         []string       `json:"except_ids"`
 }
 
@@ -415,7 +415,7 @@ func (q *Queries) SoftDeleteRunsByFilter(ctx context.Context, arg SoftDeleteRuns
 	queryParams = append(queryParams, arg.RetriesOnly)
 	queryParams = append(queryParams, arg.TaskNameFilter)
 	queryParams = append(queryParams, arg.SearchFilter)
-	queryParams = append(queryParams, arg.SearchPattern)
+	queryParams = append(queryParams, arg.SearchTerm)
 	if len(arg.ExceptIds) > 0 {
 		for _, v := range arg.ExceptIds {
 			queryParams = append(queryParams, v)

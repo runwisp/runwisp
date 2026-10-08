@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -93,10 +92,8 @@ func buildDynamicStationTask(dispatch *protocol.Execution, execDef model.Executi
 		ExecutionDef:  execDef,
 		MaxConcurrent: 1,
 		OnOverlap:     model.PolicyQueue,
-		// Station dynamic tasks bypass config defaulting, so set the same bound a
-		// TOML queue task gets — otherwise MaxQueued stays 0 (unbounded) and a
-		// stream of dispatches to one slow name grows the queue without limit.
-		MaxQueued: config.DefaultMaxQueued,
+		// MaxQueued is left unset: MaxQueuedValue bounds the queue at the same
+		// default a TOML queue task gets.
 		// One-shot station dispatch: the run manager reaps this task (and its
 		// queue-drain goroutine) once the run retires, so a long-running daemon
 		// doesn't leak state per distinct dispatched name.

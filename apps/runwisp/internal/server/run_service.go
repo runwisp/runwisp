@@ -102,6 +102,10 @@ func (s *runService) toTaskResponse(task *model.Task, usage map[string]model.Res
 		tr.NextRunAt = s.scheduler.GetNextRun(task.Name)
 		tr.PausedAt = s.scheduler.PausedAt(task.Name)
 	}
+	if task.Kind.IsService() && s.taskManager != nil {
+		snap, ok := s.taskManager.ServiceSnapshot(task.Name)
+		tr.ServiceStopped = ok && snap.State == model.ServiceStopped
+	}
 	return tr
 }
 

@@ -238,24 +238,29 @@ func TestServiceManagerName(t *testing.T) {
 func TestStopWaitTimeout(t *testing.T) {
 	t.Parallel()
 
-	t.Run("unreadable config floors at 15s", func(t *testing.T) {
+	t.Run("unreadable config waits the default shutdown budget", func(t *testing.T) {
 		t.Parallel()
 		f := Flags{CfgFile: filepath.Join(t.TempDir(), "missing.toml")}
-		assert.Equal(t, 15*time.Second, stopWaitTimeout(f))
+		// 3s input + 10s services + 10s cron + 5s kill margin + 2s teardown.
+		assert.Equal(t, 30*time.Second, stopWaitTimeout(f.CfgFile))
 	})
 
-	t.Run("long shutdown_timeout gets headroom", func(t *testing.T) {
+	// The daemon gives services one shutdown_timeout and cron runs another, so
+	// a wait of shutdown_timeout + 5s gave up while the daemon was still exiting.
+	t.Run("long shutdown_timeout covers the service and cron drains", func(t *testing.T) {
 		t.Parallel()
 		path := filepath.Join(t.TempDir(), "runwisp.toml")
 		require.NoError(t, os.WriteFile(path, []byte("[daemon]\nshutdown_timeout = \"60s\"\n\n[tasks.t]\nrun = \"echo hi\"\n"), 0o600))
-		assert.Equal(t, 65*time.Second, stopWaitTimeout(Flags{CfgFile: path}))
+		got := stopWaitTimeout(path)
+		assert.Equal(t, 130*time.Second, got)
+		assert.Greater(t, got, shutdownBudget(60*time.Second))
 	})
 
 	t.Run("short shutdown_timeout still floors at 15s", func(t *testing.T) {
 		t.Parallel()
 		path := filepath.Join(t.TempDir(), "runwisp.toml")
 		require.NoError(t, os.WriteFile(path, []byte("[daemon]\nshutdown_timeout = \"2s\"\n\n[tasks.t]\nrun = \"echo hi\"\n"), 0o600))
-		assert.Equal(t, 15*time.Second, stopWaitTimeout(Flags{CfgFile: path}))
+		assert.Equal(t, 15*time.Second, stopWaitTimeout(path))
 	})
 }
 

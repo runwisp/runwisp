@@ -1202,3 +1202,30 @@ func TestListTasks_AttachesLiveUsage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(2048), one.Usage.MemoryBytes)
 }
+
+// TestListTasks_ServiceStopped pins that the task DTO carries the daemon's
+// operator-stop state, so a dashboard reload offers Start, not Restart.
+func TestListTasks_ServiceStopped(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"job":     {Name: "job", Kind: model.KindTask},
+		"running": {Name: "running", Kind: model.KindService},
+		"stopped": {Name: "stopped", Kind: model.KindService},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	runner.On("ServiceSnapshot", "running").Return(model.ServiceSnapshot{State: model.ServiceRunning}, true)
+	runner.On("ServiceSnapshot", "stopped").Return(model.ServiceSnapshot{State: model.ServiceStopped}, true)
+
+	got := map[string]bool{}
+	for _, tr := range svc.ListTasks() {
+		got[tr.Name] = tr.ServiceStopped
+	}
+	assert.Equal(t, map[string]bool{"job": false, "running": false, "stopped": true}, got)
+
+	one, err := svc.GetTask("stopped")
+	require.NoError(t, err)
+	assert.True(t, one.ServiceStopped)
+	runner.AssertNotCalled(t, "ServiceSnapshot", "job")
+}

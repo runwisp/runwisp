@@ -473,8 +473,8 @@ type taskWire struct {
 	// substitution: the expander cannot write through an interface.
 	RunOnStart any `toml:"run_on_start,omitempty" expand:"-"`
 
-	MaxConcurrent int `toml:"max_concurrent,omitempty"`
-	MaxQueued     int `toml:"max_queued,omitempty"`
+	MaxConcurrent int  `toml:"max_concurrent,omitempty"`
+	MaxQueued     *int `toml:"max_queued,omitempty"`
 
 	RetryAttempts int                `toml:"retry_attempts,omitempty"`
 	RetryDelay    string             `toml:"retry_delay,omitempty"`

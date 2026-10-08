@@ -46,7 +46,7 @@ export function createLiveRuns(getTaskName?: () => string) {
     const deepLink = new RunDeepLink(
         (id) => runsApi.getById(id),
         (run) => {
-            source.upsert(run);
+            source.reveal(run);
         },
     );
 

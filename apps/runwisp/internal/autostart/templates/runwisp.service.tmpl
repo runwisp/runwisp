@@ -21,7 +21,7 @@ ExecStart={{.Binary | sysexe}} daemon --config {{.Config | sysq}} --data {{.Data
 Restart=on-failure
 RestartSec=5s
 KillMode=mixed
-TimeoutStopSec=30s
+TimeoutStopSec={{secs .StopTimeout}}s
 Environment="HOME={{.Home | sysesc}}"
 Environment="PATH={{.Path | sysesc}}"
 Environment=LANG=C.UTF-8

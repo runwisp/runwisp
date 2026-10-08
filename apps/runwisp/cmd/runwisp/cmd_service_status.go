@@ -97,12 +97,13 @@ func resolveStatusOptions(f Flags, systemWide bool) (autostart.InstallOptions, e
 		return autostart.InstallOptions{}, fmt.Errorf("locate runwisp binary: %w", err)
 	}
 	return autostart.InstallOptions{
-		Binary:  exe,
-		Config:  f.CfgFile,
-		DataDir: f.DataDir,
-		Host:    f.Host,
-		Port:    f.Port,
-		System:  systemWide,
+		Binary:      exe,
+		Config:      f.CfgFile,
+		DataDir:     f.DataDir,
+		Host:        f.Host,
+		Port:        f.Port,
+		System:      systemWide,
+		StopTimeout: stopWaitTimeout(f.CfgFile),
 	}, nil
 }
 

@@ -40,8 +40,7 @@ func TestMockRunRepository(t *testing.T) {
 	m.On("DeleteRunsByIDs", ctx, []string{"r1"}).Return(nil)
 	m.On("MarkCrashedRuns", ctx).Return(int64(1), nil)
 	m.On("GetPendingRuns", ctx).Return([]model.Run{*run}, nil)
-	m.On("GetLastRunByTask", ctx, "t1").Return(run, nil)
-	m.On("GetLastRunByTask", ctx, "missing").Return((*model.Run)(nil), wantErr)
+	m.On("ForgetTaskRegistrationsExcept", ctx, []string{"t1"}).Return(nil)
 	summary := &model.RunSummary{}
 	m.On("GetRunSummary", ctx).Return(summary, nil)
 	now := time.Unix(0, 0)
@@ -96,11 +95,8 @@ func TestMockRunRepository(t *testing.T) {
 	if got, err := m.GetPendingRuns(ctx); err != nil || len(got) != 1 {
 		t.Fatalf("GetPendingRuns: %v %v", got, err)
 	}
-	if got, err := m.GetLastRunByTask(ctx, "t1"); err != nil || got != run {
-		t.Fatalf("GetLastRunByTask hit: %v %v", got, err)
-	}
-	if got, err := m.GetLastRunByTask(ctx, "missing"); got != nil || !errors.Is(err, wantErr) {
-		t.Fatalf("GetLastRunByTask miss: %v %v", got, err)
+	if err := m.ForgetTaskRegistrationsExcept(ctx, []string{"t1"}); err != nil {
+		t.Fatalf("ForgetTaskRegistrationsExcept: %v", err)
 	}
 	if got, err := m.GetRunSummary(ctx); err != nil || got != summary {
 		t.Fatalf("GetRunSummary: %v %v", got, err)
@@ -133,7 +129,6 @@ func TestMockRunRepository(t *testing.T) {
 	mNil := &MockRunRepository{}
 	mNil.On("GetRun", ctx, "x").Return(nil, errors.New("not found"))
 	mNil.On("GetRunByExecutionID", ctx, "x").Return(nil, errors.New("nf"))
-	mNil.On("GetLastRunByTask", ctx, "x").Return(nil, errors.New("nf"))
 	mNil.On("GetRunSummary", ctx).Return(nil, errors.New("nf"))
 	mNil.On("GetTaskRegistration", ctx, "x").Return(nil, errors.New("nf"))
 	mNil.On("SoftDeleteRuns", ctx, sel, now).Return(nil, errors.New("nf"))
@@ -144,9 +139,6 @@ func TestMockRunRepository(t *testing.T) {
 		t.Fatal("expect err")
 	}
 	if _, err := mNil.GetRunByExecutionID(ctx, "x"); err == nil {
-		t.Fatal("expect err")
-	}
-	if _, err := mNil.GetLastRunByTask(ctx, "x"); err == nil {
 		t.Fatal("expect err")
 	}
 	if _, err := mNil.GetRunSummary(ctx); err == nil {

@@ -22,3 +22,15 @@ WHERE task_name = sqlc.arg(task_name) AND paused_at IS NOT NULL;
 
 -- name: ListPausedTaskSchedules :many
 SELECT task_name, paused_at FROM task_registrations WHERE paused_at IS NOT NULL;
+
+-- name: BumpTaskLastRun :exec
+-- Only moves forward: a backdated row (a missed tick, a jittered run) must not
+-- pull the anchor back behind a run already recorded.
+UPDATE task_registrations SET last_run_at = sqlc.arg(created_at)
+WHERE task_name = sqlc.arg(task_name)
+  AND (last_run_at IS NULL OR last_run_at < sqlc.arg(created_at));
+
+-- name: DeleteTaskRegistrationsExcept :exec
+-- Forgets every task that left the config (first-seen time, last run, pause),
+-- so one that comes back starts fresh. Its runs are kept.
+DELETE FROM task_registrations WHERE task_name NOT IN (sqlc.slice('keep'));

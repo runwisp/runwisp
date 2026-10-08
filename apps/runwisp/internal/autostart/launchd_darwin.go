@@ -78,19 +78,20 @@ func (l *launchdInstaller) renderPlist(opts InstallOptions) ([]byte, string, err
 	if data, err := os.ReadFile(opts.Binary); err == nil {
 		binarySHA = hashContent(data)
 	}
-	configHash := SettingsHash(opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port)
+	configHash := SettingsHash(opts)
 	body, err := RenderLaunchdPlist(LaunchdParams{
-		Binary:     opts.Binary,
-		Config:     opts.Config,
-		DataDir:    opts.DataDir,
-		Host:       opts.Host,
-		Port:       opts.Port,
-		Home:       l.deps.Home,
-		Path:       envPathDarwin(),
-		LogPath:    l.logPath(opts.DataDir),
-		ConfigHash: configHash,
-		BinarySHA:  binarySHA,
-		Label:      l.label(),
+		Binary:      opts.Binary,
+		Config:      opts.Config,
+		DataDir:     opts.DataDir,
+		Host:        opts.Host,
+		Port:        opts.Port,
+		Home:        l.deps.Home,
+		Path:        envPathDarwin(),
+		LogPath:     l.logPath(opts.DataDir),
+		ConfigHash:  configHash,
+		BinarySHA:   binarySHA,
+		Label:       l.label(),
+		StopTimeout: opts.StopTimeout,
 	})
 	return body, binarySHA, err
 }
@@ -316,7 +317,7 @@ func (l *launchdInstaller) Status(ctx context.Context, opts InstallOptions) (Sta
 		st.UnitConfigHash = parsed.configHash
 		st.ExpectedBinarySHA = parsed.binarySHA
 		st.Installed = parsed.managed
-		st.ExpectedConfigHash = SettingsHash(opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port)
+		st.ExpectedConfigHash = SettingsHash(opts)
 	}
 	if data, err := os.ReadFile(opts.Binary); err == nil {
 		st.BinaryExists = true

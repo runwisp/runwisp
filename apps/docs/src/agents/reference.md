@@ -130,7 +130,7 @@ timeout:           dur              — per-attempt cap (inherits [defaults])
 graceful_stop:     dur  =5s         — grace before SIGKILL on stop; 0s = immediate SIGKILL, kept literally if set
 stop_signal:       enum =SIGTERM    — stop-ladder signal (inherits [defaults]); SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
 max_concurrent:    int  =1          — concurrent run cap; 1..1024
-max_queued:        int  =100        — queued-run depth; 0..10000
+max_queued:        int  =100        — queued-run depth; 0..10000; 0 = no queue (busy → queue_full)
 on_overlap:        enum =queue      — queue | skip | kill
 retry_attempts:    int  =0          — retries after a failed attempt; 0..100
 retry_delay:       dur  =5s         — delay between retries; 0s = no delay, kept literally if set

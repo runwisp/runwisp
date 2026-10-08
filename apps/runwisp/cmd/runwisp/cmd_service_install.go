@@ -377,12 +377,13 @@ func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags, sys
 	}
 
 	return autostart.InstallOptions{
-		Binary:  binary,
-		Config:  configPath,
-		DataDir: dataDir,
-		Host:    f.Host,
-		Port:    f.Port,
-		System:  systemWide,
+		Binary:      binary,
+		Config:      configPath,
+		DataDir:     dataDir,
+		Host:        f.Host,
+		Port:        f.Port,
+		System:      systemWide,
+		StopTimeout: stopWaitTimeout(configPath),
 	}, nil
 }
 

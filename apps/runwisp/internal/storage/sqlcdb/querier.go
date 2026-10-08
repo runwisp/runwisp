@@ -10,6 +10,9 @@ import (
 )
 
 type Querier interface {
+	// Only moves forward: a backdated row (a missed tick, a jittered run) must not
+	// pull the anchor back behind a run already recorded.
+	BumpTaskLastRun(ctx context.Context, arg BumpTaskLastRunParams) error
 	CountRunsFiltered(ctx context.Context, arg CountRunsFilteredParams) (int64, error)
 	CountUnreadNotifications(ctx context.Context) (int64, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
@@ -18,13 +21,15 @@ type Querier interface {
 	DeletePendingLogUpload(ctx context.Context, executionID string) error
 	DeleteRun(ctx context.Context, id string) error
 	DeleteRunsByIDs(ctx context.Context, ids []string) error
+	// Forgets every task that left the config (first-seen time, last run, pause),
+	// so one that comes back starts fresh. Its runs are kept.
+	DeleteTaskRegistrationsExcept(ctx context.Context, keep []string) error
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	EnsureTaskRegistered(ctx context.Context, arg EnsureTaskRegisteredParams) error
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	GetConfigValue(ctx context.Context, key string) (string, error)
-	GetLastRunByTask(ctx context.Context, taskName string) (Run, error)
 	GetNotificationByID(ctx context.Context, id string) (Notification, error)
 	GetPendingRuns(ctx context.Context) ([]Run, error)
 	GetRun(ctx context.Context, id string) (Run, error)

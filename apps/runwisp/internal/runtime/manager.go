@@ -531,8 +531,7 @@ func (m *defaultTaskManager) resumePendingRun(ts *taskState, r *model.Run, resul
 }
 
 func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) *model.Run {
-	maxQueued := ts.task.MaxQueued
-	if maxQueued > 0 && len(ts.queue) >= maxQueued {
+	if len(ts.queue) >= ts.task.MaxQueuedValue() {
 		r.End(ts.task, model.ReasonQueueFull, -1, m.clock())
 		m.persistence.PersistExisting(r)
 		result.Failed++
@@ -832,10 +831,14 @@ func (m *defaultTaskManager) StartService(taskName string) error {
 		m.mu.Unlock()
 		return err
 	}
+	wasStopped := ts.supervisor.IsStopped()
 	ts.supervisor.MarkRunning()
 	ts.bookkeepingStop = false
 	m.mu.Unlock()
 
+	if wasStopped {
+		m.publishTasksChanged()
+	}
 	return m.StartServiceInstances(taskName, model.TriggeredByAPI)
 }
 
@@ -862,6 +865,9 @@ func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
 	}
 	m.mu.Unlock()
 
+	if wasStopped {
+		m.publishTasksChanged()
+	}
 	if wasStopped || wasFatal {
 		return m.StartServiceInstances(taskName, model.TriggeredByAPI)
 	}
@@ -898,18 +904,31 @@ func (m *defaultTaskManager) RecycleServiceInstances(taskName string) error {
 // the flag and stops refilling slots.
 func (m *defaultTaskManager) StopService(taskName string) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	ts, err := m.serviceLocked(taskName)
 	if err != nil {
+		m.mu.Unlock()
 		return err
 	}
+	wasStopped := ts.supervisor.IsStopped()
 	ts.supervisor.MarkStopped()
 	ts.bookkeepingStop = false
 	for _, ar := range ts.active {
 		ar.Cancel()
 	}
+	m.mu.Unlock()
+
+	if !wasStopped {
+		m.publishTasksChanged()
+	}
 	return nil
+}
+
+// publishTasksChanged tells dashboards to refetch /api/tasks after an operator
+// start/stop flipped a service's stopped state (TaskResponse.ServiceStopped).
+// Published here, not in the REST layer, so a station-driven stop shows up too.
+// Callers must not hold m.mu: bus handlers run synchronously.
+func (m *defaultTaskManager) publishTasksChanged() {
+	m.eventBus.Publish(events.EventTasksChanged, events.TasksChangedEvent{})
 }
 
 // ServiceHealthy reports whether a service currently has at least one healthy
@@ -1413,20 +1432,26 @@ func (m *defaultTaskManager) Shutdown() {
 	m.ShutdownWithDeadline(0)
 }
 
+// BeginShutdown refuses every new run from here on and leaves active runs
+// alone. Idempotent.
+func (m *defaultTaskManager) BeginShutdown() {
+	m.isShutdown.Store(true)
+	// Cancel before the wg drain so any goroutine parked in waitForDelay exits
+	// now instead of holding the drain open.
+	m.shutdownCancel()
+	// Abandon pending jittered fires and stop their breach timers so no held
+	// task starts a run after shutdown begins. Takes only the gate lock (no
+	// manager lock held here), preserving the gateMu → mu order.
+	m.gate.shutdown()
+}
+
 // ShutdownWithDeadline cancels every active run, waits up to deadline for
 // goroutines to exit cleanly, and on timeout SIGKILLs survivors so the
 // daemon can exit without leaving orphaned processes behind. Surviving runs
 // are recorded with ReasonDaemonStopped via the deadlineExceeded flag.
 // deadline <= 0 means "wait indefinitely".
 func (m *defaultTaskManager) ShutdownWithDeadline(deadline time.Duration) {
-	m.isShutdown.Store(true)
-	// Cancel before the wg drain so any goroutine parked in waitForDelay exits
-	// now instead of holding the drain open. Idempotent — safe if called twice.
-	m.shutdownCancel()
-	// Abandon pending jittered fires and stop their breach timers so no held
-	// task starts a run after shutdown begins. Takes only the gate lock (no
-	// manager lock held here), preserving the gateMu → mu order.
-	m.gate.shutdown()
+	m.BeginShutdown()
 	m.mu.Lock()
 	for _, ts := range m.allTaskStates() {
 		for _, ar := range ts.active {

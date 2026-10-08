@@ -69,4 +69,5 @@ type TaskRegistration struct {
 	FirstSeenAt time.Time  `json:"first_seen_at"`
 	PausedAt    *time.Time `json:"paused_at"`
 	ResumedAt   *time.Time `json:"resumed_at"`
+	LastRunAt   *time.Time `json:"last_run_at"`
 }

@@ -411,6 +411,29 @@ func TestSearchAndSort(t *testing.T) {
 	assert.Equal(t, "beta", runs[0].TaskName)
 }
 
+// TestSearchMatchesLikeMetacharactersLiterally guards searching for a task
+// name that contains `_` (allowed by the task name pattern) or `%`: the
+// characters must match themselves, not be dropped from the query or act as
+// wildcards.
+func TestSearchMatchesLikeMetacharactersLiterally(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	for _, name := range []string{"db_backup", "dbxbackup", "dbbackup"} {
+		require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: name, Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), TriggeredBy: model.TriggeredByAPI}))
+	}
+
+	runs, err := db.QueryRuns(ctx, RunQuery{Filter: model.RunFilter{Search: "db_backup"}, Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, runs, 1)
+	assert.Equal(t, "db_backup", runs[0].TaskName)
+
+	count, err := db.CountRunsFiltered(ctx, model.RunFilter{Search: "b_b"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+}
+
 // TestQueryRunsAllSortVariants exercises every (column, direction) tuple
 // the dispatcher routes to a dedicated sqlc query. The assertion is that
 // each variant returns rows in the expected order — proving the dispatch
@@ -744,41 +767,38 @@ func TestGetRunByExecutionID(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
-func TestGetLastRunByTask(t *testing.T) {
+// TestForgetTaskRegistrationsExcept checks that registrations of tasks not in
+// keep are deleted, runs are kept, and an empty keep forgets every task rather
+// than none (sqlc renders an empty slice as NOT IN (NULL)).
+func TestForgetTaskRegistrationsExcept(t *testing.T) {
 	ctx := t.Context()
 	db := setupTestDB(t)
 	defer db.Close()
 
-	now := time.Now()
-
-	run1 := &model.Run{
-		ID:          ulid.Make().String(),
-		TaskName:    "task-last",
-		Status:      model.PhaseEnded,
-		EndReason:   model.EndReasonPtr(model.ReasonSuccess),
-		TriggeredBy: model.TriggeredByAPI,
-		CreatedAt:   now.Add(-10 * time.Minute),
+	at := time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)
+	for _, name := range []string{"kept", "gone"} {
+		require.NoError(t, db.EnsureTaskRegistered(ctx, name, at))
 	}
-	run2 := &model.Run{
-		ID:          ulid.Make().String(),
-		TaskName:    "task-last",
-		Status:      model.PhaseEnded,
-		EndReason:   model.EndReasonPtr(model.ReasonFailed),
-		TriggeredBy: model.TriggeredByAPI,
-		CreatedAt:   now,
-	}
-	require.NoError(t, db.CreateRun(ctx, run1))
-	require.NoError(t, db.CreateRun(ctx, run2))
+	require.NoError(t, db.CreateRun(ctx, &model.Run{
+		ID: ulid.Make().String(), TaskName: "gone", Status: model.PhaseEnded,
+		TriggeredBy: model.TriggeredByCron, CreatedAt: at,
+	}))
 
-	last, err := db.GetLastRunByTask(ctx, "task-last")
+	require.NoError(t, db.ForgetTaskRegistrationsExcept(ctx, []string{"kept"}))
+	reg, err := db.GetTaskRegistration(ctx, "gone")
 	require.NoError(t, err)
-	require.NotNil(t, last)
-	assert.Equal(t, run2.ID, last.ID)
+	assert.Nil(t, reg)
+	reg, err = db.GetTaskRegistration(ctx, "kept")
+	require.NoError(t, err)
+	assert.NotNil(t, reg)
+	runs, err := db.CountRunsFiltered(ctx, model.RunFilter{})
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, runs, "runs are kept")
 
-	// Task with no runs returns nil, nil.
-	noRun, err := db.GetLastRunByTask(ctx, "no-such-task")
+	require.NoError(t, db.ForgetTaskRegistrationsExcept(ctx, nil))
+	reg, err = db.GetTaskRegistration(ctx, "kept")
 	require.NoError(t, err)
-	assert.Nil(t, noRun)
+	assert.Nil(t, reg)
 }
 
 func TestEnsureTaskRegistered(t *testing.T) {
@@ -1075,8 +1095,7 @@ func TestSQLiteDatabase_ErrorPathsAfterClose(t *testing.T) {
 	_, err = db.GetPendingRuns(ctx)
 	assert.Error(t, err)
 
-	_, err = db.GetLastRunByTask(ctx, "t")
-	assert.Error(t, err)
+	assert.Error(t, db.ForgetTaskRegistrationsExcept(ctx, []string{"t"}))
 
 	assert.Error(t, db.EnsureTaskRegistered(ctx, "t", time.Now()))
 

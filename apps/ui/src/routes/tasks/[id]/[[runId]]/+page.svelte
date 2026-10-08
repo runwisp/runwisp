@@ -31,7 +31,6 @@
     let triggering = $state(false);
     let restarting = $state(false);
     let stoppingService = $state(false);
-    let serviceStopped = $state(false);
     let selectRunId = $state<string | null>(null);
 
     const { source, logSession, deepLink } = createLiveRuns(() => taskName);
@@ -96,7 +95,7 @@
         restarting = true;
         try {
             await tasksApi.restartService(taskName);
-            serviceStopped = false;
+            void taskData.fetch();
             toast.success(`Restarting "${taskName}"`);
         } catch {
             toast.error(`Failed to restart "${taskName}"`);
@@ -110,7 +109,7 @@
         stoppingService = true;
         try {
             await tasksApi.stopService(taskName);
-            serviceStopped = true;
+            void taskData.fetch();
             toast.success(`Stopped "${taskName}"`);
         } catch {
             toast.error(`Failed to stop "${taskName}"`);
@@ -142,7 +141,6 @@
             {triggering}
             {restarting}
             {stoppingService}
-            {serviceStopped}
             onRun={handleRun}
             onStop={handleStop}
             onRestart={handleRestart}

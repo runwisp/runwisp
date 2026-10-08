@@ -6,7 +6,9 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 	"sync"
 	"time"
 
@@ -300,6 +302,14 @@ func (r *Reconciler) Warnings() []string {
 func (r *Reconciler) apply(diff config.Diff, oldTasks, newTasks map[string]*model.Task) []string {
 	for _, name := range diff.Removed {
 		r.applyRemoved(name)
+	}
+	if len(diff.Removed) > 0 {
+		// A removed task starts fresh if it comes back: forget its first-seen
+		// time, last run and pause, or the next boot's catch-up would report the
+		// whole time it was gone as missed. Its runs stay.
+		if err := r.db.ForgetTaskRegistrationsExcept(context.Background(), slices.Collect(maps.Keys(newTasks))); err != nil {
+			slog.Warn("Failed to forget registrations of removed tasks", "err", err)
+		}
 	}
 	for _, name := range diff.Added {
 		r.applyAdded(newTasks[name])

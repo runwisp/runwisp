@@ -177,12 +177,13 @@ func probeFirstRunCutover(f Flags, out io.Writer, writeConfig func(path string, 
 	// path defaults (/etc/runwisp/runwisp.toml, /var/lib/runwisp, resolvePathDefaults
 	// in root.go) are already exactly what a system install would pick.
 	c := newCutover(f, deps, installer, autostart.InstallOptions{
-		Binary:  binary,
-		Config:  f.CfgFile,
-		DataDir: f.DataDir,
-		Host:    f.Host,
-		Port:    f.Port,
-		System:  true,
+		Binary:      binary,
+		Config:      f.CfgFile,
+		DataDir:     f.DataDir,
+		Host:        f.Host,
+		Port:        f.Port,
+		System:      true,
+		StopTimeout: stopWaitTimeout(f.CfgFile),
 	}, cutover.Options{}, func(d *cutover.Deps) { d.WriteConfig = writeConfig })
 
 	// This re-scans the crontabs scanForCron just looked at. Cheap (a glob and a

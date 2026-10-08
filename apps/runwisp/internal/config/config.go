@@ -1084,11 +1084,13 @@ func validateConcurrencyLimits(task *model.Task) error {
 	if task.MaxConcurrent > MaxConcurrentCap {
 		return fmt.Errorf("invalid max_concurrent for task %s: %d exceeds the cap of %d", task.Name, task.MaxConcurrent, MaxConcurrentCap)
 	}
-	if task.MaxQueued < 0 {
-		return fmt.Errorf("invalid max_queued for task %s: must be a positive integer", task.Name)
-	}
-	if task.MaxQueued > MaxQueuedCap {
-		return fmt.Errorf("invalid max_queued for task %s: %d exceeds the cap of %d", task.Name, task.MaxQueued, MaxQueuedCap)
+	if task.MaxQueued != nil {
+		if *task.MaxQueued < 0 {
+			return fmt.Errorf("invalid max_queued for task %s: must be 0 or more", task.Name)
+		}
+		if *task.MaxQueued > MaxQueuedCap {
+			return fmt.Errorf("invalid max_queued for task %s: %d exceeds the cap of %d", task.Name, *task.MaxQueued, MaxQueuedCap)
+		}
 	}
 	return nil
 }
@@ -1361,7 +1363,6 @@ const (
 
 // Built-in defaults applied by ApplyDefaults when a field is omitted entirely.
 const (
-	DefaultMaxQueued      = 100
 	DefaultGracefulStop   = 5 * time.Second
 	DefaultRetryDelay     = 5 * time.Second
 	DefaultDaemonShutdown = 10 * time.Second
@@ -1545,9 +1546,6 @@ func applyTaskDefaults(task *model.Task) {
 	}
 	if task.OnOverlap == "" {
 		task.OnOverlap = model.PolicyQueue
-	}
-	if task.MaxQueued == 0 {
-		task.MaxQueued = DefaultMaxQueued
 	}
 }
 

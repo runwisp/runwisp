@@ -34,7 +34,7 @@ SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)));
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0));
 
 -- name: QueryRunsCreatedAtDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
@@ -52,7 +52,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
 ORDER BY created_at DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsCreatedAtAsc :many
@@ -71,7 +71,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
 ORDER BY created_at ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsStartAtDesc :many
@@ -90,7 +90,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
 ORDER BY COALESCE(started_at, created_at) DESC, created_at DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsStartAtAsc :many
@@ -109,7 +109,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
 ORDER BY COALESCE(started_at, created_at) ASC, created_at ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsTaskNameDesc :many
@@ -128,7 +128,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
 ORDER BY task_name DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsTaskNameAsc :many
@@ -147,7 +147,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
 ORDER BY task_name ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsStatusDesc :many
@@ -166,7 +166,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
 ORDER BY status DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsStatusAsc :many
@@ -185,7 +185,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
 ORDER BY status ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsExitCodeDesc :many
@@ -204,7 +204,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
 ORDER BY exit_code DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsExitCodeAsc :many
@@ -223,7 +223,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
 ORDER BY exit_code ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsDurationDesc :many
@@ -242,7 +242,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
 ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsDurationAsc :many
@@ -261,7 +261,7 @@ FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+  AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
 ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: GetRunSummary :one
@@ -294,10 +294,6 @@ WHERE status = 'running' AND ended_at IS NULL AND deleted_at IS NULL;
 -- name: GetPendingRuns :many
 SELECT * FROM runs WHERE status = 'pending' AND deleted_at IS NULL
 ORDER BY created_at ASC;
-
--- name: GetLastRunByTask :one
-SELECT * FROM runs WHERE task_name = ? AND deleted_at IS NULL
-ORDER BY created_at DESC LIMIT 1;
 
 -- name: DeleteRun :exec
 DELETE FROM runs WHERE id = ?;
