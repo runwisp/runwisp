@@ -130,10 +130,10 @@ func (l *launchdInstaller) planSteps(plan Plan) []Step {
 	}
 	uid := l.uid()
 	return []Step{
-		{Action: ActionWriteUnit, Description: "Write LaunchAgent plist\n       " + plan.UnitPath},
-		{Action: ActionLaunchctlBootout, Description: "Run:  launchctl bootout gui/" + uid + "/" + l.label() + " (best effort)"},
-		{Action: ActionLaunchctlBootstrap, Description: "Run:  launchctl bootstrap gui/" + uid + " " + plan.UnitPath},
-		{Action: ActionEnableService, Description: "Run:  launchctl enable gui/" + uid + "/" + l.label()},
+		{Description: "Write LaunchAgent plist\n       " + plan.UnitPath},
+		{Description: "Run:  launchctl bootout gui/" + uid + "/" + l.label() + " (best effort)"},
+		{Description: "Run:  launchctl bootstrap gui/" + uid + " " + plan.UnitPath},
+		{Description: "Run:  launchctl enable gui/" + uid + "/" + l.label()},
 	}
 }
 
@@ -195,8 +195,8 @@ func (l *launchdInstaller) computeUninstallPlan(_ context.Context, opts Uninstal
 	if plan.Kind == PlanUninstall {
 		uid := l.uid()
 		plan.Steps = []Step{
-			{Action: ActionLaunchctlBootout, Description: "Run:  launchctl bootout gui/" + uid + "/" + l.label()},
-			{Action: ActionRemoveUnit, Description: "Remove plist\n       " + plistPath},
+			{Description: "Run:  launchctl bootout gui/" + uid + "/" + l.label()},
+			{Description: "Remove plist\n       " + plistPath},
 		}
 	}
 	return plan, nil

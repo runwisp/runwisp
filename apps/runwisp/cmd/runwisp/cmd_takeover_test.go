@@ -34,7 +34,7 @@ func newTakeoverInstaller() *autostartfake.Installer {
 	return &autostartfake.Installer{
 		CronUnit: "cron.service", CronActive: true,
 		Plan: autostart.Plan{Kind: autostart.PlanInstall, Steps: []autostart.Step{
-			{Action: autostart.ActionWriteUnit, Description: "write /etc/systemd/system/runwisp.service"},
+			{Description: "write /etc/systemd/system/runwisp.service"},
 		}},
 	}
 }

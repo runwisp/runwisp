@@ -62,32 +62,10 @@ func (k PlanKind) String() string {
 	}
 }
 
-// Action enumerates the externally-visible side effects an installer
-// can take. The list is exhaustive so the confirmation banner is the
-// truth about what `Apply` will do — there are no hidden steps.
-type Action int
-
-const (
-	ActionWriteUnit Action = iota + 1
-	ActionRemoveUnit
-	ActionDaemonReload
-	ActionEnableLinger
-	ActionEnableService
-	ActionDisableService
-	ActionStopService
-	ActionPrintWSLPostscript
-	ActionLaunchctlBootstrap
-	ActionLaunchctlBootout
-	ActionStopCron
-	ActionMaskCron
-	ActionUnmaskCron
-)
-
 // Step is one entry in the confirmation banner. Description is
 // rendered verbatim; the "← needs sudo" suffix lives in Description
 // when relevant.
 type Step struct {
-	Action      Action
 	Description string
 }
 

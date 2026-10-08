@@ -222,40 +222,34 @@ func (s *systemdInstaller) planSteps(plan Plan, opts InstallOptions) []Step {
 	}
 	steps := []Step{
 		{
-			Action:      ActionWriteUnit,
 			Description: "Write unit file\n       " + plan.UnitPath,
 		},
 	}
 	if plan.CronFailsafe != "" {
 		steps = append(steps, Step{
-			Action: ActionWriteUnit,
 			Description: fmt.Sprintf("Write failsafe unit (starts %s again if RunWisp keeps failing)\n       %s",
 				plan.CronUnit, cronFailsafePath()),
 		})
 	}
 	steps = append(steps, Step{
-		Action:      ActionDaemonReload,
 		Description: s.daemonReloadCmd(opts.System),
 	})
 	if !opts.System && !plan.LingerOn {
 		steps = append(steps, Step{
-			Action:      ActionEnableLinger,
 			Description: fmt.Sprintf("Run:  loginctl enable-linger %s         ← needs sudo", s.deps.User),
 		})
 	}
 	if opts.TakeOverCron && plan.CronUnit != "" {
 		steps = append(steps,
-			Step{Action: ActionStopCron, Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "stop", plan.CronUnit)},
-			Step{Action: ActionMaskCron, Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "mask", plan.CronUnit)},
+			Step{Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "stop", plan.CronUnit)},
+			Step{Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "mask", plan.CronUnit)},
 		)
 	}
 	steps = append(steps, Step{
-		Action:      ActionEnableService,
 		Description: s.enableNowCmd(opts.System),
 	})
 	if s.deps.WSL {
 		steps = append(steps, Step{
-			Action:      ActionPrintWSLPostscript,
 			Description: "Print Windows Task Scheduler PowerShell snippet (Windows-side autostart)",
 		})
 	}
@@ -644,14 +638,14 @@ func (s *systemdInstaller) computeUninstallPlan(_ context.Context, opts Uninstal
 	if plan.Kind == PlanUninstall {
 		name := s.serviceName(opts.System)
 		plan.Steps = []Step{
-			{Action: ActionStopService, Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, "stop", name)},
-			{Action: ActionDisableService, Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, "disable", name)},
-			{Action: ActionRemoveUnit, Description: "Remove unit file\n       " + unitPath},
-			{Action: ActionDaemonReload, Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, systemctlDaemonReload)},
+			{Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, "stop", name)},
+			{Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, "disable", name)},
+			{Description: "Remove unit file\n       " + unitPath},
+			{Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, systemctlDaemonReload)},
 		}
 		if opts.System {
 			if _, err := s.deps.FS.Stat(cronFailsafePath()); err == nil {
-				plan.Steps = append(plan.Steps, Step{Action: ActionRemoveUnit, Description: "Remove failsafe unit\n       " + cronFailsafePath()})
+				plan.Steps = append(plan.Steps, Step{Description: "Remove failsafe unit\n       " + cronFailsafePath()})
 			}
 		}
 		// Only ever unmask a unit this instance can prove it masked —
@@ -665,7 +659,7 @@ func (s *systemdInstaller) computeUninstallPlan(_ context.Context, opts Uninstal
 			if prior != cronPriorInactive {
 				desc += " (and restart it)"
 			}
-			plan.Steps = append(plan.Steps, Step{Action: ActionUnmaskCron, Description: desc})
+			plan.Steps = append(plan.Steps, Step{Description: desc})
 		}
 	}
 	return plan, nil

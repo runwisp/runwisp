@@ -42,7 +42,7 @@ func TestRenderInstallBanner_PrintsStepsAndSettings(t *testing.T) {
 	var buf bytes.Buffer
 	plan := Plan{
 		Kind:     PlanInstall,
-		Steps:    []Step{{Action: ActionWriteUnit, Description: "Write unit file"}},
+		Steps:    []Step{{Description: "Write unit file"}},
 		Binary:   "/usr/local/bin/runwisp",
 		Config:   "/etc/runwisp.toml",
 		DataDir:  "/var/lib/runwisp",
@@ -66,7 +66,7 @@ func TestRenderInstallBanner_TakeOverNamesTheCronUnitNotTheCommand(t *testing.T)
 	var buf bytes.Buffer
 	plan := Plan{
 		Kind:     PlanInstall,
-		Steps:    []Step{{Action: ActionMaskCron, Description: "Run:  systemctl mask cron.service"}},
+		Steps:    []Step{{Description: "Run:  systemctl mask cron.service"}},
 		CronUnit: "cron.service",
 	}
 	renderInstallBanner(&buf, plan, InstallOptions{TakeOverCron: true})
