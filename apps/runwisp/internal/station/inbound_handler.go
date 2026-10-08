@@ -14,6 +14,7 @@ import (
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/runtime"
 )
 
 // InboundHandler processes inbound WebSocket messages, encapsulating
@@ -135,7 +136,13 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 	// TOML-defined tasks resolve InputValues against their declared params;
 	// buildDynamicStationTask declares an env-kind param per key for inline
 	// ad-hoc executions, so both paths resolve the same way here.
-	run, triggerErr := h.taskManager.TriggerStationRun(taskName, executionID, message.Execution.InputValues)
+	run, triggerErr := h.taskManager.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
+		TriggeredBy: model.TriggeredByStation,
+		ExecutionID: executionID,
+		// The protocol carries plain string values (no explicit-omit state), so
+		// every supplied key is a present value; absent keys use the default.
+		Params: model.PointerValues(message.Execution.InputValues),
+	})
 	if triggerErr != nil {
 		return h.handleTriggerError(ctx, executionID, run, triggerErr)
 	}

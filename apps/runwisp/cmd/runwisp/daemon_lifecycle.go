@@ -45,7 +45,7 @@ func startStationClient(
 	}
 
 	stationClient, clientErr := station.NewClient(cfg.StationConfig, station.Dependencies{
-		TaskManager:       &stationTaskRunner{stationRuntime: svc.TaskManager},
+		TaskManager:       svc.TaskManager,
 		RunRepo:           svc.DB,
 		PendingUploadRepo: svc.DB,
 		EventBus:          svc.EventBus,

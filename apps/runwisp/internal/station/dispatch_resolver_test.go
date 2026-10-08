@@ -12,6 +12,7 @@ import (
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,13 +20,13 @@ import (
 // --- fakeTaskRunner for dispatch resolver tests ---
 
 type fakeTaskRunner struct {
-	tasks      map[string]*model.Task
-	upserted   []*model.Task
-	removed    []string
-	trigErr    error
-	trigRun    *model.Run
-	trigParams map[string]string
-	triggered  []string
+	tasks     map[string]*model.Task
+	upserted  []*model.Task
+	removed   []string
+	trigErr   error
+	trigRun   *model.Run
+	trigOpts  runtime.TriggerRunOptions
+	triggered []string
 
 	startedServices   []string
 	stoppedServices   []string
@@ -80,9 +81,9 @@ func (f *fakeTaskRunner) MutateTask(name string, mutate func(*model.Task) error)
 	return true, nil
 }
 
-func (f *fakeTaskRunner) TriggerStationRun(taskName, externalID string, params map[string]string) (*model.Run, error) {
-	f.trigParams = params
-	f.triggered = append(f.triggered, externalID)
+func (f *fakeTaskRunner) TriggerRunWithOptions(_ string, opts runtime.TriggerRunOptions) (*model.Run, error) {
+	f.trigOpts = opts
+	f.triggered = append(f.triggered, opts.ExecutionID)
 	return f.trigRun, f.trigErr
 }
 

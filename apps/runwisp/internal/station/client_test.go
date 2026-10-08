@@ -77,7 +77,7 @@ func newTestEnv(t *testing.T, wsHandler wsHandlerFunc) *testEnv {
 	}
 
 	client, err := NewClient(cfg, Dependencies{
-		TaskManager:  &testTaskRunnerAdapter{inner: jm},
+		TaskManager:  jm,
 		RunRepo:      mockRepo,
 		EventBus:     bus,
 		LocalTasks:   nil,
@@ -720,7 +720,7 @@ func TestNewClient_MissingRunRepo(t *testing.T) {
 	defer jm.Shutdown()
 
 	_, err := NewClient(Config{Enabled: true}, Dependencies{
-		TaskManager: &testTaskRunnerAdapter{inner: jm},
+		TaskManager: jm,
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "run repository")
@@ -733,7 +733,7 @@ func TestNewClient_MissingEventBus(t *testing.T) {
 	defer jm.Shutdown()
 
 	_, err := NewClient(Config{Enabled: true}, Dependencies{
-		TaskManager: &testTaskRunnerAdapter{inner: jm},
+		TaskManager: jm,
 		RunRepo:     &testutil.MockRunRepository{},
 	})
 	require.Error(t, err)
@@ -753,7 +753,7 @@ func TestNewClient_SkipsNilLocalTask(t *testing.T) {
 		Enabled: true,
 		BaseURL: baseURL,
 	}, Dependencies{
-		TaskManager: &testTaskRunnerAdapter{inner: jm},
+		TaskManager: jm,
 		RunRepo:     &testutil.MockRunRepository{},
 		EventBus:    bus,
 		LocalTasks:  registry,
@@ -785,7 +785,7 @@ func TestSnapshotForSync_ReflectsLiveReload(t *testing.T) {
 		Enabled: true,
 		BaseURL: baseURL,
 	}, Dependencies{
-		TaskManager: &testTaskRunnerAdapter{inner: jm},
+		TaskManager: jm,
 		RunRepo:     &testutil.MockRunRepository{},
 		EventBus:    bus,
 		LocalTasks:  registry,
@@ -1265,64 +1265,4 @@ func snapshotNames(m map[string]*model.Task) []string {
 		names = append(names, name)
 	}
 	return names
-}
-
-// testTaskRunnerAdapter mirrors the cmd/runwisp stationTaskRunner adapter for
-// the station package's own tests, mapping station.TaskRunner.TriggerStationRun
-// onto runtime.TaskManager.TriggerRunWithOptions. Kept minimal — production
-// wiring lives in apps/runwisp/cmd/runwisp/station_adapters.go.
-type testTaskRunnerAdapter struct {
-	inner runtime.TaskManager
-}
-
-func (a *testTaskRunnerAdapter) GetTask(name string) (*model.Task, bool) {
-	return a.inner.GetTask(name)
-}
-
-func (a *testTaskRunnerAdapter) ListServiceTasks() []*model.Task {
-	return a.inner.ListServiceTasks()
-}
-
-func (a *testTaskRunnerAdapter) UpsertTask(task *model.Task) {
-	a.inner.UpsertTask(task)
-}
-
-func (a *testTaskRunnerAdapter) MutateTask(name string, mutate func(*model.Task) error) (bool, error) {
-	return a.inner.MutateTask(name, mutate)
-}
-
-func (a *testTaskRunnerAdapter) RemoveTask(taskName string) {
-	a.inner.RemoveTask(taskName)
-}
-
-func (a *testTaskRunnerAdapter) TriggerStationRun(taskName, executionID string, params map[string]string) (*model.Run, error) {
-	return a.inner.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
-		TriggeredBy: model.TriggeredByStation,
-		ExecutionID: executionID,
-		Params:      model.PointerValues(params),
-	})
-}
-
-func (a *testTaskRunnerAdapter) TerminateRunByExecutionID(executionID string) error {
-	return a.inner.TerminateRunByExecutionID(executionID)
-}
-
-func (a *testTaskRunnerAdapter) StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error {
-	return a.inner.StartServiceInstances(taskName, triggeredBy)
-}
-
-func (a *testTaskRunnerAdapter) StartService(taskName string) error {
-	return a.inner.StartService(taskName)
-}
-
-func (a *testTaskRunnerAdapter) StopService(taskName string) error {
-	return a.inner.StopService(taskName)
-}
-
-func (a *testTaskRunnerAdapter) RestartServiceInstances(taskName string) error {
-	return a.inner.RestartServiceInstances(taskName)
-}
-
-func (a *testTaskRunnerAdapter) ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool) {
-	return a.inner.ServiceSnapshot(taskName)
 }

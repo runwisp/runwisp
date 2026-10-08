@@ -104,7 +104,7 @@ func TestHandleExecutionDispatch_Success(t *testing.T) {
 // regression where inline (non-TOML) dispatches had their inputValues
 // silently dropped because they declared no params for ResolveParamValues to
 // resolve against. buildDynamicStationTask must synthesize an env-kind param
-// per supplied key so the values still reach TriggerStationRun.
+// per supplied key so the values still reach TriggerRunWithOptions.
 func TestHandleExecutionDispatch_AdHocInputValuesForwarded(t *testing.T) {
 	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
@@ -120,7 +120,10 @@ func TestHandleExecutionDispatch_AdHocInputValuesForwarded(t *testing.T) {
 		},
 	}, nil)
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"GREETING": "hi"}, runner.trigParams)
+	greeting := "hi"
+	assert.Equal(t, map[string]*string{"GREETING": &greeting}, runner.trigOpts.Params)
+	assert.Equal(t, model.TriggeredByStation, runner.trigOpts.TriggeredBy)
+	assert.Equal(t, "exec-adhoc", runner.trigOpts.ExecutionID)
 
 	require.Len(t, runner.upserted, 1)
 	require.Len(t, runner.upserted[0].Parameters, 1)
