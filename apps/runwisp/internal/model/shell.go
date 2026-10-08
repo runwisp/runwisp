@@ -5,6 +5,10 @@ package model
 
 import "path/filepath"
 
+// DefaultShell is the interpreter for `run` scripts when neither the task nor
+// [defaults] selects one.
+const DefaultShell = "/bin/sh"
+
 // posixShells are the interpreter basenames known to accept `-e` (errexit) as
 // an argv flag with POSIX semantics. The executor consults this set before
 // arming fail-fast, because `shell` is only validated as an absolute path — an

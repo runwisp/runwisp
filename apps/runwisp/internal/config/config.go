@@ -1364,11 +1364,6 @@ const (
 	// restarting it. Applied when neither the service nor [defaults] sets
 	// restart_attempts.
 	DefaultStartRetries = 3
-	// DefaultShell is the interpreter used for `run` scripts when neither the
-	// task nor [defaults] selects one. The invocation is
-	// `<shell> -e -c <script>` for a recognised POSIX shell (see
-	// model.ShellSupportsErrexit) and `<shell> -c <script>` otherwise.
-	DefaultShell = "/bin/sh"
 	// DefaultStopSignal is the first signal of the stop ladder when neither the
 	// task nor [defaults] selects one. The daemon always follows with SIGKILL
 	// after graceful_stop.
@@ -1434,7 +1429,7 @@ func applyInheritedDefaults(task *model.Task, d Defaults) {
 	if !task.Kind.IsService() && task.Jitter == nil && d.Jitter > 0 {
 		task.Jitter = new(d.Jitter)
 	}
-	task.Shell = cmp.Or(task.Shell, d.Shell, DefaultShell)
+	task.Shell = cmp.Or(task.Shell, d.Shell, model.DefaultShell)
 	applyInheritedStopSignal(task, d)
 	task.LogMaxSize = cmp.Or(task.LogMaxSize, d.LogMaxSize, defaultTaskLogMaxSize)
 	task.LogOnFull = cmp.Or(task.LogOnFull, d.LogOnFull, model.LogOverflowDropOld)

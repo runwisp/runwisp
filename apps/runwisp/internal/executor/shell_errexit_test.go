@@ -14,7 +14,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -119,10 +118,4 @@ func TestShellBackend_NonPosixShellRunsWithoutErrexitFlag(t *testing.T) {
 
 	assert.Equal(t, 0, exit)
 	assert.Equal(t, "argv: -c print(1)\n", out, "an unrecognised interpreter must not be handed -e")
-}
-
-// TestShellArgs_DefaultShellMatchesConfig pins the duplicated default. The
-// executor cannot import config, so this is what keeps the two in step.
-func TestShellArgs_DefaultShellMatchesConfig(t *testing.T) {
-	assert.Equal(t, config.DefaultShell, defaultShell)
 }

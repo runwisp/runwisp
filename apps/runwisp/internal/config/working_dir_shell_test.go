@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -58,7 +59,7 @@ run = "echo hi"
 `)
 	cfg, err := Load(cfgPath)
 	require.NoError(t, err)
-	assert.Equal(t, DefaultShell, findTask(t, cfg, "job").Shell)
+	assert.Equal(t, model.DefaultShell, findTask(t, cfg, "job").Shell)
 }
 
 func TestShell_DefaultsInheritedAndOverridden(t *testing.T) {
