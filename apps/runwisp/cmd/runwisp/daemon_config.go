@@ -62,10 +62,6 @@ func loadDaemonConfig(ctx context.Context, configRepo *storage.SQLiteDatabase, m
 		return nil, err
 	}
 
-	if err := config.Validate(cfg); err != nil {
-		return nil, err
-	}
-
 	noAuth, err := resolveAuthMode()
 	if err != nil {
 		return nil, err

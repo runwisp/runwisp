@@ -81,7 +81,7 @@ func SnapshotCatchupAnchors(ctx context.Context, db storage.RunRepository, tasks
 // task's own timezone overrides it, exactly as the live scheduler resolves it.
 // snapshotErrors seeds the result so registration/lookup failures from the
 // snapshot phase are still reflected in the total.
-func RunMissedTickCatchUp(tasks map[string]*model.Task, runner TaskRunner, now time.Time, defaultLoc *time.Location, anchors map[string]time.Time, snapshotErrors int) CatchUpResult {
+func RunMissedTickCatchUp(tasks map[string]*model.Task, runner RunTrigger, now time.Time, defaultLoc *time.Location, anchors map[string]time.Time, snapshotErrors int) CatchUpResult {
 	result := CatchUpResult{Errors: snapshotErrors}
 	parser := cronspec.NewScheduleParser()
 
@@ -117,7 +117,7 @@ func catchupSchedule(parser cron.ScheduleParser, task *model.Task, defaultLoc *t
 // catchupOneTask processes a single task's catch-up logic and returns the
 // number of runs triggered and errors encountered. anchor is the task's
 // catch-up anchor, resolved earlier by SnapshotCatchupAnchors.
-func catchupOneTask(parser cron.ScheduleParser, task *model.Task, runner TaskRunner, now time.Time, defaultLoc *time.Location, anchor time.Time) (triggered, errors int) {
+func catchupOneTask(parser cron.ScheduleParser, task *model.Task, runner RunTrigger, now time.Time, defaultLoc *time.Location, anchor time.Time) (triggered, errors int) {
 	schedule, loc, err := catchupSchedule(parser, task, defaultLoc)
 	if err != nil {
 		slog.Warn("Failed to parse schedule for catch-up", "task", task.Name, "err", err)

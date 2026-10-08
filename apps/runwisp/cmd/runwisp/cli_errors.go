@@ -17,6 +17,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
 // handleCLIError is the fang error handler, and it owns *every* CLI error path
@@ -102,9 +103,7 @@ func isUserFacing(err error) (*userFacingError, bool) {
 // fang's badge aesthetic — bold, dark text on the brand red) followed by the
 // title, then the optional bulleted details, then an optional dim hint line.
 // It is the single renderer behind every CLI error path (cobra/generic,
-// userFacingError, and cmd_password). The badge colors come from the same
-// shared brand hex constants as the rest of the CLI. w is wrapped in a
-// colorprofile writer rather than styled against lipgloss's package-level
+// userFacingError, and cmd_password). w is wrapped in a colorprofile writer rather than styled against lipgloss's package-level
 // profile (which derives from os.Stdout): errors go to stderr, and styling
 // them by what os.Stdout happens to be writes escape sequences into a
 // redirected error log.
@@ -112,15 +111,15 @@ func renderError(w io.Writer, title, details, hint string) {
 	cw := colorprofile.NewWriter(w, os.Environ())
 	badge := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color(brandErrorFgHex)).
-		Background(lipgloss.Color(brandErrorHex)).
+		Foreground(uikit.ColorBg).
+		Background(uikit.ColorError).
 		Padding(0, 1).
 		Render("ERROR")
 	fmt.Fprintln(cw, badge+" "+title)
 
 	if details != "" {
 		fmt.Fprintln(cw)
-		bullet := lipgloss.NewStyle().Foreground(lipgloss.Color(brandErrorHex)).Render("•")
+		bullet := lipgloss.NewStyle().Foreground(uikit.ColorError).Render("•")
 		for _, line := range strings.Split(strings.TrimRight(details, "\n"), "\n") {
 			if strings.HasPrefix(line, "  - ") {
 				fmt.Fprintln(cw, "  "+bullet+" "+strings.TrimPrefix(line, "  - "))

@@ -3,8 +3,9 @@
 
 <script lang="ts">
     import { Activity, ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "@lucide/svelte";
-    import ComposeBadge from "../ComposeBadge.svelte";
-    import TaskSourceBadge from "../TaskSourceBadge.svelte";
+    import type { Component } from "svelte";
+    import RunStatusBadge from "./RunStatusBadge.svelte";
+    import TaskBadges from "./TaskBadges.svelte";
     import {
         RUN_STATUS_CONFIG,
         TaskCard,
@@ -25,32 +26,24 @@
     } from "./overview-format.js";
 
     let {
-        attentionTasks = [],
-        runningNow = [],
-        upcomingTasks = [],
-        showUpcoming = true,
-        now = new Date(),
+        attentionTasks,
+        runningNow,
+        upcomingTasks,
+        showUpcoming,
+        now,
         onTaskClick,
         onRunClick,
-        getInstanceCount = () => 1,
+        getInstanceCount,
     }: {
-        attentionTasks?: TaskOverview[];
-        runningNow?: Run[];
-        upcomingTasks?: TaskOverview[];
-        showUpcoming?: boolean;
-        now?: Date;
-        onTaskClick?: (taskName: string) => void;
-        onRunClick?: (taskName: string, runId: string) => void;
-        getInstanceCount?: (taskName: string) => number;
+        attentionTasks: TaskOverview[];
+        runningNow: Run[];
+        upcomingTasks: TaskOverview[];
+        showUpcoming: boolean;
+        now: Date;
+        onTaskClick: (taskName: string) => void;
+        onRunClick: (taskName: string, runId: string) => void;
+        getInstanceCount: (taskName: string) => number;
     } = $props();
-
-    function viewTask(taskName: string): void {
-        onTaskClick?.(taskName);
-    }
-
-    function viewRun(run: Run): void {
-        onRunClick?.(run.taskName, run.id);
-    }
 
     // Cap the "Up next" list so a long schedule can't run the column off the
     // page; the badge still counts them all and a footer names the remainder.
@@ -59,6 +52,28 @@
     let upcomingOverflow = $derived(Math.max(0, upcomingTasks.length - UPCOMING_LIMIT));
 </script>
 
+{#snippet cardHeader(
+    title: string,
+    count: number,
+    variant: "danger" | "success" | "primary" | "default" | "info",
+)}
+    <div class="flex items-center justify-between gap-3">
+        <Heading level={3} size="sm">{title}</Heading>
+        <Badge {variant}>{count}</Badge>
+    </div>
+{/snippet}
+
+{#snippet emptyNote(Icon: Component, text: string, good: boolean)}
+    <div
+        class="mt-4 flex items-center gap-2 rounded-[3px] px-3 py-2.5 {good
+            ? 'bg-success-soft text-success-soft-text'
+            : 'bg-surface-sunken text-on-surface-muted'}"
+    >
+        <Icon size={14} />
+        <span class="text-sm">{text}</span>
+    </div>
+{/snippet}
+
 <!-- flex-1 lets the panels fill the left column's leftover height; the md:grid-rows-1
      1fr track then stretches each card to the full height so their ends line up
      with the taller Recent activity rail beside them. -->
@@ -66,24 +81,20 @@
     class={["grid flex-1 gap-4 md:grid-rows-1", showUpcoming ? "md:grid-cols-3" : "md:grid-cols-2"]}
 >
     <Card>
-        <div class="flex items-center justify-between gap-3">
-            <Heading level={3} size="sm">Needs attention</Heading>
-            <Badge variant={attentionTasks.length > 0 ? "danger" : "success"}>
-                {attentionTasks.length}
-            </Badge>
-        </div>
+        {@render cardHeader(
+            "Needs attention",
+            attentionTasks.length,
+            attentionTasks.length > 0 ? "danger" : "success",
+        )}
 
         {#if attentionTasks.length === 0}
-            <div class="mt-4 flex items-center gap-2 rounded-[3px] bg-success-soft px-3 py-2.5">
-                <ShieldCheck size={14} class="text-success-soft-text" />
-                <span class="text-sm text-success-soft-text">Nothing waiting for triage</span>
-            </div>
+            {@render emptyNote(ShieldCheck, "Nothing waiting for triage", true)}
         {:else}
             <div class="mt-4 space-y-2">
                 {#each attentionTasks as task (task.task.name)}
                     {@const statusConfig = task.lastStatus && RUN_STATUS_CONFIG[task.lastStatus]}
 
-                    <TaskCard accent="danger" onclick={() => viewTask(task.task.name)}>
+                    <TaskCard accent="danger" onclick={() => onTaskClick(task.task.name)}>
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0 flex-1">
                                 <div class="flex flex-wrap items-center gap-1.5">
@@ -93,11 +104,9 @@
                                         {task.task.name}
                                     </span>
                                     {#if statusConfig}
-                                        <span
-                                            class="rounded-[3px] px-1.5 py-0.5 font-mono text-2xs font-semibold uppercase {statusConfig.badge}"
-                                        >
+                                        <RunStatusBadge tone={statusConfig.badge} class="uppercase">
                                             {humanizeStatus(task.lastStatus ?? "")}
-                                        </span>
+                                        </RunStatusBadge>
                                     {/if}
                                 </div>
                                 <p class="mt-1 text-xs text-on-surface-muted">
@@ -113,7 +122,7 @@
                             <span>Next {formatTaskNextRunLabel(task, now)}</span>
                             {#if task.lastRun?.isFailure}
                                 <span class="font-mono text-danger-soft-text tabular-nums">
-                                    Exit {task.lastRun?.exitCode}
+                                    Exit {task.lastRun.exitCode}
                                 </span>
                             {/if}
                         </div>
@@ -124,18 +133,14 @@
     </Card>
 
     <Card>
-        <div class="flex items-center justify-between gap-3">
-            <Heading level={3} size="sm">Running now</Heading>
-            <Badge variant={runningNow.length > 0 ? "primary" : "default"}>
-                {runningNow.length}
-            </Badge>
-        </div>
+        {@render cardHeader(
+            "Running now",
+            runningNow.length,
+            runningNow.length > 0 ? "primary" : "default",
+        )}
 
         {#if runningNow.length === 0}
-            <div class="mt-4 flex items-center gap-2 rounded-[3px] bg-surface-sunken px-3 py-2.5">
-                <Activity size={14} class="text-on-surface-muted" />
-                <span class="text-sm text-on-surface-muted">Nothing is running</span>
-            </div>
+            {@render emptyNote(Activity, "Nothing is running", false)}
         {:else}
             <div class="mt-4 space-y-2">
                 {#each runningNow as run (run.id)}
@@ -143,7 +148,7 @@
                         run.instanceIndex,
                         getInstanceCount(run.taskName),
                     )}
-                    <TaskCard accent="wisp" onclick={() => viewRun(run)}>
+                    <TaskCard accent="wisp" onclick={() => onRunClick(run.taskName, run.id)}>
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0 flex-1">
                                 <div class="flex items-center gap-2">
@@ -177,22 +182,14 @@
 
     {#if showUpcoming}
         <Card>
-            <div class="flex items-center justify-between gap-3">
-                <Heading level={3} size="sm">Up next</Heading>
-                <Badge variant="info">{upcomingTasks.length}</Badge>
-            </div>
+            {@render cardHeader("Up next", upcomingTasks.length, "info")}
 
             {#if upcomingTasks.length === 0}
-                <div
-                    class="mt-4 flex items-center gap-2 rounded-[3px] bg-surface-sunken px-3 py-2.5"
-                >
-                    <Clock3 size={14} class="text-on-surface-muted" />
-                    <span class="text-sm text-on-surface-muted">No scheduled runs queued</span>
-                </div>
+                {@render emptyNote(Clock3, "No scheduled runs queued", false)}
             {:else}
                 <div class="mt-4 space-y-2">
                     {#each visibleUpcoming as task (task.task.name)}
-                        <TaskCard accent="aurora" onclick={() => viewTask(task.task.name)}>
+                        <TaskCard accent="aurora" onclick={() => onTaskClick(task.task.name)}>
                             <div class="flex items-start justify-between gap-2">
                                 <div class="@container min-w-0 flex-1">
                                     <div class="flex flex-wrap items-center gap-1.5">
@@ -201,25 +198,7 @@
                                         >
                                             {task.task.name}
                                         </span>
-                                        {#if task.task.group}
-                                            <Badge variant="default" size="sm"
-                                                >{task.task.group}</Badge
-                                            >
-                                        {/if}
-                                        {#if task.task.compose}
-                                            <ComposeBadge
-                                                file={task.task.compose.file}
-                                                service={task.task.compose.service}
-                                                projectName={task.task.compose.projectName}
-                                            />
-                                        {/if}
-                                        {#if task.task.source}
-                                            <TaskSourceBadge
-                                                name={task.task.name}
-                                                source={task.task.source}
-                                                sourceFile={task.task.sourceFile}
-                                            />
-                                        {/if}
+                                        <TaskBadges task={task.task} />
                                     </div>
                                     <!-- Time + cron share one line to keep the card short, but the
                                          column gets tight on smaller screens: drop the cron (never

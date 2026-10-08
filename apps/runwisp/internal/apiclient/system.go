@@ -80,7 +80,7 @@ func (c *Client) StreamDaemonLogs(ctx context.Context) (<-chan string, error) {
 		return nil, err
 	}
 
-	events := make(chan SSEEvent, 64)
+	events := make(chan RunStreamEvent, 64)
 	go simpleSSELoop(ctx, resp.Body, events)
 
 	ch := make(chan string, 64)

@@ -15,127 +15,18 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
 )
 
-func TestResolve_Slack(t *testing.T) {
-	cfg := config.NotifyConfig{
-		Notifiers: []config.NotifierSpec{{
-			ID:         "ops",
-			Type:       "slack",
-			WebhookURL: "https://hooks.slack.test/T/B/Z",
-		}},
-	}
-	got := Resolve(cfg, render.TemplateContext{})
-	require.Len(t, got.Notifiers, 1)
-	assert.Equal(t, "https://hooks.slack.test/T/B/Z", got.Notifiers[0].WebhookURL)
-}
-
-func TestResolve_Discord(t *testing.T) {
-	cfg := config.NotifyConfig{
-		Notifiers: []config.NotifierSpec{{
-			ID:         "discord-ops",
-			Type:       "discord",
-			WebhookURL: "https://discord.com/api/webhooks/123/token",
-		}},
-	}
-	got := Resolve(cfg, render.TemplateContext{})
-	require.Len(t, got.Notifiers, 1)
-	assert.Equal(t, "https://discord.com/api/webhooks/123/token", got.Notifiers[0].WebhookURL)
-}
-
-func TestResolve_PushProviders(t *testing.T) {
+func TestResolve_NotifiersCarryConfigAndRenderContext(t *testing.T) {
 	cfg := config.NotifyConfig{
 		Notifiers: []config.NotifierSpec{
-			{ID: "phone", Type: "ntfy", URL: "https://ntfy.example.com", Topic: "alerts", Token: "tk"},
-			{ID: "gotify", Type: "gotify", URL: "https://gotify.example.com", Token: "app"},
-			{ID: "po", Type: "pushover", Token: "app", User: "user"},
+			{ID: "ops", Type: "slack", WebhookURL: "https://hooks.slack.test/T/B/Z"},
+			{ID: "hook", Type: "webhook", URL: "https://example.com/hook", Headers: map[string]string{"X": "y"}},
 		},
 	}
-	got := Resolve(cfg, render.TemplateContext{})
-	require.Len(t, got.Notifiers, 3)
-	n, g, p := got.Notifiers[0], got.Notifiers[1], got.Notifiers[2]
-	assert.Equal(t, []string{"https://ntfy.example.com", "alerts", "tk"}, []string{n.URL, n.Topic, n.Token})
-	assert.Equal(t, []string{"https://gotify.example.com", "app"}, []string{g.URL, g.Token})
-	assert.Equal(t, []string{"app", "user"}, []string{p.Token, p.User})
-}
-
-func TestResolve_Telegram(t *testing.T) {
-	cfg := config.NotifyConfig{
-		Notifiers: []config.NotifierSpec{{
-			ID:       "tg",
-			Type:     "telegram",
-			BotToken: "123456:token",
-			ChatID:   "-100123",
-		}},
-	}
-	got := Resolve(cfg, render.TemplateContext{})
-	require.Len(t, got.Notifiers, 1)
-	assert.Equal(t, "123456:token", got.Notifiers[0].BotToken)
-	assert.Equal(t, "-100123", got.Notifiers[0].ChatID)
-}
-
-func TestResolve_SMTP_Password(t *testing.T) {
-	cfg := config.NotifyConfig{
-		Notifiers: []config.NotifierSpec{{
-			ID:         "email-ops",
-			Type:       "smtp",
-			Host:       "smtp.example.com",
-			Port:       587,
-			Username:   "apikey",
-			Password:   "inline-secret",
-			From:       "runwisp@example.com",
-			Recipients: []string{"ops@example.com"},
-		}},
-	}
-	got := Resolve(cfg, render.TemplateContext{})
-	require.Len(t, got.Notifiers, 1)
-	n := got.Notifiers[0]
-	assert.Equal(t, "inline-secret", n.Password)
-	assert.Equal(t, "smtp.example.com", n.Host)
-	assert.Equal(t, []string{"ops@example.com"}, n.Recipients)
-}
-
-func TestResolve_SMTP_AuthlessRelay(t *testing.T) {
-	cfg := config.NotifyConfig{
-		Notifiers: []config.NotifierSpec{{
-			ID:         "email-local",
-			Type:       "smtp",
-			Host:       "127.0.0.1",
-			Port:       25,
-			From:       "runwisp@example.com",
-			Recipients: []string{"ops@example.com"},
-		}},
-	}
-	got := Resolve(cfg, render.TemplateContext{})
-	require.Len(t, got.Notifiers, 1)
-	assert.Empty(t, got.Notifiers[0].Password, "auth-less relay must resolve with empty password")
-	assert.Equal(t, "127.0.0.1", got.Notifiers[0].Host)
-}
-
-func TestResolve_Webhook(t *testing.T) {
-	cfg := config.NotifyConfig{
-		Notifiers: []config.NotifierSpec{{
-			ID:      "my-hook",
-			Type:    "webhook",
-			URL:     "https://example.com/hook",
-			Headers: map[string]string{"Authorization": "Bearer tok"},
-		}},
-	}
-	got := Resolve(cfg, render.TemplateContext{})
-	require.Len(t, got.Notifiers, 1)
-	assert.Equal(t, "https://example.com/hook", got.Notifiers[0].URL)
-	assert.Equal(t, "Bearer tok", got.Notifiers[0].Headers["Authorization"])
-}
-
-func TestResolve_WebhookNoHeaders(t *testing.T) {
-	cfg := config.NotifyConfig{
-		Notifiers: []config.NotifierSpec{{
-			ID:   "my-hook",
-			Type: "webhook",
-			URL:  "https://example.com/hook",
-		}},
-	}
-	got := Resolve(cfg, render.TemplateContext{})
-	require.Len(t, got.Notifiers, 1)
-	assert.Nil(t, got.Notifiers[0].Headers)
+	got := Resolve(cfg, render.TemplateContext{ExternalURL: "https://rw.test"})
+	require.Len(t, got.Notifiers, 2)
+	assert.Equal(t, cfg.Notifiers[0], got.Notifiers[0].NotifierSpec)
+	assert.Equal(t, cfg.Notifiers[1], got.Notifiers[1].NotifierSpec)
+	assert.Equal(t, "https://rw.test", got.Notifiers[0].RenderContext.ExternalURL)
 }
 
 func TestResolve_CompiledRulePredicates(t *testing.T) {

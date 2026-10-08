@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
     runDuration,
     runStartDelay,
-    runVerdict,
+    RUN_VERDICTS,
+    runEndMarker,
+    runRowReadout,
+    highlightParts,
     formatTriggeredByLabel,
     runRetryLabel,
     runUsageLabel,
@@ -21,20 +24,32 @@ describe("runLogDownloadUrl", () => {
     });
 });
 
-describe("runVerdict", () => {
+describe("runEndMarker", () => {
+    it("warns only for ends the operator or daemon caused", () => {
+        expect(runEndMarker("stopped")).toEqual({
+            label: "run stopped by operator",
+            tone: "warn",
+        });
+        expect(runEndMarker("daemon_stopped").tone).toBe("warn");
+        expect(runEndMarker("timeout").label).toBe("run timed out");
+        expect(runEndMarker("failed")).toEqual({ label: "end of output", tone: "muted" });
+    });
+});
+
+describe("RUN_VERDICTS", () => {
     it("phrases a timed outcome so a duration reads after it", () => {
-        expect(runVerdict("succeeded")).toEqual({ verb: "succeeded in", timed: true });
-        expect(runVerdict("failed")).toEqual({ verb: "failed after", timed: true });
+        expect(RUN_VERDICTS.succeeded).toEqual({ verb: "succeeded in", timed: true });
+        expect(RUN_VERDICTS.failed).toEqual({ verb: "failed after", timed: true });
     });
 
     it("marks statuses that never produced a duration as untimed", () => {
         // These end without ever running, so the caller renders the verb alone
         // rather than "skipped after —".
-        expect(runVerdict("missed").timed).toBe(false);
-        expect(runVerdict("skipped").timed).toBe(false);
-        expect(runVerdict("dst_skipped").timed).toBe(false);
-        expect(runVerdict("queue_full").timed).toBe(false);
-        expect(runVerdict("pending").timed).toBe(false);
+        expect(RUN_VERDICTS.missed.timed).toBe(false);
+        expect(RUN_VERDICTS.skipped.timed).toBe(false);
+        expect(RUN_VERDICTS.dst_skipped.timed).toBe(false);
+        expect(RUN_VERDICTS.queue_full.timed).toBe(false);
+        expect(RUN_VERDICTS.pending.timed).toBe(false);
     });
 });
 
@@ -165,5 +180,43 @@ describe("instanceSuffix", () => {
     it("maps the stored 0-based slot to a 1-based suffix", () => {
         expect(instanceSuffix(1, 3)).toBe("#2");
         expect(instanceSuffix(2, 3)).toBe("#3");
+    });
+});
+
+describe("runRowReadout", () => {
+    const ended = { startedAt: "2026-01-01T00:00:00Z", endedAt: "2026-01-01T00:00:02Z" };
+
+    it("shows live, queued and the exit code of a failure", () => {
+        expect(runRowReadout({ ...ended, status: "running", exitCode: 0 }, "running")).toBe("live");
+        expect(runRowReadout({ ...ended, status: "pending", exitCode: 0 }, "pending")).toBe(
+            "queued",
+        );
+        expect(runRowReadout({ ...ended, status: "ended", exitCode: 3 }, "failed")).toBe("exit 3");
+    });
+
+    it("falls back to the duration, or a dash when it never started", () => {
+        expect(runRowReadout({ ...ended, status: "ended", exitCode: 0 }, "succeeded")).toBe("2s");
+        expect(runRowReadout({ status: "ended", exitCode: 0 }, "missed")).toBe("—");
+    });
+});
+
+describe("highlightParts", () => {
+    it("returns the whole line when nothing matches", () => {
+        expect(highlightParts("hello", "zzz")).toEqual({ before: "hello", match: "", after: "" });
+        expect(highlightParts("hello", "  ")).toEqual({ before: "hello", match: "", after: "" });
+    });
+
+    it("splits around a case-insensitive match", () => {
+        expect(highlightParts("an ERROR here", "error")).toEqual({
+            before: "an ",
+            match: "ERROR",
+            after: " here",
+        });
+    });
+
+    it("windows a long lead-in with an ellipsis", () => {
+        const parts = highlightParts("x".repeat(40) + "needle", "needle");
+        expect(parts.before).toBe("…" + "x".repeat(14));
+        expect(parts.match).toBe("needle");
     });
 });

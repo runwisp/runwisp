@@ -40,8 +40,10 @@ type Deps struct {
 	// cobra's Flag().Changed to tell an explicit --data from a default.
 	Opts autostart.InstallOptions
 
-	GOOS     string
-	Euid     int
+	GOOS string
+	Euid int
+	// Username is the account running the process, for the unprivileged
+	// default cron patterns. "" offers no per-user spool pattern.
 	Username string
 
 	// Scan reports the crontabs on this machine with no config involved — the
@@ -60,10 +62,10 @@ type Deps struct {
 	WireCron func(path string, patterns []string) error
 
 	// Preflight is the port / data-dir conflict check. It needs a real socket,
-	// so it is a seam. stale reports that our own service holds the port and the
+	// so it is a seam. Required. stale reports that our own service holds the port and the
 	// settings baked into its unit are about to change.
 	Preflight func(ctx context.Context) (stale bool, err error)
-	// DaemonRunning reports whether a RunWisp daemon is up. Sampled once, by
+	// DaemonRunning (required) reports whether a RunWisp daemon is up. Sampled once, by
 	// Compute, before anything is installed: `systemctl enable --now` leaves a
 	// daemon behind, so a check made afterwards would find the one systemd just
 	// started and reload into a socket that is not accepting connections yet.
@@ -100,9 +102,6 @@ func New(deps Deps) *Cutover {
 	}
 	if deps.WireCron == nil {
 		deps.WireCron = configedit.WireCronInclude
-	}
-	if deps.Username == "" {
-		deps.Username = CurrentUsername()
 	}
 	return &Cutover{deps: deps}
 }

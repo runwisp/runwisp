@@ -78,7 +78,7 @@ func (u *LogUploader) AllowInsecure() {
 // empty uploadURL means "skip archival for this dispatch" — we drop the
 // entry on the floor and return without error.
 func (u *LogUploader) RegisterDispatch(ctx context.Context, executionID, uploadURL, logPath string) error {
-	if u == nil || executionID == "" {
+	if executionID == "" {
 		return nil
 	}
 	if uploadURL == "" {
@@ -107,7 +107,7 @@ func (u *LogUploader) RegisterDispatch(ctx context.Context, executionID, uploadU
 // the dispatch came with an empty logUploadURL). On success, the local log
 // file and the persistence row are both removed.
 func (u *LogUploader) Archive(ctx context.Context, executionID, logFilePath string) (*LogUploaderResult, error) {
-	if u == nil || executionID == "" {
+	if executionID == "" {
 		return nil, nil
 	}
 	entry, ok := u.lookup(executionID)
@@ -146,7 +146,7 @@ func (u *LogUploader) Archive(ctx context.Context, executionID, logFilePath stri
 // Successful uploads emit the terminal update through emit so the station
 // learns the logPath/logSize it would have received originally.
 func (u *LogUploader) RecoverOrphans(ctx context.Context, emit func(executionID string, result LogUploaderResult)) {
-	if u == nil || u.repo == nil {
+	if u.repo == nil {
 		return
 	}
 	recs, err := u.repo.ListPendingLogUploads(ctx)
@@ -166,7 +166,7 @@ func (u *LogUploader) RecoverOrphans(ctx context.Context, emit func(executionID 
 func (u *LogUploader) recoverOrphanRecord(ctx context.Context, rec model.PendingLogUpload, emit func(executionID string, result LogUploaderResult)) {
 	run, runErr := u.runRepo.GetRunByExecutionID(ctx, rec.ExecutionID)
 	if runErr != nil {
-		if errors.Is(runErr, ErrNotFound) {
+		if errors.Is(runErr, storage.ErrNotFound) {
 			slog.Info("dropping orphan log upload row: run not found", "executionId", rec.ExecutionID)
 			u.forget(ctx, rec.ExecutionID)
 			return

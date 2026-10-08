@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostartfake"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostarttest"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -180,7 +182,7 @@ func TestCompute_DarwinRefusesUpFrontWithTheManualRoute(t *testing.T) {
 	assert.Contains(t, b.Details, "crontab -r")
 	assert.Contains(t, b.Details, "SIP-protected")
 	assert.NotContains(t, b.Details, "--local")
-	assert.Empty(t, inst.calls, "no init-system call should happen on an unsupported host")
+	assert.Empty(t, inst.Calls, "no init-system call should happen on an unsupported host")
 }
 
 // TestCompute_NoCronUnitIsNotABlocker covers a Docker/sysvinit/openrc box.
@@ -295,16 +297,17 @@ func TestCompute_UntrustedConfigIsABlockerSoDryRunCanReportIt(t *testing.T) {
 	require.NoError(t, os.MkdirAll(cronDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(cronDir, "backup"), []byte(oneJob), 0o644))
 
-	inst := &fakeInstaller{cronUnit: "cron.service", cronActive: true, plan: autostart.Plan{Kind: autostart.PlanInstall}}
+	inst := &autostartfake.Installer{CronUnit: "cron.service", CronActive: true, Plan: autostart.Plan{Kind: autostart.PlanInstall}}
 	c := New(Deps{
 		Installer: inst,
-		Prompter:  &autostart.ScriptedPrompter{},
+		Prompter:  &autostarttest.ScriptedPrompter{},
 		Opts:      autostart.InstallOptions{Config: cfgPath, System: true, Port: 9477},
 		GOOS:      "linux",
 		Scan: func(_ []string, p string) config.CronScan {
 			return config.ScanCronSources([]string{filepath.Join(cronDir, "*")}, p)
 		},
 		Trusted:       func(string) error { return assert.AnError },
+		Preflight:     func(context.Context) (bool, error) { return false, nil },
 		DaemonRunning: func() bool { return false },
 	})
 

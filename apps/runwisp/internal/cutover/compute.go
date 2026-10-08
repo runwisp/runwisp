@@ -72,7 +72,7 @@ func (c *Cutover) gatherEvidence(ctx context.Context) (Evidence, error) {
 	if err := c.probeUnits(ctx, &ev); err != nil {
 		return Evidence{}, err
 	}
-	ev.DaemonRunning = c.deps.DaemonRunning != nil && c.deps.DaemonRunning()
+	ev.DaemonRunning = c.deps.DaemonRunning()
 	return ev, nil
 }
 

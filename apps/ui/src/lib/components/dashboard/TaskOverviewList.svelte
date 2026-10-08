@@ -3,9 +3,8 @@
 
 <script lang="ts">
     import { ArrowRight, Box, Search } from "@lucide/svelte";
-    import ComposeBadge from "../ComposeBadge.svelte";
-    import TaskHeldBadge from "../TaskHeldBadge.svelte";
-    import TaskSourceBadge from "../TaskSourceBadge.svelte";
+    import RunStatusBadge from "./RunStatusBadge.svelte";
+    import TaskBadges from "./TaskBadges.svelte";
     import TaskUsage from "../TaskUsage.svelte";
     import {
         RUN_STATUS_CONFIG,
@@ -119,12 +118,8 @@
         sortOptions: SortOption[];
         now: Date;
         schedulingActive: boolean;
-        onTaskClick?: (taskName: string) => void;
+        onTaskClick: (taskName: string) => void;
     } = $props();
-
-    function getTaskStateConfig(state: OverviewTaskState): TaskStateConfig {
-        return TASK_STATE_CONFIG[state];
-    }
 </script>
 
 <div class="space-y-4">
@@ -219,7 +214,7 @@
     {:else}
         <div class="space-y-2">
             {#each filteredTasks as task (task.task.name)}
-                {@const taskState = getTaskStateConfig(task.state)}
+                {@const taskState = TASK_STATE_CONFIG[task.state]}
                 {@const lastStatusConfig = task.lastStatus
                     ? RUN_STATUS_CONFIG[task.lastStatus]
                     : undefined}
@@ -227,7 +222,7 @@
 
                 <button
                     class="group w-full rounded-[4px] border border-l-4 border-outline bg-surface-raised px-4 py-3 text-left hover:border-outline-hover hover:shadow-sm {taskState.accentClass}"
-                    onclick={() => onTaskClick?.(task.task.name)}
+                    onclick={() => onTaskClick(task.task.name)}
                 >
                     <div class="flex items-center gap-4">
                         <div class="min-w-0 flex-1">
@@ -244,26 +239,7 @@
                                     {task.task.name}
                                 </span>
                                 <Badge variant={taskState.badge} size="sm">{taskState.label}</Badge>
-                                {#if task.task.group}
-                                    <Badge variant="default" size="sm">{task.task.group}</Badge>
-                                {/if}
-                                {#if task.task.compose}
-                                    <ComposeBadge
-                                        file={task.task.compose.file}
-                                        service={task.task.compose.service}
-                                        projectName={task.task.compose.projectName}
-                                    />
-                                {/if}
-                                {#if task.task.heldBy}
-                                    <TaskHeldBadge />
-                                {/if}
-                                {#if task.task.source}
-                                    <TaskSourceBadge
-                                        name={task.task.name}
-                                        source={task.task.source}
-                                        sourceFile={task.task.sourceFile}
-                                    />
-                                {/if}
+                                <TaskBadges task={task.task} />
                                 {#if isService(task.task.kind)}
                                     <Badge variant="info" size="sm">
                                         {formatTaskTriggerLabel(task)}
@@ -291,24 +267,14 @@
                                         position="left"
                                         wide
                                     >
-                                        <span
-                                            class={[
-                                                "inline-flex rounded-[3px] px-1.5 py-0.5 font-mono text-2xs font-semibold",
-                                                lastStatusConfig.badge,
-                                            ]}
-                                        >
+                                        <RunStatusBadge tone={lastStatusConfig.badge}>
                                             {formatTaskLastResultLabel(task)}
-                                        </span>
+                                        </RunStatusBadge>
                                     </Tooltip>
                                 {:else}
-                                    <span
-                                        class={[
-                                            "inline-flex rounded-[3px] px-1.5 py-0.5 font-mono text-2xs font-semibold",
-                                            taskState.toneClass,
-                                        ]}
-                                    >
+                                    <RunStatusBadge tone={taskState.toneClass}>
                                         {formatTaskLastResultLabel(task)}
-                                    </span>
+                                    </RunStatusBadge>
                                 {/if}
                             </div>
 
@@ -368,7 +334,7 @@
                             class="mt-2 rounded-[3px] border border-danger-soft-border bg-danger-soft/80 px-3 py-2 text-xs text-danger-soft-text"
                         >
                             Last run exited with code <span class="font-mono tabular-nums"
-                                >{task.lastRun?.exitCode}</span
+                                >{task.lastRun.exitCode}</span
                             >
                         </div>
                     {/if}

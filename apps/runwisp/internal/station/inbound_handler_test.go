@@ -7,12 +7,15 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 func newTestInboundHandler() *InboundHandler {
@@ -22,6 +25,7 @@ func newTestInboundHandler() *InboundHandler {
 		LogDir:          "/tmp/logs",
 		QueueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
 		Tracker:         NewExecutionTracker(),
+		Uploader:        NewLogUploader(nil, nil, "", time.Now),
 	})
 }
 
@@ -36,7 +40,7 @@ func (f *stubRunRepo) GetRunByExecutionID(_ context.Context, _ string) (*model.R
 		return nil, f.getErr
 	}
 	if f.run == nil {
-		return nil, ErrNotFound
+		return nil, storage.ErrNotFound
 	}
 	return f.run, nil
 }
@@ -49,6 +53,7 @@ func newDispatchInboundHandler(runner TaskRunner, repo ExternalRunGetter, avail 
 		availability:    avail,
 		queueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
 		tracker:         NewExecutionTracker(),
+		uploader:        NewLogUploader(nil, nil, "", time.Now),
 		logListeners:    make(map[string]struct{}),
 	}
 }
@@ -285,7 +290,7 @@ func TestHandleExecutionStop_EmptyID(t *testing.T) {
 }
 
 func TestHandleExecutionStop_NotFound(t *testing.T) {
-	repo := &stubRunRepo{getErr: ErrNotFound}
+	repo := &stubRunRepo{getErr: storage.ErrNotFound}
 	runner := &fakeTaskRunner{}
 	h := newDispatchInboundHandler(runner, repo, executor.Availability{})
 
@@ -344,7 +349,7 @@ func TestHandleLogReplayRequest_EmptyID(t *testing.T) {
 }
 
 func TestHandleLogReplayRequest_NotFound(t *testing.T) {
-	repo := &stubRunRepo{getErr: ErrNotFound}
+	repo := &stubRunRepo{getErr: storage.ErrNotFound}
 	h := newDispatchInboundHandler(nil, repo, executor.Availability{})
 
 	chunk, err := h.HandleLogReplayRequest(context.Background(), protocol.LogReplayRequestMessage{
@@ -369,13 +374,10 @@ func TestHandleLogReplayRequest_TransientError(t *testing.T) {
 	assert.Equal(t, StationErrorKindTransient, ce.Kind)
 }
 
-// TestInboundHandler_FreshHandlerGetters covers the four "zero-state" getter
-// branches in one place: LogDir/Uploader propagate from construction; the
-// listener queries return false because no listener was registered yet.
-func TestInboundHandler_FreshHandlerGetters(t *testing.T) {
+// TestInboundHandler_FreshHandlerListeners: the listener queries return false
+// because no listener was registered yet.
+func TestInboundHandler_FreshHandlerListeners(t *testing.T) {
 	h := newTestInboundHandler()
-	assert.Equal(t, "/tmp/logs", h.LogDir())
-	assert.Nil(t, h.Uploader(), "uploader must be nil when not configured")
 	assert.False(t, h.IsLogListener("exec-1"), "no listener registered → must be false")
 	assert.NotPanics(t, func() { h.RemoveLogListener("exec-1") }, "removing an absent listener must be a no-op")
 }

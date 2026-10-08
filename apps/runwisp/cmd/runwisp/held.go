@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // heldNamesShown caps how many task names the held block lists before collapsing
@@ -47,12 +48,12 @@ func printHeldBlock(w io.Writer, names []string, cronState string) {
 	if cronState != "" {
 		daemon = "a system cron daemon " + cronState + " and"
 	}
+	them := textutil.Pluralize(len(names), "it", "them")
 	fmt.Fprintf(w, "\n⏸ %s held — %s still owns %s, so RunWisp is not running %s:\n",
-		heldTaskCount(len(names)), daemon, pronounFor(len(names)), pronounFor(len(names)))
+		heldTaskCount(len(names)), daemon, them, them)
 	fmt.Fprintf(w, "    %s\n", heldNameList(names))
-	fmt.Fprintf(w, "  Run 'sudo runwisp takeover' to hand %s over, or stop cron and disable it at boot\n",
-		pronounFor(len(names)))
-	fmt.Fprintf(w, "  (for example '%s') and RunWisp picks %s up.\n", disableCronExample, pronounFor(len(names)))
+	fmt.Fprintf(w, "  Run 'sudo runwisp takeover' to hand %s over, or stop cron and disable it at boot\n", them)
+	fmt.Fprintf(w, "  (for example '%s') and RunWisp picks %s up.\n", disableCronExample, them)
 }
 
 // disableCronExample is the one-liner the held surfaces suggest for retiring cron
@@ -81,13 +82,10 @@ func printPausedBlock(w io.Writer, names []string) {
 	if len(names) == 0 {
 		return
 	}
-	schedules := "1 cron schedule is"
-	if len(names) > 1 {
-		schedules = fmt.Sprintf("%d cron schedules are", len(names))
-	}
-	fmt.Fprintf(w, "\n⏸ %s paused:\n", schedules)
+	n := len(names)
+	fmt.Fprintf(w, "\n⏸ %s %s paused:\n", textutil.Count(n, "cron schedule", "cron schedules"), textutil.Pluralize(n, "is", "are"))
 	fmt.Fprintf(w, "    %s\n", heldNameList(names))
-	fmt.Fprintf(w, "  Run 'runwisp resume <task>' to let %s fire again.\n", pronounFor(len(names)))
+	fmt.Fprintf(w, "  Run 'runwisp resume <task>' to let %s fire again.\n", textutil.Pluralize(n, "it", "them"))
 }
 
 // heldNameList renders the names, collapsing the tail past heldNamesShown.
@@ -100,19 +98,7 @@ func heldNameList(names []string) string {
 }
 
 func heldTaskCount(n int) string {
-	if n == 1 {
-		return "1 task is"
-	}
-	return fmt.Sprintf("%d tasks are", n)
-}
-
-// pronounFor keeps the block grammatical for a single task without building the
-// sentence twice.
-func pronounFor(n int) string {
-	if n == 1 {
-		return "it"
-	}
-	return "them"
+	return textutil.Count(n, "task", "tasks") + " " + textutil.Pluralize(n, "is", "are")
 }
 
 // printHeldBanner is the boot-time form: an unmissable stderr banner beside

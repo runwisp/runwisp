@@ -4,6 +4,7 @@
 package executor
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -31,9 +32,14 @@ const (
 	MaxLineBufferSize    = 64 * 1024 // 64KB max cells per row before an oversized-line split
 )
 
+// Executor runs a task. The run manager also installs its callbacks through
+// the three setters: SetRunWatcher when it is built, the other two when its
+// persistence hook is bound.
 type Executor interface {
 	Execute(ctx context.Context, task *model.Task, run *model.Run) *ExecuteResult
-	Availability() Availability
+	SetRunWatcher(watcher RunWatcher)
+	SetRunUpdateCallback(callback func(*model.Run))
+	SetOnProcessStarted(callback func(runID string, forceKill func()))
 }
 
 type ExecuteResult struct {
@@ -91,9 +97,13 @@ type Options struct {
 	EventBus               *events.Bus
 	StationDispatchEnabled bool
 	HasLocalTasks          bool
-	Docker                 Backend // container backend; nil when Docker is unavailable
-	Compose                Backend // compose backend; nil when docker compose is unavailable
-	MinFreeDisk            int64   // minimum free disk space in bytes; 0 = disabled
+	// Fingerprint identifies this daemon instance; it scopes managed-container
+	// reclaim in the compose backend.
+	Fingerprint string
+	// Docker and Compose override the real backends (tests); nil uses them.
+	Docker      Backend
+	Compose     Backend
+	MinFreeDisk int64 // minimum free disk space in bytes; 0 = disabled
 	// Clock is the wall-clock source for captured-output timestamps (system
 	// lines and the per-line timestamp index). nil defaults to time.Now;
 	// the demo seeder injects a backdated clock so historical runs carry
@@ -125,12 +135,8 @@ func New(opts Options) *RoutingExecutor {
 	// Availability separately governs what the Station peer may dispatch.
 	backends["http"] = &HTTPBackend{}
 	backends["shell"] = &ShellBackend{}
-	if opts.Docker != nil {
-		backends["container"] = opts.Docker
-	}
-	if opts.Compose != nil {
-		backends["compose"] = opts.Compose
-	}
+	backends["container"] = cmp.Or(opts.Docker, Backend(NewLazyContainerBackend()))
+	backends["compose"] = cmp.Or(opts.Compose, Backend(NewComposeBackend(opts.Fingerprint)))
 
 	// Always dispatchable: config-backed dispatch when local tasks exist.
 	if opts.HasLocalTasks {
@@ -147,18 +153,12 @@ func New(opts Options) *RoutingExecutor {
 		avail.Container = BackendStatus{Available: false, Reason: reason}
 		avail.Compose = BackendStatus{Available: false, Reason: reason}
 	} else {
+		// Container and compose report available even without Docker: both
+		// backends probe lazily, so a missing engine surfaces at run time.
 		avail.HTTP = BackendStatus{Available: true}
 		avail.Shell = BackendStatus{Available: true}
-		if opts.Docker != nil {
-			avail.Container = BackendStatus{Available: true}
-		} else {
-			avail.Container = BackendStatus{Available: false, Reason: "docker daemon unreachable"}
-		}
-		if opts.Compose != nil {
-			avail.Compose = BackendStatus{Available: true}
-		} else {
-			avail.Compose = BackendStatus{Available: false, Reason: "docker compose CLI unavailable"}
-		}
+		avail.Container = BackendStatus{Available: true}
+		avail.Compose = BackendStatus{Available: true}
 	}
 
 	clock := opts.Clock
@@ -193,7 +193,6 @@ func (r *RoutingExecutor) Availability() Availability {
 }
 
 // SetRunUpdateCallback registers a hook to persist run updates.
-// This is a concrete method (not on the Executor interface) for late binding.
 func (r *RoutingExecutor) SetRunUpdateCallback(callback func(*model.Run)) {
 	r.onUpdate = callback
 }
@@ -201,13 +200,13 @@ func (r *RoutingExecutor) SetRunUpdateCallback(callback func(*model.Run)) {
 // SetOnProcessStarted registers a hook fired immediately after a backend
 // successfully starts a process. The hook receives the run ID and the
 // process's ForceKill closure (when present), letting the manager wire a
-// daemon-shutdown SIGKILL path. Late-binding mirrors SetRunUpdateCallback.
+// daemon-shutdown SIGKILL path.
 func (r *RoutingExecutor) SetOnProcessStarted(callback func(runID string, forceKill func())) {
 	r.onProcessStarted = callback
 }
 
 // SetRunWatcher registers the RunWatcher started alongside every run's
-// process. Late-binding mirrors SetOnProcessStarted.
+// process.
 func (r *RoutingExecutor) SetRunWatcher(watcher RunWatcher) {
 	r.watcher = watcher
 }

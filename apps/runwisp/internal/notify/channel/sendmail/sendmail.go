@@ -207,7 +207,7 @@ func (c *Channel) resolve() (string, error) {
 
 // compose builds the RFC 5322 message handed to the MTA on stdin.
 func (c *Channel) compose(subject, body string) ([]byte, error) {
-	if err := c.rejectHeaderCRLF(subject); err != nil {
+	if err := notify.RejectMailHeaderCRLF("sendmail", subject, c.from, c.replyTo, c.to, c.cc, c.bcc); err != nil {
 		return nil, err
 	}
 
@@ -249,29 +249,6 @@ func writeHeader(b *strings.Builder, name, value string) {
 	b.WriteString(": ")
 	b.WriteString(value)
 	b.WriteString("\n")
-}
-
-// rejectHeaderCRLF guards every value that lands in a header. The body is
-// exempt on purpose: it is separated from the headers by the blank line, so a
-// newline in it is just a newline.
-func (c *Channel) rejectHeaderCRLF(subject string) error {
-	if err := notify.RejectHeaderCRLF("sendmail subject", subject); err != nil {
-		return err
-	}
-	if err := notify.RejectHeaderCRLF("sendmail from", c.from); err != nil {
-		return err
-	}
-	if err := notify.RejectHeaderCRLF("sendmail reply-to", c.replyTo); err != nil {
-		return err
-	}
-	for _, group := range [][]string{c.to, c.cc, c.bcc} {
-		for _, addr := range group {
-			if err := notify.RejectHeaderCRLF("sendmail recipient", addr); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 // runCommand is the production runner: pipe the message in, capture the

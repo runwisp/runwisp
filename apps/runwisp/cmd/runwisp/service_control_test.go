@@ -13,6 +13,7 @@ import (
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostartfake"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -280,7 +281,7 @@ func TestStopViaService_WarnsWhenCronIsMasked(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var out bytes.Buffer
-			require.NoError(t, stopViaService(&out, &fakeTakeoverInstaller{}, autostart.InstallOptions{}, tt.st, f))
+			require.NoError(t, stopViaService(&out, &autostartfake.Installer{}, autostart.InstallOptions{}, tt.st, f))
 			if tt.warn {
 				assert.Contains(t, out.String(), "cron.service is masked by the RunWisp take-over, so no cron jobs run")
 				assert.Contains(t, out.String(), "runwisp restart")

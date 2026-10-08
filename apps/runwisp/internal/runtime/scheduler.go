@@ -43,7 +43,7 @@ type ScheduleResult struct {
 type Scheduler struct {
 	cron        *cron.Cron
 	location    *time.Location
-	taskManager TaskRunner
+	taskManager RunTrigger
 	tasks       map[string]*model.Task
 	entryIDs    map[string]cron.EntryID
 	// firedTicks tracks, per task, every wall-clock second already fired within
@@ -129,7 +129,7 @@ type firedHour struct {
 // the scheduler's wall-clock reads; pass nil for time.Now — production always
 // does, and tests inject a fake clock so DST-fall-back firing sequences are
 // deterministic.
-func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location *time.Location, clock func() time.Time) *Scheduler {
+func NewScheduler(taskManager RunTrigger, tasks map[string]*model.Task, location *time.Location, clock func() time.Time) *Scheduler {
 	if location == nil {
 		location = time.UTC
 	}
@@ -146,15 +146,6 @@ func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location
 		jitterPlans: make(map[string]jitterPlan),
 		paused:      make(map[string]time.Time),
 		now:         clock,
-	}
-	// A jittered fire can wait in the manager's gate past the moment its task
-	// is paused; the manager asks back before starting it. Optional so the
-	// TaskRunner interface (and every fake of it) stays unchanged.
-	type pauseGuardSetter interface {
-		setSchedulePaused(func(string) bool)
-	}
-	if setter, ok := taskManager.(pauseGuardSetter); ok {
-		setter.setSchedulePaused(scheduler.IsPaused)
 	}
 	return scheduler
 }

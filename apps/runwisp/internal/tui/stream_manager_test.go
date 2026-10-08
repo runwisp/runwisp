@@ -103,7 +103,7 @@ func TestStreamManager_FetchOlderLogs_RunsAndReturnsLoadedMsg(t *testing.T) {
 	assert.Equal(t, "run", loaded.RunID)
 	assert.EqualValues(t, 42, loaded.Total)
 	require.Len(t, loaded.Lines, 1)
-	assert.EqualValues(t, 5, loaded.FirstLine)
+	assert.EqualValues(t, 5, loaded.Lines[0].N)
 }
 
 func TestStreamManager_FetchOlderLogs_ServerErrorReturnsDebugMsg(t *testing.T) {
@@ -315,10 +315,7 @@ func newFakeDaemonServer(t *testing.T) *httptest.Server {
 }
 
 func TestStreamManager_FetchSystemStats_HappyPath(t *testing.T) {
-	srv := newFakeDaemonServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, newFakeDaemonServer(t))
 
 	cmd := sm.FetchSystemStats()
 	require.NotNil(t, cmd)
@@ -329,10 +326,7 @@ func TestStreamManager_FetchSystemStats_HappyPath(t *testing.T) {
 }
 
 func TestStreamManager_FetchRunSummary_HappyPath(t *testing.T) {
-	srv := newFakeDaemonServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, newFakeDaemonServer(t))
 
 	cmd := sm.FetchRunSummary()
 	require.NotNil(t, cmd)
@@ -342,10 +336,7 @@ func TestStreamManager_FetchRunSummary_HappyPath(t *testing.T) {
 }
 
 func TestStreamManager_FetchMetricsHistory_HappyPath(t *testing.T) {
-	srv := newFakeDaemonServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, newFakeDaemonServer(t))
 
 	cmd := sm.FetchMetricsHistory()
 	require.NotNil(t, cmd)
@@ -355,10 +346,7 @@ func TestStreamManager_FetchMetricsHistory_HappyPath(t *testing.T) {
 }
 
 func TestStreamManager_FetchUnreadCount_HappyPath(t *testing.T) {
-	srv := newFakeDaemonServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, newFakeDaemonServer(t))
 
 	cmd := sm.FetchUnreadCount()
 	require.NotNil(t, cmd)
@@ -368,10 +356,7 @@ func TestStreamManager_FetchUnreadCount_HappyPath(t *testing.T) {
 }
 
 func TestStreamManager_FetchNotifications_HappyPath(t *testing.T) {
-	srv := newFakeDaemonServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, newFakeDaemonServer(t))
 
 	cmd := sm.FetchNotifications()
 	require.NotNil(t, cmd)
@@ -381,10 +366,7 @@ func TestStreamManager_FetchNotifications_HappyPath(t *testing.T) {
 }
 
 func TestStreamManager_MarkNotificationRead_HappyPath(t *testing.T) {
-	srv := newFakeDaemonServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, newFakeDaemonServer(t))
 
 	cmd := sm.MarkNotificationRead("id")
 	require.NotNil(t, cmd)
@@ -395,10 +377,7 @@ func TestStreamManager_MarkNotificationRead_HappyPath(t *testing.T) {
 }
 
 func TestStreamManager_MarkNotificationUnread_HappyPath(t *testing.T) {
-	srv := newFakeDaemonServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, newFakeDaemonServer(t))
 
 	cmd := sm.MarkNotificationUnread("id")
 	require.NotNil(t, cmd)
@@ -489,13 +468,27 @@ func TestStreamManager_RecordEventID_IgnoresEmpty(t *testing.T) {
 	assert.Equal(t, "7", sm.lastEventID, "an empty id (ping/notification) must not clear the resume cursor")
 }
 
-func TestStreamManager_SubscribeDaemonLogs_ConnectedReturnsChannel(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+// newSSETestSM returns a StreamManager pointed at a server that answers every
+// request with an empty text/event-stream, so connects succeed and stay open.
+func newSSETestSM(t *testing.T) StreamManager {
+	t.Helper()
+	return newSMFor(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-	}))
-	defer srv.Close()
+	})))
+}
+
+// newSMFor returns a StreamManager talking to srv; the server and the manager
+// are torn down with the test.
+func newSMFor(t *testing.T, srv *httptest.Server) StreamManager {
+	t.Helper()
+	t.Cleanup(srv.Close)
 	sm := NewStreamManager(apiclient.New(srv.URL, ""))
 	t.Cleanup(sm.Shutdown)
+	return sm
+}
+
+func TestStreamManager_SubscribeDaemonLogs_ConnectedReturnsChannel(t *testing.T) {
+	sm := newSSETestSM(t)
 
 	cmd := sm.SubscribeDaemonLogs()
 	require.NotNil(t, cmd)
@@ -521,12 +514,7 @@ func TestStreamManager_StartLogStream_ConnectErrorReturnsDoneMsg(t *testing.T) {
 }
 
 func TestStreamManager_StartLogStream_ConnectedReturnsLogStreamConnectedMsg(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-	}))
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSSETestSM(t)
 
 	cmd := sm.StartLogStream(&model.Run{ID: "r2", TaskName: "task"}, 0)
 	require.NotNil(t, cmd)
@@ -537,12 +525,7 @@ func TestStreamManager_StartLogStream_ConnectedReturnsLogStreamConnectedMsg(t *t
 }
 
 func TestStreamManager_StartLogStream_CancelsPreviousStream(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-	}))
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSSETestSM(t)
 
 	// First stream owns logCancel.
 	_ = sm.StartLogStream(&model.Run{ID: "r1", TaskName: "t"}, 0)
@@ -623,10 +606,7 @@ func newBulkServer(t *testing.T) *httptest.Server {
 }
 
 func TestStreamManager_BulkActions_HappyPath(t *testing.T) {
-	srv := newBulkServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, newBulkServer(t))
 
 	sel := model.RunSelector{IDs: []string{"r1", "r2"}}
 	cases := []struct {
@@ -653,10 +633,7 @@ func TestStreamManager_BulkActions_HappyPath(t *testing.T) {
 }
 
 func TestStreamManager_DeleteRuns_HappyPath(t *testing.T) {
-	srv := newBulkServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, newBulkServer(t))
 
 	sel := model.RunSelector{IDs: []string{"r1"}}
 	cmd := sm.DeleteRuns(sel)
@@ -669,10 +646,7 @@ func TestStreamManager_DeleteRuns_HappyPath(t *testing.T) {
 }
 
 func TestStreamManager_MarkAllNotificationsRead_HappyPath(t *testing.T) {
-	srv := newBulkServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, newBulkServer(t))
 
 	cmd := sm.MarkAllNotificationsRead()
 	require.NotNil(t, cmd)
@@ -680,10 +654,7 @@ func TestStreamManager_MarkAllNotificationsRead_HappyPath(t *testing.T) {
 }
 
 func TestStreamManager_FetchDaemonInfo_HappyPath(t *testing.T) {
-	srv := newBulkServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, newBulkServer(t))
 
 	cmd := sm.FetchDaemonInfo()
 	require.NotNil(t, cmd)
@@ -693,10 +664,7 @@ func TestStreamManager_FetchDaemonInfo_HappyPath(t *testing.T) {
 }
 
 func TestStreamManager_Reload_HappyPath(t *testing.T) {
-	srv := newBulkServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, newBulkServer(t))
 
 	cmd := sm.Reload()
 	require.NotNil(t, cmd)
@@ -710,10 +678,7 @@ func TestStreamManager_Reload_HappyPath(t *testing.T) {
 }
 
 func TestStreamManager_FetchTaskSummary_HappyPath(t *testing.T) {
-	srv := newBulkServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, newBulkServer(t))
 
 	assert.Nil(t, sm.FetchTaskSummary(""), "empty task name short-circuits")
 
@@ -726,10 +691,7 @@ func TestStreamManager_FetchTaskSummary_HappyPath(t *testing.T) {
 }
 
 func TestStreamManager_FetchLineHistory_HappyPath(t *testing.T) {
-	srv := newBulkServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, newBulkServer(t))
 
 	cmd := sm.FetchLineHistory("r1", 7, "committed text")
 	require.NotNil(t, cmd)
@@ -743,9 +705,7 @@ func TestStreamManager_FetchLineHistory_HappyPath(t *testing.T) {
 
 func TestStreamManager_FetchExecWindow_HappyPath(t *testing.T) {
 	srv := newBulkServer(t)
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSMFor(t, srv)
 
 	w := execlist.NewExecWindow(apiclient.New(srv.URL, ""))
 	cmd := sm.FetchExecWindow(w, 0, 10)

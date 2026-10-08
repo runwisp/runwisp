@@ -34,8 +34,8 @@ func TestExecute_WritesTheConfigBeforeInstallingTheUnit(t *testing.T) {
 	res, err := c.Execute(context.Background(), p, &out)
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"write-config", "install"}, inst.calls)
-	assert.True(t, inst.configAtInstall, "the config must exist by the time Install runs")
+	assert.Equal(t, []string{"write-config", "install"}, inst.Calls)
+	assert.True(t, inst.ConfigAtInstall, "the config must exist by the time Install runs")
 	assert.Equal(t, cfgPath, res.ConfigWritten)
 	assert.True(t, res.ServiceInstalled)
 	assert.FileExists(t, cfgPath)
@@ -58,8 +58,8 @@ func TestExecute_PassesTakeOverCronAndPreConfirmedToTheInstaller(t *testing.T) {
 	_, err = c.Execute(context.Background(), p, &bytes.Buffer{})
 	require.NoError(t, err)
 
-	assert.True(t, inst.installOpts.TakeOverCron)
-	assert.True(t, inst.installOpts.PreConfirmed, "the plan was already confirmed; do not ask twice")
+	assert.True(t, inst.InstallOpts.TakeOverCron)
+	assert.True(t, inst.InstallOpts.PreConfirmed, "the plan was already confirmed; do not ask twice")
 }
 
 // TestExecute_NoCronUnitInstallsWithoutRequestingAMask covers the box that has
@@ -78,7 +78,7 @@ func TestExecute_NoCronUnitInstallsWithoutRequestingAMask(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, res.ServiceInstalled)
-	assert.False(t, inst.installOpts.TakeOverCron)
+	assert.False(t, inst.InstallOpts.TakeOverCron)
 }
 
 // TestExecute_WiresIncludeCronIntoAnExistingConfig is the second config step: the
@@ -97,7 +97,7 @@ func TestExecute_WiresIncludeCronIntoAnExistingConfig(t *testing.T) {
 	res, err := c.Execute(context.Background(), p, &bytes.Buffer{})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"wire-cron", "install"}, inst.calls)
+	assert.Equal(t, []string{"wire-cron", "install"}, inst.Calls)
 	assert.True(t, res.IncludeWired)
 	assert.Empty(t, res.ConfigWritten, "wiring is not scaffolding")
 
@@ -126,7 +126,7 @@ func TestExecute_SkipsSatisfiedConfigStep(t *testing.T) {
 	res, err := c.Execute(context.Background(), p, &bytes.Buffer{})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"install"}, inst.calls)
+	assert.Equal(t, []string{"install"}, inst.Calls)
 	assert.Empty(t, res.ConfigWritten)
 	assert.False(t, res.IncludeWired)
 
@@ -154,7 +154,7 @@ func TestExecute_ReloadsOnlyWhenADaemonWasAlreadyRunning(t *testing.T) {
 		res, err := c.Execute(context.Background(), p, &bytes.Buffer{})
 		require.NoError(t, err)
 
-		assert.Equal(t, []string{"write-config", "install", "reload"}, inst.calls)
+		assert.Equal(t, []string{"write-config", "install", "reload"}, inst.Calls)
 		assert.True(t, res.Reloaded)
 	})
 
@@ -171,7 +171,7 @@ func TestExecute_ReloadsOnlyWhenADaemonWasAlreadyRunning(t *testing.T) {
 		res, err := c.Execute(context.Background(), p, &bytes.Buffer{})
 		require.NoError(t, err)
 
-		assert.NotContains(t, inst.calls, "reload")
+		assert.NotContains(t, inst.Calls, "reload")
 		assert.False(t, res.Reloaded)
 	})
 }
@@ -186,7 +186,7 @@ func TestExecute_AbortAtTheInstallerPromptIsNotAnError(t *testing.T) {
 		cronActive:    true,
 		daemonRunning: true,
 	}.build(t)
-	inst.installErr = autostart.ErrAborted
+	inst.InstallErr = autostart.ErrAborted
 
 	p, err := c.Compute(context.Background())
 	require.NoError(t, err)
@@ -198,7 +198,7 @@ func TestExecute_AbortAtTheInstallerPromptIsNotAnError(t *testing.T) {
 	assert.True(t, res.Aborted)
 	assert.False(t, res.ServiceInstalled)
 	assert.False(t, res.Reloaded)
-	assert.NotContains(t, inst.calls, "reload")
+	assert.NotContains(t, inst.Calls, "reload")
 	assert.Contains(t, out.String(), "cron.service is untouched")
 }
 
@@ -212,7 +212,7 @@ func TestExecute_InstallErrorStopsBeforeReload(t *testing.T) {
 		daemonRunning: true,
 	}.build(t)
 	boom := errors.New("systemctl exploded")
-	inst.installErr = boom
+	inst.InstallErr = boom
 
 	p, err := c.Compute(context.Background())
 	require.NoError(t, err)
@@ -221,7 +221,7 @@ func TestExecute_InstallErrorStopsBeforeReload(t *testing.T) {
 	require.ErrorIs(t, err, boom)
 
 	assert.False(t, res.Reloaded)
-	assert.NotContains(t, inst.calls, "reload")
+	assert.NotContains(t, inst.Calls, "reload")
 	assert.False(t, res.ServiceInstalled)
 	// The config write did happen, and the Result says so — a partial cutover
 	// that under-reported what is on disk is how an operator loses track of
@@ -249,10 +249,10 @@ func TestExecute_ConfigThatAppearedWhileAskingIsNeverClobbered(t *testing.T) {
 	_, err = c.Execute(context.Background(), p, &bytes.Buffer{})
 	require.Error(t, err)
 
-	var ue *userError
+	var ue *UserError
 	require.ErrorAs(t, err, &ue)
-	assert.Contains(t, ue.Title(), "appeared while RunWisp was asking")
-	assert.Empty(t, inst.calls, "nothing may be installed or masked")
+	assert.Contains(t, ue.Title, "appeared while RunWisp was asking")
+	assert.Empty(t, inst.Calls, "nothing may be installed or masked")
 
 	body, err := os.ReadFile(cfgPath)
 	require.NoError(t, err)
@@ -279,13 +279,13 @@ func TestExecute_WireConflictNamesTheImportCollision(t *testing.T) {
 	_, err = c.Execute(context.Background(), p, &bytes.Buffer{})
 	require.Error(t, err)
 
-	var ue *userError
+	var ue *UserError
 	require.ErrorAs(t, err, &ue)
-	assert.Contains(t, ue.Title(), "nothing was written")
-	assert.Contains(t, ue.Details(), "duplicate task")
-	assert.Contains(t, ue.Details(), "import cron")
-	assert.Contains(t, ue.Details(), "crontab -r")
-	assert.Empty(t, inst.calls, "a config that would not load must not become a masked cron")
+	assert.Contains(t, ue.Title, "nothing was written")
+	assert.Contains(t, ue.Details, "duplicate task")
+	assert.Contains(t, ue.Details, "import cron")
+	assert.Contains(t, ue.Details, "crontab -r")
+	assert.Empty(t, inst.Calls, "a config that would not load must not become a masked cron")
 
 	body, err := os.ReadFile(cfgPath)
 	require.NoError(t, err)
@@ -310,7 +310,7 @@ func TestExecute_RefusesABlockedPlan(t *testing.T) {
 	_, err = c.Execute(context.Background(), p, &bytes.Buffer{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot take over cron")
-	assert.Empty(t, inst.calls)
+	assert.Empty(t, inst.Calls)
 }
 
 // TestExecute_PreflightFailureStopsBeforeAnythingIsMasked: the port check is a
@@ -329,7 +329,7 @@ func TestExecute_PreflightFailureStopsBeforeAnythingIsMasked(t *testing.T) {
 
 	_, err = c.Execute(context.Background(), p, &bytes.Buffer{})
 	require.ErrorIs(t, err, boom)
-	assert.NotContains(t, inst.calls, "install")
+	assert.NotContains(t, inst.Calls, "install")
 }
 
 // TestExecute_StaleSettingsAreReported: our own running service holds the port
@@ -369,7 +369,7 @@ func TestExecute_NothingToDoBoxIsANoop(t *testing.T) {
 	res, err := c.Execute(context.Background(), p, &bytes.Buffer{})
 	require.NoError(t, err)
 
-	assert.Empty(t, inst.calls)
+	assert.Empty(t, inst.Calls)
 	assert.Equal(t, Result{}, res)
 }
 
@@ -391,10 +391,10 @@ func TestExecute_ScaffoldThatDoesNotLoadIsRemovedBeforeAnythingIsMasked(t *testi
 	require.NoError(t, err)
 
 	_, err = c.Execute(context.Background(), p, &bytes.Buffer{})
-	var ue *userError
+	var ue *UserError
 	require.ErrorAs(t, err, &ue)
-	assert.Contains(t, ue.Title(), "would not load")
-	assert.Contains(t, ue.Details(), `task "broken"`)
-	assert.Empty(t, inst.calls, "nothing may be installed or masked")
+	assert.Contains(t, ue.Title, "would not load")
+	assert.Contains(t, ue.Details, `task "broken"`)
+	assert.Empty(t, inst.Calls, "nothing may be installed or masked")
 	assert.NoFileExists(t, cfgPath)
 }

@@ -6,6 +6,7 @@
 package e2e
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -69,7 +70,8 @@ params = [
 	deadline := time.Now().Add(10 * time.Second)
 	var captured []byte
 	for time.Now().Before(deadline) {
-		if data, err := os.ReadFile(out); err == nil && len(data) > 0 {
+		// The task writes the file in two steps; wait for the last token.
+		if data, err := os.ReadFile(out); err == nil && bytes.HasSuffix(data, []byte("arg=--force\n")) {
 			captured = data
 			break
 		}

@@ -14,6 +14,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil/fakeclock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -596,6 +597,7 @@ func TestTriggerRunReturnsIndependentSnapshot(t *testing.T) {
 // the manager's per-task Cancel has no effect, so the only way out is the
 // deadline-triggered ForceKill.
 type stuckExecutor struct {
+	testutil.NoExecutorHooks
 	onStarted     func(runID string, forceKill func())
 	startedCh     chan struct{}
 	forceKilledCh chan struct{}
@@ -606,8 +608,6 @@ type stuckExecutor struct {
 func (s *stuckExecutor) SetOnProcessStarted(cb func(runID string, forceKill func())) {
 	s.onStarted = cb
 }
-
-func (s *stuckExecutor) Availability() executor.Availability { return executor.Availability{} }
 
 func (s *stuckExecutor) Execute(_ context.Context, _ *model.Task, run *model.Run) *executor.ExecuteResult {
 	released := make(chan struct{})
@@ -1605,7 +1605,7 @@ func TestUpsertTask_PolicyChangeAwayFromQueueFinalizesQueuedRuns(t *testing.T) {
 // daemon owns this tick now, so RunWisp starting its own run for it would be
 // exactly the double-execution the hold exists to prevent.
 func TestScheduleJitteredRun_HeldTaskFireDroppedNotDoubleRun(t *testing.T) {
-	clk := testutil.NewClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	clk := fakeclock.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	exec := testutil.NewGateExecutor()
 	eb := events.NewEventBus()
 	jm := NewTaskManager(exec, eb, clk.Now).(*defaultTaskManager)

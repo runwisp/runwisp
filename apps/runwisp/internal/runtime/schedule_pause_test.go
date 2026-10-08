@@ -12,6 +12,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil/fakeclock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,7 +51,7 @@ func TestSchedulerPause_SkipsTicksUntilResume(t *testing.T) {
 }
 
 func TestSchedulerPause_IdempotentKeepsFirstPauseTime(t *testing.T) {
-	clk := testutil.NewClock(time.Date(2026, 9, 29, 14, 0, 0, 0, time.UTC))
+	clk := fakeclock.New(time.Date(2026, 9, 29, 14, 0, 0, 0, time.UTC))
 	sched := NewScheduler(&fakeTaskRunner{}, map[string]*model.Task{"nightly": pausableTask("nightly")}, time.UTC, clk.Now)
 
 	require.NoError(t, sched.Pause(context.Background(), "nightly"))
@@ -111,7 +112,7 @@ func TestSchedulerPause_SurvivesRescheduleAndJitterRecompute(t *testing.T) {
 func TestSchedulerPause_PersistsAcrossRestart(t *testing.T) {
 	ctx := context.Background()
 	db := newPauseDB(t)
-	clk := testutil.NewClock(time.Date(2026, 9, 29, 14, 0, 0, 0, time.UTC))
+	clk := fakeclock.New(time.Date(2026, 9, 29, 14, 0, 0, 0, time.UTC))
 	tasks := map[string]*model.Task{"nightly": pausableTask("nightly")}
 
 	first := NewScheduler(&fakeTaskRunner{}, tasks, time.UTC, clk.Now)
@@ -200,7 +201,7 @@ func TestSchedulerRestorePauses_ClearsStaleRows(t *testing.T) {
 // A jittered fire can already be waiting in the gate when the operator pauses
 // the task; it must not start once the gate frees up.
 func TestScheduleJitteredRun_PausedTaskFireRefused(t *testing.T) {
-	clk := testutil.NewClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	clk := fakeclock.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	exec := testutil.NewGateExecutor()
 	eb := events.NewEventBus()
 	jm := NewTaskManager(exec, eb, clk.Now).(*defaultTaskManager)
@@ -212,6 +213,7 @@ func TestScheduleJitteredRun_PausedTaskFireRefused(t *testing.T) {
 	jm.UpsertTask(a)
 	jm.UpsertTask(b)
 	sched := NewScheduler(jm, map[string]*model.Task{"a": a, "b": b}, time.UTC, clk.Now)
+	jm.SetSchedulePaused(sched.IsPaused)
 
 	created := watchRuns(eb, events.EventRunCreated)
 

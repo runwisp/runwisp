@@ -19,11 +19,6 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
-// defaultShell mirrors config.DefaultShell. It is duplicated rather than
-// imported because the executor must not depend on the config package; the two
-// are pinned together by TestShellArgs_DefaultShellMatchesConfig.
-const defaultShell = "/bin/sh"
-
 // ShellBackend executes shell scripts on the host via the task's shell
 // (default /bin/sh).
 type ShellBackend struct{}
@@ -50,7 +45,7 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 
 	shellPath := shell.Shell
 	if shellPath == "" {
-		shellPath = defaultShell
+		shellPath = model.DefaultShell
 	}
 	cmd := exec.CommandContext(ctx, shellPath, shellArgs(shellPath, script)...)
 

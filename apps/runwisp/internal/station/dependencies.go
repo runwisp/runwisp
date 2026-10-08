@@ -9,7 +9,6 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
-	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // TaskRunner is the slice of runtime.TaskManager the station integration
@@ -34,12 +33,11 @@ type TaskRunner interface {
 	ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool)
 }
 
-// ExternalRunGetter is the subset of run persistence the station package needs.
-// Mirrors a slice of storage.RunRepository so the station doesn't depend on
-// the SQLite-backed concrete.
+// ExternalRunGetter is the subset of run persistence the station package needs,
+// a slice of storage.RunRepository.
 type ExternalRunGetter interface {
 	// GetRunByExecutionID returns the run tagged with the supplied
-	// station-side execution id, or ErrNotFound if no such run exists.
+	// station-side execution id, or storage.ErrNotFound if no such run exists.
 	GetRunByExecutionID(ctx context.Context, executionID string) (*model.Run, error)
 }
 
@@ -49,9 +47,3 @@ type ExternalRunGetter interface {
 type EventSubscriber interface {
 	Subscribe(eventType events.EventType, handler events.EventHandler) func()
 }
-
-// ErrNotFound is the sentinel returned by ExternalRunGetter and related
-// interfaces when a referenced execution does not exist. Aliased from the
-// storage package so station-internal `errors.Is(err, ErrNotFound)` checks
-// match what the concrete SQLite-backed repository returns.
-var ErrNotFound = storage.ErrNotFound

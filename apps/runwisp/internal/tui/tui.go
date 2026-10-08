@@ -19,34 +19,24 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
-// --- Palette ---
-
-var (
-	yellow   = lipgloss.Color("#FBBF24")
-	cyan     = lipgloss.Color("#06B6D4")
-	dimGray  = lipgloss.Color("#6B7280")
-	darkGray = lipgloss.Color("#374151")
-)
-
 var (
 	brandMark = lipgloss.NewStyle().Foreground(uikit.ColorSecondary).Bold(true)
 	brandText = lipgloss.NewStyle().Foreground(uikit.ColorPrimary).Bold(true)
-	dimStyle  = lipgloss.NewStyle().Foreground(dimGray)
-	dotStyle  = lipgloss.NewStyle().Foreground(darkGray)
+	dimStyle  = lipgloss.NewStyle().Foreground(uikit.ColorTextMuted)
 	greenMark = lipgloss.NewStyle().Foreground(uikit.ColorSecondary)
-	yellowSt  = lipgloss.NewStyle().Foreground(yellow)
-	cyanBold  = lipgloss.NewStyle().Foreground(cyan).Bold(true)
+	yellowSt  = lipgloss.NewStyle().Foreground(uikit.ColorWarning)
+	cyanBold  = lipgloss.NewStyle().Foreground(uikit.ColorRunning).Bold(true)
 	boldStyle = lipgloss.NewStyle().Bold(true)
 )
 
 // StartTUI launches the interactive Bubble Tea TUI connected to a daemon via API.
 // If debugWriter is non-nil, it is wired to the program so that writes to it
-// appear in the TUI's debug view; a nil debugWriter marks the session remote
-// (cfg.IsRemote is derived from it).
+// appear in the TUI's debug view; a nil debugWriter means the daemon runs out
+// of process.
 // It blocks until the user quits. Returns the chosen uikit.QuitAction and any error.
 func StartTUI(cfg TUIConfig, debugWriter *DebugLogWriter) (uikit.QuitAction, error) {
-	cfg.IsRemote = debugWriter == nil
 	m := NewModel(cfg)
+	m.outOfProcess = debugWriter == nil
 
 	p := tea.NewProgram(m)
 
@@ -103,11 +93,8 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 	fmt.Fprintf(w, "    %s\n", dimStyle.Render(runtime.GOOS+"/"+runtime.GOARCH))
 	fmt.Fprintln(w)
 
-	// Database and log paths are deterministic suffixes of Data
-	// (<data>/runwisp.db and <data>/logs), so listing them as separate fields
-	// padded the banner with three lines for the same root directory. The
-	// banner shows the absolute Data dir once; the interactive Info tab still
-	// breaks it down for operators who want the full layout.
+	// The database and logs live under Data, so the banner names only that; the
+	// Info tab breaks it down.
 	printDotField(w, "Config", info.ConfigPath)
 	printDotField(w, "Data", info.DataDir)
 	if info.Fingerprint != "" {
@@ -197,20 +184,12 @@ func printTasksSection(w io.Writer, tasks []model.Task) {
 		if i == last {
 			prefix = "└─"
 		}
-		var schedule string
-		switch {
-		case task.Kind.IsService():
-			schedule = fmt.Sprintf("service x%d", task.Instances)
-		case task.Cron != "":
-			schedule = task.Cron
-		default:
-			schedule = "manual"
-		}
+		schedule := uikit.ScheduleLabel(&task)
 		dots := strings.Repeat("·", max(2, taskPad-len(task.Name)))
 		fmt.Fprintf(w, "  %s %s %s %s\n",
 			dimStyle.Render(prefix),
 			boldStyle.Render(task.Name),
-			dotStyle.Render(dots),
+			dimStyle.Render(dots),
 			dimStyle.Render(schedule),
 		)
 	}
@@ -245,7 +224,7 @@ func printDotField(w io.Writer, label, value string) {
 	dots := strings.Repeat("·", max(1, fieldPad-len(label)))
 	fmt.Fprintf(w, "  %s %s %s\n",
 		dimStyle.Render(label),
-		dotStyle.Render(dots),
+		dimStyle.Render(dots),
 		value,
 	)
 }

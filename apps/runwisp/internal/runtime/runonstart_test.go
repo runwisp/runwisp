@@ -11,7 +11,6 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,27 +21,22 @@ func TestRunStartupTasks(t *testing.T) {
 		"svc":       {Name: "svc", Kind: model.KindService, RunOnStart: true}, // ignored on services
 	}
 
-	runner := new(mockTaskRunner)
-	runner.On("TriggerRunWithOptions", "boot",
-		TriggerRunOptions{TriggeredBy: model.TriggeredByStartup}).
-		Return(&model.Run{}, nil).Once()
+	runner := &fakeTaskRunner{}
 
 	result := RunStartupTasks(t.Context(), tasks, runner, nil, "", nil)
 
 	assert.Equal(t, 1, result.Triggered)
 	assert.Equal(t, 0, result.Errors)
 	// Only the run_on_start task fires — never the scheduled task or the service.
-	runner.AssertExpectations(t)
-	runner.AssertNumberOfCalls(t, "TriggerRunWithOptions", 1)
+	assert.Equal(t, []string{"boot"}, runner.triggers)
+	assert.Equal(t, []TriggerRunOptions{{TriggeredBy: model.TriggeredByStartup}}, runner.triggerOpts)
 }
 
 func TestRunStartupTasksCountsErrors(t *testing.T) {
 	tasks := map[string]*model.Task{
 		"boot": {Name: "boot", Kind: model.KindTask, RunOnStart: true, Run: "echo hi"},
 	}
-	runner := new(mockTaskRunner)
-	runner.On("TriggerRunWithOptions", "boot", mock.Anything).
-		Return((*model.Run)(nil), errors.New("boom")).Once()
+	runner := &fakeTaskRunner{triggerErr: errors.New("boom")}
 
 	result := RunStartupTasks(t.Context(), tasks, runner, nil, "", nil)
 
@@ -117,14 +111,11 @@ func TestRunStartupTasksSkipsPausedTask(t *testing.T) {
 		"paused": {Name: "paused", Kind: model.KindTask, RunOnStart: true, Cron: "0 3 * * *", ManualTrigger: true},
 		"boot":   {Name: "boot", Kind: model.KindTask, RunOnStart: true, Run: "echo hi"},
 	}
-	runner := new(mockTaskRunner)
-	runner.On("TriggerRunWithOptions", "boot",
-		TriggerRunOptions{TriggeredBy: model.TriggeredByStartup}).
-		Return(&model.Run{}, nil).Once()
+	runner := &fakeTaskRunner{}
 
 	result := RunStartupTasks(t.Context(), tasks, runner, nil, "", func(name string) bool { return name == "paused" })
 
 	assert.Equal(t, 1, result.Triggered)
-	runner.AssertExpectations(t)
-	runner.AssertNumberOfCalls(t, "TriggerRunWithOptions", 1)
+	assert.Equal(t, []string{"boot"}, runner.triggers)
+	assert.Equal(t, []TriggerRunOptions{{TriggeredBy: model.TriggeredByStartup}}, runner.triggerOpts)
 }

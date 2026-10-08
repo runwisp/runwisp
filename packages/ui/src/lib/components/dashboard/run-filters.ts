@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { TRIGGERS, type Trigger } from "@runwisp/common";
+import { formatCalendarDate, formatDateTime } from "../../utils/format.js";
 import { TRIGGER_LABELS } from "./run-helpers.js";
+import { RUN_STATUS_CONFIG } from "./status-config.js";
 
 /**
  * The filter shared by the runs list, the filter popover, the SSE-merge source
@@ -42,7 +44,7 @@ export const FAILURE_STATUS_TOKEN = "failure";
 /**
  * Outcome buckets: a UI grouping of the individual run statuses into five
  * plain-language picks. The popover's "Advanced" section still exposes the
- * individual statuses. `dot` mirrors the group's color in RUN_STATUS_CONFIG.
+ * individual statuses.
  */
 export interface StatusBucket {
     key: string;
@@ -52,24 +54,34 @@ export interface StatusBucket {
 }
 
 export const STATUS_BUCKETS: readonly StatusBucket[] = [
-    { key: "running", label: "Running", dot: "bg-info-surface", statuses: ["pending", "running"] },
-    { key: "succeeded", label: "Succeeded", dot: "bg-success-surface", statuses: ["succeeded"] },
+    {
+        key: "running",
+        label: "Running",
+        dot: RUN_STATUS_CONFIG.running.solidDot,
+        statuses: ["pending", "running"],
+    },
+    {
+        key: "succeeded",
+        label: "Succeeded",
+        dot: RUN_STATUS_CONFIG.succeeded.solidDot,
+        statuses: ["succeeded"],
+    },
     {
         key: "failed",
         label: "Failed",
-        dot: "bg-danger-surface",
+        dot: RUN_STATUS_CONFIG.failed.solidDot,
         statuses: [FAILURE_STATUS_TOKEN],
     },
     {
         key: "skipped",
         label: "Skipped",
-        dot: "bg-on-surface-faint",
+        dot: RUN_STATUS_CONFIG.skipped.solidDot,
         statuses: ["skipped", "dst_skipped", "queue_full"],
     },
     {
         key: "stopped",
         label: "Stopped",
-        dot: "bg-warning-surface",
+        dot: RUN_STATUS_CONFIG.stopped.solidDot,
         statuses: ["stopped", "daemon_stopped"],
     },
 ];
@@ -297,7 +309,67 @@ export function isExitCodeExprValid(expr: string): boolean {
     return parseExitCodeRange(expr).valid;
 }
 
+/**
+ * The server-side filter fields for a filter state. The list query and the
+ * bulk selector both build on it, so "select all matching" targets exactly the
+ * rows on screen. Dimensions that are off are omitted.
+ */
+export interface RunFilterParams {
+    taskName?: string;
+    search?: string;
+    status?: string;
+    createdAfter?: string;
+    createdBefore?: string;
+    triggeredBy?: string;
+    exitCodeMin?: number;
+    exitCodeMax?: number;
+    retriesOnly?: true;
+}
+
+export function runFilterParams(f: RunsListFilters): RunFilterParams {
+    const params: RunFilterParams = {};
+    if (f.taskName) params.taskName = f.taskName;
+    const search = f.search.trim();
+    if (search) params.search = search;
+    if (f.statuses.length > 0) params.status = f.statuses.join(",");
+    if (f.createdAfter) params.createdAfter = f.createdAfter;
+    if (f.createdBefore) params.createdBefore = f.createdBefore;
+    if (f.triggeredBy) params.triggeredBy = f.triggeredBy;
+    const exit = exitCodeRange(f.exitCode);
+    if (exit.min !== undefined) params.exitCodeMin = exit.min;
+    if (exit.max !== undefined) params.exitCodeMax = exit.max;
+    if (f.retriesOnly === true) params.retriesOnly = true;
+    return params;
+}
+
 /** Chip label for an active exit-code filter, e.g. `Exit >100 <150`. */
 export function exitCodeChipLabel(expr: string | undefined): string {
     return `Exit ${(expr ?? "").trim()}`;
+}
+
+function timeChipLabel(f: RunsListFilters): string {
+    const { createdAfter: after, createdBefore: before } = f;
+    if (isWholeDay(after, before) && after) return `On ${formatCalendarDate(after)}`;
+    if (after && before) return `${formatDateTime(after)} – ${formatDateTime(before)}`;
+    if (after) return `Since ${formatDateTime(after)}`;
+    if (before) return `Before ${formatDateTime(before)}`;
+    return "";
+}
+
+/** Label of the chip shown for an active filter dimension. */
+export function filterChipLabel(f: RunsListFilters, dim: FilterDimension): string {
+    switch (dim) {
+        case "status":
+            return statusChipLabel(f.statuses);
+        case "time":
+            return timeChipLabel(f);
+        case "task":
+            return f.taskName ?? "";
+        case "triggeredBy":
+            return "Trigger: " + triggerDescription(f.triggeredBy ?? "");
+        case "exitCode":
+            return exitCodeChipLabel(f.exitCode);
+        case "retries":
+            return "Retries only";
+    }
 }

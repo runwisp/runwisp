@@ -20,6 +20,7 @@
     import SearchInput from "./SearchInput.svelte";
     import FilterPill from "./FilterPill.svelte";
     import Popover from "./Popover.svelte";
+    import { isTypingTarget } from "../utils/typing-target.js";
     import { Plus, RotateCcw } from "@lucide/svelte";
     import {
         type FilterField,
@@ -83,12 +84,7 @@
     // `/` focuses the search box, unless the user is already typing somewhere.
     function onWindowKeydown(e: KeyboardEvent) {
         if (e.key !== "/" || !searchEl) return;
-        const t = e.target;
-        if (
-            t instanceof HTMLElement &&
-            (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)
-        )
-            return;
+        if (isTypingTarget(e.target)) return;
         e.preventDefault();
         searchEl.focus();
     }

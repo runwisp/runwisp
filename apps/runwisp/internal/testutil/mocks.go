@@ -155,9 +155,18 @@ func (m *MockRunRepository) Close() error {
 	return args.Error(0)
 }
 
+// NoExecutorHooks supplies no-op executor.Executor hook setters; embed it in a
+// fake executor that has nothing to do with the run manager's callbacks.
+type NoExecutorHooks struct{}
+
+func (NoExecutorHooks) SetRunWatcher(executor.RunWatcher)                        {}
+func (NoExecutorHooks) SetRunUpdateCallback(func(*model.Run))                    {}
+func (NoExecutorHooks) SetOnProcessStarted(func(runID string, forceKill func())) {}
+
 // MockExecutor is a testify mock for executor.Executor.
 type MockExecutor struct {
 	mock.Mock
+	NoExecutorHooks
 }
 
 func (m *MockExecutor) Execute(ctx context.Context, task *model.Task, run *model.Run) *executor.ExecuteResult {
@@ -193,16 +202,14 @@ func cancelledResult(err error) *executor.ExecuteResult {
 	}
 }
 
-func (m *MockExecutor) Availability() executor.Availability {
-	return executor.Availability{}
-}
-
 // GateExecutor is a deterministic executor.Executor for concurrency tests.
 // Each Execute call announces its run ID on a channel and then blocks until
 // the test releases it (or the run's context is cancelled). This lets a test
 // hold a run "in flight" while it triggers overlapping runs and asserts on
 // concurrency policy — with no sleeps to guess at timing.
 type GateExecutor struct {
+	NoExecutorHooks
+
 	// Result is returned when Execute is released normally. Defaults to a clean
 	// exit-0 result when nil.
 	Result *executor.ExecuteResult
@@ -240,8 +247,6 @@ func (g *GateExecutor) Execute(ctx context.Context, _ *model.Task, run *model.Ru
 		return cancelledResult(ctx.Err())
 	}
 }
-
-func (g *GateExecutor) Availability() executor.Availability { return executor.Availability{} }
 
 // WaitStarted blocks until a run reports it has begun executing, returning its
 // ID. It fails the test on timeout so a wiring bug surfaces as a clear failure

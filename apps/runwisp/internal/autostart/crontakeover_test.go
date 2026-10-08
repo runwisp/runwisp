@@ -140,9 +140,9 @@ func TestComputePlan_TakeOverCronDiscoversAndRecordsMarker(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "cron.service", plan.CronUnit)
 	assert.Contains(t, plan.UnitContent, "# runwisp-masked-cron: cron.service")
-	actions := stepActions(plan.Steps)
-	assert.Contains(t, actions, ActionStopCron)
-	assert.Contains(t, actions, ActionMaskCron)
+	steps := stepDescriptions(plan.Steps)
+	assert.Contains(t, steps, "stop cron.service")
+	assert.Contains(t, steps, "mask cron.service")
 }
 
 // TestComputePlan_CarriesForwardExistingMarker proves the fix for the
@@ -570,7 +570,7 @@ func TestComputeUninstallPlan_UnmasksOnlyOwnMarker(t *testing.T) {
 	plan, err := inst.computeUninstallPlan(context.Background(), UninstallOptions{System: true})
 	require.NoError(t, err)
 	assert.Equal(t, "cron.service", plan.CronUnit)
-	assert.Contains(t, stepActions(plan.Steps), ActionUnmaskCron)
+	assert.Contains(t, stepDescriptions(plan.Steps), "unmask cron.service")
 }
 
 func TestComputeUninstallPlan_NoMarkerMeansNoUnmaskStep(t *testing.T) {
@@ -585,7 +585,7 @@ func TestComputeUninstallPlan_NoMarkerMeansNoUnmaskStep(t *testing.T) {
 	plan, err := inst.computeUninstallPlan(context.Background(), UninstallOptions{System: true})
 	require.NoError(t, err)
 	assert.Empty(t, plan.CronUnit)
-	assert.NotContains(t, stepActions(plan.Steps), ActionUnmaskCron)
+	assert.NotContains(t, stepDescriptions(plan.Steps), "unmask")
 }
 
 func TestApplyUninstall_UnmasksAndRestartsCron(t *testing.T) {
@@ -670,7 +670,7 @@ const cronShowState = "show -p LoadState,ActiveState,UnitFileState --value cron.
 
 // installTakeover runs a take-over install that succeeds, with cron probed as
 // "<ActiveState>\n<UnitFileState>" before RunWisp touched it.
-func installTakeover(t *testing.T, inst *systemdInstaller, fs *autostarttest.FakeFS, cmd *FakeRunner, prompter *ScriptedPrompter, opts InstallOptions, cronState string) {
+func installTakeover(t *testing.T, inst *systemdInstaller, fs *autostarttest.FakeFS, cmd *FakeRunner, prompter *autostarttest.ScriptedPrompter, opts InstallOptions, cronState string) {
 	t.Helper()
 	opts.TakeOverCron = true
 	prompter.YesNo = []bool{true}

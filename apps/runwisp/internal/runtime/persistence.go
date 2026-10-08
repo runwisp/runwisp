@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
-	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
@@ -53,19 +52,9 @@ func NewPersistenceCoordinator(bufferSize int) *PersistenceCoordinator {
 	return pc
 }
 
-// BindHook wires the persistence hook. If the executor supports
-// SetRunUpdateCallback (optional interface), it is wired to persist
-// run updates triggered by the executor (e.g. status changes).
-func (pc *PersistenceCoordinator) BindHook(hook RunPersistenceHook, exec executor.Executor) {
+// BindHook wires the persistence hook.
+func (pc *PersistenceCoordinator) BindHook(hook RunPersistenceHook) {
 	pc.hook = hook
-	type runUpdateSetter interface {
-		SetRunUpdateCallback(func(*model.Run))
-	}
-	if setter, ok := exec.(runUpdateSetter); ok {
-		setter.SetRunUpdateCallback(func(run *model.Run) {
-			pc.PersistExisting(run)
-		})
-	}
 }
 
 // PersistNew enqueues a create-style persistence task.

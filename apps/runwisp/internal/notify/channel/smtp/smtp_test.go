@@ -318,7 +318,7 @@ func TestSMTP_BuildMsg_RejectsCRLFInRecipients(t *testing.T) {
 	})
 	_, err := ch.buildMsg("ok", "<p>x</p>", "x")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "to")
+	assert.Contains(t, err.Error(), "recipient")
 }
 
 func TestSMTP_RejectCRLFEdgeCases(t *testing.T) {

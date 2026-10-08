@@ -66,3 +66,21 @@ func TestRejectNonPublicIP_Allowed(t *testing.T) {
 		t.Errorf("RejectNonPublicIP(nil) = nil, want error")
 	}
 }
+
+func TestIsLoopbackHost(t *testing.T) {
+	for host, want := range map[string]bool{
+		"localhost":   true,
+		"127.0.0.1":   true,
+		"127.0.0.2":   true,
+		"::1":         true,
+		"":            false, // as a bind host, all interfaces
+		"0.0.0.0":     false,
+		"::":          false,
+		"10.0.0.5":    false,
+		"example.com": false,
+	} {
+		if got := IsLoopbackHost(host); got != want {
+			t.Errorf("IsLoopbackHost(%q) = %v, want %v", host, got, want)
+		}
+	}
+}

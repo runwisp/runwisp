@@ -46,7 +46,7 @@
         activeTask?: Task | undefined;
         tasks?: {
             name: string;
-            group?: string;
+            group: string;
             icon: Component;
         }[];
         /** The task list hasn't loaded yet: show placeholders, not an empty list. */
@@ -56,15 +56,18 @@
 
     type TaskGroup = { name: string; tasks: typeof tasks };
 
+    let showGroupHeaders = $derived(new Set(tasks.map((t) => t.group)).size > 1);
+
+    // One group per task group when there are several; otherwise a single
+    // "Tasks" section, so a lone custom group name isn't shown as a header.
     let taskGroups: TaskGroup[] = $derived.by(() => {
+        if (!showGroupHeaders) return [{ name: "Tasks", tasks }];
         const groups: Record<string, typeof tasks> = {};
         for (const task of tasks) {
-            (groups[task.group ?? "Tasks"] ??= []).push(task);
+            (groups[task.group] ??= []).push(task);
         }
         return Object.entries(groups).map(([name, groupTasks]) => ({ name, tasks: groupTasks }));
     });
-
-    let showGroupHeaders = $derived(taskGroups.length > 1);
 
     let sidebarOpen = $state(false);
     // Between lg and 3xl the sidebar sits beside the page but can be folded
@@ -232,14 +235,16 @@
                         </div>
                     {/each}
                 </div>
-            {:else if showGroupHeaders}
+            {:else}
                 {#each taskGroups as group (group.name)}
                     <div
-                        class="mt-4 mb-2 px-3 font-mono text-2xs font-medium tracking-[0.16em] text-on-surface-faint uppercase first:mt-0"
+                        class="mb-2 px-3 font-mono text-2xs font-medium tracking-[0.16em] text-on-surface-faint uppercase {showGroupHeaders
+                            ? 'mt-4 first:mt-0'
+                            : ''}"
                     >
                         {group.name}
                     </div>
-                    <nav class="mb-2 space-y-0.5">
+                    <nav class="space-y-0.5 {showGroupHeaders ? 'mb-2' : 'mb-8'}">
                         {#each group.tasks as task (task.name)}
                             {@render navLink(
                                 resolve(`/tasks/${task.name}`),
@@ -250,22 +255,6 @@
                         {/each}
                     </nav>
                 {/each}
-            {:else}
-                <div
-                    class="mb-2 px-3 font-mono text-2xs font-medium tracking-[0.16em] text-on-surface-faint uppercase"
-                >
-                    Tasks
-                </div>
-                <nav class="mb-8 space-y-0.5">
-                    {#each tasks as task (task.name)}
-                        {@render navLink(
-                            resolve(`/tasks/${task.name}`),
-                            task.name === activeTaskName,
-                            task.icon,
-                            task.name,
-                        )}
-                    {/each}
-                </nav>
             {/if}
         </div>
 

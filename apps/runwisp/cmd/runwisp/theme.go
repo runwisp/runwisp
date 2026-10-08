@@ -6,18 +6,7 @@ package main
 import (
 	lipglossv2 "charm.land/lipgloss/v2"
 	"github.com/charmbracelet/fang"
-)
-
-// Brand palette — the single source of truth for CLI accent colors, matching
-// internal/tui/uikit/theme.go (blue primary, green secondary) and the run-status
-// red used across the TUI, banner, and logs. Kept as hex strings so both the
-// fang color scheme (lipgloss v2) and the error renderer (lipgloss v1) can draw
-// from the same constants.
-const (
-	brandPrimaryHex   = "#526ee3" // blue
-	brandSecondaryHex = "#009371" // green
-	brandErrorHex     = "#f7768e" // red
-	brandErrorFgHex   = "#1a1b26" // near-black, for text on the red badge
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
 // brandColorScheme paints fang's help/usage pages in the RunWisp palette. It
@@ -28,9 +17,9 @@ const (
 // default: handleCLIError renders errors, not fang, so it would never be seen.
 func brandColorScheme(c lipglossv2.LightDarkFunc) fang.ColorScheme {
 	cs := fang.DefaultColorScheme(c)
-	cs.Title = lipglossv2.Color(brandPrimaryHex)
-	cs.Command = lipglossv2.Color(brandPrimaryHex)
-	cs.Program = lipglossv2.Color(brandSecondaryHex)
-	cs.Flag = lipglossv2.Color(brandSecondaryHex)
+	cs.Title = uikit.ColorPrimary
+	cs.Command = uikit.ColorPrimary
+	cs.Program = uikit.ColorSecondary
+	cs.Flag = uikit.ColorSecondary
 	return cs
 }

@@ -86,14 +86,16 @@ export type { FetchLogsFn, LogEvent, LogSlice } from "./log-console/types.js";
 export { default as RunDetailPanel } from "./components/dashboard/RunDetailPanel.svelte";
 export { default as RunsList } from "./components/dashboard/RunsList.svelte";
 export { default as RunFilterPopover } from "./components/dashboard/RunFilterPopover.svelte";
-export type { RunOutputMatch } from "./components/dashboard/RunsList.svelte";
+export type { RunOutputMatch } from "./components/dashboard/types.js";
 export {
     activeFilterCount,
     emptyRunFilters,
     FAILURE_STATUS_TOKEN,
     humanizeStatus,
     exitCodeRange,
+    runFilterParams,
     type ExitCodeRange,
+    type RunFilterParams,
     type RunsListFilters,
 } from "./components/dashboard/run-filters.js";
 export { RUN_STATUS_CONFIG } from "./components/dashboard/status-config.js";
@@ -117,6 +119,7 @@ export {
 } from "./utils/format.js";
 export { formatShortId } from "./utils/id.js";
 export { debounce } from "./utils/debounce.js";
+export { isTypingTarget } from "./utils/typing-target.js";
 export { TickingNow } from "./utils/ticking-now.svelte.js";
 export { CopyFeedback, copyText } from "./utils/clipboard.svelte.js";
 export { RunMotion } from "./utils/run-motion.js";

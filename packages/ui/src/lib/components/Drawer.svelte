@@ -5,9 +5,9 @@
     import type { Snippet } from "svelte";
     import { X } from "@lucide/svelte";
     import Heading from "./Heading.svelte";
-    import { portal } from "../actions/portal.js";
     import { trapFocus } from "../actions/focusTrap.js";
-    import { fly } from "svelte/transition";
+    import { modalDialogHandlers, showModal } from "../actions/modal-dialog.js";
+    import { fade, fly } from "svelte/transition";
 
     type Side = "left" | "right" | "top" | "bottom";
     type DrawerSize = "sm" | "md" | "lg" | "xl";
@@ -37,6 +37,8 @@
         children,
         class: className = "",
     }: Props = $props();
+
+    const titleId = $props.id();
 
     const sizeValues: Record<DrawerSize, string> = {
         sm: "320px",
@@ -72,32 +74,25 @@
         onClose?.();
     }
 
-    function handleKeydown(e: KeyboardEvent) {
-        if (e.key === "Escape" && closable) {
-            handleClose();
-        }
-    }
+    const dialogHandlers = modalDialogHandlers({
+        closable: () => closable,
+        isOpen: () => open,
+        close: handleClose,
+    });
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
-
 {#if open}
-    <div use:portal class="fixed inset-0 z-50">
-        {#if closable}
-            <button
-                type="button"
-                class="absolute inset-0 z-0 bg-backdrop backdrop-blur-sm"
-                aria-label="Close drawer"
-                tabindex="-1"
-                onclick={handleClose}
-                transition:fly={{ duration: 150 }}
-            ></button>
-        {:else}
-            <div
-                class="absolute inset-0 z-0 bg-backdrop backdrop-blur-sm"
-                transition:fly={{ duration: 150 }}
-            ></div>
-        {/if}
+    <dialog
+        use:showModal
+        {...dialogHandlers}
+        aria-labelledby={title ? titleId : undefined}
+        class="fixed inset-0 m-0 h-full max-h-none w-full max-w-none border-0 bg-transparent p-0 text-inherit backdrop:bg-transparent"
+    >
+        <div
+            class="pointer-events-none absolute inset-0 z-0 bg-backdrop backdrop-blur-sm"
+            aria-hidden="true"
+            transition:fade={{ duration: 150 }}
+        ></div>
 
         <div
             use:trapFocus
@@ -108,9 +103,6 @@
                 {className}
             "
             style={panelStyle}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={title ? "drawer-title" : undefined}
             transition:fly={{ ...flyParams[side], duration: 250 }}
         >
             {#if header}
@@ -123,7 +115,7 @@
                 >
                     <div>
                         {#if title}
-                            <Heading level={2} size="lg" id="drawer-title">{title}</Heading>
+                            <Heading level={2} size="lg" id={titleId}>{title}</Heading>
                         {/if}
                     </div>
                     {#if closable}
@@ -150,5 +142,5 @@
                 </div>
             {/if}
         </div>
-    </div>
+    </dialog>
 {/if}

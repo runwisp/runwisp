@@ -29,7 +29,7 @@ func TestFormatDuration(t *testing.T) {
 	start := now.Add(-500 * time.Millisecond)
 	r := model.Run{StartedAt: &start}
 	d := FormatDuration(r)
-	assert.Contains(t, d, "ms")
+	assert.True(t, strings.HasPrefix(d, "0."), d)
 
 	// < 1m
 	start2 := now.Add(-30 * time.Second)
@@ -64,6 +64,7 @@ func TestFormatTimeAgo(t *testing.T) {
 	now := time.Now()
 
 	assert.Equal(t, "just now", FormatTimeAgo(now, nil))
+	assert.Equal(t, "just now", FormatTimeAgo(now.Add(-10*time.Second), nil))
 	assert.Contains(t, FormatTimeAgo(now.Add(-45*time.Second), nil), "s ago")
 	assert.Contains(t, FormatTimeAgo(now.Add(-30*time.Minute), nil), "m ago")
 	assert.Contains(t, FormatTimeAgo(now.Add(-3*time.Hour), nil), "h ago")

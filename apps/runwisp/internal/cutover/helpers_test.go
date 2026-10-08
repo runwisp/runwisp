@@ -5,12 +5,13 @@ package cutover
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostartfake"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostarttest"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/stretchr/testify/require"
 )
@@ -25,69 +26,6 @@ import (
 //
 // Config files are real, under t.TempDir(): the loader is what answers "does
 // this config read crontabs", and faking it would assert the mock.
-
-// fakeInstaller records what it was asked to do and answers from fields.
-type fakeInstaller struct {
-	cronUnit   string
-	cronActive bool
-	cronErr    error
-
-	status    autostart.Status
-	statusErr error
-
-	plan    autostart.Plan
-	planErr error
-
-	installErr error
-
-	// calls records the ordered log of side-effecting methods.
-	calls []string
-	// installOpts is what Install was last handed, for asserting TakeOverCron
-	// and PreConfirmed.
-	installOpts autostart.InstallOptions
-	// configAtInstall is whether opts.Config existed when Install was called —
-	// the ordering guarantee that matters most here.
-	configAtInstall bool
-}
-
-func (f *fakeInstaller) Render(autostart.InstallOptions) ([]byte, error) { return nil, nil }
-
-func (f *fakeInstaller) ComputePlan(context.Context, autostart.InstallOptions) (autostart.Plan, error) {
-	return f.plan, f.planErr
-}
-
-func (f *fakeInstaller) Install(_ context.Context, opts autostart.InstallOptions, _ io.Writer) error {
-	f.calls = append(f.calls, "install")
-	f.installOpts = opts
-	_, err := os.Stat(opts.Config)
-	f.configAtInstall = err == nil
-	return f.installErr
-}
-
-func (f *fakeInstaller) Uninstall(context.Context, autostart.UninstallOptions, io.Writer) error {
-	return nil
-}
-
-func (f *fakeInstaller) Status(context.Context, autostart.InstallOptions) (autostart.Status, error) {
-	return f.status, f.statusErr
-}
-
-func (f *fakeInstaller) Stop(context.Context, autostart.InstallOptions) error    { return nil }
-func (f *fakeInstaller) Restart(context.Context, autostart.InstallOptions) error { return nil }
-
-func (f *fakeInstaller) EnsurePasswordDropIn(context.Context, autostart.InstallOptions, string) (string, bool, error) {
-	return "", false, nil
-}
-
-func (f *fakeInstaller) SupportsPasswordDropIn() bool { return true }
-
-func (f *fakeInstaller) WriteEnvDropIn(context.Context, autostart.InstallOptions, string, map[string]string) (string, autostart.DropInChange, error) {
-	return "", autostart.DropInUnchanged, nil
-}
-
-func (f *fakeInstaller) CronStatus(context.Context) (string, bool, error) {
-	return f.cronUnit, f.cronActive, f.cronErr
-}
 
 // fixture is a box description: the files on it, and what its units say.
 type fixture struct {
@@ -119,7 +57,7 @@ type fixture struct {
 }
 
 // build turns a fixture into a Cutover plus the installer it will talk to.
-func (fx fixture) build(t *testing.T) (*Cutover, *fakeInstaller, string) {
+func (fx fixture) build(t *testing.T) (*Cutover, *autostartfake.Installer, string) {
 	t.Helper()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runwisp.toml")
@@ -137,11 +75,11 @@ func (fx fixture) build(t *testing.T) (*Cutover, *fakeInstaller, string) {
 	if fx.unitInstalled {
 		unitPlan = autostart.Plan{Kind: autostart.PlanNoop}
 	}
-	inst := &fakeInstaller{
-		cronUnit:   fx.cronUnit,
-		cronActive: fx.cronActive,
-		status:     autostart.Status{Installed: fx.unitInstalled, Running: fx.unitInstalled && !fx.serviceStopped},
-		plan:       unitPlan,
+	inst := &autostartfake.Installer{
+		CronUnit:   fx.cronUnit,
+		CronActive: fx.cronActive,
+		Stat:       autostart.Status{Installed: fx.unitInstalled, Running: fx.unitInstalled && !fx.serviceStopped},
+		Plan:       unitPlan,
 	}
 
 	goos := fx.goos
@@ -151,7 +89,7 @@ func (fx fixture) build(t *testing.T) (*Cutover, *fakeInstaller, string) {
 
 	c := New(Deps{
 		Installer: inst,
-		Prompter:  &autostart.ScriptedPrompter{},
+		Prompter:  &autostarttest.ScriptedPrompter{},
 		Opts: autostart.InstallOptions{
 			Binary: "/usr/local/bin/runwisp", Config: cfgPath,
 			DataDir: filepath.Join(dir, "data"), Host: "127.0.0.1", Port: 9477, System: true,
@@ -168,14 +106,15 @@ func (fx fixture) build(t *testing.T) (*Cutover, *fakeInstaller, string) {
 			return scan
 		},
 		Trusted:       func(string) error { return nil },
+		Preflight:     func(context.Context) (bool, error) { return false, nil },
 		DaemonRunning: func() bool { return fx.daemonRunning },
-		Reload:        func(context.Context) error { inst.calls = append(inst.calls, "reload"); return nil },
+		Reload:        func(context.Context) error { inst.Calls = append(inst.Calls, "reload"); return nil },
 		WriteConfig: func(path string, patterns []string) error {
-			inst.calls = append(inst.calls, "write-config")
+			inst.Calls = append(inst.Calls, "write-config")
 			return os.WriteFile(path, []byte(config.CronStarterConfig(patterns)), 0o644)
 		},
 		WireCron: func(path string, patterns []string) error {
-			inst.calls = append(inst.calls, "wire-cron")
+			inst.Calls = append(inst.Calls, "wire-cron")
 			return writeWired(path, patterns)
 		},
 		AllowSkippedCronJobs: fx.allowSkipped,

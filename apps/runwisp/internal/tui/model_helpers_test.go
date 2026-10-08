@@ -887,16 +887,16 @@ func TestToggleSelectedNotificationRead_ReadToUnread(t *testing.T) {
 
 // ─── requestQuit with remote daemon ──────────────────────────────────────────
 
-// TestRequestQuit_RemoteSkipsAutostartHint exercises the isRemote=true
+// TestRequestQuit_RemoteSkipsAutostartHint exercises the outOfProcess=true
 // branch where the dialog gets no autostart hint.
 func TestRequestQuit_RemoteSkipsAutostartHint(t *testing.T) {
 	m := newTestModel(nil)
-	m.isRemote = true
+	m.outOfProcess = true
 	m.daemon = DaemonStarted
 	m.requestQuit()
 	d := m.dialogs.confirm()
 	if d == nil {
-		t.Fatal("expected confirm dialog after requestQuit with isRemote=true")
+		t.Fatal("expected confirm dialog after requestQuit with outOfProcess=true")
 	}
 	if len(d.noteLines) != 0 {
 		t.Fatalf("expected no autostart hint, got %q", d.noteLines)

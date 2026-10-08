@@ -27,8 +27,8 @@ func (v *ExecView) renderMetaField(label, value string, focus HeaderFocusItem) s
 	focused := v.HeaderFocus == focus
 	hovered := v.HoveredHeader == focus && focus != HeaderFocusNone
 	bg := focusBg(focused, hovered)
-	labelStyle := lipgloss.NewStyle().Background(bg).Foreground(uikit.ColorTextMuted)
-	valueStyle := lipgloss.NewStyle().Background(bg).Foreground(uikit.ColorTextBright)
+	labelStyle := uikit.OnBg(bg, uikit.ColorTextMuted)
+	valueStyle := uikit.OnBg(bg, uikit.ColorTextBright)
 	if focused {
 		valueStyle = valueStyle.Bold(true)
 	}
@@ -109,7 +109,7 @@ func (v *ExecView) renderTitleRow(w int) string {
 	idFocused := v.HeaderFocus == HeaderFocusID
 	idHovered := v.HoveredHeader == HeaderFocusID
 	idBg := focusBg(idFocused, idHovered)
-	idStyle := lipgloss.NewStyle().Background(idBg).Foreground(uikit.ColorTextMuted)
+	idStyle := uikit.OnBg(idBg, uikit.ColorTextMuted)
 	if idFocused {
 		idStyle = idStyle.Bold(true)
 	}
@@ -209,7 +209,7 @@ func (v *ExecView) renderMetaRow(w int) string {
 		metaLine += trigger
 	}
 	if v.Pane.Follow && (v.Run.Status == model.PhaseRunning || v.Run.Status == model.PhasePending) {
-		if follow := lipgloss.NewStyle().Background(uikit.ColorBgLight).Foreground(uikit.ColorSecondary).Bold(true).Render("  ● FOLLOW"); fits(follow) {
+		if follow := uikit.OnBg(uikit.ColorBgLight, uikit.ColorSecondary).Bold(true).Render("  ● FOLLOW"); fits(follow) {
 			metaLine += follow
 		}
 	}

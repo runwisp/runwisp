@@ -511,12 +511,6 @@ func TestWebSocketURLDerivation(t *testing.T) {
 
 // ---------- Inbound payload dispatch (via handler) ----------
 
-func TestRecoverArchiveBacklog_NilClientReturnsImmediately(t *testing.T) {
-	var c *Client
-	// Must not panic on a nil receiver — RecoverArchiveBacklog is safe before Run().
-	c.RecoverArchiveBacklog(context.Background())
-}
-
 // newClientWithUploader builds a Client wired with a real LogUploader, fake
 // pending repo, and fake run repo — the minimum surface RecoverArchiveBacklog
 // needs. We bypass NewClient because it requires a TaskRunner and event bus
@@ -702,12 +696,6 @@ func TestWriteLoop_ContextCancelExitsCleanly(t *testing.T) {
 
 // ---------- NewClient validation ----------
 
-func TestNewClient_DisabledReturnsNil(t *testing.T) {
-	client, err := NewClient(Config{Enabled: false}, Dependencies{})
-	require.NoError(t, err)
-	assert.Nil(t, client, "disabled config must produce no client")
-}
-
 func TestNewClient_MissingTaskManager(t *testing.T) {
 	_, err := NewClient(Config{Enabled: true}, Dependencies{})
 	require.Error(t, err)
@@ -809,13 +797,6 @@ func TestSnapshotForSync_ReflectsLiveReload(t *testing.T) {
 	assert.NotContains(t, after, "backup", "reload removed this task; sync must stop reporting it")
 	assert.Contains(t, after, "nightly-backup")
 	assert.Contains(t, after, "cleanup")
-}
-
-// Nil-receiver Run is a safe no-op so callers can wire the station client
-// unconditionally and let NewClient's disabled-config check return nil.
-func TestRun_NilClientIsNoop(t *testing.T) {
-	var c *Client
-	require.NoError(t, c.Run(context.Background()))
 }
 
 // readLoop reads frames until the websocket closes, then returns the wrapped

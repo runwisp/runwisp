@@ -18,7 +18,7 @@ var ErrAborted = errors.New("autostart: aborted by user")
 var ErrNeedsYes = errors.New("autostart: requires --yes when stdin is not a terminal")
 
 // Prompter is the user-confirmation seam. Production uses a TTY-aware
-// implementation; tests use ScriptedPrompter.
+// implementation; tests use autostarttest.ScriptedPrompter.
 type Prompter interface {
 	// Confirm asks a yes/no question. The default fires on bare Enter.
 	Confirm(question string, defaultYes bool) (bool, error)
@@ -86,36 +86,6 @@ func (p *stdioPrompter) ConfirmLiteral(question, expected string) error {
 		return fmt.Errorf("read prompt response: %w", err)
 	}
 	if strings.TrimSpace(answer) != expected {
-		return ErrAborted
-	}
-	return nil
-}
-
-// ScriptedPrompter answers prompts from a pre-set queue. Used in tests
-// to drive the install flow deterministically.
-type ScriptedPrompter struct {
-	YesNo    []bool
-	Literals []string
-	yesIdx   int
-	litIdx   int
-}
-
-func (s *ScriptedPrompter) Confirm(_ string, _ bool) (bool, error) {
-	if s.yesIdx >= len(s.YesNo) {
-		return false, errors.New("ScriptedPrompter: no answer queued for Confirm")
-	}
-	ans := s.YesNo[s.yesIdx]
-	s.yesIdx++
-	return ans, nil
-}
-
-func (s *ScriptedPrompter) ConfirmLiteral(_, expected string) error {
-	if s.litIdx >= len(s.Literals) {
-		return errors.New("ScriptedPrompter: no answer queued for ConfirmLiteral")
-	}
-	ans := s.Literals[s.litIdx]
-	s.litIdx++
-	if ans != expected {
 		return ErrAborted
 	}
 	return nil

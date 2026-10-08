@@ -8,19 +8,15 @@
     import { OverviewPage, OverviewSkeleton } from "$lib/components/dashboard";
     import { RunMotion, type DaemonStats } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
-    import { runsApi, systemApi, systemEventSchema, type MetricsSample } from "$lib/api";
-    import { runUpdatesStore, systemStore, taskStore, appEventStream } from "$lib/stores";
+    import { runsApi } from "$lib/api";
+    import { runUpdatesStore, systemStore, taskStore } from "$lib/stores";
     import { mergeRuns } from "$lib/utils/overview-runs";
-    import { safeParseJSON } from "$lib/utils/parse";
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import type { Run } from "@runwisp/common";
 
     const RECENT_RUN_LIMIT = 16;
     const RUNNING_RUN_LIMIT = 8;
-    const TASKS_REFRESH_DEBOUNCE_MS = 1000;
-    // Live window for the metrics chart: seeded from /api/system/metrics, then
-    // grown by pushed samples (one every ~5s). 120 ≈ 10 minutes.
-    const METRICS_HISTORY_LIMIT = 120;
+    const TASKS_REFRESH_DELAY_MS = 1000;
 
     const isRunning = (run: Run) => run.status === "running";
 
@@ -28,14 +24,12 @@
         recentRuns: Run[];
         runningRuns: Run[];
         totalRuns: number;
-        metricsHistory: MetricsSample[];
     }
 
     let dashState = $state<DashboardState>({
         recentRuns: [],
         runningRuns: [],
         totalRuns: 0,
-        metricsHistory: [],
     });
 
     const pageData = new AsyncData(async () => {
@@ -120,24 +114,10 @@
             }
         });
 
-        // Live cpu/mem samples arrive on the shared app-event stream; append
-        // each onto the chart. The gauges themselves read systemStore, which is
-        // push-fed by the same stream (seeded in the layout). No polling.
-        const unsubscribeSystem = appEventStream.subscribe("system", (data) => {
-            // Invalid payloads are dropped silently: the chart is secondary.
-            const parsed = safeParseJSON(data, systemEventSchema);
-            if (!parsed.success) return;
-            dashState.metricsHistory = [...dashState.metricsHistory, parsed.data.sample].slice(
-                -METRICS_HISTORY_LIMIT,
-            );
-        });
-
         void pageData.fetch();
-        void loadMetricsHistory();
 
         return () => {
             unsubscribe();
-            unsubscribeSystem();
             if (tasksRefreshTimer) {
                 clearTimeout(tasksRefreshTimer);
                 tasksRefreshTimer = null;
@@ -173,26 +153,14 @@
 
     let tasksRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-    // Trailing debounce so a burst of simultaneous cron fires coalesces into
-    // a single /api/tasks refetch.
+    // The first event arms a timer and later ones inside the window ride on it,
+    // so a burst of simultaneous cron fires costs a single /api/tasks refetch.
     function scheduleTasksRefresh() {
         if (tasksRefreshTimer) return;
         tasksRefreshTimer = setTimeout(() => {
             tasksRefreshTimer = null;
             void taskStore.refresh();
-        }, TASKS_REFRESH_DEBOUNCE_MS);
-    }
-
-    async function loadMetricsHistory() {
-        // No connection-status guard: this fires once at mount, and the status
-        // briefly reads "disconnected" before the SSE stream opens, so gating on
-        // it would skip the one-shot backfill. The daemon serves this page, so
-        // it's reachable; a genuine failure is caught and swallowed below.
-        try {
-            dashState.metricsHistory = await systemApi.getMetricsHistory();
-        } catch {
-            // silent, metrics history is secondary
-        }
+        }, TASKS_REFRESH_DELAY_MS);
     }
 
     async function handleTaskClick(taskName: string) {
@@ -212,7 +180,6 @@
         runningRuns={dashState.runningRuns}
         totalRuns={dashState.totalRuns}
         tasks={taskStore.items}
-        metricsHistory={dashState.metricsHistory}
         onViewAllRuns={() => goto(resolve("/runs"))}
         onTaskClick={handleTaskClick}
         onRunClick={handleRunClick}

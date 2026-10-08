@@ -12,7 +12,7 @@ export interface RunVerdict {
 }
 
 // The run's outcome as a verb phrase, read as one sentence: "succeeded in 933ms".
-const RUN_VERDICTS: Record<RunStatus, RunVerdict> = {
+export const RUN_VERDICTS: Record<RunStatus, RunVerdict> = {
     succeeded: { verb: "succeeded in", timed: true },
     failed: { verb: "failed after", timed: true },
     crashed: { verb: "crashed after", timed: true },
@@ -31,8 +31,21 @@ const RUN_VERDICTS: Record<RunStatus, RunVerdict> = {
     queue_full: { verb: "skipped", timed: false },
 };
 
-export function runVerdict(status: RunStatus): RunVerdict {
-    return RUN_VERDICTS[status];
+export interface RunEndMarker {
+    label: string;
+    tone: "muted" | "warn";
+}
+
+// The line closing a run's console output; only abnormal ends are worth a warning tone.
+const RUN_END_MARKERS: Partial<Record<RunStatus, RunEndMarker>> = {
+    stopped: { label: "run stopped by operator", tone: "warn" },
+    daemon_stopped: { label: "daemon stopped mid-run", tone: "warn" },
+    timeout: { label: "run timed out", tone: "warn" },
+};
+const DEFAULT_END_MARKER: RunEndMarker = { label: "end of output", tone: "muted" };
+
+export function runEndMarker(status: RunStatus): RunEndMarker {
+    return RUN_END_MARKERS[status] ?? DEFAULT_END_MARKER;
 }
 
 export function runDuration(
@@ -117,4 +130,41 @@ export function runPhaseOrder(status: string): number {
     if (status === "pending") return 0;
     if (status === "running") return 1;
     return 2;
+}
+
+/** Right-hand mono readout of a run row: live / queued / exit N / duration. */
+export function runRowReadout(
+    run: Pick<Run, "status" | "exitCode" | "startedAt" | "endedAt">,
+    displayed: RunStatus,
+): string {
+    if (run.status === "running") return "live";
+    if (run.status === "pending") return "queued";
+    if (displayed === "failed" || displayed === "crashed") return "exit " + String(run.exitCode);
+    return runDuration(run) ?? "—";
+}
+
+export interface HighlightParts {
+    before: string;
+    match: string;
+    after: string;
+}
+
+/**
+ * Split an output line into [before, match, after] around the first
+ * occurrence of the query, windowed to keep the match in view. Plain strings,
+ * so rendering them as text never lets untrusted HTML reach the DOM.
+ */
+export function highlightParts(text: string, query: string): HighlightParts {
+    const q = query.trim();
+    const idx = q ? text.toLowerCase().indexOf(q.toLowerCase()) : -1;
+    if (idx === -1) return { before: text, match: "", after: "" };
+    const start = Math.max(0, idx - 14);
+    const lead = start > 0 ? "…" : "";
+    const windowed = text.slice(start);
+    const fi = windowed.toLowerCase().indexOf(q.toLowerCase());
+    return {
+        before: lead + windowed.slice(0, fi),
+        match: windowed.slice(fi, fi + q.length),
+        after: windowed.slice(fi + q.length),
+    };
 }

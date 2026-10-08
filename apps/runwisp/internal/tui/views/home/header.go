@@ -63,53 +63,41 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 	b.WriteString("\n")
 	lineCount++
 
-	title := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorTextBright).
+	title := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextBright).
 		Bold(true).
 		Render("  Home")
 	b.WriteString(uikit.PadLine(title, w, uikit.ColorBgLight))
 	b.WriteString("\n")
 	lineCount++
 
-	muted := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorTextMuted)
+	muted := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted)
 	var parts []string
 	if info.StationEnabled {
 		parts = append(parts, muted.Render("Station connected"))
 	}
 	if info.ConfigStale {
 		// Warning color, not muted \u2014 a pending config change is actionable.
-		warn := lipgloss.NewStyle().
-			Background(uikit.ColorBgLight).
-			Foreground(uikit.ColorWarning).
+		warn := uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
 			Render("\u26a0 runwisp.toml changed \u2014 press R to reload")
 		parts = append(parts, warn)
 	}
 	if n := HeldTaskCount(info.Tasks); n > 0 {
 		// Warning color: these are the operator's own jobs, loaded and listed, that
 		// RunWisp is deliberately not firing. The chip names the way out.
-		warn := lipgloss.NewStyle().
-			Background(uikit.ColorBgLight).
-			Foreground(uikit.ColorWarning).
+		warn := uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
 			Render(fmt.Sprintf("⏸ %d held by cron — `sudo runwisp takeover`", n))
 		parts = append(parts, warn)
 	}
 	if n := len(info.PausedTasks); n > 0 {
 		// Warning color like held: a forgotten pause silently stops a job.
-		warn := lipgloss.NewStyle().
-			Background(uikit.ColorBgLight).
-			Foreground(uikit.ColorWarning).
+		warn := uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
 			Render("⏸ " + textutil.Count(n, "schedule", "schedules") + " paused")
 		parts = append(parts, warn)
 	}
 	if n := len(info.ConfigWarnings); n > 0 {
 		// Warning color for the same reason as the stale notice: these name jobs the
 		// daemon is not running, and nothing else in the TUI would ever mention them.
-		warn := lipgloss.NewStyle().
-			Background(uikit.ColorBgLight).
-			Foreground(uikit.ColorWarning).
+		warn := uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
 			Render(fmt.Sprintf("\u26a0 %s \u2014 see `runwisp validate`", textutil.Count(n, "config warning", "config warnings")))
 		parts = append(parts, warn)
 	}
@@ -188,18 +176,14 @@ func rowStyle(selected, hovered bool) (bg color.Color, indicator string) {
 func renderFieldRow(b *strings.Builder, label, value string, valueColor color.Color, w int, selected, hovered bool) {
 	bg, indicator := rowStyle(selected, hovered)
 
-	l := lipgloss.NewStyle().
-		Background(bg).
-		Foreground(uikit.ColorTextMuted).
+	l := uikit.OnBg(bg, uikit.ColorTextMuted).
 		Render(indicator + label)
 
 	sep := lipgloss.NewStyle().
 		Background(bg).
 		Render("  ")
 
-	v := lipgloss.NewStyle().
-		Background(bg).
-		Foreground(valueColor).
+	v := uikit.OnBg(bg, valueColor).
 		Bold(selected).
 		Render(value)
 
@@ -211,9 +195,7 @@ func renderFieldRow(b *strings.Builder, label, value string, valueColor color.Co
 func renderActionRow(b *strings.Builder, label string, labelColor color.Color, w int, selected, hovered bool) {
 	bg, indicator := rowStyle(selected, hovered)
 
-	l := lipgloss.NewStyle().
-		Background(bg).
-		Foreground(labelColor).
+	l := uikit.OnBg(bg, labelColor).
 		Bold(true).
 		Render(indicator + "⮕  " + label)
 
@@ -234,9 +216,7 @@ func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, p
 	b.WriteString("\n")
 	lineCount++
 
-	name := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorTextBright).
+	name := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextBright).
 		Bold(true).
 		Render("  " + taskName)
 	b.WriteString(uikit.PadLine(name, w, uikit.ColorBgLight))
@@ -244,11 +224,8 @@ func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, p
 	lineCount++
 
 	schedule := "manual"
-	switch {
-	case task != nil && task.Kind.IsService():
-		schedule = fmt.Sprintf("service x%d", task.Instances)
-	case task != nil && task.Cron != "":
-		schedule = task.Cron
+	if task != nil {
+		schedule = uikit.ScheduleLabel(task)
 	}
 	held := task != nil && task.HeldBy != model.HeldByNothing
 	schedInfo := "  Schedule: " + schedule
@@ -260,23 +237,17 @@ func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, p
 	if usage != nil {
 		schedInfo += "  •  " + uikit.FormatUsage(*usage)
 	}
-	schedText := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorTextMuted).
+	schedText := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
 		Render(schedInfo)
 	if held {
 		// A next-run time would be a lie here: the scheduler stood down for cron, so
 		// that tick comes and goes without RunWisp firing anything. This is the only
 		// per-task metadata slot in the TUI, so it is where the fact belongs.
-		schedText += lipgloss.NewStyle().
-			Background(uikit.ColorBgLight).
-			Foreground(uikit.ColorWarning).
+		schedText += uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
 			Render("  •  ⏸ held — cron still owns this job")
 	} else if paused {
 		// Same slot and tone as held: the schedule is listed but nothing fires.
-		schedText += lipgloss.NewStyle().
-			Background(uikit.ColorBgLight).
-			Foreground(uikit.ColorWarning).
+		schedText += uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
 			Render("  •  ⏸ paused, p resumes")
 	}
 

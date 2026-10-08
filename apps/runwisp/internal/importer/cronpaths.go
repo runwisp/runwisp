@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -140,4 +141,77 @@ func detectCronFlavor(root fs.FS) CronFlavor {
 		}
 	}
 	return CronFlavorUnknown
+}
+
+// IsSystemCrontabPath reports whether a path is a conventional system-crontab
+// location, whose lines carry a user column between the schedule and the command.
+//
+// It lives here rather than in a caller because it is a fact about the crontab
+// format, and two callers need the same answer: `runwisp import cron`
+// choosing a default for one file, and the `[daemon] include_cron` loader
+// choosing per file for a whole glob. Two copies of this would be two answers.
+func IsSystemCrontabPath(path string) bool {
+	if path == "" || path == "-" {
+		return false
+	}
+	clean := filepath.Clean(path)
+	if clean == SystemCrontabPath {
+		return true
+	}
+	return slices.Contains(strings.Split(clean, string(filepath.Separator)), "cron.d")
+}
+
+// UserSpoolOwner returns the account a per-user crontab in a cron spool belongs
+// to, and whether the path is in a spool at all.
+//
+// A spool crontab has no user column — crond knows who it belongs to because the
+// *filename* is the account name. Every layout UserSpoolDirs recognizes is
+// checked: Debian/Ubuntu's /var/spool/cron/crontabs/<user>, RHEL/SUSE's
+// /var/spool/cron/<user>, and the rest.
+//
+// The name is only a claim. What makes acting on it safe is that the caller then
+// requires the file to be owned by that account (see config.assertCronFileTrusted)
+// — deriving an identity from a filename is an escalation only when nothing has to
+// agree with it, and crond makes exactly the same pair of checks on the same files.
+func UserSpoolOwner(path string) (string, bool) {
+	if path == "" || path == "-" {
+		return "", false
+	}
+	clean := filepath.Clean(path)
+	dir, base := filepath.Split(clean)
+	if !IsSpoolCrontabDir(filepath.Clean(dir)) {
+		return "", false
+	}
+	// A spool filename is a bare account name. Anything else in there — a lock
+	// file, an editor's leftover — is not a crontab, and guessing an owner from it
+	// would be inventing an identity.
+	if base == "" || !IsPlausibleAccountName(base) {
+		return "", false
+	}
+	return base, true
+}
+
+// IsSpoolCrontabDir reports whether dir is one of the per-user cron spool
+// directories UserSpoolDirs recognizes. `[daemon] include_cron`'s glob filter
+// uses it to avoid guessing "spool" for an arbitrary directory that merely
+// happens to be named `crontabs`.
+func IsSpoolCrontabDir(dir string) bool {
+	return slices.Contains(UserSpoolDirs(), filepath.Clean(dir))
+}
+
+// IsPlausibleAccountName reports whether a spool basename can be an account
+// name. Deliberately strict: a name that has to survive being handed to the OS
+// as a run-as identity, so anything exotic is better refused than resolved.
+// `[daemon] include_cron`'s glob filter shares this rule, since a stricter one
+// there would silently drop crontabs crond runs just fine.
+func IsPlausibleAccountName(name string) bool {
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '-', r == '_', r == '.', r == '$':
+		default:
+			return false
+		}
+	}
+	return true
 }

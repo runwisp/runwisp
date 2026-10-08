@@ -36,29 +36,6 @@ func TestStatusEmojiAndVerbCoverAllKinds(t *testing.T) {
 	}
 }
 
-func TestHumanDuration(t *testing.T) {
-	cases := []struct {
-		in   time.Duration
-		want string
-	}{
-		{0, "0s"},
-		{-time.Second, "0s"},
-		{300 * time.Millisecond, "0.3s"},
-		{1500 * time.Millisecond, "2s"}, // rounds to nearest second
-		{12 * time.Second, "12s"},
-		{59 * time.Second, "59s"},
-		{61 * time.Second, "1m 1s"},
-		{2*time.Minute + 30*time.Second, "2m 30s"},
-		{5 * time.Minute, "5m"},
-		{time.Hour, "1h"},
-		{75 * time.Minute, "1h 15m"},
-	}
-	for _, c := range cases {
-		got := humanDuration(c.in)
-		assert.Equal(t, c.want, got, "humanDuration(%s)", c.in)
-	}
-}
-
 func TestHumanTime(t *testing.T) {
 	loc, err := time.LoadLocation("Europe/Bratislava")
 	if err != nil {

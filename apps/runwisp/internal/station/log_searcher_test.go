@@ -11,12 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSearchExecutionLog_NilRun(t *testing.T) {
@@ -101,7 +102,7 @@ func TestSearchExecutionLog_BadRegexValidationError(t *testing.T) {
 }
 
 func TestHandleLogSearchRequest_UnknownExecutionExhausted(t *testing.T) {
-	repo := &stubRunRepo{} // nil run -> ErrNotFound
+	repo := &stubRunRepo{} // nil run -> storage.ErrNotFound
 	h := newDispatchInboundHandler(nil, repo, executor.Availability{})
 
 	chunk, err := h.HandleLogSearchRequest(context.Background(), protocol.LogSearchRequestMessage{

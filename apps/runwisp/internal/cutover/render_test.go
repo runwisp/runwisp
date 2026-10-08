@@ -54,10 +54,10 @@ func TestRender_BareBoxShowsFindingsThenEverySideEffect(t *testing.T) {
 		cronActive: true,
 	}.build(t)
 	// autostart's own steps, which Render must nest verbatim rather than restate.
-	inst.plan.Steps = []autostart.Step{
-		{Action: autostart.ActionWriteUnit, Description: "write /etc/systemd/system/runwisp.service"},
-		{Action: autostart.ActionStopCron, Description: "stop cron.service"},
-		{Action: autostart.ActionMaskCron, Description: "mask cron.service"},
+	inst.Plan.Steps = []autostart.Step{
+		{Description: "write /etc/systemd/system/runwisp.service"},
+		{Description: "stop cron.service"},
+		{Description: "mask cron.service"},
 	}
 
 	_, text := render(t, c)

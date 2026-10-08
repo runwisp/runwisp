@@ -26,6 +26,8 @@ import {
     exitCodeRangeActive,
     isExitCodeExprValid,
     exitCodeChipLabel,
+    runFilterParams,
+    filterChipLabel,
     type StatusBucket,
     type RunsListFilters,
 } from "./run-filters.js";
@@ -290,5 +292,63 @@ describe("exit-code expression", () => {
     it("labels the chip with the raw expression", () => {
         expect(exitCodeChipLabel(">100 <150")).toBe("Exit >100 <150");
         expect(exitCodeChipLabel(" 137 ")).toBe("Exit 137");
+    });
+});
+
+describe("runFilterParams", () => {
+    it("omits every inactive dimension", () => {
+        expect(runFilterParams(emptyRunFilters())).toEqual({});
+    });
+
+    it("maps each active dimension to its server field", () => {
+        expect(
+            runFilterParams({
+                search: " nightly ",
+                statuses: ["failed", "timeout"],
+                sortDirection: "asc",
+                taskName: "backup",
+                createdAfter: "2026-01-01T00:00:00Z",
+                createdBefore: "2026-01-02T00:00:00Z",
+                triggeredBy: "cron",
+                exitCode: ">100 <150",
+                retriesOnly: true,
+            }),
+        ).toEqual({
+            taskName: "backup",
+            search: "nightly",
+            status: "failed,timeout",
+            createdAfter: "2026-01-01T00:00:00Z",
+            createdBefore: "2026-01-02T00:00:00Z",
+            triggeredBy: "cron",
+            exitCodeMin: 101,
+            exitCodeMax: 149,
+            retriesOnly: true,
+        });
+    });
+
+    it("ignores an unparseable exit-code expression", () => {
+        expect(runFilterParams({ ...emptyRunFilters(), exitCode: "12a" })).toEqual({});
+    });
+});
+
+describe("filterChipLabel", () => {
+    it("labels each dimension", () => {
+        const f = base({
+            statuses: ["failed"],
+            taskName: "backup",
+            triggeredBy: "cron",
+            exitCode: ">100",
+            createdAfter: "2026-01-01T00:00:00Z",
+        });
+        expect(filterChipLabel(f, "status")).toBe(statusChipLabel(["failed"]));
+        expect(filterChipLabel(f, "task")).toBe("backup");
+        expect(filterChipLabel(f, "triggeredBy")).toBe("Trigger: " + triggerDescription("cron"));
+        expect(filterChipLabel(f, "exitCode")).toBe("Exit >100");
+        expect(filterChipLabel(f, "retries")).toBe("Retries only");
+        expect(filterChipLabel(f, "time")).toMatch(/^Since /);
+    });
+
+    it("has no time label without bounds", () => {
+        expect(filterChipLabel(base(), "time")).toBe("");
     });
 });

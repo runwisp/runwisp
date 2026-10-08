@@ -82,21 +82,30 @@ func (m *mockNotificationRepository) MarkAllNotificationsRead(ctx context.Contex
 	return args.Error(0)
 }
 
-type mockNotificationHub struct {
-	mock.Mock
+// newNotificationHub returns a real hub plus a subscription to it. Publish is
+// synchronous into the buffered channel, so a handler's update is readable as
+// soon as the request returns.
+func newNotificationHub(t *testing.T) (*inapp.Hub, <-chan inapp.Update) {
+	t.Helper()
+	hub := inapp.NewHub(8)
+	sub, unsubscribe := hub.Subscribe()
+	t.Cleanup(unsubscribe)
+	return hub, sub.Channel()
 }
 
-func (m *mockNotificationHub) Subscribe() (*inapp.Subscriber, func()) {
-	args := m.Called()
-	return args.Get(0).(*inapp.Subscriber), args.Get(1).(func())
-}
-
-func (m *mockNotificationHub) Publish(u inapp.Update) {
-	m.Called(u)
+func requireUpdate(t *testing.T, updates <-chan inapp.Update) inapp.Update {
+	t.Helper()
+	select {
+	case u := <-updates:
+		return u
+	default:
+		require.Fail(t, "expected a hub update")
+		return inapp.Update{}
+	}
 }
 
 // notificationServer builds a Server with mocked notification dependencies.
-func notificationServer(t *testing.T, repo *mockNotificationRepository, hub NotificationHub) *Server {
+func notificationServer(t *testing.T, repo *mockNotificationRepository, hub *inapp.Hub) *Server {
 	t.Helper()
 	s, _, _, _ := setupServer(t)
 	s.notifyRepo = repo
@@ -178,13 +187,10 @@ func TestNotifyUpdateToPayload_UnknownTypeFallsBackToUpdated(t *testing.T) {
 
 func TestHumaMarkAllNotificationsRead_Success(t *testing.T) {
 	repo := new(mockNotificationRepository)
-	hub := new(mockNotificationHub)
+	hub, updates := newNotificationHub(t)
 
 	repo.On("MarkAllNotificationsRead", mock.Anything, mock.AnythingOfType("time.Time")).Return(nil)
 	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(0), nil)
-	hub.On("Publish", mock.MatchedBy(func(u inapp.Update) bool {
-		return u.Type == inapp.UpdateTypeUnreadCountChanged && u.UnreadCount == 0
-	})).Return()
 
 	s := notificationServer(t, repo, hub)
 
@@ -195,7 +201,9 @@ func TestHumaMarkAllNotificationsRead_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusNoContent, w.Code)
 	repo.AssertExpectations(t)
-	hub.AssertExpectations(t)
+	u := requireUpdate(t, updates)
+	assert.Equal(t, inapp.UpdateTypeUnreadCountChanged, u.Type)
+	assert.Equal(t, int64(0), u.UnreadCount)
 }
 
 func TestHumaMarkAllNotificationsRead_ReQueriesRatherThanAssumingZero(t *testing.T) {
@@ -203,13 +211,10 @@ func TestHumaMarkAllNotificationsRead_ReQueriesRatherThanAssumingZero(t *testing
 	// UPDATE is still unread; the published count must reflect that instead
 	// of hardcoding 0, or every other open tab's badge goes wrongly to zero.
 	repo := new(mockNotificationRepository)
-	hub := new(mockNotificationHub)
+	hub, updates := newNotificationHub(t)
 
 	repo.On("MarkAllNotificationsRead", mock.Anything, mock.AnythingOfType("time.Time")).Return(nil)
 	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(1), nil)
-	hub.On("Publish", mock.MatchedBy(func(u inapp.Update) bool {
-		return u.Type == inapp.UpdateTypeUnreadCountChanged && u.UnreadCount == 1
-	})).Return()
 
 	s := notificationServer(t, repo, hub)
 
@@ -220,18 +225,17 @@ func TestHumaMarkAllNotificationsRead_ReQueriesRatherThanAssumingZero(t *testing
 
 	assert.Equal(t, http.StatusNoContent, w.Code)
 	repo.AssertExpectations(t)
-	hub.AssertExpectations(t)
+	u := requireUpdate(t, updates)
+	assert.Equal(t, inapp.UpdateTypeUnreadCountChanged, u.Type)
+	assert.Equal(t, int64(1), u.UnreadCount)
 }
 
 func TestHumaMarkAllNotificationsRead_CountQueryFails_ShipsNegativeCount(t *testing.T) {
 	repo := new(mockNotificationRepository)
-	hub := new(mockNotificationHub)
+	hub, updates := newNotificationHub(t)
 
 	repo.On("MarkAllNotificationsRead", mock.Anything, mock.AnythingOfType("time.Time")).Return(nil)
 	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(0), errors.New("db error"))
-	hub.On("Publish", mock.MatchedBy(func(u inapp.Update) bool {
-		return u.Type == inapp.UpdateTypeUnreadCountChanged && u.UnreadCount == -1
-	})).Return()
 
 	s := notificationServer(t, repo, hub)
 
@@ -242,7 +246,9 @@ func TestHumaMarkAllNotificationsRead_CountQueryFails_ShipsNegativeCount(t *test
 
 	assert.Equal(t, http.StatusNoContent, w.Code)
 	repo.AssertExpectations(t)
-	hub.AssertExpectations(t)
+	u := requireUpdate(t, updates)
+	assert.Equal(t, inapp.UpdateTypeUnreadCountChanged, u.Type)
+	assert.Equal(t, int64(-1), u.UnreadCount)
 }
 
 func TestHumaMarkAllNotificationsRead_RepoError(t *testing.T) {
@@ -265,14 +271,11 @@ func TestHumaMarkAllNotificationsRead_RepoError(t *testing.T) {
 
 func TestHumaMarkNotificationRead_Success(t *testing.T) {
 	repo := new(mockNotificationRepository)
-	hub := new(mockNotificationHub)
+	hub, updates := newNotificationHub(t)
 
 	n := &storage.Notification{ID: "01JT0000000000000000000001", Kind: "run.failed"}
 	repo.On("MarkNotificationRead", mock.Anything, "01JT0000000000000000000001", mock.AnythingOfType("time.Time")).Return(n, nil)
 	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(3), nil)
-	hub.On("Publish", mock.MatchedBy(func(u inapp.Update) bool {
-		return u.Type == inapp.UpdateTypeUpdated && u.Notification.ID == n.ID && u.UnreadCount == 3
-	})).Return()
 
 	s := notificationServer(t, repo, hub)
 
@@ -283,7 +286,10 @@ func TestHumaMarkNotificationRead_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusNoContent, w.Code)
 	repo.AssertExpectations(t)
-	hub.AssertExpectations(t)
+	u := requireUpdate(t, updates)
+	assert.Equal(t, inapp.UpdateTypeUpdated, u.Type)
+	assert.Equal(t, n.ID, u.Notification.ID)
+	assert.Equal(t, int64(3), u.UnreadCount)
 }
 
 func TestHumaMarkNotificationRead_NotFound(t *testing.T) {
@@ -324,14 +330,11 @@ func TestHumaMarkNotificationRead_RepoError(t *testing.T) {
 
 func TestHumaMarkNotificationUnread_Success(t *testing.T) {
 	repo := new(mockNotificationRepository)
-	hub := new(mockNotificationHub)
+	hub, updates := newNotificationHub(t)
 
 	n := &storage.Notification{ID: "01JT0000000000000000000002", Kind: "run.failed"}
 	repo.On("MarkNotificationUnread", mock.Anything, "01JT0000000000000000000002").Return(n, nil)
 	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(5), nil)
-	hub.On("Publish", mock.MatchedBy(func(u inapp.Update) bool {
-		return u.Type == inapp.UpdateTypeUpdated && u.Notification.ID == n.ID && u.UnreadCount == 5
-	})).Return()
 
 	s := notificationServer(t, repo, hub)
 
@@ -342,7 +345,10 @@ func TestHumaMarkNotificationUnread_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusNoContent, w.Code)
 	repo.AssertExpectations(t)
-	hub.AssertExpectations(t)
+	u := requireUpdate(t, updates)
+	assert.Equal(t, inapp.UpdateTypeUpdated, u.Type)
+	assert.Equal(t, n.ID, u.Notification.ID)
+	assert.Equal(t, int64(5), u.UnreadCount)
 }
 
 func TestHumaMarkNotificationUnread_NotFound(t *testing.T) {
@@ -387,27 +393,29 @@ func TestPublishNotificationUpdate_NilHub_NoPanic(t *testing.T) {
 }
 
 func TestPublishNotificationUpdate_NilNotification_NoPanic(t *testing.T) {
-	hub := new(mockNotificationHub)
+	hub, updates := newNotificationHub(t)
 	repo := new(mockNotificationRepository)
 	s := notificationServer(t, repo, hub)
 	s.publishNotificationUpdate(context.Background(), nil)
-	hub.AssertNotCalled(t, "Publish")
+	select {
+	case u := <-updates:
+		t.Fatalf("unexpected hub update %+v", u)
+	default:
+	}
 }
 
 func TestPublishNotificationUpdate_CountQueryFails_ShipsNegativeCount(t *testing.T) {
 	repo := new(mockNotificationRepository)
-	hub := new(mockNotificationHub)
+	hub, updates := newNotificationHub(t)
 
 	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(0), errors.New("db error"))
-	hub.On("Publish", mock.MatchedBy(func(u inapp.Update) bool {
-		return u.UnreadCount == -1
-	})).Return()
 
 	s := notificationServer(t, repo, hub)
 	s.publishNotificationUpdate(context.Background(), &storage.Notification{ID: "y"})
 
 	repo.AssertExpectations(t)
-	hub.AssertExpectations(t)
+	u := requireUpdate(t, updates)
+	assert.Equal(t, int64(-1), u.UnreadCount)
 }
 
 // --- publishUnreadCountChanged ---
@@ -420,16 +428,14 @@ func TestPublishUnreadCountChanged_NilHub_NoPanic(t *testing.T) {
 
 func TestPublishUnreadCountChanged_PublishesCount(t *testing.T) {
 	repo := new(mockNotificationRepository)
-	hub := new(mockNotificationHub)
-
-	hub.On("Publish", mock.MatchedBy(func(u inapp.Update) bool {
-		return u.Type == inapp.UpdateTypeUnreadCountChanged && u.UnreadCount == 7
-	})).Return()
+	hub, updates := newNotificationHub(t)
 
 	s := notificationServer(t, repo, hub)
 	s.publishUnreadCountChanged(7)
 
-	hub.AssertExpectations(t)
+	u := requireUpdate(t, updates)
+	assert.Equal(t, inapp.UpdateTypeUnreadCountChanged, u.Type)
+	assert.Equal(t, int64(7), u.UnreadCount)
 }
 
 // --- List notifications ---

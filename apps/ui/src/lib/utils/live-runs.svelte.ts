@@ -50,5 +50,17 @@ export function createLiveRuns(getTaskName?: () => string) {
         },
     );
 
-    return { source, logSession, deepLink };
+    // True until the first fetch settles, and while a page is in flight.
+    const loading = $derived(source.loading || !source.loaded);
+
+    return {
+        source,
+        logSession,
+        deepLink,
+        get loading() {
+            return loading;
+        },
+    };
 }
+
+export type LiveRuns = ReturnType<typeof createLiveRuns>;

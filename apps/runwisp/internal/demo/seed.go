@@ -21,6 +21,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // minRuns is the floor on how many historical runs Seed produces; plan() tops
@@ -48,13 +49,6 @@ const (
 	defaultServicePerInstance = 45
 )
 
-// seederDeps is the slice of storage the seeder needs. SQLiteDatabase satisfies
-// it; tests can pass an in-memory database.
-type seederDeps interface {
-	CreateRun(ctx context.Context, run *model.Run) error
-	EnsureTaskRegistered(ctx context.Context, taskName string, firstSeen time.Time) error
-}
-
 // seedOptions tunes the planning/execution knobs. Production uses the defaults
 // (see Seed); tests pass small values so a synthetic config seeds fast.
 type seedOptions struct {
@@ -70,7 +64,7 @@ type seedOptions struct {
 // Each command runs through the real executor under a backdated clock: captured
 // output is the log, exit code is the outcome, nothing fabricated. Planning is
 // single-threaded (order-sensitive); subprocess execution fans out across CPUs.
-func Seed(ctx context.Context, db seederDeps, cfg *config.Config, logDir string, now time.Time) (int, error) {
+func Seed(ctx context.Context, db storage.RunRepository, cfg *config.Config, logDir string, now time.Time) (int, error) {
 	return seedWith(ctx, db, cfg, logDir, now, seedOptions{
 		lookback:           defaultLookback,
 		maxPerScheduled:    defaultMaxPerScheduled,
@@ -81,7 +75,7 @@ func Seed(ctx context.Context, db seederDeps, cfg *config.Config, logDir string,
 
 // seedWith is Seed with explicit knobs, so tests can drive a tiny config over a
 // short lookback without the full 30-day real-execution cost.
-func seedWith(ctx context.Context, db seederDeps, cfg *config.Config, logDir string, now time.Time, opts seedOptions) (int, error) {
+func seedWith(ctx context.Context, db storage.RunRepository, cfg *config.Config, logDir string, now time.Time, opts seedOptions) (int, error) {
 	s := &seeder{db: db, cfg: cfg, logDir: logDir, now: now, opts: opts}
 	return s.run(ctx)
 }
@@ -89,7 +83,7 @@ func seedWith(ctx context.Context, db seederDeps, cfg *config.Config, logDir str
 // seeder owns one seeding pass: the config, target paths, the reference "now",
 // and the tuning knobs.
 type seeder struct {
-	db     seederDeps
+	db     storage.RunRepository
 	cfg    *config.Config
 	logDir string
 	now    time.Time

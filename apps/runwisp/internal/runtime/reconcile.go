@@ -254,8 +254,7 @@ func (r *Reconciler) RefreshCronHolds(state cronprobe.State) CronHoldChange {
 		// this is: anchorUnheld stamps the catch-up anchor at the moment RunWisp
 		// becomes responsible for the ticks, and rescheduleChanged adds or drops the
 		// cron entry according to the new Schedulable().
-		r.registry.Set(newTask)
-		r.manager.UpsertTask(newTask)
+		r.publishTask(newTask)
 		r.anchorUnheld(oldTask, newTask)
 		if r.scheduler != nil {
 			r.rescheduleChanged(newTask)
@@ -316,8 +315,11 @@ func (r *Reconciler) apply(diff config.Diff, oldTasks, newTasks map[string]*mode
 			warnings = append(warnings, w)
 		}
 	}
+	// Restamped tasks differ only in derived provenance (a task `runwisp promote`
+	// graduated out of the staging file), so the new pointer is all they need:
+	// nothing is rescheduled and no service is recycled.
 	for _, name := range diff.Restamped {
-		r.applyRestamped(newTasks[name])
+		r.publishTask(newTasks[name])
 	}
 
 	// Rebuild jitter plans against the new task set so added and rescheduled
@@ -350,7 +352,6 @@ func (r *Reconciler) applyRemoved(name string) {
 // rather than replaying a backlog. Crucially it does NOT fire run_on_start and
 // does NOT run catch-up — those are boot-only.
 func (r *Reconciler) applyAdded(task *model.Task) {
-	r.registry.Set(task)
 	// A held task is left unregistered: stamping its catch-up anchor now would
 	// make the whole hold window look like missed ticks once the hold lifts. It
 	// gets its anchor when it becomes schedulable (see anchorUnheld).
@@ -359,7 +360,7 @@ func (r *Reconciler) applyAdded(task *model.Task) {
 			slog.Warn("Failed to register added task for catch-up tracking", "task", task.Name, "err", err)
 		}
 	}
-	r.manager.UpsertTask(task)
+	r.publishTask(task)
 
 	if task.Kind.IsService() {
 		// Honours Autostart: a non-autostart service is created stopped, and
@@ -384,8 +385,6 @@ func (r *Reconciler) applyAdded(task *model.Task) {
 // expected (currently only an autostart false→true flip on a service that stays
 // stopped).
 func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *model.Task) string {
-	r.registry.Set(newTask)
-
 	// A task that stopped being a service: cancel its old instances before the
 	// definition flips so the supervisor doesn't keep refilling them.
 	if oldTask.Kind.IsService() && !newTask.Kind.IsService() {
@@ -394,7 +393,7 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 		}
 	}
 
-	r.manager.UpsertTask(newTask)
+	r.publishTask(newTask)
 	r.anchorUnheld(oldTask, newTask)
 
 	if r.scheduler != nil && (change.Has(config.ReasonSchedule) || change.Has(config.ReasonKind)) {
@@ -437,12 +436,9 @@ func (r *Reconciler) autostartFlipWarning(oldTask, newTask *model.Task) string {
 		newTask.Name, newTask.Name)
 }
 
-// applyRestamped swaps in a definition that differs only in derived provenance —
-// a task `runwisp promote` graduated out of the staging file into the operator's
-// own config. The registry and manager take the new pointer so the API, UI and
-// TUI stop reporting it as staged, and that is all: nothing is rescheduled and no
-// service is recycled, because what the task runs did not change.
-func (r *Reconciler) applyRestamped(task *model.Task) {
+// publishTask makes task's definition the live one in both the registry (what
+// the API, UI, and TUI read) and the manager (what new runs use).
+func (r *Reconciler) publishTask(task *model.Task) {
 	r.registry.Set(task)
 	r.manager.UpsertTask(task)
 }

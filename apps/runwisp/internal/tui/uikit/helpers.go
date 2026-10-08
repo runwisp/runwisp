@@ -8,8 +8,10 @@ import (
 	"image/color"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // SidebarWidth is the fixed width of the left sidebar panel in cells.
@@ -19,6 +21,11 @@ const SidebarWidth = 28
 // and header don't stretch edge-to-edge. The panel is left-aligned against the
 // sidebar; any extra width is filled with the app background.
 const MaxContentWidth = 110
+
+// OnBg is a style that draws fg text on a bg fill.
+func OnBg(bg, fg color.Color) lipgloss.Style {
+	return lipgloss.NewStyle().Background(bg).Foreground(fg)
+}
 
 // PadLine right-pads content with a styled-background space run so the row
 // fills `width` cells without losing the background colour when terminals
@@ -34,28 +41,14 @@ func PadLine(content string, width int, bg color.Color) string {
 // FormatDuration renders a run's elapsed time. When EndedAt is nil the duration
 // is measured against time.Now() so live cells tick forward.
 func FormatDuration(run model.Run) string {
-	if run.StartedAt == nil {
-		return "—"
+	d, ok := run.Duration()
+	if !ok {
+		if run.StartedAt == nil {
+			return "—"
+		}
+		d = time.Since(*run.StartedAt)
 	}
-	endTime := time.Now()
-	if run.EndedAt != nil {
-		endTime = *run.EndedAt
-	}
-	d := endTime.Sub(*run.StartedAt)
-	if d < time.Second {
-		return fmt.Sprintf("%dms", d.Milliseconds())
-	}
-	if d < time.Minute {
-		return fmt.Sprintf("%.1fs", d.Seconds())
-	}
-	if d < time.Hour {
-		mins := int(d.Minutes())
-		secs := int(d.Seconds()) % 60
-		return fmt.Sprintf("%dm%ds", mins, secs)
-	}
-	hrs := int(d.Hours())
-	mins := int(d.Minutes()) % 60
-	return fmt.Sprintf("%dh%dm", hrs, mins)
+	return textutil.FormatDuration(d)
 }
 
 // FormatUsage renders live usage as "CPU 12% · 48 MB" (100% is one core).
@@ -74,6 +67,18 @@ func ResolveLocation(name string) *time.Location {
 		return time.Local
 	}
 	return loc
+}
+
+// ScheduleLabel is how a task's trigger reads in lists and headers: "service
+// x2", its cron expression, or "manual".
+func ScheduleLabel(t *model.Task) string {
+	switch {
+	case t.Kind.IsService():
+		return fmt.Sprintf("service x%d", t.Instances)
+	case t.Cron != "":
+		return t.Cron
+	}
+	return "manual"
 }
 
 // FormatTimestamp renders a timestamp as "2006-01-02 15:04:05" in loc. A nil loc
@@ -118,23 +123,15 @@ func RelativeTime(t, now time.Time) string {
 	}
 }
 
-// FormatTimeAgo renders a short relative-time label ("5m ago", "Jan 02 15:04").
-// Past a day it shows the absolute time in loc (nil means the process zone).
+// FormatTimeAgo is RelativeTime up to a day, then the absolute time in loc
+// (nil means the process zone).
 func FormatTimeAgo(t time.Time, loc *time.Location) string {
-	d := time.Since(t)
-	switch {
-	case d < time.Second:
-		return "just now"
-	case d < time.Minute:
-		return fmt.Sprintf("%ds ago", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d.Hours()))
-	default:
-		if loc == nil {
-			loc = time.Local
-		}
-		return t.In(loc).Format("Jan 02 15:04")
+	now := time.Now()
+	if now.Sub(t) < 24*time.Hour {
+		return RelativeTime(t, now)
 	}
+	if loc == nil {
+		loc = time.Local
+	}
+	return t.In(loc).Format("Jan 02 15:04")
 }

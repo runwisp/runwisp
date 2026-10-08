@@ -13,6 +13,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil/fakeclock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -79,7 +80,7 @@ func TestStartServiceInstances_HonorsAutostart(t *testing.T) {
 func TestStartServiceInstances_GatesDependentOnDependencyHealth(t *testing.T) {
 	exec := testutil.NewGateExecutor()
 	bus := events.NewEventBus()
-	clock := testutil.NewClock(time.Now())
+	clock := fakeclock.New(time.Now())
 	tm := runtime.NewTaskManager(exec, bus, clock.Now)
 	t.Cleanup(tm.Shutdown)
 

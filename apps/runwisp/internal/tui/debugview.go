@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/logpane"
 )
@@ -55,23 +54,17 @@ func (v *DebugView) View() string {
 	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
-	title := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorTextBright).
+	title := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextBright).
 		Bold(true).
 		Render("  Debug Log")
 	b.WriteString(uikit.PadLine(title, w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
-	subtitle := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorTextMuted).
+	subtitle := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
 		Render("  Internal events and diagnostics")
 	followIndicator := ""
 	if v.pane.Follow {
-		followIndicator = lipgloss.NewStyle().
-			Background(uikit.ColorBgLight).
-			Foreground(uikit.ColorSecondary).
+		followIndicator = uikit.OnBg(uikit.ColorBgLight, uikit.ColorSecondary).
 			Bold(true).
 			Render("  ● FOLLOW")
 	}
@@ -82,9 +75,7 @@ func (v *DebugView) View() string {
 	b.WriteString("\n")
 
 	if len(v.pane.Lines) == 0 {
-		emptyMsg := lipgloss.NewStyle().
-			Background(uikit.ColorBg).
-			Foreground(uikit.ColorTextMuted).
+		emptyMsg := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted).
 			PaddingLeft(2).
 			Render("Waiting for events...")
 		b.WriteString(uikit.PadLine(emptyMsg, w, uikit.ColorBg))

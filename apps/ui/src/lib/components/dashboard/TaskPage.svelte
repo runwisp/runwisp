@@ -5,8 +5,8 @@
     import { Play, Square, RefreshCcw } from "@lucide/svelte";
     import { untrack } from "svelte";
     import { SvelteMap } from "svelte/reactivity";
-    import { isService, type Task, type Run } from "@runwisp/common";
-    import type { LogEvent, RunMotion, RunsListFilters, RunOutputMatch } from "@runwisp/ui";
+    import { isService, type Task } from "@runwisp/common";
+    import type { RunsListFilters, RunOutputMatch } from "@runwisp/ui";
     import {
         activeFilterCount,
         RunsList,
@@ -18,6 +18,7 @@
     } from "@runwisp/ui";
     import { tasksApi } from "$lib/api";
     import { headerSearchStore, systemStore } from "$lib/stores";
+    import type { LiveRuns } from "$lib/utils/live-runs.svelte";
     import { createRunSelection } from "$lib/utils/run-selection.svelte";
     import { HistoryRail } from "$lib/utils/history-rail.svelte";
     import ParamForm from "./ParamForm.svelte";
@@ -25,66 +26,35 @@
 
     let {
         task,
-        items,
-        total,
-        loading = false,
+        live,
         filters = $bindable(),
-        onLoadMore,
-        onOptimisticRemove,
-        onOptimisticRestore,
-        concurrencyReached = false,
-        triggering = false,
-        restarting = false,
-        stoppingService = false,
+        concurrencyReached,
+        triggering,
+        serviceBusy,
         onRun,
         onStop,
         onRestart,
         onStopService,
-        fetchLogs,
-        streamLogs,
-        fetchLineHistory,
-        motion,
-        initialRunId = null,
-        initialHighlightLine = null,
-        selectRunId = null,
-        runNotFound = false,
-        runPending = false,
+        initialRunId,
+        initialHighlightLine,
+        selectRunId,
         onSelectRun,
     }: {
         task: Task;
-        items: Run[];
-        total: number;
-        loading?: boolean;
+        live: LiveRuns;
         filters: RunsListFilters;
-        onLoadMore: () => void;
-        onOptimisticRemove: (ids: string[]) => void;
-        onOptimisticRestore: (runs: Run[]) => void;
-        concurrencyReached?: boolean;
-        triggering?: boolean;
-        restarting?: boolean;
-        stoppingService?: boolean;
+        concurrencyReached: boolean;
+        triggering: boolean;
+        serviceBusy: boolean;
         onRun: (params?: Record<string, string | null>) => void;
-        onStop?: (runId: string) => void;
-        onRestart?: () => void;
-        onStopService?: () => void;
-        fetchLogs: (runId: string, from: number, to: number) => Promise<LogEvent>;
-        streamLogs: (
-            runId: string,
-            onEvent: (event: LogEvent) => void,
-            initialState?: { fromLine: number },
-        ) => () => void;
-        fetchLineHistory: (runId: string, lineNum: number) => Promise<string[][]>;
-        // Runs that arrived or were removed live moments ago; they animate.
-        motion: RunMotion;
-        initialRunId?: string | null;
-        initialHighlightLine?: number | null;
-        selectRunId?: string | null;
-        // The deep-linked run was fetched and doesn't exist.
-        runNotFound?: boolean;
-        // The deep-linked run is still being fetched; the panel holds on loading.
-        runPending?: boolean;
+        onStop: (runId: string) => void;
+        onRestart: () => void;
+        onStopService: () => void;
+        initialRunId: string | null;
+        initialHighlightLine: number | null;
+        selectRunId: string | null;
         // Reports explicit picks (not the auto-fallback) so the URL can mirror them.
-        onSelectRun?: (runId: string | null) => void;
+        onSelectRun: (runId: string | null) => void;
     } = $props();
 
     const taskIsService = $derived(isService(task.kind));
@@ -209,19 +179,17 @@
         headerSearchStore.setLoading(outputSearchLoading);
     });
 
+    // `live` and `onSelectRun` are fixed for the page's lifetime.
+    // svelte-ignore state_referenced_locally
     const selection = createRunSelection({
-        getItems: () => items,
+        live,
         getInitialRunId: () => initialRunId,
-        getRunNotFound: () => runNotFound,
-        getRunPending: () => runPending,
-        onOptimisticRemove: (ids) => onOptimisticRemove(ids),
-        onOptimisticRestore: (runs) => onOptimisticRestore(runs),
         preferRunning: true,
         getSelectRunId: () => selectRunId,
         // A run named from outside the list (a notification link, a run just
         // triggered) is picked too, so a phone shows it rather than the list.
         onSeeded: () => rail.picked(),
-        onSelectRun: (id) => onSelectRun?.(id),
+        onSelectRun,
     });
 
     // A run can always be *triggered*, at max concurrency it queues (the modal
@@ -260,7 +228,7 @@
     let panes = $derived(
         rail.panes(
             !!selection.selectedRun,
-            !loading && items.length === 0 && activeFilterCount(filters) === 0,
+            !live.loading && live.source.items.length === 0 && activeFilterCount(filters) === 0,
         ),
     );
 
@@ -306,11 +274,11 @@
     <div class="flex min-h-0 flex-1 flex-col md:flex-row">
         {#if panes.list}
             <RunsList
-                {items}
-                {total}
-                {loading}
+                items={live.source.items}
+                total={live.source.total}
+                loading={live.loading}
                 bind:filters
-                {onLoadMore}
+                onLoadMore={() => live.source.loadMore()}
                 selectedRunId={selection.selectedRunId}
                 onselect={(id) => {
                     selection.userSelectedRunId = id;
@@ -323,7 +291,7 @@
                 onBulkDelete={selection.handleBulkDelete}
                 onBulkRerun={selection.handleBulkRerun}
                 getInstanceCount={() => instanceCount}
-                {motion}
+                motion={live.source.motion}
                 outputSearch
                 {outputQuery}
                 {outputMatches}
@@ -334,31 +302,30 @@
         {#if panes.detail}
             <RunDetailPanel
                 run={selection.selectedRun}
-                {fetchLogs}
-                {streamLogs}
-                {fetchLineHistory}
+                {...live.logSession}
                 onDelete={selection.deleteSingle}
                 onRun={runTriggerable ? openRun : undefined}
                 onRunAgain={runTriggerable && hasParams ? openRunAgain : undefined}
                 onRunTask={runTriggerable ? openRun : undefined}
-                onStop={!taskIsService && onStop ? () => (stopConfirmOpen = true) : undefined}
-                onStopService={serviceControllable && onStopService
+                onStop={!taskIsService ? () => (stopConfirmOpen = true) : undefined}
+                onStopService={serviceControllable
                     ? () => (stopServiceConfirmOpen = true)
                     : undefined}
-                onRestartService={serviceControllable && onRestart
+                onRestartService={serviceControllable
                     ? () => (restartConfirmOpen = true)
                     : undefined}
                 {serviceStopped}
-                serviceBusy={stoppingService || restarting}
+                {serviceBusy}
                 onBack={rail.phone ? rail.back : undefined}
                 onToggleList={rail.collapsible ? rail.toggleList : undefined}
                 listVisible={panes.list}
                 {highlightLine}
                 getInstanceCount={() => instanceCount}
                 getLiveUsage={(id) => systemStore.runUsage(id)}
-                {motion}
+                motion={live.source.motion}
                 notFound={selection.deepLinkMissing}
-                loading={(loading && items.length === 0) || selection.deepLinkPending}
+                loading={(live.loading && live.source.items.length === 0) ||
+                    selection.deepLinkPending}
             />
         {/if}
     </div>
@@ -400,7 +367,7 @@
     confirmVariant="danger"
     confirmIcon={Square}
     onConfirm={() => {
-        if (onStop && selection.selectedRun) onStop(selection.selectedRun.id);
+        if (selection.selectedRun) onStop(selection.selectedRun.id);
     }}
 />
 
@@ -415,7 +382,7 @@
     confirmLabel={serviceStopped ? "Start Now" : "Restart Now"}
     confirmVariant="primary"
     confirmIcon={serviceStopped ? Play : RefreshCcw}
-    onConfirm={() => onRestart?.()}
+    onConfirm={onRestart}
 />
 
 <AlertDialog
@@ -425,12 +392,16 @@
     confirmLabel="Stop Now"
     confirmVariant="danger"
     confirmIcon={Square}
-    onConfirm={() => onStopService?.()}
+    onConfirm={onStopService}
 />
 
 {#snippet runModalBody()}
     {#if concurrencyReached}
-        {@render concurrencyWarning()}
+        <Alert variant="warning">
+            This task is already running at its maximum concurrency. Your run will be <strong
+                >queued</strong
+            > and will start automatically once a slot becomes available.
+        </Alert>
     {/if}
     {#if hasParams && confirmOpen}
         {#if runSeed}
@@ -454,12 +425,4 @@
             />
         {/key}
     {/if}
-{/snippet}
-
-{#snippet concurrencyWarning()}
-    <Alert variant="warning">
-        This task is already running at its maximum concurrency. Your run will be <strong
-            >queued</strong
-        > and will start automatically once a slot becomes available.
-    </Alert>
 {/snippet}

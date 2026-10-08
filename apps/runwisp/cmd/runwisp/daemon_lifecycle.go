@@ -64,22 +64,20 @@ func startStationClient(
 		return cancelStation, &stationWG
 	}
 
-	if stationClient != nil {
-		stationWG.Add(1)
-		go func() {
-			defer crashguard.Guard()
-			defer stationWG.Done()
-			// Backlog recovery does real HTTP PUTs (up to 90s each) against the
-			// Station peer; running it here (not before srv.Start) means a slow or
-			// unreachable peer can never delay the UI/API from becoming
-			// available. stationCtx cancellation (on shutdown) unblocks it the same
-			// way it unblocks Run below.
-			stationClient.RecoverArchiveBacklog(stationCtx)
-			if runErr := stationClient.Run(stationCtx); runErr != nil {
-				slog.Error("Station integration stopped", "err", runErr)
-			}
-		}()
-	}
+	stationWG.Add(1)
+	go func() {
+		defer crashguard.Guard()
+		defer stationWG.Done()
+		// Backlog recovery does real HTTP PUTs (up to 90s each) against the
+		// Station peer; running it here (not before srv.Start) means a slow or
+		// unreachable peer can never delay the UI/API from becoming
+		// available. stationCtx cancellation (on shutdown) unblocks it the same
+		// way it unblocks Run below.
+		stationClient.RecoverArchiveBacklog(stationCtx)
+		if runErr := stationClient.Run(stationCtx); runErr != nil {
+			slog.Error("Station integration stopped", "err", runErr)
+		}
+	}()
 
 	return cancelStation, &stationWG
 }

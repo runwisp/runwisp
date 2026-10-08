@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/sendmail"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/smtp"
@@ -24,43 +25,11 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
 )
 
-// NotifierSpec is the resolved-from-TOML, secret-substituted description of a
-// single [notifiers.<id>]. The factory produces one Channel per spec; specs are
-// supplied by the configload package.
+// NotifierSpec is a config.NotifierSpec (secrets already substituted) plus the
+// runtime values the caller binds before Build. The factory produces one
+// Channel per spec; specs are supplied by the configload package.
 type NotifierSpec struct {
-	ID           string
-	Type         string
-	WebhookURL   string // slack, discord
-	SlackChannel string // slack channel override (e.g. "#ops")
-	BotToken     string // telegram
-	ChatID       string // telegram
-	ParseMode    string // telegram
-
-	// SMTP-specific
-	Host          string
-	Port          int
-	TLSMode       string
-	TLSSkipVerify bool
-	Username      string
-	Password      string
-	From          string
-	ReplyTo       string
-	Recipients    []string
-	CC            []string
-	BCC           []string
-
-	// sendmail-specific: an explicit MTA binary. Empty means "find the system
-	// one". From/Recipients/CC/BCC are shared with SMTP.
-	SendmailPath string
-
-	// Webhook-specific (URL is also the ntfy/gotify server base)
-	URL     string
-	Headers map[string]string
-
-	// Push-specific (ntfy, gotify, pushover)
-	Topic string // ntfy
-	Token string // ntfy access token, gotify/pushover application token
-	User  string // pushover user or group key
+	config.NotifierSpec
 
 	// Template is the body of the operator's template_path override, read by
 	// the caller; "" means the embedded default for Type.

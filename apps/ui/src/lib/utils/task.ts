@@ -6,7 +6,7 @@ import { AppWindow, CalendarClock, CalendarOff, CircleDot } from "@lucide/svelte
 import { isService, type Task } from "@runwisp/common";
 
 /** Whether the task has a cron schedule. */
-export function hasCron(task: Pick<Task, "cron">): boolean {
+export function hasCron(task: Pick<Task, "cron">): task is Pick<Task, "cron"> & { cron: string } {
     return Boolean(task.cron?.trim());
 }
 
@@ -70,7 +70,7 @@ export function taskIcon(task: Task): Component {
 
 export function taskTriggerTooltip(task: Task): string {
     if (isService(task.kind)) return serviceLabel(task);
-    if (task.cron && hasCron(task)) {
+    if (hasCron(task)) {
         return task.pausedAt ? `Cron · ${task.cron} · paused` : `Cron · ${task.cron}`;
     }
     return "Manual trigger";

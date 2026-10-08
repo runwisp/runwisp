@@ -24,13 +24,13 @@ import (
 // newFakeInstaller wires a systemdInstaller against FakeFS + FakeRunner
 // and a scripted prompter. The returned binary path points at a real
 // temp file (because the installer hashes its content).
-func newFakeInstaller(t *testing.T, wsl bool) (*systemdInstaller, *autostarttest.FakeFS, *FakeRunner, *ScriptedPrompter, string) {
+func newFakeInstaller(t *testing.T, wsl bool) (*systemdInstaller, *autostarttest.FakeFS, *FakeRunner, *autostarttest.ScriptedPrompter, string) {
 	t.Helper()
 	binaryPath := filepath.Join(t.TempDir(), "runwisp")
 	require.NoError(t, os.WriteFile(binaryPath, []byte("fake-binary-content"), 0755))
 	fs := autostarttest.NewFakeFS()
 	cmd := NewFakeRunner()
-	prompter := &ScriptedPrompter{}
+	prompter := &autostarttest.ScriptedPrompter{Mismatch: ErrAborted}
 	deps := Deps{
 		FS:          fs,
 		Cmd:         cmd,
@@ -68,12 +68,12 @@ func TestSystemdComputePlan_FreshInstall(t *testing.T) {
 	assert.Equal(t, "/home/alice/.config/systemd/user/runwisp-bright-falcon.service", plan.UnitPath)
 	assert.False(t, plan.LingerOn)
 
-	// Step sequence: WriteUnit, daemon-reload, EnableLinger, EnableService.
-	actions := stepActions(plan.Steps)
-	assert.Equal(t,
-		[]Action{ActionWriteUnit, ActionDaemonReload, ActionEnableLinger, ActionEnableService},
-		actions,
-	)
+	// Step sequence: write unit, daemon-reload, enable-linger, enable --now.
+	require.Len(t, plan.Steps, 4)
+	assert.Contains(t, plan.Steps[0].Description, "Write unit file")
+	assert.Contains(t, plan.Steps[1].Description, "daemon-reload")
+	assert.Contains(t, plan.Steps[2].Description, "enable-linger")
+	assert.Contains(t, plan.Steps[3].Description, "enable --now")
 }
 
 func TestSystemdComputePlan_LingerAlreadyOnSkipsStep(t *testing.T) {
@@ -84,10 +84,7 @@ func TestSystemdComputePlan_LingerAlreadyOnSkipsStep(t *testing.T) {
 	plan, err := inst.ComputePlan(context.Background(), defaultInstallOpts(binary))
 	require.NoError(t, err)
 	assert.True(t, plan.LingerOn)
-	actions := stepActions(plan.Steps)
-	for _, a := range actions {
-		assert.NotEqual(t, ActionEnableLinger, a, "linger step must be skipped when Linger=yes")
-	}
+	assert.NotContains(t, stepDescriptions(plan.Steps), "enable-linger", "linger step must be skipped when Linger=yes")
 }
 
 func TestSystemdComputePlan_WSLAppendsPostscript(t *testing.T) {
@@ -97,8 +94,7 @@ func TestSystemdComputePlan_WSLAppendsPostscript(t *testing.T) {
 
 	plan, err := inst.ComputePlan(context.Background(), defaultInstallOpts(binary))
 	require.NoError(t, err)
-	actions := stepActions(plan.Steps)
-	assert.Contains(t, actions, ActionPrintWSLPostscript)
+	assert.Contains(t, stepDescriptions(plan.Steps), "Windows Task Scheduler")
 }
 
 func TestSystemdComputePlan_NoopWhenInstalled(t *testing.T) {
@@ -546,12 +542,14 @@ func TestSystemdEnvPath_UsesEnvWhenSet(t *testing.T) {
 	assert.Equal(t, "/custom/bin", envPath())
 }
 
-func stepActions(steps []Step) []Action {
-	out := make([]Action, len(steps))
+// stepDescriptions flattens a plan's steps into one string so a test can ask
+// whether a step is present without pinning its exact wording.
+func stepDescriptions(steps []Step) string {
+	out := make([]string, len(steps))
 	for i, s := range steps {
-		out[i] = s.Action
+		out[i] = s.Description
 	}
-	return out
+	return strings.Join(out, "\n")
 }
 
 // assertErrFake returns a sentinel error tagged with a message so the

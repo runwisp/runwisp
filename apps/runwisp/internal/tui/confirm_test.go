@@ -16,6 +16,17 @@ import (
 var onConfirmCmd = func() tea.Msg { return struct{}{} }
 var onDenyCmd = func() tea.Msg { return struct{ deny bool }{true} }
 
+// placeButtons gives d fixed button geometry (row 5, yes at x 10-20, no at x
+// 22-30) so click and hover tests don't need a render pass.
+func placeButtons(d *ConfirmDialog) *ConfirmDialog {
+	d.btnY = 5
+	d.btnYesX1 = 10
+	d.btnYesX2 = 20
+	d.btnNoX1 = 22
+	d.btnNoX2 = 30
+	return d
+}
+
 // TestConfirmDialog_HandleKeyMsg_ToggleSelected verifies left/right/tab toggle selected.
 func TestConfirmDialog_HandleKeyMsg_ToggleSelected(t *testing.T) {
 	d := NewConfirmDialog("title", "message", onConfirmCmd)
@@ -113,12 +124,7 @@ func TestConfirmDialog_HandleKeyMsg_Unknown(t *testing.T) {
 
 // TestConfirmDialog_HandleClick_Yes fires confirm.
 func TestConfirmDialog_HandleClick_Yes(t *testing.T) {
-	d := NewConfirmDialog("t", "m", onConfirmCmd)
-	d.btnY = 5
-	d.btnYesX1 = 10
-	d.btnYesX2 = 20
-	d.btnNoX1 = 22
-	d.btnNoX2 = 30
+	d := placeButtons(NewConfirmDialog("t", "m", onConfirmCmd))
 
 	cmd, closed := d.handleClick(15, 5)
 	assert.True(t, closed)
@@ -127,12 +133,7 @@ func TestConfirmDialog_HandleClick_Yes(t *testing.T) {
 
 // TestConfirmDialog_HandleClick_No_WithDeny fires deny.
 func TestConfirmDialog_HandleClick_No_WithDeny(t *testing.T) {
-	d := NewChoiceDialog("t", "m", "Yes", "No", onConfirmCmd, onDenyCmd)
-	d.btnY = 5
-	d.btnYesX1 = 10
-	d.btnYesX2 = 20
-	d.btnNoX1 = 22
-	d.btnNoX2 = 30
+	d := placeButtons(NewChoiceDialog("t", "m", "Yes", "No", onConfirmCmd, onDenyCmd))
 
 	cmd, closed := d.handleClick(25, 5)
 	assert.True(t, closed)
@@ -141,12 +142,7 @@ func TestConfirmDialog_HandleClick_No_WithDeny(t *testing.T) {
 
 // TestConfirmDialog_HandleClick_No_NoDeny returns nil cmd.
 func TestConfirmDialog_HandleClick_No_NoDeny(t *testing.T) {
-	d := NewConfirmDialog("t", "m", onConfirmCmd)
-	d.btnY = 5
-	d.btnYesX1 = 10
-	d.btnYesX2 = 20
-	d.btnNoX1 = 22
-	d.btnNoX2 = 30
+	d := placeButtons(NewConfirmDialog("t", "m", onConfirmCmd))
 
 	cmd, closed := d.handleClick(25, 5)
 	assert.True(t, closed)
@@ -155,12 +151,7 @@ func TestConfirmDialog_HandleClick_No_NoDeny(t *testing.T) {
 
 // TestConfirmDialog_HandleClick_Miss returns not closed.
 func TestConfirmDialog_HandleClick_Miss(t *testing.T) {
-	d := NewConfirmDialog("t", "m", onConfirmCmd)
-	d.btnY = 5
-	d.btnYesX1 = 10
-	d.btnYesX2 = 20
-	d.btnNoX1 = 22
-	d.btnNoX2 = 30
+	d := placeButtons(NewConfirmDialog("t", "m", onConfirmCmd))
 
 	_, closed := d.handleClick(5, 10) // wrong row
 	assert.False(t, closed)
@@ -168,12 +159,7 @@ func TestConfirmDialog_HandleClick_Miss(t *testing.T) {
 
 // TestConfirmDialog_UpdateHover_Yes sets hovered=0.
 func TestConfirmDialog_UpdateHover_Yes(t *testing.T) {
-	d := NewConfirmDialog("t", "m", onConfirmCmd)
-	d.btnY = 5
-	d.btnYesX1 = 10
-	d.btnYesX2 = 20
-	d.btnNoX1 = 22
-	d.btnNoX2 = 30
+	d := placeButtons(NewConfirmDialog("t", "m", onConfirmCmd))
 
 	d.updateHover(15, 5)
 	assert.Equal(t, 0, d.hovered)
@@ -181,12 +167,7 @@ func TestConfirmDialog_UpdateHover_Yes(t *testing.T) {
 
 // TestConfirmDialog_UpdateHover_No sets hovered=1.
 func TestConfirmDialog_UpdateHover_No(t *testing.T) {
-	d := NewConfirmDialog("t", "m", onConfirmCmd)
-	d.btnY = 5
-	d.btnYesX1 = 10
-	d.btnYesX2 = 20
-	d.btnNoX1 = 22
-	d.btnNoX2 = 30
+	d := placeButtons(NewConfirmDialog("t", "m", onConfirmCmd))
 
 	d.updateHover(25, 5)
 	assert.Equal(t, 1, d.hovered)
@@ -194,12 +175,7 @@ func TestConfirmDialog_UpdateHover_No(t *testing.T) {
 
 // TestConfirmDialog_UpdateHover_Miss sets hovered=-1.
 func TestConfirmDialog_UpdateHover_Miss(t *testing.T) {
-	d := NewConfirmDialog("t", "m", onConfirmCmd)
-	d.btnY = 5
-	d.btnYesX1 = 10
-	d.btnYesX2 = 20
-	d.btnNoX1 = 22
-	d.btnNoX2 = 30
+	d := placeButtons(NewConfirmDialog("t", "m", onConfirmCmd))
 	d.hovered = 0 // ensure it gets reset
 
 	d.updateHover(5, 10) // wrong row
@@ -208,12 +184,7 @@ func TestConfirmDialog_UpdateHover_Miss(t *testing.T) {
 
 // TestConfirmDialog_Update_MouseMotion calls updateHover.
 func TestConfirmDialog_Update_MouseMotion(t *testing.T) {
-	d := NewConfirmDialog("t", "m", onConfirmCmd)
-	d.btnY = 5
-	d.btnYesX1 = 10
-	d.btnYesX2 = 20
-	d.btnNoX1 = 22
-	d.btnNoX2 = 30
+	d := placeButtons(NewConfirmDialog("t", "m", onConfirmCmd))
 
 	cmd, closed := d.Update(tea.MouseMotionMsg{X: 15, Y: 5})
 	assert.Nil(t, cmd)
@@ -223,12 +194,7 @@ func TestConfirmDialog_Update_MouseMotion(t *testing.T) {
 
 // TestConfirmDialog_Update_MousePress_Left fires confirm on yes button click.
 func TestConfirmDialog_Update_MousePress_Left(t *testing.T) {
-	d := NewConfirmDialog("t", "m", onConfirmCmd)
-	d.btnY = 5
-	d.btnYesX1 = 10
-	d.btnYesX2 = 20
-	d.btnNoX1 = 22
-	d.btnNoX2 = 30
+	d := placeButtons(NewConfirmDialog("t", "m", onConfirmCmd))
 
 	cmd, closed := d.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 15, Y: 5})
 	assert.True(t, closed)

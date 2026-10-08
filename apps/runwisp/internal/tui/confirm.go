@@ -209,9 +209,7 @@ func (d *ConfirmDialog) renderShuttingDownLines(innerWidth int, titleStr string)
 	// Render spinner and message as separately styled strings so the
 	// spinner's internal ANSI reset doesn't kill the outer background.
 	spinnerPart := d.spinner.View()
-	msgPart := lipgloss.NewStyle().
-		Foreground(uikit.ColorText).
-		Background(uikit.ColorBgLight).
+	msgPart := uikit.OnBg(uikit.ColorBgLight, uikit.ColorText).
 		Render(" " + d.message)
 	spinnerLine := lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).
@@ -236,7 +234,7 @@ func (d *ConfirmDialog) renderButtonLines(innerWidth int, titleStr, msgStr strin
 	if d.selected == 0 || yesHover {
 		bg := uikit.ColorError
 		if yesHover {
-			bg = lipgloss.Color("#f99aae")
+			bg = uikit.ColorErrorHover
 		}
 		yesStyle = yesStyle.Background(bg).Foreground(uikit.ColorWhite)
 	} else {
@@ -246,7 +244,7 @@ func (d *ConfirmDialog) renderButtonLines(innerWidth int, titleStr, msgStr strin
 	if d.selected == 1 || noHover {
 		bg := uikit.ColorPrimary
 		if noHover {
-			bg = lipgloss.Color("#6b85f0")
+			bg = uikit.ColorPrimaryHover
 		}
 		noStyle = noStyle.Background(bg).Foreground(uikit.ColorWhite)
 	} else {
@@ -323,9 +321,7 @@ func renderModalBox(screenWidth, screenHeight, dialogWidth int, accent color.Col
 }
 
 func modalSurfaceLine(text string, innerWidth int, fg color.Color, bold bool) string {
-	style := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(fg).
+	style := uikit.OnBg(uikit.ColorBgLight, fg).
 		Width(innerWidth).
 		Align(lipgloss.Center)
 	if bold {
@@ -353,9 +349,7 @@ func modalEmptyLine(innerWidth int) string {
 
 // modalSectionLine renders a left-aligned bold section header inside a modal.
 func modalSectionLine(title string, innerWidth int) string {
-	return lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorSecondary).
+	return uikit.OnBg(uikit.ColorBgLight, uikit.ColorSecondary).
 		Bold(true).
 		Width(innerWidth).
 		Render(title)
@@ -364,10 +358,7 @@ func modalSectionLine(title string, innerWidth int) string {
 // modalSeg renders one coloured inline segment on the modal surface, so a
 // composed line keeps the dialog's fill behind each piece.
 func modalSeg(text string, fg color.Color) string {
-	return lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(fg).
-		Render(text)
+	return uikit.OnBg(uikit.ColorBgLight, fg).Render(text)
 }
 
 // isTextModalDismiss reports whether msg closes a read-only text modal: a close

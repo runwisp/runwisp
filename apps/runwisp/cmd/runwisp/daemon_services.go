@@ -207,6 +207,7 @@ func startStandaloneScheduling(ctx context.Context, db *storage.SQLiteDatabase, 
 	boot.catchUpAnchors, boot.catchUpSnapshotErrors = runtime.SnapshotCatchupAnchors(ctx, db, tasksMap, boot.catchUpNow)
 
 	scheduler := runtime.NewScheduler(taskManager, tasksMap, schedLoc, nil)
+	taskManager.SetSchedulePaused(scheduler.IsPaused)
 	boot.scheduler = scheduler
 	// Restore operator schedule pauses before the first tick can fire. A read
 	// failure is not fatal (the daemon must boot), but it does mean paused
@@ -275,19 +276,13 @@ func runMissedTickCatchUp(tasksMap map[string]*model.Task, taskManager runtime.T
 // initExecutor builds the routing executor. sampler may be nil (one-shot CLI
 // runs, which display no resource usage).
 func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint string, sampler *procstat.Sampler) *executor.RoutingExecutor {
-	dockerBackend := executor.NewLazyContainerBackend()
-	composeBackend := executor.NewLazyComposeBackend(fingerprint)
-
-	minFreeDisk := cfg.Storage.MinFreeSpace
-
 	return executor.New(executor.Options{
 		LogDir:                 logDir,
 		EventBus:               eventBus,
 		StationDispatchEnabled: cfg.Daemon.AllowStationDispatch,
 		HasLocalTasks:          len(cfg.Tasks) > 0,
-		Docker:                 dockerBackend,
-		Compose:                composeBackend,
-		MinFreeDisk:            minFreeDisk,
+		Fingerprint:            fingerprint,
+		MinFreeDisk:            cfg.Storage.MinFreeSpace,
 		Sampler:                sampler,
 	})
 }

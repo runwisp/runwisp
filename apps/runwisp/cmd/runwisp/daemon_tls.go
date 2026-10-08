@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/netguard"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tlscert"
 )
 
@@ -75,7 +76,8 @@ func tlsScheme(d config.Daemon, host string) string {
 
 // isNonLoopbackBind reports whether a bind host is reachable beyond localhost.
 // Shared by the security-warning banner and TLS resolution so "what counts as
-// exposed" is defined in exactly one place.
+// exposed" is defined in exactly one place. An empty host binds every
+// interface, so it counts as exposed.
 func isNonLoopbackBind(host string) bool {
-	return host != "127.0.0.1" && host != "::1" && host != "localhost"
+	return !netguard.IsLoopbackHost(host)
 }

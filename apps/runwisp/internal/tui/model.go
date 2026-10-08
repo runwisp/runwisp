@@ -5,7 +5,6 @@ package tui
 
 import (
 	"fmt"
-	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -13,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/netguard"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/home"
@@ -112,10 +112,12 @@ type Model struct {
 	// lastInfoFetch paces the periodic /api/daemon poll (see infoPollInterval).
 	lastInfoFetch time.Time
 
-	width    int
-	height   int
-	ready    bool
-	isRemote bool
+	width  int
+	height int
+	ready  bool
+	// outOfProcess is set when the daemon runs outside this process (no local
+	// debug writer): its logs arrive over the API and quit offers no autostart hint.
+	outOfProcess bool
 	// daemon decides what quitting does to the attached daemon (see requestQuit).
 	daemon DaemonOwnership
 }
@@ -138,7 +140,6 @@ const (
 type TUIConfig struct {
 	Info             uikit.StartupInfo
 	Client           *apiclient.Client
-	IsRemote         bool                   // true when connecting to a remote daemon (no local debug writer)
 	Daemon           DaemonOwnership        // what quitting does to the daemon (see requestQuit)
 	ShutdownFunc     func() error           // if set, called inside the TUI to shut down the daemon
 	LaunchTicketFunc func() (string, error) // generates a single-use launch ticket for browser auth
@@ -167,7 +168,6 @@ func NewModel(cfg TUIConfig) Model {
 		homeCursor:       -1,
 		mouse:            mouseState{homeHover: -1},
 		frame:            new(string),
-		isRemote:         cfg.IsRemote,
 		daemon:           cfg.Daemon,
 		shutdownFunc:     cfg.ShutdownFunc,
 		launchTicketFunc: cfg.LaunchTicketFunc,
@@ -189,7 +189,7 @@ func (m Model) Init() tea.Cmd {
 		m.streams.FetchTaskState(),
 		m.tickCmd(),
 	}
-	if m.isRemote {
+	if m.outOfProcess {
 		cmds = append(cmds, m.streams.SubscribeDaemonLogs())
 	}
 	return tea.Batch(cmds...)
@@ -487,7 +487,7 @@ func (m *Model) requestQuit() tea.Cmd {
 	)
 	// Hint about autostart only in a fresh local session (the operator
 	// started this daemon by running ./runwisp).
-	if !m.isRemote {
+	if !m.outOfProcess {
 		dialog = dialog.WithNote(
 			"",
 			"Tip: `runwisp service install` makes it",
@@ -645,14 +645,7 @@ func isInsecureRemoteURL(base string) bool {
 	if err != nil || u.Scheme != "http" {
 		return false
 	}
-	host := u.Hostname()
-	if host == "localhost" {
-		return false
-	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		return false
-	}
-	return true
+	return !netguard.IsLoopbackHost(u.Hostname())
 }
 
 func (m *Model) logActionResult(action, taskName string, err error) {

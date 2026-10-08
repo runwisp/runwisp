@@ -130,10 +130,7 @@ func (s *systemdInstaller) runSystemctl(ctx context.Context, systemWide bool, ar
 
 // renderUnit assembles the SystemdParams + renders the template.
 func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, error) {
-	binarySHA := ""
-	if data, err := os.ReadFile(opts.Binary); err == nil {
-		binarySHA = hashContent(data)
-	}
+	binarySHA, _ := fileSHA(opts.Binary)
 	configHash := SettingsHash(opts)
 	params := SystemdParams{
 		Binary:         opts.Binary,
@@ -225,40 +222,34 @@ func (s *systemdInstaller) planSteps(plan Plan, opts InstallOptions) []Step {
 	}
 	steps := []Step{
 		{
-			Action:      ActionWriteUnit,
 			Description: "Write unit file\n       " + plan.UnitPath,
 		},
 	}
 	if plan.CronFailsafe != "" {
 		steps = append(steps, Step{
-			Action: ActionWriteUnit,
 			Description: fmt.Sprintf("Write failsafe unit (starts %s again if RunWisp keeps failing)\n       %s",
 				plan.CronUnit, cronFailsafePath()),
 		})
 	}
 	steps = append(steps, Step{
-		Action:      ActionDaemonReload,
 		Description: s.daemonReloadCmd(opts.System),
 	})
 	if !opts.System && !plan.LingerOn {
 		steps = append(steps, Step{
-			Action:      ActionEnableLinger,
 			Description: fmt.Sprintf("Run:  loginctl enable-linger %s         ← needs sudo", s.deps.User),
 		})
 	}
 	if opts.TakeOverCron && plan.CronUnit != "" {
 		steps = append(steps,
-			Step{Action: ActionStopCron, Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "stop", plan.CronUnit)},
-			Step{Action: ActionMaskCron, Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "mask", plan.CronUnit)},
+			Step{Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "stop", plan.CronUnit)},
+			Step{Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "mask", plan.CronUnit)},
 		)
 	}
 	steps = append(steps, Step{
-		Action:      ActionEnableService,
 		Description: s.enableNowCmd(opts.System),
 	})
 	if s.deps.WSL {
 		steps = append(steps, Step{
-			Action:      ActionPrintWSLPostscript,
 			Description: "Print Windows Task Scheduler PowerShell snippet (Windows-side autostart)",
 		})
 	}
@@ -307,16 +298,10 @@ func (s *systemdInstaller) Install(ctx context.Context, opts InstallOptions, out
 	return s.applyInstall(ctx, plan, opts, out)
 }
 
-// preflight gates the install on conditions that are catch-this-now-or-
-// boot-loop-later: missing config, port already taken, daemon running.
+// preflight gates the install on a config that exists: a unit pointing at a
+// missing one would boot-loop.
 func (s *systemdInstaller) preflight(_ context.Context, opts InstallOptions) error {
-	if _, err := s.deps.FS.Stat(opts.Config); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return ErrConfigMissing
-		}
-		return fmt.Errorf("stat config: %w", err)
-	}
-	return nil
+	return requireConfig(s.deps.FS, opts.Config)
 }
 
 // applyInstall executes the steps after confirmation.
@@ -653,14 +638,14 @@ func (s *systemdInstaller) computeUninstallPlan(_ context.Context, opts Uninstal
 	if plan.Kind == PlanUninstall {
 		name := s.serviceName(opts.System)
 		plan.Steps = []Step{
-			{Action: ActionStopService, Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, "stop", name)},
-			{Action: ActionDisableService, Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, "disable", name)},
-			{Action: ActionRemoveUnit, Description: "Remove unit file\n       " + unitPath},
-			{Action: ActionDaemonReload, Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, systemctlDaemonReload)},
+			{Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, "stop", name)},
+			{Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, "disable", name)},
+			{Description: "Remove unit file\n       " + unitPath},
+			{Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, systemctlDaemonReload)},
 		}
 		if opts.System {
 			if _, err := s.deps.FS.Stat(cronFailsafePath()); err == nil {
-				plan.Steps = append(plan.Steps, Step{Action: ActionRemoveUnit, Description: "Remove failsafe unit\n       " + cronFailsafePath()})
+				plan.Steps = append(plan.Steps, Step{Description: "Remove failsafe unit\n       " + cronFailsafePath()})
 			}
 		}
 		// Only ever unmask a unit this instance can prove it masked —
@@ -674,7 +659,7 @@ func (s *systemdInstaller) computeUninstallPlan(_ context.Context, opts Uninstal
 			if prior != cronPriorInactive {
 				desc += " (and restart it)"
 			}
-			plan.Steps = append(plan.Steps, Step{Action: ActionUnmaskCron, Description: desc})
+			plan.Steps = append(plan.Steps, Step{Description: desc})
 		}
 	}
 	return plan, nil
@@ -705,13 +690,7 @@ func (s *systemdInstaller) Uninstall(ctx context.Context, opts UninstallOptions,
 	}
 
 	if opts.Purge {
-		// --purge is the footgun; the literal word check happens
-		// in the CLI before we get here (it doesn't share the
-		// auto-yes path).
-		if err := s.deps.Prompter.ConfirmLiteral(
-			fmt.Sprintf("Type 'delete' to permanently remove the data dir %s:", opts.DataDir),
-			"delete",
-		); err != nil {
+		if err := confirmPurge(s.deps.Prompter, opts.DataDir); err != nil {
 			return err
 		}
 	}
@@ -753,11 +732,10 @@ func (s *systemdInstaller) applyUninstall(ctx context.Context, plan Plan, opts U
 			fmt.Fprintf(out, "Warning: %v\n", err)
 		}
 	}
-	if opts.Purge && opts.DataDir != "" {
-		if err := os.RemoveAll(opts.DataDir); err != nil {
-			return fmt.Errorf("remove data dir %s: %w", opts.DataDir, err)
+	if opts.Purge {
+		if err := purgeDataDir(out, opts.DataDir); err != nil {
+			return err
 		}
-		fmt.Fprintf(out, "Purged data dir %s\n", opts.DataDir)
 	}
 	fmt.Fprintln(out, "Uninstalled.")
 	return nil
@@ -778,15 +756,9 @@ func (s *systemdInstaller) Status(ctx context.Context, opts InstallOptions) (Sta
 		LogsHint: logsHint(opts.System, name),
 	}
 	s.populateUnitStatus(ctx, opts, unitPath, &st)
-	if data, err := os.ReadFile(opts.Binary); err == nil {
-		st.BinaryExists = true
-		st.BinaryOnDiskSHA = hashContent(data)
-	}
+	st.fillBinary(opts.Binary)
 	s.populateRuntimeStatus(ctx, opts, name, &st)
-	if info, err := s.deps.FS.Stat(opts.DataDir); err == nil && info.IsDir() {
-		st.DataDirWritable = isDirWritable(opts.DataDir)
-		st.DataDirLastWrite = info.ModTime()
-	}
+	st.fillDataDir(s.deps.FS, opts.DataDir)
 	return st, nil
 }
 

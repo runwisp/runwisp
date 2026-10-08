@@ -27,6 +27,8 @@ func TestHostDescription_AllBranches(t *testing.T) {
 		"":          "loopback only",
 		"127.0.0.1": "loopback only",
 		"localhost": "loopback only",
+		"::1":       "loopback only",
+		"127.0.0.2": "loopback only",
 		"0.0.0.0":   "ALL INTERFACES — accessible from the network",
 		"::":        "ALL INTERFACES — accessible from the network",
 		"10.0.0.5":  "10.0.0.5",
@@ -42,7 +44,7 @@ func TestRenderInstallBanner_PrintsStepsAndSettings(t *testing.T) {
 	var buf bytes.Buffer
 	plan := Plan{
 		Kind:     PlanInstall,
-		Steps:    []Step{{Action: ActionWriteUnit, Description: "Write unit file"}},
+		Steps:    []Step{{Description: "Write unit file"}},
 		Binary:   "/usr/local/bin/runwisp",
 		Config:   "/etc/runwisp.toml",
 		DataDir:  "/var/lib/runwisp",
@@ -66,7 +68,7 @@ func TestRenderInstallBanner_TakeOverNamesTheCronUnitNotTheCommand(t *testing.T)
 	var buf bytes.Buffer
 	plan := Plan{
 		Kind:     PlanInstall,
-		Steps:    []Step{{Action: ActionMaskCron, Description: "Run:  systemctl mask cron.service"}},
+		Steps:    []Step{{Description: "Run:  systemctl mask cron.service"}},
 		CronUnit: "cron.service",
 	}
 	renderInstallBanner(&buf, plan, InstallOptions{TakeOverCron: true})

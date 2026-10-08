@@ -18,6 +18,14 @@
     // The selected run lives in the path as an optional segment: /tasks/{name}/{runId}.
     let runIdParam = $derived($page.params.runId ?? null);
 
+    // Deep link to a log line: ?line=N.
+    let highlightLine = $derived.by(() => {
+        const v = $page.url.searchParams.get("line");
+        if (!v) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+    });
+
     // Mirror the user-selected run into the address bar so the URL is a shareable
     // permalink; null (e.g. the selected run was deleted) drops back to /tasks/{name}.
     function selectRun(runId: string | null) {
@@ -28,21 +36,20 @@
     }
 
     let triggering = $state(false);
-    let restarting = $state(false);
-    let stoppingService = $state(false);
+    let serviceBusy = $state(false);
     let selectRunId = $state<string | null>(null);
 
-    const { source, logSession, deepLink } = createLiveRuns(() => taskName);
+    const live = createLiveRuns(() => taskName);
 
     let filters = $state<RunsListFilters>(emptyRunFilters());
 
     $effect(() => {
         if (!taskName) return;
-        source.setFilters({ ...filters, taskName: taskName });
+        live.source.setFilters({ ...filters, taskName: taskName });
     });
 
     const DEFAULT_CONCURRENCY_LIMIT = 1;
-    let activeRunCount = $derived(source.items.filter((r) => r.status === "running").length);
+    let activeRunCount = $derived(live.source.items.filter((r) => r.status === "running").length);
 
     // Refetch the shared task list on open (and after service actions); the
     // layout keeps it current on reloads. AsyncData drives the load/error UI.
@@ -57,14 +64,13 @@
         return () => taskData.abort();
     });
 
-    $effect(() => deepLink.resolve(taskName ? runIdParam : null, source.items));
+    $effect(() => live.deepLink.resolve(taskName ? runIdParam : null, live.source.items));
 
     async function handleRun(params?: Record<string, string | null>) {
-        if (!taskName) return;
         triggering = true;
         try {
             const newRun = await tasksApi.triggerRun(taskName, params);
-            source.upsert(newRun);
+            live.source.upsert(newRun);
             selectRunId = newRun.id;
             toast.success(`Triggered "${taskName}"`);
         } catch (err) {
@@ -75,7 +81,6 @@
     }
 
     async function handleStop(runId: string) {
-        if (!taskName) return;
         try {
             await tasksApi.stopRun(runId);
             toast.success("Stopped run");
@@ -84,31 +89,22 @@
         }
     }
 
-    async function handleRestart() {
-        if (!taskName) return;
-        restarting = true;
-        try {
-            await tasksApi.restartService(taskName);
-            void taskData.fetch();
-            toast.success(`Restarting "${taskName}"`);
-        } catch (err) {
-            toast.error(extractErrorMessage(err, `Failed to restart "${taskName}"`));
-        } finally {
-            restarting = false;
-        }
-    }
+    const SERVICE_ACTIONS = {
+        restart: { call: tasksApi.restartService, done: "Restarting", failed: "restart" },
+        stop: { call: tasksApi.stopService, done: "Stopped", failed: "stop" },
+    };
 
-    async function handleStopService() {
-        if (!taskName) return;
-        stoppingService = true;
+    async function handleServiceAction(action: keyof typeof SERVICE_ACTIONS) {
+        const { call, done, failed } = SERVICE_ACTIONS[action];
+        serviceBusy = true;
         try {
-            await tasksApi.stopService(taskName);
+            await call(taskName);
             void taskData.fetch();
-            toast.success(`Stopped "${taskName}"`);
+            toast.success(`${done} "${taskName}"`);
         } catch (err) {
-            toast.error(extractErrorMessage(err, `Failed to stop "${taskName}"`));
+            toast.error(extractErrorMessage(err, `Failed to ${failed} "${taskName}"`));
         } finally {
-            stoppingService = false;
+            serviceBusy = false;
         }
     }
 </script>
@@ -124,35 +120,18 @@
     {#if task}
         <TaskPage
             {task}
-            items={source.items}
-            total={source.total}
-            loading={source.loading || !source.loaded}
+            {live}
             bind:filters
-            onLoadMore={() => source.loadMore()}
-            onOptimisticRemove={(ids) => ids.forEach((id) => source.remove(id))}
-            onOptimisticRestore={(runs) => runs.forEach((run) => source.upsert(run))}
             {concurrencyReached}
             {triggering}
-            {restarting}
-            {stoppingService}
+            {serviceBusy}
             onRun={handleRun}
             onStop={handleStop}
-            onRestart={handleRestart}
-            onStopService={handleStopService}
-            fetchLogs={logSession.fetchLogs}
-            streamLogs={logSession.streamLogs}
-            fetchLineHistory={logSession.fetchLineHistory}
-            motion={source.motion}
+            onRestart={() => handleServiceAction("restart")}
+            onStopService={() => handleServiceAction("stop")}
             initialRunId={runIdParam}
-            initialHighlightLine={(() => {
-                const v = $page.url.searchParams.get("line");
-                if (!v) return null;
-                const n = Number(v);
-                return Number.isFinite(n) ? n : null;
-            })()}
+            initialHighlightLine={highlightLine}
             {selectRunId}
-            runNotFound={deepLink.notFound}
-            runPending={deepLink.pending}
             onSelectRun={selectRun}
         />
     {:else}

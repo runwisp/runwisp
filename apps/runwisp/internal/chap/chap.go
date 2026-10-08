@@ -10,9 +10,8 @@
 //
 // The response is PBKDF2-HMAC-SHA256 over the password, salted with the
 // single-use nonce. The slow KDF is what TLS-less / trusted-LAN operators rely
-// on: a single SHA-256 made an intercepted transcript trivial to brute-force
-// offline, whereas PBKDF2 with a high iteration count makes each password guess
-// expensive. It is defense-in-depth behind TLS, not a replacement for it.
+// on: it makes each offline guess against an intercepted transcript expensive.
+// It is defense-in-depth behind TLS, not a replacement for it.
 package chap
 
 import (

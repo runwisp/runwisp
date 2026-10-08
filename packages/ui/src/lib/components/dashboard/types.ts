@@ -7,3 +7,9 @@ export interface DaemonStats {
     activeTasks: number;
     successRate: number;
 }
+
+/** A single output-search hit surfaced under its run in the history rail. */
+export interface RunOutputMatch {
+    line: number;
+    text: string;
+}

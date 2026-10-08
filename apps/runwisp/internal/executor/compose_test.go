@@ -612,6 +612,7 @@ func TestComposeBackend_ProcessGroupSIGTERMReapsChildren(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "child.pid")
 	body := "#!/bin/sh\n" +
+		"[ \"$1\" = compose ] && [ \"$2\" = version ] && exit 0\n" + // availability probe
 		"[ \"$1\" = ps ] && exit 0\n" + // reclaim probe in Start must not block
 		"sleep 30 &\n" +
 		"echo $! > '" + pidFile + "'\n" +
@@ -652,7 +653,7 @@ func TestComposeBackend_ProcessGroupSIGTERMReapsChildren(t *testing.T) {
 // The shim traps SIGTERM so only SIGKILL can end it.
 func TestComposeBackend_ImmediateKillWhenGracefulStopZero(t *testing.T) {
 	dir := t.TempDir()
-	installDockerShimScript(t, dir, "#!/bin/sh\n[ \"$1\" = ps ] && exit 0\ntrap '' TERM\nsleep 30\n")
+	installDockerShimScript(t, dir, "#!/bin/sh\n[ \"$1\" = compose ] && [ \"$2\" = version ] && exit 0\n[ \"$1\" = ps ] && exit 0\ntrap '' TERM\nsleep 30\n")
 
 	task := &model.Task{GracefulStop: durPtr(0)}
 	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeRun}
@@ -717,19 +718,18 @@ func TestComposeBackend_Start_ContextCancelledBeforeStart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	b := &ComposeBackend{dockerCmd: "docker"}
+	b := &ComposeBackend{dockerCmd: "docker", avail: true} // the cancelled ctx would fail the probe first
 	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeRun}
 	_, err := b.Start(ctx, &model.Task{}, &model.Run{}, ce)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "start docker compose")
 }
 
-// TestLazyComposeBackend_ReprobesAfterTransientFailure pins the H5 fix: a
-// transient first-probe failure (docker still coming up) must not disable
-// compose for the daemon's whole lifetime. The old code latched probed=true on
-// the first failure and never retried. The shim fails `compose version` once,
-// then succeeds — so the second ensureProbed must report available.
-func TestLazyComposeBackend_ReprobesAfterTransientFailure(t *testing.T) {
+// TestComposeBackend_ReprobesAfterTransientFailure: a transient first-probe
+// failure (docker still coming up) must not disable compose for the daemon's
+// whole lifetime. The shim fails `compose version` once, then succeeds, so the
+// second available() must report true.
+func TestComposeBackend_ReprobesAfterTransientFailure(t *testing.T) {
 	dir := t.TempDir()
 	counter := filepath.Join(dir, "probe.count")
 	body := "#!/bin/sh\n" +
@@ -746,24 +746,21 @@ func TestLazyComposeBackend_ReprobesAfterTransientFailure(t *testing.T) {
 		"exit 0\n"
 	installDockerShimScript(t, dir, body)
 
-	l := NewLazyComposeBackend("fp-test")
+	b := NewComposeBackend("fp-test")
 
-	_, availFirst := l.ensureProbed(context.Background())
-	assert.False(t, availFirst, "the transient first-probe failure must report unavailable")
-
-	_, availSecond := l.ensureProbed(context.Background())
-	assert.True(t, availSecond, "compose must be re-probed and become available once docker is up")
+	assert.False(t, b.available(context.Background()), "the transient first-probe failure must report unavailable")
+	assert.True(t, b.available(context.Background()), "compose must be re-probed and become available once docker is up")
 
 	data, err := os.ReadFile(counter)
 	require.NoError(t, err)
 	assert.Equal(t, "2", strings.TrimSpace(string(data)),
-		"ensureProbed must actually re-run the probe after a failure, not latch the failed result")
+		"available must actually re-run the probe after a failure, not latch the failed result")
 }
 
-func TestLazyComposeBackend_ReturnsErrorWhenUnavailable(t *testing.T) {
+func TestComposeBackend_StartReturnsErrorWhenUnavailable(t *testing.T) {
 	t.Setenv("PATH", "")
-	l := NewLazyComposeBackend("fp-test")
-	_, err := l.Start(context.Background(), &model.Task{}, &model.Run{},
+	b := NewComposeBackend("fp-test")
+	_, err := b.Start(context.Background(), &model.Task{}, &model.Run{},
 		&model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeRun})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "docker compose unavailable")
@@ -787,8 +784,7 @@ func installDockerShim(t *testing.T, shimDir, argsFile string, exitCode int) {
 
 // installDockerShimScript installs a custom-bodied `docker` shim so kill-ladder
 // and working-dir tests can supply their own trap/sleep behavior. The body must
-// still answer `docker compose version` for the availability probe, or callers
-// must avoid triggering it. PATH is prepended with shimDir for the test's
+// still answer `docker compose version` for the availability probe. PATH is prepended with shimDir for the test's
 // lifetime.
 func installDockerShimScript(t *testing.T, shimDir, body string) {
 	t.Helper()

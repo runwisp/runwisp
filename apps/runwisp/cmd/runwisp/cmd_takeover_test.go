@@ -6,12 +6,13 @@ package main
 import (
 	"bytes"
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostartfake"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostarttest"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cutover"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
@@ -27,76 +28,22 @@ import (
 // blocked plan exits non-zero, and that the reload seam is fed by this package's
 // real isDaemonRunning.
 
-// fakeTakeoverInstaller is an autostart.Installer that records what it was asked
-// to do. Only the methods a cutover reaches are meaningful.
-type fakeTakeoverInstaller struct {
-	cronUnit   string
-	cronActive bool
-	installed  bool
-
-	// startsDaemon makes Install leave a live PID file behind, the way
-	// `systemctl enable --now` leaves a daemon behind.
-	startsDaemon bool
-	dataDir      string
-	t            *testing.T
-
-	installs int
-	// configAtInstall records whether opts.Config existed when Install ran — the
-	// ordering a unit pointing at a missing config would break.
-	configAtInstall bool
-}
-
-func (f *fakeTakeoverInstaller) Render(autostart.InstallOptions) ([]byte, error) { return nil, nil }
-
-func (f *fakeTakeoverInstaller) ComputePlan(context.Context, autostart.InstallOptions) (autostart.Plan, error) {
-	if f.installed {
-		return autostart.Plan{Kind: autostart.PlanNoop}, nil
+// newTakeoverInstaller is a fake init system on a box with cron running and no
+// RunWisp unit yet: its plan is an install, so a cutover has something to do.
+func newTakeoverInstaller() *autostartfake.Installer {
+	return &autostartfake.Installer{
+		CronUnit: "cron.service", CronActive: true,
+		Plan: autostart.Plan{Kind: autostart.PlanInstall, Steps: []autostart.Step{
+			{Description: "write /etc/systemd/system/runwisp.service"},
+		}},
 	}
-	return autostart.Plan{Kind: autostart.PlanInstall, Steps: []autostart.Step{
-		{Action: autostart.ActionWriteUnit, Description: "write /etc/systemd/system/runwisp.service"},
-	}}, nil
-}
-
-func (f *fakeTakeoverInstaller) Install(_ context.Context, opts autostart.InstallOptions, _ io.Writer) error {
-	f.installs++
-	_, err := os.Stat(opts.Config)
-	f.configAtInstall = err == nil
-	if f.startsDaemon {
-		writeLivePidFile(f.t, f.dataDir)
-	}
-	return nil
-}
-
-func (f *fakeTakeoverInstaller) Uninstall(context.Context, autostart.UninstallOptions, io.Writer) error {
-	return nil
-}
-
-func (f *fakeTakeoverInstaller) Status(context.Context, autostart.InstallOptions) (autostart.Status, error) {
-	return autostart.Status{Installed: f.installed, Running: f.installed}, nil
-}
-
-func (f *fakeTakeoverInstaller) Stop(context.Context, autostart.InstallOptions) error    { return nil }
-func (f *fakeTakeoverInstaller) Restart(context.Context, autostart.InstallOptions) error { return nil }
-
-func (f *fakeTakeoverInstaller) EnsurePasswordDropIn(context.Context, autostart.InstallOptions, string) (string, bool, error) {
-	return "", false, nil
-}
-
-func (f *fakeTakeoverInstaller) SupportsPasswordDropIn() bool { return true }
-
-func (f *fakeTakeoverInstaller) WriteEnvDropIn(context.Context, autostart.InstallOptions, string, map[string]string) (string, autostart.DropInChange, error) {
-	return "", autostart.DropInUnchanged, nil
-}
-
-func (f *fakeTakeoverInstaller) CronStatus(context.Context) (string, bool, error) {
-	return f.cronUnit, f.cronActive, nil
 }
 
 // takeoverHarness substitutes the whole machine behind the newTakeover seam: a
 // fake init system, a crontab in a temp dir, and a config path that starts out
 // missing — the box the reported dead-end was about.
 type takeoverHarness struct {
-	inst *fakeTakeoverInstaller
+	inst *autostartfake.Installer
 
 	cfgPath string
 	dataDir string
@@ -120,9 +67,7 @@ func newTakeoverHarness(t *testing.T) *takeoverHarness {
 		dataDir: dir,
 		answer:  true,
 	}
-	h.inst = &fakeTakeoverInstaller{
-		cronUnit: "cron.service", cronActive: true, dataDir: dir, t: t,
-	}
+	h.inst = newTakeoverInstaller()
 
 	prevSeam, prevOpts := newTakeover, takeoverOpts
 	t.Cleanup(func() { newTakeover, takeoverOpts = prevSeam, prevOpts })
@@ -140,7 +85,7 @@ func newTakeoverHarness(t *testing.T) *takeoverHarness {
 
 		return cutover.New(cutover.Deps{
 			Installer: h.inst,
-			Prompter:  &autostart.ScriptedPrompter{YesNo: []bool{h.answer}},
+			Prompter:  &autostarttest.ScriptedPrompter{YesNo: []bool{h.answer}},
 			Opts: autostart.InstallOptions{
 				Binary: "/usr/local/bin/runwisp", Config: h.cfgPath,
 				DataDir: dir, Host: "127.0.0.1", Port: 9477, System: true,
@@ -153,6 +98,7 @@ func newTakeoverHarness(t *testing.T) *takeoverHarness {
 			Trusted: func(string) error { return nil },
 			// The seam under test: fed by this package's real PID-file probe, so
 			// the sampling order is exercised end to end rather than assumed.
+			Preflight:     func(context.Context) (bool, error) { return false, nil },
 			DaemonRunning: func() bool { return isDaemonRunning(f) },
 			Reload:        func(context.Context) error { h.reloads++; return nil },
 		}), nil
@@ -196,7 +142,7 @@ func TestRunTakeover_WorksFromNothing(t *testing.T) {
 	assert.Contains(t, out, "write /etc/systemd/system/runwisp.service",
 		"autostart's own steps are shown, not a restatement of them")
 	assert.FileExists(t, h.cfgPath)
-	assert.Equal(t, 1, h.inst.installs)
+	assert.Equal(t, 1, h.inst.Installs())
 }
 
 // The whole reason `takeover` exists as its own command rather than an alias:
@@ -209,7 +155,7 @@ func TestRunTakeover_ReloadsRunningDaemonAfterInstall(t *testing.T) {
 
 	require.NoError(t, h.run(t, h.flags()))
 
-	assert.Equal(t, 1, h.inst.installs)
+	assert.Equal(t, 1, h.inst.Installs())
 	assert.Equal(t, 1, h.reloads, "a running daemon must be reloaded so the hold lifts")
 	assert.Contains(t, h.out.String(), "Reloading the running daemon")
 }
@@ -220,11 +166,13 @@ func TestRunTakeover_ReloadsRunningDaemonAfterInstall(t *testing.T) {
 // before the install, which this test pins by having the install start one.
 func TestRunTakeover_NoReloadWhenTheInstallItselfStartedTheDaemon(t *testing.T) {
 	h := newTakeoverHarness(t)
-	h.inst.startsDaemon = true
+	// Install leaves a live PID file behind, the way `systemctl enable --now`
+	// leaves a daemon behind.
+	h.inst.OnInstall = func(autostart.InstallOptions) { writeLivePidFile(t, h.dataDir) }
 
 	require.NoError(t, h.run(t, h.flags()))
 
-	assert.Equal(t, 1, h.inst.installs)
+	assert.Equal(t, 1, h.inst.Installs())
 	assert.Zero(t, h.reloads, "the daemon systemd just started has nothing held to hand over")
 	assert.NotContains(t, h.out.String(), "Reloading")
 }
@@ -234,7 +182,7 @@ func TestRunTakeover_NoReloadWhenNoDaemonWasRunning(t *testing.T) {
 
 	require.NoError(t, h.run(t, h.flags()))
 
-	assert.Equal(t, 1, h.inst.installs)
+	assert.Equal(t, 1, h.inst.Installs())
 	assert.Zero(t, h.reloads)
 }
 
@@ -251,7 +199,7 @@ func TestRunTakeover_DryRunPrintsThePlanAndWritesNothing(t *testing.T) {
 	assert.Contains(t, out, "Write "+h.cfgPath)
 	assert.Contains(t, out, "Dry run — nothing was written")
 	assert.NoFileExists(t, h.cfgPath)
-	assert.Zero(t, h.inst.installs)
+	assert.Zero(t, h.inst.Installs())
 	assert.Zero(t, h.reloads)
 }
 
@@ -265,7 +213,7 @@ func TestRunTakeover_DeclinedWritesNothing(t *testing.T) {
 
 	assert.Contains(t, h.out.String(), "Aborted")
 	assert.NoFileExists(t, h.cfgPath)
-	assert.Zero(t, h.inst.installs)
+	assert.Zero(t, h.inst.Installs())
 }
 
 // TestRunTakeover_BlockedPlanPrintsFindingsThenExitsNonZero: the plan block still
@@ -283,7 +231,7 @@ func TestRunTakeover_BlockedPlanPrintsFindingsThenExitsNonZero(t *testing.T) {
 	assert.Contains(t, err.Error(), "2 things stop RunWisp taking over cron")
 	assert.Contains(t, err.Error(), "root")
 	assert.Contains(t, err.Error(), "no cron jobs on this box")
-	assert.Zero(t, h.inst.installs)
+	assert.Zero(t, h.inst.Installs())
 
 	_, ok := isUserFacing(err)
 	assert.True(t, ok, "a refusal renders through the CLI's pretty path")
@@ -305,14 +253,15 @@ func TestRunTakeover_SingleBlockerKeepsItsOwnTitle(t *testing.T) {
 // provisioning script.
 func TestRunTakeover_NothingToDoIsANoop(t *testing.T) {
 	h := newTakeoverHarness(t)
-	h.inst.installed = true
-	h.inst.cronActive = false
+	h.inst.Plan = autostart.Plan{Kind: autostart.PlanNoop}
+	h.inst.Stat = autostart.Status{Installed: true, Running: true}
+	h.inst.CronActive = false
 	dir := filepath.Dir(h.cfgPath)
 	h.configBody = "[daemon]\ninclude_cron = [\"" + filepath.Join(dir, "crontabs", "*") + "\"]\n"
 
 	require.NoError(t, h.run(t, h.flags()))
 
 	assert.Contains(t, h.out.String(), "Nothing to do")
-	assert.Zero(t, h.inst.installs)
+	assert.Zero(t, h.inst.Installs())
 	assert.Zero(t, h.reloads)
 }

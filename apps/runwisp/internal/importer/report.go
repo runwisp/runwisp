@@ -231,17 +231,6 @@ var noteKindInfo = map[NoteKind]noteSeverity{
 	},
 }
 
-// slug is the kind's stable identifier, for tests and structured dumps.
-func (k NoteKind) slug() string { slug, _, _ := k.info(); return slug }
-
-// String makes a NoteKind readable in test failures.
-func (k NoteKind) String() string {
-	if slug := k.slug(); slug != "" {
-		return slug
-	}
-	return "note-kind-without-severity"
-}
-
 // Note is a single human-readable observation about the conversion. Scope is
 // structural rather than a field: a note about one job's own mapping lives on
 // that job's Item, and a note about the file's structure lives on the Result.
@@ -271,22 +260,6 @@ const (
 	StatusBlocked                   // carries an unresolved # TODO, or didn't import
 	StatusSkipped                   // recognized and deliberately not imported
 )
-
-// String makes an ItemStatus readable in test failures and structured dumps.
-func (s ItemStatus) String() string {
-	switch s {
-	case StatusClean:
-		return "clean"
-	case StatusChanged:
-		return "changed"
-	case StatusBlocked:
-		return "blocked"
-	case StatusSkipped:
-		return "skipped"
-	default:
-		return "unknown"
-	}
-}
 
 // Item is one row of the report: one job in the source, exactly one row, and a
 // mark that says what happened to it. Every job the parser saw gets an Item —

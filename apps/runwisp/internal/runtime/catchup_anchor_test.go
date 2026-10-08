@@ -15,7 +15,6 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -156,9 +155,7 @@ func TestSnapshotCatchupAnchors_FreezesBeforeContaminatingWrites(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, reg.LastRunAt.Equal(now), "sanity: the boot-time run is now the task's last run")
 
-	runner := new(mockTaskRunner)
-	runner.On("RecordMissedRun", task.Name, mock.Anything, mock.Anything).Return(nil)
-	runner.On("TriggerRunWithOptions", task.Name, TriggerRunOptions{TriggeredBy: model.TriggeredByCron}).Return(&model.Run{}, nil)
+	runner := &fakeTaskRunner{}
 
 	result := RunMissedTickCatchUp(tasks, runner, now, time.UTC, anchors, errs)
 

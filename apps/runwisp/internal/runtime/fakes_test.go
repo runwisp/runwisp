@@ -15,6 +15,12 @@ type recordedSkip struct {
 	reason   model.EndReason
 }
 
+type recordedMissed struct {
+	taskName    string
+	scheduledAt time.Time
+	reason      string
+}
+
 // jitteredCall captures one ScheduleJitteredRun invocation so the scheduler's
 // jitter tests can assert the task was routed through the gate with the
 // expected tick, slot deadline, and window horizon.
@@ -25,34 +31,32 @@ type jitteredCall struct {
 	window   time.Duration
 }
 
-// fakeTaskRunner is a recording TaskRunner stand-in for runtime tests. It
-// captures trigger/skip calls in arrival order and returns a configurable
-// result, so both the scheduler's golden firing-sequence tests and the
-// catch-up tests share one fake without booting the executor, event bus, or
-// database.
-//
-// It lives in package runtime (not testutil) on purpose: the runtime test
-// binary cannot import a testutil that imports runtime, so a shared fake for
-// the TaskRunner interface has to be in-package.
+// fakeTaskRunner is a recording RunTrigger for runtime tests. It captures
+// calls in arrival order and returns a configurable result, so the scheduler,
+// catch-up, and run_on_start tests share one fake without booting the
+// executor, event bus, or database.
 type fakeTaskRunner struct {
 	mu sync.Mutex
 
 	// triggerErr, when set, makes every TriggerRun fail without recording a
-	// trigger — used to exercise catch-up error accounting.
+	// trigger; used to exercise catch-up error accounting.
 	triggerErr error
 
-	triggers []string
-	skips    []recordedSkip
-	jittered []jitteredCall
+	triggers    []string
+	triggerOpts []TriggerRunOptions
+	skips       []recordedSkip
+	jittered    []jitteredCall
+	missed      []recordedMissed
 }
 
-func (r *fakeTaskRunner) TriggerRunWithOptions(name string, _ TriggerRunOptions) (*model.Run, error) {
+func (r *fakeTaskRunner) TriggerRunWithOptions(name string, opts TriggerRunOptions) (*model.Run, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.triggerErr != nil {
 		return nil, r.triggerErr
 	}
 	r.triggers = append(r.triggers, name)
+	r.triggerOpts = append(r.triggerOpts, opts)
 	return &model.Run{TaskName: name}, nil
 }
 
@@ -87,23 +91,9 @@ func (r *fakeTaskRunner) triggerCount() int {
 	return len(r.triggers)
 }
 
-func (r *fakeTaskRunner) RecordMissedRun(string, time.Time, string) error { return nil }
-
-func (r *fakeTaskRunner) GetTask(string) (*model.Task, bool) { return nil, false }
-func (r *fakeTaskRunner) ListServiceTasks() []*model.Task    { return nil }
-func (r *fakeTaskRunner) UpsertTask(*model.Task)             {}
-func (r *fakeTaskRunner) MutateTask(string, func(*model.Task) error) (bool, error) {
-	return false, nil
+func (r *fakeTaskRunner) RecordMissedRun(name string, scheduledAt time.Time, reason string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.missed = append(r.missed, recordedMissed{taskName: name, scheduledAt: scheduledAt, reason: reason})
+	return nil
 }
-func (r *fakeTaskRunner) TerminateRun(string) error                             { return nil }
-func (r *fakeTaskRunner) TerminateRunByExecutionID(string) error                { return nil }
-func (r *fakeTaskRunner) StopTask(string) error                                 { return nil }
-func (r *fakeTaskRunner) RestartServiceInstances(string) error                  { return nil }
-func (r *fakeTaskRunner) StopService(string) error                              { return nil }
-func (r *fakeTaskRunner) StartService(string) error                             { return nil }
-func (r *fakeTaskRunner) StartServiceInstances(string, model.TriggeredBy) error { return nil }
-func (r *fakeTaskRunner) ServiceSnapshot(string) (model.ServiceSnapshot, bool) {
-	return model.ServiceSnapshot{}, false
-}
-func (r *fakeTaskRunner) GetActiveRunCount(string) int      { return 0 }
-func (r *fakeTaskRunner) GetActiveRuns(string) []*ActiveRun { return nil }

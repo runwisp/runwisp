@@ -62,7 +62,7 @@ func (m *Model) View(width, height int) string {
 // shows a vertical cursor (▶) on the selected row.
 func (m *Model) renderHits(b *strings.Builder, width int) {
 	hitStyle := lipgloss.NewStyle().Foreground(uikit.ColorText)
-	selStyle := lipgloss.NewStyle().Foreground(uikit.ColorBg).Background(uikit.ColorPrimary)
+	selStyle := uikit.OnBg(uikit.ColorPrimary, uikit.ColorBg)
 	mutedStyle := lipgloss.NewStyle().Foreground(uikit.ColorTextMuted)
 
 	total := len(m.hits)

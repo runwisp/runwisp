@@ -17,30 +17,27 @@
     } from "@runwisp/ui";
     import type { RunMotion } from "@runwisp/ui";
     import { displayStatus, type Run } from "@runwisp/common";
+    import RunStatusBadge from "./RunStatusBadge.svelte";
     import { formatRunDurationLabel } from "./overview-format.js";
 
     let {
-        recentActivity = [],
-        now = new Date(),
+        recentActivity,
+        now,
         onRunClick,
         onViewAllRuns,
-        getInstanceCount = () => 1,
+        getInstanceCount,
         motion,
     }: {
-        recentActivity?: Run[];
-        now?: Date;
-        onRunClick?: (taskName: string, runId: string) => void;
-        onViewAllRuns?: () => void;
-        getInstanceCount?: (taskName: string) => number;
+        recentActivity: Run[];
+        now: Date;
+        onRunClick: (taskName: string, runId: string) => void;
+        onViewAllRuns: () => void;
+        getInstanceCount: (taskName: string) => number;
         // Runs that finished live moments ago drop in with the shared arrival
         // cue. Rows only ever leave this list live (deleted, or pushed off the
         // bottom), so they always sweep out.
-        motion?: RunMotion;
+        motion: RunMotion;
     } = $props();
-
-    function viewRun(run: Run): void {
-        onRunClick?.(run.taskName, run.id);
-    }
 </script>
 
 <Card padding="lg">
@@ -48,7 +45,7 @@
         <Heading level={2} size="sm">Recent activity</Heading>
         <button
             class="inline-flex items-center gap-1 font-mono text-xs font-medium text-on-surface-muted hover:text-primary"
-            onclick={() => onViewAllRuns?.()}
+            onclick={onViewAllRuns}
         >
             All runs
             <ArrowRight size={12} />
@@ -74,10 +71,10 @@
                 <button
                     data-run-id={run.id}
                     animate:shift
-                    use:arrival={motion?.arrived(run.id) ?? false}
+                    use:arrival={motion.arrived(run.id)}
                     out:leave={() => true}
                     class="group flex w-full items-start gap-3 rounded-[3px] p-2.5 text-left hover:bg-surface-sunken"
-                    onclick={() => viewRun(run)}
+                    onclick={() => onRunClick(run.taskName, run.id)}
                 >
                     <div
                         class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[3px] {statusConfig.bg}"
@@ -100,11 +97,12 @@
                                             >{suffix}</span
                                         >{/if}
                                 </span>
-                                <span
-                                    class="shrink-0 rounded-[3px] px-1.5 py-0.5 font-mono text-2xs font-semibold uppercase {statusConfig.badge}"
+                                <RunStatusBadge
+                                    tone={statusConfig.badge}
+                                    class="shrink-0 uppercase"
                                 >
                                     {status}
-                                </span>
+                                </RunStatusBadge>
                             </div>
                             <ArrowRight
                                 size={12}
