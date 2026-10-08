@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 )
 
 // The CLI caches the JWT minted by a remote daemon so repeated `runwisp run

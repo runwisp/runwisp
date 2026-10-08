@@ -5,11 +5,11 @@ package tui
 
 import (
 	tea "charm.land/bubbletea/v2"
-	"github.com/runwisp/runwisp/internal/tui/uikit"
-	"github.com/runwisp/runwisp/internal/tui/views/execlist"
-	"github.com/runwisp/runwisp/internal/tui/views/home"
-	"github.com/runwisp/runwisp/internal/tui/views/logsearch"
-	"github.com/runwisp/runwisp/internal/tui/views/notifications"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/execlist"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/home"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/logsearch"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/notifications"
 )
 
 // keyHandlerFn processes a key event. Returns (model, cmd, handled): when

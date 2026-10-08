@@ -3,7 +3,7 @@
 
 package importer
 
-import "github.com/runwisp/runwisp/internal/model"
+import "github.com/runwisp/runwisp/apps/runwisp/internal/model"
 
 // This file owns the *report*: one row per job the source described, whatever
 // became of it. It is deliberately separate from the emitted TOML (blocks), so

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
 )
 
 //go:embed defaults/*

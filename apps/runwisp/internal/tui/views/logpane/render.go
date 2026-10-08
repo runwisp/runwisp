@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
 // RenderLines renders the visible log lines into the given strings.Builder.

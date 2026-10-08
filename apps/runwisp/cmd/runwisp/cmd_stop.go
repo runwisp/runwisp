@@ -10,8 +10,8 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/runwisp/runwisp/internal/autostart"
-	"github.com/runwisp/runwisp/internal/datadir"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 	"github.com/spf13/cobra"
 )
 

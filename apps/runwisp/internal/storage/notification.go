@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage/sqlcdb"
 )
 
 // Notification is one persistent in-app notification row, possibly representing

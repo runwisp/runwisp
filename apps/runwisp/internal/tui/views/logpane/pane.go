@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
 const (

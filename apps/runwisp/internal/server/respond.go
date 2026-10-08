@@ -10,8 +10,8 @@ import (
 	"log/slog"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/runwisp/runwisp/internal/runtime"
-	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // mapDomainError translates a runService sentinel (or storage.ErrNotFound) to

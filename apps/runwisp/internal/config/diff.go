@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"slices"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // ChangeReason names one way two definitions of the same task differ. A change

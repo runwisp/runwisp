@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // check-latest.ts <app> — fail when a direct dependency of apps/<app> is behind
-// its latest stable release. Go apps check go.mod's requires and toolchain line;
+// its latest stable release. The Go app checks the root go.mod's requires and toolchain line;
 // JS apps check package.json deps against the versions locked in bun.lock.
 //
 // A release only counts once it is older than GRACE_SECONDS (default 1h), so a
@@ -162,7 +162,7 @@ async function goDeps(dir: string): Promise<Dep[]> {
     );
 
     const toolchain = /^toolchain go(\S+)$/m.exec(
-        readFileSync(join(dir, "go.mod"), "utf8"),
+        readFileSync(join(repoRoot, "go.mod"), "utf8"),
     )?.[1];
     if (!toolchain) throw new Error("go.mod has no toolchain line");
     const releases: unknown = await fetch("https://go.dev/dl/?mode=json").then(
@@ -189,9 +189,9 @@ async function goDeps(dir: string): Promise<Dep[]> {
 const app = process.argv[2];
 if (!app) throw new Error("usage: bun scripts/check-latest.ts <app>");
 const dir = join(repoRoot, "apps", app);
-const deps = existsSync(join(dir, "go.mod"))
-    ? await goDeps(dir)
-    : await npmDeps(dir);
+const deps = existsSync(join(dir, "package.json"))
+    ? await npmDeps(dir)
+    : await goDeps(dir);
 
 let stale = 0;
 for (const { name, current, newer } of deps) {

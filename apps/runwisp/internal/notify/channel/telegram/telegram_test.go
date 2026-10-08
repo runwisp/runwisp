@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/testutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/testutil"
 )
 
 // newFastTransport layers telegram's 429 Retry-After parser on top of the

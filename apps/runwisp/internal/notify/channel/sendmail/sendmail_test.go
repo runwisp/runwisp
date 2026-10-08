@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
 )
 
 // fixedTime keeps the Date header deterministic. Any constant does; this one is

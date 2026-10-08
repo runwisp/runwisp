@@ -18,9 +18,9 @@ import (
 
 	"log/slog"
 
-	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/autostart"
-	"github.com/runwisp/runwisp/internal/datadir"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 )
 
 // pollUntil calls check every 200ms until it returns true or deadline passes,

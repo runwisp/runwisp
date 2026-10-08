@@ -6,7 +6,7 @@ layer: 'application'
 
 fileGroups:
   # ensure-ui-dist.sh is sourced by every Go entry-point script.
-  go: ['cmd/**/*.go', 'internal/**/*.go', 'go.mod', 'go.sum', 'scripts/ensure-ui-dist.sh']
+  go: ['cmd/**/*.go', 'internal/**/*.go', '/go.mod', '/go.sum', 'scripts/ensure-ui-dist.sh']
   # Non-Go assets compiled into the binary via //go:embed. They are build
   # inputs even though they aren't .go files, so the build cache must key on
   # them — otherwise editing e.g. the demo config leaves a stale binary.
@@ -138,8 +138,8 @@ tasks:
       - 'cmd/**/*'
       - 'internal/**/*'
       - 'tests/**/*'
-      - 'go.mod'
-      - 'go.sum'
+      - '/go.mod'
+      - '/go.sum'
       - 'scripts/test-go.sh'
       - 'scripts/merge-coverage.sh'
       # The Docker image's copy of the starter, pinned by a config test.

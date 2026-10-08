@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
-	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/inapp"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"

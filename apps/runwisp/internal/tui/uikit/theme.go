@@ -11,7 +11,7 @@ import (
 	"image/color"
 
 	"charm.land/lipgloss/v2"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // Brand palette — official RunWisp colors.

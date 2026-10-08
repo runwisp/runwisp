@@ -21,9 +21,9 @@ import (
 	"context"
 	"os/user"
 
-	"github.com/runwisp/runwisp/internal/autostart"
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/configedit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/configedit"
 )
 
 // Deps is every seam a cutover needs. GOOS is injected and Installer is an

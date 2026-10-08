@@ -17,10 +17,10 @@ import (
 	"github.com/robfig/cron/v3"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/cronspec"
-	"github.com/runwisp/runwisp/internal/executor"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // minRuns is the floor on how many historical runs Seed produces; plan() tops

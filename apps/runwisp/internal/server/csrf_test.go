@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/server/auth"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 	"github.com/stretchr/testify/assert"
 )
 

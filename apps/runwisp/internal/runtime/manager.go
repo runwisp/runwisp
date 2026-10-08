@@ -16,13 +16,13 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/crashguard"
-	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/executor"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/runtime/retry"
-	"github.com/runwisp/runwisp/internal/runtime/services"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime/retry"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime/services"
 )
 
 const (

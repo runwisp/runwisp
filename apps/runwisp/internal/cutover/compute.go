@@ -11,10 +11,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/autostart"
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/configedit"
-	"github.com/runwisp/runwisp/internal/textutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/configedit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // Compute answers "what would a cutover do to this box, and what stops it",

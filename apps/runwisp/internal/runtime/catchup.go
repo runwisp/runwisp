@@ -13,10 +13,10 @@ import (
 	"log/slog"
 
 	"github.com/robfig/cron/v3"
-	"github.com/runwisp/runwisp/internal/cronspec"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage"
-	"github.com/runwisp/runwisp/internal/textutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // CatchUpResult summarises missed-tick catch-up actions taken at startup.

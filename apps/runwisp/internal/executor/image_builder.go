@@ -16,7 +16,7 @@ import (
 
 	"github.com/moby/moby/client"
 	"github.com/oklog/ulid/v2"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // ImageBuilder handles Docker image creation from execution definitions.

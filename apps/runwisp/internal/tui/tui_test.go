@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/tui/uikit"
-	"github.com/runwisp/runwisp/internal/tui/views/home"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/home"
 	"github.com/stretchr/testify/assert"
 )
 

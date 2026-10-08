@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 func failedRunEvent() events.Event {

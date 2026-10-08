@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 )
 
 // GetLogPage fetches a JSON page of log lines. A negative `from` counts from

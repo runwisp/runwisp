@@ -15,10 +15,10 @@ import (
 	// runtime test binary does not, so it is pinned here.
 	_ "time/tzdata"
 
-	"github.com/runwisp/runwisp/internal/cronspec"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage"
-	"github.com/runwisp/runwisp/internal/testutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )

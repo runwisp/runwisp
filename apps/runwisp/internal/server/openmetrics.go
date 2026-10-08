@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/version"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/version"
 )
 
 // openMetricsContentType is the OpenMetrics 1.0 text exposition content type.

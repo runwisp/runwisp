@@ -16,8 +16,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
 )
 
 // RenderedMessage carries the output of a Renderer.

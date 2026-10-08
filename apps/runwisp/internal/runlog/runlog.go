@@ -14,8 +14,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // Subscribe wires the run-lifecycle logger onto bus and returns an unsubscribe

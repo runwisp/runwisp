@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/runwisp/runwisp/internal/executor"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/runtime/retry"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime/retry"
 )
 
 var t0 = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)

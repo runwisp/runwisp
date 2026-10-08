@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/cronspec"
-	"github.com/runwisp/runwisp/internal/executor"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/runtime/health"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime/health"
 )
 
 // watchRun is the executor's RunWatcher. For a live instance of a service with

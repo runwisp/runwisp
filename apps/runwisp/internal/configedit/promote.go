@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 )
 
 // Promotion moves a staged task (from runwisp.d/imported.toml, or read live

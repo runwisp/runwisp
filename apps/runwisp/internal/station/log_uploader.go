@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/station/logarchive"
-	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/station/logarchive"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // archiveTimeout caps a single terminal archive operation. Daemon log files

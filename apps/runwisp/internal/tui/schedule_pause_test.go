@@ -10,10 +10,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/tui/keys"
-	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/keys"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

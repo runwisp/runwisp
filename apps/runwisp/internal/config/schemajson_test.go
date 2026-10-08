@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/pelletier/go-toml/v2"
-	"github.com/runwisp/runwisp/internal/notify/kinds"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/kinds"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 )

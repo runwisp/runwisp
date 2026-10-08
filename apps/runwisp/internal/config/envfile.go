@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/textutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // loadEnvFile resolves path relative to baseDir, parses it literally, and runs

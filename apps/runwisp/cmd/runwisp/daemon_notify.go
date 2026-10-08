@@ -10,17 +10,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/crashguard"
-	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/channel"
-	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
-	"github.com/runwisp/runwisp/internal/notify/coalesce"
-	"github.com/runwisp/runwisp/internal/notify/configload"
-	"github.com/runwisp/runwisp/internal/notify/render"
-	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/inapp"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/coalesce"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/configload"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // liveNotify owns the running notify.Service and swaps it when a reload changes

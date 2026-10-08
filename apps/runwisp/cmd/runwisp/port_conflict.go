@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 )
 
 // conflictChoice is the launcher's decision after probing an occupied port.

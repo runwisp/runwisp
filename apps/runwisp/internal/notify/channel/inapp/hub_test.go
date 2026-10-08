@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // TestHubConcurrentPublishUnsubscribe drives Subscribe/unsubscribe churn

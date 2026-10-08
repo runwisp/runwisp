@@ -7,7 +7,7 @@ import (
 	"maps"
 	"sync"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // TaskRegistry is the single guarded owner of the daemon's in-memory task set.

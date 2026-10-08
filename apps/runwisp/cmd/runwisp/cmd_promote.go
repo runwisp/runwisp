@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/configedit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/configedit"
 	"github.com/spf13/cobra"
 )
 

@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
 )
 
 func TestResolve_Slack(t *testing.T) {

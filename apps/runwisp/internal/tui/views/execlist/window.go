@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
 // windowSize is the number of items loaded into the sliding window.

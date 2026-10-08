@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
-	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 )
 
 // ErrIncludeNeedsManualWiring signals that the root config already declares a

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

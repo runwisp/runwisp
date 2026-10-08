@@ -10,9 +10,9 @@ import (
 
 	"log/slog"
 
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/generated/protocol"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // HandleServiceApply installs or updates a service. Two shapes resolve here:

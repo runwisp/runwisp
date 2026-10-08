@@ -26,10 +26,10 @@ runner_version() {
 }
 
 runner_ldflags() {
-  local module version flags
-  module=$(go list -m -f '{{.Path}}')
+  local pkg version flags
+  pkg=$(go list -f '{{.ImportPath}}' "${metadata_script_dir}/../internal/version")
   version=$(runner_version)
-  flags="-X ${module}/internal/version.Version=${version}"
+  flags="-X ${pkg}.Version=${version}"
   if [[ "${RELEASE:-}" == "1" ]]; then
     flags="-s -w ${flags}"
   fi

@@ -11,10 +11,10 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/channel"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
 )
 
 // ResolvedNotify carries everything the daemon needs to construct a

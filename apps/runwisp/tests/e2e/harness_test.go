@@ -21,9 +21,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
-	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/autostart"
-	"github.com/runwisp/runwisp/internal/testutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 

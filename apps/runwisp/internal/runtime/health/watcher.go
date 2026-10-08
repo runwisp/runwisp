@@ -16,9 +16,9 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/runwisp/runwisp/internal/executor"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/runtime/retry"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime/retry"
 )
 
 // Watcher watches one service instance through its health-check probe.

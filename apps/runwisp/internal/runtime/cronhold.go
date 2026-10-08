@@ -9,7 +9,7 @@ import (
 
 	"log/slog"
 
-	"github.com/runwisp/runwisp/internal/cronprobe"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronprobe"
 )
 
 // cronHoldPollInterval is how often the watcher re-asks whether a system cron

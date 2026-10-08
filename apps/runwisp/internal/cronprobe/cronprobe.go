@@ -19,8 +19,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/datadir"
-	"github.com/runwisp/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
 )
 
 // State is the answer: whether a system cron daemon is live, and prose for the

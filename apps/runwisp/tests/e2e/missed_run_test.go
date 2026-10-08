@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/server"
-	"github.com/runwisp/runwisp/internal/storage"
-	"github.com/runwisp/runwisp/internal/testutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 

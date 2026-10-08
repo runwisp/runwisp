@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/tlscert"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tlscert"
 )
 
 type fakeStore struct{ m map[string]string }

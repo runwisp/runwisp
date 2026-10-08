@@ -7,7 +7,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // TaskRunner is the subset of TaskManager consumed by the server package, the

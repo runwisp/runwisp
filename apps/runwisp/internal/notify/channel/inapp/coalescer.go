@@ -12,8 +12,8 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // CoalescerConfig parameterizes the dedupe behavior.

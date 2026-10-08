@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/importer"
-	"github.com/runwisp/runwisp/internal/testutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

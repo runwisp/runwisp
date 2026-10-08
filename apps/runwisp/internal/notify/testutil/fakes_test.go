@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
 )
 
 func TestFakeChannel(t *testing.T) {

@@ -7,7 +7,7 @@
 // source of truth without an import cycle.
 package kinds
 
-import "github.com/runwisp/runwisp/internal/model"
+import "github.com/runwisp/runwisp/apps/runwisp/internal/model"
 
 // excludedEndReasons are model.EndReason values deliberately left out of
 // AllKindStrings so a route can't be written that never fires: `skipped`/

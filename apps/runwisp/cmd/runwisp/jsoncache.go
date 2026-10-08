@@ -10,7 +10,7 @@ import (
 
 	"log/slog"
 
-	"github.com/runwisp/runwisp/internal/datadir"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 )
 
 // runwispCacheFile returns the path to name under the per-user OS cache dir's

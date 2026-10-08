@@ -11,8 +11,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/autostart"
-	"github.com/runwisp/runwisp/internal/cutover"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cutover"
 	"github.com/spf13/cobra"
 )
 

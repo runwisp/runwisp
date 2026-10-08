@@ -6,8 +6,8 @@ package inapp
 import (
 	"context"
 
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
 )
 
 // Channel is the in-app sink: it lives in-process, talks to a Coalescer for

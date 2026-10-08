@@ -17,18 +17,18 @@ import (
 
 	"log/slog"
 
-	"github.com/runwisp/runwisp/internal/autostart"
-	"github.com/runwisp/runwisp/internal/bootid"
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/executor"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/procstat"
-	"github.com/runwisp/runwisp/internal/runtime"
-	"github.com/runwisp/runwisp/internal/storage"
-	"github.com/runwisp/runwisp/internal/tui/uikit"
-	"github.com/runwisp/runwisp/internal/version"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/bootid"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/procstat"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/version"
 )
 
 // daemonServices holds all long-lived services created during daemon startup.

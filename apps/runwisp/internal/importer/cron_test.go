@@ -10,7 +10,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 func parseCron(t *testing.T, in string, opts CronOptions) *Result {

@@ -4,8 +4,8 @@
 package cutover
 
 import (
-	"github.com/runwisp/runwisp/internal/autostart"
-	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 )
 
 // StepKind enumerates the effects a cutover can have. The list is exhaustive, so

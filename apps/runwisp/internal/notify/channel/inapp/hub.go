@@ -10,8 +10,8 @@ package inapp
 import (
 	"sync"
 
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // Update is the SSE-shaped envelope the Hub broadcasts. Type is one of

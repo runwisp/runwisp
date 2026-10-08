@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // populatePlatformSample reads real host CPU and memory usage from /proc.

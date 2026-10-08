@@ -6,8 +6,8 @@ package station
 import (
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/generated/protocol"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 )
 

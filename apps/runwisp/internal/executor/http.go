@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/netguard"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/netguard"
 )
 
 // blockedMetadataHosts are well-known cloud-metadata endpoints that must never

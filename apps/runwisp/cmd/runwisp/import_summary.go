@@ -12,10 +12,10 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/configedit"
-	"github.com/runwisp/runwisp/internal/importer"
-	"github.com/runwisp/runwisp/internal/textutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/configedit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // This file owns how an import *reads*: the counts, the per-job rows, the

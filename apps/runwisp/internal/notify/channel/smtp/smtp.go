@@ -23,8 +23,8 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	gomail "github.com/wneessen/go-mail"
 
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
 )
 
 const (

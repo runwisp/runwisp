@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/cronspec"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/textutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // CronOptions tunes crontab parsing.

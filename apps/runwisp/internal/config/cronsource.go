@@ -12,9 +12,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/cronprobe"
-	"github.com/runwisp/runwisp/internal/importer"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronprobe"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // This file implements `[daemon] include_cron`: real crontabs read as live task

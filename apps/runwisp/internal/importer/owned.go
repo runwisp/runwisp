@@ -6,7 +6,7 @@ package importer
 import (
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // Owned describes the entries a live config already defines outside the

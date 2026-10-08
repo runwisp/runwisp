@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/runtime/retry"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime/retry"
 )
 
 // scheduleRetry waits for the retry delay and triggers a new run.

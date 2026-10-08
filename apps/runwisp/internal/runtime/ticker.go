@@ -9,7 +9,7 @@ import (
 
 	"log/slog"
 
-	"github.com/runwisp/runwisp/internal/crashguard"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
 )
 
 // startTicker launches a goroutine that calls onTick every interval until ctx

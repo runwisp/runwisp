@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
-	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/inapp"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // NotificationHub is the interface the server requires from the in-app

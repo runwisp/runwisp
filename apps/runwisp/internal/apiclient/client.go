@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/chap"
-	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/chap"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 )
 
 // Client communicates with the RunWisp daemon HTTP API.

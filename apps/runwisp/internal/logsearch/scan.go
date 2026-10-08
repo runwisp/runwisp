@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
 	"golang.org/x/sync/errgroup"
 )
 

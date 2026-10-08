@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/notify/kinds"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/kinds"
 )
 
 var allowedNotifierTypes = []string{"slack", "discord", "telegram", "smtp", "sendmail", "ntfy", "gotify", "pushover", "webhook"}

@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/importer"
-	"github.com/runwisp/runwisp/internal/textutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // Render writes the plan block an operator reads before approving anything: what

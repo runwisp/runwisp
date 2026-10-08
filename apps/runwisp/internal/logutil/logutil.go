@@ -11,7 +11,7 @@ import (
 
 	"log/slog"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // LogIndexInterval is the number of lines between index entries in log files.

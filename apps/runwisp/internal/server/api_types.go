@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/server/logstream"
-	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server/logstream"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // ---------- Path / query inputs ----------

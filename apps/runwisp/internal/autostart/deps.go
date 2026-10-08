@@ -11,7 +11,7 @@ import (
 
 	"github.com/mattn/go-isatty"
 
-	"github.com/runwisp/runwisp/internal/fingerprint"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/fingerprint"
 )
 
 // Deps consolidates the injected seams. Constructed once by the CLI

@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
 )
 
 // Config tunes the coalescing window.

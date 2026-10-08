@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // MapEvent converts an internal events.Event into a notify.Event. Returns nil

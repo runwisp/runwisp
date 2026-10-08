@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // Built-in fallbacks for a [services.*.health_check] probe. A probe resolves

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/spf13/cobra"
 )
 

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/runwisp/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
 )
 
 // This file backs first-run cron detection: scanning the machine for

@@ -6,7 +6,7 @@ package storage
 import (
 	"fmt"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // RunQuery groups the orthogonal axes of a runs-list query — filter,

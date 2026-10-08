@@ -15,17 +15,17 @@ import (
 
 	"log/slog"
 
-	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/autostart"
-	"github.com/runwisp/runwisp/internal/clilog"
-	"github.com/runwisp/runwisp/internal/crashguard"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/runlog"
-	"github.com/runwisp/runwisp/internal/runtime"
-	"github.com/runwisp/runwisp/internal/server"
-	"github.com/runwisp/runwisp/internal/station"
-	"github.com/runwisp/runwisp/internal/tui"
-	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/clilog"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runlog"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/station"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
 // startStationClient creates and runs the station client in a background goroutine.

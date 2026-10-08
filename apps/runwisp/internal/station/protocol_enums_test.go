@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/generated/protocol"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 )
 
 func TestExecutionStatusJSON(t *testing.T) {

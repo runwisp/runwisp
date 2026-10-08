@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/runwisp/runwisp/internal/netguard"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/netguard"
 )
 
 // MaxAttempts caps the retries on transient PUT failures.

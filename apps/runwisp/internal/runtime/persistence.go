@@ -7,9 +7,9 @@ import (
 	"context"
 	"sync"
 
-	"github.com/runwisp/runwisp/internal/crashguard"
-	"github.com/runwisp/runwisp/internal/executor"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // RunPersistenceHook persists run state transitions. ctx is cancelled at

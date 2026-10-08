@@ -8,11 +8,11 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/server"
-	"github.com/runwisp/runwisp/internal/tui/uikit"
-	"github.com/runwisp/runwisp/internal/tui/views/execlist"
-	"github.com/runwisp/runwisp/internal/tui/views/logsearch"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/execlist"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/logsearch"
 )
 
 func keyMsg(s string) tea.KeyPressMsg {

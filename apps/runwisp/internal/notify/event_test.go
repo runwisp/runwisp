@@ -6,8 +6,8 @@ package notify
 import (
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/notify/kinds"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/kinds"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/runwisp/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
 )
 
 // NewOutputTail returns the captured-output tail closure consumed by the

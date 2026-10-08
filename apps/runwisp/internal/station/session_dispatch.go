@@ -15,8 +15,8 @@ import (
 	"log/slog"
 
 	"github.com/coder/websocket"
-	"github.com/runwisp/runwisp/internal/crashguard"
-	"github.com/runwisp/runwisp/internal/generated/protocol"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 )
 
 // sessionRunner manages the active WebSocket session loops (read, write,

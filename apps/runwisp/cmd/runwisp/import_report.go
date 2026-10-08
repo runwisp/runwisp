@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/runwisp/runwisp/internal/importer"
-	"github.com/runwisp/runwisp/internal/textutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // This file lays out the import report. Every function here is pure — it takes

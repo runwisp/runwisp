@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 const countRunsFiltered = `-- name: CountRunsFiltered :one

@@ -7,8 +7,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
 func TestHandleDaemonInfo_UpdatesConfigStale(t *testing.T) {

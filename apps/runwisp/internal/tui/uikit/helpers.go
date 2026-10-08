@@ -8,8 +8,8 @@ import (
 	"image/color"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // SidebarWidth is the fixed width of the left sidebar panel in cells.

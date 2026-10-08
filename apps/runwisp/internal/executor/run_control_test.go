@@ -18,9 +18,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // scriptedBackend stands in for the shell backend: a task named "svc" runs

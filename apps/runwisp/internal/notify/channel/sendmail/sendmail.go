@@ -30,8 +30,8 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
 )
 
 // exTempFail is sysexits.h EX_TEMPFAIL — "the operation failed, but may

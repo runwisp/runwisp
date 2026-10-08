@@ -15,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/textutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // defaultShell mirrors config.DefaultShell. It is duplicated rather than

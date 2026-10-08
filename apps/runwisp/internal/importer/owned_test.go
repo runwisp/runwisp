@@ -6,7 +6,7 @@ package importer
 import (
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 func TestOwnedFrom_SnapshotsKindAndCommand(t *testing.T) {

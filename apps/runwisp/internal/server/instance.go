@@ -9,8 +9,8 @@ import (
 	"os"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/version"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/version"
 )
 
 // InstanceOutput wraps the identity payload returned by GET /api/daemon/identity.

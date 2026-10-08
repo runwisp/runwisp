@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 func parseSup(t *testing.T, in string) *Result {

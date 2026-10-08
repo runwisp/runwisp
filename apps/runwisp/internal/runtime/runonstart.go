@@ -10,8 +10,8 @@ import (
 
 	"log/slog"
 
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // RunOnStartResult summarises run_on_start firings performed at daemon boot.

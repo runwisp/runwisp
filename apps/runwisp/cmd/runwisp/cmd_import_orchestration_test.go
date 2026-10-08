@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
 )
 
 // tempFile writes content to a new file in t.TempDir() and returns its path.
