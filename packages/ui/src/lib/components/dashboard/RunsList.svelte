@@ -4,12 +4,12 @@
 <script lang="ts">
     import { Clock, ArrowUpDown, X, Square, Trash, RotateCw } from "@lucide/svelte";
     import { untrack } from "svelte";
-    import { SvelteSet } from "svelte/reactivity";
     import { createVirtualizer } from "@tanstack/svelte-virtual";
     import Button from "../Button.svelte";
     import { arrival, leave, prefersReducedMotion } from "../../actions/row-motion.js";
     import type { RunMotion } from "../../utils/run-motion.js";
     import EmptyState from "../EmptyState.svelte";
+    import { BulkSelection } from "./bulk-selection.svelte.js";
     import RunFilterPopover from "./RunFilterPopover.svelte";
     import RunListSkeleton from "./RunListSkeleton.svelte";
     import RunRow from "./RunRow.svelte";
@@ -104,12 +104,7 @@
     const OVERSCAN = 8;
     const LOAD_AHEAD = 10;
 
-    // Selection model: two modes,
-    //   1. explicit:  user picked specific rows. explicitIds holds them.
-    //   2. selectAll: "all matching the current filter". exceptIds holds opt-outs.
-    let selectAllMode = $state(false);
-    const explicitIds = new SvelteSet<string>();
-    const exceptIds = new SvelteSet<string>();
+    const selection = new BulkSelection();
 
     let scrollElement: HTMLDivElement | undefined = $state();
 
@@ -177,45 +172,18 @@
         untrack(() => $virtualizer.scrollToIndex(index, { align: "auto", behavior }));
     });
 
-    function isRowSelected(id: string): boolean {
-        return selectAllMode ? !exceptIds.has(id) : explicitIds.has(id);
-    }
-
-    function toggleRow(id: string) {
-        if (selectAllMode) {
-            if (exceptIds.has(id)) exceptIds.delete(id);
-            else exceptIds.add(id);
-        } else {
-            if (explicitIds.has(id)) explicitIds.delete(id);
-            else explicitIds.add(id);
-        }
-    }
-
-    function clearSelection() {
-        selectAllMode = false;
-        explicitIds.clear();
-        exceptIds.clear();
-    }
-
-    function selectAllVisible() {
-        selectAllMode = true;
-        explicitIds.clear();
-        exceptIds.clear();
-    }
-
     function selectRun(runId: string) {
         selectedRunId = runId;
         onselect?.(runId);
     }
 
-    let selectedRuns = $derived(items.filter((r: Run) => isRowSelected(r.id)));
+    let selectedRuns = $derived(items.filter((r: Run) => selection.isSelected(r.id)));
     let selectionCount = $derived(selectedRuns.length);
     let hasSelection = $derived(selectionCount > 0);
     // Task-rail rows overlay the checkbox on the status dot (it appears on hover
     // or once a selection exists). selectionActive forces all checkboxes visible
     // so the operator can extend the selection without hunting per-row hovers.
     let selectionActive = $derived(bulkActions && hasSelection);
-    let allSelected = $derived(selectAllMode && exceptIds.size === 0);
 
     let anyRunning = $derived(selectedRuns.some((r: Run) => r.status === "running"));
     let anyTerminal = $derived(
@@ -235,17 +203,6 @@
         return filter;
     }
 
-    function buildSelector(): RunSelector {
-        if (!selectAllMode) {
-            return { matchAll: false, ids: [...explicitIds] };
-        }
-        return {
-            matchAll: true,
-            filter: buildSelectorFilter(),
-            exceptIds: [...exceptIds],
-        };
-    }
-
     // Active-filter chips for the header row. `task` only chips on the
     // cross-task view; everywhere else the task name is the page scope.
     const filterChips = $derived(
@@ -262,19 +219,21 @@
         if (!handler) return;
         const affected = selectedRuns.filter(predicate);
         if (affected.length === 0) return;
-        const sel = buildSelector();
-        // Narrow the selector to the affected predicate when in explicit mode
-        // so we don't ask the server to operate on rows the UI excluded.
-        const narrowed: RunSelector = sel.matchAll
-            ? sel
-            : { matchAll: false, ids: affected.map((r) => r.id) };
-        handler(narrowed, affected);
-        clearSelection();
+        // In explicit mode the selector is narrowed to the affected rows, so
+        // the server is never asked to touch rows the UI excluded.
+        handler(
+            selection.selector(
+                buildSelectorFilter(),
+                affected.map((r) => r.id),
+            ),
+            affected,
+        );
+        selection.clear();
     }
 
     function handleMasterToggle() {
-        if (hasSelection) clearSelection();
-        else selectAllVisible();
+        if (hasSelection) selection.clear();
+        else selection.selectAll();
     }
 
     function toggleSortDirection() {
@@ -290,7 +249,7 @@
     let masterCheckboxRef: HTMLInputElement | undefined = $state();
     $effect(() => {
         if (!masterCheckboxRef) return;
-        masterCheckboxRef.indeterminate = hasSelection && !allSelected;
+        masterCheckboxRef.indeterminate = hasSelection && !selection.allSelected;
     });
 </script>
 
@@ -312,7 +271,7 @@
                 <input
                     bind:this={masterCheckboxRef}
                     type="checkbox"
-                    checked={allSelected}
+                    checked={selection.allSelected}
                     onchange={handleMasterToggle}
                     class="h-3.5 w-3.5 cursor-pointer rounded border-outline accent-primary"
                     aria-label={hasSelection ? "Clear selection" : "Select all"}
@@ -517,8 +476,8 @@
     >
         <input
             type="checkbox"
-            checked={isRowSelected(run.id)}
-            onchange={() => toggleRow(run.id)}
+            checked={selection.isSelected(run.id)}
+            onchange={() => selection.toggle(run.id)}
             onclick={(e) => e.stopPropagation()}
             aria-label={`Select run from ${formatDateTime(run.startedAt ?? run.createdAt)}`}
             class="size-3.5 cursor-pointer rounded border-outline accent-primary opacity-0 {selectionActive
