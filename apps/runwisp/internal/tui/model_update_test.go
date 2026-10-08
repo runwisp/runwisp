@@ -498,8 +498,8 @@ func TestHandleSSEEvent_NotificationCreatedUpdatesUnreadAndPanel(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("expected nil cmd")
 	}
-	if m.notifications.Unread() != 1 {
-		t.Fatalf("expected unread=1, got %d", m.notifications.Unread())
+	if view := m.notifications.View(); !strings.Contains(view, "Notifications (1)") {
+		t.Fatalf("expected unread=1, got %q", view)
 	}
 }
 
@@ -515,8 +515,8 @@ func TestHandleSSEEvent_NotificationUpdatedUpdatesUnread(t *testing.T) {
 	m := newTestModel(nil)
 	payload := []byte(`{"notification":{"id":"n-1","severity":"info","title":"hi","count":1,"lastOccurredAt":"2026-01-01T00:00:00Z"},"unreadCount":2}`)
 	_ = m.handleSSEEvent(apiclient.RunStreamEvent{Type: "notification.updated", Data: payload})
-	if m.notifications.Unread() != 2 {
-		t.Fatalf("expected unread=2, got %d", m.notifications.Unread())
+	if view := m.notifications.View(); !strings.Contains(view, "Notifications (2)") {
+		t.Fatalf("expected unread=2, got %q", view)
 	}
 }
 
@@ -527,8 +527,8 @@ func TestHandleSSEEvent_NotificationUnreadCountChanged(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("expected nil cmd")
 	}
-	if m.notifications.Unread() != 7 {
-		t.Fatalf("expected unread=7 after unreadCountChanged, got %d", m.notifications.Unread())
+	if view := m.notifications.View(); !strings.Contains(view, "Notifications (7)") {
+		t.Fatalf("expected unread=7 after unreadCountChanged, got %q", view)
 	}
 }
 

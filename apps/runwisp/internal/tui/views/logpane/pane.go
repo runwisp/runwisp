@@ -219,9 +219,6 @@ func (p *Pane) overlayCount() int {
 	return n
 }
 
-// MaxScroll exposes maxScroll for tests and external follow-edge checks.
-func (p *Pane) MaxScroll() int { return p.maxScroll() }
-
 func (p *Pane) evictAndFollow() {
 	if p.Cfg.MaxLines > 0 && len(p.Lines) > p.Cfg.MaxLines {
 		excess := len(p.Lines) - p.Cfg.MaxLines

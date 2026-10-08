@@ -123,9 +123,6 @@ func (p *Panel) insertOrdered(idx int, id string) {
 // IsExpanded reports whether the panel is in expanded mode.
 func (p *Panel) IsExpanded() bool { return p.expanded }
 
-// Unread returns the snapshot+delta-tracked unread count.
-func (p *Panel) Unread() int { return p.unread }
-
 // Toggle flips expanded state and snaps the cursor into a valid range.
 func (p *Panel) Toggle() {
 	p.expanded = !p.expanded

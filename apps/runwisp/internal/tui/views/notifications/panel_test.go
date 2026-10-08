@@ -41,8 +41,8 @@ func TestNotificationsPanel_UpsertNew(t *testing.T) {
 		t.Fatalf("Total: want 1, got %d", len(p.items))
 	}
 	// The badge is server-driven (SetUnread); Upsert alone never touches it.
-	if p.Unread() != 0 {
-		t.Fatalf("Upsert must not mutate the badge; got %d", p.Unread())
+	if p.unread != 0 {
+		t.Fatalf("Upsert must not mutate the badge; got %d", p.unread)
 	}
 }
 
@@ -267,8 +267,8 @@ func TestNotificationsPanel_MarkReadLocalFlipsReadAt(t *testing.T) {
 	if got := p.Selected(); got == nil || got.ReadAt == nil {
 		t.Fatalf("MarkReadLocal must stamp ReadAt on the row; got %+v", got)
 	}
-	if p.Unread() != 3 {
-		t.Fatalf("MarkReadLocal must not touch the badge; want 3, got %d", p.Unread())
+	if p.unread != 3 {
+		t.Fatalf("MarkReadLocal must not touch the badge; want 3, got %d", p.unread)
 	}
 	// Idempotent: re-marking is a no-op.
 	if p.MarkReadLocal("x", now) {
@@ -288,8 +288,8 @@ func TestNotificationsPanel_MarkUnreadLocalClearsReadAt(t *testing.T) {
 	if got := p.Selected(); got == nil || got.ReadAt != nil {
 		t.Fatalf("MarkUnreadLocal must clear ReadAt on the row; got %+v", got)
 	}
-	if p.Unread() != 0 {
-		t.Fatalf("MarkUnreadLocal must not touch the badge; want 0, got %d", p.Unread())
+	if p.unread != 0 {
+		t.Fatalf("MarkUnreadLocal must not touch the badge; want 0, got %d", p.unread)
 	}
 }
 
@@ -305,8 +305,8 @@ func TestNotificationsPanel_MarkAllReadLocal(t *testing.T) {
 		t.Fatal("MarkAllReadLocal must report a change when unread rows exist")
 	}
 	// Every row now carries a ReadAt and the badge is zeroed optimistically.
-	if p.Unread() != 0 {
-		t.Fatalf("MarkAllReadLocal must zero the badge; got %d", p.Unread())
+	if p.unread != 0 {
+		t.Fatalf("MarkAllReadLocal must zero the badge; got %d", p.unread)
 	}
 
 	// Idempotent: a second sweep with everything already read changes nothing.
@@ -318,8 +318,8 @@ func TestNotificationsPanel_MarkAllReadLocal(t *testing.T) {
 func TestNotificationsPanel_SetUnread(t *testing.T) {
 	p := NewPanel()
 	p.SetUnread(7)
-	if p.Unread() != 7 {
-		t.Fatalf("SetUnread: want 7, got %d", p.Unread())
+	if p.unread != 7 {
+		t.Fatalf("SetUnread: want 7, got %d", p.unread)
 	}
 	if p.PanelHeight() != CollapsedH {
 		t.Fatal("SetUnread alone should make the panel visible at collapsed height")
@@ -327,8 +327,8 @@ func TestNotificationsPanel_SetUnread(t *testing.T) {
 	// Negative values are the "server query failed" sentinel; the badge must
 	// keep its last known good value rather than drift to a wrong number.
 	p.SetUnread(-1)
-	if p.Unread() != 7 {
-		t.Fatalf("negative SetUnread must be ignored; got %d", p.Unread())
+	if p.unread != 7 {
+		t.Fatalf("negative SetUnread must be ignored; got %d", p.unread)
 	}
 }
 
@@ -344,14 +344,14 @@ func TestNotificationsPanel_BadgeIsServerAuthoritative(t *testing.T) {
 	p.Upsert(unreadNotification("01B", "warn", now, "b"))
 	p.MarkReadLocal("01A", now)
 	p.MarkUnreadLocal("01A")
-	if p.Unread() != 5 {
-		t.Fatalf("upsert + mark-read/unread must not move the badge; want 5, got %d", p.Unread())
+	if p.unread != 5 {
+		t.Fatalf("upsert + mark-read/unread must not move the badge; want 5, got %d", p.unread)
 	}
 
 	// Server sends the post-mutation count → badge updates exactly once.
 	p.SetUnread(4)
-	if p.Unread() != 4 {
-		t.Fatalf("SetUnread must replace the badge; want 4, got %d", p.Unread())
+	if p.unread != 4 {
+		t.Fatalf("SetUnread must replace the badge; want 4, got %d", p.unread)
 	}
 }
 
@@ -370,8 +370,8 @@ func TestNotificationsPanel_LoadHistoricalDoesNotTouchUnread(t *testing.T) {
 	}
 	// Badge is server-authoritative via SetUnread; LoadHistorical only
 	// hydrates the items map.
-	if p.Unread() != 0 {
-		t.Fatalf("LoadHistorical must not touch unread; got %d", p.Unread())
+	if p.unread != 0 {
+		t.Fatalf("LoadHistorical must not touch unread; got %d", p.unread)
 	}
 
 	// Re-loading the same items is a no-op.

@@ -331,20 +331,11 @@ func TestLogPane_SetLineNumbers_EnableDisable(t *testing.T) {
 	assert.True(t, p.Cfg.LineNumbers)
 }
 
-// ---- MaxScroll ----
-
-func TestLogPane_MaxScroll_ExposedMethod(t *testing.T) {
-	p := newTestPane(100_000)
-	for i := 0; i < 50; i++ {
-		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
-	}
-	// MaxScroll (exported) must equal maxScroll (internal).
-	assert.Equal(t, p.maxScroll(), p.MaxScroll())
-}
+// ---- maxScroll ----
 
 func TestLogPane_MaxScroll_Empty(t *testing.T) {
 	p := newTestPane(100_000)
-	assert.Equal(t, 0, p.MaxScroll())
+	assert.Equal(t, 0, p.maxScroll())
 }
 
 // ---- scrollRight ----

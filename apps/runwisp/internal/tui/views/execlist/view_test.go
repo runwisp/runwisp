@@ -115,9 +115,10 @@ func TestExecView_FollowMode(t *testing.T) {
 		t.Fatal("expected follow=true initially")
 	}
 
-	appendLines(&ev, 50)
-	if ev.Pane.Scroll != ev.Pane.MaxScroll() {
-		t.Fatalf("expected scroll=%d (bottom), got %d", ev.Pane.MaxScroll(), ev.Pane.Scroll)
+	appendLines(&ev, 49)
+	ev.Pane.AppendLine(49, "stdout", "last line")
+	if !strings.Contains(ev.View(), "last line") {
+		t.Fatal("expected the pane to follow to the last line")
 	}
 }
 
@@ -134,17 +135,21 @@ func TestExecView_Update_ScrollUp(t *testing.T) {
 
 func TestExecView_Update_ScrollToBottom(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	appendLines(&ev, 50)
+	appendLines(&ev, 49)
+	ev.Pane.AppendLine(49, "stdout", "last line")
 	ev.Pane.Scroll = 0
 	ev.Pane.Follow = false
+	if strings.Contains(ev.View(), "last line") {
+		t.Fatal("precondition: the last line starts off screen")
+	}
 
 	ev.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 
 	if !ev.Pane.Follow {
 		t.Fatal("expected follow=true after G/end")
 	}
-	if ev.Pane.Scroll != ev.Pane.MaxScroll() {
-		t.Fatalf("expected scroll=%d, got %d", ev.Pane.MaxScroll(), ev.Pane.Scroll)
+	if !strings.Contains(ev.View(), "last line") {
+		t.Fatal("expected G/end to show the last line")
 	}
 }
 
