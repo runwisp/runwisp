@@ -358,7 +358,7 @@ func findHitCoord(ev *execlist.ExecView, target execlist.HeaderFocusItem, w int)
 // TestHandleExecViewClick_BackButton covers the back-button click branch.
 func TestHandleExecViewClick_BackButton(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)
@@ -381,7 +381,7 @@ func TestHandleExecViewClick_BackButton(t *testing.T) {
 // TestHandleExecViewClick_IDCopiesValue covers the HeaderFocusID branch.
 func TestHandleExecViewClick_IDCopiesValue(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)
@@ -400,7 +400,7 @@ func TestHandleExecViewClick_IDCopiesValue(t *testing.T) {
 // TestHandleExecViewClick_StartedCopiesValue covers HeaderFocusStarted.
 func TestHandleExecViewClick_StartedCopiesValue(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)
@@ -420,7 +420,7 @@ func TestHandleExecViewClick_StartedCopiesValue(t *testing.T) {
 // running non-service run → ActionStop.
 func TestHandleExecViewClick_ActionStop(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)
@@ -455,7 +455,7 @@ func TestHandleExecViewClick_Delete(t *testing.T) {
 func assertDeleteClick(t *testing.T, reason model.EndReason) {
 	t.Helper()
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(80, 24)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 80, Height: 24})
 	run := &model.Run{
 		ID:        "r-1234567890",
 		TaskName:  "t1",
@@ -489,7 +489,7 @@ func assertDeleteClick(t *testing.T, reason model.EndReason) {
 // branch (HitAt returns HeaderFocusNone).
 func TestHandleExecViewClick_NoHitReturnsNil(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)
@@ -506,7 +506,7 @@ func TestHandleExecViewClick_NoHitReturnsNil(t *testing.T) {
 // header focus (production rule: "clear keyboard header focus on any click").
 func TestHandleExecViewClick_ResetsHeaderFocus(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)
@@ -579,7 +579,7 @@ func TestUpdateHoverState_NonHomePageResetsHomeHover(t *testing.T) {
 
 func TestHandleMainPanelClick_WithExecViewRoutesToExecViewClick(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)

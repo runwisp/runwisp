@@ -12,64 +12,17 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
-// The dispatchers are pure structural switches: given a message they call the
-// matching handler and report intercepted=true. The negative path returns
-// intercepted=false. These tests exercise each branch with the cheapest
-// possible payload — handlers themselves are covered elsewhere or via the
-// happy-path assertions here.
-
-func TestDispatchInputMsg(t *testing.T) {
-	m := newTestModel(nil)
-
-	cases := []struct {
-		name string
-		msg  tea.Msg
-	}{
-		{"WindowSize", tea.WindowSizeMsg{Width: 100, Height: 30}},
-		{"Mouse", tea.MouseClickMsg{}},
-		{"Key", tea.KeyPressMsg{Code: 'x', Text: "x"}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, _, ok := m.dispatchInputMsg(tc.msg)
-			if !ok {
-				t.Fatalf("dispatchInputMsg(%T) want intercepted=true, got false", tc.msg)
-			}
-		})
-	}
-
-	t.Run("unknown returns false", func(t *testing.T) {
-		_, _, ok := m.dispatchInputMsg(struct{}{})
-		if ok {
-			t.Fatal("unknown msg must not be intercepted")
-		}
-	})
-}
-
-func TestDispatchStreamMsg(t *testing.T) {
-	m := newTestModel(nil)
-
-	cases := []tea.Msg{
+// Every message kind Update knows is routed without panicking, even with
+// the cheapest possible payload. Handlers are covered in their own tests.
+func TestModelUpdate_HandlesEveryMessageKind(t *testing.T) {
+	msgs := []tea.Msg{
+		tea.WindowSizeMsg{Width: 100, Height: 30},
+		tea.MouseClickMsg{},
+		tea.KeyPressMsg{Code: 'x', Text: "x"},
 		uikit.ExecWindowFetchedMsg{},
 		uikit.SSEConnectedMsg{},
 		uikit.SSEEventMsg{},
 		uikit.SSEDisconnectedMsg{},
-	}
-	for _, msg := range cases {
-		_, _, ok := m.dispatchStreamMsg(msg)
-		if !ok {
-			t.Fatalf("dispatchStreamMsg(%T) want intercepted=true", msg)
-		}
-	}
-
-	if _, _, ok := m.dispatchStreamMsg(struct{}{}); ok {
-		t.Fatal("unknown msg must not be intercepted")
-	}
-}
-
-func TestDispatchLogMsg(t *testing.T) {
-	m := newTestModel(nil)
-	cases := []tea.Msg{
 		uikit.LogOlderLoadedMsg{},
 		uikit.LogStreamConnectedMsg{},
 		uikit.LogLineMsg{},
@@ -81,65 +34,15 @@ func TestDispatchLogMsg(t *testing.T) {
 		uikit.DaemonLogConnectedMsg{},
 		uikit.DaemonLogLineMsg{},
 		uikit.DaemonLogDisconnectedMsg{},
-	}
-	for _, msg := range cases {
-		_, _, ok := m.dispatchLogMsg(msg)
-		if !ok {
-			t.Fatalf("dispatchLogMsg(%T) want intercepted=true", msg)
-		}
-	}
-
-	if _, _, ok := m.dispatchLogMsg(struct{}{}); ok {
-		t.Fatal("unknown msg must not be intercepted")
-	}
-}
-
-func TestDispatchNotificationMsg(t *testing.T) {
-	m := newTestModel(nil)
-	cases := []tea.Msg{
 		uikit.NotificationUnreadCountMsg{},
 		uikit.NotificationsLoadedMsg{},
 		uikit.NotificationReadStateMsg{},
 		uikit.NotificationBoundaryFlashClearedMsg{},
-	}
-	for _, msg := range cases {
-		_, _, ok := m.dispatchNotificationMsg(msg)
-		if !ok {
-			t.Fatalf("dispatchNotificationMsg(%T) want intercepted=true", msg)
-		}
-	}
-
-	if _, _, ok := m.dispatchNotificationMsg(struct{}{}); ok {
-		t.Fatal("unknown msg must not be intercepted")
-	}
-}
-
-func TestDispatchActionMsg(t *testing.T) {
-	// Action messages call logActionResult which writes to debugView — no
-	// other side-effects, so the test only needs intercepted=true.
-	m := newTestModel(nil)
-	cases := []tea.Msg{
 		uikit.TriggerRunMsg{TaskName: "t1"},
 		uikit.StopRunMsg{TaskName: "t1"},
 		uikit.RestartServiceMsg{TaskName: "t1"},
 		uikit.StopServiceMsg{TaskName: "t1"},
 		uikit.DeleteRunMsg{TaskName: "t1"},
-	}
-	for _, msg := range cases {
-		_, _, ok := m.dispatchActionMsg(msg)
-		if !ok {
-			t.Fatalf("dispatchActionMsg(%T) want intercepted=true", msg)
-		}
-	}
-
-	if _, _, ok := m.dispatchActionMsg(struct{}{}); ok {
-		t.Fatal("unknown msg must not be intercepted")
-	}
-}
-
-func TestDispatchLifecycleMsg(t *testing.T) {
-	m := newTestModel(nil)
-	cases := []tea.Msg{
 		uikit.TickMsg{},
 		uikit.QuitMsg{Action: uikit.QuitKeepDaemon},
 		uikit.FlashExpiredMsg{},
@@ -149,25 +52,19 @@ func TestDispatchLifecycleMsg(t *testing.T) {
 		uikit.MetricsHistoryMsg{},
 		uikit.RunSummaryMsg{},
 	}
-	for _, msg := range cases {
-		_, _, ok := m.dispatchLifecycleMsg(msg)
-		if !ok {
-			t.Fatalf("dispatchLifecycleMsg(%T) want intercepted=true", msg)
+	for _, msg := range msgs {
+		m := newTestModel(nil)
+		if got, _ := m.Update(msg); got == nil {
+			t.Fatalf("Update(%T) did not return a Model", msg)
 		}
-	}
-
-	if _, _, ok := m.dispatchLifecycleMsg(struct{}{}); ok {
-		t.Fatal("unknown msg must not be intercepted")
 	}
 }
 
-// Update routes through the entire dispatcher chain. Verify it returns the
-// model for both a recognised message and an unrecognised one (the "noop"
-// fall-through at the bottom of Update).
+// Update applies a recognised message and falls through to a no-op for an
+// unrecognised one.
 func TestModelUpdate_RoutesAndFallsThrough(t *testing.T) {
 	m := newTestModel(nil)
 
-	// Recognised: window size routes to dispatchInputMsg.
 	got, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	got2 := got.(Model)
 	if got2.width != 80 || got2.height != 24 {
@@ -186,46 +83,26 @@ func TestHandleSystemStats_NilStatsOrErrIsNoop(t *testing.T) {
 	m := newTestModel(nil)
 
 	// Nil stats — handler must not panic.
-	_, cmd := m.handleSystemStats(uikit.SystemStatsMsg{Err: errors.New("boom")})
-	if cmd != nil {
-		t.Fatal("expected nil cmd for error path")
-	}
-
-	_, cmd = m.handleSystemStats(uikit.SystemStatsMsg{Stats: &model.SystemStats{Name: "test"}})
-	if cmd != nil {
-		t.Fatal("expected nil cmd (handler is fire-and-forget)")
-	}
+	m.handleSystemStats(uikit.SystemStatsMsg{Err: errors.New("boom")})
+	m.handleSystemStats(uikit.SystemStatsMsg{Stats: &model.SystemStats{Name: "test"}})
 }
 
 func TestHandleMetricsHistory_ErrAndSuccess(t *testing.T) {
 	m := newTestModel(nil)
-	_, cmd := m.handleMetricsHistory(uikit.MetricsHistoryMsg{Err: errors.New("x")})
-	if cmd != nil {
-		t.Fatal("expected nil cmd on err")
-	}
-	_, cmd = m.handleMetricsHistory(uikit.MetricsHistoryMsg{Samples: []model.MetricsSample{{Timestamp: 1}}})
-	if cmd != nil {
-		t.Fatal("expected nil cmd on success")
-	}
+	m.handleMetricsHistory(uikit.MetricsHistoryMsg{Err: errors.New("x")})
+	m.handleMetricsHistory(uikit.MetricsHistoryMsg{Samples: []model.MetricsSample{{Timestamp: 1}}})
 }
 
 func TestHandleRunSummary_ErrAndSuccess(t *testing.T) {
 	m := newTestModel(nil)
-	_, cmd := m.handleRunSummary(uikit.RunSummaryMsg{Err: errors.New("x")})
-	if cmd != nil {
-		t.Fatal("expected nil cmd on err")
-	}
-	_, cmd = m.handleRunSummary(uikit.RunSummaryMsg{Summary: &model.RunSummary{Total: 1}})
-	if cmd != nil {
-		t.Fatal("expected nil cmd on success")
-	}
+	m.handleRunSummary(uikit.RunSummaryMsg{Err: errors.New("x")})
+	m.handleRunSummary(uikit.RunSummaryMsg{Summary: &model.RunSummary{Total: 1}})
 }
 
 func TestHandleWindowSize_AppliesDimensions(t *testing.T) {
 	m := newTestModel(nil)
-	got, _ := m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 40})
-	g := got.(Model)
-	if g.width != 120 || g.height != 40 || !g.ready {
-		t.Fatalf("handleWindowSize did not apply dimensions: %+v", g)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if m.width != 120 || m.height != 40 || !m.ready {
+		t.Fatalf("handleWindowSize did not apply dimensions: %+v", m)
 	}
 }

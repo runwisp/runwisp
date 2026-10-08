@@ -194,12 +194,8 @@ func TestRunDetailDialog_ShowsTimesInDaemonZone(t *testing.T) {
 
 func TestHandleDaemonInfo_AdoptsTimezoneChange(t *testing.T) {
 	m := newTestModel(nil)
-	updated, _ := m.handleDaemonInfo(uikit.DaemonInfoMsg{Info: &model.DaemonInfo{ResolvedTimezone: "Etc/GMT-2", TimezoneSource: "config"}})
-	got, ok := updated.(Model)
-	if !ok {
-		t.Fatal("handleDaemonInfo did not return a Model")
-	}
-	if got.loc.String() != "Etc/GMT-2" {
-		t.Fatalf("loc: want Etc/GMT-2, got %v", got.loc)
+	m.handleDaemonInfo(uikit.DaemonInfoMsg{Info: &model.DaemonInfo{ResolvedTimezone: "Etc/GMT-2", TimezoneSource: "config"}})
+	if m.loc.String() != "Etc/GMT-2" {
+		t.Fatalf("loc: want Etc/GMT-2, got %v", m.loc)
 	}
 }

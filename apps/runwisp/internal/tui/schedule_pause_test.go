@@ -49,8 +49,7 @@ func TestTaskStateMsg_StoresUsage(t *testing.T) {
 	m := newTestModel(pauseTestTasks())
 	usage := map[string]model.ResourceUsage{"web": {CPUPercent: 5, MemoryBytes: 1 << 20}}
 
-	updated, _, handled := m.dispatchActionMsg(uikit.TaskStateMsg{Paused: map[string]time.Time{}, Usage: usage})
-	require.True(t, handled)
+	updated, _ := m.Update(uikit.TaskStateMsg{Paused: map[string]time.Time{}, Usage: usage})
 	got := updated.(Model)
 	assert.Equal(t, &model.ResourceUsage{CPUPercent: 5, MemoryBytes: 1 << 20}, got.taskUsage("web"))
 	assert.Nil(t, got.taskUsage("backup"))
