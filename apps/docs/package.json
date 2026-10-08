@@ -8,7 +8,7 @@
         "build": "bun scripts/sync-openapi.ts && bunx --bun astro build"
     },
     "dependencies": {
-        "@astrojs/starlight": "^0.42.5",
+        "@astrojs/starlight": "^0.42.6",
         "@astrojs/svelte": "^9.0.1",
         "@runwisp/ui": "workspace:*",
         "astro": "^7.3.8",
