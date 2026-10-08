@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/runwisp/runwisp/internal/netguard"
 )
 
@@ -42,43 +43,46 @@ func Archive(ctx context.Context, client *http.Client, uploadURL, logFilePath st
 	if err := validateUploadURL(uploadURL, allowInsecure); err != nil {
 		return 0, &PermanentError{StatusCode: 0, Status: err.Error()}
 	}
-	return archive(ctx, client, uploadURL, logFilePath)
+	return archive(ctx, client, uploadURL, logFilePath, newRetryDelays())
 }
 
-// archive performs the gzip + retrying PUT without URL validation. Split out of
-// Archive so transport tests can exercise the mechanics against a loopback test
-// server, which validateUploadURL rejects.
-func archive(ctx context.Context, client *http.Client, uploadURL, logFilePath string) (int64, error) {
+// archive performs the gzip + retrying PUT without URL validation, waiting
+// retryDelays between attempts. Split out of Archive so transport tests can
+// exercise the mechanics against a loopback test server, which
+// validateUploadURL rejects, without real-time waits.
+func archive(ctx context.Context, client *http.Client, uploadURL, logFilePath string, retryDelays backoff.BackOff) (int64, error) {
 	compressed, size, err := gzipFile(logFilePath)
 	if err != nil {
 		return 0, err
 	}
 	defer compressed.Close()
 
-	var lastErr error
-	for attempt := 1; attempt <= MaxAttempts; attempt++ {
-		if ctx.Err() != nil {
-			return 0, ctx.Err()
-		}
+	var perm *PermanentError
+	err = backoff.Retry(func() error {
 		err := putOnce(ctx, client, uploadURL, compressed, size)
-		if err == nil {
-			return size, nil
-		}
-		lastErr = err
-		var perm *PermanentError
 		if errors.As(err, &perm) {
-			return 0, err
+			return backoff.Permanent(err)
 		}
-		if attempt < MaxAttempts {
-			backoff := time.Duration(1<<attempt) * time.Second
-			select {
-			case <-ctx.Done():
-				return 0, ctx.Err()
-			case <-time.After(backoff):
-			}
-		}
+		return err
+	}, backoff.WithContext(backoff.WithMaxRetries(retryDelays, MaxAttempts-1), ctx))
+	switch {
+	case err == nil:
+		return size, nil
+	case perm != nil || ctx.Err() != nil:
+		return 0, err
+	default:
+		return 0, fmt.Errorf("logarchive: upload failed after %d attempts: %w", MaxAttempts, err)
 	}
-	return 0, fmt.Errorf("logarchive: upload failed after %d attempts: %w", MaxAttempts, lastErr)
+}
+
+// newRetryDelays waits 2s, then 4s, between upload attempts.
+func newRetryDelays() backoff.BackOff {
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = 2 * time.Second
+	b.Multiplier = 2
+	b.RandomizationFactor = 0
+	b.MaxElapsedTime = 0
+	return b
 }
 
 func gzipFile(path string) (*os.File, int64, error) {
