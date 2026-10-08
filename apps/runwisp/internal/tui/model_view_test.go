@@ -338,99 +338,47 @@ func TestBuildExecViewHelpText_HeaderFocusNone(t *testing.T) {
 
 // ─── appendExecViewActionHints ────────────────────────────────────────────────
 
+// execViewHints returns the action hints appendExecViewActionHints adds for a
+// model showing ev.
+func execViewHints(m Model, ev execlist.ExecView) string {
+	m.execView = &ev
+	return strings.Join(m.appendExecViewActionHints(nil), " ")
+}
+
 // TestAppendExecViewActionHints_AllActionsAndExtras covers the four Action
 // branches plus the launch-ticket and CanDelete extras.
 func TestAppendExecViewActionHints_AllActionsAndExtras(t *testing.T) {
-	reason := model.ReasonFailed
-
-	t.Run("ActionStop", func(t *testing.T) {
-		m := newTestModel(nil)
-		ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning})
-		m.execView = &ev
-		parts := m.appendExecViewActionHints(nil)
-		var joined string
-		for _, p := range parts {
-			joined += p + " "
-		}
-		if !strings.Contains(joined, "stop") {
-			t.Fatalf("expected stop hint, got: %v", parts)
-		}
-	})
-
-	t.Run("ActionStopService", func(t *testing.T) {
-		m := newTestModel(nil)
-		ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning})
+	failed, success := model.ReasonFailed, model.ReasonSuccess
+	service := func(r *model.Run) execlist.ExecView {
+		ev := execlist.NewExecView(r)
 		ev.TaskIsService = true
-		m.execView = &ev
-		parts := m.appendExecViewActionHints(nil)
-		var joined string
-		for _, p := range parts {
-			joined += p + " "
-		}
-		if !strings.Contains(joined, "stop service") {
-			t.Fatalf("expected stop service hint, got: %v", parts)
-		}
-	})
+		return ev
+	}
+	stoppedService := service(&model.Run{ID: "r1", TaskName: "t1"})
+	stoppedService.SetServiceStopped(true)
+	withTicket := newTestModel(nil)
+	withTicket.launchTicketFunc = func() (string, error) { return "tkt", nil }
 
-	t.Run("ActionRetry", func(t *testing.T) {
-		m := newTestModel(nil)
-		ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &reason})
-		m.execView = &ev
-		parts := m.appendExecViewActionHints(nil)
-		var joined string
-		for _, p := range parts {
-			joined += p + " "
-		}
-		if !strings.Contains(joined, "retry") {
-			t.Fatalf("expected retry hint, got: %v", parts)
-		}
-	})
-
-	t.Run("ActionRestartService", func(t *testing.T) {
-		m := newTestModel(nil)
-		ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1"})
-		ev.TaskIsService = true
-		ev.SetServiceStopped(true)
-		m.execView = &ev
-		parts := m.appendExecViewActionHints(nil)
-		var joined string
-		for _, p := range parts {
-			joined += p + " "
-		}
-		if !strings.Contains(joined, "restart") {
-			t.Fatalf("expected restart hint, got: %v", parts)
-		}
-	})
-
-	t.Run("With launch ticket adds download hint", func(t *testing.T) {
-		m := newTestModel(nil)
-		m.launchTicketFunc = func() (string, error) { return "tkt", nil }
-		ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1"})
-		m.execView = &ev
-		parts := m.appendExecViewActionHints(nil)
-		var joined string
-		for _, p := range parts {
-			joined += p + " "
-		}
-		if !strings.Contains(joined, "download") {
-			t.Fatalf("expected download hint, got: %v", parts)
-		}
-	})
-
-	t.Run("With deletable run adds D hint", func(t *testing.T) {
-		m := newTestModel(nil)
-		success := model.ReasonSuccess
-		ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &success})
-		m.execView = &ev
-		parts := m.appendExecViewActionHints(nil)
-		var joined string
-		for _, p := range parts {
-			joined += p + " "
-		}
-		if !strings.Contains(joined, "delete") {
-			t.Fatalf("expected delete hint, got: %v", parts)
-		}
-	})
+	cases := []struct {
+		name string
+		m    Model
+		ev   execlist.ExecView
+		want string
+	}{
+		{"ActionStop", newTestModel(nil), execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}), "stop"},
+		{"ActionStopService", newTestModel(nil), service(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}), "stop service"},
+		{"ActionRetry", newTestModel(nil), execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &failed}), "retry"},
+		{"ActionRestartService", newTestModel(nil), stoppedService, "restart"},
+		{"With launch ticket adds download hint", withTicket, execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1"}), "download"},
+		{"With deletable run adds D hint", newTestModel(nil), execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &success}), "delete"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := execViewHints(c.m, c.ev); !strings.Contains(got, c.want) {
+				t.Fatalf("expected %q hint, got: %q", c.want, got)
+			}
+		})
+	}
 
 	t.Run("Nil Run returns parts unchanged", func(t *testing.T) {
 		m := newTestModel(nil)

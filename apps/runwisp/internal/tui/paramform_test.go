@@ -16,14 +16,19 @@ import (
 
 func strptr(s string) *string { return &s }
 
+// captureSubmit returns a submit callback that stores the submitted map in *dst.
+func captureSubmit(dst *map[string]*string) func(map[string]*string) tea.Cmd {
+	return func(m map[string]*string) tea.Cmd {
+		*dst = m
+		return func() tea.Msg { return nil }
+	}
+}
+
 // TestParamForm_DefaultsAndFlagToggle verifies flags seed from their default
 // and toggle with space, and that submit collects the canonical map.
 func TestParamForm_DefaultsAndFlagToggle(t *testing.T) {
 	var got map[string]*string
-	submit := func(m map[string]*string) tea.Cmd {
-		got = m
-		return func() tea.Msg { return nil }
-	}
+	submit := captureSubmit(&got)
 	params := []model.TaskParam{
 		{Kind: model.ParamFlag, Key: "--force", Default: strptr("false")},
 	}
@@ -63,10 +68,7 @@ func TestParamForm_RequiredMissingKeepsOpen(t *testing.T) {
 // and the selected member is submitted.
 func TestParamForm_StrictChoiceCycle(t *testing.T) {
 	var got map[string]*string
-	submit := func(m map[string]*string) tea.Cmd {
-		got = m
-		return func() tea.Msg { return nil }
-	}
+	submit := captureSubmit(&got)
 	params := []model.TaskParam{
 		{Kind: model.ParamOption, Key: "--region", Required: true, Choices: []string{"us", "eu"}},
 	}
@@ -82,10 +84,7 @@ func TestParamForm_StrictChoiceCycle(t *testing.T) {
 // TestParamForm_TextValueSubmitted verifies free-text values flow through.
 func TestParamForm_TextValueSubmitted(t *testing.T) {
 	var got map[string]*string
-	submit := func(m map[string]*string) tea.Cmd {
-		got = m
-		return func() tea.Msg { return nil }
-	}
+	submit := captureSubmit(&got)
 	params := []model.TaskParam{
 		{Kind: model.ParamEnv, Key: "PROJECT_ID", Required: true},
 	}
@@ -102,10 +101,7 @@ func TestParamForm_TextValueSubmitted(t *testing.T) {
 // selects a listed choice with left/right and submits it.
 func TestParamForm_ComboCycleSubmits(t *testing.T) {
 	var got map[string]*string
-	submit := func(m map[string]*string) tea.Cmd {
-		got = m
-		return func() tea.Msg { return nil }
-	}
+	submit := captureSubmit(&got)
 	params := []model.TaskParam{
 		{Kind: model.ParamOption, Key: "--region", Choices: []string{"us", "eu"}, AllowCustom: true},
 	}
@@ -126,10 +122,7 @@ func TestParamForm_ComboCycleSubmits(t *testing.T) {
 // free text the choices don't cover flows through.
 func TestParamForm_ComboAcceptsCustomText(t *testing.T) {
 	var got map[string]*string
-	submit := func(m map[string]*string) tea.Cmd {
-		got = m
-		return func() tea.Msg { return nil }
-	}
+	submit := captureSubmit(&got)
 	params := []model.TaskParam{
 		{Kind: model.ParamOption, Key: "--region", Choices: []string{"us", "eu"}, AllowCustom: true},
 	}
@@ -242,10 +235,7 @@ func TestParamForm_FlagRenderNoDuplicateName(t *testing.T) {
 // daemon drops it rather than re-injecting a default.
 func TestParamForm_BlankOptionalOmitted(t *testing.T) {
 	var got map[string]*string
-	submit := func(m map[string]*string) tea.Cmd {
-		got = m
-		return func() tea.Msg { return nil }
-	}
+	submit := captureSubmit(&got)
 	params := []model.TaskParam{
 		{Kind: model.ParamEnv, Key: "TOKEN", Default: strptr("seed")},
 	}
@@ -263,10 +253,7 @@ func TestParamForm_BlankOptionalOmitted(t *testing.T) {
 // field force-includes it, sending an explicit empty string rather than omitting.
 func TestParamForm_CtrlTForcesEmptyString(t *testing.T) {
 	var got map[string]*string
-	submit := func(m map[string]*string) tea.Cmd {
-		got = m
-		return func() tea.Msg { return nil }
-	}
+	submit := captureSubmit(&got)
 	params := []model.TaskParam{{Kind: model.ParamEnv, Key: "TOKEN"}}
 	d := NewParamFormDialog("sync", params, submit)
 
@@ -284,10 +271,7 @@ func TestParamForm_CtrlTForcesEmptyString(t *testing.T) {
 // force-omits it, dropping the typed value.
 func TestParamForm_CtrlTOmitsFilledValue(t *testing.T) {
 	var got map[string]*string
-	submit := func(m map[string]*string) tea.Cmd {
-		got = m
-		return func() tea.Msg { return nil }
-	}
+	submit := captureSubmit(&got)
 	params := []model.TaskParam{{Kind: model.ParamEnv, Key: "TOKEN"}}
 	d := NewParamFormDialog("sync", params, submit)
 	for _, r := range "abc" {
@@ -305,10 +289,7 @@ func TestParamForm_CtrlTOmitsFilledValue(t *testing.T) {
 // which is already a single on/off control (no include/omit affordance).
 func TestParamForm_CtrlTIgnoredForFlag(t *testing.T) {
 	var got map[string]*string
-	submit := func(m map[string]*string) tea.Cmd {
-		got = m
-		return func() tea.Msg { return nil }
-	}
+	submit := captureSubmit(&got)
 	params := []model.TaskParam{{Kind: model.ParamFlag, Key: "--force"}}
 	d := NewParamFormDialog("t", params, submit)
 

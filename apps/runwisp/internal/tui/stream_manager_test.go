@@ -489,13 +489,21 @@ func TestStreamManager_RecordEventID_IgnoresEmpty(t *testing.T) {
 	assert.Equal(t, "7", sm.lastEventID, "an empty id (ping/notification) must not clear the resume cursor")
 }
 
-func TestStreamManager_SubscribeDaemonLogs_ConnectedReturnsChannel(t *testing.T) {
+// newSSETestSM returns a StreamManager pointed at a server that answers every
+// request with an empty text/event-stream, so connects succeed and stay open.
+func newSSETestSM(t *testing.T) StreamManager {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	sm := NewStreamManager(apiclient.New(srv.URL, ""))
 	t.Cleanup(sm.Shutdown)
+	return sm
+}
+
+func TestStreamManager_SubscribeDaemonLogs_ConnectedReturnsChannel(t *testing.T) {
+	sm := newSSETestSM(t)
 
 	cmd := sm.SubscribeDaemonLogs()
 	require.NotNil(t, cmd)
@@ -521,12 +529,7 @@ func TestStreamManager_StartLogStream_ConnectErrorReturnsDoneMsg(t *testing.T) {
 }
 
 func TestStreamManager_StartLogStream_ConnectedReturnsLogStreamConnectedMsg(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-	}))
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSSETestSM(t)
 
 	cmd := sm.StartLogStream(&model.Run{ID: "r2", TaskName: "task"}, 0)
 	require.NotNil(t, cmd)
@@ -537,12 +540,7 @@ func TestStreamManager_StartLogStream_ConnectedReturnsLogStreamConnectedMsg(t *t
 }
 
 func TestStreamManager_StartLogStream_CancelsPreviousStream(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-	}))
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
+	sm := newSSETestSM(t)
 
 	// First stream owns logCancel.
 	_ = sm.StartLogStream(&model.Run{ID: "r1", TaskName: "t"}, 0)
