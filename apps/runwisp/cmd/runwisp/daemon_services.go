@@ -33,7 +33,7 @@ import (
 
 // daemonServices holds all long-lived services created during daemon startup.
 type daemonServices struct {
-	DB               storage.Database
+	DB               *storage.SQLiteDatabase
 	EventBus         *events.Bus
 	Executor         *executor.RoutingExecutor
 	Usage            *procstat.Sampler
@@ -68,7 +68,7 @@ type daemonServices struct {
 // initDaemonServices creates and wires together the core daemon services.
 // db must already be open; initDaemonServices marks crashed runs and then
 // builds all higher-level services on top of it.
-func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Database, mode daemonMode, f Flags) (*daemonServices, error) {
+func initDaemonServices(ctx context.Context, cfg *daemonConfig, db *storage.SQLiteDatabase, mode daemonMode, f Flags) (*daemonServices, error) {
 	// initWarnings accumulates non-fatal startup hiccups so the caller can
 	// render them inside the banner instead of emitting slog.Warn lines that
 	// would print before the banner exists.
@@ -128,7 +128,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	softDeletePurger := runtime.NewSoftDeletePurger(db, f.LogDir())
 	softDeletePurger.Start()
 
-	memoryReclaimer := runtime.NewMemoryReclaimer(sqliteShrinkHook(db))
+	memoryReclaimer := runtime.NewMemoryReclaimer(db.ShrinkMemory)
 	memoryReclaimer.Start()
 
 	debugSrv := startDebugServer()
@@ -192,7 +192,7 @@ type standaloneBoot struct {
 // here. It returns the collected results; non-fatal hiccups are appended to
 // warnings. Service instances are launched separately by initDaemonServices in
 // both modes.
-func startStandaloneScheduling(ctx context.Context, db storage.Database, taskManager runtime.TaskManager, tasksMap map[string]*model.Task, schedLoc *time.Location, warnings *[]string) standaloneBoot {
+func startStandaloneScheduling(ctx context.Context, db *storage.SQLiteDatabase, taskManager runtime.TaskManager, tasksMap map[string]*model.Task, schedLoc *time.Location, warnings *[]string) standaloneBoot {
 	var boot standaloneBoot
 	boot.schedLoc = schedLoc
 
@@ -240,7 +240,7 @@ func startStandaloneScheduling(ctx context.Context, db storage.Database, taskMan
 // startNotify initializes the notify subsystem and starts its service, routing
 // an init failure to a warning (non-fatal: the daemon must boot even when
 // notify is misconfigured).
-func startNotify(cfg *daemonConfig, db storage.Database, eventBus *events.Bus, addWarning func(string, ...any)) *liveNotify {
+func startNotify(cfg *daemonConfig, db *storage.SQLiteDatabase, eventBus *events.Bus, addWarning func(string, ...any)) *liveNotify {
 	live := newLiveNotify()
 	templates, err := readNotifyTemplates(cfg.Config.Notify, os.ReadFile)
 	var svc *notify.Service
@@ -283,7 +283,7 @@ func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint 
 	return executor.New(executor.Options{
 		LogDir:                 logDir,
 		EventBus:               eventBus,
-		StationDispatchEnabled: cfg.IsStationDispatchEnabled(),
+		StationDispatchEnabled: cfg.Daemon.AllowStationDispatch,
 		HasLocalTasks:          len(cfg.Tasks) > 0,
 		Docker:                 dockerBackend,
 		Compose:                composeBackend,
@@ -325,19 +325,6 @@ func initTaskManager(cfg *daemonConfig, db storage.RunRepository, exec executor.
 	return taskManager, tasksMap
 }
 
-// sqliteShrinkHook returns the store's PRAGMA shrink_memory callback for the
-// MemoryReclaimer, or nil when the store can't shrink. Probed via an anonymous
-// interface so the storage.Database contract (and its test fakes) stay
-// untouched — only the concrete *storage.SQLiteDatabase implements it.
-func sqliteShrinkHook(db storage.Database) func(context.Context) error {
-	if s, ok := db.(interface {
-		ShrinkMemory(context.Context) error
-	}); ok {
-		return s.ShrinkMemory
-	}
-	return nil
-}
-
 func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasks *runtime.TaskRegistry, logDir string, eventBus *events.Bus) *runtime.RetentionCleaner {
 	maxTotalSize := cfg.Config.Storage.MaxSize
 	cleaner := runtime.NewRetentionCleaner(db, tasks, time.Hour, logDir, maxTotalSize, eventBus)
@@ -374,7 +361,7 @@ func launchServiceWhenReady(ctx context.Context, taskManager runtime.TaskManager
 	for _, dep := range task.DependsOn {
 		window := graceWindow
 		if d, ok := tasksMap[dep]; ok {
-			window += config.OrDefault(d.HealthyAfter, config.DefaultHealthyAfter)
+			window += model.OrDefault(d.HealthyAfter, config.DefaultHealthyAfter)
 		}
 		depCtx, cancel := context.WithTimeout(ctx, window)
 		err := taskManager.WaitServiceHealthy(depCtx, dep)
@@ -420,11 +407,8 @@ func orderServicesForStart(tasksMap map[string]*model.Task) []*model.Task {
 // priority/name spawn order as the tiebreak. depends_on is validated acyclic,
 // so the DFS always terminates.
 func orderServicesForStop(tasksMap map[string]*model.Task) []*model.Task {
-	start := topoStartOrder(tasksMap)
-	stop := make([]*model.Task, len(start))
-	for i, t := range start {
-		stop[len(start)-1-i] = t
-	}
+	stop := topoStartOrder(tasksMap)
+	slices.Reverse(stop)
 	return stop
 }
 

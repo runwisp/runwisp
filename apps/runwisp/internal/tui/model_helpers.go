@@ -167,24 +167,17 @@ func (m *Model) triggerRun() tea.Cmd {
 	if m.isService(taskName) {
 		return m.confirmAction(confirmActionRestartService)
 	}
-	client := m.client
-	ctx := m.streams.streamCtx
 	if task := m.taskDisplayByName(taskName); task != nil && len(task.Parameters) > 0 {
+		streams := m.streams
 		m.dialogs.Show(dlgParamForm, NewParamFormDialog(taskName, task.Parameters, func(params map[string]*string) tea.Cmd {
-			return func() tea.Msg {
-				run, err := client.TriggerRun(ctx, taskName, params, "ui")
-				return uikit.TriggerRunMsg{TaskName: taskName, Run: run, Err: err}
-			}
+			return streams.TriggerRun(taskName, params, false)
 		}))
 		return nil
 	}
 	return m.showConfirmDialog(
 		"Run Task",
 		fmt.Sprintf("Run '%s' now?", taskName),
-		func() tea.Msg {
-			run, err := client.TriggerRun(ctx, taskName, nil, "ui")
-			return uikit.TriggerRunMsg{TaskName: taskName, Run: run, Err: err}
-		},
+		m.streams.TriggerRun(taskName, nil, false),
 	)
 }
 
@@ -193,8 +186,6 @@ func (m *Model) confirmRestartService() tea.Cmd {
 	if taskName == "" {
 		return nil
 	}
-	client := m.client
-	ctx := m.streams.streamCtx
 	instances := m.serviceInstances(taskName)
 	var prompt string
 	if instances > 1 {
@@ -205,10 +196,7 @@ func (m *Model) confirmRestartService() tea.Cmd {
 	return m.showConfirmDialog(
 		"Restart Service",
 		prompt,
-		func() tea.Msg {
-			err := client.RestartTask(ctx, taskName, "ui")
-			return uikit.RestartServiceMsg{TaskName: taskName, Err: err}
-		},
+		m.streams.RestartService(taskName),
 	)
 }
 
@@ -217,15 +205,10 @@ func (m *Model) confirmStopService() tea.Cmd {
 	if taskName == "" {
 		return nil
 	}
-	client := m.client
-	ctx := m.streams.streamCtx
 	return m.showConfirmDialog(
 		"Stop Service",
 		fmt.Sprintf("Stop service\n'%s'?\nIt stays stopped until you start it\nagain or the daemon restarts.", taskName),
-		func() tea.Msg {
-			err := client.StopTask(ctx, taskName)
-			return uikit.StopServiceMsg{TaskName: taskName, Err: err}
-		},
+		m.streams.StopService(taskName),
 	)
 }
 
@@ -234,17 +217,10 @@ func (m *Model) confirmStop() tea.Cmd {
 	if run == nil || run.Status != model.PhaseRunning {
 		return nil
 	}
-	client := m.client
-	ctx := m.streams.streamCtx
-	runID := run.ID
-	taskName := run.TaskName
 	return m.showConfirmDialog(
 		"Stop Run",
-		fmt.Sprintf("Stop the running execution of\n'%s'?", taskName),
-		func() tea.Msg {
-			err := client.StopRun(ctx, runID)
-			return uikit.StopRunMsg{RunID: runID, TaskName: taskName, Err: err}
-		},
+		fmt.Sprintf("Stop the running execution of\n'%s'?", run.TaskName),
+		m.streams.StopRun(run.ID, run.TaskName),
 	)
 }
 
@@ -259,14 +235,7 @@ func (m *Model) deleteCurrentRun() tea.Cmd {
 	if run == nil || m.execView == nil || !m.execView.CanDelete() {
 		return nil
 	}
-	client := m.client
-	ctx := m.streams.streamCtx
-	runID := run.ID
-	taskName := run.TaskName
-	return func() tea.Msg {
-		_, err := client.BulkDeleteRuns(ctx, model.RunSelector{IDs: []string{runID}})
-		return uikit.DeleteRunMsg{RunID: runID, TaskName: taskName, Err: err}
-	}
+	return m.streams.DeleteRun(run.ID, run.TaskName)
 }
 
 // retryRun re-runs the current execution, gated by a confirm dialog, reproducing
@@ -276,8 +245,6 @@ func (m *Model) retryRun() tea.Cmd {
 	if run == nil || !run.IsRetryable() {
 		return nil
 	}
-	client := m.client
-	ctx := m.streams.streamCtx
 	taskName := run.TaskName
 	// Reproduce the original run exactly: present params carry forward, omitted
 	// ones stay omitted (rather than picking their default back up on re-resolve).
@@ -288,9 +255,6 @@ func (m *Model) retryRun() tea.Cmd {
 	return m.showConfirmDialog(
 		"Retry Run",
 		fmt.Sprintf("Retry '%s'?", taskName),
-		func() tea.Msg {
-			newRun, err := client.TriggerRun(ctx, taskName, params, "ui")
-			return uikit.TriggerRunMsg{TaskName: taskName, Run: newRun, Err: err, Retry: true}
-		},
+		m.streams.TriggerRun(taskName, params, true),
 	)
 }

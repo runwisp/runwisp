@@ -3,7 +3,7 @@
 
 // Declarative filter spec. A `FilterField[]` + one bound `FilterValues` object
 // drives <FilterBar>, the client engine (`applyFilters`), and the URL sync
-// helper — the same way DataGrid's `Column[]` drives the table. Add a field
+// helper, the same way DataGrid's `Column[]` drives the table. Add a field
 // type here, and every table that adopts it renders identically.
 
 import type { SelectOption } from "./Select.svelte";
@@ -44,7 +44,7 @@ export type FilterField =
           primary?: boolean;
       };
 
-// All values are strings — DOM inputs are string-valued and URL params are
+// All values are strings, DOM inputs are string-valued and URL params are
 // strings; the client engine coerces (e.g. Number()) where a field needs it.
 export type FilterValues = Record<string, string>;
 
@@ -65,7 +65,7 @@ export function isBlank(v: string | undefined): boolean {
     return !v || v === "all";
 }
 
-// Which value keys a field owns — daterange owns two, everything else one.
+// Which value keys a field owns, daterange owns two, everything else one.
 // Used by chips, active-state detection, clear, and URL (de)serialization so
 // none of them has to special-case the range type.
 export function fieldKeys(field: FilterField): string[] {

@@ -42,7 +42,7 @@ const base = (overrides: Partial<RunsListFilters> = {}): RunsListFilters => ({
 });
 
 describe("emptyRunFilters", () => {
-    it("is a fully-open filter — no dimension active, newest-first", () => {
+    it("is a fully-open filter, no dimension active, newest-first", () => {
         const f = emptyRunFilters();
         expect(f.statuses).toEqual([]);
         expect(f.sortDirection).toBe("desc");
@@ -132,7 +132,7 @@ describe("statusChipLabel", () => {
 describe("STATUS_BUCKETS", () => {
     // The Failed bucket is the failure sentinel (resolved server-side to the
     // per-task is_failure classification), so the execution-failure reasons are
-    // not bucketed — they stay reachable via the popover's Advanced expander.
+    // not bucketed, they stay reachable via the popover's Advanced expander.
     const FAILURE_REASONS = [
         "failed",
         "crashed",

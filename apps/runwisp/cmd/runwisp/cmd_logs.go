@@ -250,7 +250,7 @@ func selectTaskRuns(ctx context.Context, client *apiclient.Client, targets []mod
 	for _, t := range targets {
 		mine := runsOf(active, t.Name)
 		if len(mine) == 0 && lastEnded {
-			last, _, err := client.ListRunsByTask(ctx, t.Name, apiclient.RunsParams{Status: string(model.PhaseEnded), Limit: 1})
+			last, _, err := client.ListRuns(ctx, apiclient.RunsParams{TaskName: t.Name, Status: string(model.PhaseEnded), Limit: 1})
 			if err != nil {
 				return nil, fmt.Errorf("list runs of %q: %w", t.Name, err)
 			}

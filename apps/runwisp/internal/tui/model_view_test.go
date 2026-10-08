@@ -24,7 +24,7 @@ func TestView_NotReadyShowsInitializing(t *testing.T) {
 
 func TestView_ReadyRendersBodyAndHelpBar(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	got := m.View().Content
 	if got == "" {
 		t.Fatal("expected non-empty View output")
@@ -38,7 +38,7 @@ func TestView_ReadyRendersBodyAndHelpBar(t *testing.T) {
 
 func TestRenderHelpBar_NoFlashReturnsHelp(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	got := m.renderHelpBar()
 	if !strings.Contains(got, "navigate") {
 		t.Fatalf("expected base help text, got: %q", got)
@@ -47,7 +47,7 @@ func TestRenderHelpBar_NoFlashReturnsHelp(t *testing.T) {
 
 func TestRenderHelpBar_OmitsFlash(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m.dialogs.Flash("Saved", 5*time.Second)
 	if got := m.renderHelpBar(); strings.Contains(got, "Saved") {
 		t.Fatalf("flash must render as a toast, not in the help bar: %q", got)
@@ -58,7 +58,7 @@ func TestRenderHelpBar_OmitsFlash(t *testing.T) {
 // bottom-right corner while the help bar stays intact on the last line.
 func TestView_ShowsToastAboveHelpBar(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m.dialogs.FlashUndo("Deleted run", func() tea.Msg { return nil }, 5*time.Second)
 	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
 	if len(lines) != 30 {
@@ -80,7 +80,7 @@ func TestView_ShowsToastAboveHelpBar(t *testing.T) {
 
 func TestRenderToast_ErrorUsesCross(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m.dialogs.FlashError("Stop failed: boom", 5*time.Second)
 	toast, ok := m.renderToast()
 	if !ok || !strings.Contains(ansi.Strip(toast), "✗ Stop failed: boom") {
@@ -90,7 +90,7 @@ func TestRenderToast_ErrorUsesCross(t *testing.T) {
 
 func TestRenderBody_DefaultSidebarPlusMain(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	// Default: no execView → renderBody joins sidebar and main horizontally.
 	body := m.renderBody()
 	if body == "" {
@@ -100,7 +100,7 @@ func TestRenderBody_DefaultSidebarPlusMain(t *testing.T) {
 
 func TestRenderBody_FullscreenExecViewTrimsTrailingNewline(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
 	ev.ToggleFullscreen()
@@ -113,7 +113,7 @@ func TestRenderBody_FullscreenExecViewTrimsTrailingNewline(t *testing.T) {
 
 func TestRenderMainContent_PageInfoUsesInfoView(t *testing.T) {
 	m := newTestModel([]model.Task{{Name: "t1"}})
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	// Sidebar items: [Home(0), t1(1), Info(2), Debug(3)] — pick Info.
 	selectSidebarItem(&m, 2)
 
@@ -125,7 +125,7 @@ func TestRenderMainContent_PageInfoUsesInfoView(t *testing.T) {
 
 func TestRenderMainContent_PageDebugUsesDebugView(t *testing.T) {
 	m := newTestModel([]model.Task{{Name: "t1"}})
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	// Item index 3 = Debug.
 	selectSidebarItem(&m, 3)
 	m.debugView.AppendLine("hello debug")
@@ -175,20 +175,13 @@ func TestBuildSidebarHelpText_NoCursorTaskOmitsActionHint(t *testing.T) {
 	}
 }
 
-// applyWindowSize is a helper that drives handleWindowSize so the model marks
-// itself ready and the layout is computed.
-func (m Model) applyWindowSize(w, h int) (Model, tea.Cmd) {
-	got, cmd := m.handleWindowSize(tea.WindowSizeMsg{Width: w, Height: h})
-	return got.(Model), cmd
-}
-
 // ─── renderHomeContent ───────────────────────────────────────────────────────
 
 // TestRenderHomeContent_NoActiveTaskRendersHomeHeader covers the no-active-task
 // branch which calls home.RenderHeader and includes the exec list view.
 func TestRenderHomeContent_NoActiveTaskRendersHomeHeader(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	got := m.renderHomeContent(80, "")
 	if got == "" {
 		t.Fatal("expected non-empty home content with no active task")
@@ -200,7 +193,7 @@ func TestRenderHomeContent_NoActiveTaskRendersHomeHeader(t *testing.T) {
 func TestRenderHomeContent_ActiveTaskRendersTaskHeader(t *testing.T) {
 	tasks := []model.Task{{Name: "backup"}}
 	m := newTestModel(tasks)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	selectSidebarItem(&m, 1)
 	got := m.renderHomeContent(80, "")
 	if got == "" {
@@ -212,7 +205,7 @@ func TestRenderHomeContent_ActiveTaskRendersTaskHeader(t *testing.T) {
 // the rendered content.
 func TestRenderHomeContent_WithPanelView(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	got := m.renderHomeContent(80, "PANEL\n")
 	if !strings.Contains(got, "PANEL") {
 		t.Fatalf("expected panel view in output, got: %q", got)
@@ -225,7 +218,7 @@ func TestRenderHomeContent_WithPanelView(t *testing.T) {
 // branch of renderMainContent.
 func TestRenderMainContent_WithExecViewRoutesToExecView(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	// ID must be >= 8 chars; the renderer slices Run.ID[-8:].
 	run := &model.Run{ID: "run-12345678", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
@@ -241,7 +234,7 @@ func TestRenderMainContent_WithExecViewRoutesToExecView(t *testing.T) {
 // notifications-panel-height>0 branch when on PageHome.
 func TestRenderMainContent_HomeWithNotificationsPrependsPanelView(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m.notifications.Upsert(testNotif("n1"))
 	if m.notifications.PanelHeight() == 0 {
 		t.Fatal("precondition: expected non-zero panel height")

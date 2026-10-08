@@ -4,6 +4,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"reflect"
@@ -222,12 +223,7 @@ func (e *expander) resolveRef(ref, path string) (string, error) {
 // tomlFieldName returns the TOML key for a struct field, falling back to the
 // Go field name when no tag is present.
 func tomlFieldName(f reflect.StructField) string {
-	tag := f.Tag.Get("toml")
-	name, _, _ := strings.Cut(tag, ",")
-	if name == "" || name == "-" {
-		return f.Name
-	}
-	return name
+	return cmp.Or(tomlTagName(f), f.Name)
 }
 
 func joinPath(base, elem string) string {

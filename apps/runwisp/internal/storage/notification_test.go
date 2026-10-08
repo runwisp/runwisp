@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupNotificationDB(t *testing.T) Database {
+func setupNotificationDB(t *testing.T) *SQLiteDatabase {
 	t.Helper()
 	db, err := New(":memory:")
 	require.NoError(t, err)

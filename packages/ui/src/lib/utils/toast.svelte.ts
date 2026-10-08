@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import { generateUlid } from "@runwisp/common";
-
 type ToastType = "success" | "error" | "warning" | "info";
 
 interface ToastAction {
@@ -28,6 +26,7 @@ const DEFAULT_DURATION = 5000;
 class ToastStore {
     items = $state<Toast[]>([]);
     private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+    private nextId = 0;
 
     add(type: ToastType, message: string, opts: ToastOptions = {}): string {
         const duration = opts.duration ?? DEFAULT_DURATION;
@@ -37,7 +36,7 @@ class ToastStore {
             return existing.id;
         }
 
-        const id = generateUlid();
+        const id = `toast-${String(++this.nextId)}`;
         const next: Toast = { id, type, message, duration };
         if (opts.action) next.action = opts.action;
         this.items = [...this.items, next];

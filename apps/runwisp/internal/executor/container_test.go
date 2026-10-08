@@ -229,7 +229,7 @@ func TestBuildContext(t *testing.T) {
 }
 
 func TestBuildContainerConfig(t *testing.T) {
-	b := NewContainerBackendFromClient(&mockDockerClient{})
+	b := newContainerBackend(&mockDockerClient{})
 	ctr := &model.ContainerExecution{
 		Script:    "echo test",
 		BaseImage: "ubuntu:22.04",
@@ -266,7 +266,7 @@ func TestBuildContainerConfig(t *testing.T) {
 }
 
 func TestBuildContainerConfigEmpty(t *testing.T) {
-	b := NewContainerBackendFromClient(&mockDockerClient{})
+	b := newContainerBackend(&mockDockerClient{})
 	ctr := &model.ContainerExecution{
 		Script:    "echo test",
 		BaseImage: "alpine",
@@ -292,7 +292,7 @@ func TestBuildContainerConfigEmpty(t *testing.T) {
 // no error, warning, or log, and inconsistently: the same ctr.Env passed
 // through unfiltered whenever the Task had nothing to overlay.
 func TestBuildContainerConfig_CtrEnvNotFilteredAsDaemonEnv(t *testing.T) {
-	b := NewContainerBackendFromClient(&mockDockerClient{})
+	b := newContainerBackend(&mockDockerClient{})
 	ctr := &model.ContainerExecution{
 		Script:    "echo test",
 		BaseImage: "alpine",
@@ -308,7 +308,7 @@ func TestBuildContainerConfig_CtrEnvNotFilteredAsDaemonEnv(t *testing.T) {
 }
 
 func TestStartRejectsNonContainerExecution(t *testing.T) {
-	b := NewContainerBackendFromClient(&mockDockerClient{})
+	b := newContainerBackend(&mockDockerClient{})
 	_, err := b.Start(context.Background(), &model.Task{}, nil, &model.ShellExecution{Script: "echo hi"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "non-container execution")
@@ -320,7 +320,7 @@ func TestStartBuildFailure(t *testing.T) {
 			return client.ImageBuildResult{}, fmt.Errorf("build error")
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	_, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "echo test",
@@ -339,7 +339,7 @@ func TestStartBuildOutputError(t *testing.T) {
 			}, nil
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	_, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "echo test",
@@ -366,7 +366,7 @@ func TestStartContainerCreateFailure(t *testing.T) {
 			return client.ImageRemoveResult{}, nil
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	_, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "echo test",
@@ -398,7 +398,7 @@ func TestStartContainerAttachFailure(t *testing.T) {
 			return client.ImageRemoveResult{}, nil
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	_, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "echo test",
@@ -434,7 +434,7 @@ func TestStartContainerStartFailure(t *testing.T) {
 			return client.ImageRemoveResult{}, nil
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	_, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "echo test",
@@ -463,7 +463,7 @@ func TestStartSuccess(t *testing.T) {
 			return client.ContainerWaitResult{Result: ch, Error: make(chan error)}
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	proc, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "echo hello",
@@ -514,7 +514,7 @@ func TestStartGracefulStopUsesSignalAndTimeout(t *testing.T) {
 			return client.ContainerKillResult{}, nil
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	task := &model.Task{StopSignal: "SIGTERM", GracefulStop: durPtr(3 * time.Second)}
@@ -572,7 +572,7 @@ func TestStartWatcherDoesNotGracefulStopAfterCleanSuccess(t *testing.T) {
 				return client.ContainerStopResult{}, nil
 			},
 		}
-		b := NewContainerBackendFromClient(mock)
+		b := newContainerBackend(mock)
 		ctx, cancel := context.WithCancel(context.Background())
 
 		task := &model.Task{StopSignal: "SIGTERM", GracefulStop: durPtr(time.Second)}
@@ -678,7 +678,7 @@ func TestStartCleanupUsesDetachedContextOnCtxCancel(t *testing.T) {
 			return client.ImageRemoveResult{}, nil
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	_, err := b.Start(ctx, &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "echo test",
@@ -712,7 +712,7 @@ func TestStartWaitError(t *testing.T) {
 			return client.ContainerWaitResult{Result: make(chan container.WaitResponse), Error: errCh}
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	proc, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "exit 1",
@@ -743,7 +743,7 @@ func TestStartNonZeroExitCode(t *testing.T) {
 			return client.ContainerWaitResult{Result: ch, Error: make(chan error)}
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	proc, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "exit 42",
@@ -815,7 +815,7 @@ func TestBuildContextWithDockerfileBlocks(t *testing.T) {
 }
 
 func TestBuildContainerConfigPortDefaultProtocol(t *testing.T) {
-	b := NewContainerBackendFromClient(&mockDockerClient{})
+	b := newContainerBackend(&mockDockerClient{})
 	ctr := &model.ContainerExecution{
 		Script:    "echo test",
 		BaseImage: "alpine",
@@ -859,7 +859,7 @@ func TestCleanupBoundedWhenDockerHangs(t *testing.T) {
 			return client.ContainerRemoveResult{}, ctx.Err()
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	proc, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "echo test",
@@ -914,7 +914,7 @@ func TestForceKillBoundedWhenDockerHangs(t *testing.T) {
 			return client.ContainerKillResult{}, ctx.Err()
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	proc, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "echo test",
@@ -966,7 +966,7 @@ func TestGracefulStopContainerHonoursGracePeriod(t *testing.T) {
 			return client.ContainerStopResult{}, nil
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	done := make(chan struct{})
 	go func() {
@@ -1047,7 +1047,7 @@ func TestStartWedgedEngineDoesNotHangRun(t *testing.T) {
 			return client.ContainerKillResult{}, ctx.Err()
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	proc, err := b.Start(ctx, &model.Task{}, nil, &model.ContainerExecution{Script: "sleep 100", BaseImage: "alpine"})
@@ -1081,7 +1081,7 @@ func TestRemoveContainerLogsError(t *testing.T) {
 			return client.ContainerRemoveResult{}, fmt.Errorf("remove failed")
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	// Should not panic, should log warning
 	b.removeContainer(context.Background(), "test-id")
@@ -1122,7 +1122,7 @@ func TestStartBuildOutputMultipleMessages(t *testing.T) {
 			return newHijackedResponse(""), nil
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	proc, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "echo ok",
@@ -1148,7 +1148,7 @@ func TestStartPassesBuildOptions(t *testing.T) {
 			return newHijackedResponse(""), nil
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	proc, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "echo test",
@@ -1174,7 +1174,7 @@ func TestContainerAttachOptions(t *testing.T) {
 			return newHijackedResponse(""), nil
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	proc, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "echo hello",
@@ -1240,7 +1240,7 @@ func TestStartCleanupBuildError(t *testing.T) {
 			return client.ImageBuildResult{Body: errBody}, nil
 		},
 	}
-	b := NewContainerBackendFromClient(mock)
+	b := newContainerBackend(mock)
 
 	_, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
 		Script:    "echo test",

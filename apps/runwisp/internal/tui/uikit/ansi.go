@@ -148,10 +148,6 @@ func skipStringSequence(s string, j int) int {
 	return n
 }
 
-// bgSGRCache memoises the opening SGR sequence per background colour. The Bubble
-// Tea view loop is single-threaded, so no lock is needed.
-var bgSGRCache = map[color.Color]string{}
-
 // FillBg returns n spaces painted with bg, byte-for-byte identical to
 // lipgloss.NewStyle().Background(bg).Render(spaces) but without re-deriving the
 // SGR sequence and re-walking the string for width on every call — the single
@@ -160,12 +156,28 @@ func FillBg(n int, bg color.Color) string {
 	if n <= 0 {
 		return ""
 	}
-	sgr, ok := bgSGRCache[bg]
-	if !ok {
-		sgr = ansi.NewStyle().BackgroundColor(bg).String()
-		bgSGRCache[bg] = sgr
+	return bgSGR(bg) + strings.Repeat(" ", n) + "\x1b[m"
+}
+
+// Opening SGR sequences for the backgrounds nearly every padded row uses,
+// derived once at init instead of on every call in the render path.
+var (
+	sgrBg        = ansi.NewStyle().BackgroundColor(ColorBg).String()
+	sgrBgLight   = ansi.NewStyle().BackgroundColor(ColorBgLight).String()
+	sgrSidebarBg = ansi.NewStyle().BackgroundColor(ColorSidebarBg).String()
+)
+
+// bgSGR returns the opening SGR sequence that paints bg as the background.
+func bgSGR(bg color.Color) string {
+	switch bg {
+	case ColorBg:
+		return sgrBg
+	case ColorBgLight:
+		return sgrBgLight
+	case ColorSidebarBg:
+		return sgrSidebarBg
 	}
-	return sgr + strings.Repeat(" ", n) + "\x1b[m"
+	return ansi.NewStyle().BackgroundColor(bg).String()
 }
 
 // TruncateToWidth truncates s to at most w visible columns, appending an

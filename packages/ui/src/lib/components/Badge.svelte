@@ -17,7 +17,7 @@
         outline?: boolean;
         /** Shown in the styled hover tooltip (see {@link Tooltip}). */
         tooltip?: string;
-        /** Side the tooltip opens on — pick one that has room, e.g. "bottom" near the top of the viewport. */
+        /** Side the tooltip opens on, pick one that has room, e.g. "bottom" near the top of the viewport. */
         tooltipPosition?: TooltipPosition;
         children?: Snippet;
         class?: string;

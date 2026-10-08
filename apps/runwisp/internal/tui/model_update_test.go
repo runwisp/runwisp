@@ -31,41 +31,30 @@ func TestUpdateHandlers_EarlyReturns(t *testing.T) {
 
 	t.Run("handleNotificationReadState with nil err returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
-		_, cmd := m.handleNotificationReadState(uikit.NotificationReadStateMsg{ID: "n1", Read: true})
-		if cmd != nil {
-			t.Fatal("expected nil cmd when no error")
-		}
+		m.handleNotificationReadState(uikit.NotificationReadStateMsg{ID: "n1", Read: true})
 	})
 
 	t.Run("handleNotificationReadState read=true err rolls back to unread", func(t *testing.T) {
 		m := newTestModel(nil)
-		_, cmd := m.handleNotificationReadState(uikit.NotificationReadStateMsg{
+		m.handleNotificationReadState(uikit.NotificationReadStateMsg{
 			ID:   "n1",
 			Read: true,
 			Err:  errors.New("boom"),
 		})
-		if cmd != nil {
-			t.Fatal("expected nil cmd; error path emits no follow-up command")
-		}
 	})
 
 	t.Run("handleNotificationReadState read=false err re-applies optimistic read", func(t *testing.T) {
 		m := newTestModel(nil)
-		_, cmd := m.handleNotificationReadState(uikit.NotificationReadStateMsg{
+		m.handleNotificationReadState(uikit.NotificationReadStateMsg{
 			ID:   "n1",
 			Read: false,
 			Err:  errors.New("boom"),
 		})
-		if cmd != nil {
-			t.Fatal("expected nil cmd; error path emits no follow-up command")
-		}
 	})
 
 	t.Run("handleLogOlderLoaded with no matching run returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
-		if _, cmd := m.handleLogOlderLoaded(uikit.LogOlderLoadedMsg{RunID: "run-123"}); cmd != nil {
-			t.Fatal("expected nil cmd when not viewing run")
-		}
+		m.handleLogOlderLoaded(uikit.LogOlderLoadedMsg{RunID: "run-123"})
 	})
 
 	t.Run("viewingRun is false when execView is nil", func(t *testing.T) {
@@ -355,7 +344,7 @@ func TestHandleSSEEvent_InvalidJSONAppendsDebugLine(t *testing.T) {
 
 func TestHandleSSEEvent_UpsertsRunIntoWindow(t *testing.T) {
 	m := newTestModel(nil)
-	payload := []byte(`{"run":{"id":"r-1","task_name":"t1","status":"running"},"task_name":"t1","status":"running"}`)
+	payload := []byte(`{"run":{"id":"r-1","taskName":"t1","status":"running"}}`)
 	_ = m.handleSSEEvent(apiclient.RunStreamEvent{Type: "run.updated", Data: payload})
 	if m.execWindow.FindRun("r-1") == nil {
 		t.Fatal("expected exec window to contain the upserted run")
@@ -371,7 +360,7 @@ func TestHandleSSEEvent_UpdatesExecViewWhenWatching(t *testing.T) {
 	// Status flips pending → running and the client is nil, so StartLogStream
 	// (which guards on client==nil) returns nil. We still expect the run
 	// pointer on the exec view to be replaced with the freshly-decoded one.
-	payload := []byte(`{"run":{"id":"r-1","task_name":"t1","status":"running"},"task_name":"t1","status":"running"}`)
+	payload := []byte(`{"run":{"id":"r-1","taskName":"t1","status":"running"}}`)
 	_ = m.handleSSEEvent(apiclient.RunStreamEvent{Type: "run.updated", Data: payload})
 	if m.execView.Run.Status != model.PhaseRunning {
 		t.Fatalf("expected execView.Run.Status to be running, got %v", m.execView.Run.Status)
@@ -399,7 +388,7 @@ func TestHandleSSEEvent_SystemSampleUpdatesLiveUsage(t *testing.T) {
 
 func TestHandleSSEEventMsg_DispatchesViaHandleSSEEvent(t *testing.T) {
 	m := newTestModel(nil)
-	evt := apiclient.RunStreamEvent{Type: "run.created", Data: json.RawMessage(`{"run":{"id":"r-x","task_name":"t","status":"running"}}`)}
+	evt := apiclient.RunStreamEvent{Type: "run.created", Data: json.RawMessage(`{"run":{"id":"r-x","taskName":"t","status":"running"}}`)}
 	_, cmd := m.handleSSEEventMsg(uikit.SSEEventMsg{Event: evt})
 	// tea.Batch with all-nil children is itself nil, which is what we get
 	// because there's no sseCh wired and StartLogStream needs a client.
@@ -433,22 +422,16 @@ func TestHandleLogStreamConnected_ViewingWiresUpChannel(t *testing.T) {
 
 func TestHandleNotificationUnreadCount_ErrAppendsDebug(t *testing.T) {
 	m := newTestModel(nil)
-	_, cmd := m.handleNotificationUnreadCount(uikit.NotificationUnreadCountMsg{
+	m.handleNotificationUnreadCount(uikit.NotificationUnreadCountMsg{
 		Err: errors.New("fetch failed"),
 	})
-	if cmd != nil {
-		t.Fatal("expected nil cmd when unread-count load errors")
-	}
 }
 
 func TestHandleNotificationsLoaded_ErrAppendsDebug(t *testing.T) {
 	m := newTestModel(nil)
-	_, cmd := m.handleNotificationsLoaded(uikit.NotificationsLoadedMsg{
+	m.handleNotificationsLoaded(uikit.NotificationsLoadedMsg{
 		Err: errors.New("fetch failed"),
 	})
-	if cmd != nil {
-		t.Fatal("expected nil cmd when notifications load errors")
-	}
 }
 
 // ─── handleReconnectLog viewing+running path ─────────────────────────────────
@@ -498,8 +481,8 @@ func TestHandleSSEEvent_NotificationCreatedUpdatesUnreadAndPanel(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("expected nil cmd")
 	}
-	if m.notifications.Unread() != 1 {
-		t.Fatalf("expected unread=1, got %d", m.notifications.Unread())
+	if view := m.notifications.View(); !strings.Contains(view, "Notifications (1)") {
+		t.Fatalf("expected unread=1, got %q", view)
 	}
 }
 
@@ -515,8 +498,8 @@ func TestHandleSSEEvent_NotificationUpdatedUpdatesUnread(t *testing.T) {
 	m := newTestModel(nil)
 	payload := []byte(`{"notification":{"id":"n-1","severity":"info","title":"hi","count":1,"lastOccurredAt":"2026-01-01T00:00:00Z"},"unreadCount":2}`)
 	_ = m.handleSSEEvent(apiclient.RunStreamEvent{Type: "notification.updated", Data: payload})
-	if m.notifications.Unread() != 2 {
-		t.Fatalf("expected unread=2, got %d", m.notifications.Unread())
+	if view := m.notifications.View(); !strings.Contains(view, "Notifications (2)") {
+		t.Fatalf("expected unread=2, got %q", view)
 	}
 }
 
@@ -527,8 +510,8 @@ func TestHandleSSEEvent_NotificationUnreadCountChanged(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("expected nil cmd")
 	}
-	if m.notifications.Unread() != 7 {
-		t.Fatalf("expected unread=7 after unreadCountChanged, got %d", m.notifications.Unread())
+	if view := m.notifications.View(); !strings.Contains(view, "Notifications (7)") {
+		t.Fatalf("expected unread=7 after unreadCountChanged, got %q", view)
 	}
 }
 
@@ -614,15 +597,12 @@ func TestHandleLogOlderLoaded_PrependsLinesAndUpdatesTotal(t *testing.T) {
 	m.execView = &ev
 	m.execView.LoadingOlder = true
 
-	_, cmd := m.handleLogOlderLoaded(uikit.LogOlderLoadedMsg{
+	m.handleLogOlderLoaded(uikit.LogOlderLoadedMsg{
 		RunID:     "r-1",
 		Lines:     []server.LogLineEntry{{N: 0, Text: "first", Stream: "stdout"}},
 		FirstLine: 0,
 		Total:     42,
 	})
-	if cmd != nil {
-		t.Fatal("expected nil cmd; older-load is a pure state update")
-	}
 	if m.execView.LoadingOlder {
 		t.Fatal("LoadingOlder must be cleared once the page arrives")
 	}
@@ -648,11 +628,11 @@ func TestHandleLogOlderLoaded_RotatedLogDoesNotDuplicateLines(t *testing.T) {
 	for n := int64(250); n < 350; n++ {
 		page = append(page, server.LogLineEntry{N: n, Stream: "stdout", Text: fmt.Sprintf("l%d", n)})
 	}
-	updated, _ := m.handleLogOlderLoaded(uikit.LogOlderLoadedMsg{
+	m.handleLogOlderLoaded(uikit.LogOlderLoadedMsg{
 		RunID: "r-1", Lines: page, FirstLine: 250, Total: 350, FirstAvailable: 250,
 	})
 
-	pane := updated.(Model).execView.Pane
+	pane := m.execView.Pane
 	if pane.FirstLoadedLine != 250 {
 		t.Fatalf("FirstLoadedLine: want 250, got %d", pane.FirstLoadedLine)
 	}
@@ -988,10 +968,7 @@ func TestHandleLogDropped_ViewingRunAppendsDebugLine(t *testing.T) {
 
 func TestHandleDebugLog_AppendsAndReturnsNil(t *testing.T) {
 	m := newTestModel(nil)
-	_, cmd := m.handleDebugLog(uikit.DebugLogMsg{Message: "info line"})
-	if cmd != nil {
-		t.Fatal("expected nil cmd for debug log handler")
-	}
+	m.handleDebugLog(uikit.DebugLogMsg{Message: "info line"})
 }
 
 // ─── handleDaemonLogLine / Connected / Disconnected ──────────────────────────
@@ -1110,8 +1087,8 @@ func TestReloadSummary(t *testing.T) {
 		in   *model.ReloadResult
 		want string
 	}{
-		{"nil", nil, "✓ Config reloaded — no changes"},
-		{"empty", &model.ReloadResult{}, "✓ Config reloaded — no changes"},
+		{"nil", nil, "✓ Config reloaded: no changes"},
+		{"empty", &model.ReloadResult{}, "✓ Config reloaded: no changes"},
 		{
 			"mixed",
 			&model.ReloadResult{
@@ -1146,7 +1123,6 @@ func TestHandleReloadResult_ErrorFlashes(t *testing.T) {
 
 func TestHandleReloadResult_SuccessRebuildsSidebar(t *testing.T) {
 	m := newTestModel([]model.Task{{Name: "old"}})
-	m.client = newDummyClient()
 	info := &model.DaemonInfo{Tasks: []model.Task{{Name: "fresh"}}, ConfigStale: false}
 	updated, _ := m.handleReloadResult(uikit.ReloadResultMsg{
 		Result: &model.ReloadResult{Added: []string{"fresh"}, Removed: []string{"old"}},
@@ -1168,10 +1144,7 @@ func TestHandleReloadResult_SuccessRebuildsSidebar(t *testing.T) {
 
 func TestHandleStopRun_LogsActionResult(t *testing.T) {
 	m := newTestModel(nil)
-	_, cmd := m.handleStopRun(uikit.StopRunMsg{TaskName: "t1"})
-	if cmd != nil {
-		t.Fatal("expected nil cmd for stop-run handler")
-	}
+	m.handleStopRun(uikit.StopRunMsg{TaskName: "t1"})
 }
 
 // TestHandleRestartService_LeavesDeadInstance is the regression for restarting
@@ -1345,36 +1318,24 @@ func TestHandleTick_ProducesBatchedCmd(t *testing.T) {
 
 func TestHandleFlashExpired_ClearsAndReturnsNil(t *testing.T) {
 	m := newTestModel(nil)
-	_, cmd := m.handleFlashExpired()
-	if cmd != nil {
-		t.Fatal("expected nil cmd after clearing flash")
-	}
+	m.handleFlashExpired()
 }
 
 // ─── handleSystemStats / handleMetricsHistory / handleRunSummary ─────────────
 
 func TestHandleSystemStats_NilStatsNoop(t *testing.T) {
 	m := newTestModel(nil)
-	_, cmd := m.handleSystemStats(uikit.SystemStatsMsg{})
-	if cmd != nil {
-		t.Fatal("expected nil cmd for empty stats")
-	}
+	m.handleSystemStats(uikit.SystemStatsMsg{})
 }
 
 func TestHandleMetricsHistory_NilSamplesNoop(t *testing.T) {
 	m := newTestModel(nil)
-	_, cmd := m.handleMetricsHistory(uikit.MetricsHistoryMsg{})
-	if cmd != nil {
-		t.Fatal("expected nil cmd for empty history")
-	}
+	m.handleMetricsHistory(uikit.MetricsHistoryMsg{})
 }
 
 func TestHandleRunSummary_NilSummaryNoop(t *testing.T) {
 	m := newTestModel(nil)
-	_, cmd := m.handleRunSummary(uikit.RunSummaryMsg{})
-	if cmd != nil {
-		t.Fatal("expected nil cmd for empty summary")
-	}
+	m.handleRunSummary(uikit.RunSummaryMsg{})
 }
 
 // ─── handleOpenBrowser branches ──────────────────────────────────────────────
@@ -1460,11 +1421,10 @@ func TestHandleExecWindowFetched_DropsPageFromOldFilter(t *testing.T) {
 	m.execList.SetFilter("other-task")
 
 	items := []uikit.ExecListItem{{Run: model.Run{ID: "old-1", TaskName: "t1"}}}
-	updated, _ := m.handleExecWindowFetched(uikit.ExecWindowFetchedMsg{Items: items, Total: 99, Gen: oldGen})
-	got := updated.(Model)
+	m.handleExecWindowFetched(uikit.ExecWindowFetchedMsg{Items: items, Total: 99, Gen: oldGen})
 
-	if got.execWindow.TotalCount() != 0 {
-		t.Fatalf("a page from the previous filter must not inflate the count, got %d", got.execWindow.TotalCount())
+	if m.execWindow.TotalCount() != 0 {
+		t.Fatalf("a page from the previous filter must not inflate the count, got %d", m.execWindow.TotalCount())
 	}
 }
 
@@ -1559,5 +1519,20 @@ func TestStoppedServiceOffersStartFromDaemonState(t *testing.T) {
 	m.openExecView(run)
 	if m.execView.Action() == execlist.ActionRestartService {
 		t.Fatal("after a restart the service is running again and must not offer Start")
+	}
+}
+
+// A single-instance service the operator is viewing opens its run as soon as
+// the server reports it running. The payload is the server's own SSE shape.
+func TestHandleSSEEvent_AutoOpensViewedSingleInstanceService(t *testing.T) {
+	m := newTestModel([]model.Task{{Name: "svc", Kind: model.KindService, MaxConcurrent: 1}})
+	selectSidebarItem(&m, 1)
+	payload, err := json.Marshal(server.RunEventBody{Run: &model.Run{ID: "r-svc", TaskName: "svc", Status: model.PhaseRunning}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = m.handleSSEEvent(apiclient.RunStreamEvent{Type: "run.started", Data: payload})
+	if m.execView == nil || m.execView.RunID() != "r-svc" {
+		t.Fatalf("expected the service run to auto-open, got %+v", m.execView)
 	}
 }

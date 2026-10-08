@@ -13,7 +13,7 @@
         children: Snippet;
         class?: string;
         // The id of the control this field labels. Pass the SAME id to the wrapped
-        // input/select so the <label for> actually points at it — otherwise the
+        // input/select so the <label for> actually points at it, otherwise the
         // label is dead (clicking it does nothing; screen readers can't associate
         // it). Falls back to a generated id when the field has no focusable target.
         id?: string;

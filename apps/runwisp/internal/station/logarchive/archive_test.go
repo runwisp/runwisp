@@ -15,7 +15,9 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -48,7 +50,7 @@ func TestArchiveSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	size, err := archive(context.Background(), srv.Client(), srv.URL, logPath)
+	size, err := archive(context.Background(), srv.Client(), srv.URL, logPath, &backoff.ZeroBackOff{})
 	if err != nil {
 		t.Fatalf("archive: %v", err)
 	}
@@ -112,12 +114,34 @@ func TestArchiveRetriesOn5xx(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := archive(context.Background(), srv.Client(), srv.URL, logPath); err != nil {
+	if _, err := archive(context.Background(), srv.Client(), srv.URL, logPath, &backoff.ZeroBackOff{}); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
 	if got := attempts.Load(); got != 2 {
 		t.Errorf("attempts=%d want 2", got)
 	}
+}
+
+func TestArchiveGivesUpAfterMaxAttempts(t *testing.T) {
+	logPath := writeLog(t, "data")
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	_, err := archive(context.Background(), srv.Client(), srv.URL, logPath, &backoff.ZeroBackOff{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "upload failed after 3 attempts")
+	assert.Equal(t, int32(MaxAttempts), attempts.Load())
+}
+
+func TestRetryDelaysDoubleFromTwoSeconds(t *testing.T) {
+	b := newRetryDelays()
+	b.Reset()
+	assert.Equal(t, 2*time.Second, b.NextBackOff())
+	assert.Equal(t, 4*time.Second, b.NextBackOff())
 }
 
 func TestArchivePermanentError(t *testing.T) {
@@ -129,7 +153,7 @@ func TestArchivePermanentError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := archive(context.Background(), srv.Client(), srv.URL, logPath)
+	_, err := archive(context.Background(), srv.Client(), srv.URL, logPath, &backoff.ZeroBackOff{})
 	if err == nil {
 		t.Fatal("expected error")
 	}

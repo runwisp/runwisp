@@ -103,7 +103,7 @@
         // Stop the selected run while it is live. When provided and the run is
         // running, the action cluster shows Stop alongside Run.
         onStop?: ((runId: string) => void) | undefined;
-        // Trigger the task from the empty state (no run selected yet) — the
+        // Trigger the task from the empty state (no run selected yet), the
         // cold-start path so a never-run task is still launchable from here.
         onRunTask?: (() => void) | undefined;
         // Service lifecycle controls. When either is set the cluster swaps the
@@ -133,7 +133,7 @@
         motion?: RunMotion;
         // True when a deep-linked run id resolved to no run (deleted by retention,
         // or never existed). The empty state then says so plainly instead of the
-        // generic "Select a run" — the caller must not silently substitute another.
+        // generic "Select a run", the caller must not silently substitute another.
         notFound?: boolean;
         // True while there is no run to show *yet* (the run list or a deep-linked
         // run is still loading), so the empty state doesn't claim "No runs yet".
@@ -195,8 +195,8 @@
     // below) and paints it into the console. Resolves the line the live
     // stream should resume from, or null when there's nothing left to stream
     // (the run already ended, or the caller cancelled while we were waiting).
-    // A failed fetch still falls back to an SSE tail backfill from scratch —
-    // it does not stop the console from live-tailing — but records the
+    // A failed fetch still falls back to an SSE tail backfill from scratch,
+    // it does not stop the console from live-tailing, but records the
     // failure so LogConsole can show it instead of looking like a quiet run.
     async function seedConsoleTail(
         id: string,
@@ -261,7 +261,7 @@
     });
 
     // Maximize the console to a full-bleed overlay. The console wrapper is
-    // never remounted — `maximizePortal` relocates the *live* node to <body>
+    // never remounted, `maximizePortal` relocates the *live* node to <body>
     // (escaping any transformed/blurred ancestor that would otherwise trap a
     // position:fixed child) and moves it back on restore, so the SSE stream,
     // scroll position, and the {#key run.id} mount all survive the toggle.
@@ -283,7 +283,7 @@
 
     // The accent for a status that means "something to triage", or undefined
     // when there is nothing wrong. Tint is reserved for alarms (DESIGN.md) so a
-    // failure is the one lit thing on the page — a deliberate stop or a skip is
+    // failure is the one lit thing on the page, a deliberate stop or a skip is
     // not a failure, and success least of all. Doubles as the switch for the
     // verdict phrase's colour, so wash and wording light up together.
     function alarmAccent(displayed: string): string | undefined {
@@ -307,7 +307,7 @@
             consoleMaximized = false;
             return;
         }
-        // `F` toggles focus mode, the way a media player does — but never while
+        // `F` toggles focus mode, the way a media player does, but never while
         // the operator is typing into a field (search box, etc.).
         if (
             (event.key === "f" || event.key === "F") &&
@@ -412,7 +412,7 @@
         <!-- Detailed header: a readout whose ink scales with how much went wrong.
              Every run states its outcome in one phrase over one quiet fact line;
              only a run worth triaging colours the phrase and tints the surface.
-             Nothing here is a fixed slot — every fact renders only when it is
+             Nothing here is a fixed slot, every fact renders only when it is
              true, so the header's height is itself a signal. -->
         <div
             class="head-region @container relative shrink-0 border-b border-outline-faint"
@@ -462,9 +462,9 @@
 
                         <!-- Verdict: the outcome as one sentence, and the only large
                          type in the panel. It is prose, so the phrase is sans and
-                         only the tokens inside it — the duration, a failing exit —
+                         only the tokens inside it, the duration, a failing exit,
                          are mono (DESIGN.md's mono-vs-sans rule). The glyph is bare
-                         — no plate, no ring — so it reads as part of the sentence,
+                         (no plate, no ring) so it reads as part of the sentence,
                          and it alone carries the outcome colour on a healthy run:
                          green words are ink spent on nothing being wrong. -->
                         <Tooltip content={config.description} position="right" wide>
@@ -772,7 +772,7 @@
             </div>
         </div>
 
-        <!-- Console hero — maximizes to a full-bleed overlay via portal -->
+        <!-- Console hero, maximizes to a full-bleed overlay via portal -->
         {#if consoleMaximized}
             <div
                 use:portal
@@ -901,7 +901,7 @@
         <EmptyState
             title={notFound ? "Run not found" : onRunTask ? "No runs yet" : "Select a run"}
             description={notFound
-                ? "This run doesn't exist — it may have been deleted by retention, or the link is wrong. Pick a run from the list to continue."
+                ? "This run doesn't exist. It may have been deleted by retention, or the link is wrong. Pick a run from the list to continue."
                 : onRunTask
                   ? "This task hasn't run yet. Trigger it to see its output here."
                   : "Pick a run from the list to view details and logs."}
@@ -922,7 +922,7 @@
 
 <style>
     /* Only a run worth triaging is washed in its outcome colour (--rw-oc, set
-       inline). Everything else — success included — passes the surface itself so
+       inline). Everything else, success included, passes the surface itself so
        the mix collapses to a plain surface, which is what lets a genuine failure
        be the one lit thing on the page. */
     .head-region {

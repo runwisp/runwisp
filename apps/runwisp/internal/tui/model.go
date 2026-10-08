@@ -80,7 +80,6 @@ type Model struct {
 	// the scheduler. taskZones memoises per-task [tasks.*] timezone lookups.
 	loc       *time.Location
 	taskZones map[string]*time.Location
-	client    *apiclient.Client
 
 	// Home page cursor for interactive fields (-1 = not in header area).
 	homeCursor int
@@ -165,7 +164,6 @@ func NewModel(cfg TUIConfig) Model {
 		info:             cfg.Info,
 		loc:              uikit.ResolveLocation(cfg.Info.Timezone),
 		taskZones:        make(map[string]*time.Location),
-		client:           cfg.Client,
 		homeCursor:       -1,
 		mouse:            mouseState{homeHover: -1},
 		frame:            new(string),
@@ -504,7 +502,7 @@ func (m *Model) requestQuit() tea.Cmd {
 // open exec view wins: its header actions target the run's task, which the
 // sidebar doesn't know about when the run was opened from Home.
 func (m *Model) resolveTaskName() string {
-	if m.execView != nil && m.execView.Run != nil {
+	if m.currentRun() != nil {
 		return m.execView.Run.TaskName
 	}
 	if m.panelFocus == uikit.PanelMain {
@@ -532,7 +530,7 @@ func (m *Model) copyExecField() tea.Cmd {
 // showRunParams opens the read-only run-params modal for the focused run.
 // No-op when the run has no resolved parameters.
 func (m *Model) showRunParams() tea.Cmd {
-	if m.execView == nil || m.execView.Run == nil || len(m.execView.Run.Params) == 0 {
+	if m.currentRun() == nil || len(m.execView.Run.Params) == 0 {
 		return nil
 	}
 	run := m.execView.Run
@@ -545,18 +543,13 @@ func (m *Model) hasLaunchTicket() bool {
 	return m.launchTicketFunc != nil
 }
 
-// openRunByID opens the exec view for a run identified by task + run ID.
+// openRunByID opens the exec view for a run identified by its ID.
 // Looks the run up in the in-memory window first; falls back to a REST call.
-func (m *Model) openRunByID(taskName, runID string) tea.Cmd {
+func (m *Model) openRunByID(runID string) tea.Cmd {
 	if run := m.execWindow.FindRun(runID); run != nil {
 		return m.openExecView(run)
 	}
-	client := m.client
-	ctx := m.streams.streamCtx
-	return func() tea.Msg {
-		run, err := client.GetRun(ctx, runID)
-		return uikit.OpenRunMsg{Run: run, RunID: runID, Err: err}
-	}
+	return m.streams.FetchRun(runID)
 }
 
 // activateHomeField performs the primary action for the currently selected home field:
@@ -590,7 +583,7 @@ func (m *Model) openWebUI() tea.Cmd {
 // non-graphical session (e.g. SSH) the URL is offered for clipboard copy
 // instead, with the modal dialog as the final fallback.
 func (m *Model) downloadExecLog() tea.Cmd {
-	if m.execView == nil || m.execView.Run == nil {
+	if m.currentRun() == nil {
 		return nil
 	}
 	run := m.execView.Run

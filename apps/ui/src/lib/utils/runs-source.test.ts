@@ -113,7 +113,7 @@ describe("createRunsSource", () => {
     // A loadMore() page fetch captures its offset from items.length at call
     // time. If a live SSE upsert() splices a new row to the front while that
     // fetch is still in flight, every already-loaded run's true server-side
-    // rank shifts forward by one — so the in-flight page (computed at the old
+    // rank shifts forward by one, so the in-flight page (computed at the old
     // offset) would re-deliver an already-loaded row if merged blindly.
     // fetchPage detects the drift (items.length no longer matches what it was
     // when the request started) and retries from the corrected offset instead.
@@ -139,13 +139,13 @@ describe("createRunsSource", () => {
         expect(runsApi.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 3 }));
 
         // A run finishes and its SSE update arrives before the page above
-        // resolves — inserted at the front, shifting r5/r4/r3's true rank.
+        // resolves, inserted at the front, shifting r5/r4/r3's true rank.
         const fresh = makeRun("fresh", { createdAt: "2026-06-22T12:06:00.000Z" });
         src.upsert(fresh);
         expect(src.items.map((r) => r.id)).toEqual(["fresh", "r5", "r4", "r3"]);
 
         // The stale page (whatever it contains) must be discarded, never
-        // merged — its content is irrelevant to the assertions below.
+        // merged, its content is irrelevant to the assertions below.
         const ghost = makeRun("ghost", { createdAt: "2026-06-22T12:03:30.000Z" });
         resolveStale({ runs: [ghost], total: 11 });
 
@@ -166,7 +166,7 @@ describe("createRunsSource", () => {
     // The opposite direction of the same race: a live remove() (the optimistic
     // delete, or its SSE echo) shifts every later run's true server-side rank
     // *back* by one while loadMore()'s page is in flight. Blindly appending
-    // that page would silently skip a run entirely — there's no duplicate id
+    // that page would silently skip a run entirely, there's no duplicate id
     // to filter out, the row is just gone. The same drift detection that
     // fixes the insert case must also catch this and retry.
     it("retries loadMore's page instead of skipping a run when a live remove shifts ranks back", async () => {
@@ -198,7 +198,7 @@ describe("createRunsSource", () => {
 
         // Without drift detection this page (fetched at the pre-removal
         // offset 3) would land at what is now rank 2, and the run that
-        // belongs there — r2 — would never be fetched at all.
+        // belongs there, r2, would never be fetched at all.
         const r2 = makeRun("r2", { createdAt: "2026-06-22T12:02:00.000Z" });
         vi.mocked(runsApi.getAll).mockResolvedValueOnce({ runs: [r2], total: 9 });
         await vi.waitFor(() => {
@@ -269,7 +269,7 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
 
     it("matches an ended run by its end reason, not its phase", async () => {
         // Regression: the filter set holds display statuses ("failed"), but the
-        // run's phase is "ended" — matching must consult displayStatus.
+        // run's phase is "ended", matching must consult displayStatus.
         const src = await loadedWith({ statuses: ["failed"] });
         src.upsert(makeRun("a", { status: "ended", endReason: "failed" }));
         src.upsert(makeRun("b", { status: "ended", endReason: "succeeded" }));
@@ -287,7 +287,7 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
 
     it("matches the failure sentinel by the run's isFailure bit, not its end reason", async () => {
         // The "Failed" bucket sends FAILURE_STATUS_TOKEN; the SSE mirror resolves
-        // it to run.isFailure — so a promoted `stopped` matches and a demoted
+        // it to run.isFailure, so a promoted `stopped` matches and a demoted
         // `timeout` does not, agreeing with the server's is_failure gate.
         const src = await loadedWith({ statuses: [FAILURE_STATUS_TOKEN] });
         src.upsert(makeRun("promoted", { status: "ended", endReason: "stopped", isFailure: true }));

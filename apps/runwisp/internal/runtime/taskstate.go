@@ -15,9 +15,6 @@ import (
 	"github.com/runwisp/runwisp/internal/runtime/services"
 )
 
-// DefaultConcurrencyLimit is used when a task does not configure max_concurrent.
-const DefaultConcurrencyLimit = 1
-
 // ActiveRun holds context for an in-flight run.
 type ActiveRun struct {
 	Run    *model.Run
@@ -35,19 +32,14 @@ type ActiveRun struct {
 	cancelled bool
 }
 
-// queuedRun is a run sitting in ts.queue, waiting for queueProcessLoop to
-// call startRun once a slot frees.
-type queuedRun struct {
-	run *model.Run
-}
-
 // taskState holds all per-task runtime state under the manager mutex.
 type taskState struct {
 	task   *model.Task
 	active []*ActiveRun
 
-	// queue is populated only when task.OnOverlap == PolicyQueue.
-	queue []queuedRun
+	// queue holds runs waiting for queueProcessLoop to call startRun once a
+	// slot frees. Populated only when task.OnOverlap == PolicyQueue.
+	queue []*model.Run
 	// cond signals the queue-drain goroutine. Allocated alongside queue.
 	cond *sync.Cond
 
@@ -112,7 +104,7 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 		if maxQueued := ts.task.MaxQueuedValue(); len(ts.queue) >= maxQueued {
 			return actionQueueFull, fmt.Errorf("queue full (%d pending) for task %s", maxQueued, ts.task.Name)
 		}
-		ts.queue = append(ts.queue, queuedRun{run: run})
+		ts.queue = append(ts.queue, run)
 		ts.cond.Signal()
 		slog.Debug("Task queued", "name", ts.task.Name, "active", len(ts.active), "limit", concurrencyLimit, "queue", len(ts.queue))
 		return actionQueued, nil
@@ -169,7 +161,7 @@ func (m *defaultTaskManager) queueProcessLoop(ts *taskState) {
 	// tell the drain is gone and spawn a fresh loop.
 	defer func() { ts.queueDraining = false }()
 	for {
-		for len(ts.queue) == 0 || len(ts.active) >= m.getConcurrencyLimit(ts.task) {
+		for len(ts.queue) == 0 || len(ts.active) >= ts.task.MaxConcurrentValue() {
 			if m.isShutdown.Load() || ts.removed || ts.task.OnOverlap != model.PolicyQueue {
 				return
 			}
@@ -190,14 +182,6 @@ func (m *defaultTaskManager) queueProcessLoop(ts *taskState) {
 		}
 		queued := ts.queue[0]
 		ts.queue = ts.queue[1:]
-		m.startRun(ts.task, queued.run)
+		m.startRun(ts.task, queued)
 	}
-}
-
-// getConcurrencyLimit returns the configured max_concurrent, defaulting to 1.
-func (m *defaultTaskManager) getConcurrencyLimit(task *model.Task) int {
-	if task.MaxConcurrent == 0 {
-		return DefaultConcurrencyLimit
-	}
-	return task.MaxConcurrent
 }

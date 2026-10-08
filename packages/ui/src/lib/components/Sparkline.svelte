@@ -12,7 +12,7 @@
     }
 
     // `currentColor` by default so the caller can theme us with a Tailwind
-    // text-* class — that's the only way to flip on .dark without burning a
+    // text-* class, that's the only way to flip on .dark without burning a
     // hardcoded hex in here.
     let {
         data,
@@ -47,7 +47,7 @@
         return `${pathD} L${lastX.toFixed(1)},${height} L0,${height} Z`;
     });
 
-    // Use `fill-opacity` rather than appending "18" to a hex — that trick
+    // Use `fill-opacity` rather than appending "18" to a hex, that trick
     // breaks for `currentColor` / `oklch()` / `var(...)` values.
     let resolvedFill = $derived(fillColor ?? color);
     let resolvedFillOpacity = $derived(fillColor === undefined ? fillOpacity : 1);

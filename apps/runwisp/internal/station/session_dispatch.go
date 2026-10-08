@@ -226,7 +226,7 @@ func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSe
 	case protocol.ExecutionDispatchMessage:
 		return sr.handleExecutionDispatch(ctx, session, message)
 	case protocol.ExecutionStopMessage:
-		return sr.reportIfErr(session, sr.handler.HandleExecutionStop(ctx, message), strings.TrimSpace(message.ExecutionID))
+		sr.reportIfErr(session, sr.handler.HandleExecutionStop(ctx, message), strings.TrimSpace(message.ExecutionID))
 	case protocol.LogReplayRequestMessage:
 		response, responseErr := sr.handler.HandleLogReplayRequest(ctx, message)
 		if responseErr != nil {
@@ -244,18 +244,18 @@ func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSe
 		}
 		return sendMessage(session, response)
 	case protocol.LogListenMessage:
-		return sr.reportIfErr(session, sr.handler.HandleLogListen(message), strings.TrimSpace(message.ExecutionID))
+		sr.reportIfErr(session, sr.handler.HandleLogListen(message), strings.TrimSpace(message.ExecutionID))
 	case protocol.LogStopMessage:
 		sr.handler.HandleLogStop(message)
 		return nil
 	case protocol.AgentRestartMessage:
-		return sr.reportIfErr(session, sr.handler.HandleAgentRestart(), "")
+		sr.reportIfErr(session, sr.handler.HandleAgentRestart(), "")
 	case protocol.ServiceApplyMessage:
-		return sr.reportIfErr(session, sr.handler.HandleServiceApply(message), "")
+		sr.reportIfErr(session, sr.handler.HandleServiceApply(message), "")
 	case protocol.ServiceControlMessage:
-		return sr.reportIfErr(session, sr.handler.HandleServiceControl(message), "")
+		sr.reportIfErr(session, sr.handler.HandleServiceControl(message), "")
 	case protocol.ServiceRemoveMessage:
-		return sr.reportIfErr(session, sr.handler.HandleServiceRemove(message), "")
+		sr.reportIfErr(session, sr.handler.HandleServiceRemove(message), "")
 	case protocol.AuthResultMessage:
 		if !message.Success {
 			return &StationError{Kind: StationErrorKindAuth, Message: message.Error}
@@ -268,8 +268,8 @@ func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSe
 		// without a matching case here — a coding error, not a wire event. Log
 		// it; do NOT send an error frame (it isn't the daemon's fault).
 		slog.Warn("decoded message type has no dispatch case", "type", fmt.Sprintf("%T", decoded))
-		return nil
 	}
+	return nil
 }
 
 // handleExecutionDispatch guards the required `execution` pointer field before
@@ -302,13 +302,12 @@ func (sr *sessionRunner) sendProtocolError(session *wsSession, kind StationError
 }
 
 // reportIfErr forwards a non-nil inbound-handler error to the station peer as a
-// protocol-error frame and always returns nil: a handler failure is reported,
-// not fatal — the session survives. Shared by the fire-and-forget inbound arms
+// protocol-error frame: a handler failure is reported, not fatal, so the
+// session survives. Shared by the fire-and-forget inbound arms
 // (those with no response of their own to send). executionID scopes the error
 // to a specific execution when the message carried one; "" otherwise.
-func (sr *sessionRunner) reportIfErr(session *wsSession, err error, executionID string) error {
+func (sr *sessionRunner) reportIfErr(session *wsSession, err error, executionID string) {
 	if err != nil {
 		sr.sendProtocolError(session, classifyErrorKind(err), err.Error(), "", executionID)
 	}
-	return nil
 }

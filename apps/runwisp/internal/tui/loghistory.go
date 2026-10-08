@@ -102,11 +102,7 @@ func (d *LogHistoryDialog) View(screenWidth, screenHeight int) string {
 		lines = append(lines, histContentLine(d.rows[i], innerWidth))
 	}
 
-	lines = append(lines,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine(scrollHint(d.maxScroll(), "esc close"), innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
-	)
+	lines = append(lines, modalFooter(scrollHint(d.maxScroll(), "esc close"), innerWidth)...)
 
 	return renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, lines).view
 }

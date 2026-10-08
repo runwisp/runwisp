@@ -127,6 +127,6 @@ func requireNoMissedRuns(t *testing.T, client *apiclient.Client, msg string) {
 // can outlive the check and the test, so it must not fail the test or use
 // t.Context(). ok is false when the request failed.
 func runCount(client *apiclient.Client, taskName string) (total int64, ok bool) {
-	_, total, err := client.ListRunsByTask(context.Background(), taskName, apiclient.RunsParams{Limit: 1})
+	_, total, err := client.ListRuns(context.Background(), apiclient.RunsParams{TaskName: taskName, Limit: 1})
 	return total, err == nil
 }

@@ -59,7 +59,8 @@ func TestFormatUptime(t *testing.T) {
 
 func TestHumaGetInfo(t *testing.T) {
 	srv := &Server{
-		stats: newStatsProvider(&model.DaemonInfo{Fingerprint: "test-fp"}, time.Now()),
+		stats:       newStatsProvider(&model.DaemonInfo{Fingerprint: "test-fp"}, time.Now()),
+		configStale: neverStale,
 	}
 	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
 	require.NoError(t, err)
@@ -70,7 +71,7 @@ func TestHumaGetInfo(t *testing.T) {
 // it must be the same instant /api/system's uptime counts from.
 func TestHumaGetInfo_StartedAtIsTheStatsStartTime(t *testing.T) {
 	start := time.Date(2026, 9, 23, 10, 0, 0, 0, time.UTC)
-	srv := &Server{stats: newStatsProvider(&model.DaemonInfo{}, start)}
+	srv := &Server{stats: newStatsProvider(&model.DaemonInfo{}, start), configStale: neverStale}
 	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
 	require.NoError(t, err)
 	assert.Equal(t, start, out.Body.StartedAt)
@@ -103,6 +104,7 @@ func TestHumaGetInfo_TasksComeFromTheLiveRegistry(t *testing.T) {
 		stats: newStatsProvider(&model.DaemonInfo{
 			Tasks: []model.Task{*held},
 		}, time.Now()),
+		configStale: neverStale,
 	}
 
 	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
@@ -129,6 +131,7 @@ func TestHumaGetInfo_NoRegistryKeepsTheBootList(t *testing.T) {
 		stats: newStatsProvider(&model.DaemonInfo{
 			Tasks: []model.Task{{Name: "backup"}},
 		}, time.Now()),
+		configStale: neverStale,
 	}
 	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
 	require.NoError(t, err)
@@ -160,7 +163,7 @@ func TestHumaGetMetricsHistory_ReturnsCollectorHistory(t *testing.T) {
 // call the sender at all.
 func TestSseDaemonLogHandler_RejectsWhenLimiterFull(t *testing.T) {
 	limiter := newStreamLimiter(0, 0) // zero capacity ⇒ acquire always fails
-	srv := &Server{streams: limiter}
+	srv := &Server{streams: limiter, shutdownCtx: context.Background()}
 
 	called := false
 	send := func(_ sse.Message) error {
@@ -178,6 +181,7 @@ func TestSseDaemonLogHandler_ReturnsEarlyWhenBufferNil(t *testing.T) {
 	srv := &Server{
 		streams:         newStreamLimiter(2, 2),
 		daemonLogBuffer: nil,
+		shutdownCtx:     context.Background(),
 	}
 	called := false
 	send := func(_ sse.Message) error {
@@ -198,6 +202,7 @@ func TestSseDaemonLogHandler_ReplaysBufferedLines(t *testing.T) {
 	srv := &Server{
 		streams:         newStreamLimiter(2, 2),
 		daemonLogBuffer: buf,
+		shutdownCtx:     context.Background(),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

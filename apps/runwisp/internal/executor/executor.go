@@ -337,9 +337,8 @@ func (m *outputMatcher) pattern() string {
 	return ""
 }
 
-// callback (when wired) and the event bus. logPath is the freshly resolved
-// callback and event bus when each is wired. logPath is the freshly resolved
-// on-disk log file; the executor carries it on the event envelope (not the
+// notifyRunUpdated reports a run state change to the onUpdate callback (when
+// wired) and the event bus. logPath is the freshly resolved on-disk log file; the executor carries it on the event envelope (not the
 // Run row, which is never persisted with a log path) so station and notify
 // subscribers can locate the captured output.
 func (r *RoutingExecutor) notifyRunUpdated(run *model.Run, logPath string) {
@@ -546,7 +545,7 @@ func writeCommittedLines(writer *LogWriter, stream string, texts []string) ([]in
 }
 
 func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task *model.Task, run *model.Run, matcher *outputMatcher, stream string) {
-	executionID := config.OrDefault(run.ExecutionID, "")
+	executionID := model.OrDefault(run.ExecutionID, "")
 	nowMs := func() int64 { return r.clock().UnixMilli() }
 
 	// publishCommitted sees each successfully written line's redacted text, so
@@ -624,7 +623,7 @@ func (r *RoutingExecutor) publishLine(task *model.Task, run *model.Run, stream, 
 	r.eventBus.Publish(events.EventLogLine, events.LogLineEvent{
 		TaskName:    task.Name,
 		RunID:       run.ID,
-		ExecutionID: config.OrDefault(run.ExecutionID, ""),
+		ExecutionID: model.OrDefault(run.ExecutionID, ""),
 		LineNum:     lineNum,
 		Timestamp:   r.clock().UnixMilli(),
 		Stream:      stream,

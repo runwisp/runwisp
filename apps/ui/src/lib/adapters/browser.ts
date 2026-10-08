@@ -6,8 +6,8 @@ import { EventSourcePolyfill } from "event-source-polyfill";
 const AUTH_REQUIRED_EVENT = "auth-required";
 
 /**
- * Minimal SSE consumer surface — exactly what the EventManager and connectSSE
- * helper use. Both the native `EventSource` and `EventSourcePolyfill`
+ * Minimal SSE consumer surface: exactly what createReconnectingConnection
+ * uses. Both the native `EventSource` and `EventSourcePolyfill`
  * structurally satisfy this, and test fakes only need to provide these few
  * members. Callbacks omit a `this` type so values typed against EventSource
  * (which binds `this: EventSource`) remain assignable.
@@ -42,8 +42,8 @@ export const browserAuthEventBus = {
 /**
  * Auth-aware SSE factory. The browser session is authenticated solely by the
  * HttpOnly session cookie, so it opens the stream with `withCredentials: true`
- * to send that cookie. The JWT is never held in JS-readable storage — that is
- * the whole point of the cookie being HttpOnly — so there is no Bearer path here.
+ * to send that cookie. The JWT is never held in JS-readable storage, that is
+ * the whole point of the cookie being HttpOnly, so there is no Bearer path here.
  */
 export const browserAuthEventSourceFactory: EventSourceFactory = (url) => {
     return new EventSourcePolyfill(url, { withCredentials: true });

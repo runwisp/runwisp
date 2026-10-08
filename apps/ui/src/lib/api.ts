@@ -6,15 +6,10 @@ import { z } from "zod";
 import type { APIPaths, APIOperations, AuthStatusBody, RunSelector } from "@runwisp/common";
 import { chapResponse } from "./chap";
 import { HTTP_STATUS } from "./config/constants";
-import { authFetch, handleUnauthorized } from "./utils/auth-required";
-import {
-    logPageSchema,
-    type LogPage,
-    logSearchResponseSchema,
-    type LogSearchResponse,
-    logLineHistorySchema,
-} from "./logs";
+import { handleUnauthorized } from "./utils/auth-required";
+import type { LogPage } from "./logs";
 import { authChallengeResponseSchema, authStatusResponseSchema } from "./types";
+import { isRecord } from "./utils/parse";
 
 export class AuthRequiredError extends Error {
     constructor() {
@@ -34,21 +29,36 @@ export class RateLimitedError extends Error {
 }
 
 // The browser session is authenticated by the HttpOnly cookie, which the
-// browser attaches automatically to same-origin requests — there is no
+// browser attaches automatically to same-origin requests, so there is no
 // JS-readable token to set as a Bearer header. This middleware reacts to a 401
 // by driving the login modal, and throws on any other non-ok response so every
-// generated-client call rejects on failure instead of resolving with `{error}`
-// — callers never have to check `error` themselves.
+// generated-client call rejects on failure instead of resolving with `{error}`.
+// The thrown message is the server's huma `detail` when it sent one, so an
+// operator-actionable reason (a rejected reload, a refused trigger) reaches the
+// toast instead of a bare status line.
 const errorMiddleware: Middleware = {
-    onResponse({ response }) {
+    async onResponse({ response }) {
         if (response.ok) return response;
         if (response.status === HTTP_STATUS.UNAUTHORIZED) {
             handleUnauthorized();
             throw new AuthRequiredError();
         }
-        throw new Error(`Request failed: ${String(response.status)} ${response.statusText}`);
+        throw await requestError(response);
     },
 };
+
+/** The Error for a failed (non-401) response: huma's `detail`, else the status line. */
+export async function requestError(response: Response): Promise<Error> {
+    try {
+        const body: unknown = await response.clone().json();
+        if (isRecord(body) && typeof body.detail === "string" && body.detail) {
+            return new Error(body.detail);
+        }
+    } catch {
+        // Not a JSON problem body; fall back to the status line.
+    }
+    return new Error(`Request failed: ${String(response.status)} ${response.statusText}`);
+}
 
 const apiClient = createClient<APIPaths>();
 apiClient.use(errorMiddleware);
@@ -66,6 +76,8 @@ function unwrap<T extends object>(data: T | undefined): T {
 // The /api/runs query shape, sourced from the generated client so it can never
 // drift from what the server actually accepts.
 type RunsQueryParams = NonNullable<APIOperations["listRuns"]["parameters"]["query"]>;
+type LogPageQuery = NonNullable<APIOperations["getLogPage"]["parameters"]["query"]>;
+type LogSearchQuery = NonNullable<APIOperations["searchLogs"]["parameters"]["query"]>;
 
 // The bodiless per-task POST actions. errorMiddleware throws on any failure.
 type TaskActionPath =
@@ -76,13 +88,6 @@ type TaskActionPath =
 
 async function postTaskAction(path: TaskActionPath, taskName: string): Promise<void> {
     await apiClient.POST(path, { params: { path: { taskName } } });
-}
-
-// GETs a JSON endpoint outside the generated client and validates the body.
-async function getJson<T>(url: string, schema: z.ZodType<T>, errorPrefix: string): Promise<T> {
-    const response = await authFetch(url, { headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error(errorPrefix + ": " + String(response.status));
-    return schema.parse(await response.json());
 }
 
 export const authApi = {
@@ -136,47 +141,26 @@ export const tasksApi = {
         });
     },
 
-    getLogPage: async (
-        runId: string,
-        options?: { from?: number; limit?: number },
-    ): Promise<LogPage> => {
-        const params = new URLSearchParams();
-        if (options?.from !== undefined) params.set("from", String(options.from));
-        if (options?.limit !== undefined) params.set("limit", String(options.limit));
-        const qs = params.toString();
-        const url = "/api/runs/" + encodeURIComponent(runId) + "/log" + (qs ? "?" + qs : "");
-        return getJson(url, logPageSchema, "Log page fetch failed");
+    getLogPage: async (runId: string, query: LogPageQuery = {}): Promise<LogPage> => {
+        const { data } = await apiClient.GET("/api/runs/{runId}/log", {
+            params: { path: { runId }, query },
+        });
+        return unwrap(data);
     },
 
-    searchLogs: async (
-        taskName: string,
-        options: {
-            q: string;
-            regex: boolean;
-            case: boolean;
-            runId?: string;
-            limit?: number;
-            cursor?: string;
-        },
-    ): Promise<LogSearchResponse> => {
-        const params = new URLSearchParams();
-        params.set("q", options.q);
-        if (options.regex) params.set("regex", "true");
-        if (options.case) params.set("case", "true");
-        if (options.runId) params.set("runId", options.runId);
-        if (options.limit !== undefined) params.set("limit", String(options.limit));
-        if (options.cursor) params.set("cursor", options.cursor);
-
-        const url =
-            "/api/tasks/" + encodeURIComponent(taskName) + "/log/search?" + params.toString();
-        return getJson(url, logSearchResponseSchema, "Log search failed");
+    /** Matching lines across a task's runs, newest run first. */
+    searchLogs: async (taskName: string, query: LogSearchQuery) => {
+        const { data } = await apiClient.GET("/api/tasks/{taskName}/log/search", {
+            params: { path: { taskName }, query },
+        });
+        return unwrap(data).items ?? [];
     },
 
-    getLogLineHistory: async (runId: string, lineNum: number): Promise<string[][]> => {
-        const url =
-            "/api/runs/" + encodeURIComponent(runId) + "/log/line/" + String(lineNum) + "/history";
-        const history = await getJson(url, logLineHistorySchema, "Log line history fetch failed");
-        return history.frames;
+    getLogLineHistory: async (runId: string, lineNumber: number): Promise<string[][]> => {
+        const { data } = await apiClient.GET("/api/runs/{runId}/log/line/{lineNumber}/history", {
+            params: { path: { runId, lineNumber } },
+        });
+        return (unwrap(data).frames ?? []).map((frame) => frame ?? []);
     },
 };
 
@@ -189,7 +173,7 @@ export const runsApi = {
         return { runs: runs.items ?? [], total: runs.total };
     },
 
-    // Fetch one run by its (globally unique) ULID — no task name needed. Lets
+    // Fetch one run by its (globally unique) ULID, no task name needed. Lets
     // the cross-task /runs view restore a deep-linked run that isn't on the
     // currently loaded page.
     getById: async (runId: string) => {
@@ -246,14 +230,11 @@ export const systemApi = {
         return unwrap(data).items ?? [];
     },
 
-    // Reload re-reads runwisp.toml and reconciles the live task set. Unlike this
-    // file's other methods, a rejected reload (parse error, a restart-only
-    // setting changed) carries an operator-actionable reason in `detail`, so
-    // that reason is surfaced instead of a generic fallback message.
+    // Reload re-reads runwisp.toml and reconciles the live task set. A rejected
+    // reload rejects with the daemon's reason (see errorMiddleware).
     reload: async () => {
-        const { data, error } = await apiClient.POST("/api/daemon/reload");
-        if (error) throw new Error(error.detail ?? "Failed to reload config");
-        return data;
+        const { data } = await apiClient.POST("/api/daemon/reload");
+        return unwrap(data);
     },
 };
 

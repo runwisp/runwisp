@@ -33,14 +33,13 @@ type daemonConfig struct {
 	Fingerprint       string
 	StationConfig     station.Config
 	Config            *config.Config
-	UsingDemo         bool
 	Password          string
 	PasswordEphemeral bool
 	JWTSecret         string
 	NoAuth            bool
 }
 
-func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, mode daemonMode, f Flags) (*daemonConfig, error) {
+func loadDaemonConfig(ctx context.Context, configRepo *storage.SQLiteDatabase, mode daemonMode, f Flags) (*daemonConfig, error) {
 	// Fingerprint resolution priority: an env override (not persisted), then the
 	// DB (canonical store), then a freshly generated one persisted for next boot.
 	fp, err := resolveFingerprint(ctx, configRepo)
@@ -58,7 +57,7 @@ func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, 
 		}
 	}
 
-	cfg, usingDemo, err := loadConfigFile(f.CfgFile, stationCfg.Enabled)
+	cfg, err := loadConfigFile(f.CfgFile, stationCfg.Enabled)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +85,6 @@ func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, 
 		Fingerprint:       fp,
 		StationConfig:     stationCfg,
 		Config:            cfg,
-		UsingDemo:         usingDemo,
 		Password:          password,
 		PasswordEphemeral: ephemeral,
 		JWTSecret:         jwtSecret,
@@ -169,7 +167,7 @@ func deriveJWTSecret(password, fp string) (string, error) {
 // resolveFingerprint resolves the daemon's per-install fingerprint: an env
 // override wins (not persisted), else the DB's stored value, else a freshly
 // generated one persisted for next boot.
-func resolveFingerprint(ctx context.Context, configRepo storage.ConfigRepository) (string, error) {
+func resolveFingerprint(ctx context.Context, configRepo *storage.SQLiteDatabase) (string, error) {
 	if fp := strings.TrimSpace(os.Getenv("RUNWISP_FINGERPRINT")); fp != "" {
 		return fp, nil
 	}
@@ -185,33 +183,33 @@ func resolveFingerprint(ctx context.Context, configRepo storage.ConfigRepository
 	return fp, nil
 }
 
-func loadConfigFile(path string, stationEnabled bool) (*config.Config, bool, error) {
+func loadConfigFile(path string, stationEnabled bool) (*config.Config, error) {
 	cfg, err := config.Load(path)
 	if err == nil {
 		// A root daemon executes whatever the config says; re-assert the file
 		// (and its includes) are not reachable through a user-writable path or a
 		// repointable symlink before trusting it. No-op when unprivileged.
 		if terr := config.AssertPrivilegedConfigTrust(cfg, path); terr != nil {
-			return nil, false, terr
+			return nil, terr
 		}
 		if perr := config.ApplyTrustedProxiesEnv(cfg); perr != nil {
-			return nil, false, perr
+			return nil, perr
 		}
-		return cfg, false, nil
+		return cfg, nil
 	}
 
 	if !errors.Is(err, os.ErrNotExist) {
-		return nil, false, err
+		return nil, err
 	}
 
 	if stationEnabled {
 		cfg := &config.Config{}
 		config.ApplyDefaults(cfg)
 		if perr := config.ApplyTrustedProxiesEnv(cfg); perr != nil {
-			return nil, false, perr
+			return nil, perr
 		}
-		return cfg, false, nil
+		return cfg, nil
 	}
 
-	return nil, false, noConfigError(path)
+	return nil, noConfigError(path)
 }

@@ -155,7 +155,7 @@ func newTakeoverHarness(t *testing.T) *takeoverHarness {
 			// the sampling order is exercised end to end rather than assumed.
 			DaemonRunning: func() bool { return isDaemonRunning(f) },
 			Reload:        func(context.Context) error { h.reloads++; return nil },
-		}, cutover.Options{}), nil
+		}), nil
 	}
 	return h
 }

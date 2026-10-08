@@ -12,13 +12,8 @@ import (
 	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
-// runFromRow maps a storage row (sqlcdb.Run) to the public domain shape,
-// dropping the row-internal DeletedAt column the rest of the daemon never
-// sees and decoding the params_json column into the Params map. Pointer fields
-// are shared with the source — the row is not retained after this call, so no
-// aliasing problem in practice. A corrupt params_json degrades to nil params
-// (see decodeParams) rather than failing the row, so a single bad row can't
-// wedge a whole batch.
+// runFromRow maps a storage row to model.Run, dropping DeletedAt and decoding
+// params_json (corrupt JSON degrades to nil params, see decodeParams).
 func runFromRow(s sqlcdb.Run) model.Run {
 	return model.Run{
 		ID:            s.ID,
@@ -112,13 +107,9 @@ func runToUpdateParams(r *model.Run) sqlcdb.UpdateRunParams {
 	}
 }
 
-// utcPtr normalizes a nullable time.Time to UTC before it reaches the SQL
-// layer, mirroring nullableTime's nil-passthrough on the write side. Without
-// this, CreatedAt/StartedAt/EndedAt would persist with whatever offset the
-// caller's clock happened to use, and modernc.org/sqlite's _time_format=sqlite
-// writes that offset verbatim instead of normalizing it — so plain TEXT
-// comparisons (created_at >= ?) sort inconsistently across offsets even when
-// the underlying instants are correctly ordered.
+// utcPtr normalizes a nullable time to UTC before it reaches SQLite, which
+// stores the offset verbatim, so TEXT comparisons (created_at >= ?) only order
+// correctly when every row shares one offset.
 func utcPtr(t *time.Time) *time.Time {
 	if t == nil {
 		return nil

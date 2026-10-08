@@ -19,8 +19,8 @@ describe("parseLogPage", () => {
     it("maps lines into a Record keyed by line number", () => {
         const page = makePage({
             lines: [
-                { n: 0, stream: "stdout", text: "first" },
-                { n: 1, stream: "stdout", text: "second" },
+                { n: 0, ts: 0, stream: "stdout", text: "first" },
+                { n: 1, ts: 0, stream: "stdout", text: "second" },
             ],
             totalLines: 2,
         });
@@ -50,8 +50,8 @@ describe("parseLogPage", () => {
     it("preserves stream and line-number gaps from sparse input", () => {
         const page = makePage({
             lines: [
-                { n: 3, stream: "stderr", text: "boom" },
-                { n: 7, stream: "stdout", text: "ok" },
+                { n: 3, ts: 0, stream: "stderr", text: "boom" },
+                { n: 7, ts: 0, stream: "stdout", text: "ok" },
             ],
             totalLines: 8,
         });

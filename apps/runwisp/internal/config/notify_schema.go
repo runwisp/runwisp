@@ -83,10 +83,10 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 
 	for _, r := range t.Routes {
 		out.Routes = append(out.Routes, NotificationRoute{
-			Kinds:        append([]string(nil), r.Match.Kinds...),
+			Kinds:        r.Match.Kinds,
 			MatchFailure: r.Match.Failure,
 			TaskGlob:     strings.TrimSpace(r.Match.Task),
-			NotifierID:   append([]string(nil), r.Notifiers...),
+			NotifierID:   r.Notifiers,
 		})
 	}
 
@@ -157,9 +157,9 @@ func buildNotifierSpecs(notifiers map[string]*notifierWire, out *NotifyConfig) e
 			Password:      n.Password,
 			From:          n.From,
 			ReplyTo:       n.ReplyTo,
-			Recipients:    append([]string(nil), n.To...),
-			CC:            append([]string(nil), n.CC...),
-			BCC:           append([]string(nil), n.BCC...),
+			Recipients:    n.To,
+			CC:            n.CC,
+			BCC:           n.BCC,
 
 			SendmailPath: n.SendmailPath,
 

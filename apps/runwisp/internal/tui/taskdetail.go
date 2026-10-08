@@ -87,17 +87,13 @@ func (d *TaskDetailDialog) View(screenWidth, screenHeight int) string {
 		lines = append(lines, desc...)
 	}
 	lines = append(lines, modalEmptyLine(innerWidth))
-	lines = append(lines, d.definitionRows(row, innerWidth)...)
+	lines = append(lines, d.definitionRows(row)...)
 	lines = append(lines,
 		modalEmptyLine(innerWidth),
-		taskDetailSectionLine("Recent health", innerWidth),
+		modalSectionLine("Recent health", innerWidth),
 	)
 	lines = append(lines, d.healthRows(row)...)
-	lines = append(lines,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine("i / esc close", innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
-	)
+	lines = append(lines, modalFooter("i / esc close", innerWidth)...)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorPrimary, lines)
 	return box.view
@@ -128,7 +124,7 @@ func (d *TaskDetailDialog) descriptionLines(innerWidth int) []string {
 // definitionRows renders the static task definition: kind, schedule, concurrency
 // and any dependencies/parameters. Each field is shown only when it carries
 // information, so a plain cron task stays compact.
-func (d *TaskDetailDialog) definitionRows(row func(label, value string, color color.Color) string, innerWidth int) []string {
+func (d *TaskDetailDialog) definitionRows(row func(label, value string, color color.Color) string) []string {
 	task := d.task
 	if task == nil {
 		return []string{row("", "definition unavailable", uikit.ColorTextMuted)}
@@ -229,11 +225,11 @@ func (d *TaskDetailDialog) healthRows(row func(label, value string, color color.
 		return append(out, row("", "no runs yet", uikit.ColorTextMuted))
 	}
 
-	breakdown := seg(fmt.Sprintf("%d ok", s.Success), uikit.ColorSuccess) +
-		seg(" · ", uikit.ColorTextMuted) +
-		seg(fmt.Sprintf("%d failed", s.Failed), failureColor(s.Failed))
+	breakdown := modalSeg(fmt.Sprintf("%d ok", s.Success), uikit.ColorSuccess) +
+		modalSeg(" · ", uikit.ColorTextMuted) +
+		modalSeg(fmt.Sprintf("%d failed", s.Failed), failureColor(s.Failed))
 	if s.Other > 0 {
-		breakdown += seg(fmt.Sprintf(" · %d other", s.Other), uikit.ColorTextMuted)
+		breakdown += modalSeg(fmt.Sprintf(" · %d other", s.Other), uikit.ColorTextMuted)
 	}
 	out = append(out, row(fmt.Sprintf("Last %d", s.Window), breakdown, uikit.ColorText))
 
@@ -299,25 +295,6 @@ func paramNames(params []model.TaskParam) []string {
 		names[i] = params[i].Key
 	}
 	return names
-}
-
-// seg renders a colored inline segment on the modal surface background so
-// composed health strings keep the dialog's fill behind each piece.
-func seg(text string, color color.Color) string {
-	return lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(color).
-		Render(text)
-}
-
-// taskDetailSectionLine renders a left-aligned bold section header inside the modal.
-func taskDetailSectionLine(title string, innerWidth int) string {
-	return lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorSecondary).
-		Bold(true).
-		Width(innerWidth).
-		Render(title)
 }
 
 // taskDetailRow renders a "label  value" line with a fixed label column. The

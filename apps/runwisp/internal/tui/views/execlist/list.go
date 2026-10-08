@@ -312,8 +312,8 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	}
 	// Truncate without padding: the badge's trailing fill must take the row
 	// background, not the badge color.
-	statusStr := uikit.TruncateToWidth(item.Run.DisplayStatus(), cw.status)
-	statusBadge := uikit.StatusStyle(statusStr).Render(statusStr)
+	status := item.Run.DisplayStatus()
+	statusBadge := uikit.StatusStyle(status).Render(uikit.TruncateToWidth(status, cw.status))
 	statPad := max(cw.status-uikit.VisibleWidth(statusBadge), 0)
 	statusCell := statusBadge + rowStyle.Render(strings.Repeat(" ", statPad))
 	count := 1
@@ -329,7 +329,7 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 			padCell(string(item.Run.TriggeredBy), cw.trigger))
 }
 
-func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, w, contentW int, cw colWidths, sb scrollbarRender) {
+func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, contentW int, cw colWidths, sb scrollbarRender) {
 	end := min(e.Scroll+vpH, n)
 	// contentW is w when no scrollbar shows and w-1 when it does; the scrollbar
 	// glyph is exactly one cell. So a row padded to contentW plus the scrollbar
@@ -437,7 +437,7 @@ func (e *ExecList) View() string {
 	if n == 0 {
 		e.renderEmptySection(&b, vpH, w)
 	} else {
-		e.renderDataSection(&b, vpH, n, w, contentW, cw, sb)
+		e.renderDataSection(&b, vpH, n, contentW, cw, sb)
 	}
 
 	var footerText string

@@ -397,7 +397,7 @@ func TestOpenRunByID_RunInWindowOpensExecView(t *testing.T) {
 	}
 	m.execWindow.UpsertRun(run)
 
-	_ = m.openRunByID("backup-db", "r-found")
+	_ = m.openRunByID("r-found")
 	if m.execView == nil {
 		t.Fatal("expected execView to be set when run is found in window")
 	}
@@ -413,9 +413,9 @@ func TestOpenRunByID_DeletedRunReportsNotFound(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(srv.Close)
 	m := newTestModel(nil)
-	m.client = apiclient.New(srv.URL, "")
+	m.streams.client = apiclient.New(srv.URL, "")
 
-	cmd := m.openRunByID("backup-db", "r-gone")
+	cmd := m.openRunByID("r-gone")
 	if cmd == nil {
 		t.Fatal("expected fetch cmd")
 	}

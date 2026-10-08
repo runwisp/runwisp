@@ -35,7 +35,7 @@ export interface AppEventStream {
     onError(handler: ErrorHandler): () => void;
     /**
      * Fires when the connection was created but has neither opened nor errored
-     * within {@link SSE_CONFIG.OPEN_TIMEOUT} — i.e. it is stuck CONNECTING,
+     * within {@link SSE_CONFIG.OPEN_TIMEOUT}, i.e. it is stuck CONNECTING,
      * almost always because the browser's per-origin connection cap is full.
      */
     onStall(handler: StallHandler): () => void;
@@ -53,7 +53,7 @@ interface EventManagerOptions {
      * Seeds the resume cursor for a freshly-opened connection, appended as
      * `?lastEventId=`. A same-EventSource reconnect resends `Last-Event-ID`
      * natively, but a brand-new EventSource (e.g. a promoted cross-tab leader)
-     * starts with an empty one — this lets it resume from the id the cohort last
+     * starts with an empty one, this lets it resume from the id the cohort last
      * saw so the server replays the handoff gap. Returns null for a fresh start.
      */
     initialLastEventId?: () => string | null;
@@ -75,7 +75,7 @@ export class EventManager implements AppEventStream {
     // subscribe()/unsubscribe() read+write a tracked source, so calling
     // subscribe() inside an $effect self-invalidated the effect into an
     // infinite subscribe/teardown loop that tore the EventSource down on every
-    // tick. Nothing reactively reads who is subscribed — keep these plain.
+    // tick. Nothing reactively reads who is subscribed, keep these plain.
     readonly #handlers = new HandlerRegistry();
     readonly #open = new Signal<[]>(this.#logger, "onOpen");
     readonly #error = new Signal<[SSEErrorInfo]>(this.#logger, "onError");
@@ -173,7 +173,7 @@ export class EventManager implements AppEventStream {
     }
 
     // A connect attempt that fires neither `open` nor `error` within the window
-    // is stalled — the browser is holding the request queued behind other
+    // is stalled, the browser is holding the request queued behind other
     // long-lived connections to this origin. We keep the EventSource pending
     // (the browser opens it once a slot frees, firing `open` → recovery) and
     // just surface the stall so the UI can explain it. No teardown, no

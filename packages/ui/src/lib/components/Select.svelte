@@ -21,7 +21,6 @@
     import { floating, isOutsideClick } from "../actions/floating.js";
     import { portal } from "../actions/portal.js";
     import { trapFocus } from "../actions/focusTrap.js";
-    import { generateUlid } from "@runwisp/common";
 
     type SelectSize = "sm" | "md" | "lg";
 
@@ -41,6 +40,8 @@
         onchange?: (value: unknown) => void;
     }
 
+    const uid = $props.id();
+
     let {
         value = $bindable(),
         options = [],
@@ -52,7 +53,7 @@
         error,
         hint,
         class: className = "",
-        id = `select-${generateUlid()}`,
+        id = `select-${uid}`,
         name,
         onchange,
         onsearch,

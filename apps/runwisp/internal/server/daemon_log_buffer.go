@@ -63,14 +63,6 @@ func (b *DaemonLogBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Lines returns the last n stored lines in chronological order.
-func (b *DaemonLogBuffer) Lines(n int) []string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	return b.linesLocked(n)
-}
-
 func (b *DaemonLogBuffer) linesLocked(n int) []string {
 	if n > b.count {
 		n = b.count
@@ -87,35 +79,19 @@ func (b *DaemonLogBuffer) linesLocked(n int) []string {
 	return result
 }
 
-// Subscribe returns a channel that receives new log lines as they arrive.
-// Call Unsubscribe with the returned ID to clean up.
-func (b *DaemonLogBuffer) Subscribe() (int, <-chan string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	return b.subscribeLocked()
-}
-
 // SubscribeWithBacklog atomically registers a subscriber and snapshots the
 // last n lines under a single lock acquisition, so no line written between
-// the two can be missed or double-delivered — unlike calling Lines then
-// Subscribe separately, which leaves a gap where a concurrent Write reaches
-// neither the snapshot nor (yet) a registered subscriber.
+// the two can be missed or double-delivered. Call Unsubscribe with the
+// returned ID to clean up.
 func (b *DaemonLogBuffer) SubscribeWithBacklog(n int) (int, []string, <-chan string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	backlog := b.linesLocked(n)
-	id, ch := b.subscribeLocked()
-	return id, backlog, ch
-}
-
-func (b *DaemonLogBuffer) subscribeLocked() (int, <-chan string) {
 	id := b.nextSubID
 	b.nextSubID++
 	ch := make(chan string, 64)
 	b.subscribers[id] = ch
-	return id, ch
+	return id, b.linesLocked(n), ch
 }
 
 // Unsubscribe removes a subscriber and closes its channel.

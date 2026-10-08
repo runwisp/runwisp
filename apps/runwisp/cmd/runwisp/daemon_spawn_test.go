@@ -113,6 +113,16 @@ func TestProcessAlive_PresentAndAlive(t *testing.T) {
 	assert.True(t, processAlive(os.Getpid(), filepath.Join(lockedDir, "daemon.pid")))
 }
 
+// TestProcessAlive_OtherUsersDaemon: a daemon running as another user (pid 1
+// stands in: it is root's, so signal 0 from an unprivileged test gets EPERM)
+// still exists, so a held PID-file lock must report it alive rather than let
+// stop/restart treat it as gone.
+func TestProcessAlive_OtherUsersDaemon(t *testing.T) {
+	lockedDir := t.TempDir()
+	writeLivePidFile(t, lockedDir)
+	assert.True(t, processAlive(1, filepath.Join(lockedDir, "daemon.pid")))
+}
+
 func TestProcessAlive_PresentButDead(t *testing.T) {
 	dir := t.TempDir()
 	pidPath := filepath.Join(dir, "pid")
@@ -337,7 +347,7 @@ func TestWaitForDaemon_SurfacesEmptyLogTailNote(t *testing.T) {
 	require.NoError(t, os.WriteFile(logPath, nil, 0o600))
 
 	client := apiclient.New("http://127.0.0.1:1", "")
-	err := waitForDaemon(client, logPath, 50*time.Millisecond, Flags{DataDir: dir})
+	err := waitForDaemon(client, 50*time.Millisecond, Flags{DataDir: dir})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timed out")
 }
@@ -363,7 +373,7 @@ func TestWaitForDaemon_SuccessDoesNotDumpLogTail(t *testing.T) {
 	go func() { _, _ = buf.ReadFrom(r); close(done) }()
 
 	client := apiclient.New(srv.URL, "")
-	waitErr := waitForDaemon(client, logPath, time.Second, Flags{DataDir: dir})
+	waitErr := waitForDaemon(client, time.Second, Flags{DataDir: dir})
 
 	w.Close()
 	os.Stderr = orig
@@ -380,7 +390,7 @@ func TestWaitForDaemon_PromotesBindFailureHint(t *testing.T) {
 	require.NoError(t, os.WriteFile(logPath, []byte("listen tcp 0.0.0.0:9477: bind: address already in use\n"), 0o600))
 
 	client := apiclient.New("http://127.0.0.1:1", "")
-	err := waitForDaemon(client, logPath, 50*time.Millisecond, Flags{DataDir: dir})
+	err := waitForDaemon(client, 50*time.Millisecond, Flags{DataDir: dir})
 	require.Error(t, err)
 	_, ok := isUserFacing(err)
 	assert.True(t, ok, "bind-failure must surface as a userFacingError")

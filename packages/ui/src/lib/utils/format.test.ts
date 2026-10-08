@@ -86,7 +86,7 @@ describe("formatRelativeTimeWithAbsolute", () => {
     it("uses time-only format (HH:MM) for dates within the same day", () => {
         const recent = new Date(Date.now() - 30 * 60_000).toISOString();
         const r = formatRelativeTimeWithAbsolute(recent);
-        // Same-day branch produces `relative (HH:MM)` — assert on the colon
+        // Same-day branch produces `relative (HH:MM)`, assert on the colon
         // that only appears inside the time format.
         expect(r).toMatch(/\(\d{1,2}:\d{2}\)$/);
     });
@@ -131,13 +131,13 @@ describe("formatRelativeTime", () => {
 
 describe("formatClockTime", () => {
     it("renders three numeric groups (hours, minutes, seconds)", () => {
-        // 24-hour h:m:s — the seconds component is what sets it apart from formatTimeHM.
+        // 24-hour h:m:s, the seconds component is what sets it apart from formatTimeHM.
         expect(numericGroups(formatClockTime("2026-06-22T17:15:02Z"))).toBe(3);
     });
 });
 
 describe("formatTimeHM", () => {
-    it("renders two numeric groups (hours, minutes) — no seconds", () => {
+    it("renders two numeric groups (hours, minutes), no seconds", () => {
         expect(numericGroups(formatTimeHM("2026-06-22T17:15:02Z"))).toBe(2);
     });
 });

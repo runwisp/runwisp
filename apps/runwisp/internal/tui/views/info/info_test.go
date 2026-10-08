@@ -35,16 +35,18 @@ func TestRenderSparkline(t *testing.T) {
 }
 
 func TestAppendCapped(t *testing.T) {
-	s := appendCapped(nil, 1.0, 3)
-	assert.Equal(t, []float64{1.0}, s)
+	var s []float64
+	for i := range maxHistorySamples {
+		s = appendCapped(s, float64(i))
+	}
+	assert.Len(t, s, maxHistorySamples)
+	assert.Equal(t, 0.0, s[0])
 
-	s = appendCapped(s, 2.0, 3)
-	s = appendCapped(s, 3.0, 3)
-	assert.Equal(t, []float64{1.0, 2.0, 3.0}, s)
-
-	// Adding a 4th element should evict the first.
-	s = appendCapped(s, 4.0, 3)
-	assert.Equal(t, []float64{2.0, 3.0, 4.0}, s)
+	// One more evicts the oldest.
+	s = appendCapped(s, float64(maxHistorySamples))
+	assert.Len(t, s, maxHistorySamples)
+	assert.Equal(t, 1.0, s[0])
+	assert.Equal(t, float64(maxHistorySamples), s[maxHistorySamples-1])
 }
 
 func TestInfoView_ScrollUp_ScrollDown(t *testing.T) {

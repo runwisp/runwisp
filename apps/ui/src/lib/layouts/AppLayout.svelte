@@ -9,14 +9,14 @@
         Menu,
         PanelLeftClose,
         PanelLeftOpen,
+        RadioTower,
         Search,
+        ShieldOff,
         X,
     } from "@lucide/svelte";
     import { type Snippet, type Component, flushSync, tick } from "svelte";
     import { resolve } from "$app/paths";
     import { page } from "$app/stores";
-    import AuthDisabledBadge from "$lib/components/AuthDisabledBadge.svelte";
-    import StationModeBadge from "$lib/components/StationModeBadge.svelte";
     import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
     import FeedbackCard from "$lib/components/FeedbackCard.svelte";
     import HeaderSearch from "$lib/components/HeaderSearch.svelte";
@@ -24,24 +24,27 @@
     import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
     import TaskScheduleChip from "$lib/components/TaskScheduleChip.svelte";
     import TaskUsage from "$lib/components/TaskUsage.svelte";
-    import { headerSearchStore, systemStore } from "$lib/stores";
-    import { showScheduleChip } from "$lib/utils/task-schedule";
+    import { authStore, headerSearchStore, systemStore } from "$lib/stores";
+    import { showScheduleChip } from "$lib/utils/task";
     import { StoredFlag } from "$lib/utils/stored-flag.svelte";
-    import { ThemeToggle, Logo, Heading } from "@runwisp/ui";
+    import { Badge, ThemeToggle, Logo, Heading } from "@runwisp/ui";
     import type { Task } from "@runwisp/common";
 
     let {
         activePage,
+        activeTaskName,
         activeTask,
         tasks = [],
         tasksLoading = false,
         children,
     }: {
+        /** "overview", "runs", or "" (task pages are identified by activeTaskName). */
         activePage: string;
+        /** The task name in the open task page's URL, if any. */
+        activeTaskName?: string | undefined;
         /** The task whose detail page is open, if any. */
         activeTask?: Task | undefined;
         tasks?: {
-            id: string;
             name: string;
             group?: string;
             icon: Component;
@@ -144,6 +147,7 @@
     <!-- eslint-disable svelte/no-navigation-without-resolve -->
     <a
         {href}
+        aria-current={active ? "page" : undefined}
         use:registerFirstLink={first}
         class="group flex items-center gap-3 rounded-[3px] px-3 py-2 font-mono text-sm font-medium {active
             ? 'bg-primary-soft text-primary-soft-text'
@@ -179,7 +183,7 @@
             ? 'translate-x-0'
             : '-translate-x-full'} {sidebarHidden.current ? 'lg:hidden 3xl:flex' : ''}"
     >
-        <!-- Brand — the same lockup as the website nav: teal mark at 21px,
+        <!-- Brand, the same lockup as the website nav: teal mark at 21px,
              wordmark in the body sans at 700. Brand voice, not chrome, so it
              deliberately stays out of the mono. -->
         <div class="flex h-[52px] items-center gap-[9px] border-b border-outline px-5">
@@ -236,10 +240,10 @@
                         {group.name}
                     </div>
                     <nav class="mb-2 space-y-0.5">
-                        {#each group.tasks as task (task.id)}
+                        {#each group.tasks as task (task.name)}
                             {@render navLink(
                                 resolve(`/tasks/${task.name}`),
-                                activePage === task.id,
+                                task.name === activeTaskName,
                                 task.icon,
                                 task.name,
                             )}
@@ -253,10 +257,10 @@
                     Tasks
                 </div>
                 <nav class="mb-8 space-y-0.5">
-                    {#each tasks as task (task.id)}
+                    {#each tasks as task (task.name)}
                         {@render navLink(
                             resolve(`/tasks/${task.name}`),
-                            activePage === task.id,
+                            task.name === activeTaskName,
                             task.icon,
                             task.name,
                         )}
@@ -317,7 +321,7 @@
                     </span>
                 {:else}
                     <span class="font-mono font-semibold text-on-surface capitalize"
-                        >{activePage.replace("task_", "").replace(/_/g, " ")}</span
+                        >{activeTaskName ?? activePage}</span
                     >
                 {/if}
             </div>
@@ -355,8 +359,30 @@
                         <Search size={18} />
                     </button>
                 {/if}
-                <StationModeBadge />
-                <AuthDisabledBadge />
+                {#if systemStore.stationEnabled}
+                    <Badge
+                        variant="info"
+                        class="shrink-0"
+                        tooltip="This runner is managed by RunWisp Station. Scheduling and dispatch happen in the station; this page shows what runs on this machine."
+                        tooltipPosition="bottom"
+                    >
+                        <RadioTower size={12} class="shrink-0" />
+                        <span class="hidden sm:inline md:@max-5xl:hidden">RunWisp Station</span>
+                    </Badge>
+                {/if}
+                <!-- Persistent on purpose: a daemon running with RUNWISP_AUTH=off
+                     must never be mistaken for a secured instance. -->
+                {#if authStore.current.loaded && !authStore.current.required}
+                    <Badge
+                        variant="warning"
+                        class="shrink-0"
+                        tooltip="RUNWISP_AUTH=off is set: the API and Web UI are reachable without a password. Local/dev use only."
+                        tooltipPosition="bottom"
+                    >
+                        <ShieldOff size={12} class="shrink-0" />
+                        <span class="hidden sm:inline md:@max-5xl:hidden">Auth disabled</span>
+                    </Badge>
+                {/if}
                 <ThemeToggle />
                 <NotificationBell />
             </div>

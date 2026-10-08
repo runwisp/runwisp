@@ -308,18 +308,3 @@ func noConfigError(path string) error {
 			"  - Or run `runwisp demo` to explore a fully-populated instance without writing one",
 	}
 }
-
-// authRateLimitedError is returned when the daemon's auth rate limiter
-// rejects our login attempt. The window and limit are exported constants in
-// the server package, but we avoid importing them here to keep this file
-// self-contained — the numbers match MaxAuthAttempts / AuthRateWindow.
-func authRateLimitedError(port int) error {
-	return &userFacingError{
-		title: fmt.Sprintf("too many authentication attempts against the daemon on port %d", port),
-		details: "The daemon temporarily blocks further login attempts from your IP after repeated failures.\n" +
-			"To resolve this, you can:\n" +
-			"  - Wait a few minutes and try again\n" +
-			"  - Set RUNWISP_PASSWORD to the correct password before retrying\n" +
-			"  - Stop and restart the daemon if you have lost the password",
-	}
-}

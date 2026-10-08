@@ -44,10 +44,7 @@ func TestNew_MigratesToHead(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	sdb, ok := db.(*SQLiteDatabase)
-	require.True(t, ok)
-
-	require.Equal(t, headVersion(t), readUserVersion(t, sdb.db))
+	require.Equal(t, headVersion(t), readUserVersion(t, db.db))
 }
 
 func TestRunMigrations_IsIdempotent(t *testing.T) {

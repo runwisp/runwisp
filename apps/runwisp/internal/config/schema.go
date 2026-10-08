@@ -336,11 +336,5 @@ type Storage struct {
 	MinFreeSpace int64
 }
 
-// IsStationDispatchEnabled reports whether the daemon accepts peer-dispatched
-// ad-hoc shell, container, or compose runs.
-func (cfg *Config) IsStationDispatchEnabled() bool {
-	return cfg.Daemon.AllowStationDispatch
-}
-
 // MaxServiceInstances caps the number of instances a single service can request.
 const MaxServiceInstances = 64

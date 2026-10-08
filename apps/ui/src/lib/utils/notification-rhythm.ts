@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// keep parity with apps/runwisp/internal/tui/rhythm/rhythm.go
 import { relative } from "./format-time";
 
 interface RhythmInput {
@@ -18,10 +17,8 @@ const WEEK_MS = 7 * DAY_MS;
 const MONTH_MS = 30 * DAY_MS;
 
 /**
- * Mirrors `Phrase()` in `internal/notify/render/rhythm.go`. Order of rules
- * matters; the first match wins. Keep the two implementations in sync — the
- * parity test in `notification-rhythm.test.ts` verifies vector-equivalence
- * with the Go side.
+ * Order of rules matters; the first match wins. `notification-rhythm.test.ts`
+ * pins the output against __rhythm_vectors.json.
  */
 export function phrase(input: RhythmInput): string {
     const now = input.now ?? new Date();
@@ -50,8 +47,7 @@ export function phrase(input: RhythmInput): string {
 const BLOCKS = "▁▂▃▄▅▆▇█";
 
 /**
- * Mirrors `Sparkline()` in `internal/notify/render/rhythm.go`. Buckets the
- * occurrences by age relative to `now`, over the supplied window. Returns a
+ * Buckets the occurrences by age relative to `now`, over the supplied window. Returns a
  * fixed-length string of unicode block characters; heavy on the right means a
  * recent burst.
  */

@@ -21,8 +21,7 @@
     import { createRunSelection } from "$lib/utils/run-selection.svelte";
     import { HistoryRail } from "$lib/utils/history-rail.svelte";
     import ParamForm from "./ParamForm.svelte";
-    import { taskInstanceCount } from "./instance-count";
-    import { isServiceStopped } from "./service-control";
+    import { isServiceStopped, taskInstanceCount } from "$lib/utils/task";
 
     let {
         task,
@@ -80,17 +79,11 @@
         initialRunId?: string | null;
         initialHighlightLine?: number | null;
         selectRunId?: string | null;
-        // True when the deep-linked run id (initialRunId) was fetched and doesn't
-        // exist under this task — surfaces a "not found" panel instead of quietly
-        // falling back to the running/newest run under a dead URL.
+        // The deep-linked run was fetched and doesn't exist.
         runNotFound?: boolean;
-        // True while the deep-linked run (initialRunId) is being fetched because
-        // it isn't in the loaded list yet. Holds the detail panel on a loading
-        // state rather than flashing another run first.
+        // The deep-linked run is still being fetched; the panel holds on loading.
         runPending?: boolean;
-        // Notified whenever the user picks a run (click or freshly triggered),
-        // so the route can mirror it into the address bar. The auto-fallback
-        // selection (newest/running) is deliberately not reported.
+        // Reports explicit picks (not the auto-fallback) so the URL can mirror them.
         onSelectRun?: (runId: string | null) => void;
     } = $props();
 
@@ -108,7 +101,7 @@
     let runParamsValid = $state(true);
     const taskParams = $derived(task.parameters ?? []);
     const hasParams = $derived(taskParams.length > 0);
-    // The Run modal only needs a body when there's something to show — the
+    // The Run modal only needs a body when there's something to show, the
     // concurrency warning or the parameter form. Passing `children`
     // conditionally keeps Modal from rendering an empty padded band otherwise.
     const showRunBody = $derived(concurrencyReached || (hasParams && confirmOpen));
@@ -116,7 +109,7 @@
     // Seed values for the Run modal's parameter form: null = start from the
     // task defaults ("Run"); a prior run's params = pre-fill from it ("Run
     // again"). `runFormSeq` keys the form so each open (or a reset) re-mounts
-    // it and re-seeds — ParamForm captures its values once at construction.
+    // it and re-seeds, ParamForm captures its values once at construction.
     let runSeed = $state<Record<string, string | null> | null>(null);
     let runFormSeq = $state(0);
 
@@ -148,7 +141,7 @@
     let outputSearchSeq = 0;
     // The query most recently handed to the search. While the live header query
     // is ahead of it (mid-type, inside the header's debounce) the search counts
-    // as pending even though no request has fired — keeps the rail in its
+    // as pending even though no request has fired, keeps the rail in its
     // searching state instead of flashing stale results.
     let lastDispatched = $state("");
 
@@ -167,7 +160,7 @@
         // previous query's results, while this one is in flight.
         outputMatches = null;
         try {
-            const res = await tasksApi.searchLogs(task.name, {
+            const hits = await tasksApi.searchLogs(task.name, {
                 q: query,
                 regex: false,
                 case: false,
@@ -175,7 +168,7 @@
             });
             if (seq !== outputSearchSeq) return; // a newer query superseded this one
             const map = new SvelteMap<string, RunOutputMatch>();
-            for (const hit of res.items) {
+            for (const hit of hits) {
                 if (!map.has(hit.runId)) map.set(hit.runId, { line: hit.n, text: hit.text });
             }
             outputMatches = map;
@@ -224,17 +217,22 @@
         onOptimisticRemove: (ids) => onOptimisticRemove(ids),
         onOptimisticRestore: (runs) => onOptimisticRestore(runs),
         preferRunning: true,
+        getSelectRunId: () => selectRunId,
+        // A run named from outside the list (a notification link, a run just
+        // triggered) is picked too, so a phone shows it rather than the list.
+        onSeeded: () => rail.picked(),
+        onSelectRun: (id) => onSelectRun?.(id),
     });
 
-    // A run can always be *triggered* — at max concurrency it queues (the modal
+    // A run can always be *triggered*, at max concurrency it queues (the modal
     // says so), so concurrency must not gate the button, only its warning.
     // Disabled only when the task forbids API triggering or a trigger is mid-flight.
-    const runTriggerable = $derived(!taskIsService && (task.manualTrigger ?? true) && !triggering);
+    const runTriggerable = $derived(!taskIsService && task.manualTrigger && !triggering);
 
     // manualTrigger means something different on a service: whether it can be
     // stopped/restarted from here at all, rather than run-triggered. false
     // locks it to its restart policy until a runwisp.toml edit + reload.
-    const serviceControllable = $derived(taskIsService && (task.manualTrigger ?? true));
+    const serviceControllable = $derived(taskIsService && task.manualTrigger);
     const serviceStopped = $derived(isServiceStopped(task));
 
     // In station mode the station owns scheduling/dispatch; triggering here is the
@@ -252,31 +250,9 @@
     let highlightLine = $state<number | null>(null);
 
     $effect(() => {
-        if (initialHighlightLine !== null && initialHighlightLine !== undefined) {
+        if (initialHighlightLine !== null) {
             highlightLine = initialHighlightLine;
         }
-    });
-
-    // A run named from outside the list (a notification link, a run just
-    // triggered) is picked too, so a phone shows it rather than the list.
-    $effect(() => {
-        if (!initialRunId) return;
-        selection.userSelectedRunId = initialRunId;
-        rail.picked();
-    });
-
-    $effect(() => {
-        if (!selectRunId) return;
-        selection.userSelectedRunId = selectRunId;
-        rail.picked();
-    });
-
-    // Report explicit selections upward so the URL can mirror the run on screen.
-    // Must stay after the seed effects above: on the first flush they run in
-    // declaration order, so userSelectedRunId is already seeded from the deep
-    // link when this reports — otherwise the initial null would clobber it.
-    $effect(() => {
-        onSelectRun?.(selection.userSelectedRunId);
     });
 
     // Filters are applied server-side, so an empty list under a filter means

@@ -91,11 +91,11 @@ func TestAuthenticate(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "my-password")
-	assert.False(t, c.IsAuthenticated())
+	assert.Empty(t, c.Token())
 
 	err := c.Authenticate(t.Context())
 	require.NoError(t, err)
-	assert.True(t, c.IsAuthenticated())
+	assert.Equal(t, "jwt-token-xyz", c.Token())
 }
 
 func TestSetTokenSkipsHandshake(t *testing.T) {
@@ -116,7 +116,6 @@ func TestSetTokenSkipsHandshake(t *testing.T) {
 
 	c := New(srv.URL, "")
 	c.SetToken("cached-jwt")
-	assert.True(t, c.IsAuthenticated())
 	assert.Equal(t, "cached-jwt", c.Token())
 
 	run, err := c.TriggerRun(t.Context(), "my-task", nil, "")
@@ -218,26 +217,6 @@ func TestListRuns(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, runs, 2)
 	assert.Equal(t, int64(42), total)
-}
-
-func TestListRunsByTask(t *testing.T) {
-	resp := server.RunsResponseBody{
-		Items: []model.Run{{ID: "run-1"}},
-		Total: 1,
-	}
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/runs", r.URL.Path)
-		assert.Equal(t, "my-task", r.URL.Query().Get("taskName"))
-		json.NewEncoder(w).Encode(resp)
-	}))
-	defer srv.Close()
-
-	c := New(srv.URL, "")
-	runs, total, err := c.ListRunsByTask(t.Context(), "my-task", RunsParams{})
-	require.NoError(t, err)
-	assert.Len(t, runs, 1)
-	assert.Equal(t, int64(1), total)
 }
 
 func TestTriggerRun(t *testing.T) {
@@ -412,7 +391,6 @@ func TestBaseURL(t *testing.T) {
 func TestNewUnix_LocalShortCircuitsAuth(t *testing.T) {
 	c := NewUnix("/tmp/runwisp-test.sock")
 	assert.True(t, c.local, "NewUnix client must be flagged as local")
-	assert.True(t, c.IsAuthenticated(), "local client must report authenticated before any call")
 	// Authenticate is a no-op on the local path; it must not error even
 	// without a daemon at the socket path.
 	require.NoError(t, c.Authenticate(t.Context()))

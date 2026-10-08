@@ -14,7 +14,7 @@
     import type { Task } from "@runwisp/common";
     import { tasksApi } from "$lib/api";
     import { systemStore, taskStore } from "$lib/stores";
-    import { canTogglePause } from "$lib/utils/task-schedule";
+    import { canTogglePause } from "$lib/utils/task";
     import { UNDO_MS } from "$lib/utils/run-actions";
 
     let { task }: { task: Task } = $props();

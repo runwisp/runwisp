@@ -71,35 +71,12 @@ type RunRepository interface {
 	Close() error
 }
 
-// ConfigRepository stores and retrieves named daemon configuration values.
-type ConfigRepository interface {
-	GetConfigValue(ctx context.Context, key string) (string, bool, error)
-	SetConfigValue(ctx context.Context, key, value string) error
-}
-
 // PendingLogUploadRepository persists dispatch metadata so the daemon can
 // resume terminal log archival after a crash.
 type PendingLogUploadRepository interface {
 	UpsertPendingLogUpload(ctx context.Context, rec model.PendingLogUpload) error
 	DeletePendingLogUpload(ctx context.Context, executionID string) error
 	ListPendingLogUploads(ctx context.Context) ([]model.PendingLogUpload, error)
-}
-
-// TaskPauseRepository persists operator pauses of a task's cron schedule so a
-// pause survives a daemon restart (see runtime.Scheduler.Pause).
-type TaskPauseRepository interface {
-	PauseTaskSchedule(ctx context.Context, taskName string, at time.Time) error
-	ResumeTaskSchedule(ctx context.Context, taskName string, at time.Time) error
-	ListPausedTaskSchedules(ctx context.Context) (map[string]time.Time, error)
-}
-
-// Database is the full persistent store for the daemon: runs + configuration + notifications.
-type Database interface {
-	RunRepository
-	ConfigRepository
-	NotificationRepository
-	PendingLogUploadRepository
-	TaskPauseRepository
 }
 
 // SQLiteDatabase wraps persistence concerns for runs and configuration.
@@ -112,7 +89,7 @@ type SQLiteDatabase struct {
 
 // New opens the SQLite database and applies any pending forward-only
 // migrations (see migrate.go).
-func New(dbPath string) (Database, error) {
+func New(dbPath string) (*SQLiteDatabase, error) {
 	// modernc.org/sqlite's default time.Time write format is Go's
 	// time.Time.String() (e.g. "2026-08-22 14:39:12.06 +0200 CEST"): a
 	// trailing zone-name abbreviation SQLite's own date/time functions

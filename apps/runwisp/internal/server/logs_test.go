@@ -53,7 +53,7 @@ func TestParseResumeID(t *testing.T) {
 
 // logsTestServer wires a Server with just the fields the log handlers need:
 // a real in-memory SQLite RunRepository and a temp logDir on disk.
-func logsTestServer(t *testing.T) (*Server, storage.Database, string) {
+func logsTestServer(t *testing.T) (*Server, *storage.SQLiteDatabase, string) {
 	t.Helper()
 	db, err := storage.New(":memory:")
 	require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestHumaGetLogRaw_MissingBothFilesIsEmpty(t *testing.T) {
 
 // TestHumaGetLogRaw_StreamsFullContent: unlike the JSON page
 // (LogPageMaxLimit), the SSE replay (replayLimit), or search
-// (LogSearchMaxLimit), /log/raw has no size cap and must return the entire
+// (logsearch.MaxHitsCeiling), /log/raw has no size cap and must return the entire
 // file untruncated no matter how large it is (see streamRawLog).
 func TestHumaGetLogRaw_StreamsFullContent(t *testing.T) {
 	srv, db, _ := logsTestServer(t)

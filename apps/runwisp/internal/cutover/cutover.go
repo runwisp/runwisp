@@ -48,8 +48,6 @@ type Deps struct {
 	// unlock that lets a cutover start from nothing. Defaults to
 	// config.ScanCronSources.
 	Scan func(patterns []string, cfgPath string) config.CronScan
-	// Load reads an existing config. Defaults to config.Load.
-	Load func(path string) (*config.Config, error)
 	// Trusted checks that an existing config is safe to bake into a root-run
 	// unit. Defaults to a config.AssertFileTrusted wrapper.
 	Trusted func(path string) error
@@ -72,32 +70,23 @@ type Deps struct {
 	DaemonRunning func() bool
 	// Reload hands the held jobs to a daemon that was already running.
 	Reload func(ctx context.Context) error
-}
 
-// Options are the operator's answers that aren't part of the unit description.
-// --yes and --force are absent on purpose: the first lives in the Prompter, the
-// second on Opts.
-type Options struct {
 	// AllowSkippedCronJobs proceeds even though some cron sources won't load.
 	// Those jobs stay stopped.
 	AllowSkippedCronJobs bool
 }
 
-// Cutover binds the deps to the operator's options. Plan stays a pure value with
-// no behaviour, so it can be rendered by a surface that cannot execute it.
+// Cutover binds the deps. Plan stays a pure value with no behaviour, so it can
+// be rendered by a surface that cannot execute it.
 type Cutover struct {
 	deps Deps
-	opts Options
 }
 
 // New fills in the production defaults for any seam the caller left nil, so a
 // caller only overrides what it actually needs to fake.
-func New(deps Deps, opts Options) *Cutover {
+func New(deps Deps) *Cutover {
 	if deps.Scan == nil {
 		deps.Scan = config.ScanCronSources
-	}
-	if deps.Load == nil {
-		deps.Load = config.Load
 	}
 	if deps.Trusted == nil {
 		deps.Trusted = func(path string) error {
@@ -115,7 +104,7 @@ func New(deps Deps, opts Options) *Cutover {
 	if deps.Username == "" {
 		deps.Username = CurrentUsername()
 	}
-	return &Cutover{deps: deps, opts: opts}
+	return &Cutover{deps: deps}
 }
 
 // CurrentUsername looks up the account running this process, for

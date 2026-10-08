@@ -25,14 +25,15 @@ import (
 type fakeDaemon struct {
 	authRequired bool
 	password     string
-	statusCode   int // when non-zero, /api/auth/status returns this status
-	challengeErr int // when non-zero, /api/auth/challenge returns this status
+	statusCode   int  // when non-zero, /api/auth/status returns this status
+	challengeErr int  // when non-zero, /api/auth/challenge returns this status
+	tls          bool // serve HTTPS with httptest's self-signed cert
 }
 
 func (d fakeDaemon) start(t *testing.T) *httptest.Server {
 	t.Helper()
 	const nonce = "test-nonce"
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/health":
 			w.WriteHeader(http.StatusOK)
@@ -62,6 +63,11 @@ func (d fakeDaemon) start(t *testing.T) *httptest.Server {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
+	if d.tls {
+		srv.StartTLS()
+	} else {
+		srv.Start()
+	}
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -101,7 +107,7 @@ func TestRunTUIViaRemote_Unreachable(t *testing.T) {
 	isolatedTokenCache(t)
 	// Nothing is listening on this port, so the health probe must fail fast and
 	// surface an unreachable-daemon error rather than an auth error.
-	err := runTUIViaRemote(t.Context(), "http://127.0.0.1:1", Flags{})
+	err := runTUIViaRemote(t.Context(), "http://127.0.0.1:1", "")
 	require.Error(t, err)
 	var ufe *userFacingError
 	require.ErrorAs(t, err, &ufe)
@@ -111,7 +117,7 @@ func TestRunTUIViaRemote_Unreachable(t *testing.T) {
 func TestRunTUIViaRemote_AuthStatusError(t *testing.T) {
 	isolatedTokenCache(t)
 	srv := fakeDaemon{statusCode: http.StatusInternalServerError}.start(t)
-	err := runTUIViaRemote(t.Context(), srv.URL, Flags{})
+	err := runTUIViaRemote(t.Context(), srv.URL, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "check authentication status")
 }
@@ -122,18 +128,36 @@ func TestRunTUIViaRemote_NoAuthReachesTUILaunch(t *testing.T) {
 	// A RUNWISP_AUTH=off daemon needs no password: the bootstrap should sail past
 	// auth and into the shared launch path, which declines here because the test
 	// process has no interactive terminal.
-	err := runTUIViaRemote(t.Context(), srv.URL, Flags{})
+	err := runTUIViaRemote(t.Context(), srv.URL, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no interactive terminal")
 }
 
+// TestRunTUIViaRemote_PinsCert guards that tui --url trusts a self-signed
+// daemon cert the same way run --url does: first contact records the pin, and
+// a changed cert is refused with the known-hosts guidance.
+func TestRunTUIViaRemote_PinsCert(t *testing.T) {
+	isolatedTokenCache(t)
+	srv := fakeDaemon{tls: true}.start(t)
+
+	err := runTUIViaRemote(t.Context(), srv.URL, "")
+	require.ErrorContains(t, err, "no interactive terminal", "first contact must trust and pin the self-signed cert")
+	_, pinned := certPinStore{}.Load(srv.URL)
+	require.True(t, pinned)
+
+	certPinStore{}.Store(srv.URL, "0000")
+	err = runTUIViaRemote(t.Context(), srv.URL, "")
+	var ufe *userFacingError
+	require.ErrorAs(t, err, &ufe)
+	assert.Contains(t, ufe.title, "TLS certificate")
+}
+
 func TestRunTUIViaRemote_EnvPasswordAuthenticates(t *testing.T) {
 	isolatedTokenCache(t)
-	t.Setenv("RUNWISP_PASSWORD", "s3cret")
 	srv := fakeDaemon{authRequired: true, password: "s3cret"}.start(t)
 	// CHAP succeeds with the env password, then the launch path declines for lack
 	// of a terminal — proving the whole authenticate-then-launch chain ran.
-	err := runTUIViaRemote(t.Context(), srv.URL, Flags{})
+	err := runTUIViaRemote(t.Context(), srv.URL, "s3cret")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no interactive terminal")
 }
@@ -144,7 +168,7 @@ func TestAuthenticateRemoteTUI_UsesCachedToken(t *testing.T) {
 	// Seed the cache so authentication short-circuits without any network call.
 	storeCachedToken(baseURL, "cached-jwt")
 
-	client, err := authenticateRemoteTUI(t.Context(), baseURL)
+	client, err := authenticateRemoteTUI(t.Context(), baseURL, "")
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	assert.Equal(t, "cached-jwt", client.Token())
@@ -152,10 +176,9 @@ func TestAuthenticateRemoteTUI_UsesCachedToken(t *testing.T) {
 
 func TestAuthenticateRemoteTUI_EnvPasswordStoresToken(t *testing.T) {
 	isolatedTokenCache(t)
-	t.Setenv("RUNWISP_PASSWORD", "s3cret")
 	srv := fakeDaemon{authRequired: true, password: "s3cret"}.start(t)
 
-	client, err := authenticateRemoteTUI(t.Context(), srv.URL)
+	client, err := authenticateRemoteTUI(t.Context(), srv.URL, "s3cret")
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	assert.Equal(t, "fake-jwt", client.Token())
@@ -165,10 +188,9 @@ func TestAuthenticateRemoteTUI_EnvPasswordStoresToken(t *testing.T) {
 
 func TestAuthenticateRemoteTUI_WrongEnvPasswordFails(t *testing.T) {
 	isolatedTokenCache(t)
-	t.Setenv("RUNWISP_PASSWORD", "wrong")
 	srv := fakeDaemon{authRequired: true, password: "right"}.start(t)
 
-	_, err := authenticateRemoteTUI(t.Context(), srv.URL)
+	_, err := authenticateRemoteTUI(t.Context(), srv.URL, "wrong")
 	require.Error(t, err)
 	var ufe *userFacingError
 	require.ErrorAs(t, err, &ufe)
@@ -177,10 +199,9 @@ func TestAuthenticateRemoteTUI_WrongEnvPasswordFails(t *testing.T) {
 
 func TestAuthenticateRemoteTUI_RateLimited(t *testing.T) {
 	isolatedTokenCache(t)
-	t.Setenv("RUNWISP_PASSWORD", "s3cret")
 	srv := fakeDaemon{authRequired: true, password: "s3cret", challengeErr: http.StatusTooManyRequests}.start(t)
 
-	_, err := authenticateRemoteTUI(t.Context(), srv.URL)
+	_, err := authenticateRemoteTUI(t.Context(), srv.URL, "s3cret")
 	require.Error(t, err)
 	var ufe *userFacingError
 	require.ErrorAs(t, err, &ufe)
@@ -189,10 +210,9 @@ func TestAuthenticateRemoteTUI_RateLimited(t *testing.T) {
 
 func TestAuthenticateRemoteTUI_TransientServerError(t *testing.T) {
 	isolatedTokenCache(t)
-	t.Setenv("RUNWISP_PASSWORD", "s3cret")
 	srv := fakeDaemon{authRequired: true, password: "s3cret", challengeErr: http.StatusInternalServerError}.start(t)
 
-	_, err := authenticateRemoteTUI(t.Context(), srv.URL)
+	_, err := authenticateRemoteTUI(t.Context(), srv.URL, "s3cret")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authenticate with")
 }
@@ -203,7 +223,7 @@ func TestAuthenticateRemoteTUI_NonInteractiveNoPasswordFails(t *testing.T) {
 	// there is nowhere to read a password from, so this is a hard error.
 	srv := fakeDaemon{authRequired: true, password: "s3cret"}.start(t)
 
-	_, err := authenticateRemoteTUI(t.Context(), srv.URL)
+	_, err := authenticateRemoteTUI(t.Context(), srv.URL, "")
 	require.Error(t, err)
 	var ufe *userFacingError
 	require.ErrorAs(t, err, &ufe)

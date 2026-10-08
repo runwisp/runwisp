@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"log/slog"
@@ -24,14 +23,7 @@ func runDefault(ctx context.Context, f Flags) error {
 	client := apiclient.NewUnix(localAPISocketPath(f))
 
 	if client.HealthCheck(ctx) == nil {
-		err := runTUIConnect(ctx, client, f, tui.DaemonAttached)
-		if err == nil {
-			return nil
-		}
-		if errors.Is(err, apiclient.ErrRateLimited) {
-			return authRateLimitedError(f.Port)
-		}
-		return err
+		return runTUIConnect(ctx, client, f, tui.DaemonAttached)
 	}
 
 	// Spawn a background daemon or handle port conflicts.
@@ -44,9 +36,8 @@ func runDefault(ctx context.Context, f Flags) error {
 	// this data dir and started it — spawning a second one here would fight it for
 	// the port and the SQLite file. Wait for the one systemd started (which is a
 	// health poll, not a spawn) and attach to it.
-	logPath := filepath.Join(f.DataDir, "daemon.log")
 	if serviceInstalled {
-		if err := waitForDaemon(client, logPath, 30*time.Second, f); err != nil {
+		if err := waitForDaemon(client, 30*time.Second, f); err != nil {
 			return err
 		}
 		return runTUIConnect(ctx, client, f, tui.DaemonAttached)
@@ -57,15 +48,21 @@ func runDefault(ctx context.Context, f Flags) error {
 		return portErr
 	}
 
-	if err := spawnDaemon(f, false); err != nil {
+	return spawnAndAttach(ctx, client, f, modeStandalone)
+}
+
+// spawnAndAttach spawns a detached daemon in mode, waits for it to come up and
+// attaches the TUI to it. When the spawn itself fails, it runs the daemon
+// inline instead.
+func spawnAndAttach(ctx context.Context, client *apiclient.Client, f Flags, mode daemonMode) error {
+	if err := spawnDaemon(f, mode == modeStation); err != nil {
 		slog.Warn("Failed to spawn background daemon, running inline", "err", err)
-		return runDaemon(modeStandalone, f, false)
+		return runDaemon(mode, f, false)
 	}
 
-	if err := waitForDaemon(client, logPath, 10*time.Second, f); err != nil {
+	if err := waitForDaemon(client, 10*time.Second, f); err != nil {
 		return err
 	}
-
 	return runTUIConnect(ctx, client, f, tui.DaemonStarted)
 }
 

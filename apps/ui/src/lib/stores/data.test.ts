@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { describe, expect, it, vi } from "vitest";
-import { AuthRequiredError } from "$lib/api";
 import { createTaskStore } from "./data.svelte";
 import type { Task } from "@runwisp/common";
 
@@ -14,7 +13,7 @@ describe("TaskStore.loadIfNeeded", () => {
     it("populates items and marks loaded on success", async () => {
         const store = createTaskStore({
             getTasks: () => Promise.resolve(tasks),
-            reportFetchError: () => false,
+            fetchErrorMessage: () => null,
             notifyError: () => {},
         });
 
@@ -28,7 +27,7 @@ describe("TaskStore.loadIfNeeded", () => {
         const getTasks = vi.fn(() => Promise.resolve(tasks));
         const store = createTaskStore({
             getTasks,
-            reportFetchError: () => false,
+            fetchErrorMessage: () => null,
             notifyError: () => {},
         });
 
@@ -42,7 +41,7 @@ describe("TaskStore.loadIfNeeded", () => {
         const notifyError = vi.fn();
         const store = createTaskStore({
             getTasks: () => Promise.reject(new Error("network down")),
-            reportFetchError: () => true,
+            fetchErrorMessage: () => "Connection lost",
             notifyError,
         });
 
@@ -56,7 +55,7 @@ describe("TaskStore.loadIfNeeded", () => {
         let fail = true;
         const store = createTaskStore({
             getTasks: () => (fail ? Promise.reject(new Error("boom")) : Promise.resolve([])),
-            reportFetchError: () => false,
+            fetchErrorMessage: (err, fallback) => (err instanceof Error ? err.message : fallback),
             notifyError: vi.fn(),
         });
 
@@ -73,7 +72,7 @@ describe("TaskStore.loadIfNeeded", () => {
         const notifyError = vi.fn();
         const store = createTaskStore({
             getTasks: () => Promise.reject(new Error("boom")),
-            reportFetchError: () => false,
+            fetchErrorMessage: (err, fallback) => (err instanceof Error ? err.message : fallback),
             notifyError,
         });
 
@@ -82,19 +81,18 @@ describe("TaskStore.loadIfNeeded", () => {
         expect(notifyError).toHaveBeenCalledWith("boom");
     });
 
-    it("stays silent on AuthRequiredError (the login flow handles it)", async () => {
+    it("stays silent when the login flow owns the error", async () => {
         const notifyError = vi.fn();
-        const reportFetchError = vi.fn(() => false);
         const store = createTaskStore({
-            getTasks: () => Promise.reject(new AuthRequiredError()),
-            reportFetchError,
+            getTasks: () => Promise.reject(new Error("auth")),
+            fetchErrorMessage: () => null,
             notifyError,
         });
 
         await store.loadIfNeeded();
 
         expect(store.loaded).toBe(false);
-        expect(reportFetchError).not.toHaveBeenCalled();
+        expect(store.loadFailed).toBe(false);
         expect(notifyError).not.toHaveBeenCalled();
     });
 });
@@ -108,7 +106,7 @@ describe("TaskStore.refresh", () => {
         const getTasks = vi.fn(() => Promise.resolve(tasks));
         const store = createTaskStore({
             getTasks,
-            reportFetchError: () => false,
+            fetchErrorMessage: () => null,
             notifyError: () => {},
         });
 
@@ -121,18 +119,18 @@ describe("TaskStore.refresh", () => {
 
     it("keeps the current list and stays quiet on failure", async () => {
         const notifyError = vi.fn();
-        const reportFetchError = vi.fn(() => true);
+        const fetchErrorMessage = vi.fn(() => "Connection lost");
         const getTasks = vi
             .fn<() => Promise<Task[]>>()
             .mockResolvedValueOnce(tasks)
             .mockRejectedValueOnce(new Error("network down"));
-        const store = createTaskStore({ getTasks, reportFetchError, notifyError });
+        const store = createTaskStore({ getTasks, fetchErrorMessage, notifyError });
 
         await store.loadIfNeeded();
         await store.refresh();
 
         expect(store.items).toEqual(tasks);
-        expect(reportFetchError).toHaveBeenCalledTimes(1);
+        expect(fetchErrorMessage).toHaveBeenCalledTimes(1);
         expect(notifyError).not.toHaveBeenCalled();
     });
 });

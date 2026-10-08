@@ -43,7 +43,6 @@ type StartupInfo struct {
 	// so the operator can verify it out-of-band against what a remote client
 	// pins on first connect. Empty when serving plain HTTP.
 	TLSFingerprint string
-	UsingDemo      bool
 	Capabilities   []model.CapInfo
 	Tasks          []model.Task
 	Timezone       string
@@ -56,7 +55,6 @@ type StartupInfo struct {
 	AuthDisabled bool
 
 	StationEnabled bool
-	WebUIDisabled  bool
 	// ServiceManaged is true when the daemon runs under systemd / launchd.
 	// The quit dialog then drops its "Shut Down" option in favour of a
 	// `runwisp stop` hint, so the TUI never fights the service manager.
@@ -100,6 +98,23 @@ type StartupInfo struct {
 	CrashedRuns      int64
 	PendingRuns      PendingRunsSummary
 	CatchUpTriggered int
+}
+
+// ApplyDaemonInfo adopts the daemon-reported fields of info, as read at attach
+// and refreshed by the /api/daemon poll and after a reload. Tasks are left to
+// the caller: adopting a new task set also means rebuilding the sidebar.
+func (s *StartupInfo) ApplyDaemonInfo(info model.DaemonInfo) {
+	s.Version = info.Version
+	s.Fingerprint = info.Fingerprint
+	s.Port = info.Port
+	s.StationEnabled = info.StationEnabled
+	s.ServiceManaged = info.ServiceManaged
+	s.AuthDisabled = info.AuthDisabled
+	s.ConfigStale = info.ConfigStale
+	s.ConfigWarnings = info.ConfigWarnings
+	s.Timezone = info.ResolvedTimezone
+	s.TimezoneSource = info.TimezoneSource
+	s.Capabilities = info.Capabilities
 }
 
 // WebURL returns the operator-reachable base URL of the Web UI for copy and

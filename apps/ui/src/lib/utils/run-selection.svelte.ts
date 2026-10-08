@@ -16,13 +16,19 @@ interface RunSelectionOptions {
     onOptimisticRestore: (runs: Run[]) => void;
     /** With no explicit pick, fall back to a running run before the newest. */
     preferRunning?: boolean;
+    /** A run picked from outside the list (e.g. one just triggered). */
+    getSelectRunId?: () => string | null;
+    /** Called when a deep link or outside pick seeds the selection. */
+    onSeeded: () => void;
+    /** Reports explicit selections upward so the URL can mirror the run. */
+    onSelectRun?: ((runId: string | null) => void) | undefined;
 }
 
 /**
  * Run selection shared by the /runs view and a task's page, plus the bulk run
- * actions (which drop a selection whose run was deleted). The caller seeds
- * `userSelectedRunId` from the deep link and reports it upward in its own
- * effects, seed before report, so the first flush doesn't clobber the link.
+ * actions (which drop a selection whose run was deleted). Seeds the selection
+ * from the deep link and reports it upward, so it must be called during
+ * component init (it registers effects).
  */
 export function createRunSelection(opts: RunSelectionOptions) {
     let userSelectedRunId = $state<string | null>(null);
@@ -56,6 +62,28 @@ export function createRunSelection(opts: RunSelectionOptions) {
     });
 
     const selectedRun = $derived(opts.getItems().find((r) => r.id === selectedRunId));
+
+    // Seed from the deep link (on load and on later URL changes) and from an
+    // outside pick. These must stay before the report effect: on the first
+    // flush effects run in declaration order, so the selection is seeded
+    // before it is reported; otherwise the initial null would clobber the link.
+    $effect(() => {
+        const id = opts.getInitialRunId();
+        if (!id) return;
+        userSelectedRunId = id;
+        opts.onSeeded();
+    });
+
+    $effect(() => {
+        const id = opts.getSelectRunId?.();
+        if (!id) return;
+        userSelectedRunId = id;
+        opts.onSeeded();
+    });
+
+    $effect(() => {
+        opts.onSelectRun?.(userSelectedRunId);
+    });
 
     const actions = createRunActions({
         getItems: opts.getItems,

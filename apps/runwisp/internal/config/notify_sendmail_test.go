@@ -10,6 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// decode parses TOML bytes into a Config, the way Load does for one file.
+func decode(data []byte, baseDir string) (*Config, error) {
+	raw, err := parseWire(data, baseDir)
+	if err != nil {
+		return nil, err
+	}
+	return buildConfig(raw)
+}
+
 // --- sendmail notifier validation ------------------------------------------
 //
 // The point of the type is that a box migrating off cron already has a working

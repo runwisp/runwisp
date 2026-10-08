@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	// MaxVisibleHits caps the rendered result list. Hits beyond this are
+	// maxVisibleHits caps the rendered result list. Hits beyond this are
 	// still in the model; the user can scroll to them.
-	MaxVisibleHits = 12
+	maxVisibleHits = 12
 )
 
 // SelectMsg fires when the user presses Enter on a hit. The parent model
@@ -56,7 +56,6 @@ type Model struct {
 	// highlighted hit once it matches — so the deep-link path is reachable
 	// without blurring the (always-focused) input.
 	lastSearched string
-	searched     bool
 }
 
 // New creates a fresh overlay for the given task.
@@ -71,18 +70,6 @@ func New(client *apiclient.Client, taskName string) Model {
 		input:    ti,
 		client:   client,
 	}
-}
-
-// TaskName returns the task the overlay is scoped to.
-func (m *Model) TaskName() string { return m.taskName }
-
-// selectedIndex returns the currently selected hit index, or -1 if there are
-// no hits.
-func (m *Model) selectedIndex() int {
-	if len(m.hits) == 0 {
-		return -1
-	}
-	return m.cursor
 }
 
 // SelectedHit returns the highlighted result, if any.
@@ -164,7 +151,7 @@ func (m Model) handleEnter() (Model, tea.Cmd) {
 	if q == "" {
 		return m, nil
 	}
-	if !m.searched || q != m.lastSearched {
+	if q != m.lastSearched {
 		return m.startSearch()
 	}
 	if h := m.SelectedHit(); h != nil {
@@ -175,16 +162,12 @@ func (m Model) handleEnter() (Model, tea.Cmd) {
 	return m, nil
 }
 
-// Regex reports whether the overlay is in regex mode.
-func (m *Model) Regex() bool { return m.regex }
-
 // startSearch fires off a search and returns the model with loading=true
-// plus the async command. Extracted so the Update switch stays short.
+// plus the async command.
 func (m Model) startSearch() (Model, tea.Cmd) {
 	m.loading = true
 	m.errMsg = ""
 	m.lastSearched = m.input.Value()
-	m.searched = true
 	client := m.client
 	taskName := m.taskName
 	opts := apiclient.SearchLogsOptions{

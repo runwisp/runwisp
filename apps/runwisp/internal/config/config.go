@@ -103,13 +103,15 @@ func ApplyTrustedProxiesEnv(cfg *Config) error {
 func collectWatchFiles(cfg *Config, dirs entrySources) []string {
 	files := append([]string(nil), cfg.includeFiles...)
 	files = append(files, cfg.cronFiles...)
-	if cfg.Defaults.EnvFile != "" {
-		files = append(files, resolveAgainst(dirs.root, cfg.Defaults.EnvFile))
-	}
-	for owner, unit := range cfg.units() {
-		if unit.EnvFile != "" {
-			files = append(files, resolveAgainst(dirs.dir(owner), unit.EnvFile))
+	addEnvFile := func(baseDir, path string) {
+		// An unresolvable path already failed the load in loadEnvFile.
+		if resolved, err := resolvePath(baseDir, path); path != "" && err == nil {
+			files = append(files, resolved)
 		}
+	}
+	addEnvFile(dirs.root, cfg.Defaults.EnvFile)
+	for owner, unit := range cfg.units() {
+		addEnvFile(dirs.dir(owner), unit.EnvFile)
 	}
 	return files
 }
@@ -339,16 +341,6 @@ func parseWire(data []byte, baseDir string) (*tomlConfig, error) {
 		return nil, err
 	}
 	return &raw, nil
-}
-
-// decode parses TOML bytes into a Config. baseDir is the runwisp.toml
-// directory; ${file:...} substitutions resolve relative paths against it.
-func decode(data []byte, baseDir string) (*Config, error) {
-	raw, err := parseWire(data, baseDir)
-	if err != nil {
-		return nil, err
-	}
-	return buildConfig(raw)
 }
 
 // buildConfig turns a (possibly merged) wire config into a Config. It runs
@@ -1382,20 +1374,6 @@ const (
 	// after graceful_stop.
 	DefaultStopSignal = "SIGTERM"
 )
-
-// OrDefault returns *p, or fallback when p is nil. For RestartAttempts, nil
-// only reaches a runtime consumer for a *model.Task built without going
-// through Load (a test literal, a station ephemeral dispatch task) — never for
-// one that loaded from TOML, which Load's defaulting pass always resolves to
-// a concrete pointer. A missing value must fall back to the protective
-// built-in default, not to 0 ("give up on the first failure") or any other
-// literal — 0 is meaningful only when the operator wrote it.
-func OrDefault[T any](p *T, fallback T) T {
-	if p == nil {
-		return fallback
-	}
-	return *p
-}
 
 // ApplyDefaults fills in zero-valued fields with sensible defaults. The
 // scheduler timezone, in particular, falls back to the host's system zone

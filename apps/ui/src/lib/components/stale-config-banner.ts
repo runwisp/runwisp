@@ -22,6 +22,6 @@ export function reloadSummary(result: ReloadCounts): string {
     if (changed > 0) parts.push(`~${String(changed)} changed`);
     if ((result.settings?.length ?? 0) > 0) parts.push("settings updated");
     return parts.length === 0
-        ? "Config reloaded — no changes"
+        ? "Config reloaded: no changes"
         : `Config reloaded: ${parts.join(", ")}`;
 }

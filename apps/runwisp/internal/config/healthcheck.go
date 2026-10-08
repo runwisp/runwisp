@@ -94,7 +94,7 @@ func validateHealthCheck(svc *model.Task) error {
 	}
 	// With a check, healthy_after is the deadline for the first pass; a zero
 	// deadline would kill every instance before its first probe.
-	if OrDefault(svc.HealthyAfter, DefaultHealthyAfter) <= 0 {
+	if model.OrDefault(svc.HealthyAfter, DefaultHealthyAfter) <= 0 {
 		return fmt.Errorf("invalid healthy_after for service %s: with a health_check it is the deadline for the first passing check and must be a positive duration", svc.Name)
 	}
 	return validateUnit(probe)

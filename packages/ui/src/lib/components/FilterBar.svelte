@@ -11,7 +11,7 @@
   shown as pills; every other field stays behind "+ Add filter" until the user
   adds it, then lives as a pill. Each pill is self-contained (label + value +
   clear in one element, see FilterPill) so activating a filter never adds a
-  second row — the table below never jumps. Data-mode agnostic: the parent feeds
+  second row, the table below never jumps. Data-mode agnostic: the parent feeds
   `values` to applyFilters (client) or maps it to query params (server).
 -->
 

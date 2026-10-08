@@ -141,12 +141,12 @@ func (m Model) handleMainPanelClick(x, y int) (tea.Model, tea.Cmd) {
 		return m.handleExecViewClick(x, y)
 	}
 	if m.sidebar.ActivePage() == uikit.PageHome {
-		return m.handleHomePageClick(x, y)
+		return m.handleHomePageClick(y)
 	}
 	return m, nil
 }
 
-func (m Model) handleHomePageClick(x, y int) (tea.Model, tea.Cmd) {
+func (m Model) handleHomePageClick(y int) (tea.Model, tea.Cmd) {
 	if m.sidebar.ActiveTask() != "" {
 		if y == m.layout.taskBtnY {
 			return m, m.confirmAction(confirmActionTrigger)
@@ -227,7 +227,7 @@ func (m *Model) updateHoverState(x, y int) {
 
 // handleExecViewClick handles clicks on buttons and meta fields inside the exec view.
 func (m Model) handleExecViewClick(x, y int) (tea.Model, tea.Cmd) {
-	if m.execView == nil || m.execView.Run == nil {
+	if m.currentRun() == nil {
 		return m, nil
 	}
 	// Clear keyboard header focus on any click.

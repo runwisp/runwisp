@@ -102,11 +102,7 @@ func (d *HelpDialog) View(screenWidth, screenHeight int) string {
 	}
 	end := min(d.scroll+viewport, len(content))
 	lines = append(lines, content[d.scroll:end]...)
-	lines = append(lines,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine(scrollHint(d.maxScroll(), "? / esc close"), innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
-	)
+	lines = append(lines, modalFooter(scrollHint(d.maxScroll(), "? / esc close"), innerWidth)...)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, lines)
 	return box.view
@@ -119,23 +115,13 @@ func helpContentLines(innerWidth, keyColWidth int) []string {
 	for _, section := range keys.OverlaySections {
 		lines = append(lines,
 			modalEmptyLine(innerWidth),
-			helpSectionLine(section.Title, innerWidth),
+			modalSectionLine(section.Title, innerWidth),
 		)
 		for _, b := range section.Bindings {
 			lines = append(lines, helpEntryLine(b, keyColWidth, innerWidth))
 		}
 	}
 	return lines
-}
-
-// helpSectionLine renders a left-aligned bold section header.
-func helpSectionLine(title string, innerWidth int) string {
-	return lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorSecondary).
-		Bold(true).
-		Width(innerWidth).
-		Render(title)
 }
 
 // helpEntryLine renders one "keys → description" row with a fixed key column.

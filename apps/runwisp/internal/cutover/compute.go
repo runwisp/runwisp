@@ -67,9 +67,7 @@ func (c *Cutover) gatherEvidence(ctx context.Context) (Evidence, error) {
 		ev.Patterns = ev.Scan.Globs
 	}
 
-	if err := c.readConfig(&ev, cfgPath); err != nil {
-		return Evidence{}, err
-	}
+	c.readConfig(&ev, cfgPath)
 
 	if err := c.probeUnits(ctx, &ev); err != nil {
 		return Evidence{}, err
@@ -86,17 +84,17 @@ func (c *Cutover) gatherEvidence(ctx context.Context) (Evidence, error) {
 // The order matters. Load runs before anything decides to wire include_cron in,
 // because a surgical edit to a file whose [daemon] header we cannot trust is how
 // you turn a broken config into a differently broken one.
-func (c *Cutover) readConfig(ev *Evidence, path string) error {
+func (c *Cutover) readConfig(ev *Evidence, path string) {
 	raw, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		return nil
+		return
 	case err != nil:
 		// Unreadable-but-present (a permission problem, a directory) is evidence,
 		// not a crash: the blocker below names it.
 		ev.ConfigExists = true
 		ev.loadErr = err
-		return nil
+		return
 	}
 	ev.ConfigExists = true
 
@@ -106,10 +104,10 @@ func (c *Cutover) readConfig(ev *Evidence, path string) error {
 		ev.CronIncludeDeclared = true
 	}
 
-	cfg, err := c.deps.Load(path)
+	cfg, err := config.Load(path)
 	if err != nil {
 		ev.loadErr = err
-		return nil
+		return
 	}
 	ev.Cfg = cfg
 	// "Does this config read crontabs" is answered the only way that can't
@@ -120,7 +118,6 @@ func (c *Cutover) readConfig(ev *Evidence, path string) error {
 			ev.Uncovered = append(ev.Uncovered, f)
 		}
 	}
-	return nil
 }
 
 // probeUnits asks the init system about cron and about RunWisp's own service.
@@ -294,7 +291,7 @@ func (c *Cutover) cronSourceBlockers(ev Evidence) []Blocker {
 			}
 		}
 	}
-	if len(reasons) > 0 && !c.opts.AllowSkippedCronJobs {
+	if len(reasons) > 0 && !c.deps.AllowSkippedCronJobs {
 		out = append(out, Blocker{
 			Kind:  BlockerCronSourcesFailed,
 			Title: fmt.Sprintf("%d cron source(s) failed to load", len(reasons)),

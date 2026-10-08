@@ -63,16 +63,16 @@ type Event struct {
 	Data      EventData `json:"data"`
 }
 
-// eventData is a marker method; the empty body is intentional — it exists only to constrain the EventData type set.
-func (RunEvent) eventData()             { /* sealed-type marker */ }
-func (RunDeletedEvent) eventData()      { /* sealed-type marker */ }
-func (LogLineEvent) eventData()         { /* sealed-type marker */ }
-func (LogRegionEvent) eventData()       { /* sealed-type marker */ }
-func (LogDiskPressureEvent) eventData() { /* sealed-type marker */ }
-func (ServiceFatalEvent) eventData()    { /* sealed-type marker */ }
-func (SystemSampleEvent) eventData()    { /* sealed-type marker */ }
-func (ConfigStaleEvent) eventData()     { /* sealed-type marker */ }
-func (TasksChangedEvent) eventData()    { /* sealed-type marker */ }
+// eventData seals the EventData type set.
+func (RunEvent) eventData()             {}
+func (RunDeletedEvent) eventData()      {}
+func (LogLineEvent) eventData()         {}
+func (LogRegionEvent) eventData()       {}
+func (LogDiskPressureEvent) eventData() {}
+func (ServiceFatalEvent) eventData()    {}
+func (SystemSampleEvent) eventData()    {}
+func (ConfigStaleEvent) eventData()     {}
+func (TasksChangedEvent) eventData()    {}
 
 // SystemSampleEvent carries a periodic system resource snapshot pushed to live
 // dashboards so they don't poll /api/system. Uptime is formatted server-side

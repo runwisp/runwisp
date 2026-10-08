@@ -35,8 +35,7 @@ func TestDaemonLogBuffer_DoesNotCapturePasswordValue(t *testing.T) {
 	s.router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	lines := logBuf.Lines(64)
-	joined := strings.Join(lines, "\n")
+	joined := strings.Join(lines(logBuf, 64), "\n")
 	assert.Contains(t, joined, "Ephemeral password retrieved via socket",
 		"the audit message must still be observable via the SSE-streamed daemon log")
 	assert.NotContains(t, joined, sentinel,

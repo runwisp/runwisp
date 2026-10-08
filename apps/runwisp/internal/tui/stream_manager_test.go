@@ -652,14 +652,14 @@ func TestStreamManager_BulkActions_HappyPath(t *testing.T) {
 	}
 }
 
-func TestStreamManager_DeleteRunsUndoable_HappyPath(t *testing.T) {
+func TestStreamManager_DeleteRuns_HappyPath(t *testing.T) {
 	srv := newBulkServer(t)
 	defer srv.Close()
 	sm := NewStreamManager(apiclient.New(srv.URL, ""))
 	t.Cleanup(sm.Shutdown)
 
 	sel := model.RunSelector{IDs: []string{"r1"}}
-	cmd := sm.DeleteRunsUndoable(sel)
+	cmd := sm.DeleteRuns(sel)
 	require.NotNil(t, cmd)
 	msg, ok := cmd().(uikit.BulkDeleteResultMsg)
 	require.True(t, ok)

@@ -4,7 +4,11 @@
 import { SvelteSet } from "svelte/reactivity";
 import { systemApi, AuthRequiredError } from "$lib/api";
 import { createLogger } from "@runwisp/common";
+import { extractErrorMessage } from "@runwisp/ui";
 import { isRecord } from "$lib/utils/parse";
+import { handleUnauthorized } from "$lib/utils/auth-required";
+import { HTTP_STATUS } from "$lib/config/constants";
+import type { AppEventStream } from "./event-manager";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "stalled";
 
@@ -69,7 +73,7 @@ function createConnectionStore() {
 
     function markConnected() {
         // Only fire reconnect listeners when we've actually recovered from a
-        // previous successful connection — not on the very first success.
+        // previous successful connection, not on the very first success.
         const wasDown = Boolean(lastConnectedAt) && status !== "connected";
         status = "connected";
         lastConnectedAt = Date.now();
@@ -110,8 +114,8 @@ function createConnectionStore() {
         retryAttempts = 0;
         // A stall recovers on its own: the browser opens the queued EventSource
         // once a connection slot frees, firing `open` → reportSourceUp →
-        // markConnected. So no fetch-ping retry here — a ping could reach the
-        // daemon and wrongly flip us to "connected" while no live events flow —
+        // markConnected. So no fetch-ping retry here, a ping could reach the
+        // daemon and wrongly flip us to "connected" while no live events flow,
         // and no "down for" tick, because we are not down.
         cancelRetry();
         stopTick();
@@ -132,7 +136,7 @@ function createConnectionStore() {
             return true;
         } catch (err) {
             if (err instanceof AuthRequiredError) {
-                // Server responded (just needs auth) — it's reachable.
+                // Server responded (just needs auth), it's reachable.
                 markConnected();
                 return true;
             }
@@ -171,8 +175,8 @@ function createConnectionStore() {
         } else if (upSources.size === 0) {
             // No live source left, but another is stalled (waiting for a
             // connection slot): reflect "updates paused" rather than keeping the
-            // stale prior status. Latent today — the per-domain cap that
-            // populates stalledSources isn't reached with only two streams — but
+            // stale prior status. Latent today, the per-domain cap that
+            // populates stalledSources isn't reached with only two streams, but
             // it strands the UI on "connected" once a third stream is added.
             markStalled();
         }
@@ -193,6 +197,14 @@ function createConnectionStore() {
             return true;
         }
         return false;
+    }
+
+    /** The message to show for a failed REST fetch, or null for a 401 (the
+     * login flow owns that). A connection-shaped failure also marks the
+     * daemon unreachable. */
+    function fetchErrorMessage(err: unknown, fallback?: string): string | null {
+        if (err instanceof AuthRequiredError) return null;
+        return reportFetchError(err) ? "Connection lost" : extractErrorMessage(err, fallback);
     }
 
     return {
@@ -223,6 +235,7 @@ function createConnectionStore() {
         markConnected,
         markDisconnected,
         reportFetchError,
+        fetchErrorMessage,
         reportSourceUp,
         reportSourceStalled,
         reportSourceDown,
@@ -254,3 +267,30 @@ function formatError(err: unknown): string | null {
 }
 
 export const connectionStore = createConnectionStore();
+
+/**
+ * Mirror a live stream's health into {@link connectionStore} under `id`: open
+ * reports the source up, a stall reports it stalled, and an error reports it
+ * down. A 401 is an expired session on a reachable daemon, not a lost
+ * connection, so it routes to the login flow instead. Returns the unsubscribe.
+ */
+export function trackStreamHealth(events: AppEventStream, id: string): () => void {
+    const offs = [
+        events.onOpen(() => {
+            connectionStore.reportSourceUp(id);
+        }),
+        events.onError((info) => {
+            if (info.status === HTTP_STATUS.UNAUTHORIZED) {
+                handleUnauthorized();
+            } else {
+                connectionStore.reportSourceDown(id, info.message ?? "Event stream error");
+            }
+        }),
+        events.onStall(() => {
+            connectionStore.reportSourceStalled(id);
+        }),
+    ];
+    return () => {
+        for (const off of offs) off();
+    };
+}

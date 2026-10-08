@@ -8,7 +8,7 @@
 <script lang="ts">
     interface Props {
         tone?: StatusDotTone;
-        /** Radar ping around the dot — use for "live" states only. */
+        /** Radar ping around the dot, use for "live" states only. */
         pulse?: boolean;
         size?: "sm" | "md" | "lg";
         class?: string;

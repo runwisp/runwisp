@@ -13,6 +13,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/textutil"
 )
 
 // CronOptions tunes crontab parsing.
@@ -303,7 +304,8 @@ func (cp *crontabParser) handleEnv(name, value string) {
 		}
 		// cronie schedules the table in CRON_TZ.
 		cp.timezone = value
-		cp.timezoneErr = validateCronTimezone(value)
+		// Validated by the same helper the scheduler and config loader use.
+		cp.timezoneErr = cronspec.Validate("* * * * *", value)
 	default:
 		// TZ included: no cron schedules by it (cronie, Debian and vixie all
 		// fire in the daemon's zone, or CRON_TZ); it only reaches the command.
@@ -442,7 +444,7 @@ func (cp *crontabParser) importJob(line string) bool {
 		b.set("description", tomlString(cp.pendingComment))
 	}
 
-	schedule := cp.applySchedule(&b, ref, j.schedule, j.runOnStart)
+	cp.applySchedule(&b, ref, j.schedule, j.runOnStart)
 
 	if owner != "" {
 		b.set("user", tomlString(owner))
@@ -467,7 +469,7 @@ func (cp *crontabParser) importJob(line string) bool {
 	if eb, ok := envBlock("tasks."+name+".env", cp.env); ok {
 		blocks = append(blocks, eb)
 	}
-	ref.emit(name, model.KindTask, schedule, command, blocks...)
+	ref.emit(name, model.KindTask, id.Schedule, command, blocks...)
 	return true
 }
 
@@ -733,17 +735,16 @@ func cronStdin(rest string) string {
 }
 
 // applySchedule sets the schedule-related fields on b — including the timezone,
-// which is part of when a job runs — and returns the schedule as the report
-// should show it. A cron expression that doesn't parse is emitted commented with
-// a TODO so the operator fixes the line they wrote.
-func (cp *crontabParser) applySchedule(b *block, ref itemRef, schedule string, runOnStart bool) string {
+// which is part of when a job runs. A cron expression that doesn't parse is
+// emitted commented with a TODO so the operator fixes the line they wrote.
+func (cp *crontabParser) applySchedule(b *block, ref itemRef, schedule string, runOnStart bool) {
 	if runOnStart {
 		b.set("run_on_start", tomlString(string(model.RunOnStartBoot)))
 		b.lead = []string{"@reboot: runs once per machine boot, not on daemon restarts."}
 		// @reboot consults no cron grammar, but it still runs under the crontab's
 		// timezone, so a bad zone has to be caught here too.
 		cp.applyTimezone(b, ref)
-		return "@reboot"
+		return
 	}
 	// Validated without the timezone deliberately: applyTimezone checks the zone
 	// separately, so a bad CRON_TZ puts its TODO on the timezone line instead of
@@ -757,7 +758,6 @@ func (cp *crontabParser) applySchedule(b *block, ref itemRef, schedule string, r
 		b.set("cron", tomlString(schedule))
 	}
 	cp.applyTimezone(b, ref)
-	return schedule
 }
 
 // applyTimezone folds the crontab's CRON_TZ onto the task. A zone RunWisp
@@ -775,17 +775,6 @@ func (cp *crontabParser) applyTimezone(b *block, ref itemRef) {
 		return
 	}
 	b.set("timezone", tomlString(cp.timezone))
-}
-
-// validateCronTimezone reports whether a crontab CRON_TZ value names a
-// timezone RunWisp can use, via the same helper the scheduler and config loader
-// validate with — rather than a direct time.LoadLocation, which would put a
-// second, differently-behaved answer in the tree.
-func validateCronTimezone(tz string) error {
-	if tz == "" {
-		return nil
-	}
-	return cronspec.Validate("* * * * *", tz)
 }
 
 // isCronHeaderLegend reports whether a comment is the column legend that system
@@ -881,11 +870,7 @@ func cronEnvLine(line string) (name, value string, ok bool) {
 			return "", "", false
 		}
 	}
-	value = strings.TrimSpace(value)
-	if n := len(value); n >= 2 && (value[0] == '"' || value[0] == '\'') && value[n-1] == value[0] {
-		value = value[1 : n-1] // one matched pair, as cron does
-	}
-	return name, value, true
+	return name, textutil.TrimMatchedQuotes(strings.TrimSpace(value)), true
 }
 
 // deriveCronName builds a readable task name from a command: it finds the first

@@ -6,6 +6,7 @@ package apiclient
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 
@@ -25,7 +26,7 @@ type RunsParams struct {
 
 func (c *Client) ListTasks(ctx context.Context) ([]model.TaskResponse, error) {
 	var resp server.TasksResponseBody
-	if err := c.doJSON(ctx, "GET", "/api/tasks", nil, &resp); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, "/api/tasks", nil, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Items, nil
@@ -61,17 +62,10 @@ func (c *Client) ListRuns(ctx context.Context, params RunsParams) ([]model.Run, 
 	}
 
 	var resp server.RunsResponseBody
-	if err := c.doJSON(ctx, "GET", path, nil, &resp); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &resp); err != nil {
 		return nil, 0, err
 	}
 	return resp.Items, resp.Total, nil
-}
-
-// ListRunsByTask is a convenience wrapper over ListRuns that scopes the query
-// to a single task via the taskName filter.
-func (c *Client) ListRunsByTask(ctx context.Context, taskName string, params RunsParams) ([]model.Run, int64, error) {
-	params.TaskName = taskName
-	return c.ListRuns(ctx, params)
 }
 
 // TriggerRun starts a new run of a task, optionally supplying values for the
@@ -91,7 +85,7 @@ func (c *Client) TriggerRun(ctx context.Context, taskName string, params map[str
 	if via != "" {
 		path += "?via=" + url.QueryEscape(via)
 	}
-	return doJSONAs[model.Run](ctx, c, "POST", path, body)
+	return doJSONAs[model.Run](ctx, c, http.MethodPost, path, body)
 }
 
 // StartTask starts a service (un-parking it and filling empty instance
@@ -126,28 +120,28 @@ func (c *Client) postTaskAction(ctx context.Context, action, taskName, via strin
 	if via != "" {
 		path += "?via=" + url.QueryEscape(via)
 	}
-	return c.doJSON(ctx, "POST", path, nil, nil)
+	return c.doJSON(ctx, http.MethodPost, path, nil, nil)
 }
 
 // StopTask stops a service for the lifetime of the daemon, or cancels a
 // task's active runs and drops anything queued.
 func (c *Client) StopTask(ctx context.Context, taskName string) error {
-	return c.doJSON(ctx, "POST", fmt.Sprintf("/api/tasks/%s/stop", taskName), nil, nil)
+	return c.postTaskAction(ctx, "stop", taskName, "")
 }
 
 // StopRun sends a stop signal to a running execution.
 func (c *Client) StopRun(ctx context.Context, runID string) error {
-	return c.doJSON(ctx, "POST", fmt.Sprintf("/api/runs/%s/stop", runID), nil, nil)
+	return c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/runs/%s/stop", runID), nil, nil)
 }
 
 // GetRun fetches a run by its (globally unique) ULID — the endpoint is
 // task-scope-free.
 func (c *Client) GetRun(ctx context.Context, runID string) (*model.Run, error) {
-	return doJSONAs[model.Run](ctx, c, "GET", "/api/runs/"+runID, nil)
+	return doJSONAs[model.Run](ctx, c, http.MethodGet, "/api/runs/"+runID, nil)
 }
 
 func (c *Client) DeleteRun(ctx context.Context, runID string) error {
-	return c.doJSON(ctx, "DELETE", fmt.Sprintf("/api/runs/%s", runID), nil, nil)
+	return c.doJSON(ctx, http.MethodDelete, fmt.Sprintf("/api/runs/%s", runID), nil, nil)
 }
 
 // BulkDeleteRuns soft-deletes every run matched by sel and returns how many rows
@@ -171,7 +165,7 @@ func (c *Client) BulkCancelRuns(ctx context.Context, sel model.RunSelector) (int
 // bulkAffected posts a selector to a bulk endpoint that reports an affected count.
 func (c *Client) bulkAffected(ctx context.Context, path string, sel model.RunSelector) (int, error) {
 	var resp server.BulkAffectedBody
-	if err := c.doJSON(ctx, "POST", path, sel, &resp); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, path, sel, &resp); err != nil {
 		return 0, err
 	}
 	return resp.Affected, nil
@@ -181,7 +175,7 @@ func (c *Client) bulkAffected(ctx context.Context, path string, sel model.RunSel
 // references to the runs it spawned.
 func (c *Client) BulkRerunRuns(ctx context.Context, sel model.RunSelector) ([]server.TriggeredRunRef, error) {
 	var resp server.BulkRerunBody
-	if err := c.doJSON(ctx, "POST", "/api/runs/bulk/rerun", sel, &resp); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/api/runs/bulk/rerun", sel, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Triggered, nil

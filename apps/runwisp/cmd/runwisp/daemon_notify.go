@@ -13,6 +13,7 @@ import (
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel"
 	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
@@ -75,9 +76,7 @@ func (l *liveNotify) swap(next *notify.Service) {
 		go func() {
 			defer l.retiring.Done()
 			defer crashguard.Guard()
-			if err := old.Stop(l.retireCtx); err != nil {
-				slog.Warn("retired notification service shutdown error", "err", err)
-			}
+			old.Stop(l.retireCtx)
 		}()
 	}
 }
@@ -86,9 +85,9 @@ func (l *liveNotify) swap(next *notify.Service) {
 // service a reload replaced to finish draining. Both are bounded by ctx: at its
 // deadline, pending deliveries are cancelled. Nil-safe so callers that never
 // wired notify can call it unconditionally.
-func (l *liveNotify) Stop(ctx context.Context) error {
+func (l *liveNotify) Stop(ctx context.Context) {
 	if l == nil {
-		return nil
+		return
 	}
 	l.mu.Lock()
 	l.stopped = true
@@ -96,12 +95,10 @@ func (l *liveNotify) Stop(ctx context.Context) error {
 	l.mu.Unlock()
 
 	defer context.AfterFunc(ctx, l.cancelRetire)()
-	var err error
 	if svc != nil {
-		err = svc.Stop(ctx)
+		svc.Stop(ctx)
 	}
 	l.retiring.Wait()
-	return err
 }
 
 // initNotify builds (but does not start) the notification service for cfg,
@@ -114,7 +111,7 @@ func initNotify(
 	templates map[string]string,
 	fingerprint string,
 	hub *inapp.Hub,
-	db storage.Database,
+	db *storage.SQLiteDatabase,
 	bus *events.Bus,
 	logger *slog.Logger,
 ) (*notify.Service, error) {
@@ -160,7 +157,7 @@ func initNotify(
 		coalescerCfg := inapp.CoalescerConfig{
 			// The in-app coalescer always applies a window: nil/zero falls back to
 			// its built-in default. coalesce_window = "0s" only disables outbound.
-			Window:        config.OrDefault(notifyCfg.CoalesceWindow, 0),
+			Window:        model.OrDefault(notifyCfg.CoalesceWindow, 0),
 			CoalesceLimit: notifyCfg.CoalesceLimit,
 		}
 		coalescer := inapp.NewCoalescer(db, hub, time.Now, coalescerCfg, logger)
@@ -179,7 +176,7 @@ func initNotify(
 	// applies its own 1h default when the window is zero.
 	outboundCoalesce := notifyCfg.CoalesceWindow == nil || *notifyCfg.CoalesceWindow > 0
 	coalesceCfg := coalesce.Config{
-		Window:        config.OrDefault(notifyCfg.CoalesceWindow, 0),
+		Window:        model.OrDefault(notifyCfg.CoalesceWindow, 0),
 		CoalesceLimit: notifyCfg.CoalesceLimit,
 	}
 
@@ -259,7 +256,7 @@ func buildInappRenderer() (render.Renderer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load inapp template: %w", err)
 	}
-	return render.NewTemplateRenderer("inapp", body, "text/plain", render.DefaultTitle, render.TemplateContext{})
+	return render.NewTemplateRenderer("inapp", body, render.DefaultTitle, render.TemplateContext{})
 }
 
 func buildOutboundChannels(specs []channel.NotifierSpec, outboundCoalesce bool, coalesceCfg coalesce.Config, logger *slog.Logger, failureSink notify.SyntheticIngester) ([]notify.Channel, error) {

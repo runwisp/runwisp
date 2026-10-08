@@ -105,11 +105,7 @@ func wrapAfter(text string, width, firstCol, hanging int) []string {
 
 	// Wrap to whatever room is left after the deepest indent either line kind
 	// will carry, so a continuation can't overflow.
-	indent := firstCol
-	if hanging > indent {
-		indent = hanging
-	}
-	limit := max(width-indent, 1)
+	limit := max(width-max(firstCol, hanging), 1)
 	return indentEach(wrapToLimit(text, limit), firstCol, hanging)
 }
 

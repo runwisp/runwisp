@@ -30,13 +30,13 @@ run = "echo hi"
 }
 
 func TestLoadConfigFile_MissingWithStationReturnsDefaults(t *testing.T) {
-	cfg, _, err := loadConfigFile("/this/does/not/exist/runwisp.toml", true)
+	cfg, err := loadConfigFile("/this/does/not/exist/runwisp.toml", true)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 }
 
 func TestLoadConfigFile_MissingWithoutStationErrors(t *testing.T) {
-	_, _, err := loadConfigFile("/this/does/not/exist/runwisp.toml", false)
+	_, err := loadConfigFile("/this/does/not/exist/runwisp.toml", false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no runwisp.toml")
 

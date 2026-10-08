@@ -34,19 +34,7 @@ func NewRunParamsDialog(taskName string, params map[string]string) *RunParamsDia
 
 // Update reports whether the dialog should close.
 func (d *RunParamsDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "esc", "enter", "backspace", "q":
-			return nil, true
-		}
-	case tea.MouseClickMsg:
-		// Right-click closes; left-click is reserved for terminal text selection.
-		if msg.Button == tea.MouseRight {
-			return nil, true
-		}
-	}
-	return nil, false
+	return nil, isTextModalDismiss(msg)
 }
 
 func (d *RunParamsDialog) View(screenWidth, screenHeight int) string {
@@ -66,11 +54,7 @@ func (d *RunParamsDialog) View(screenWidth, screenHeight int) string {
 	for _, l := range d.lines {
 		lines = append(lines, modalLeftLine("  "+l, innerWidth, uikit.ColorText))
 	}
-	lines = append(lines,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine("esc close", innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
-	)
+	lines = append(lines, modalFooter("esc close", innerWidth)...)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, lines)
 	return box.view

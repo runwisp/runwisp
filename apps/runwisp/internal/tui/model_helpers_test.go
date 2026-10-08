@@ -465,7 +465,6 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 	t.Run("Trigger queues a confirm dialog", func(t *testing.T) {
 		m := newTestModel(tasks)
 		selectSidebarItem(&m, 1)
-		m.client = newDummyClient()
 		m.confirmAction(confirmActionTrigger)
 		if !m.dialogs.Has(dlgConfirm) {
 			t.Fatal("expected Trigger to queue a confirm dialog")
@@ -475,7 +474,6 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 	t.Run("RestartService routes via service task", func(t *testing.T) {
 		m := newTestModel(tasks)
 		selectSidebarItem(&m, 2) // svc
-		m.client = newDummyClient()
 		m.confirmAction(confirmActionRestartService)
 		if !m.dialogs.Has(dlgConfirm) {
 			t.Fatal("expected RestartService to queue a dialog")
@@ -485,7 +483,6 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 	t.Run("StopService routes via service task", func(t *testing.T) {
 		m := newTestModel(tasks)
 		selectSidebarItem(&m, 2) // svc
-		m.client = newDummyClient()
 		m.confirmAction(confirmActionStopService)
 		if !m.dialogs.Has(dlgConfirm) {
 			t.Fatal("expected StopService to queue a dialog")
@@ -494,7 +491,6 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 
 	t.Run("Stop with running exec queues stop dialog", func(t *testing.T) {
 		m := newTestModel(nil)
-		m.client = newDummyClient()
 		run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
 		ev := execlist.NewExecView(run)
 		m.execView = &ev
@@ -506,7 +502,6 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 
 	t.Run("Retry with retryable run queues retry dialog", func(t *testing.T) {
 		m := newTestModel(nil)
-		m.client = newDummyClient()
 		r := model.ReasonFailed
 		run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &r}
 		ev := execlist.NewExecView(run)
@@ -522,7 +517,6 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 
 	t.Run("Delete with deletable run acts immediately", func(t *testing.T) {
 		m := newTestModel(nil)
-		m.client = newDummyClient()
 		r := model.ReasonSuccess
 		run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &r}
 		ev := execlist.NewExecView(run)
@@ -537,7 +531,6 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 
 	t.Run("unknown action falls through to nil", func(t *testing.T) {
 		m := newTestModel(nil)
-		m.client = newDummyClient()
 		if m.confirmAction(confirmAction(99)) != nil {
 			t.Fatal("unknown action must return nil")
 		}
@@ -944,7 +937,7 @@ func TestCopyExecField_WithFocusedIDReturnsCmd(t *testing.T) {
 // not invoked so no network call happens.
 func TestOpenRunByID_NotInWindowWithClientReturnsCmd(t *testing.T) {
 	m := newTestModel(nil)
-	cmd := m.openRunByID("task-A", "run-missing")
+	cmd := m.openRunByID("run-missing")
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd when run not in window and client present")
 	}

@@ -147,14 +147,14 @@ func TestHandleHomePageClick_ClickOnTaskButtonTriggers(t *testing.T) {
 	selectSidebarItem(&m, 1)
 	m.layout.taskBtnY = 7
 	// client is nil → confirmAction returns nil. We still exercise the branch.
-	_, _ = m.handleHomePageClick(uikit.SidebarWidth+5, 7)
+	_, _ = m.handleHomePageClick(7)
 }
 
 func TestHandleHomePageClick_ClickOnHomeFieldFocusesField(t *testing.T) {
 	m := newTestModel(nil)
 	m.layout.homeFieldsY = 5
 	// Try to click at y == homeFieldsY (field 0).
-	newM, _ := m.handleHomePageClick(uikit.SidebarWidth+5, 5)
+	newM, _ := m.handleHomePageClick(5)
 	if nm, ok := newM.(Model); ok {
 		// Could be either home field or pass-through to exec list, depending on
 		// whether fields are present. Either way, no panic + return is enough.
@@ -165,7 +165,7 @@ func TestHandleHomePageClick_ClickOnHomeFieldFocusesField(t *testing.T) {
 func TestHandleHomePageClick_NoTaskAndOutsideFieldsDelegatesToExecList(t *testing.T) {
 	m := newTestModel(nil)
 	m.layout.homeFieldsY = 100 // ensure y < fieldsStartY → fieldIdx negative
-	_, _ = m.handleHomePageClick(uikit.SidebarWidth+5, 0)
+	_, _ = m.handleHomePageClick(0)
 }
 
 // ─── handleExecListClick ─────────────────────────────────────────────────────
@@ -358,7 +358,7 @@ func findHitCoord(ev *execlist.ExecView, target execlist.HeaderFocusItem, w int)
 // TestHandleExecViewClick_BackButton covers the back-button click branch.
 func TestHandleExecViewClick_BackButton(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)
@@ -381,7 +381,7 @@ func TestHandleExecViewClick_BackButton(t *testing.T) {
 // TestHandleExecViewClick_IDCopiesValue covers the HeaderFocusID branch.
 func TestHandleExecViewClick_IDCopiesValue(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)
@@ -400,7 +400,7 @@ func TestHandleExecViewClick_IDCopiesValue(t *testing.T) {
 // TestHandleExecViewClick_StartedCopiesValue covers HeaderFocusStarted.
 func TestHandleExecViewClick_StartedCopiesValue(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)
@@ -420,7 +420,7 @@ func TestHandleExecViewClick_StartedCopiesValue(t *testing.T) {
 // running non-service run → ActionStop.
 func TestHandleExecViewClick_ActionStop(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)
@@ -455,7 +455,7 @@ func TestHandleExecViewClick_Delete(t *testing.T) {
 func assertDeleteClick(t *testing.T, reason model.EndReason) {
 	t.Helper()
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(80, 24)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 80, Height: 24})
 	run := &model.Run{
 		ID:        "r-1234567890",
 		TaskName:  "t1",
@@ -489,7 +489,7 @@ func assertDeleteClick(t *testing.T, reason model.EndReason) {
 // branch (HitAt returns HeaderFocusNone).
 func TestHandleExecViewClick_NoHitReturnsNil(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)
@@ -506,7 +506,7 @@ func TestHandleExecViewClick_NoHitReturnsNil(t *testing.T) {
 // header focus (production rule: "clear keyboard header focus on any click").
 func TestHandleExecViewClick_ResetsHeaderFocus(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)
@@ -579,7 +579,7 @@ func TestUpdateHoverState_NonHomePageResetsHomeHover(t *testing.T) {
 
 func TestHandleMainPanelClick_WithExecViewRoutesToExecViewClick(t *testing.T) {
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 120, Height: 30})
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)
@@ -599,7 +599,7 @@ func TestHandleHomePageClick_DoubleClickActivatesField(t *testing.T) {
 	m.info.Port = 8181
 	m.layout.homeFieldsY = 5
 	// First click primes detectDoubleClick.
-	m.handleHomePageClick(uikit.SidebarWidth+5, 5)
+	m.handleHomePageClick(5)
 	// Second click at same Y within threshold → double click → activate.
-	_, _ = m.handleHomePageClick(uikit.SidebarWidth+5, 5)
+	_, _ = m.handleHomePageClick(5)
 }

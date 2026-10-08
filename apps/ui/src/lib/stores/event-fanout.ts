@@ -13,7 +13,7 @@ export type StallHandler = () => void;
 export type ErrorHandler = (info: SSEErrorInfo) => void;
 
 /**
- * One named "signal" with any number of listeners — the shape EventManager
+ * One named "signal" with any number of listeners, the shape EventManager
  * and SharedAppStream each repeat three times over (open/error/stall):
  * subscribing adds a listener and returns an unsubscribe function, emitting
  * invokes every listener and logs (rather than throws) if one does.
@@ -51,7 +51,7 @@ export class Signal<Args extends unknown[]> {
 /**
  * Per-event-type fan-out: many handlers per SSE event type, dispatched with
  * the same try/catch-and-log shape. EventManager and SharedAppStream each
- * keep one of these for their subscribers; plain (non-reactive) storage —
+ * keep one of these for their subscribers; plain (non-reactive) storage,
  * this is connection plumbing, never a reactive UI source (see the note on
  * EventManager's own field for why that distinction matters here).
  */

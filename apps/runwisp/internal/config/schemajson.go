@@ -3,29 +3,19 @@
 
 package config
 
-// The blank import pulls in the embed package purely so the //go:embed directive
-// on schemaJSON below is honoured by the compiler. schemaJSON is a string, not an
-// embed.FS, so the package is never referenced by name and must be imported blank.
-import _ "embed"
+import _ "embed" // for //go:embed below
 
-// SchemaURL is the canonical, stable URL where the runwisp.toml JSON Schema is
-// published. It is what a `#:schema` directive in a generated runwisp.toml
-// points at, so editors (Even Better TOML / taplo) can validate and complete
-// the file. The embedded copy (SchemaJSON) is byte-identical to what is served
-// there.
+// SchemaURL is where the runwisp.toml JSON Schema is published; the embedded
+// copy (SchemaJSON) is byte-identical to it.
 const SchemaURL = "https://docs.runwisp.com/config.schema.json"
 
-// SchemaDirective is the `#:schema` line prepended to every runwisp.toml that
-// RunWisp generates (first-run scaffold, `runwisp import`). Editors with TOML
-// schema support (Even Better TOML / taplo) read it and validate + autocomplete
-// the file against the published JSON Schema. It is a TOML comment, so it never
-// affects parsing.
+// SchemaDirective is the `#:schema` comment prepended to every runwisp.toml
+// RunWisp generates, so TOML editors (taplo) validate against SchemaURL.
 const SchemaDirective = "#:schema " + SchemaURL + "\n"
 
-// schemaJSON is the JSON Schema (draft 2020-12) describing the full runwisp.toml
-// surface. It is the machine-readable twin of the human docs and the dense agent
-// reference, embedded so `runwisp schema` works fully offline. The wire structs
-// in wire.go are the ground truth; TestSchemaCoversWireTags guards against drift.
+// schemaJSON is the runwisp.toml JSON Schema (draft 2020-12), embedded so
+// `runwisp schema` works offline. TestSchemaCoversWireTags keeps it in sync with
+// the wire structs in wire.go.
 //
 //go:embed config.schema.json
 var schemaJSON string

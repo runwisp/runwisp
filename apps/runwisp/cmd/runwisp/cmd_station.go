@@ -8,10 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"time"
-
-	"log/slog"
 
 	"github.com/joho/godotenv"
 	"github.com/runwisp/runwisp/internal/apiclient"
@@ -55,17 +51,7 @@ func runStationInteractive(ctx context.Context, f Flags) error {
 	if client.HealthCheck(ctx) == nil {
 		return runTUIConnect(ctx, client, f, tui.DaemonAttached)
 	}
-
-	if err := spawnDaemon(f, true); err != nil {
-		slog.Warn("Failed to spawn background station daemon, running inline", "err", err)
-		return runDaemon(modeStation, f, false)
-	}
-
-	logPath := filepath.Join(f.DataDir, "daemon.log")
-	if err := waitForDaemon(client, logPath, 10*time.Second, f); err != nil {
-		return err
-	}
-	return runTUIConnect(ctx, client, f, tui.DaemonStarted)
+	return spawnAndAttach(ctx, client, f, modeStation)
 }
 
 // resolveStationEnv loads the .env file (if present) and applies the --token /

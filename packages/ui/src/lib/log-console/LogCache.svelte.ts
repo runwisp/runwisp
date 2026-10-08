@@ -14,7 +14,7 @@ import { visibleColumns } from "./ansi.js";
  */
 // Streams pinned to the front of the overlay, in render order. The companion
 // Set backs the membership test in `overlayRows`. Both are module-level,
-// immutable, and non-reactive — a fixed lookup table, not component state.
+// immutable, and non-reactive, a fixed lookup table, not component state.
 const PREFERRED_STREAM_ORDER = ["stdout", "stderr"] as const;
 const PREFERRED_STREAMS: ReadonlySet<string> = new Set(PREFERRED_STREAM_ORDER);
 

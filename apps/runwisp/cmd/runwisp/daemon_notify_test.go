@@ -297,7 +297,7 @@ func TestNotifyService_RoutesOnClassifiedFailureBit(t *testing.T) {
 		}},
 	})
 	svc.Start(context.Background())
-	t.Cleanup(func() { _ = svc.Stop(context.Background()) })
+	t.Cleanup(func() { svc.Stop(context.Background()) })
 
 	publishRun(bus, "promoted", true)
 	require.Eventually(t, func() bool { return recorder.delivered.Load() == 1 }, time.Second, time.Millisecond,
@@ -333,7 +333,7 @@ func TestLiveNotify_SwapRetiresOldService(t *testing.T) {
 	require.Eventually(t, func() bool { return second.delivered.Load() == 1 }, time.Second, time.Millisecond)
 	assert.Equal(t, int64(1), first.delivered.Load(), "the retired service must stop delivering")
 
-	require.NoError(t, live.Stop(context.Background()))
+	live.Stop(context.Background())
 	lateSvc := build(late)
 	live.swap(lateSvc)
 	assert.NotSame(t, lateSvc, live.service, "swap after Stop must not install a service")
@@ -395,7 +395,7 @@ func TestLiveNotify_StopWaitsForRetiredService(t *testing.T) {
 				defer cancel()
 			}
 			stopped := make(chan struct{})
-			go func() { _ = live.Stop(ctx); close(stopped) }()
+			go func() { live.Stop(ctx); close(stopped) }()
 
 			if tc.deadline {
 				select {

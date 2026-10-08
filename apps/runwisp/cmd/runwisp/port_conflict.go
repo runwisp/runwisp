@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
@@ -34,10 +35,14 @@ const (
 // It returns the identity when the port-holder is a RunWisp daemon reachable
 // over loopback, or nil for everything else: a non-RunWisp process, a RunWisp
 // daemon bound beyond loopback (403, paths withheld), or an unreachable/slow
-// listener. Best-effort by design — it never returns an error.
+// listener. Best-effort by design — it never returns an error. The brief
+// timeout keeps a launcher that hit a port conflict from stalling when the
+// port-holder is slow or not even an HTTP server.
 func probeRunwispInstance(host string, port int) *model.InstanceInfo {
-	client := apiclient.NewProbe(fmt.Sprintf("http://%s:%d", bindHost(host), port)) //NOSONAR: go:S5332 — plain HTTP is this daemon's own loopback default (see resolveTLS); the identity endpoint is server-gated to loopback callers regardless of scheme
-	info, err := client.GetInstanceInfo(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	client := apiclient.New(fmt.Sprintf("http://%s:%d", bindHost(host), port), "") //NOSONAR: go:S5332 — plain HTTP is this daemon's own loopback default (see resolveTLS); the identity endpoint is server-gated to loopback callers regardless of scheme
+	info, err := client.GetInstanceInfo(ctx)
 	if err != nil || info == nil || info.App != server.AppName {
 		return nil
 	}

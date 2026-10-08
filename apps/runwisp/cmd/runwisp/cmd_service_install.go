@@ -14,7 +14,6 @@ import (
 
 	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/cutover"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/spf13/cobra"
@@ -291,7 +290,7 @@ func ensureServicePasswordFallback(out io.Writer, installer autostart.Installer,
 // A box left with cron firing jobs RunWisp also reads runs them twice, and
 // nothing else on this path would say so.
 func printCronStillOwnsNote(cmd *cobra.Command, f Flags, deps autostart.Deps, installer autostart.Installer, opts autostart.InstallOptions) {
-	plan, err := newCutover(f, deps, installer, opts, cutover.Options{}).Compute(context.Background())
+	plan, err := newCutover(f, deps, installer, opts).Compute(context.Background())
 	if err != nil || plan.Blocked() || plan.NothingToDo() || !plan.MasksCron || !plan.Evidence.CronActive {
 		return
 	}
@@ -536,7 +535,7 @@ func resolveDataDirInteractive(cmd *cobra.Command, deps autostart.Deps, res auto
 		// Declined the suggested location — rather than dead-ending, offer the
 		// current directory (the common "install right here" intent) before
 		// giving up.
-		return resolveDataDirCurrentDir(cmd, deps)
+		return resolveDataDirCurrentDir(deps)
 	}
 	return res.Path, nil
 }
@@ -556,7 +555,7 @@ var dataDirDeclinedError = &userFacingError{
 // an explicit ".") so the current dir passes the same durability guards — a cwd
 // under /tmp is refused, and the offer is skipped rather than baking a doomed
 // path into the unit.
-func resolveDataDirCurrentDir(cmd *cobra.Command, deps autostart.Deps) (string, error) {
+func resolveDataDirCurrentDir(deps autostart.Deps) (string, error) {
 	cwdRes, err := autostart.ResolveDataDir(autostart.ResolveDataDirOptions{
 		Explicit:    ".",
 		ExplicitSet: true,

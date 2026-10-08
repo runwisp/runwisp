@@ -20,7 +20,7 @@ func pausableTask(name string) *model.Task {
 	return &model.Task{Name: name, Cron: "0 3 * * *", Run: "echo hi", ManualTrigger: true}
 }
 
-func newPauseDB(t *testing.T) storage.Database {
+func newPauseDB(t *testing.T) *storage.SQLiteDatabase {
 	t.Helper()
 	db, err := storage.New(":memory:")
 	require.NoError(t, err)

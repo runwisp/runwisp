@@ -244,7 +244,7 @@ run = "echo hi"
 `
 	require.NoError(t, os.WriteFile(cfgPath, []byte(minimalCfg), 0o600))
 
-	exitCode, err := runExecStandalone("missing", Flags{CfgFile: cfgPath}, nil)
+	exitCode, err := runExecStandalone("missing", Flags{CfgFile: cfgPath}, nil, false)
 	assert.Equal(t, 0, exitCode)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `task "missing" not found`)
@@ -268,7 +268,7 @@ manual_trigger = false
 `
 	require.NoError(t, os.WriteFile(cfgPath, []byte(cfg), 0o600))
 
-	exitCode, err := runExecStandalone("locked", Flags{CfgFile: cfgPath}, nil)
+	exitCode, err := runExecStandalone("locked", Flags{CfgFile: cfgPath}, nil, false)
 	assert.Equal(t, 0, exitCode)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot be run manually")
@@ -285,7 +285,7 @@ run = "exec ./bin/web"
 `
 	require.NoError(t, os.WriteFile(cfgPath, []byte(cfg), 0o600))
 
-	exitCode, err := runExecStandalone("web", Flags{CfgFile: cfgPath}, nil)
+	exitCode, err := runExecStandalone("web", Flags{CfgFile: cfgPath}, nil, false)
 	assert.Equal(t, 0, exitCode)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, server.ErrServiceNotRunnable)
@@ -293,14 +293,14 @@ run = "exec ./bin/web"
 
 func TestRunExecStandalone_BadConfigFile(t *testing.T) {
 	t.Parallel()
-	_, err := runExecStandalone("anything", Flags{CfgFile: "/does/not/exist/runwisp.toml"}, nil)
+	_, err := runExecStandalone("anything", Flags{CfgFile: "/does/not/exist/runwisp.toml"}, nil, false)
 	require.Error(t, err)
 }
 
 func TestRunExecViaDaemon_DaemonUnreachable(t *testing.T) {
 	t.Parallel()
 	// No socket created — apiclient.NewUnix will fail HealthCheck.
-	exitCode, err := runExecViaDaemon(t.Context(), "anything", Flags{DataDir: t.TempDir()}, nil)
+	exitCode, err := runExecViaDaemon(t.Context(), "anything", Flags{DataDir: t.TempDir()}, nil, false)
 	assert.Equal(t, 0, exitCode)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "daemon is not reachable")
@@ -323,7 +323,7 @@ run = "echo runwisp-exec-test"
 `
 	require.NoError(t, os.WriteFile(cfgPath, []byte(cfg), 0o600))
 
-	exitCode, err := runExecStandalone("greet", Flags{CfgFile: cfgPath, DataDir: dir}, nil)
+	exitCode, err := runExecStandalone("greet", Flags{CfgFile: cfgPath, DataDir: dir}, nil, false)
 	require.NoError(t, err)
 	assert.Equal(t, 0, exitCode)
 }
@@ -353,12 +353,12 @@ required = true
 `
 	require.NoError(t, os.WriteFile(cfgPath, []byte(cfg), 0o600))
 
-	_, err := runExecStandalone("greet", Flags{CfgFile: cfgPath, DataDir: dir}, nil)
+	_, err := runExecStandalone("greet", Flags{CfgFile: cfgPath, DataDir: dir}, nil, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "\"MSG\" is required")
 
 	value := "param-value"
-	exitCode, err := runExecStandalone("greet", Flags{CfgFile: cfgPath, DataDir: dir}, map[string]*string{"MSG": &value})
+	exitCode, err := runExecStandalone("greet", Flags{CfgFile: cfgPath, DataDir: dir}, map[string]*string{"MSG": &value}, false)
 	require.NoError(t, err)
 	assert.Equal(t, 0, exitCode)
 }
@@ -391,7 +391,7 @@ func TestRunExecStandalone_InvalidConfig(t *testing.T) {
 	cfgPath := filepath.Join(dir, "runwisp.toml")
 	require.NoError(t, os.WriteFile(cfgPath, []byte("not valid toml ============="), 0o600))
 
-	_, err := runExecStandalone("x", Flags{CfgFile: cfgPath}, nil)
+	_, err := runExecStandalone("x", Flags{CfgFile: cfgPath}, nil, false)
 	require.Error(t, err)
 }
 

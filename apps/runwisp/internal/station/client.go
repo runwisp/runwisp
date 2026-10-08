@@ -64,15 +64,13 @@ type Dependencies struct {
 	SystemStats func() model.SystemStats
 	// Now is the wall-clock source used by sub-components that persist
 	// timestamps (currently only the log uploader). Production wires
-	// time.Now; tests inject a fixed clock for deterministic fixtures. nil
-	// falls back to time.Now.
+	// time.Now; tests inject a fixed clock for deterministic fixtures.
 	Now func() time.Time
 }
 
 type Client struct {
 	config  Config
 	runRepo ExternalRunGetter
-	logDir  string
 
 	syncClient   *TaskSyncClient
 	taskManager  TaskRunner
@@ -127,7 +125,6 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 	client := &Client{
 		config:       cfg,
 		runRepo:      deps.RunRepo,
-		logDir:       deps.LogDir,
 		syncClient:   NewTaskSyncClient(cfg.TaskSyncURL(), requestTimeout),
 		taskManager:  deps.TaskManager,
 		localTasks:   deps.LocalTasks,
@@ -246,7 +243,7 @@ func (client *Client) runConnectionAttempt(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	if err := client.syncTasks(ctx, connection); err != nil {
+	if err := client.syncTasks(ctx); err != nil {
 		closeConnection(connection, "task sync failed")
 		return false, err
 	}
@@ -304,7 +301,7 @@ func (client *Client) authenticate(ctx context.Context, connection *websocket.Co
 	return nil
 }
 
-func (client *Client) syncTasks(ctx context.Context, connection *websocket.Conn) error {
+func (client *Client) syncTasks(ctx context.Context) error {
 	syncCtx, cancelSync := context.WithTimeout(ctx, requestTimeout)
 	syncResult, syncErr := client.syncClient.SyncTasks(syncCtx, client.config.StationToken, client.snapshotForSync())
 	cancelSync()

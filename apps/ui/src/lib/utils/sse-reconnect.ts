@@ -9,7 +9,7 @@ import { type SSEErrorInfo, extractErrorInfo, formatErrorInfo } from "$lib/utils
 interface ReconnectingConnectionOptions {
     /**
      * Resolves the URL to connect to and the label used in log lines (e.g.
-     * the bare path). Called once per (re)connect attempt — both values are
+     * the bare path). Called once per (re)connect attempt, both values are
      * captured for the lifetime of that attempt, so a stateful URL (e.g. a
      * resumption offset) doesn't shift mid-attempt.
      */
@@ -17,7 +17,7 @@ interface ReconnectingConnectionOptions {
     /** Creates the underlying stream for a URL. May throw. */
     createEventSource: (url: string) => SSEStream;
     logger: Logger;
-    /** Called right after a stream is created, before open/error can fire — bind listeners here. */
+    /** Called right after a stream is created, before open/error can fire, bind listeners here. */
     onCreated: (es: SSEStream) => void;
     /** Called when the stream opens. Reconnect backoff has already been reset. */
     onOpen: () => void;

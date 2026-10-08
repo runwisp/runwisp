@@ -3,7 +3,7 @@
 import cronstrue from "cronstrue";
 
 interface HumanizedCron {
-    /** Display text — humanized when possible, otherwise the raw expression. */
+    /** Display text, humanized when possible, otherwise the raw expression. */
     humanized: string;
     /** The original cron expression, for tooltips. */
     raw: string;
@@ -51,7 +51,7 @@ function humanizeEvery(duration: string): string | null {
 /**
  * humanizeCron renders a cron expression as plain English ("Every 5 minutes").
  * Handles robfig's `@every <duration>` extension (cronstrue throws on it) and
- * falls back to the raw expression on anything unparseable — never "Invalid".
+ * falls back to the raw expression on anything unparseable, never "Invalid".
  */
 export function humanizeCron(cron: string): HumanizedCron {
     const raw = cron.trim();

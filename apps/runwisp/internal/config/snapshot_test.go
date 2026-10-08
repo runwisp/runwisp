@@ -68,6 +68,23 @@ func TestSnapshot_EditedEnvFileIsStale(t *testing.T) {
 	assert.True(t, snap.Stale())
 }
 
+// TestSnapshot_EditedHomeRelativeEnvFileIsStale: env_file = "~/x" loads from
+// $HOME, so the stale check must watch that same file, not "<dir>/~/x".
+func TestSnapshot_EditedHomeRelativeEnvFileIsStale(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	envPath := filepath.Join(home, "secrets.env")
+	require.NoError(t, os.WriteFile(envPath, []byte("TOKEN=one\n"), 0o600))
+	path := writeSnapshotConfig(t, t.TempDir(), "[tasks.t]\nrun = \"echo hi\"\nenv_file = \"~/secrets.env\"\n")
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	snap := NewSnapshot(path, cfg, time.Now())
+	require.False(t, snap.Stale())
+
+	require.NoError(t, os.WriteFile(envPath, []byte("TOKEN=two\n"), 0o600))
+	assert.True(t, snap.Stale())
+}
+
 func TestSnapshot_EditedIncludedFileIsStale(t *testing.T) {
 	dir := writeFileTree(t, map[string]string{
 		"runwisp.toml":  "[daemon]\ninclude = [\"conf.d/*.toml\"]\n",
@@ -205,7 +222,7 @@ func TestSnapshot_MissingFileAppearingIsStale(t *testing.T) {
 	path := filepath.Join(dir, "runwisp.toml")
 	// Snapshot a path that does not exist (station mode boots without a
 	// runwisp.toml); the file showing up later must read as a change.
-	snap := NewSnapshot(path, nil, time.Now())
+	snap := NewSnapshot(path, &Config{}, time.Now())
 	require.False(t, snap.Stale())
 
 	require.NoError(t, os.WriteFile(path, []byte("[tasks.t]\nrun = \"echo hi\"\n"), 0o600))

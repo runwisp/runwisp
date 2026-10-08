@@ -215,12 +215,7 @@ func lineFromRecord(rec logutil.LogLineRecord, frameCount int) LineEvent {
 // starting line number. Negative values mean "tail from end". The result
 // is clamped against the available rotation window.
 func resolveBackfillAnchor(from, replayLimit, totalLines, firstAvailable int64) int64 {
-	if from < 0 {
-		from = max(totalLines+from, 0)
-	}
-	if from < firstAvailable {
-		from = firstAvailable
-	}
+	from = logutil.ResolveStartLine(from, firstAvailable, totalLines)
 	// A window larger than the replay budget replays its newest lines: the live
 	// loop resumes at the true end, so an oldest-first slice would drop the gap.
 	if replayLimit > 0 && totalLines-from > replayLimit {
@@ -301,8 +296,8 @@ func (s *streamer) streamLoop(ctx context.Context, runID string, bus *events.Bus
 	// the resolved anchor so the freshest missed lines are replayed instead of
 	// the oldest slice (which emitBackfill would otherwise drop entirely).
 	if len(backfill) > 0 && resolvedAnchor > backfill[0].LineNum {
-		if reBackfill, reFirst, reTotal, reErr := logutil.ReadLineRange(s.logPath, resolvedAnchor, replayLimit); reErr == nil {
-			backfill, firstAvailable, totalLines = reBackfill, reFirst, reTotal
+		if reBackfill, reFirst, _, reErr := logutil.ReadLineRange(s.logPath, resolvedAnchor, replayLimit); reErr == nil {
+			backfill, firstAvailable = reBackfill, reFirst
 		}
 	}
 	// Stamp frame-history availability onto backfilled anchor lines so a

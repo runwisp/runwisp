@@ -32,7 +32,7 @@ describe("relative", () => {
         });
     });
 
-    // Each row pins one bucket; pair (boundary, midrange) per bucket — extra
+    // Each row pins one bucket; pair (boundary, midrange) per bucket, extra
     // duplicate rows did not add coverage.
     it.each([
         ["0ms ago", 0, "just now"],

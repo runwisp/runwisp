@@ -107,11 +107,9 @@ func (d *NewReleaseDialog) View(screenWidth, screenHeight int) string {
 		modalSurfaceLine("You're on v"+d.current, innerWidth, uikit.ColorTextMuted, false),
 		modalEmptyLine(innerWidth),
 		linkLine,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine(hint, innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
 	}
 	const linkLineIndex = 6
+	lines = append(lines, modalFooter(hint, innerWidth)...)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorWarning, lines)
 

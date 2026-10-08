@@ -3,9 +3,8 @@
 
 // Package runlog emits one concise slog line per run lifecycle transition for
 // the headless daemon. Without it a `docker logs` / journald operator sees a
-// black box once the startup banner scrolls past — directly undercutting Prime
-// Directive 1 ("Nothing silently fails") on the one surface with no TUI/UI in
-// front of the user. The interactive TUI already visualizes runs, so Subscribe
+// black box once the startup banner scrolls past, on the one surface with no
+// TUI/UI in front of the user. The interactive TUI already visualizes runs, so Subscribe
 // is wired only on the daemon boot path; LogEnded lets the CLI (`runwisp logs`)
 // report a run's outcome in the same words.
 package runlog

@@ -30,4 +30,8 @@ if [[ "${installed_version}" != "${GOLANGCI_VERSION#v}" ]]; then
   GOBIN="${bin_dir}" go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_VERSION}"
 fi
 
+# The default cache is shared by every checkout on the machine and keys on
+# file paths, so a parallel worktree's results can leak into this run.
+export GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-${bin_dir}/golangci-lint-cache}"
+
 "${golangci}" run "$@"

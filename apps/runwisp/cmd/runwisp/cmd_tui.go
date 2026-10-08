@@ -4,7 +4,6 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -47,8 +46,8 @@ func init() {
 }
 
 func runTUIClient(ctx context.Context, f Flags) error {
-	if remoteURL := cmp.Or(tuiFlags.URL, os.Getenv("RUNWISP_URL")); remoteURL != "" {
-		return runTUIViaRemote(ctx, remoteURL, f)
+	if baseURL, envPassword := (remoteFlags{URL: tuiFlags.URL}).resolve(); baseURL != "" {
+		return runTUIViaRemote(ctx, baseURL, envPassword)
 	}
 
 	client := apiclient.NewUnix(localAPISocketPath(f))
@@ -57,11 +56,7 @@ func runTUIClient(ctx context.Context, f Flags) error {
 		return fmt.Errorf("cannot reach daemon at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
 	}
 
-	err := runTUIConnect(ctx, client, f, tui.DaemonAttached)
-	if err != nil && errors.Is(err, apiclient.ErrRateLimited) {
-		return authRateLimitedError(f.Port)
-	}
-	return err
+	return runTUIConnect(ctx, client, f, tui.DaemonAttached)
 }
 
 // maxRemotePasswordPrompts bounds the interactive re-prompt loop so a wrong
@@ -69,80 +64,64 @@ func runTUIClient(ctx context.Context, f Flags) error {
 // single-shot.
 const maxRemotePasswordPrompts = 3
 
-// runTUIViaRemote attaches the TUI to a daemon over HTTP. It probes health and
-// whether auth is required (so a RUNWISP_AUTH=off daemon connects with none),
-// authenticates via CHAP when needed (reusing a cached JWT), then hands the
-// authenticated client to the shared TUI launch path.
-func runTUIViaRemote(ctx context.Context, baseURL string, f Flags) error {
-	probe := apiclient.New(baseURL, "")
-
-	// Health is a public endpoint — probe it before auth so an unreachable
-	// daemon reports as such rather than as a login failure.
-	if err := probe.HealthCheck(ctx); err != nil {
-		return remoteUnreachableError(baseURL, err)
+// runTUIViaRemote attaches the TUI to a daemon over HTTP. It dials the daemon
+// the way run --url does (pinned cert, health probe), checks whether auth is
+// required (so a RUNWISP_AUTH=off daemon connects with none), authenticates
+// via CHAP when needed (reusing a cached JWT), then hands the client to the
+// shared TUI launch path.
+func runTUIViaRemote(ctx context.Context, baseURL, envPassword string) error {
+	client, err := dialRemote(ctx, baseURL, envPassword)
+	if err != nil {
+		return err
 	}
 
-	status, err := probe.AuthStatus(ctx)
+	status, err := client.AuthStatus(ctx)
 	if err != nil {
 		return fmt.Errorf("check authentication status at %s: %w", baseURL, err)
 	}
 
-	client := probe
 	if status.AuthRequired {
-		authed, authErr := authenticateRemoteTUI(ctx, baseURL)
-		if authErr != nil {
-			return authErr
+		if client, err = authenticateRemoteTUI(ctx, baseURL, envPassword); err != nil {
+			return err
 		}
-		client = authed
 	}
 
 	return launchConnectedTUI(ctx, client, tuiConnectMode{remote: true, connBaseURL: baseURL})
 }
 
-// authenticateRemoteTUI returns an authenticated client for baseURL. It reuses a
-// cached session token when one is valid; otherwise it resolves a password
-// (RUNWISP_PASSWORD or a no-echo prompt) and runs the CHAP handshake, caching
-// the resulting token and re-prompting on a wrong password when interactive.
-func authenticateRemoteTUI(ctx context.Context, baseURL string) (*apiclient.Client, error) {
+// authenticateRemoteTUI returns an authenticated, cert-pinned client for
+// baseURL. It reuses a cached session token when one is valid; otherwise it
+// resolves a password (envPassword or a no-echo prompt) and runs the CHAP
+// handshake, caching the resulting token and re-prompting on a wrong password
+// when interactive.
+func authenticateRemoteTUI(ctx context.Context, baseURL, envPassword string) (*apiclient.Client, error) {
 	if cached := loadCachedToken(baseURL); cached != "" {
-		client := apiclient.New(baseURL, "")
+		client := apiclient.NewPinned(baseURL, "", certPinStore{})
 		client.SetToken(cached)
 		return client, nil
 	}
 
-	envPassword := os.Getenv("RUNWISP_PASSWORD")
 	interactive := isInteractiveTerminal()
-
-	for attempt := 0; attempt < maxRemotePasswordPrompts; attempt++ {
+	for attempt := 1; ; attempt++ {
 		password, err := resolveRemotePassword(baseURL, envPassword, interactive)
 		if err != nil {
 			return nil, err
 		}
 
-		client := apiclient.New(baseURL, password)
+		client := apiclient.NewPinned(baseURL, password, certPinStore{})
 		authErr := client.Authenticate(ctx)
 		if authErr == nil {
 			storeCachedToken(baseURL, client.Token())
 			return client, nil
 		}
-
-		switch {
-		case errors.Is(authErr, apiclient.ErrUnauthorized):
-			// Only an interactive prompt is worth retrying; an env-var password
-			// is fixed, so fail fast rather than loop on the same value.
-			if interactive && envPassword == "" && attempt+1 < maxRemotePasswordPrompts {
-				fmt.Fprintln(os.Stderr, "Incorrect password — try again.")
-				continue
-			}
-			return nil, remoteAuthFailedError(baseURL)
-		case errors.Is(authErr, apiclient.ErrRateLimited):
-			return nil, remoteRateLimitedError(baseURL)
-		default:
-			return nil, fmt.Errorf("authenticate with %s: %w", baseURL, authErr)
+		// Only an interactive prompt is worth retrying; an env-var password
+		// is fixed, so fail fast rather than loop on the same value.
+		if errors.Is(authErr, apiclient.ErrUnauthorized) && interactive && envPassword == "" && attempt < maxRemotePasswordPrompts {
+			fmt.Fprintln(os.Stderr, "Incorrect password, try again.")
+			continue
 		}
+		return nil, remoteLoginError(authErr, baseURL)
 	}
-
-	return nil, remoteAuthFailedError(baseURL)
 }
 
 // resolveRemotePassword yields the password for the CHAP handshake: the
@@ -177,24 +156,9 @@ func promptPassword(prompt string) (string, error) {
 
 func buildStartupInfoFromDaemon(info *model.DaemonInfo) uikit.StartupInfo {
 	si := uikit.StartupInfo{}
-	if info == nil {
-		return si
+	if info != nil {
+		si.ApplyDaemonInfo(*info)
+		si.Tasks = info.Tasks
 	}
-	si.Version = info.Version
-	si.Fingerprint = info.Fingerprint
-	si.Port = info.Port
-	si.StationEnabled = info.StationEnabled
-	si.ServiceManaged = info.ServiceManaged
-	si.AuthDisabled = info.AuthDisabled
-	si.ConfigStale = info.ConfigStale
-	// Carried on attach so the header shows config findings before the first
-	// /api/daemon poll lands; they appear nowhere else in the TUI.
-	si.ConfigWarnings = info.ConfigWarnings
-	si.Timezone = info.ResolvedTimezone
-	si.TimezoneSource = info.TimezoneSource
-
-	si.Tasks = info.Tasks
-	si.Capabilities = info.Capabilities
-
 	return si
 }

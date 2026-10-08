@@ -9,12 +9,12 @@
   renders removable chips for each.
 
   Status is a five-bucket pick (Running / Succeeded / Failed / Skipped /
-  Stopped) with an "Advanced" expander for the individual statuses — buckets are
+  Stopped) with an "Advanced" expander for the individual statuses, buckets are
   pure UI groupings over the same `statuses` array. Time is an independent
   From/To date pair; exit code is a free-form expression (137, >100, >100 <150)
   normalized to an inclusive range at the wire.
 
-  All controls are NATIVE (<select>, <input>, checkbox, button) — a portalled
+  All controls are NATIVE (<select>, <input>, checkbox, button), a portalled
   Select component must not nest inside the portalled Popover, since clicking an
   option lands outside the popover's DOM subtree and triggers its outside-click
   close. Every mutation reassigns the whole `filters` object (never an in-place
@@ -75,7 +75,7 @@
     }
 
     // Reflect a tri-state bucket onto the native checkbox (no `indeterminate`
-    // HTML attribute exists — it must be set on the DOM node).
+    // HTML attribute exists, it must be set on the DOM node).
     function indeterminate(node: HTMLInputElement, value: boolean) {
         node.indeterminate = value;
         return {
@@ -95,7 +95,7 @@
     // --- Time -------------------------------------------------------------
     //
     // Independent From/To date bounds. A bare date is that day's 00:00 (From) or
-    // its end (To), so either edge applies on its own — From alone means
+    // its end (To), so either edge applies on its own, From alone means
     // "everything since", To alone "everything before", and the same date in
     // both captures the whole day.
 
@@ -186,7 +186,7 @@
                     class="flex cursor-pointer items-center gap-1 font-mono text-2xs font-medium text-on-surface-muted select-none marker:content-none hover:text-on-surface [&::-webkit-details-marker]:hidden"
                 >
                     <ChevronRight size={12} class={advancedOpen ? "rotate-90" : ""} />
-                    Advanced — pick exact statuses
+                    Advanced: pick exact statuses
                 </summary>
                 <div class="mt-2 flex flex-col gap-1.5">
                     {#each STATUS_GROUPS as group (group.label)}

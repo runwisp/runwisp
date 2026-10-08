@@ -73,27 +73,26 @@ func TestServiceStart_IsIdempotent(t *testing.T) {
 	t.Cleanup(func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		_ = svc.Stop(stopCtx)
+		svc.Stop(stopCtx)
 	})
 	svc.Start(context.Background()) // must be a no-op, not a second set of workers
 }
 
-// TestServiceStop_NotStartedReturnsNil covers the "not started" early-return.
-func TestServiceStop_NotStartedReturnsNil(t *testing.T) {
+// TestServiceStop_NotStartedIsNoOp covers the "not started" early-return.
+func TestServiceStop_NotStartedIsNoOp(t *testing.T) {
 	svc := New(Config{Bus: events.NewEventBus()})
-	require.NoError(t, svc.Stop(context.Background()))
+	svc.Stop(context.Background())
 }
 
-// TestServiceStop_DoubleStopReturnsNil covers the second-call CompareAndSwap
+// TestServiceStop_DoubleStopIsNoOp covers the second-call CompareAndSwap
 // branch in Stop.
-func TestServiceStop_DoubleStopReturnsNil(t *testing.T) {
+func TestServiceStop_DoubleStopIsNoOp(t *testing.T) {
 	svc := New(Config{Bus: events.NewEventBus()})
 	svc.Start(context.Background())
 	stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	require.NoError(t, svc.Stop(stopCtx))
-	require.NoError(t, svc.Stop(context.Background()),
-		"repeated Stop calls must short-circuit, not error")
+	svc.Stop(stopCtx)
+	svc.Stop(context.Background())
 }
 
 // TestServiceStop_FastWhenIdle exercises the shutdown path. With the retention
@@ -118,7 +117,7 @@ func TestServiceStop_FastWhenIdle(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	require.NoError(t, svc.Stop(stopCtx))
+	svc.Stop(stopCtx)
 	elapsed := time.Since(start)
 
 	assert.Less(t, elapsed, deadline/2,
@@ -184,7 +183,7 @@ func TestOnBusEvent_AfterStopDropsWithoutPanic(t *testing.T) {
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	require.NoError(t, svc.Stop(stopCtx))
+	svc.Stop(stopCtx)
 
 	before := svc.droppedIngress.Load()
 
@@ -226,7 +225,7 @@ func TestServiceStop_RetentionTickerExits(t *testing.T) {
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	require.NoError(t, svc.Stop(stopCtx))
+	svc.Stop(stopCtx)
 
 	assert.NoError(t, stopCtx.Err(), "Stop must not consume its own deadline when idle")
 

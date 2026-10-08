@@ -114,7 +114,7 @@
         // null = no active search; the full list shows.
         outputMatches?: Map<string, RunOutputMatch> | null;
         // True while a query is typed but its results aren't in yet (debounce
-        // window or request in flight) — the rail shows its searching shimmer.
+        // window or request in flight), the rail shows its searching shimmer.
         outputSearchPending?: boolean;
     } = $props();
 
@@ -124,7 +124,7 @@
     const OVERSCAN = 8;
     const LOAD_AHEAD = 10;
 
-    // Selection model: two modes —
+    // Selection model: two modes,
     //   1. explicit:  user picked specific rows. explicitIds holds them.
     //   2. selectAll: "all matching the current filter". exceptIds holds opt-outs.
     let selectAllMode = $state(false);
@@ -139,13 +139,13 @@
 
     // Loaded runs that matched the output search, in list order. A match in a
     // not-yet-loaded run can't be shown until the rail scrolls far enough to
-    // load it — the count reflects what's loaded, not the whole history.
+    // load it, the count reflects what's loaded, not the whole history.
     const matchedRuns = $derived(
         outputMatches ? items.filter((r: Run) => outputMatches.has(r.id)) : [],
     );
 
     // Split the matching line into [before, match, after] around the first
-    // occurrence of the query, windowed to keep the match in view — mirrors the
+    // occurrence of the query, windowed to keep the match in view, mirrors the
     // artifact's snippet. Rendered as plain text spans (Svelte auto-escapes), so
     // no untrusted HTML ever reaches the DOM.
     interface HighlightParts {
@@ -600,8 +600,8 @@
     </div>
 </div>
 
-<!-- Status dot. With bulk actions on it fades out — on row hover, or whenever a
-     selection exists — so the row checkbox can take its place over it. -->
+<!-- Status dot. With bulk actions on it fades out, on row hover, or whenever a
+     selection exists, so the row checkbox can take its place over it. -->
 <!-- Placeholders shaped like this list's run rows (same padding, dot, text
      and right readout), while a search or the first page is in flight. -->
 {#snippet skeletonRows(label: string)}
@@ -697,7 +697,7 @@
     >
         {#if showTaskName}
             <!-- Cross-task /runs variant: the same readout language as the task
-                 rail — status dot, status-colored outcome, mono right readout —
+                 rail, status dot, status-colored outcome, mono right readout,
                  with the task name carried as the primary. -->
             <div class="flex items-center gap-2.5">
                 {@render statusDot(config.color, running)}
@@ -735,7 +735,7 @@
                 </span>
             </div>
         {:else}
-            <!-- Task-rail variant (artifact ".run"): a single dense line —
+            <!-- Task-rail variant (artifact ".run"): a single dense line,
                  time · date · outcome, with a mono exit/duration readout.
                  leading-tight matches the artifact's ~1.2 line-height so the
                  (descender-less) text optically centers instead of riding high

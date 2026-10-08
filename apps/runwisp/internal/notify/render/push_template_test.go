@@ -21,7 +21,7 @@ func renderPush(t *testing.T, kind string, ctx TemplateContext, ev *notify.Event
 	t.Helper()
 	body, err := LoadDefaultTemplate(kind)
 	require.NoError(t, err)
-	r, err := NewTemplateRenderer(kind+":test", body, "application/json", DefaultTitle, ctx)
+	r, err := NewTemplateRenderer(kind+":test", body, DefaultTitle, ctx)
 	require.NoError(t, err)
 	out, err := r.Render(ev)
 	require.NoError(t, err)

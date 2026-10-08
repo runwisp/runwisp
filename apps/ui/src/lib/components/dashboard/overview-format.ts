@@ -8,8 +8,8 @@ import {
     runDuration,
 } from "@runwisp/ui";
 import type { TaskOverview } from "./overview.js";
-import { taskInstanceCount } from "./instance-count.js";
-import type { Run } from "@runwisp/common";
+import { serviceLabel } from "$lib/utils/task";
+import { isService, type Run } from "@runwisp/common";
 
 export function pluralize(count: number): string {
     return count === 1 ? "" : "s";
@@ -51,7 +51,7 @@ export function formatTaskLastResultLabel(task: TaskOverview): string {
 }
 
 export function formatTaskNextRunLabel(task: TaskOverview, now: Date = new Date()): string {
-    if (task.task.kind === "service") {
+    if (isService(task.task.kind)) {
         return "Always on";
     }
 
@@ -67,9 +67,8 @@ export function formatTaskNextRunLabel(task: TaskOverview, now: Date = new Date(
 }
 
 export function formatTaskTriggerLabel(task: TaskOverview): string {
-    if (task.task.kind === "service") {
-        const instances = taskInstanceCount(task.task);
-        return instances > 1 ? `Service ×${String(instances)}` : "Service";
+    if (isService(task.task.kind)) {
+        return serviceLabel(task.task);
     }
 
     if (task.task.cron) {
@@ -82,7 +81,7 @@ export function formatTaskTriggerLabel(task: TaskOverview): string {
 // taskTriggerIsHumanizedCron reports whether the trigger label is plain
 // English (proportional font) rather than a raw cron expression (mono).
 export function taskTriggerIsHumanizedCron(task: TaskOverview): boolean {
-    if (task.task.kind === "service" || !task.task.cron) {
+    if (isService(task.task.kind) || !task.task.cron) {
         return false;
     }
     return humanizeCron(task.task.cron).isHumanized;

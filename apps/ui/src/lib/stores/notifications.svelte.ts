@@ -5,10 +5,9 @@ import { z } from "zod";
 import type { AppEventStream } from "./event-manager";
 import { appEventStream } from "./app-stream";
 import { createLogger } from "@runwisp/common";
-import { authFetch, handleUnauthorized } from "$lib/utils/auth-required";
-import { HTTP_STATUS } from "$lib/config/constants";
+import { authFetch } from "$lib/utils/auth-required";
 import { safeParseJSON } from "$lib/utils/parse";
-import { connectionStore } from "./connection.svelte";
+import { connectionStore, trackStreamHealth } from "./connection.svelte";
 
 const notificationSchema = z.object({
     id: z.string(),
@@ -66,7 +65,7 @@ class NotificationStore {
     #items = $state<Notification[]>([]);
     // unread is the server's authoritative snapshot. Every SSE event
     // (notification.created/updated/unreadCountChanged) carries the
-    // post-mutation count and we set it directly from that — never delta
+    // post-mutation count and we set it directly from that, never delta
     // math, since a row absent from our paginated #items would otherwise
     // drift the count on every recurrence. We never recompute it from
     // #items because items is paginated.
@@ -153,7 +152,7 @@ class NotificationStore {
     async markAllRead(): Promise<void> {
         const now = new Date().toISOString();
         // Snapshot which rows were unread when the request was ISSUED, not
-        // when it resolves — a notification created while the request is in
+        // when it resolves, a notification created while the request is in
         // flight (delivered via its own SSE event, with its own authoritative
         // unread count) must not be swept into "read" just because it's
         // unread in #items at response time.
@@ -169,7 +168,7 @@ class NotificationStore {
             );
             // The server just marked every pre-existing row read, so the new
             // total is however many *still-unread* rows we know about that
-            // weren't part of that snapshot — i.e. arrived during the
+            // weren't part of that snapshot, i.e. arrived during the
             // request. Not a subtraction from the old #unread: that count may
             // already have been bumped by a concurrent notification.created
             // SSE event, and subtracting the full snapshot size from it would
@@ -191,25 +190,10 @@ class NotificationStore {
         if (this.#subscribed) return;
         this.#subscribed = true;
         this.#unsubscribes.push(
-            this.#events.onOpen(() => {
-                connectionStore.reportSourceUp(SOURCE_ID);
-            }),
-            this.#events.onError((info) => {
-                if (info.status === HTTP_STATUS.UNAUTHORIZED) {
-                    handleUnauthorized();
-                } else {
-                    connectionStore.reportSourceDown(
-                        SOURCE_ID,
-                        info.message ?? "Notifications stream error",
-                    );
-                }
-            }),
-            this.#events.onStall(() => {
-                connectionStore.reportSourceStalled(SOURCE_ID);
-            }),
+            trackStreamHealth(this.#events, SOURCE_ID),
             // The notification hub has no replay of its own (unlike the
-            // id-sequenced run/system event ring), so any reconnect gap —
-            // a real network drop, or a cross-tab leader handoff — can drop
+            // id-sequenced run/system event ring), so any reconnect gap,
+            // a real network drop, or a cross-tab leader handoff, can drop
             // a notification permanently. Resync from REST, the same pattern
             // every sibling data source (runs-source, AsyncData) already uses.
             connectionStore.onReconnect(() => {

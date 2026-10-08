@@ -105,14 +105,6 @@ func TestRenderError_WithHint(t *testing.T) {
 	assert.Contains(t, out, "Run 'runwisp --help' for usage.")
 }
 
-func TestAuthRateLimitedError_HasHints(t *testing.T) {
-	err := authRateLimitedError(9477)
-	var ufe *userFacingError
-	require.True(t, errors.As(err, &ufe))
-	assert.Contains(t, ufe.title, "9477")
-	assert.Contains(t, ufe.details, "Wait")
-}
-
 func TestIsUserFacing_Direct(t *testing.T) {
 	e := &userFacingError{title: "direct error"}
 	got, ok := isUserFacing(e)

@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -111,6 +112,18 @@ func TestHandleLogSearchRequest_UnknownExecutionExhausted(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, chunk.Exhausted, "unknown execution = nothing to scan, exhausted")
 	assert.Empty(t, chunk.Hits)
+}
+
+func TestHandleLogSearchRequest_BadRegexReportsKindOnce(t *testing.T) {
+	run := &model.Run{ID: testRunID, TaskName: "t1", Status: model.PhaseEnded, CreatedAt: time.Now()}
+	h := newDispatchInboundHandler(nil, &stubRunRepo{run: run}, executor.Availability{})
+
+	_, err := h.HandleLogSearchRequest(context.Background(), protocol.LogSearchRequestMessage{
+		RequestID: "r", ExecutionID: "exec-1", Query: "([", Regex: true,
+	})
+	require.Error(t, err)
+	assert.Equal(t, StationErrorKindValidation, classifyErrorKind(err))
+	assert.Equal(t, 1, strings.Count(err.Error(), string(StationErrorKindValidation)), "kind prefix must not repeat: %q", err.Error())
 }
 
 func TestHandleLogSearchRequest_MissingExecID(t *testing.T) {

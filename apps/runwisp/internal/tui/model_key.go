@@ -279,7 +279,7 @@ func handleKeyEnterNotifications(m Model) (Model, tea.Cmd, bool) {
 		// The panel stays open until the run actually opens (openExecView
 		// collapses it), so a run that no longer exists leaves the operator
 		// where they were, with a flash explaining why.
-		return m, m.openRunByID(sel.TaskName, sel.RunID), true
+		return m, m.openRunByID(sel.RunID), true
 	}
 	return m, nil, true
 }
@@ -405,7 +405,7 @@ func handleKeyU(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 // run when an exec view is showing, otherwise the focused task (with an async
 // health fetch). With nothing inspectable it falls through.
 func handleKeyI(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
-	if m.execView != nil && m.execView.Run != nil {
+	if m.currentRun() != nil {
 		d := NewRunDetailDialog(m.execView.Run, m.execView.TaskIsService, m.execView.InstanceCount)
 		d.loc = m.loc
 		m.dialogs.Show(dlgRunDetail, d)
@@ -532,7 +532,7 @@ func handleKeyDownHome(m Model) (Model, tea.Cmd, bool) {
 // overlay. The feature is scoped to a task — the user must either be
 // looking at an exec view or have a task selected in the sidebar.
 func (m Model) canOpenLogSearch() bool {
-	if m.execView != nil && m.execView.Run != nil {
+	if m.currentRun() != nil {
 		return true
 	}
 	return m.sidebar.ActiveTask() != ""
@@ -542,7 +542,7 @@ func (m Model) canOpenLogSearch() bool {
 // exec view's task takes precedence over the sidebar selection. Empty when no
 // task is in focus (e.g. the Home/Info/Debug pages).
 func (m Model) focusedTaskName() string {
-	if m.execView != nil && m.execView.Run != nil {
+	if m.currentRun() != nil {
 		return m.execView.Run.TaskName
 	}
 	return m.sidebar.ActiveTask()
@@ -555,7 +555,7 @@ func (m Model) openLogSearch() (tea.Model, tea.Cmd) {
 	if taskName == "" {
 		return m, nil
 	}
-	ls := logsearch.New(m.client, taskName)
+	ls := logsearch.New(m.streams.client, taskName)
 	m.logSearch = &ls
 	return m, nil
 }
@@ -614,7 +614,7 @@ func (m *Model) bulkDeleteSelection() tea.Cmd {
 		return nil
 	}
 	m.execList.ClearSelection()
-	return m.streams.DeleteRunsUndoable(sel)
+	return m.streams.DeleteRuns(sel)
 }
 
 // bulkCancelSelection cancels the selected runs and clears the selection.
@@ -696,12 +696,12 @@ func (m Model) handleLogSearchSelect(msg logsearch.SelectMsg) (tea.Model, tea.Cm
 	m.logSearch = nil
 	m.pendingHighlight = msg.Line
 	m.pendingHighlightRun = msg.RunID
-	if m.execView != nil && m.execView.Run != nil && m.execView.Run.ID == msg.RunID {
+	if m.currentRun() != nil && m.execView.Run.ID == msg.RunID {
 		// Already open — jump immediately and clear the pending marker.
 		m.execView.Pane.JumpToLine(msg.Line)
 		m.pendingHighlight = 0
 		m.pendingHighlightRun = ""
 		return m, nil
 	}
-	return m, m.openRunByID(msg.TaskName, msg.RunID)
+	return m, m.openRunByID(msg.RunID)
 }

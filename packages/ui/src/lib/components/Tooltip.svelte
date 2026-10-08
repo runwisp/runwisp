@@ -45,7 +45,7 @@
     {@render children()}
 
     <!-- Hover intent: 100ms before it appears, so sweeping the pointer across a
-         dense row doesn't flash a trail of bubbles. Still no fade — `duration-0`
+         dense row doesn't flash a trail of bubbles. Still no fade, `duration-0`
          keeps the appearance instant once the delay is served, per DESIGN.md. -->
     <div
         class="

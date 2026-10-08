@@ -8,7 +8,7 @@
     import { systemStore } from "$lib/stores";
 
     // A stat pane, in the website's tmux-pane language: the label rides the top
-    // hairline as a lowercase tab. State is carried by the number itself — it
+    // hairline as a lowercase tab. State is carried by the number itself, it
     // stays neutral while things are fine and takes on a tone when they aren't,
     // so a bad pane is the single lit thing on the page instead of a second
     // label in the opposite corner arguing with the first.

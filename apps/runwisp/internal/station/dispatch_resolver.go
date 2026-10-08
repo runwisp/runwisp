@@ -4,6 +4,7 @@
 package station
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -16,21 +17,9 @@ import (
 // daemon's TOML-defined tasks for a config execution, otherwise an ephemeral
 // task synthesized from the inline definition.
 func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (string, error) {
-	execDef, err := model.ParseExecutionDef(dispatch.Script)
+	execDef, err := h.parseAvailableDef(dispatch.Script)
 	if err != nil {
-		return "", &StationError{
-			Kind:    StationErrorKindValidation,
-			Message: fmt.Sprintf("failed to parse execution def: %v", err),
-		}
-	}
-
-	// Reject execution types the daemon doesn't allow for station dispatch.
-	status := h.availability.ForType(execDef.ExecType())
-	if !status.Available {
-		return "", &StationError{
-			Kind:    StationErrorKindConflict,
-			Message: fmt.Sprintf("execution type %q not available: %s", execDef.ExecType(), status.Reason),
-		}
+		return "", err
 	}
 
 	if cfg, ok := execDef.(*model.ConfigExecution); ok {
@@ -76,6 +65,25 @@ func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (stri
 	}
 	h.taskManager.UpsertTask(task)
 	return task.Name, nil
+}
+
+// parseAvailableDef parses a peer-supplied execution definition and rejects
+// execution types the daemon doesn't allow for station dispatch.
+func (h *InboundHandler) parseAvailableDef(script json.RawMessage) (model.ExecutionDef, error) {
+	execDef, err := model.ParseExecutionDef(script)
+	if err != nil {
+		return nil, &StationError{
+			Kind:    StationErrorKindValidation,
+			Message: fmt.Sprintf("failed to parse execution def: %v", err),
+		}
+	}
+	if status := h.availability.ForType(execDef.ExecType()); !status.Available {
+		return nil, &StationError{
+			Kind:    StationErrorKindConflict,
+			Message: fmt.Sprintf("execution type %q not available: %s", execDef.ExecType(), status.Reason),
+		}
+	}
+	return execDef, nil
 }
 
 func buildDynamicStationTask(dispatch *protocol.Execution, execDef model.ExecutionDef) *model.Task {

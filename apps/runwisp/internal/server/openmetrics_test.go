@@ -27,6 +27,7 @@ func buildOpenMetricsServer(t *testing.T, info *model.DaemonInfo) (*Server, *tes
 		db:          repo,
 		taskManager: runner,
 		stats:       newStatsProvider(info, time.Now().Add(-90*time.Second)),
+		runService:  newRunService(repo, runner, nil, nil, nil),
 	}
 	return srv, repo, runner
 }
@@ -183,7 +184,7 @@ func TestEscapeLabelValue(t *testing.T) {
 		"no escape needed": "no escape needed",
 	}
 	for in, want := range cases {
-		assert.Equalf(t, want, escapeLabelValue(in), "input=%q", in)
+		assert.Equalf(t, want, labelValueEscaper.Replace(in), "input=%q", in)
 	}
 }
 
@@ -200,7 +201,7 @@ func TestEscapeHelp(t *testing.T) {
 		"no escape here": "no escape here",
 	}
 	for in, want := range cases {
-		assert.Equalf(t, want, escapeHelp(in), "input=%q", in)
+		assert.Equalf(t, want, helpEscaper.Replace(in), "input=%q", in)
 	}
 }
 

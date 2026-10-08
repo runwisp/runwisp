@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"mime"
 	"net/http"
 	"path"
 	"strings"
@@ -103,10 +102,8 @@ func tryServeFile(stripped fs.FS, w http.ResponseWriter, req *http.Request, reqP
 		return false
 	}
 
-	if contentType := mime.TypeByExtension(path.Ext(reqPath)); contentType != "" {
-		w.Header().Set("Content-Type", contentType)
-	}
-	// Regular files from embed.FS are always seekable.
+	// Regular files from embed.FS are always seekable. ServeContent sets
+	// Content-Type from the extension (sniffing when it has none).
 	http.ServeContent(w, req, reqPath, stat.ModTime(), f.(io.ReadSeeker))
 	return true
 }

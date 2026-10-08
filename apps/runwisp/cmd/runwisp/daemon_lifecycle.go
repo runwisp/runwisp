@@ -45,7 +45,7 @@ func startStationClient(
 	}
 
 	stationClient, clientErr := station.NewClient(cfg.StationConfig, station.Dependencies{
-		TaskManager:       &stationTaskRunner{stationRuntime: svc.TaskManager},
+		TaskManager:       svc.TaskManager,
 		RunRepo:           svc.DB,
 		PendingUploadRepo: svc.DB,
 		EventBus:          svc.EventBus,
@@ -242,9 +242,7 @@ func waitDrain(svc *daemonServices, taskTimeout time.Duration) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := svc.Notify.Stop(ctx); err != nil {
-			slog.Warn("notification service shutdown error", "err", err)
-		}
+		svc.Notify.Stop(ctx)
 	}()
 	wg.Add(1)
 	go func() {

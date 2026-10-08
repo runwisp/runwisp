@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import type { SSEErrorInfo } from "$lib/utils/event-source";
+import { parseErrorInfo, type SSEErrorInfo } from "$lib/utils/event-source";
 import { createLogger } from "@runwisp/common";
 import { isRecord } from "$lib/utils/parse";
 import { EventManager, type AppEventStream } from "./event-manager";
@@ -127,7 +127,7 @@ export class SharedAppStream implements AppEventStream {
     /**
      * Whether this tab is actually sharing one connection across tabs (Web Locks
      * + BroadcastChannel present). When false we've degraded to one EventSource
-     * per tab, so a stall genuinely can be caused by too many open tabs — UI copy
+     * per tab, so a stall genuinely can be caused by too many open tabs, UI copy
      * keys off this to decide whether blaming tabs is honest.
      */
     get sharing(): boolean {
@@ -189,7 +189,7 @@ export class SharedAppStream implements AppEventStream {
     // Hand leadership back to the cohort when this tab is hidden or about to be
     // frozen/unloaded. The browser only freezes hidden tabs, so releasing the
     // lock the moment we go hidden (after a short grace) keeps the sole
-    // connection on a tab that is still alive — a backgrounded tab can no longer
+    // connection on a tab that is still alive, a backgrounded tab can no longer
     // hold it hostage and starve every visible tab. Browser-only; no-op under
     // SSR or where the lifecycle events are unavailable.
     #bindLifecycle(): void {
@@ -232,7 +232,7 @@ export class SharedAppStream implements AppEventStream {
     // election from the back of the queue. A still-visible tab is ahead in the
     // queue and is promoted; a lone tab simply re-wins and reopens. Closing the
     // EventManager is quiet (no error broadcast), so followers keep their last
-    // lifecycle until the new leader's stream opens — no spurious disconnect.
+    // lifecycle until the new leader's stream opens, no spurious disconnect.
     #relinquishLeadership(): void {
         this.#cancelRelinquish();
         if (!this.#started || !this.#isLeader) return;
@@ -255,7 +255,7 @@ export class SharedAppStream implements AppEventStream {
     #becomeLeader(): void {
         if (!this.#started || this.#isLeader) return;
         this.#isLeader = true;
-        logger.info("elected leader — opening the shared app-event stream");
+        logger.info("elected leader, opening the shared app-event stream");
 
         const mgr = this.#createLeaderManager(() => this.#lastEventId);
         this.#leader = mgr;
@@ -303,7 +303,7 @@ export class SharedAppStream implements AppEventStream {
         const msg = parseSharedMessage(raw);
         if (!msg) return;
         // A leader never receives its own broadcasts (BroadcastChannel doesn't
-        // echo), so leader vs follower see disjoint message sets — split them.
+        // echo), so leader vs follower see disjoint message sets, split them.
         if (this.#isLeader) this.#handleAsLeader(msg);
         else this.#handleAsFollower(msg);
     }
@@ -430,16 +430,6 @@ function parseEventMessage(type: unknown, data: unknown, id: unknown): SharedMes
 
 function parseStringArray(value: unknown): string[] {
     return Array.isArray(value) ? value.filter((x): x is string => typeof x === "string") : [];
-}
-
-function parseErrorInfo(value: unknown): SSEErrorInfo {
-    const info: SSEErrorInfo = {};
-    if (!isRecord(value)) return info;
-    if (typeof value.status === "number") info.status = value.status;
-    if (typeof value.message === "string") info.message = value.message;
-    if (typeof value.readyState === "number") info.readyState = value.readyState;
-    if (typeof value.url === "string") info.url = value.url;
-    return info;
 }
 
 // ─── default browser transports ──────────────────────────────────────────────

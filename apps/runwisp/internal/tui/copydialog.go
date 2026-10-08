@@ -22,19 +22,7 @@ func NewCopyDialog(title, value string) *CopyDialog {
 }
 
 func (d *CopyDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "esc", "enter", "backspace", "q":
-			return nil, true
-		}
-	case tea.MouseClickMsg:
-		// Right-click closes the dialog; left-click is reserved for text selection.
-		if msg.Button == tea.MouseRight {
-			return nil, true
-		}
-	}
-	return nil, false
+	return nil, isTextModalDismiss(msg)
 }
 
 func (d *CopyDialog) View(screenWidth, screenHeight int) string {
@@ -54,14 +42,12 @@ func (d *CopyDialog) View(screenWidth, screenHeight int) string {
 		Align(lipgloss.Center).
 		Render(d.value)
 
-	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, []string{
+	lines := []string{
 		modalEmptyLine(innerWidth),
 		titleStr,
 		modalEmptyLine(innerWidth),
 		valueStr,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine("select text above · esc/enter close", innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
-	})
-	return box.view
+	}
+	lines = append(lines, modalFooter("select text above · esc/enter close", innerWidth)...)
+	return renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, lines).view
 }

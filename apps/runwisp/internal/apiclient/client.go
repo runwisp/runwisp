@@ -72,24 +72,10 @@ func NewPinned(baseURL, password string, pins CertPinStore) *Client {
 	return c
 }
 
-// NewProbe constructs a short-timeout, password-less Client for one-shot local
-// identity probes (GET /api/daemon/identity). The brief timeout keeps a launcher that
-// hit a port conflict from stalling when the port-holder is slow or not even an
-// HTTP server. It carries no password — /api/daemon/identity is public but local-gated.
-func NewProbe(baseURL string) *Client {
-	return &Client{
-		baseURL: NormalizeBaseURL(baseURL),
-		httpClient: &http.Client{
-			Timeout: 2 * time.Second,
-		},
-		streamClient: &http.Client{},
-	}
-}
-
 // NewUnix constructs a Client that talks to the daemon over a Unix socket.
 // The local CLI/TUI use this path: the socket already gates access via 0700
 // datadir + 0600 socket-file perms + PEERCRED, so no password is required
-// and Authenticate is a no-op (IsAuthenticated returns true immediately).
+// and Authenticate is a no-op.
 func NewUnix(socketPath string) *Client {
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
 	transport := &http.Transport{
@@ -120,10 +106,7 @@ func (c *Client) Authenticate(ctx context.Context) error {
 	}
 
 	var challenge server.AuthChallengeBody
-	if err := c.doJSON(ctx, "GET", "/api/auth/challenge", nil, &challenge); err != nil {
-		if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrRateLimited) {
-			return err
-		}
+	if err := c.doJSON(ctx, http.MethodGet, "/api/auth/challenge", nil, &challenge); err != nil {
 		return fmt.Errorf("auth challenge: %w", err)
 	}
 
@@ -132,21 +115,12 @@ func (c *Client) Authenticate(ctx context.Context) error {
 		Response: chap.Response(c.password, challenge.Nonce),
 	}
 	var authResult server.AuthLoginBody
-	if err := c.doJSON(ctx, "POST", "/api/auth/login", body, &authResult); err != nil {
-		if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrRateLimited) {
-			return err
-		}
+	if err := c.doJSON(ctx, http.MethodPost, "/api/auth/login", body, &authResult); err != nil {
 		return fmt.Errorf("auth failed: %w", err)
 	}
 
 	c.token = authResult.Token
 	return nil
-}
-
-// IsAuthenticated reports whether the client is ready to make protected
-// API calls. Unix-socket clients are always authenticated.
-func (c *Client) IsAuthenticated() bool {
-	return c.local || c.token != ""
 }
 
 // SetToken seeds the client with a previously obtained JWT, letting callers
@@ -207,11 +181,17 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body io.Rea
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	return c.send(c.httpClient, req)
+}
+
+// send attaches the session token, performs req on hc, and maps a non-2xx
+// response to ErrUnauthorized, ErrRateLimited or an *HTTPStatusError.
+func (c *Client) send(hc *http.Client, req *http.Request) (*http.Response, error) {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -277,7 +257,7 @@ func IsHTTPStatus(err error, code int) bool {
 // The ticket can be redeemed via GET /api/auth/launch-ticket?ticket=<ticket>.
 func (c *Client) CreateLaunchTicket(ctx context.Context) (string, error) {
 	var resp server.LaunchTicketBody
-	if err := c.doJSON(ctx, "POST", "/api/auth/launch-ticket", nil, &resp); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/api/auth/launch-ticket", nil, &resp); err != nil {
 		return "", err
 	}
 	return resp.Ticket, nil

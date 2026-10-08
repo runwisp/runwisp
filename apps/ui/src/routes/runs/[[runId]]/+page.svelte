@@ -5,7 +5,7 @@
     import { page } from "$app/stores";
     import { resolve } from "$app/paths";
     import { RunsPage } from "$lib/components/dashboard";
-    import { instanceCountResolver } from "$lib/components/dashboard/instance-count";
+    import { instanceCountResolver } from "$lib/utils/task";
     import { taskStore } from "$lib/stores";
     import { createLiveRuns } from "$lib/utils/live-runs.svelte";
     import { navigateToRun } from "$lib/utils/run-url";

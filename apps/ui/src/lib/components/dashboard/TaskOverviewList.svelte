@@ -31,7 +31,8 @@
         formatTaskTriggerLabel,
         taskTriggerIsHumanizedCron,
     } from "./overview-format.js";
-    import { taskIcon, taskTriggerTooltip } from "$lib/utils/task-icon";
+    import { isService } from "@runwisp/common";
+    import { hasCron, taskIcon, taskTriggerTooltip } from "$lib/utils/task";
 
     type BadgeTone = "default" | "primary" | "success" | "warning" | "danger" | "info";
 
@@ -186,7 +187,7 @@
     {#if taskOverviews.length === 0}
         <EmptyState
             title="No tasks configured yet"
-            description="Tasks are defined in your runwisp.toml — the daemon never edits them for you. Add one and restart the daemon:"
+            description="Tasks are defined in your runwisp.toml; the daemon never edits them for you. Add one and restart the daemon:"
             icon={Box}
         >
             {#snippet actions()}
@@ -217,7 +218,7 @@
         />
     {:else}
         <div class="space-y-2">
-            {#each filteredTasks as task (task.task.id)}
+            {#each filteredTasks as task (task.task.name)}
                 {@const taskState = getTaskStateConfig(task.state)}
                 {@const lastStatusConfig = task.lastStatus
                     ? RUN_STATUS_CONFIG[task.lastStatus]
@@ -263,7 +264,7 @@
                                         sourceFile={task.task.sourceFile}
                                     />
                                 {/if}
-                                {#if task.task.kind === "service"}
+                                {#if isService(task.task.kind)}
                                     <Badge variant="info" size="sm">
                                         {formatTaskTriggerLabel(task)}
                                     </Badge>
@@ -331,7 +332,7 @@
                                     >
                                         Trigger
                                     </p>
-                                    {#if task.task.cron && task.task.kind !== "service"}
+                                    {#if hasCron(task.task) && !isService(task.task.kind)}
                                         <Tooltip
                                             content={taskTriggerTooltip(task.task)}
                                             position="left"

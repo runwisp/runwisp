@@ -16,6 +16,7 @@ import (
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/textutil"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
@@ -25,11 +26,8 @@ import (
 
 const keyCtrlC = "ctrl+c"
 
-// Update processes messages by delegating to per-domain dispatchers. Each
-// dispatcher owns a related group of message types (input, streams, logs,
-// notifications, actions, lifecycle); routing is purely structural so adding
-// a new message means picking the right group rather than extending one
-// monolithic switch.
+// Update routes each message to its handler. The topmost open dialog gets
+// first claim on input.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Reset the per-message frame-reuse flag; only a coalesced mouse motion/wheel
 	// (see handleMouse) sets it back on, so every other message rebuilds the view
@@ -40,26 +38,115 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return newModel, cmd
 	}
 
-	dispatchers := []func(tea.Msg) (tea.Model, tea.Cmd, bool){
-		m.dispatchInputMsg,
-		m.dispatchStreamMsg,
-		m.dispatchLogMsg,
-		m.dispatchNotificationMsg,
-		m.dispatchActionMsg,
-		m.dispatchLifecycleMsg,
-	}
-	for _, dispatch := range dispatchers {
-		if newModel, cmd, ok := dispatch(msg); ok {
-			return newModel, cmd
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.handleWindowSize(msg)
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
+	case tea.KeyPressMsg:
+		return m.handleKey(msg)
+	case uikit.ExecWindowFetchedMsg:
+		m.handleExecWindowFetched(msg)
+	case uikit.SSEConnectedMsg:
+		return m.handleSSEConnected(msg)
+	case uikit.SSEEventMsg:
+		return m.handleSSEEventMsg(msg)
+	case uikit.SSEDisconnectedMsg:
+		return m.handleSSEDisconnected(msg)
+	case uikit.LogOlderLoadedMsg:
+		m.handleLogOlderLoaded(msg)
+	case uikit.LogTailLoadedMsg:
+		return m.handleLogTailLoaded(msg)
+	case uikit.LogStreamConnectedMsg:
+		return m.handleLogStreamConnected(msg)
+	case uikit.LogLineMsg:
+		return m.handleLogLine(msg)
+	case uikit.LogRegionMsg:
+		return m.handleLogRegion(msg)
+	case uikit.LogRotatedMsg:
+		return m.handleLogRotated(msg)
+	case uikit.LogDroppedMsg:
+		return m.handleLogDropped(msg)
+	case uikit.LogDoneMsg:
+		return m.handleLogDone(msg)
+	case uikit.DebugLogMsg:
+		m.handleDebugLog(msg)
+	case uikit.ReconnectLogMsg:
+		return m.handleReconnectLog(msg)
+	case uikit.LogLineHistoryMsg:
+		return m.handleLogLineHistory(msg)
+	case uikit.DaemonLogConnectedMsg:
+		return m.handleDaemonLogConnected(msg)
+	case uikit.DaemonLogLineMsg:
+		return m.handleDaemonLogLine(msg)
+	case uikit.DaemonLogDisconnectedMsg:
+		return m.handleDaemonLogDisconnected()
+	case uikit.NotificationUnreadCountMsg:
+		m.handleNotificationUnreadCount(msg)
+	case uikit.NotificationsLoadedMsg:
+		m.handleNotificationsLoaded(msg)
+	case uikit.NotificationReadStateMsg:
+		m.handleNotificationReadState(msg)
+	case uikit.NotificationBoundaryFlashClearedMsg:
+		m.notifications.ClearBoundaryFlash()
+	case uikit.TriggerRunMsg:
+		return m.handleTriggerRun(msg)
+	case uikit.StopRunMsg:
+		m.handleStopRun(msg)
+	case uikit.RestartServiceMsg:
+		return m.handleRestartService(msg)
+	case uikit.StopServiceMsg:
+		return m.handleStopService(msg)
+	case uikit.DeleteRunMsg:
+		return m.handleDeleteRun(msg)
+	case uikit.SchedulePauseMsg:
+		return m.handleSchedulePause(msg)
+	case uikit.TaskStateMsg:
+		if msg.Err == nil {
+			m.info.PausedTasks = msg.Paused
+			m.info.TaskUsage = msg.Usage
+			m.infoView.SetTaskUsage(msg.Usage)
+			m.info.StoppedServices = msg.Stopped
+			if m.currentRun() != nil {
+				m.execView.SetServiceStopped(msg.Stopped[m.execView.Run.TaskName])
+			}
 		}
+	case uikit.BulkActionMsg:
+		return m.handleBulkAction(msg)
+	case uikit.BulkDeleteResultMsg:
+		return m.handleBulkDeleteResult(msg)
+	case logsearch.SelectMsg:
+		return m.handleLogSearchSelect(msg)
+	case uikit.TickMsg:
+		return m.handleTick()
+	case coalesceFlushMsg:
+		// The coalesce window elapsed; the reset at the top of Update already
+		// cleared m.coalesce, so this frame rebuilds fresh. Record it as the last
+		// real frame so the next event paces from here.
+		m.flushPending = false
+		m.lastRenderAt = time.Now()
+	case uikit.QuitMsg:
+		return m.handleQuit(msg)
+	case uikit.FlashExpiredMsg:
+		m.handleFlashExpired()
+	case uikit.OpenBrowserMsg:
+		return m.handleOpenBrowser(msg)
+	case uikit.OpenRunMsg:
+		return m.handleOpenRun(msg)
+	case uikit.SystemStatsMsg:
+		m.handleSystemStats(msg)
+	case uikit.DaemonInfoMsg:
+		m.handleDaemonInfo(msg)
+	case uikit.ReloadResultMsg:
+		return m.handleReloadResult(msg)
+	case uikit.MetricsHistoryMsg:
+		m.handleMetricsHistory(msg)
+	case uikit.RunSummaryMsg:
+		m.handleRunSummary(msg)
+	case uikit.TaskSummaryMsg:
+		m.dialogs.ApplyTaskSummary(msg)
 	}
 	return m, nil
-}
-
-// handled adapts a handler's (model, cmd) result to a dispatcher's
-// "claimed" return: `return handled(m.handleX(msg))`.
-func handled(model tea.Model, cmd tea.Cmd) (tea.Model, tea.Cmd, bool) {
-	return model, cmd, true
 }
 
 // interceptActiveDialog gives the topmost open dialog first claim on the
@@ -94,9 +181,9 @@ func (m Model) interceptActiveDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		case "enter":
 			// Enter on a retry's inspector opens the run it retried.
 			if rd, isRun := d.(*RunDetailDialog); isRun {
-				if taskName, runID, hasParent := rd.ParentRef(); hasParent {
+				if runID, hasParent := rd.ParentRef(); hasParent {
 					m.dialogs.Dismiss(dlgRunDetail)
-					return m, m.openRunByID(taskName, runID), true
+					return m, m.openRunByID(runID), true
 				}
 			}
 		}
@@ -111,171 +198,23 @@ func (m Model) interceptActiveDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	return m, tea.Batch(cmd, m.dialogs.SyncMouseState()), true
 }
 
-func (m Model) dispatchInputMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		return handled(m.handleWindowSize(msg))
-	case tea.MouseMsg:
-		return handled(m.handleMouse(msg))
-	case tea.KeyPressMsg:
-		return handled(m.handleKey(msg))
-	}
-	return m, nil, false
-}
-
-func (m Model) dispatchStreamMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case uikit.ExecWindowFetchedMsg:
-		return handled(m.handleExecWindowFetched(msg))
-	case uikit.SSEConnectedMsg:
-		return handled(m.handleSSEConnected(msg))
-	case uikit.SSEEventMsg:
-		return handled(m.handleSSEEventMsg(msg))
-	case uikit.SSEDisconnectedMsg:
-		return handled(m.handleSSEDisconnected(msg))
-	}
-	return m, nil, false
-}
-
-func (m Model) dispatchLogMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case uikit.LogOlderLoadedMsg:
-		return handled(m.handleLogOlderLoaded(msg))
-	case uikit.LogTailLoadedMsg:
-		return handled(m.handleLogTailLoaded(msg))
-	case uikit.LogStreamConnectedMsg:
-		return handled(m.handleLogStreamConnected(msg))
-	case uikit.LogLineMsg:
-		return handled(m.handleLogLine(msg))
-	case uikit.LogRegionMsg:
-		return handled(m.handleLogRegion(msg))
-	case uikit.LogRotatedMsg:
-		return handled(m.handleLogRotated(msg))
-	case uikit.LogDroppedMsg:
-		return handled(m.handleLogDropped(msg))
-	case uikit.LogDoneMsg:
-		return handled(m.handleLogDone(msg))
-	case uikit.DebugLogMsg:
-		return handled(m.handleDebugLog(msg))
-	case uikit.ReconnectLogMsg:
-		return handled(m.handleReconnectLog(msg))
-	case uikit.LogLineHistoryMsg:
-		return handled(m.handleLogLineHistory(msg))
-	case uikit.DaemonLogConnectedMsg:
-		return handled(m.handleDaemonLogConnected(msg))
-	case uikit.DaemonLogLineMsg:
-		return handled(m.handleDaemonLogLine(msg))
-	case uikit.DaemonLogDisconnectedMsg:
-		return handled(m.handleDaemonLogDisconnected())
-	}
-	return m, nil, false
-}
-
-func (m Model) dispatchNotificationMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case uikit.NotificationUnreadCountMsg:
-		return handled(m.handleNotificationUnreadCount(msg))
-	case uikit.NotificationsLoadedMsg:
-		return handled(m.handleNotificationsLoaded(msg))
-	case uikit.NotificationReadStateMsg:
-		return handled(m.handleNotificationReadState(msg))
-	case uikit.NotificationBoundaryFlashClearedMsg:
-		m.notifications.ClearBoundaryFlash()
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
-func (m Model) dispatchActionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case uikit.TriggerRunMsg:
-		return handled(m.handleTriggerRun(msg))
-	case uikit.StopRunMsg:
-		return handled(m.handleStopRun(msg))
-	case uikit.RestartServiceMsg:
-		return handled(m.handleRestartService(msg))
-	case uikit.StopServiceMsg:
-		return handled(m.handleStopService(msg))
-	case uikit.DeleteRunMsg:
-		return handled(m.handleDeleteRun(msg))
-	case uikit.SchedulePauseMsg:
-		return handled(m.handleSchedulePause(msg))
-	case uikit.TaskStateMsg:
-		if msg.Err == nil {
-			m.info.PausedTasks = msg.Paused
-			m.info.TaskUsage = msg.Usage
-			m.infoView.SetTaskUsage(msg.Usage)
-			m.info.StoppedServices = msg.Stopped
-			if m.execView != nil && m.execView.Run != nil {
-				m.execView.SetServiceStopped(msg.Stopped[m.execView.Run.TaskName])
-			}
-		}
-		return m, nil, true
-	case uikit.BulkActionMsg:
-		return handled(m.handleBulkAction(msg))
-	case uikit.BulkDeleteResultMsg:
-		return handled(m.handleBulkDeleteResult(msg))
-	}
-	return m, nil, false
-}
-
-func (m Model) dispatchLifecycleMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case logsearch.SelectMsg:
-		return handled(m.handleLogSearchSelect(msg))
-	case uikit.TickMsg:
-		return handled(m.handleTick())
-	case coalesceFlushMsg:
-		// The coalesce window elapsed; the reset at the top of Update already
-		// cleared m.coalesce, so this frame rebuilds fresh. Record it as the last
-		// real frame so the next event paces from here.
-		m.flushPending = false
-		m.lastRenderAt = time.Now()
-		return m, nil, true
-	case uikit.QuitMsg:
-		return handled(m.handleQuit(msg))
-	case uikit.FlashExpiredMsg:
-		return handled(m.handleFlashExpired())
-	case uikit.OpenBrowserMsg:
-		return handled(m.handleOpenBrowser(msg))
-	case uikit.OpenRunMsg:
-		return handled(m.handleOpenRun(msg))
-	case uikit.SystemStatsMsg:
-		return handled(m.handleSystemStats(msg))
-	case uikit.DaemonInfoMsg:
-		return handled(m.handleDaemonInfo(msg))
-	case uikit.ReloadResultMsg:
-		return handled(m.handleReloadResult(msg))
-	case uikit.MetricsHistoryMsg:
-		return handled(m.handleMetricsHistory(msg))
-	case uikit.RunSummaryMsg:
-		return handled(m.handleRunSummary(msg))
-	case uikit.TaskSummaryMsg:
-		m.dialogs.ApplyTaskSummary(msg)
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
-func (m Model) handleNotificationUnreadCount(msg uikit.NotificationUnreadCountMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleNotificationUnreadCount(msg uikit.NotificationUnreadCountMsg) {
 	if msg.Err != nil {
 		m.debugView.AppendLine("Failed to load unread count: " + msg.Err.Error())
-		return m, nil
+		return
 	}
 	m.notifications.SetUnread(int(msg.Count))
 	m.updateLayout()
-	return m, nil
 }
 
-func (m Model) handleNotificationsLoaded(msg uikit.NotificationsLoadedMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleNotificationsLoaded(msg uikit.NotificationsLoadedMsg) {
 	if msg.Err != nil {
 		m.debugView.AppendLine("Failed to load notifications: " + msg.Err.Error())
-		return m, nil
+		return
 	}
 	if m.notifications.LoadHistorical(msg.Items) {
 		m.updateLayout()
 	}
-	return m, nil
 }
 
 func (m Model) handleOpenRun(msg uikit.OpenRunMsg) (tea.Model, tea.Cmd) {
@@ -286,10 +225,10 @@ func (m Model) handleOpenRun(msg uikit.OpenRunMsg) (tea.Model, tea.Cmd) {
 			// notification that still points at the run.
 			return m, tea.Batch(
 				m.markRunNotificationsRead(msg.RunID),
-				m.dialogs.FlashError("That run no longer exists (deleted or cleaned up by retention)", 6*time.Second),
+				m.dialogs.FlashError("That run no longer exists (deleted or cleaned up by retention)", flashLong),
 			)
 		}
-		return m, m.dialogs.FlashError("Couldn't open run: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Couldn't open run: "+msg.Err.Error(), flashLong)
 	}
 	if msg.Run == nil {
 		return m, nil
@@ -297,11 +236,11 @@ func (m Model) handleOpenRun(msg uikit.OpenRunMsg) (tea.Model, tea.Cmd) {
 	return m, m.openExecView(msg.Run)
 }
 
-func (m Model) handleNotificationReadState(msg uikit.NotificationReadStateMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleNotificationReadState(msg uikit.NotificationReadStateMsg) {
 	if msg.Err == nil {
 		// Local state was already applied optimistically — nothing to do.
 		// The server publishes notification.updated so other surfaces sync.
-		return m, nil
+		return
 	}
 	verb := "read"
 	if !msg.Read {
@@ -315,7 +254,6 @@ func (m Model) handleNotificationReadState(msg uikit.NotificationReadStateMsg) (
 		m.notifications.MarkReadLocal(msg.ID, time.Now())
 	}
 	m.updateLayout()
-	return m, nil
 }
 
 // interceptShuttingDownDialog handles input while the quit confirm shows its
@@ -342,20 +280,18 @@ func (m Model) interceptShuttingDownDialog(msg tea.Msg) (tea.Model, tea.Cmd, boo
 	return m, nil, false
 }
 
-func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) {
 	m.width = msg.Width
 	m.height = msg.Height
 	m.ready = true
 	m.updateLayout()
-	return m, nil
 }
 
-func (m Model) handleExecWindowFetched(msg uikit.ExecWindowFetchedMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleExecWindowFetched(msg uikit.ExecWindowFetchedMsg) {
 	if !m.execWindow.IsCurrent(msg.Gen) {
-		return m, nil
+		return
 	}
 	m.execWindow.ApplyFetch(msg.Items, msg.Offset, msg.Total)
-	return m, nil
 }
 
 func (m Model) handleSSEConnected(msg uikit.SSEConnectedMsg) (tea.Model, tea.Cmd) {
@@ -471,9 +407,9 @@ func (m Model) handleLogDone(msg uikit.LogDoneMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleLogOlderLoaded(msg uikit.LogOlderLoadedMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleLogOlderLoaded(msg uikit.LogOlderLoadedMsg) {
 	if !m.viewingRun(msg.RunID) {
-		return m, nil
+		return
 	}
 	m.execView.LoadingOlder = false
 	m.execView.Pane.SetFirstAvailable(int(msg.FirstAvailable))
@@ -494,12 +430,10 @@ func (m Model) handleLogOlderLoaded(msg uikit.LogOlderLoadedMsg) (tea.Model, tea
 	if msg.Total > 0 {
 		m.execView.Pane.SetTotalLines(int(msg.Total))
 	}
-	return m, nil
 }
 
-func (m Model) handleDebugLog(msg uikit.DebugLogMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleDebugLog(msg uikit.DebugLogMsg) {
 	m.debugView.AppendLine(msg.Message)
-	return m, nil
 }
 
 func (m Model) handleOpenBrowser(msg uikit.OpenBrowserMsg) (tea.Model, tea.Cmd) {
@@ -507,7 +441,7 @@ func (m Model) handleOpenBrowser(msg uikit.OpenBrowserMsg) (tea.Model, tea.Cmd) 
 		m.debugView.AppendLine("Failed to open browser: " + msg.Err.Error())
 	}
 	if msg.BrowserOpened {
-		return m, m.dialogs.Flash("Opened browser", 3*time.Second)
+		return m, m.dialogs.Flash("Opened browser", flashShort)
 	}
 	if msg.URL != "" {
 		// No graphical session or browser failed — offer URL for manual copy.
@@ -539,9 +473,9 @@ func (m Model) handleTriggerRun(msg uikit.TriggerRunMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
 		// Concurrency limit or other error — close exec view to show the task list.
 		if m.execView != nil {
-			return m, tea.Batch(m.closeExecView(), m.dialogs.FlashError("Run failed: "+msg.Err.Error(), 6*time.Second))
+			return m, tea.Batch(m.closeExecView(), m.dialogs.FlashError("Run failed: "+msg.Err.Error(), flashLong))
 		}
-		return m, m.dialogs.FlashError("Run failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Run failed: "+msg.Err.Error(), flashLong)
 	}
 	if msg.Run != nil {
 		// Run/retry is confirmed up front (no undo toast); just flash the result.
@@ -549,23 +483,22 @@ func (m Model) handleTriggerRun(msg uikit.TriggerRunMsg) (tea.Model, tea.Cmd) {
 		if msg.Retry {
 			verb = "Retried run for " + msg.TaskName
 		}
-		return m, tea.Batch(m.openExecView(msg.Run), m.dialogs.Flash(verb, 4*time.Second))
+		return m, tea.Batch(m.openExecView(msg.Run), m.dialogs.Flash(verb, flashResult))
 	}
 	return m, nil
 }
 
-func (m Model) handleStopRun(msg uikit.StopRunMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleStopRun(msg uikit.StopRunMsg) {
 	m.logActionResult("Stopped run for", msg.TaskName, msg.Err)
-	return m, nil
 }
 
 func (m Model) handleDeleteRun(msg uikit.DeleteRunMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Deleted run for", msg.TaskName, msg.Err)
 	if msg.Err != nil {
-		return m, m.dialogs.FlashError("Delete failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Delete failed: "+msg.Err.Error(), flashLong)
 	}
 	var cmds []tea.Cmd
-	if m.execView != nil && m.execView.Run != nil && m.execView.Run.ID == msg.RunID {
+	if m.currentRun() != nil && m.execView.Run.ID == msg.RunID {
 		if cmd := m.closeExecView(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -573,7 +506,7 @@ func (m Model) handleDeleteRun(msg uikit.DeleteRunMsg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, m.fetchExecWindow())
 	// Soft delete is reversible — offer an undo that restores the run.
 	undo := m.streams.RestoreRuns(model.RunSelector{IDs: []string{msg.RunID}})
-	cmds = append(cmds, m.dialogs.FlashUndo("Deleted run", undo, 6*time.Second))
+	cmds = append(cmds, m.dialogs.FlashUndo("Deleted run", undo, flashLong))
 	return m, tea.Batch(cmds...)
 }
 
@@ -581,11 +514,11 @@ func (m Model) handleDeleteRun(msg uikit.DeleteRunMsg) (tea.Model, tea.Cmd) {
 // refreshes the list and flashes a count. Bulk delete is itself undoable.
 func (m Model) handleBulkAction(msg uikit.BulkActionMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
-		return m, m.dialogs.FlashError(msg.Action+" failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError(msg.Action+" failed: "+msg.Err.Error(), flashLong)
 	}
 	cmds := []tea.Cmd{m.fetchExecWindow()}
-	summary := fmt.Sprintf("%s %d run%s", msg.Action, msg.Affected, textutil.Pluralize(msg.Affected, "", "s"))
-	cmds = append(cmds, m.dialogs.Flash(summary, 4*time.Second))
+	summary := msg.Action + " " + textutil.Count(msg.Affected, "run", "runs")
+	cmds = append(cmds, m.dialogs.Flash(summary, flashResult))
 	return m, tea.Batch(cmds...)
 }
 
@@ -595,15 +528,15 @@ func (m Model) handleBulkAction(msg uikit.BulkActionMsg) (tea.Model, tea.Cmd) {
 // already soft-deleted before this action.
 func (m Model) handleBulkDeleteResult(msg uikit.BulkDeleteResultMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
-		return m, m.dialogs.FlashError("Delete failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Delete failed: "+msg.Err.Error(), flashLong)
 	}
 	cmds := []tea.Cmd{m.fetchExecWindow()}
-	label := fmt.Sprintf("Deleted %d run%s", msg.Affected, textutil.Pluralize(msg.Affected, "", "s"))
+	label := "Deleted " + textutil.Count(msg.Affected, "run", "runs")
 	if !msg.Restore.MatchAll && msg.Affected > 0 {
 		undo := m.streams.RestoreRuns(msg.Restore)
-		cmds = append(cmds, m.dialogs.FlashUndo(label, undo, 6*time.Second))
+		cmds = append(cmds, m.dialogs.FlashUndo(label, undo, flashLong))
 	} else {
-		cmds = append(cmds, m.dialogs.Flash(label, 4*time.Second))
+		cmds = append(cmds, m.dialogs.Flash(label, flashResult))
 	}
 	return m, tea.Batch(cmds...)
 }
@@ -622,7 +555,7 @@ func (m Model) handleSchedulePause(msg uikit.SchedulePauseMsg) (tea.Model, tea.C
 		if errors.As(msg.Err, &statusErr) {
 			reason = statusErr.Detail()
 		}
-		return m, m.dialogs.Flash(failed+reason, 6*time.Second)
+		return m, m.dialogs.Flash(failed+reason, flashLong)
 	}
 	paused := maps.Clone(m.info.PausedTasks)
 	if paused == nil {
@@ -636,16 +569,16 @@ func (m Model) handleSchedulePause(msg uikit.SchedulePauseMsg) (tea.Model, tea.C
 	m.info.PausedTasks = paused
 	undo := m.streams.SetSchedulePaused(msg.TaskName, !msg.Paused)
 	label := fmt.Sprintf("%s the schedule of '%s' · press u to undo", verb, msg.TaskName)
-	return m, tea.Batch(m.streams.FetchTaskState(), m.dialogs.FlashUndo(label, undo, 6*time.Second))
+	return m, tea.Batch(m.streams.FetchTaskState(), m.dialogs.FlashUndo(label, undo, flashLong))
 }
 
 func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Restarted service", msg.TaskName, msg.Err)
 	if msg.Err != nil {
-		return m, m.dialogs.FlashError("Restart failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Restart failed: "+msg.Err.Error(), flashLong)
 	}
 	m.setServiceStopped(msg.TaskName, false)
-	if m.execView == nil || m.execView.Run == nil || m.execView.Run.TaskName != msg.TaskName {
+	if m.currentRun() == nil || m.execView.Run.TaskName != msg.TaskName {
 		return m, nil
 	}
 	// The open run is a pre-restart instance, now dead. Leave it for the fresh
@@ -662,10 +595,10 @@ func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea
 func (m Model) handleStopService(msg uikit.StopServiceMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Stopped service", msg.TaskName, msg.Err)
 	if msg.Err != nil {
-		return m, m.dialogs.FlashError("Stop failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Stop failed: "+msg.Err.Error(), flashLong)
 	}
 	m.setServiceStopped(msg.TaskName, true)
-	if m.execView != nil && m.execView.Run != nil && m.execView.Run.TaskName == msg.TaskName {
+	if m.currentRun() != nil && m.execView.Run.TaskName == msg.TaskName {
 		m.execView.SetServiceStopped(true)
 	}
 	return m, nil
@@ -700,10 +633,10 @@ func (m Model) handleLogLineHistory(msg uikit.LogLineHistoryMsg) (tea.Model, tea
 		return m, nil
 	}
 	if msg.Err != nil {
-		return m, m.dialogs.FlashError("Failed to load frame history", 3*time.Second)
+		return m, m.dialogs.FlashError("Failed to load frame history", flashShort)
 	}
 	if len(msg.Frames) == 0 {
-		return m, m.dialogs.Flash("No frame history for this line", 3*time.Second)
+		return m, m.dialogs.Flash("No frame history for this line", flashShort)
 	}
 	m.dialogs.Show(dlgLogHistory, NewLogHistoryDialog(msg.Line, msg.Frames, msg.Committed))
 	return m, nil
@@ -737,42 +670,42 @@ func (m Model) handleQuit(msg uikit.QuitMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
-func (m Model) handleFlashExpired() (tea.Model, tea.Cmd) {
+func (m *Model) handleFlashExpired() {
 	m.dialogs.ClearFlashIfExpired()
-	return m, nil
 }
 
-func (m Model) handleSystemStats(msg uikit.SystemStatsMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleSystemStats(msg uikit.SystemStatsMsg) {
 	if msg.Err == nil && msg.Stats != nil {
 		m.infoView.UpdateStats(msg.Stats)
 	}
-	return m, nil
 }
 
-// handleDaemonInfo refreshes the live bits of StartupInfo from the periodic
-// /api/daemon poll — currently the config-stale notice and the service-managed
-// flag (the daemon may be restarted under a service manager mid-session).
-// Errors are ignored: the header just keeps its last known state.
-func (m Model) handleDaemonInfo(msg uikit.DaemonInfoMsg) (tea.Model, tea.Cmd) {
+// handleDaemonInfo refreshes StartupInfo from the periodic /api/daemon poll:
+// the config-stale notice, the service-managed flag (the daemon may be
+// restarted under a service manager mid-session) and the timezone. Errors are
+// ignored: the header just keeps its last known state.
+func (m *Model) handleDaemonInfo(msg uikit.DaemonInfoMsg) {
 	if msg.Err == nil && msg.Info != nil {
-		m.info.ConfigStale = msg.Info.ConfigStale
-		m.info.ConfigWarnings = msg.Info.ConfigWarnings
-		m.info.ServiceManaged = msg.Info.ServiceManaged
-		if msg.Info.ResolvedTimezone != m.info.Timezone {
-			m.info.Timezone = msg.Info.ResolvedTimezone
-			m.info.TimezoneSource = msg.Info.TimezoneSource
-			m.loc = uikit.ResolveLocation(m.info.Timezone)
-			m.execWindow.SetLocation(m.loc)
-		}
-		m.sidebar.SetUpdate(msg.Info.UpdateAvailable, msg.Info.LatestVersion)
+		m.applyDaemonInfo(*msg.Info)
 	}
-	return m, nil
+}
+
+// applyDaemonInfo adopts a fresh /api/daemon read, re-basing displayed times
+// when the daemon's timezone changed.
+func (m *Model) applyDaemonInfo(info model.DaemonInfo) {
+	prevTZ := m.info.Timezone
+	m.info.ApplyDaemonInfo(info)
+	if m.info.Timezone != prevTZ {
+		m.loc = uikit.ResolveLocation(m.info.Timezone)
+		m.execWindow.SetLocation(m.loc)
+	}
+	m.sidebar.SetUpdate(info.UpdateAvailable, info.LatestVersion)
 }
 
 // reloadConfig triggers an explicit config reload from inside the TUI. The
 // result arrives as a ReloadResultMsg.
 func (m *Model) reloadConfig() tea.Cmd {
-	return tea.Batch(m.dialogs.Flash("Reloading config…", 3*time.Second), m.streams.Reload())
+	return tea.Batch(m.dialogs.Flash("Reloading config…", flashShort), m.streams.Reload())
 }
 
 // handleReloadResult applies an operator-triggered reload: on success it adopts
@@ -781,14 +714,13 @@ func (m *Model) reloadConfig() tea.Cmd {
 // daemon's reason and leaves the running set untouched.
 func (m Model) handleReloadResult(msg uikit.ReloadResultMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
-		return m, m.dialogs.FlashError("Reload failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Reload failed: "+msg.Err.Error(), flashLong)
 	}
 
 	var cmds []tea.Cmd
 	if msg.Info != nil {
+		m.applyDaemonInfo(*msg.Info)
 		m.info.Tasks = msg.Info.Tasks
-		m.info.ConfigStale = msg.Info.ConfigStale
-		m.info.ConfigWarnings = msg.Info.ConfigWarnings
 		m.sidebar.Rebuild(msg.Info.Tasks)
 		m.execList.SetFilter(m.sidebar.ActiveTask())
 		m.recalcExecListHeight()
@@ -796,14 +728,14 @@ func (m Model) handleReloadResult(msg uikit.ReloadResultMsg) (tea.Model, tea.Cmd
 		// A reload clears the pause of a task it made unpausable.
 		cmds = append(cmds, m.fetchExecWindow(), m.streams.FetchTaskState())
 	}
-	cmds = append(cmds, m.dialogs.Flash(reloadSummary(msg.Result), 5*time.Second))
+	cmds = append(cmds, m.dialogs.Flash(reloadSummary(msg.Result), flashLong))
 	return m, tea.Batch(cmds...)
 }
 
 // reloadSummary renders a one-line summary of what a reload changed.
 func reloadSummary(r *model.ReloadResult) string {
 	if r == nil || r.IsEmpty() {
-		return "✓ Config reloaded — no changes"
+		return "✓ Config reloaded: no changes"
 	}
 	var parts []string
 	if n := len(r.Added); n > 0 {
@@ -821,18 +753,16 @@ func reloadSummary(r *model.ReloadResult) string {
 	return "✓ Config reloaded: " + strings.Join(parts, ", ")
 }
 
-func (m Model) handleMetricsHistory(msg uikit.MetricsHistoryMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleMetricsHistory(msg uikit.MetricsHistoryMsg) {
 	if msg.Err == nil && msg.Samples != nil {
 		m.infoView.LoadHistory(msg.Samples)
 	}
-	return m, nil
 }
 
-func (m Model) handleRunSummary(msg uikit.RunSummaryMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleRunSummary(msg uikit.RunSummaryMsg) {
 	if msg.Err == nil && msg.Summary != nil {
 		m.infoView.UpdateRunSummary(msg.Summary)
 	}
-	return m, nil
 }
 
 // viewingRun reports whether the active execView is showing the given run ID.
@@ -861,19 +791,15 @@ func (m *Model) maybeLoadOlderLogs() tea.Cmd {
 // lifecycle events (the default, handled below) and notification events
 // (created/updated/unreadCountChanged) share this one connection.
 func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
-	if cmd, handled := m.handleNotificationSSEEvent(evt); handled {
-		return cmd
+	if m.handleNotificationSSEEvent(evt) {
+		return nil
 	}
 	if evt.Type == string(events.EventSystemSample) {
 		m.handleSystemSample(evt)
 		return nil
 	}
 
-	var runEvt struct {
-		Run      *model.Run     `json:"run"`
-		TaskName string         `json:"taskName"`
-		Status   model.RunPhase `json:"status"`
-	}
+	var runEvt server.RunEventBody
 	if err := json.Unmarshal(evt.Data, &runEvt); err != nil {
 		m.debugView.AppendLine("Failed to parse event: " + err.Error())
 		return nil
@@ -893,8 +819,8 @@ func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 
 		// Auto-open when a single-instance service starts and user is viewing that task.
 		if m.execView == nil && runEvt.Run.Status == model.PhaseRunning &&
-			m.sidebar.ActiveTask() == runEvt.TaskName &&
-			m.isSingleInstanceService(runEvt.TaskName) {
+			m.sidebar.ActiveTask() == runEvt.Run.TaskName &&
+			m.isSingleInstanceService(runEvt.Run.TaskName) {
 			return m.openExecView(runEvt.Run)
 		}
 	}
@@ -906,10 +832,7 @@ func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 // the task header, the Info page and an open run's header follow it as it
 // changes.
 func (m *Model) handleSystemSample(evt apiclient.RunStreamEvent) {
-	var sample struct {
-		Tasks map[string]model.ResourceUsage `json:"tasks"`
-		Runs  map[string]model.ResourceUsage `json:"runs"`
-	}
+	var sample server.SystemSampleSSEEvent
 	if err := json.Unmarshal(evt.Data, &sample); err != nil {
 		m.debugView.AppendLine("Failed to parse system sample: " + err.Error())
 		return
@@ -926,30 +849,30 @@ func (m *Model) handleSystemSample(evt apiclient.RunStreamEvent) {
 // ride the unified stream alongside run lifecycle events. handled is false
 // for any other event type, telling the caller to fall through to the run
 // lifecycle path.
-func (m *Model) handleNotificationSSEEvent(evt apiclient.RunStreamEvent) (cmd tea.Cmd, handled bool) {
+func (m *Model) handleNotificationSSEEvent(evt apiclient.RunStreamEvent) bool {
 	switch evt.Type {
 	case "notification.created", "notification.updated":
 		env, err := apiclient.DecodeNotificationEnvelope(evt.Data)
 		if err != nil {
 			m.debugView.AppendLine("Failed to parse notification: " + err.Error())
-			return nil, true
+			return true
 		}
 		m.notifications.SetUnread(int(env.UnreadCount))
 		if m.notifications.Upsert(env.Notification) {
 			m.updateLayout()
 		}
-		return nil, true
+		return true
 	case "notification.unreadCountChanged":
 		count, err := apiclient.DecodeUnreadCountEnvelope(evt.Data)
 		if err != nil {
 			m.debugView.AppendLine("Failed to parse unread count: " + err.Error())
-			return nil, true
+			return true
 		}
 		m.notifications.SetUnread(int(count))
 		m.updateLayout()
-		return nil, true
+		return true
 	default:
-		return nil, false
+		return false
 	}
 }
 

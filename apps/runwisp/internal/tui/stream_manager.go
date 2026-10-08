@@ -17,7 +17,6 @@ import (
 )
 
 // StreamManager owns SSE event subscriptions, log streaming, and data fetching.
-// Extracted from Model to isolate I/O and async concerns.
 //
 // The base context is owned by this manager because each subscription derives
 // a child context from it; shutting the manager down cancels every in-flight
@@ -368,16 +367,78 @@ func (sm *StreamManager) RerunRuns(sel model.RunSelector) tea.Cmd {
 	})
 }
 
-// DeleteRunsUndoable soft-deletes every run matched by sel and reports the
-// selector back so the caller can offer an undo (restore). Distinct from
-// DeleteRuns, whose generic BulkActionMsg only flashes a count and would clobber
-// an undo toast.
-func (sm *StreamManager) DeleteRunsUndoable(sel model.RunSelector) tea.Cmd {
+// DeleteRuns soft-deletes every run matched by sel and reports the selector
+// back so the caller can offer an undo (restore). It answers with its own
+// BulkDeleteResultMsg rather than the generic BulkActionMsg, which only flashes
+// a count and would clobber the undo toast.
+func (sm *StreamManager) DeleteRuns(sel model.RunSelector) tea.Cmd {
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
 		n, err := client.BulkDeleteRuns(ctx, sel)
 		return uikit.BulkDeleteResultMsg{Affected: n, Restore: sel, Err: err}
+	}
+}
+
+// TriggerRun starts a run of taskName with params (nil for the defaults).
+// retry marks the result as a re-run of an earlier execution.
+func (sm *StreamManager) TriggerRun(taskName string, params map[string]*string, retry bool) tea.Cmd {
+	client := sm.client
+	ctx := sm.streamCtx
+	return func() tea.Msg {
+		run, err := client.TriggerRun(ctx, taskName, params, "ui")
+		return uikit.TriggerRunMsg{TaskName: taskName, Run: run, Err: err, Retry: retry}
+	}
+}
+
+// RestartService cancels and restarts every instance of a service.
+func (sm *StreamManager) RestartService(taskName string) tea.Cmd {
+	client := sm.client
+	ctx := sm.streamCtx
+	return func() tea.Msg {
+		err := client.RestartTask(ctx, taskName, "ui")
+		return uikit.RestartServiceMsg{TaskName: taskName, Err: err}
+	}
+}
+
+// StopService stops a service until it is started again or the daemon restarts.
+func (sm *StreamManager) StopService(taskName string) tea.Cmd {
+	client := sm.client
+	ctx := sm.streamCtx
+	return func() tea.Msg {
+		err := client.StopTask(ctx, taskName)
+		return uikit.StopServiceMsg{TaskName: taskName, Err: err}
+	}
+}
+
+// StopRun stops one running execution of taskName.
+func (sm *StreamManager) StopRun(runID, taskName string) tea.Cmd {
+	client := sm.client
+	ctx := sm.streamCtx
+	return func() tea.Msg {
+		err := client.StopRun(ctx, runID)
+		return uikit.StopRunMsg{TaskName: taskName, Err: err}
+	}
+}
+
+// DeleteRun soft-deletes one run through the same bulk selector the Web UI
+// uses, so both surfaces exercise one delete path.
+func (sm *StreamManager) DeleteRun(runID, taskName string) tea.Cmd {
+	client := sm.client
+	ctx := sm.streamCtx
+	return func() tea.Msg {
+		_, err := client.BulkDeleteRuns(ctx, model.RunSelector{IDs: []string{runID}})
+		return uikit.DeleteRunMsg{RunID: runID, TaskName: taskName, Err: err}
+	}
+}
+
+// FetchRun loads one run by ID for opening in the exec view.
+func (sm *StreamManager) FetchRun(runID string) tea.Cmd {
+	client := sm.client
+	ctx := sm.streamCtx
+	return func() tea.Msg {
+		run, err := client.GetRun(ctx, runID)
+		return uikit.OpenRunMsg{Run: run, RunID: runID, Err: err}
 	}
 }
 
@@ -419,7 +480,8 @@ func (sm *StreamManager) FetchTaskSummary(taskName string) tea.Cmd {
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
-		runs, total, err := client.ListRunsByTask(ctx, taskName, apiclient.RunsParams{
+		runs, total, err := client.ListRuns(ctx, apiclient.RunsParams{
+			TaskName:      taskName,
 			Limit:         taskSummaryWindow,
 			SortField:     "createdAt",
 			SortDirection: "desc",

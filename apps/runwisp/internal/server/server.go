@@ -64,7 +64,7 @@ type Server struct {
 	// updateStatus reports (available, latestVersion) from the background update
 	// checker. nil (station mode, or check disabled) reports never-available.
 	updateStatus func() (bool, string)
-	// runUsage reports live CPU/memory per running run; nil reports none.
+	// runUsage reports live CPU/memory per running run.
 	runUsage func() map[string]model.ResourceUsage
 	// configStaleLast tracks the last staleness value broadcast over the event
 	// bus so the collector goroutine only emits an EventConfigStale when it
@@ -94,18 +94,11 @@ type Server struct {
 	// outside standalone mode (station mode has no local scheduler to reconcile),
 	// in which case POST /api/daemon/reload reports the operation is unavailable.
 	reload func() (model.ReloadResult, error)
-	// shutdownCtx/shutdownCancel let Shutdown interrupt long-lived SSE handler
-	// goroutines directly: http.Server.Shutdown only stops accepting new
-	// connections and waits for in-flight ones to finish on their own, it
-	// never cancels a handler's request context, so an open SSE stream would
-	// otherwise keep running until the client disconnects or Shutdown's
-	// deadline expires. SSE handlers derive their working context from this
-	// via withShutdown instead of using the raw request context directly.
+	// shutdownCtx is cancelled by Shutdown so SSE handlers (via withShutdown)
+	// exit; http.Server.Shutdown never cancels a handler's request context.
 	shutdownCtx    context.Context
 	shutdownCancel context.CancelFunc
 }
-
-// DaemonInfo and CapInfo live in the model package.
 
 type Options struct {
 	DB              storage.RunRepository
@@ -141,6 +134,8 @@ type Options struct {
 	TLSKey            string                                // PEM key path; paired with TLSCert
 	Reload            func() (model.ReloadResult, error)    // Reconciles the live task set against runwisp.toml; nil disables POST /api/daemon/reload
 }
+
+func neverStale() bool { return false }
 
 func New(opts Options) (*Server, error) {
 	if opts.Password == "" {
@@ -204,13 +199,21 @@ func New(opts Options) (*Server, error) {
 		opts.EventBus.Subscribe(t, s.appEvents.ingest)
 	}
 
-	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir, opts.EventBus)
-	s.runService.taskUsage = opts.TaskUsage
+	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.EventBus)
+	if opts.TaskUsage != nil {
+		s.runService.taskUsage = opts.TaskUsage
+	}
 	s.stats = newStatsProvider(opts.DaemonInfo, time.Now())
 	s.configStale = opts.ConfigStale
+	if s.configStale == nil {
+		s.configStale = neverStale
+	}
 	s.configWarnings = opts.ConfigWarnings
 	s.updateStatus = opts.UpdateStatus
 	s.runUsage = opts.RunUsage
+	if s.runUsage == nil {
+		s.runUsage = noUsage
+	}
 	s.metrics = NewMetricsCollector(32) // ~2.5 min at 5s intervals; sampling starts in Start()
 	s.daemonLogBuffer = opts.DaemonLogBuffer
 	s.streams = newStreamLimiter(maxConcurrentStreams, maxStreamsPerIP)
@@ -224,7 +227,7 @@ func (srv *Server) Start() error {
 	// Seed the staleness baseline from the current value so the first sample
 	// tick doesn't emit a spurious flip; clients get the initial value from the
 	// one-shot GET /api/daemon.
-	srv.configStaleLast = srv.currentConfigStale()
+	srv.configStaleLast = srv.configStale()
 	srv.metrics.onSample = srv.broadcastSample
 
 	// Begin sampling here rather than in New so construction stays pure — a
@@ -453,12 +456,6 @@ func removeStaleSocket(path string) error {
 // request context so Shutdown can end a long-lived stream immediately rather
 // than waiting for the client to disconnect.
 func (srv *Server) withShutdown(ctx context.Context) (context.Context, context.CancelFunc) {
-	if srv.shutdownCtx == nil {
-		// A Server built directly as a struct literal (as many unit tests do,
-		// exercising a single handler without New()) has no shutdown signal to
-		// wire up; behave like a plain derived context in that case.
-		return context.WithCancel(ctx)
-	}
 	merged, cancel := context.WithCancel(ctx)
 	stop := context.AfterFunc(srv.shutdownCtx, cancel)
 	return merged, func() {
@@ -469,9 +466,7 @@ func (srv *Server) withShutdown(ctx context.Context) (context.Context, context.C
 
 // Shutdown gracefully stops the HTTP server and metrics collector.
 func (srv *Server) Shutdown(ctx context.Context) error {
-	if srv.metrics != nil {
-		srv.metrics.Stop()
-	}
+	srv.metrics.Stop()
 
 	// Cancel every context handed out by withShutdown first, so active SSE
 	// handler goroutines (see appStreamHandler, sseDaemonLogHandler,

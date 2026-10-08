@@ -20,15 +20,6 @@ import (
 )
 
 const (
-	// LogSearchDefaultLimit is the default number of hits returned by the
-	// search endpoint when the client omits the `limit` query parameter.
-	LogSearchDefaultLimit = 200
-
-	// LogSearchMaxLimit caps the per-request hit budget; the value matches
-	// logsearch.MaxHitsCeiling so a clamped huma value still allows a full
-	// library page.
-	LogSearchMaxLimit = 1000
-
 	// LogSearchRunPageSize bounds the number of runs scanned per request,
 	// so a task with thousands of historical runs paginates naturally
 	// through the cursor rather than spending an unbounded scan budget on
@@ -86,14 +77,6 @@ func (srv *Server) humaSearchLogs(ctx context.Context, input *LogSearchInput) (*
 		return nil, err
 	}
 
-	limit := input.Limit
-	if limit <= 0 {
-		limit = LogSearchDefaultLimit
-	}
-	if limit > LogSearchMaxLimit {
-		limit = LogSearchMaxLimit
-	}
-
 	cursor, err := decodeSearchCursor(input.Cursor)
 	if err != nil {
 		return nil, huma.Error400BadRequest("Invalid cursor")
@@ -116,7 +99,7 @@ func (srv *Server) humaSearchLogs(ctx context.Context, input *LogSearchInput) (*
 		return &LogSearchOutput{Body: LogSearchBody{Items: []LogSearchHit{}, Exhausted: true}}, nil
 	}
 
-	hits, scanCursor, scanned, err := logsearch.ScanTask(ctx, runs, matcherFactory, logsearch.ScanOpts{MaxHits: limit}, startAfterRunID, startAfterN)
+	hits, scanCursor, scanned, err := logsearch.ScanTask(ctx, runs, matcherFactory, logsearch.ScanOpts{MaxHits: input.Limit}, startAfterRunID, startAfterN)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			// Client closed the connection mid-scan. huma will turn this

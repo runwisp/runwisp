@@ -9,7 +9,7 @@
 //
 // The formula is hex(PBKDF2-HMAC-SHA256(password, salt=nonce, iterations, 32
 // bytes)). PBKDF2 makes an intercepted login transcript expensive to
-// brute-force offline — defense in depth behind TLS, not a substitute for it.
+// brute-force offline, defense in depth behind TLS, not a substitute for it.
 //
 // Browsers only expose crypto.subtle in secure contexts (HTTPS or localhost),
 // so a daemon reached over plain HTTP at a LAN address falls back to the

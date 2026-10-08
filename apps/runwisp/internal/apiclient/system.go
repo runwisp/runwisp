@@ -14,24 +14,24 @@ import (
 )
 
 func (c *Client) GetSystemStats(ctx context.Context) (*model.SystemStats, error) {
-	return doJSONAs[model.SystemStats](ctx, c, "GET", "/api/system", nil)
+	return doJSONAs[model.SystemStats](ctx, c, http.MethodGet, "/api/system", nil)
 }
 
 // GetMetricsHistory fetches historical system metrics from the ring buffer.
 func (c *Client) GetMetricsHistory(ctx context.Context) ([]model.MetricsSample, error) {
 	var resp server.MetricsHistoryBody
-	if err := c.doJSON(ctx, "GET", "/api/system/metrics", nil, &resp); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, "/api/system/metrics", nil, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Items, nil
 }
 
 func (c *Client) GetRunSummary(ctx context.Context) (*model.RunSummary, error) {
-	return doJSONAs[model.RunSummary](ctx, c, "GET", "/api/runs/summary", nil)
+	return doJSONAs[model.RunSummary](ctx, c, http.MethodGet, "/api/runs/summary", nil)
 }
 
 func (c *Client) GetDaemonInfo(ctx context.Context) (*model.DaemonInfo, error) {
-	return doJSONAs[model.DaemonInfo](ctx, c, "GET", "/api/daemon", nil)
+	return doJSONAs[model.DaemonInfo](ctx, c, http.MethodGet, "/api/daemon", nil)
 }
 
 // GetInstanceInfo fetches the daemon's local identity (datadir, config, socket,
@@ -41,14 +41,14 @@ func (c *Client) GetDaemonInfo(ctx context.Context) (*model.DaemonInfo, error) {
 // reaches it over loopback; a non-RunWisp port-holder yields a transport or
 // decode error, which the caller treats as "not a discoverable daemon".
 func (c *Client) GetInstanceInfo(ctx context.Context) (*model.InstanceInfo, error) {
-	return doJSONAs[model.InstanceInfo](ctx, c, "GET", "/api/daemon/identity", nil)
+	return doJSONAs[model.InstanceInfo](ctx, c, http.MethodGet, "/api/daemon/identity", nil)
 }
 
 // Reload asks the daemon to re-read runwisp.toml and reconcile its live task
 // set, returning the applied diff. A rejected reload (bad config or a
 // restart-only change) comes back as an error from the daemon.
 func (c *Client) Reload(ctx context.Context) (*model.ReloadResult, error) {
-	return doJSONAs[model.ReloadResult](ctx, c, "POST", "/api/daemon/reload", nil)
+	return doJSONAs[model.ReloadResult](ctx, c, http.MethodPost, "/api/daemon/reload", nil)
 }
 
 // AuthStatus reports whether the daemon requires authentication, via the public
@@ -56,7 +56,7 @@ func (c *Client) Reload(ctx context.Context) (*model.ReloadResult, error) {
 // a password so a RUNWISP_AUTH=off daemon connects without one.
 func (c *Client) AuthStatus(ctx context.Context) (server.AuthStatusBody, error) {
 	var body server.AuthStatusBody
-	if err := c.doJSON(ctx, "GET", "/api/auth/status", nil, &body); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, "/api/auth/status", nil, &body); err != nil {
 		return server.AuthStatusBody{}, err
 	}
 	return body, nil
@@ -123,7 +123,7 @@ var ErrAuthDisabled = errors.New("daemon runs with authentication disabled")
 // failures.
 func (c *Client) GetLocalCredentials(ctx context.Context) (*server.LocalCredentialsBody, error) {
 	var body server.LocalCredentialsBody
-	if err := c.doJSON(ctx, "GET", "/api/local/credentials", nil, &body); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, "/api/local/credentials", nil, &body); err != nil {
 		if IsHTTPStatus(err, http.StatusNotFound) {
 			return nil, ErrLocalCredentialsUnavailable
 		}

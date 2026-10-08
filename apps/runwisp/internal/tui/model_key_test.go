@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -638,7 +639,6 @@ func TestHandleKeyUpHome_HomeCursorNegativeWithFields(t *testing.T) {
 	m := newTestModel(nil)
 	// Set up info so Fields() returns something
 	m.info.Port = 8080
-	m.info.WebUIDisabled = false
 	m.homeCursor = -1
 
 	newM, cmd, handled := handleKeyUpHome(m)
@@ -655,7 +655,6 @@ func TestHandleKeyUpHome_HomeCursorNegativeWithFields(t *testing.T) {
 func TestHandleKeyUpHome_HomeCursorPositiveDecrement(t *testing.T) {
 	m := newTestModel(nil)
 	m.info.Port = 8080
-	m.info.WebUIDisabled = false
 	m.homeCursor = 1
 
 	newM, _, handled := handleKeyUpHome(m)
@@ -674,7 +673,6 @@ func TestHandleKeyDown_MainPanelHomeCursorGte0(t *testing.T) {
 	m.focusMainPanel()
 	m.homeCursor = 0
 	m.info.Port = 8080
-	m.info.WebUIDisabled = false
 
 	// handleKeyDownHome: cursor at 0, fields has items
 	_, _, handled := handleKeyDown(m, keyMsgSpecial(tea.KeyDown))
@@ -689,7 +687,6 @@ func TestHandleKeyDownHome_LastFieldResetsCursor(t *testing.T) {
 	m := newTestModel(nil)
 	// Only FieldWebUI (no launchTicket, no password)
 	m.info.Port = 8080
-	m.info.WebUIDisabled = false
 	// Set cursor to last field index
 	m.homeCursor = 0 // WebUI is only field (index 0)
 
@@ -1409,8 +1406,8 @@ func TestOpenLogSearch_FromExecView(t *testing.T) {
 	if got.logSearch == nil {
 		t.Fatal("expected logSearch overlay attached")
 	}
-	if got.logSearch.TaskName() != "task-x" {
-		t.Fatalf("expected scoped to task-x, got %q", got.logSearch.TaskName())
+	if view := got.logSearch.View(80, 24); !strings.Contains(view, "Search logs for task-x") {
+		t.Fatalf("expected scoped to task-x, got %q", view)
 	}
 }
 
@@ -1421,7 +1418,7 @@ func TestOpenLogSearch_FromSidebar(t *testing.T) {
 
 	newM, _ := m.openLogSearch()
 	got := newM.(Model)
-	if got.logSearch == nil || got.logSearch.TaskName() != "alpha" {
+	if got.logSearch == nil || !strings.Contains(got.logSearch.View(80, 24), "Search logs for alpha") {
 		t.Fatalf("expected overlay scoped to alpha, got %#v", got.logSearch)
 	}
 }
@@ -1440,7 +1437,7 @@ func TestOpenLogSearch_NoTask_NoOverlay(t *testing.T) {
 
 func TestHandleLogSearchKey_EscClosesOverlay(t *testing.T) {
 	m := newTestModel(nil)
-	ls := logsearch.New(m.client, "task-x")
+	ls := logsearch.New(m.streams.client, "task-x")
 	m.logSearch = &ls
 
 	newM, cmd := m.handleLogSearchKey(keyMsgSpecial(tea.KeyEsc))
@@ -1455,25 +1452,23 @@ func TestHandleLogSearchKey_EscClosesOverlay(t *testing.T) {
 
 func TestHandleLogSearchKey_ForwardsKey(t *testing.T) {
 	m := newTestModel(nil)
-	ls := logsearch.New(m.client, "task-x")
+	ls := logsearch.New(m.streams.client, "task-x")
 	m.logSearch = &ls
 
-	// Tab toggles regex inside the overlay; we don't observe the boolean
-	// directly (unexported), but the overlay should still be attached and
-	// no cmd should be returned for tab.
+	// Tab toggles regex inside the overlay, which its mode line shows.
 	newM, _ := m.handleLogSearchKey(tea.KeyPressMsg{Code: tea.KeyTab})
 	got := newM.(Model)
 	if got.logSearch == nil {
 		t.Fatal("overlay should still be attached after Tab")
 	}
-	if !got.logSearch.Regex() {
+	if !strings.Contains(got.logSearch.View(80, 24), "(regex") {
 		t.Fatal("expected regex toggled on after Tab")
 	}
 }
 
 func TestHandleLogSearchSelect_OpensRunWhenNotAlreadyOpen(t *testing.T) {
 	m := newTestModel(nil)
-	ls := logsearch.New(m.client, "task-x")
+	ls := logsearch.New(m.streams.client, "task-x")
 	m.logSearch = &ls
 
 	newM, cmd := m.handleLogSearchSelect(logsearch.SelectMsg{TaskName: "task-x", RunID: "r-other", Line: 42})
@@ -1491,7 +1486,7 @@ func TestHandleLogSearchSelect_OpensRunWhenNotAlreadyOpen(t *testing.T) {
 
 func TestHandleLogSearchSelect_JumpsInPlaceIfSameRunOpen(t *testing.T) {
 	m := newTestModel(nil)
-	ls := logsearch.New(m.client, "task-x")
+	ls := logsearch.New(m.streams.client, "task-x")
 	m.logSearch = &ls
 	ev := execlist.NewExecView(&model.Run{ID: "r-here", TaskName: "task-x"})
 	m.execView = &ev

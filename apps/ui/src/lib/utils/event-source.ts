@@ -4,37 +4,6 @@
 import type { SSEStream } from "$lib/adapters/browser";
 import { isRecord } from "$lib/utils/parse";
 
-interface EventSourceErrorDetails {
-    status?: number;
-    message?: string;
-}
-
-export function getEventSourceErrorDetails(event: Event): EventSourceErrorDetails {
-    let status: number | undefined;
-    let message: string | undefined;
-
-    if (isRecord(event)) {
-        const rawStatus = event["status"];
-        if (typeof rawStatus === "number") {
-            status = rawStatus;
-        }
-
-        const rawMessage = event["message"];
-        if (typeof rawMessage === "string") {
-            message = rawMessage;
-        }
-    }
-
-    if (message === undefined && event instanceof ErrorEvent && event.message) {
-        message = event.message;
-    }
-
-    return {
-        ...(status !== undefined && { status }),
-        ...(message !== undefined && { message }),
-    };
-}
-
 export function getMessageEventData(event: Event): string | undefined {
     if (event instanceof MessageEvent && typeof event.data === "string") {
         return event.data;
@@ -55,14 +24,19 @@ export interface SSEErrorInfo {
     url?: string;
 }
 
+/** Read the fields an SSE error carries (an Event, or one relayed across tabs). */
+export function parseErrorInfo(value: unknown): SSEErrorInfo {
+    const info: SSEErrorInfo = {};
+    if (!isRecord(value)) return info;
+    if (typeof value.status === "number") info.status = value.status;
+    if (typeof value.message === "string") info.message = value.message;
+    if (typeof value.readyState === "number") info.readyState = value.readyState;
+    if (typeof value.url === "string") info.url = value.url;
+    return info;
+}
+
 export function extractErrorInfo(e: Event, es: SSEStream, url: string): SSEErrorInfo {
-    const { status, message } = getEventSourceErrorDetails(e);
-    return {
-        ...(status !== undefined && { status }),
-        ...(message !== undefined && { message }),
-        readyState: es.readyState,
-        url,
-    };
+    return { ...parseErrorInfo(e), readyState: es.readyState, url };
 }
 
 export function formatErrorInfo(info: SSEErrorInfo): string {

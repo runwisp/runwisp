@@ -154,9 +154,6 @@ func (m *defaultTaskManager) location() *time.Location {
 // production wires time.Now, tests inject a fake to keep run timestamps
 // deterministic.
 func NewTaskManager(exec executor.Executor, bus *events.Bus, clock func() time.Time) TaskManager {
-	if clock == nil {
-		clock = time.Now
-	}
 	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 	m := &defaultTaskManager{
 		executor:       exec,
@@ -328,7 +325,7 @@ func (m *defaultTaskManager) upsertTaskLocked(task *model.Task) []*model.Run {
 // upsertSupervisor creates or updates ts's service supervisor for task.
 // Caller holds m.mu.
 func (m *defaultTaskManager) upsertSupervisor(ts *taskState, task *model.Task) {
-	healthyAfter := config.OrDefault(task.HealthyAfter, config.DefaultHealthyAfter)
+	healthyAfter := model.OrDefault(task.HealthyAfter, config.DefaultHealthyAfter)
 	if ts.supervisor == nil {
 		ts.supervisor = services.NewSupervisor(task.Name, task.Instances, healthyAfter, !task.Autostart, m.clock)
 		return
@@ -355,9 +352,9 @@ func (m *defaultTaskManager) finalizeOrphanedQueue(ts *taskState) []*model.Run {
 		return nil
 	}
 	runs := make([]*model.Run, 0, len(ts.queue))
-	for _, q := range ts.queue {
-		m.endOrphanedPending(q.run)
-		runs = append(runs, q.run)
+	for _, run := range ts.queue {
+		m.endOrphanedPending(run)
+		runs = append(runs, run)
 	}
 	ts.queue = nil
 	return runs
@@ -537,14 +534,14 @@ func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *model.Run, resu
 		result.Failed++
 		return r
 	}
-	ts.queue = append(ts.queue, queuedRun{run: r})
+	ts.queue = append(ts.queue, r)
 	ts.cond.Signal()
 	result.Queued++
 	return nil
 }
 
 func (m *defaultTaskManager) restartOrFailPendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) *model.Run {
-	concurrencyLimit := m.getConcurrencyLimit(ts.task)
+	concurrencyLimit := ts.task.MaxConcurrentValue()
 	if len(ts.active) < concurrencyLimit {
 		m.startRun(ts.task, r)
 		result.Resumed++
@@ -641,7 +638,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	m.publishRun(events.EventRunCreated, run, "")
 
 	if !isService {
-		action, actionErr := m.evaluateConcurrency(ts, run, m.getConcurrencyLimit(ts.task))
+		action, actionErr := m.evaluateConcurrency(ts, run, ts.task.MaxConcurrentValue())
 		switch action {
 		case actionRejected:
 			run.End(ts.task, model.ReasonSkipped, -1, m.clock())
@@ -1202,7 +1199,7 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 	}
 	if task.Kind.IsService() {
 		wasFailure := retry.IsFailedExecution(endReason)
-		startRetries := config.OrDefault(task.RestartAttempts, config.DefaultStartRetries)
+		startRetries := model.OrDefault(task.RestartAttempts, config.DefaultStartRetries)
 		nextRestartAttempt, serviceFatal = ts.supervisor.RecordExit(
 			run.InstanceIndex, runDuration, startRetries, wasFailure)
 		if serviceFatal {
@@ -1366,7 +1363,10 @@ func WaitIdle(ctx context.Context, r TaskRunner, taskName string) error {
 	return nil
 }
 
-// StopTask implements TaskRunner.StopTask. Idempotent, mirroring StopService.
+// StopTask cancels every active run of a non-service task and discards
+// anything still queued, so nothing starts back up right behind the stop. The
+// cron schedule is untouched. Returns an error for an unknown task or a service
+// (use StopService for those). Idempotent, mirroring StopService.
 // Cancelled runs end with ReasonStopped, which is outside retry eligibility
 // (see runtime/retry.IsFailedExecution), so a stop never races its own
 // automatic re-run.
@@ -1432,8 +1432,9 @@ func (m *defaultTaskManager) Shutdown() {
 	m.ShutdownWithDeadline(0)
 }
 
-// BeginShutdown refuses every new run from here on and leaves active runs
-// alone. Idempotent.
+// BeginShutdown refuses every new run from here on (triggers, retries, queued
+// runs, held jittered fires) and leaves active runs alone. The daemon calls it
+// before stopping services; ShutdownWithDeadline calls it too. Idempotent.
 func (m *defaultTaskManager) BeginShutdown() {
 	m.isShutdown.Store(true)
 	// Cancel before the wg drain so any goroutine parked in waitForDelay exits

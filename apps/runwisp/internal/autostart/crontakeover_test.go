@@ -156,7 +156,7 @@ func TestComputePlan_CarriesForwardExistingMarker(t *testing.T) {
 
 	takenOver := opts
 	takenOver.maskedCronUnit = "cron.service"
-	body, _, err := inst.renderUnit(takenOver)
+	body, err := inst.renderUnit(takenOver)
 	require.NoError(t, err)
 	unitPath := inst.unitPath(true)
 	require.NoError(t, fs.WriteFile(unitPath, body, 0644))
@@ -455,7 +455,7 @@ func takenOverUnitOnDisk(t *testing.T, inst *systemdInstaller, fs *autostarttest
 	t.Helper()
 	recorded := opts
 	recorded.maskedCronUnit = "cron.service"
-	body, _, err := inst.renderUnit(recorded)
+	body, err := inst.renderUnit(recorded)
 	require.NoError(t, err)
 	require.NoError(t, fs.WriteFile(inst.unitPath(true), body, 0644))
 }
@@ -562,7 +562,7 @@ func TestComputeUninstallPlan_UnmasksOnlyOwnMarker(t *testing.T) {
 	inst.deps.Euid = 0
 	opts := systemInstallOpts(binary)
 	opts.maskedCronUnit = "cron.service"
-	body, _, err := inst.renderUnit(opts)
+	body, err := inst.renderUnit(opts)
 	require.NoError(t, err)
 	unitPath := inst.unitPath(true)
 	require.NoError(t, fs.WriteFile(unitPath, body, 0644))
@@ -577,7 +577,7 @@ func TestComputeUninstallPlan_NoMarkerMeansNoUnmaskStep(t *testing.T) {
 	inst, fs, _, _, binary := newFakeInstaller(t, false)
 	inst.deps.Euid = 0
 	opts := systemInstallOpts(binary)
-	body, _, err := inst.renderUnit(opts)
+	body, err := inst.renderUnit(opts)
 	require.NoError(t, err)
 	unitPath := inst.unitPath(true)
 	require.NoError(t, fs.WriteFile(unitPath, body, 0644))
@@ -593,7 +593,7 @@ func TestApplyUninstall_UnmasksAndRestartsCron(t *testing.T) {
 	inst.deps.Euid = 0
 	opts := systemInstallOpts(binary)
 	opts.maskedCronUnit = "cron.service"
-	body, _, err := inst.renderUnit(opts)
+	body, err := inst.renderUnit(opts)
 	require.NoError(t, err)
 	unitPath := inst.unitPath(true)
 	require.NoError(t, fs.WriteFile(unitPath, body, 0644))
@@ -620,7 +620,7 @@ func TestStatus_CronRow_MaskedByUs(t *testing.T) {
 	inst.deps.Euid = 0
 	opts := systemInstallOpts(binary)
 	opts.maskedCronUnit = "cron.service"
-	body, _, err := inst.renderUnit(opts)
+	body, err := inst.renderUnit(opts)
 	require.NoError(t, err)
 	require.NoError(t, fs.WriteFile(inst.unitPath(true), body, 0644))
 

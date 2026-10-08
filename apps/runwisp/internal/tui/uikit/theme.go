@@ -7,7 +7,12 @@
 // subpackage in a way that creates a cycle with this one.
 package uikit
 
-import "charm.land/lipgloss/v2"
+import (
+	"image/color"
+
+	"charm.land/lipgloss/v2"
+	"github.com/runwisp/runwisp/internal/model"
+)
 
 // Brand palette — official RunWisp colors.
 var (
@@ -114,27 +119,34 @@ var (
 // ColorExecRowHover is the background colour for the hovered execution row.
 var ColorExecRowHover = lipgloss.Color("#1f2038")
 
-// StatusStyle returns the badge style for a given run status string.
+// StatusColor maps a run's display status (phase or end reason) to its
+// accent colour. Every failure reason takes the error colour.
+func StatusColor(status string) color.Color {
+	switch status {
+	case string(model.PhaseRunning):
+		return ColorRunning
+	case string(model.ReasonSuccess):
+		return ColorSuccess
+	case string(model.PhasePending):
+		return ColorPending
+	case string(model.ReasonFailed), string(model.ReasonCrashed), string(model.ReasonTimeout),
+		string(model.ReasonStartFailed), string(model.ReasonLogOverflow), string(model.ReasonUnhealthy):
+		return ColorError
+	case string(model.ReasonStopped), string(model.ReasonMissed):
+		return ColorWarning
+	default:
+		return ColorTextMuted
+	}
+}
+
+// StatusStyle returns the badge style for a run's display status.
 func StatusStyle(status string) lipgloss.Style {
-	base := lipgloss.NewStyle().
+	return lipgloss.NewStyle().
 		PaddingLeft(1).
 		PaddingRight(1).
-		Bold(true)
-
-	switch status {
-	case "running":
-		return base.Background(ColorRunning).Foreground(ColorBg)
-	case "succeeded":
-		return base.Background(ColorSuccess).Foreground(ColorBg)
-	case "failed", "crashed":
-		return base.Background(ColorError).Foreground(ColorBg)
-	case "pending":
-		return base.Background(ColorPending).Foreground(ColorBg)
-	case "stopped", "timeout":
-		return base.Background(ColorWarning).Foreground(ColorBg)
-	default:
-		return base.Background(ColorTextMuted).Foreground(ColorBg)
-	}
+		Bold(true).
+		Background(StatusColor(status)).
+		Foreground(ColorBg)
 }
 
 // HelpBarStyle styles the bottom help bar.

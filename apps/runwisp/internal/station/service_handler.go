@@ -169,20 +169,9 @@ func (h *InboundHandler) HandleServiceRemove(message protocol.ServiceRemoveMessa
 // taskId, falling back to taskName) so control messages and status reports
 // resolve to the same registered task.
 func (h *InboundHandler) buildServiceTask(svc *protocol.Service) (*model.Task, error) {
-	execDef, err := model.ParseExecutionDef(svc.Script)
+	execDef, err := h.parseAvailableDef(svc.Script)
 	if err != nil {
-		return nil, &StationError{
-			Kind:    StationErrorKindValidation,
-			Message: fmt.Sprintf("failed to parse execution def: %v", err),
-		}
-	}
-
-	status := h.availability.ForType(execDef.ExecType())
-	if !status.Available {
-		return nil, &StationError{
-			Kind:    StationErrorKindConflict,
-			Message: fmt.Sprintf("execution type %q not available: %s", execDef.ExecType(), status.Reason),
-		}
+		return nil, err
 	}
 
 	taskName := sanitizeStationTaskName(svc.TaskID)
@@ -193,16 +182,10 @@ func (h *InboundHandler) buildServiceTask(svc *protocol.Service) (*model.Task, e
 		taskName = "station-service"
 	}
 
-	if svc.Instances > config.MaxServiceInstances {
-		return nil, &StationError{
-			Kind:    StationErrorKindValidation,
-			Message: fmt.Sprintf("invalid instances for service %s: must be <= %d", taskName, config.MaxServiceInstances),
-		}
+	if err := checkServiceInstances(taskName, svc.Instances); err != nil {
+		return nil, err
 	}
-	instances := svc.Instances
-	if instances < 1 {
-		instances = 1
-	}
+	instances := max(svc.Instances, 1)
 
 	task := &model.Task{
 		Name:         taskName,
@@ -242,6 +225,18 @@ func (h *InboundHandler) buildServiceTask(svc *protocol.Service) (*model.Task, e
 	applyServiceTaskConfig(task, svc.TaskConfig)
 
 	return task, nil
+}
+
+// checkServiceInstances rejects a service instance count above the cap TOML
+// services are held to.
+func checkServiceInstances(name string, instances int) error {
+	if instances > config.MaxServiceInstances {
+		return &StationError{
+			Kind:    StationErrorKindValidation,
+			Message: fmt.Sprintf("invalid instances for service %s: must be <= %d", name, config.MaxServiceInstances),
+		}
+	}
+	return nil
 }
 
 // resolveServiceTarget maps a station-supplied taskId/taskName onto a registered
@@ -302,27 +297,15 @@ func (h *InboundHandler) mergeServiceApply(task *model.Task, svc *protocol.Servi
 		}
 	}
 	if len(svc.Script) > 0 && string(svc.Script) != "null" {
-		execDef, err := model.ParseExecutionDef(svc.Script)
+		execDef, err := h.parseAvailableDef(svc.Script)
 		if err != nil {
-			return &StationError{
-				Kind:    StationErrorKindValidation,
-				Message: fmt.Sprintf("failed to parse execution def: %v", err),
-			}
-		}
-		if status := h.availability.ForType(execDef.ExecType()); !status.Available {
-			return &StationError{
-				Kind:    StationErrorKindConflict,
-				Message: fmt.Sprintf("execution type %q not available: %s", execDef.ExecType(), status.Reason),
-			}
+			return err
 		}
 		task.ExecutionDef = execDef
 	}
 
-	if svc.Instances > config.MaxServiceInstances {
-		return &StationError{
-			Kind:    StationErrorKindValidation,
-			Message: fmt.Sprintf("invalid instances for service %s: must be <= %d", task.Name, config.MaxServiceInstances),
-		}
+	if err := checkServiceInstances(task.Name, svc.Instances); err != nil {
+		return err
 	}
 	if svc.Instances >= 1 {
 		task.Instances = svc.Instances

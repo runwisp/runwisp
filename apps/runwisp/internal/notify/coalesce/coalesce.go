@@ -103,9 +103,6 @@ func New(inner notify.Channel, cfg Config, clock func() time.Time, logger *slog.
 	if cfg.Window <= 0 {
 		cfg.Window = DefaultWindow
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Channel{
 		inner:       inner,

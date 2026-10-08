@@ -7,7 +7,7 @@ import { reloadSummary } from "./stale-config-banner.js";
 describe("reloadSummary", () => {
     it("reports no changes when everything is empty", () => {
         expect(reloadSummary({ added: [], removed: [], changed: [] })).toBe(
-            "Config reloaded — no changes",
+            "Config reloaded: no changes",
         );
     });
 

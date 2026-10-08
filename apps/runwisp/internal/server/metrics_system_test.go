@@ -88,8 +88,10 @@ func TestBroadcastSample(t *testing.T) {
 		eventBus:    bus,
 		stats:       newStatsProvider(nil, time.Now()),
 		configStale: func() bool { return stale },
+		runUsage:    noUsage,
+		runService:  newRunService(nil, nil, nil, nil, bus),
 	}
-	srv.configStaleLast = srv.currentConfigStale() // seed baseline like Start()
+	srv.configStaleLast = srv.configStale() // seed baseline like Start()
 
 	var systemCount, staleCount int
 	var lastStale bool
@@ -131,9 +133,11 @@ func TestBroadcastSample_CarriesRunUsage(t *testing.T) {
 	bus := events.NewEventBus()
 	runs := map[string]model.ResourceUsage{"run1": {CPUPercent: 12, MemoryBytes: 48 << 20}}
 	srv := &Server{
-		eventBus: bus,
-		stats:    newStatsProvider(nil, time.Now()),
-		runUsage: func() map[string]model.ResourceUsage { return runs },
+		eventBus:    bus,
+		stats:       newStatsProvider(nil, time.Now()),
+		runUsage:    func() map[string]model.ResourceUsage { return runs },
+		configStale: neverStale,
+		runService:  newRunService(nil, nil, nil, nil, bus),
 	}
 	var got map[string]model.ResourceUsage
 	bus.Subscribe(events.EventSystemSample, func(e events.Event) {

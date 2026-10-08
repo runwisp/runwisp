@@ -66,7 +66,6 @@ type TriggerRunMsg struct {
 
 // StopRunMsg is the result of a "Stop" action.
 type StopRunMsg struct {
-	RunID    string
 	TaskName string
 	Err      error
 }

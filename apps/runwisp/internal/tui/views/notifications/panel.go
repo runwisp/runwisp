@@ -17,7 +17,6 @@ import (
 
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui/keys"
-	"github.com/runwisp/runwisp/internal/tui/rhythm"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -122,9 +121,6 @@ func (p *Panel) insertOrdered(idx int, id string) {
 
 // IsExpanded reports whether the panel is in expanded mode.
 func (p *Panel) IsExpanded() bool { return p.expanded }
-
-// Unread returns the snapshot+delta-tracked unread count.
-func (p *Panel) Unread() int { return p.unread }
 
 // Toggle flips expanded state and snaps the cursor into a valid range.
 func (p *Panel) Toggle() {
@@ -387,7 +383,7 @@ func (p *Panel) renderCollapsed() string {
 	}
 
 	if p.width > 0 {
-		body = truncateLine(body, p.width)
+		body = uikit.TruncateToWidth(body, p.width)
 	}
 	return uikit.PadLine(body, p.width, uikit.ColorBgLight)
 }
@@ -529,23 +525,7 @@ func relativeTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	return rhythm.Relative(t, time.Now())
-}
-
-// truncateLine trims a (possibly ANSI-styled) line to at most max display
-// columns. It slices by visible column via uikit.SliceLineColumns — never by
-// raw bytes — so a cut never lands mid escape-sequence or mid-rune and garbles
-// the styled collapsed summary.
-func truncateLine(s string, maxWidth int) string {
-	if maxWidth <= 1 || lipgloss.Width(s) <= maxWidth {
-		return s
-	}
-	if maxWidth <= 3 {
-		sliced, _ := uikit.SliceLineColumns(s, 0, maxWidth)
-		return sliced
-	}
-	sliced, _ := uikit.SliceLineColumns(s, 0, maxWidth-1)
-	return sliced + "…"
+	return uikit.RelativeTime(t, time.Now())
 }
 
 func isUnread(n server.NotificationDTO) bool { return n.ReadAt == nil }

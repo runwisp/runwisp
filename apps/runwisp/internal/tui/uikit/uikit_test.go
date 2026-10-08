@@ -102,6 +102,17 @@ func TestStatusStyle(t *testing.T) {
 	}
 }
 
+func TestStatusColor_FailuresTakeErrorColour(t *testing.T) {
+	for _, r := range []model.EndReason{
+		model.ReasonFailed, model.ReasonCrashed, model.ReasonTimeout,
+		model.ReasonStartFailed, model.ReasonLogOverflow, model.ReasonUnhealthy,
+	} {
+		assert.Equal(t, ColorError, StatusColor(string(r)), r)
+	}
+	assert.Equal(t, ColorWarning, StatusColor(string(model.ReasonStopped)))
+	assert.Equal(t, ColorTextMuted, StatusColor(string(model.ReasonSkipped)))
+}
+
 func TestPadLine(t *testing.T) {
 	result := PadLine("hello", 10, ColorBg)
 	assert.GreaterOrEqual(t, len([]rune(result)), 5)
@@ -109,4 +120,28 @@ func TestPadLine(t *testing.T) {
 	// Already at width — no padding added
 	short := PadLine("hello", 3, ColorBg)
 	assert.Equal(t, "hello", short)
+}
+
+func TestRelativeTime(t *testing.T) {
+	now := time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		d    time.Duration
+		want string
+	}{
+		{5 * time.Second, "just now"},
+		{45 * time.Second, "45s ago"},
+		{90 * time.Second, "1m ago"},
+		{30 * time.Minute, "30m ago"},
+		{2 * time.Hour, "2h ago"},
+		{25 * time.Hour, "yesterday"},
+		{5 * 24 * time.Hour, "5d ago"},
+		{45 * 24 * time.Hour, "1mo ago"},
+		{2 * 30 * 24 * time.Hour, "2mo ago"},
+		{400 * 24 * time.Hour, "1y ago"},
+		{3 * 365 * 24 * time.Hour, "3y ago"},
+	}
+	for _, tt := range tests {
+		got := RelativeTime(now.Add(-tt.d), now)
+		assert.Equal(t, tt.want, got, "RelativeTime with d=%v", tt.d)
+	}
 }

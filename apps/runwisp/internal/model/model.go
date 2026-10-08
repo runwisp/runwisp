@@ -280,12 +280,12 @@ func (t *Task) Held() bool { return t.HeldBy != HeldByNothing }
 // GracefulStopValue returns the configured stop-signal-to-SIGKILL window, or 0
 // (kill immediately) when unset. Config-loaded tasks always have it resolved by
 // ApplyDefaults; nil only occurs for tasks built outside config.Load.
-func (t *Task) GracefulStopValue() time.Duration { return derefOr(t.GracefulStop, 0) }
+func (t *Task) GracefulStopValue() time.Duration { return OrDefault(t.GracefulStop, 0) }
 
 // TimeoutValue returns the configured per-run timeout, or 0 ("no timeout") when
 // unset or explicitly disabled with `timeout = "0s"`. Both nil and *0 mean the
 // run manager arms no timeout timer.
-func (t *Task) TimeoutValue() time.Duration { return derefOr(t.Timeout, 0) }
+func (t *Task) TimeoutValue() time.Duration { return OrDefault(t.Timeout, 0) }
 
 // WithTimeout derives the context one execution of the task runs under: bounded
 // by its timeout when one is set, otherwise only cancellable. The single place
@@ -299,7 +299,7 @@ func (t *Task) WithTimeout(parent context.Context) (context.Context, context.Can
 
 // JitterValue returns the configured start-spread window, or 0 ("no jitter")
 // when unset or explicitly disabled with `jitter = "0s"`.
-func (t *Task) JitterValue() time.Duration { return derefOr(t.Jitter, 0) }
+func (t *Task) JitterValue() time.Duration { return OrDefault(t.Jitter, 0) }
 
 // DefaultCatchUp is the built-in catch_up value applied when the key is omitted:
 // re-run only the most recent missed cron tick after downtime.
@@ -308,24 +308,39 @@ const DefaultCatchUp = 1
 // CatchUpValue returns the maximum number of missed cron ticks to re-run, falling
 // back to DefaultCatchUp when unset. Config-loaded tasks always have it resolved
 // by ApplyDefaults; nil only occurs for tasks built outside config.Load.
-func (t *Task) CatchUpValue() int { return derefOr(t.CatchUp, DefaultCatchUp) }
+func (t *Task) CatchUpValue() int { return OrDefault(t.CatchUp, DefaultCatchUp) }
+
+// DefaultMaxConcurrent is the max_concurrent applied when the key is omitted.
+const DefaultMaxConcurrent = 1
+
+// MaxConcurrentValue returns how many runs may overlap, falling back to
+// DefaultMaxConcurrent when unset.
+func (t *Task) MaxConcurrentValue() int {
+	if t.MaxConcurrent == 0 {
+		return DefaultMaxConcurrent
+	}
+	return t.MaxConcurrent
+}
 
 // DefaultMaxQueued is the built-in max_queued applied when the key is omitted.
 const DefaultMaxQueued = 100
 
 // MaxQueuedValue returns how many runs may wait when on_overlap = "queue",
 // falling back to DefaultMaxQueued when unset. 0 means no run waits.
-func (t *Task) MaxQueuedValue() int { return derefOr(t.MaxQueued, DefaultMaxQueued) }
+func (t *Task) MaxQueuedValue() int { return OrDefault(t.MaxQueued, DefaultMaxQueued) }
 
 // RetryDelayValue returns the configured base retry delay, or 0 when unset. Note
 // the 5s builtin fallback lives in retry.ComputeRetryDelay, which reads the
 // pointer directly so an explicit "0s" stays 0.
-func (t *Task) RetryDelayValue() time.Duration { return derefOr(t.RetryDelay, 0) }
+func (t *Task) RetryDelayValue() time.Duration { return OrDefault(t.RetryDelay, 0) }
 
-// derefOr returns *p, or def when p is nil.
-func derefOr[T any](p *T, def T) T {
+// OrDefault returns *p, or fallback when p is nil. A nil pointer reaches a
+// runtime consumer only for tasks built without Load (test literals, station
+// ad-hoc dispatch); Load always resolves defaults to concrete pointers, so the
+// fallback should be the protective built-in default, not a bare zero.
+func OrDefault[T any](p *T, fallback T) T {
 	if p == nil {
-		return def
+		return fallback
 	}
 	return *p
 }

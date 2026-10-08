@@ -1,11 +1,39 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { describe, expect, it } from "vitest";
-import { connectionStore } from "./connection.svelte";
+import { describe, expect, it, vi } from "vitest";
+import type { SSEErrorInfo } from "$lib/utils/event-source";
+
+const h = vi.hoisted(() => ({ handleUnauthorized: vi.fn() }));
+vi.mock("$lib/utils/auth-required", () => ({
+    handleUnauthorized: h.handleUnauthorized,
+    authFetch: fetch,
+}));
+
+import { connectionStore, trackStreamHealth } from "./connection.svelte";
 import { AuthRequiredError } from "$lib/api";
 
 // ─── reportFetchError (exercises isConnectionError + formatError) ─────────────
+
+describe("connectionStore.fetchErrorMessage", () => {
+    it("returns null for AuthRequiredError so the login flow owns it", () => {
+        expect(connectionStore.fetchErrorMessage(new AuthRequiredError())).toBeNull();
+    });
+
+    it("says 'Connection lost' for a network failure", () => {
+        expect(connectionStore.fetchErrorMessage(new TypeError("Failed to fetch"))).toBe(
+            "Connection lost",
+        );
+        connectionStore.markConnected();
+    });
+
+    it("surfaces the server's message, else the fallback", () => {
+        expect(connectionStore.fetchErrorMessage(new Error("boom"), "x")).toBe("boom");
+        expect(connectionStore.fetchErrorMessage({}, "Failed to load tasks")).toBe(
+            "Failed to load tasks",
+        );
+    });
+});
 
 describe("connectionStore.reportFetchError", () => {
     it("returns false and makes no state change for AuthRequiredError", () => {
@@ -133,7 +161,7 @@ describe("connectionStore.reportSourceStalled", () => {
         connectionStore.markConnected();
     }
 
-    it("enters 'stalled' — distinct from 'disconnected' — when a source stalls", () => {
+    it("enters 'stalled', distinct from 'disconnected', when a source stalls", () => {
         connectionStore.reportSourceStalled("a");
         expect(connectionStore.status).toBe("stalled");
         // A stall is not a network outage: no error text, no retry scheduled.
@@ -167,7 +195,7 @@ describe("connectionStore.reportSourceStalled", () => {
 
     // Regression: when the last live source goes down but a sibling is
     // still stalled (waiting for a connection slot), the store must reflect
-    // "stalled" — not strand the UI on its prior "connected" status. Before the
+    // "stalled", not strand the UI on its prior "connected" status. Before the
     // fix reportSourceDown only handled the all-empty case, so this transition
     // was silently dropped.
     it("shows 'stalled' when the last live source goes down while another is stalled", () => {
@@ -178,6 +206,36 @@ describe("connectionStore.reportSourceStalled", () => {
         connectionStore.reportSourceDown("a");
         expect(connectionStore.status).toBe("stalled");
         drain("a", "b");
+    });
+});
+
+describe("trackStreamHealth", () => {
+    it("treats a 401 as an expired session, not a lost connection", () => {
+        let onError: ((info: SSEErrorInfo) => void) | undefined;
+        const off = trackStreamHealth(
+            {
+                subscribe: () => () => undefined,
+                onOpen: () => () => undefined,
+                onError: (fn) => {
+                    onError = fn;
+                    return () => undefined;
+                },
+                onStall: () => () => undefined,
+            },
+            "health-test",
+        );
+        connectionStore.markConnected();
+
+        onError?.({ status: 401, message: "unauthorized" });
+        expect(h.handleUnauthorized).toHaveBeenCalledOnce();
+        expect(connectionStore.status).toBe("connected");
+
+        onError?.({ status: 502, message: "bad gateway" });
+        expect(h.handleUnauthorized).toHaveBeenCalledOnce();
+        expect(connectionStore.status).toBe("disconnected");
+
+        off();
+        connectionStore.markConnected();
     });
 });
 

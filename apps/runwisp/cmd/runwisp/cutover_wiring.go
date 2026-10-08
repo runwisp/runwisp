@@ -27,10 +27,10 @@ import (
 // *cobra.Command. Where the paths come from is the caller's problem — telling an
 // explicit --data from a default is Flag().Changed, which only a command knows.
 //
-// tweaks adjust the seams before New fills in its defaults. One caller needs it:
-// the first run replaces WriteConfig so the scaffold the plan writes can also
-// import an adjacent docker-compose.yml.
-func newCutover(f Flags, deps autostart.Deps, installer autostart.Installer, opts autostart.InstallOptions, opt cutover.Options, tweaks ...func(*cutover.Deps)) *cutover.Cutover {
+// tweaks adjust the deps before New fills in its defaults: the first run
+// replaces WriteConfig so the scaffold can also import an adjacent
+// docker-compose.yml, and takeover sets AllowSkippedCronJobs.
+func newCutover(f Flags, deps autostart.Deps, installer autostart.Installer, opts autostart.InstallOptions, tweaks ...func(*cutover.Deps)) *cutover.Cutover {
 	cd := cutover.Deps{
 		Installer: installer,
 		Prompter:  deps.Prompter,
@@ -47,7 +47,7 @@ func newCutover(f Flags, deps autostart.Deps, installer autostart.Installer, opt
 	for _, tweak := range tweaks {
 		tweak(&cd)
 	}
-	return cutover.New(cd, opt)
+	return cutover.New(cd)
 }
 
 // resolveCutover builds the cutover for `runwisp takeover`.
@@ -81,8 +81,8 @@ func resolveCutover(cmd *cobra.Command, f Flags, req takeoverRequest) (*cutover.
 		installer = nil
 	}
 
-	return newCutover(f, deps, installer, opts, cutover.Options{
-		AllowSkippedCronJobs: req.AllowSkippedCronJobs,
+	return newCutover(f, deps, installer, opts, func(d *cutover.Deps) {
+		d.AllowSkippedCronJobs = req.AllowSkippedCronJobs
 	}), nil
 }
 

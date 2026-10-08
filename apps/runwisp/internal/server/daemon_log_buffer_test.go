@@ -10,6 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// lines returns the buffer's last n lines via a throwaway subscription.
+func lines(b *DaemonLogBuffer, n int) []string {
+	id, backlog, _ := b.SubscribeWithBacklog(n)
+	b.Unsubscribe(id)
+	return backlog
+}
+
 func TestDaemonLogBuffer_WriteAndLines(t *testing.T) {
 	b := NewDaemonLogBuffer(4)
 	_, err := b.Write([]byte("first\nsecond\n"))
@@ -17,7 +24,7 @@ func TestDaemonLogBuffer_WriteAndLines(t *testing.T) {
 	_, err = b.Write([]byte("third"))
 	require.NoError(t, err)
 
-	all := b.Lines(10)
+	all := lines(b, 10)
 	assert.Equal(t, []string{"first", "second", "third"}, all)
 }
 
@@ -27,13 +34,13 @@ func TestDaemonLogBuffer_WrapsAroundCapacity(t *testing.T) {
 		_, err := b.Write([]byte(l + "\n"))
 		require.NoError(t, err)
 	}
-	assert.Equal(t, []string{"c", "d"}, b.Lines(10))
+	assert.Equal(t, []string{"c", "d"}, lines(b, 10))
 }
 
 func TestDaemonLogBuffer_LinesEmpty(t *testing.T) {
 	b := NewDaemonLogBuffer(2)
-	assert.Nil(t, b.Lines(5))
-	assert.Nil(t, b.Lines(0))
+	assert.Nil(t, lines(b, 5))
+	assert.Nil(t, lines(b, 0))
 }
 
 func TestDaemonLogBuffer_WriteIgnoresEmpty(t *testing.T) {
@@ -46,7 +53,7 @@ func TestDaemonLogBuffer_WriteIgnoresEmpty(t *testing.T) {
 
 func TestDaemonLogBuffer_SubscribeReceivesNewLines(t *testing.T) {
 	b := NewDaemonLogBuffer(4)
-	id, ch := b.Subscribe()
+	id, _, ch := b.SubscribeWithBacklog(0)
 
 	_, err := b.Write([]byte("hello\nworld\n"))
 	require.NoError(t, err)
@@ -114,7 +121,7 @@ func TestDaemonLogBuffer_UnsubscribeUnknownIDIsNoop(t *testing.T) {
 
 func TestDaemonLogBuffer_SubscriberDropOnFull(t *testing.T) {
 	b := NewDaemonLogBuffer(4)
-	_, ch := b.Subscribe()
+	_, _, ch := b.SubscribeWithBacklog(0)
 	// Don't consume — buffered channel size is 64. Push more than that.
 	for i := range 200 {
 		_, err := b.Write([]byte("line-" + string(rune('A'+i%26)) + "\n"))

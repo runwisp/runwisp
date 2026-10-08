@@ -46,16 +46,16 @@
         onRowClick?: (row: T) => void;
         loading?: boolean;
         stickyHeader?: boolean;
-        /** Hide the header row entirely — for single-column feeds (e.g. an
+        /** Hide the header row entirely, for single-column feeds (e.g. an
          *  inbox) where a column label would be noise. */
         showHeader?: boolean;
-        /** Rendered below the table body, inside the frame — e.g. a cursor
+        /** Rendered below the table body, inside the frame, e.g. a cursor
          *  "Load more" button for feeds that don't use offset pagination. */
         footer?: Snippet;
         /** Drop the outer border/shadow/bg so the grid sits flush inside a Card
          *  or panel that already supplies its own frame. */
         bare?: boolean;
-        /** Extra classes per row — e.g. a left accent bar for a failing row.
+        /** Extra classes per row, e.g. a left accent bar for a failing row.
          *  Rows always carry `group`, so a `render`/`rowAction` snippet can use
          *  `group-hover:` to reveal on-hover controls. */
         rowClass?: (row: T) => string;
@@ -66,7 +66,7 @@
     // Type-aware comparator. Nullish sorts last; numbers numerically; dates by
     // epoch; everything else by locale with numeric-aware string compare.
     // Returns 0 for non-comparable/equal, so a column whose key maps to no real
-    // field (a display-only key) leaves order untouched — sort stays inert there.
+    // field (a display-only key) leaves order untouched, sort stays inert there.
     function compareValues(a: unknown, b: unknown): number {
         if (a == null && b == null) return 0;
         if (a == null) return 1;
@@ -193,7 +193,7 @@
     let allSelected = $derived(selection.allSelected);
     let someSelected = $derived(selection.someSelected);
 
-    // Cell rhythm — airy by default, tight when compact. Header + body share it.
+    // Cell rhythm, airy by default, tight when compact. Header + body share it.
     const density = $derived(compact ? "compact" : "comfortable");
     // Hover reveals a teal accent rail on the leftmost cell (see .group on <tr>).
     const railHover = "group-hover:shadow-[inset_3px_0_0_var(--color-primary)]";

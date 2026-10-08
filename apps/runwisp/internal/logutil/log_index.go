@@ -16,7 +16,16 @@ import (
 const (
 	// ScanBufferSize is the buffer size for scanning log files.
 	ScanBufferSize = 32 * 1024
+	// maxLogLineSize is the longest log line newLineScanner accepts.
+	maxLogLineSize = 1024 * 1024
 )
+
+// newLineScanner returns a line scanner over r sized for log files.
+func newLineScanner(r io.Reader) *bufio.Scanner {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, ScanBufferSize), maxLogLineSize)
+	return scanner
+}
 
 // Stream identifiers used in LogLineEvent payloads and on-disk prefix mapping.
 // These match the values published on the wire ("stdout" / "stderr" / "system").
@@ -141,7 +150,7 @@ func ReadLineRange(logPath string, from, limit int64) (lines []LogLineRecord, fi
 		return nil, firstAvailable, totalLines, nil
 	}
 
-	startLine := resolveStartLine(from, firstAvailable, totalLines)
+	startLine := ResolveStartLine(from, firstAvailable, totalLines)
 	if startLine >= totalLines {
 		return nil, firstAvailable, totalLines, nil
 	}
@@ -176,8 +185,7 @@ func readCurrentSegment(file *os.File, indices []int64, meta LogMeta, startLine,
 	if _, err := file.Seek(startOffset, io.SeekStart); err != nil {
 		return nil, err
 	}
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, ScanBufferSize), 1024*1024)
+	scanner := newLineScanner(file)
 	return collectLines(scanner, startLine, limit)
 }
 
@@ -195,10 +203,10 @@ func resolvePrevSegment(logPath string, meta LogMeta) (prevPath string, exists b
 	return prevPath, exists, firstAvailable
 }
 
-// resolveStartLine converts `from` into an absolute line number: negative
+// ResolveStartLine converts `from` into an absolute line number: negative
 // values count back from totalLines (a tail request), then the result is
 // clamped to the oldest surviving line, firstAvailable.
-func resolveStartLine(from, firstAvailable, totalLines int64) int64 {
+func ResolveStartLine(from, firstAvailable, totalLines int64) int64 {
 	start := from
 	if start < 0 {
 		start = totalLines + from
@@ -252,8 +260,7 @@ func readSegmentRange(path string, segmentStart, startAt, limit int64) ([]LogLin
 		return nil, err
 	}
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, ScanBufferSize), 1024*1024)
+	scanner := newLineScanner(f)
 	return collectLines(scanner, segmentStart+int64(skip), limit)
 }
 
@@ -290,8 +297,7 @@ func scanSegment(ctx context.Context, path string, startLine int64, visit func(L
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, ScanBufferSize), 1024*1024)
+	scanner := newLineScanner(f)
 	current := startLine
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {

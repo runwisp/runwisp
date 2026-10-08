@@ -184,7 +184,7 @@ func probeFirstRunCutover(f Flags, out io.Writer, writeConfig func(path string, 
 		Port:        f.Port,
 		System:      true,
 		StopTimeout: stopWaitTimeout(f.CfgFile),
-	}, cutover.Options{}, func(d *cutover.Deps) { d.WriteConfig = writeConfig })
+	}, func(d *cutover.Deps) { d.WriteConfig = writeConfig })
 
 	// This re-scans the crontabs scanForCron just looked at. Cheap (a glob and a
 	// few small files), and worth it: the plan owns its own evidence, so what the

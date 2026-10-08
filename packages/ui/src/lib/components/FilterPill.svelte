@@ -4,7 +4,7 @@
 <!--
   One filter, one element. The pill is both the control and its own "chip":
   inactive it reads `Label ▾` (muted); active it reads `Label: value ✕` (accent)
-  with an inline clear. Active vs inactive is a restyle of the SAME element — it
+  with an inline clear. Active vs inactive is a restyle of the SAME element, it
   never spawns a second row, so the table below never jumps. Clicking the body
   opens a type-specific editor popover (select menu / number / date range).
 -->
@@ -26,7 +26,7 @@
     let {
         field,
         values = $bindable({}),
-        // Open the editor on mount — set when the pill was just added from the
+        // Open the editor on mount, set when the pill was just added from the
         // "+ Add filter" menu, so the user lands straight in the value picker.
         autoOpen = false,
         onClose,

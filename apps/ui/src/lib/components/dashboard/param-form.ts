@@ -24,7 +24,7 @@ export function paramIncluded(p: TaskParam, value: string, override: boolean | u
     return value.trim() !== "";
 }
 
-// paramSupportsInclude reports whether a field offers the include/omit toggle —
+// paramSupportsInclude reports whether a field offers the include/omit toggle,
 // only free-text fields, where a blank value is ambiguous between "omit" and
 // "empty string". Flags already express omit by being off; required params can't
 // be omitted; strict selects and numbers can't carry a meaningful empty string.
@@ -38,7 +38,7 @@ export function paramSupportsInclude(p: TaskParam, inCustomMode: boolean): boole
     return true;
 }
 
-// Decimal/scientific only — mirrors what the daemon's strconv.ParseFloat accepts
+// Decimal/scientific only, mirrors what the daemon's strconv.ParseFloat accepts
 // for typed numbers. Number() would also accept 0x/0o/0b literals, marking
 // values valid that the daemon then 400s; this regex rejects them so client and
 // server agree.

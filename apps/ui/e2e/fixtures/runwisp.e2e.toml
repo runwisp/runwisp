@@ -60,6 +60,13 @@ cron = "0 0 1 1 *"
 timezone = "UTC"
 run = "echo nightly"
 
+# Two names that differ only in punctuation; the UI must keep them apart.
+[tasks.twin-task]
+run = "true"
+
+[tasks."twin.task"]
+run = "true"
+
 # Surface failed runs as in-app notifications so the bell + popover have
 # something real to render. No outbound notifiers configured.
 [[route]]

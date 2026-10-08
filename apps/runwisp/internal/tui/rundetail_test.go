@@ -101,13 +101,13 @@ func TestRunDetailDialog_View_SuccessServiceInstance(t *testing.T) {
 
 func TestRunDetailDialog_ParentRef(t *testing.T) {
 	d := NewRunDetailDialog(endedRun(), false, 1)
-	taskName, runID, ok := d.ParentRef()
-	if !ok || taskName != "backup-db" || runID != "01HZRUNPARENTAAAAAAAAAAAAAA" {
-		t.Fatalf("parent ref: got (%q,%q,%v)", taskName, runID, ok)
+	runID, ok := d.ParentRef()
+	if !ok || runID != "01HZRUNPARENTAAAAAAAAAAAAAA" {
+		t.Fatalf("parent ref: got (%q,%v)", runID, ok)
 	}
 
 	noParent := NewRunDetailDialog(&model.Run{ID: "r1", TaskName: "t1"}, false, 1)
-	if _, _, ok := noParent.ParentRef(); ok {
+	if _, ok := noParent.ParentRef(); ok {
 		t.Fatal("a non-retry run must report no parent")
 	}
 }
@@ -194,12 +194,8 @@ func TestRunDetailDialog_ShowsTimesInDaemonZone(t *testing.T) {
 
 func TestHandleDaemonInfo_AdoptsTimezoneChange(t *testing.T) {
 	m := newTestModel(nil)
-	updated, _ := m.handleDaemonInfo(uikit.DaemonInfoMsg{Info: &model.DaemonInfo{ResolvedTimezone: "Etc/GMT-2", TimezoneSource: "config"}})
-	got, ok := updated.(Model)
-	if !ok {
-		t.Fatal("handleDaemonInfo did not return a Model")
-	}
-	if got.loc.String() != "Etc/GMT-2" {
-		t.Fatalf("loc: want Etc/GMT-2, got %v", got.loc)
+	m.handleDaemonInfo(uikit.DaemonInfoMsg{Info: &model.DaemonInfo{ResolvedTimezone: "Etc/GMT-2", TimezoneSource: "config"}})
+	if m.loc.String() != "Etc/GMT-2" {
+		t.Fatalf("loc: want Etc/GMT-2, got %v", m.loc)
 	}
 }

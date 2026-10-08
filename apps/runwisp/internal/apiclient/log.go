@@ -5,7 +5,6 @@ package apiclient
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,18 +23,9 @@ func (c *Client) GetLogPage(ctx context.Context, runID string, from, limit int64
 	if limit > 0 {
 		q.Set("limit", strconv.FormatInt(limit, 10))
 	}
-	path := fmt.Sprintf("/api/runs/%s/log?%s", runID, q.Encode())
-	resp, err := c.doRequest(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return server.LogPageBody{}, err
-	}
-	defer resp.Body.Close()
-
 	var page server.LogPageBody
-	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
-		return server.LogPageBody{}, fmt.Errorf("decode log page: %w", err)
-	}
-	return page, nil
+	err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/runs/%s/log?%s", runID, q.Encode()), nil, &page)
+	return page, err
 }
 
 // GetLogRaw streams the raw concatenated log file. The caller MUST close the
@@ -55,15 +45,9 @@ func (c *Client) GetLogRaw(ctx context.Context, runID string) (io.ReadCloser, er
 // empty slice when the line has no recorded history.
 func (c *Client) GetLogLineHistory(ctx context.Context, runID string, n int64) ([][]string, error) {
 	path := fmt.Sprintf("/api/runs/%s/log/line/%d/history", runID, n)
-	resp, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	body, err := doJSONAs[server.LogLineHistoryBody](ctx, c, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var body server.LogLineHistoryBody
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, fmt.Errorf("decode log line history: %w", err)
 	}
 	return body.Frames, nil
 }
@@ -99,16 +83,7 @@ func (c *Client) SearchLogs(ctx context.Context, taskName string, opts SearchLog
 	if opts.Cursor != "" {
 		q.Set("cursor", opts.Cursor)
 	}
-	path := fmt.Sprintf("/api/tasks/%s/log/search?%s", taskName, q.Encode())
-	resp, err := c.doRequest(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return server.LogSearchBody{}, err
-	}
-	defer resp.Body.Close()
-
 	var body server.LogSearchBody
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return server.LogSearchBody{}, fmt.Errorf("decode log search: %w", err)
-	}
-	return body, nil
+	err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/tasks/%s/log/search?%s", taskName, q.Encode()), nil, &body)
+	return body, err
 }

@@ -58,7 +58,7 @@ func TestCapInfosFromAvailability_PreservesOrder(t *testing.T) {
 
 // daemonServicesTestEnv prepares a writable data dir + in-memory DB and returns
 // Flags pointing at the dir so the helpers under test can resolve f.LogDir().
-func daemonServicesTestEnv(t *testing.T) (Flags, storage.Database) {
+func daemonServicesTestEnv(t *testing.T) (Flags, *storage.SQLiteDatabase) {
 	t.Helper()
 	f := Flags{DataDir: t.TempDir()}
 

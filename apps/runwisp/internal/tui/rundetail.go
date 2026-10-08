@@ -35,13 +35,13 @@ func NewRunDetailDialog(run *model.Run, isService bool, instanceCount int) *RunD
 	return &RunDetailDialog{run: run, isService: isService, instanceCount: instanceCount}
 }
 
-// ParentRef returns the task + run id of the run this one retried, and whether
-// there is one. The exec interceptor uses it to open the parent on enter.
-func (d *RunDetailDialog) ParentRef() (taskName, runID string, ok bool) {
+// ParentRef returns the id of the run this one retried, and whether there is
+// one. The exec interceptor uses it to open the parent on enter.
+func (d *RunDetailDialog) ParentRef() (runID string, ok bool) {
 	if d.run == nil || d.run.RetryOfRunID == nil {
-		return "", "", false
+		return "", false
 	}
-	return d.run.TaskName, *d.run.RetryOfRunID, true
+	return *d.run.RetryOfRunID, true
 }
 
 // Update reports true when the dialog should close. Enter is handled by the
@@ -79,16 +79,12 @@ func (d *RunDetailDialog) View(screenWidth, screenHeight int) string {
 		modalEmptyLine(innerWidth),
 	}
 	lines = append(lines, d.facts(row)...)
-	_, _, hasParent := d.ParentRef()
+	_, hasParent := d.ParentRef()
 	footer := "esc close"
 	if hasParent {
 		footer = "enter open parent · esc close"
 	}
-	lines = append(lines,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine(footer, innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
-	)
+	lines = append(lines, modalFooter(footer, innerWidth)...)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorPrimary, lines)
 	return box.view
@@ -100,7 +96,7 @@ func (d *RunDetailDialog) facts(row func(label, value string, color color.Color)
 	run := d.run
 	status := run.DisplayStatus()
 	out := []string{
-		row("Status", status, runStatusColor(status)),
+		row("Status", status, uikit.StatusColor(status)),
 		row("Run ID", run.ID, uikit.ColorText),
 	}
 	if run.Status == model.PhaseEnded {
@@ -135,25 +131,6 @@ func (d *RunDetailDialog) facts(row func(label, value string, color color.Color)
 		out = append(out, row("Params", strconv.Itoa(len(run.Params)), uikit.ColorTextMuted))
 	}
 	return out
-}
-
-// runStatusColor maps a display status to the row's value color, mirroring the
-// run-list badge palette.
-func runStatusColor(status string) color.Color {
-	switch status {
-	case "running":
-		return uikit.ColorRunning
-	case "succeeded":
-		return uikit.ColorSuccess
-	case "pending":
-		return uikit.ColorPending
-	case "failed", "crashed", "timeout", "start_failed", "log_overflow", "unhealthy":
-		return uikit.ColorError
-	case "stopped", "missed":
-		return uikit.ColorWarning
-	default:
-		return uikit.ColorText
-	}
 }
 
 // exitCodeColor greens a clean exit and reddens any non-zero code.

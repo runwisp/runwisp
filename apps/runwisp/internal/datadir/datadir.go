@@ -265,6 +265,19 @@ func PidFileLocked(path string) bool {
 	return false
 }
 
+// ProcessAlive reports whether a process with pid exists, via signal 0: the
+// kernel delivers nothing but still reports ESRCH for a missing pid. EPERM
+// means the process exists under another user (e.g. a root daemon checked by
+// an unprivileged CLI), so it counts as alive. Works on Linux and macOS alike,
+// unlike a /proc/<pid> stat.
+func ProcessAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
 // isCurrentFile reports whether f is still the file at path.
 func isCurrentFile(f *os.File, path string) bool {
 	held, err := f.Stat()

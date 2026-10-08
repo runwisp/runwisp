@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { displayStatus, type RunStatus, type Run, type Task } from "@runwisp/common";
-
-export type TaskWithId = Task & { id: string };
+import { hasCron } from "$lib/utils/task";
 
 export type OverviewTaskState =
     "attention" | "running" | "paused" | "scheduled" | "manual" | "idle";
@@ -11,7 +10,7 @@ export type OverviewTaskFilter = "all" | "attention" | "running" | "scheduled" |
 export type OverviewTaskSortKey = "attention" | "last_activity" | "next_run" | "name";
 
 export interface TaskOverview {
-    task: TaskWithId;
+    task: Task;
     lastRun: Run | undefined;
     lastStatus: RunStatus | undefined;
     state: OverviewTaskState;
@@ -32,7 +31,7 @@ const TASK_STATE_ORDER: Record<OverviewTaskState, number> = {
 const LOWEST_PRIORITY_TIME = -1;
 
 export function buildTaskOverviews(
-    tasks: TaskWithId[],
+    tasks: Task[],
     recentRuns: Run[],
     runningRuns: Run[],
 ): TaskOverview[] {
@@ -44,7 +43,7 @@ export function buildTaskOverviews(
         const lastRun = activeRun ?? recentRunsByTask.get(task.name);
         const lastStatus = lastRun ? displayStatus(lastRun.status, lastRun.endReason) : undefined;
         const nextRunMs = toTimestamp(task.nextRunAt);
-        const isApiOnly = task.manualTrigger && !task.cron;
+        const isApiOnly = task.manualTrigger && !hasCron(task);
 
         let state: OverviewTaskState = "idle";
         if (activeRun) {
@@ -71,13 +70,14 @@ export function buildTaskOverviews(
 }
 
 export function countTaskOverviews(taskOverviews: TaskOverview[]): OverviewTaskCounts {
+    const count = (filter: OverviewTaskFilter) =>
+        taskOverviews.filter((task) => matchesFilter(task, filter)).length;
     return {
-        all: taskOverviews.length,
-        attention: taskOverviews.filter((task) => task.state === "attention").length,
-        running: taskOverviews.filter((task) => task.state === "running").length,
-        scheduled: taskOverviews.filter((task) => task.nextRunMs !== undefined).length,
-        manual: taskOverviews.filter((task) => task.isApiOnly && task.nextRunMs === undefined)
-            .length,
+        all: count("all"),
+        attention: count("attention"),
+        running: count("running"),
+        scheduled: count("scheduled"),
+        manual: count("manual"),
     };
 }
 

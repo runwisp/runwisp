@@ -134,12 +134,12 @@ func (s *Service) Start(ctx context.Context) {
 // close per-action queues, wait for workers, close all channels. Honors the
 // supplied context as a deadline; goroutines are also cancelled directly so
 // stuck workers exit even if ctx is the background.
-func (s *Service) Stop(ctx context.Context) error {
+func (s *Service) Stop(ctx context.Context) {
 	if !s.started.Load() {
-		return nil
+		return
 	}
 	if !s.stopped.CompareAndSwap(false, true) {
-		return nil
+		return
 	}
 
 	s.Detach()
@@ -191,7 +191,6 @@ func (s *Service) Stop(ctx context.Context) error {
 	s.logger.Info("notify stopped",
 		"dropped_ingress", s.droppedIngress.Load(),
 		"dropped_action", s.disp.DroppedActionCount())
-	return nil
 }
 
 // Detach unsubscribes from the event bus without draining, so a replacement

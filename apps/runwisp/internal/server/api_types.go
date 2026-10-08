@@ -170,12 +170,12 @@ type RunsQueryInput struct {
 	Search        string `query:"search" doc:"Search query"`
 }
 
-// toPaginationParams parses the raw query strings into a typed RunFilter plus
+// toRunQuery parses the raw query strings into a typed RunFilter plus
 // the storage sort handles. Malformed values are silently coerced to the open
 // gate / safe default: the huma enum and pattern tags on RunsQueryInput
 // already reject out-of-range values at the HTTP boundary, so any error here
 // means a programming bug (e.g. enum drift) and the field is left unset.
-func (q *RunsQueryInput) toPaginationParams() PaginationParams {
+func (q *RunsQueryInput) toRunQuery() storage.RunQuery {
 	sortCol, _ := storage.ParseSortColumn(q.SortField)
 	sortDir, _ := storage.ParseSortDirection(q.SortDirection)
 
@@ -210,7 +210,7 @@ func (q *RunsQueryInput) toPaginationParams() PaginationParams {
 		}
 	}
 
-	return PaginationParams{
+	return storage.RunQuery{
 		Limit:         q.Limit,
 		Offset:        q.Offset,
 		Filter:        filter,

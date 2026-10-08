@@ -168,9 +168,9 @@ run = "spare"
 	rootBefore := readFile(t, layout.RootPath)
 	stagingBefore := readFile(t, layout.StagingPath)
 
-	// No Config: this root deliberately doesn't load, so there is none to pass.
+	// Empty Config: this root deliberately doesn't load, so there is none to pass.
 	// Promote must still classify "backup" as staged and roll the move back.
-	_, err := Promote(PromoteRequest{Layout: layout, Names: []string{"backup"}})
+	_, err := Promote(PromoteRequest{Layout: layout, Names: []string{"backup"}, Config: &config.Config{}})
 
 	var conflict *ConflictError
 	require.ErrorAs(t, err, &conflict)
@@ -211,32 +211,32 @@ func TestSelect(t *testing.T) {
 	cfg := loadLayout(t, layout)
 
 	t.Run("all takes every staged entry", func(t *testing.T) {
-		got, err := Select(cfg, layout, nil, true)
+		got, err := Select(cfg, nil, true)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, []string{"backup", "reindex"}, got)
 	})
 
 	t.Run("named entries keep the operator's order", func(t *testing.T) {
-		got, err := Select(cfg, layout, []string{"reindex", "backup"}, false)
+		got, err := Select(cfg, []string{"reindex", "backup"}, false)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"reindex", "backup"}, got)
 	})
 
 	t.Run("a repeated name is promoted once", func(t *testing.T) {
-		got, err := Select(cfg, layout, []string{"backup", "backup"}, false)
+		got, err := Select(cfg, []string{"backup", "backup"}, false)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"backup"}, got)
 	})
 
 	t.Run("an unknown name is refused", func(t *testing.T) {
-		_, err := Select(cfg, layout, []string{"nope"}, false)
+		_, err := Select(cfg, []string{"nope"}, false)
 		var unknown *UnknownEntryError
 		require.ErrorAs(t, err, &unknown)
 		assert.Equal(t, "nope", unknown.Name)
 	})
 
 	t.Run("an already-native name is refused and named its file", func(t *testing.T) {
-		_, err := Select(cfg, layout, []string{"mine"}, false)
+		_, err := Select(cfg, []string{"mine"}, false)
 		var notStaged *NotStagedError
 		require.ErrorAs(t, err, &notStaged)
 		assert.Equal(t, "mine", notStaged.Name)
@@ -244,7 +244,7 @@ func TestSelect(t *testing.T) {
 	})
 
 	t.Run("one bad name refuses the whole request", func(t *testing.T) {
-		_, err := Select(cfg, layout, []string{"backup", "nope"}, false)
+		_, err := Select(cfg, []string{"backup", "nope"}, false)
 		require.Error(t, err)
 	})
 }
@@ -254,7 +254,7 @@ func TestSelect(t *testing.T) {
 // a script can rely on.
 func TestSelect_AllWithNothingStaged(t *testing.T) {
 	layout := twoTierLayout(t, twoTierRoot, "")
-	got, err := Select(loadLayout(t, layout), layout, nil, true)
+	got, err := Select(loadLayout(t, layout), nil, true)
 
 	require.NoError(t, err)
 	assert.Empty(t, got)
@@ -276,7 +276,7 @@ file = "compose.yml"
 	cfg := loadLayout(t, layout)
 	require.NotEmpty(t, cfg.Tasks, "the compose project must have produced a task")
 
-	_, err := Select(cfg, layout, []string{cfg.Tasks[0].Name}, false)
+	_, err := Select(cfg, []string{cfg.Tasks[0].Name}, false)
 
 	var notStaged *NotStagedError
 	require.ErrorAs(t, err, &notStaged)

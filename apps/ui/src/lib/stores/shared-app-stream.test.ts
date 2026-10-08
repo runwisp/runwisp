@@ -49,7 +49,7 @@ class FakeEventSource implements SSEStream {
 }
 
 // In-memory BroadcastChannel: post reaches every OTHER connected bus, never the
-// sender — matching real BroadcastChannel semantics the code relies on.
+// sender, matching real BroadcastChannel semantics the code relies on.
 class BusHub {
     readonly #entries = new Set<{ handler: (raw: unknown) => void }>();
 
@@ -79,7 +79,7 @@ class BusHub {
 }
 
 // Single-leader election: the head of the queue is the leader. Releasing pops it
-// and promotes the next — exactly how a Web Lock hands off when a tab closes.
+// and promotes the next, exactly how a Web Lock hands off when a tab closes.
 class ElectionHub {
     readonly #queue: { onElected: () => void; elected: boolean }[] = [];
 
@@ -109,8 +109,8 @@ class ElectionHub {
 
 // Stubs document + window so the tab-lifecycle listeners (visibilitychange /
 // freeze / pagehide) can be driven under the `node` test environment. All
-// SharedAppStream instances in a test share this one registry — exactly like
-// real tabs sharing a document — so `fire` reaches every tab's handler.
+// SharedAppStream instances in a test share this one registry, exactly like
+// real tabs sharing a document, so `fire` reaches every tab's handler.
 function stubLifecycle() {
     const listeners = new Map<string, Set<() => void>>();
     let visibilityState = "visible";
@@ -483,7 +483,7 @@ describe("SharedAppStream", () => {
 
         expect(received).toHaveLength(1);
         // EventHandler is (data, id?) => void and EventManager itself passes the
-        // Last-Event-ID through — SharedAppStream's leader path reads `id` (to
+        // Last-Event-ID through, SharedAppStream's leader path reads `id` (to
         // update #lastEventId) but drops it when it calls #dispatch, so
         // subscribers never see it directly.
         expect(received[0]?.[1]).toBe("42");
@@ -652,7 +652,7 @@ describe("SharedAppStream", () => {
             followerTab.stream.subscribe("run.created", () => {});
             expect(followerTab.leaderES()).toBeNull();
 
-            lc.fire("pagehide"); // no grace timer — immediate handoff
+            lc.fire("pagehide"); // no grace timer, immediate handoff
             expect(followerTab.leaderES()).not.toBeNull();
         } finally {
             vi.unstubAllGlobals();
@@ -662,7 +662,7 @@ describe("SharedAppStream", () => {
     it("does not open a real BroadcastChannel when Web Locks are unavailable (bus gate must match canShare)", () => {
         // BroadcastChannel present, navigator.locks missing (e.g. Firefox < 96):
         // canShare() is false, so the elector already falls back to "every tab
-        // wins immediately". The bus must degrade in step — otherwise these
+        // wins immediately". The bus must degrade in step, otherwise these
         // independent "leaders" still gossip over a live cross-tab channel that
         // the leader/follower protocol was never designed to handle from more
         // than one leader at once.
