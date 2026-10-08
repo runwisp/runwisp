@@ -203,7 +203,7 @@ func runExecViaDaemon(ctx context.Context, taskName string, f Flags, params map[
 	}
 
 	slog.Info("Task triggered", "name", taskName, "run", run.ID)
-	exitCode, final, err := followRun(client, taskName, run.ID, runLineOut())
+	exitCode, final, err := followRun(ctx, client, taskName, run.ID, runLineOut())
 	if err != nil {
 		return exitCode, err
 	}
@@ -295,7 +295,7 @@ func runExecViaRemote(ctx context.Context, taskName, baseURL, password string, d
 		fmt.Println(run.ID)
 		return 0, nil
 	}
-	exitCode, final, err := followRun(client, taskName, run.ID, runLineOut())
+	exitCode, final, err := followRun(ctx, client, taskName, run.ID, runLineOut())
 	if err != nil {
 		return exitCode, err
 	}
@@ -368,21 +368,10 @@ func triggerRemote(ctx context.Context, client *apiclient.Client, taskName, base
 // returning the exit code and — when it fetched one — the terminal run so a
 // caller can render --json without re-fetching. final may be nil only alongside
 // a non-nil error (or an interrupt), never on a clean terminal outcome.
-func followRun(client *apiclient.Client, taskName, runID string, lineOut io.Writer) (int, *model.Run, error) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Forward an interrupt/SIGTERM into ctx cancellation so Ctrl+C stops the stream.
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(sig)
-	go func() {
-		select {
-		case <-sig:
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
+func followRun(ctx context.Context, client *apiclient.Client, taskName, runID string, lineOut io.Writer) (int, *model.Run, error) {
+	// An interrupt/SIGTERM cancels ctx so Ctrl+C stops the stream.
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	// Line numbers are zero-indexed; from=0 replays every line of a fresh run.
 	done, err := followRunLog(ctx, client, taskName, runID, 0, followQuietAfter, func(l server.LogLineEntry) {
@@ -402,14 +391,7 @@ func followRun(client *apiclient.Client, taskName, runID string, lineOut io.Writ
 	// streamable); fall back to the persisted terminal state for the exit code.
 	// A fresh, uncancelled context: ctx is the interrupt-cancelled one, and the
 	// whole point is to still report an accurate exit code after Ctrl+C.
-	return exitCodeFromRunState(context.Background(), client, runID)
-}
-
-// exitCodeFromRunState fetches the run's persisted state and derives its exit
-// code, used as followRun's fallback when the log stream ends without a Done.
-// It returns the fetched run alongside the code so callers can reuse it.
-func exitCodeFromRunState(ctx context.Context, client *apiclient.Client, runID string) (int, *model.Run, error) {
-	final, err := client.GetRun(ctx, runID)
+	final, err := client.GetRun(context.Background(), runID)
 	if err != nil {
 		return 0, nil, fmt.Errorf("fetch final run state: %w", err)
 	}
@@ -497,10 +479,6 @@ func runExecStandalone(taskName string, f Flags, params map[string]*string) (int
 	cfg, err := config.Load(f.CfgFile)
 	if err != nil {
 		return 0, fmt.Errorf("failed to load %s: %w", f.CfgFile, err)
-	}
-
-	if err := config.Validate(cfg); err != nil {
-		return 0, fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	var target *model.Task

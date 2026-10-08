@@ -113,7 +113,7 @@ func TestFollowRun_RetriesEmptyStreamUntilRunIsStreamable(t *testing.T) {
 	var code int
 	var err error
 	out := captureStdout(t, func() {
-		code, _, err = followRun(client, "alpha", "run-1", os.Stdout)
+		code, _, err = followRun(t.Context(), client, "alpha", "run-1", os.Stdout)
 	})
 
 	require.NoError(t, err)
@@ -157,7 +157,7 @@ func TestFollowRun_RetriesNotFoundUntilRunIsStreamable(t *testing.T) {
 	var code int
 	var err error
 	out := captureStdout(t, func() {
-		code, _, err = followRun(client, "alpha", "run-1", os.Stdout)
+		code, _, err = followRun(t.Context(), client, "alpha", "run-1", os.Stdout)
 	})
 
 	require.NoError(t, err)
@@ -177,7 +177,7 @@ func TestFollowRun_StreamRefusalSurfaces(t *testing.T) {
 	client := apiclient.New(srv.URL, "")
 	var err error
 	captureStdout(t, func() {
-		_, _, err = followRun(client, "alpha", "run-1", os.Stdout)
+		_, _, err = followRun(t.Context(), client, "alpha", "run-1", os.Stdout)
 	})
 
 	var status *apiclient.HTTPStatusError
@@ -218,7 +218,7 @@ func TestFollowRun_RereadsNonTerminalRowAfterDone(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	code, final, err := followRun(apiclient.New(srv.URL, ""), "alpha", "run-1", os.Stdout)
+	code, final, err := followRun(t.Context(), apiclient.New(srv.URL, ""), "alpha", "run-1", os.Stdout)
 	require.NoError(t, err)
 	require.NotNil(t, final)
 	assert.Equal(t, model.PhaseEnded, final.Status, "a non-terminal row after done must be re-read")
