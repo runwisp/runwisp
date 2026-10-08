@@ -56,8 +56,13 @@ class Runwisp < Formula
     end
   end
 
+  # The binary sits in libexec beside a .runwisp-source marker, which the
+  # update check reads as its install source. bin only gets a symlink, so the
+  # dotfile never lands in the shared <prefix>/bin.
   def install
-    bin.install "runwisp"
+    libexec.install "runwisp"
+    (libexec/".runwisp-source").write "homebrew\\n"
+    bin.install_symlink libexec/"runwisp"
   end
 
   test do

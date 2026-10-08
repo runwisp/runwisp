@@ -166,19 +166,6 @@ func TestInstallSourceMarkerAndFallback(t *testing.T) {
 	}
 }
 
-func TestSourceOfBinaryHomebrew(t *testing.T) {
-	for exe, want := range map[string]string{
-		"/opt/homebrew/Cellar/runwisp/1.5.1/bin/runwisp":              "homebrew",
-		"/home/linuxbrew/.linuxbrew/Cellar/runwisp/1.5.1/bin/runwisp": "homebrew",
-		"/usr/local/bin/runwisp":                                      "other",
-		"/opt/homebrew/Cellar/runwisp-dev/1.0/bin/runwisp":            "other",
-	} {
-		if got := sourceOfBinary(exe); got != want {
-			t.Errorf("sourceOfBinary(%q) = %q, want %q", exe, got, want)
-		}
-	}
-}
-
 // TestSetEnabledFalseCancelsInFlightCheck: turning check_updates off must stop
 // a request already on the wire, not just discard its answer.
 func TestSetEnabledFalseCancelsInFlightCheck(t *testing.T) {

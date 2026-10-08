@@ -327,6 +327,9 @@ jobs:
           tar xzf "dist/runwisp-${PLATFORM}.tar.gz" -C "dist/${PLATFORM}"
           cp "dist/${PLATFORM}/runwisp" "npm/${PLATFORM}/runwisp"
           chmod +x "npm/${PLATFORM}/runwisp"
+          # Install source for a daemon started without the npm wrapper (e.g.
+          # by `runwisp service install`); the wrapper's env var still wins.
+          printf 'npm\n' > "npm/${PLATFORM}/.runwisp-source"
 
       - name: Stamp version
         env:
