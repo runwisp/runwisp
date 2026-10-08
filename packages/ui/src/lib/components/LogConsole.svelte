@@ -124,8 +124,9 @@
     // Monospace character width in px, measured from a hidden ruler so the
     // horizontal scroll surface is sized without per-line DOM reflow.
     let charWidth = $state(8);
-    let isAutoScroll = $state(true);
-    let userScrolledUp = $state(false);
+    // True while the viewport is pinned to the end of the log: new lines scroll
+    // into view. Scrolling away from the bottom turns it off.
+    let followTail = $state(true);
     let isStreaming = $derived(!cache.finished && cache.totalLines > 0);
 
     const OVERSCAN = 50;
@@ -183,13 +184,16 @@
         if (!wrap || min > max) return;
         let changed = false;
         for (let num = min; num <= max; num++) {
-            const r = wrappedRowsFor(cache.lines.get(num));
-            if (rowCounts.get(num) !== r) {
-                rowCounts.set(num, r);
-                changed = true;
-            }
+            changed = measureLine(num, cache.lines.get(num)) || changed;
         }
         if (changed) rowCountVersion++;
+    }
+
+    function measureLine(num: number, text: string | undefined): boolean {
+        const r = wrappedRowsFor(text);
+        if (rowCounts.get(num) === r) return false;
+        rowCounts.set(num, r);
+        return true;
     }
 
     // Line-text white-space model: wrapped lines break anywhere (so a long
@@ -214,11 +218,7 @@
         untrack(() => {
             let changed = false;
             for (const [num, text] of cache.lines) {
-                const r = wrappedRowsFor(text);
-                if (rowCounts.get(num) !== r) {
-                    rowCounts.set(num, r);
-                    changed = true;
-                }
+                changed = measureLine(num, text) || changed;
             }
             if (changed) rowCountVersion++;
         });
@@ -408,9 +408,7 @@
         const fn = fetchLogs;
         fetcher = new LogFetcher(cache, fn, (min, max) => {
             measureRange(min, max);
-            if (isAutoScroll && !userScrolledUp) {
-                requestAnimationFrame(() => scrollToBottom());
-            }
+            if (followTail) requestAnimationFrame(scrollToBottom);
         });
 
         return () => {
@@ -442,9 +440,7 @@
         // Track committed lines AND live overlay rows so an animating region at
         // the tail keeps a bottom-anchored viewport pinned to the bottom.
         const currentTail = cache.totalLines + overlayRows.length;
-        if (currentTail > prevTailRows && isAutoScroll && !userScrolledUp) {
-            requestAnimationFrame(() => scrollToBottom());
-        }
+        if (currentTail > prevTailRows && followTail) requestAnimationFrame(scrollToBottom);
         prevTailRows = currentTail;
     });
 
@@ -452,38 +448,16 @@
         const target = e.currentTarget;
         scrollTop = target.scrollTop;
 
-        const scrollHeight = target.scrollHeight;
-        const clientHeight = target.clientHeight;
-        const currentScroll = target.scrollTop;
-        const distanceFromBottom = scrollHeight - currentScroll - clientHeight;
-
-        const atBottom = distanceFromBottom < lineHeight * 2;
-
-        if (atBottom) {
-            userScrolledUp = false;
-            isAutoScroll = true;
-        } else if (isAutoScroll) {
-            userScrolledUp = true;
-            isAutoScroll = false;
-        }
+        const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+        followTail = distanceFromBottom < lineHeight * 2;
     }
 
-    function scrollToBottom(smooth = false) {
-        if (containerEl) {
-            if (smooth) {
-                containerEl.scrollTo({
-                    top: containerEl.scrollHeight,
-                    behavior: "smooth",
-                });
-            } else {
-                containerEl.scrollTop = containerEl.scrollHeight;
-            }
-        }
+    function scrollToBottom() {
+        if (containerEl) containerEl.scrollTop = containerEl.scrollHeight;
     }
 
     function enableAutoScroll() {
-        isAutoScroll = true;
-        userScrolledUp = false;
+        followTail = true;
         scrollToBottom();
     }
 
@@ -497,7 +471,7 @@
             // this the virtualizer keeps a stale, too-large scrollTop and
             // renders an empty window until the first manual scroll.
             scrollTop = containerEl.scrollTop;
-            if (isAutoScroll && !userScrolledUp) scrollToBottom();
+            if (followTail) scrollToBottom();
         }
         measureCharWidth();
     }
@@ -516,9 +490,7 @@
         const merged = cache.applyEvent(event);
         if (merged.touched) measureRange(merged.min, merged.max);
 
-        if (cache.totalLines > prevTotal && isAutoScroll && !userScrolledUp) {
-            requestAnimationFrame(() => scrollToBottom());
-        }
+        if (cache.totalLines > prevTotal && followTail) requestAnimationFrame(scrollToBottom);
 
         if (fetcher) {
             fetcher.maybeRequestMissing(visibleStart, visibleEnd);
@@ -528,8 +500,7 @@
     export function reset() {
         cache.reset();
         collapseHistory();
-        isAutoScroll = true;
-        userScrolledUp = false;
+        followTail = true;
         scrollTop = 0;
     }
 
@@ -545,8 +516,7 @@
             const targetY = lineTop(line) - containerHeight / 2 + lineHeight / 2;
             const clamped = Math.max(0, Math.min(targetY, totalHeight - containerHeight));
             containerEl.scrollTo({ top: clamped, behavior: "smooth" });
-            isAutoScroll = false;
-            userScrolledUp = true;
+            followTail = false;
             flashLine = line;
             if (flashTimer !== null) clearTimeout(flashTimer);
             flashTimer = setTimeout(() => {
@@ -577,9 +547,8 @@
     });
 </script>
 
-<!-- One place that renders ANSI-converted markup, so the necessary @html escape
-     hatch (the input is sanitised by ansiLineToHtml) lives behind a single
-     audited disable rather than being repeated per call site. -->
+<!-- ANSI-converted markup for the overlay and frame-history rows. The @html
+     input is sanitised by ansiLineToHtml. -->
 {#snippet ansiLine(text: string)}
     <!-- eslint-disable-next-line svelte/no-at-html-tags -->
     <span class="whitespace-pre">{@html ansiLineToHtml(text)}</span>
@@ -827,7 +796,7 @@
         </div>
     </div>
 
-    {#if userScrolledUp && cache.totalLines > 0}
+    {#if !followTail && cache.totalLines > 0}
         <button
             class="absolute right-4 bottom-12 z-10 flex items-center gap-2 rounded-[3px] border
                    border-[var(--rw-con-gutter)] bg-[var(--rw-con-panel)]
@@ -871,7 +840,7 @@
             {#if cache.totalBytes > 0}
                 <span>{formatBytes(cache.totalBytes)}</span>
             {/if}
-            {#if isAutoScroll}
+            {#if followTail}
                 <span class="inline-flex items-center gap-1.5 text-term-ok">
                     <svg
                         class="h-3 w-3"
@@ -894,7 +863,6 @@
 
 <style>
     .log-console {
-        --log-line-height: 20px;
         tab-size: 8;
     }
 
