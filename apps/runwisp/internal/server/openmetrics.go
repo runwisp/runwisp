@@ -70,7 +70,7 @@ func (srv *Server) handleOpenMetrics(w http.ResponseWriter, r *http.Request) {
 
 	// Only tasks with a measured running shell run appear: an absent series
 	// means "not running", not "using nothing".
-	usage := srv.runService.usage()
+	usage := srv.runService.taskUsage()
 	writeHelpType(w, "runwisp_task_cpu_percent", "gauge", "Live CPU use of a task's running processes, in percent of one core.")
 	for _, task := range tasks {
 		if u, ok := usage[task.Name]; ok {

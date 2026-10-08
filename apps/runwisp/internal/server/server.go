@@ -64,7 +64,7 @@ type Server struct {
 	// updateStatus reports (available, latestVersion) from the background update
 	// checker. nil (station mode, or check disabled) reports never-available.
 	updateStatus func() (bool, string)
-	// runUsage reports live CPU/memory per running run; nil reports none.
+	// runUsage reports live CPU/memory per running run.
 	runUsage func() map[string]model.ResourceUsage
 	// configStaleLast tracks the last staleness value broadcast over the event
 	// bus so the collector goroutine only emits an EventConfigStale when it
@@ -142,6 +142,8 @@ type Options struct {
 	Reload            func() (model.ReloadResult, error)    // Reconciles the live task set against runwisp.toml; nil disables POST /api/daemon/reload
 }
 
+func neverStale() bool { return false }
+
 func New(opts Options) (*Server, error) {
 	if opts.Password == "" {
 		return nil, errors.New("password must be provided to start the web server")
@@ -205,12 +207,20 @@ func New(opts Options) (*Server, error) {
 	}
 
 	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.EventBus)
-	s.runService.taskUsage = opts.TaskUsage
+	if opts.TaskUsage != nil {
+		s.runService.taskUsage = opts.TaskUsage
+	}
 	s.stats = newStatsProvider(opts.DaemonInfo, time.Now())
 	s.configStale = opts.ConfigStale
+	if s.configStale == nil {
+		s.configStale = neverStale
+	}
 	s.configWarnings = opts.ConfigWarnings
 	s.updateStatus = opts.UpdateStatus
 	s.runUsage = opts.RunUsage
+	if s.runUsage == nil {
+		s.runUsage = noUsage
+	}
 	s.metrics = NewMetricsCollector(32) // ~2.5 min at 5s intervals; sampling starts in Start()
 	s.daemonLogBuffer = opts.DaemonLogBuffer
 	s.streams = newStreamLimiter(maxConcurrentStreams, maxStreamsPerIP)
@@ -224,7 +234,7 @@ func (srv *Server) Start() error {
 	// Seed the staleness baseline from the current value so the first sample
 	// tick doesn't emit a spurious flip; clients get the initial value from the
 	// one-shot GET /api/daemon.
-	srv.configStaleLast = srv.currentConfigStale()
+	srv.configStaleLast = srv.configStale()
 	srv.metrics.onSample = srv.broadcastSample
 
 	// Begin sampling here rather than in New so construction stays pure — a

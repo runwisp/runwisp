@@ -85,9 +85,7 @@ func (srv *Server) humaGetInfo(ctx context.Context, input *struct{}) (*DaemonInf
 	info := *srv.stats.GetDaemonInfo()
 	// Staleness is probed per request — the browser can't read the daemon's
 	// disk, and a cached answer would defeat the point of the indicator.
-	if srv.configStale != nil {
-		info.ConfigStale = srv.configStale()
-	}
+	info.ConfigStale = srv.configStale()
 	// Same reasoning as staleness: a reload can add or clear a warning, and the
 	// DaemonInfo the provider holds was built at boot.
 	if srv.configWarnings != nil {
@@ -131,23 +129,6 @@ func (srv *Server) humaGetSystemStats(ctx context.Context, input *struct{}) (*Sy
 	return &SystemStatsOutput{Body: stats}, nil
 }
 
-// currentConfigStale probes on-disk staleness, treating a nil hook (modes that
-// can't reload) as never-stale.
-func (srv *Server) currentConfigStale() bool {
-	if srv.configStale == nil {
-		return false
-	}
-	return srv.configStale()
-}
-
-// currentRunUsage is the live per-run usage, or nil when nothing samples runs.
-func (srv *Server) currentRunUsage() map[string]model.ResourceUsage {
-	if srv.runUsage == nil {
-		return nil
-	}
-	return srv.runUsage()
-}
-
 // broadcastSample fans a freshly collected metrics sample out over the event
 // bus as a system event, and — only when staleness has flipped since the last
 // tick — a config.stale event. It runs on the metrics collector goroutine, so
@@ -157,11 +138,11 @@ func (srv *Server) broadcastSample(sample model.MetricsSample) {
 	srv.eventBus.Publish(events.EventSystemSample, events.SystemSampleEvent{
 		Sample: sample,
 		Uptime: formatUptime(time.Since(srv.stats.startTime)),
-		Tasks:  srv.runService.usage(),
-		Runs:   srv.currentRunUsage(),
+		Tasks:  srv.runService.taskUsage(),
+		Runs:   srv.runUsage(),
 	})
 
-	stale := srv.currentConfigStale()
+	stale := srv.configStale()
 	if stale != srv.configStaleLast {
 		srv.configStaleLast = stale
 		srv.eventBus.Publish(events.EventConfigStale, events.ConfigStaleEvent{Stale: stale})

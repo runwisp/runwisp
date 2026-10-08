@@ -59,7 +59,8 @@ func TestFormatUptime(t *testing.T) {
 
 func TestHumaGetInfo(t *testing.T) {
 	srv := &Server{
-		stats: newStatsProvider(&model.DaemonInfo{Fingerprint: "test-fp"}, time.Now()),
+		stats:       newStatsProvider(&model.DaemonInfo{Fingerprint: "test-fp"}, time.Now()),
+		configStale: neverStale,
 	}
 	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
 	require.NoError(t, err)
@@ -70,7 +71,7 @@ func TestHumaGetInfo(t *testing.T) {
 // it must be the same instant /api/system's uptime counts from.
 func TestHumaGetInfo_StartedAtIsTheStatsStartTime(t *testing.T) {
 	start := time.Date(2026, 9, 23, 10, 0, 0, 0, time.UTC)
-	srv := &Server{stats: newStatsProvider(&model.DaemonInfo{}, start)}
+	srv := &Server{stats: newStatsProvider(&model.DaemonInfo{}, start), configStale: neverStale}
 	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
 	require.NoError(t, err)
 	assert.Equal(t, start, out.Body.StartedAt)
@@ -103,6 +104,7 @@ func TestHumaGetInfo_TasksComeFromTheLiveRegistry(t *testing.T) {
 		stats: newStatsProvider(&model.DaemonInfo{
 			Tasks: []model.Task{*held},
 		}, time.Now()),
+		configStale: neverStale,
 	}
 
 	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
@@ -129,6 +131,7 @@ func TestHumaGetInfo_NoRegistryKeepsTheBootList(t *testing.T) {
 		stats: newStatsProvider(&model.DaemonInfo{
 			Tasks: []model.Task{{Name: "backup"}},
 		}, time.Now()),
+		configStale: neverStale,
 	}
 	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
 	require.NoError(t, err)

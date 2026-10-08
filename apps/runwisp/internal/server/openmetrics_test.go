@@ -27,6 +27,7 @@ func buildOpenMetricsServer(t *testing.T, info *model.DaemonInfo) (*Server, *tes
 		db:          repo,
 		taskManager: runner,
 		stats:       newStatsProvider(info, time.Now().Add(-90*time.Second)),
+		runService:  newRunService(repo, runner, nil, nil, nil),
 	}
 	return srv, repo, runner
 }
