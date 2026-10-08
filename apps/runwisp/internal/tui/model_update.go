@@ -750,24 +750,27 @@ func (m Model) handleSystemStats(msg uikit.SystemStatsMsg) (tea.Model, tea.Cmd) 
 	return m, nil
 }
 
-// handleDaemonInfo refreshes the live bits of StartupInfo from the periodic
-// /api/daemon poll — currently the config-stale notice and the service-managed
-// flag (the daemon may be restarted under a service manager mid-session).
-// Errors are ignored: the header just keeps its last known state.
+// handleDaemonInfo refreshes StartupInfo from the periodic /api/daemon poll:
+// the config-stale notice, the service-managed flag (the daemon may be
+// restarted under a service manager mid-session) and the timezone. Errors are
+// ignored: the header just keeps its last known state.
 func (m Model) handleDaemonInfo(msg uikit.DaemonInfoMsg) (tea.Model, tea.Cmd) {
 	if msg.Err == nil && msg.Info != nil {
-		m.info.ConfigStale = msg.Info.ConfigStale
-		m.info.ConfigWarnings = msg.Info.ConfigWarnings
-		m.info.ServiceManaged = msg.Info.ServiceManaged
-		if msg.Info.ResolvedTimezone != m.info.Timezone {
-			m.info.Timezone = msg.Info.ResolvedTimezone
-			m.info.TimezoneSource = msg.Info.TimezoneSource
-			m.loc = uikit.ResolveLocation(m.info.Timezone)
-			m.execWindow.SetLocation(m.loc)
-		}
-		m.sidebar.SetUpdate(msg.Info.UpdateAvailable, msg.Info.LatestVersion)
+		m.applyDaemonInfo(*msg.Info)
 	}
 	return m, nil
+}
+
+// applyDaemonInfo adopts a fresh /api/daemon read, re-basing displayed times
+// when the daemon's timezone changed.
+func (m *Model) applyDaemonInfo(info model.DaemonInfo) {
+	prevTZ := m.info.Timezone
+	m.info.ApplyDaemonInfo(info)
+	if m.info.Timezone != prevTZ {
+		m.loc = uikit.ResolveLocation(m.info.Timezone)
+		m.execWindow.SetLocation(m.loc)
+	}
+	m.sidebar.SetUpdate(info.UpdateAvailable, info.LatestVersion)
 }
 
 // reloadConfig triggers an explicit config reload from inside the TUI. The
@@ -787,9 +790,8 @@ func (m Model) handleReloadResult(msg uikit.ReloadResultMsg) (tea.Model, tea.Cmd
 
 	var cmds []tea.Cmd
 	if msg.Info != nil {
+		m.applyDaemonInfo(*msg.Info)
 		m.info.Tasks = msg.Info.Tasks
-		m.info.ConfigStale = msg.Info.ConfigStale
-		m.info.ConfigWarnings = msg.Info.ConfigWarnings
 		m.sidebar.Rebuild(msg.Info.Tasks)
 		m.execList.SetFilter(m.sidebar.ActiveTask())
 		m.recalcExecListHeight()

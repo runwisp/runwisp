@@ -102,6 +102,23 @@ type StartupInfo struct {
 	CatchUpTriggered int
 }
 
+// ApplyDaemonInfo adopts the daemon-reported fields of info, as read at attach
+// and refreshed by the /api/daemon poll and after a reload. Tasks are left to
+// the caller: adopting a new task set also means rebuilding the sidebar.
+func (s *StartupInfo) ApplyDaemonInfo(info model.DaemonInfo) {
+	s.Version = info.Version
+	s.Fingerprint = info.Fingerprint
+	s.Port = info.Port
+	s.StationEnabled = info.StationEnabled
+	s.ServiceManaged = info.ServiceManaged
+	s.AuthDisabled = info.AuthDisabled
+	s.ConfigStale = info.ConfigStale
+	s.ConfigWarnings = info.ConfigWarnings
+	s.Timezone = info.ResolvedTimezone
+	s.TimezoneSource = info.TimezoneSource
+	s.Capabilities = info.Capabilities
+}
+
 // WebURL returns the operator-reachable base URL of the Web UI for copy and
 // browser-launch actions. It prefers the resolved ListenURL ([daemon]
 // external_url, or the daemon's reachable host:port for a remote connection),

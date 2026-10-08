@@ -156,24 +156,9 @@ func promptPassword(prompt string) (string, error) {
 
 func buildStartupInfoFromDaemon(info *model.DaemonInfo) uikit.StartupInfo {
 	si := uikit.StartupInfo{}
-	if info == nil {
-		return si
+	if info != nil {
+		si.ApplyDaemonInfo(*info)
+		si.Tasks = info.Tasks
 	}
-	si.Version = info.Version
-	si.Fingerprint = info.Fingerprint
-	si.Port = info.Port
-	si.StationEnabled = info.StationEnabled
-	si.ServiceManaged = info.ServiceManaged
-	si.AuthDisabled = info.AuthDisabled
-	si.ConfigStale = info.ConfigStale
-	// Carried on attach so the header shows config findings before the first
-	// /api/daemon poll lands; they appear nowhere else in the TUI.
-	si.ConfigWarnings = info.ConfigWarnings
-	si.Timezone = info.ResolvedTimezone
-	si.TimezoneSource = info.TimezoneSource
-
-	si.Tasks = info.Tasks
-	si.Capabilities = info.Capabilities
-
 	return si
 }

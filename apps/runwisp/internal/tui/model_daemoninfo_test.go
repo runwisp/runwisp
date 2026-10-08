@@ -61,3 +61,22 @@ func TestHandleDaemonInfo_ErrorKeepsLastKnownState(t *testing.T) {
 		t.Fatal("expected error to leave ConfigStale untouched")
 	}
 }
+
+// A reload that changes [daemon] timezone re-bases the TUI's clock at once.
+func TestHandleReloadResult_AdoptsNewTimezone(t *testing.T) {
+	m := newTestModel(nil)
+	updated, _ := m.handleReloadResult(uikit.ReloadResultMsg{
+		Result: &model.ReloadResult{},
+		Info:   &model.DaemonInfo{ResolvedTimezone: "Asia/Tokyo", TimezoneSource: "config"},
+	})
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatal("expected Model")
+	}
+	if got.info.Timezone != "Asia/Tokyo" || got.info.TimezoneSource != "config" {
+		t.Fatalf("timezone not adopted: %q (%q)", got.info.Timezone, got.info.TimezoneSource)
+	}
+	if got.loc.String() != "Asia/Tokyo" {
+		t.Fatalf("location = %v, want Asia/Tokyo", got.loc)
+	}
+}
