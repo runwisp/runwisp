@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostarttest"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/stretchr/testify/require"
 )
@@ -151,7 +152,7 @@ func (fx fixture) build(t *testing.T) (*Cutover, *fakeInstaller, string) {
 
 	c := New(Deps{
 		Installer: inst,
-		Prompter:  &autostart.ScriptedPrompter{},
+		Prompter:  &autostarttest.ScriptedPrompter{},
 		Opts: autostart.InstallOptions{
 			Binary: "/usr/local/bin/runwisp", Config: cfgPath,
 			DataDir: filepath.Join(dir, "data"), Host: "127.0.0.1", Port: 9477, System: true,

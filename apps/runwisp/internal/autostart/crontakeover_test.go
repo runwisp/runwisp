@@ -670,7 +670,7 @@ const cronShowState = "show -p LoadState,ActiveState,UnitFileState --value cron.
 
 // installTakeover runs a take-over install that succeeds, with cron probed as
 // "<ActiveState>\n<UnitFileState>" before RunWisp touched it.
-func installTakeover(t *testing.T, inst *systemdInstaller, fs *autostarttest.FakeFS, cmd *FakeRunner, prompter *ScriptedPrompter, opts InstallOptions, cronState string) {
+func installTakeover(t *testing.T, inst *systemdInstaller, fs *autostarttest.FakeFS, cmd *FakeRunner, prompter *autostarttest.ScriptedPrompter, opts InstallOptions, cronState string) {
 	t.Helper()
 	opts.TakeOverCron = true
 	prompter.YesNo = []bool{true}

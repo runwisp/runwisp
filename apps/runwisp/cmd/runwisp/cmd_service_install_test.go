@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostarttest"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
@@ -336,7 +337,7 @@ func TestPrintDryRun_IncludesDiffWhenPresent(t *testing.T) {
 
 func TestResolveDataDirInteractive_Accept(t *testing.T) {
 	cmd := newInstallTestCmd(&bytes.Buffer{}, &bytes.Buffer{})
-	deps := autostart.Deps{Prompter: &autostart.ScriptedPrompter{}}
+	deps := autostart.Deps{Prompter: &autostarttest.ScriptedPrompter{}}
 
 	path, err := resolveDataDirInteractive(cmd, deps, autostart.ResolveDataDirResult{
 		Action: autostart.ResolveActionAccept,
@@ -349,7 +350,7 @@ func TestResolveDataDirInteractive_Accept(t *testing.T) {
 func TestResolveDataDirInteractive_WarnPrintsAndAccepts(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd := newInstallTestCmd(&bytes.Buffer{}, &stderr)
-	deps := autostart.Deps{Prompter: &autostart.ScriptedPrompter{}}
+	deps := autostart.Deps{Prompter: &autostarttest.ScriptedPrompter{}}
 
 	path, err := resolveDataDirInteractive(cmd, deps, autostart.ResolveDataDirResult{
 		Action: autostart.ResolveActionWarn,
@@ -363,7 +364,7 @@ func TestResolveDataDirInteractive_WarnPrintsAndAccepts(t *testing.T) {
 
 func TestResolveDataDirInteractive_RejectReturnsUserFacing(t *testing.T) {
 	cmd := newInstallTestCmd(&bytes.Buffer{}, &bytes.Buffer{})
-	deps := autostart.Deps{Prompter: &autostart.ScriptedPrompter{}}
+	deps := autostart.Deps{Prompter: &autostarttest.ScriptedPrompter{}}
 
 	_, err := resolveDataDirInteractive(cmd, deps, autostart.ResolveDataDirResult{
 		Action: autostart.ResolveActionReject,
@@ -377,7 +378,7 @@ func TestResolveDataDirInteractive_RejectReturnsUserFacing(t *testing.T) {
 
 func TestResolveDataDirInteractive_PromptYes(t *testing.T) {
 	cmd := newInstallTestCmd(&bytes.Buffer{}, &bytes.Buffer{})
-	deps := autostart.Deps{Prompter: &autostart.ScriptedPrompter{YesNo: []bool{true}}}
+	deps := autostart.Deps{Prompter: &autostarttest.ScriptedPrompter{YesNo: []bool{true}}}
 
 	path, err := resolveDataDirInteractive(cmd, deps, autostart.ResolveDataDirResult{
 		Action: autostart.ResolveActionPrompt,
@@ -391,7 +392,7 @@ func TestResolveDataDirInteractive_PromptYes(t *testing.T) {
 func TestResolveDataDirInteractive_NoticePrintsAndAccepts(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd := newInstallTestCmd(&bytes.Buffer{}, &stderr)
-	deps := autostart.Deps{Prompter: &autostart.ScriptedPrompter{}}
+	deps := autostart.Deps{Prompter: &autostarttest.ScriptedPrompter{}}
 
 	path, err := resolveDataDirInteractive(cmd, deps, autostart.ResolveDataDirResult{
 		Action: autostart.ResolveActionNotice,
@@ -409,7 +410,7 @@ func TestResolveDataDirInteractive_NoticePrintsAndAccepts(t *testing.T) {
 // directory; accepting it returns the absolute cwd.
 func TestResolveDataDirInteractive_PromptNoThenCurrentDirYes(t *testing.T) {
 	cmd := newInstallTestCmd(&bytes.Buffer{}, &bytes.Buffer{})
-	deps := autostart.Deps{Prompter: &autostart.ScriptedPrompter{YesNo: []bool{false, true}}}
+	deps := autostart.Deps{Prompter: &autostarttest.ScriptedPrompter{YesNo: []bool{false, true}}}
 
 	path, err := resolveDataDirInteractive(cmd, deps, autostart.ResolveDataDirResult{
 		Action: autostart.ResolveActionPrompt,
@@ -427,7 +428,7 @@ func TestResolveDataDirInteractive_PromptNoThenCurrentDirYes(t *testing.T) {
 // user-facing error that points at both frictionless ways to pin a data dir.
 func TestResolveDataDirInteractive_PromptNoThenCurrentDirNo(t *testing.T) {
 	cmd := newInstallTestCmd(&bytes.Buffer{}, &bytes.Buffer{})
-	deps := autostart.Deps{Prompter: &autostart.ScriptedPrompter{YesNo: []bool{false, false}}}
+	deps := autostart.Deps{Prompter: &autostarttest.ScriptedPrompter{YesNo: []bool{false, false}}}
 
 	_, err := resolveDataDirInteractive(cmd, deps, autostart.ResolveDataDirResult{
 		Action: autostart.ResolveActionPrompt,
@@ -444,7 +445,7 @@ func TestResolveDataDirInteractive_PromptNoThenCurrentDirNo(t *testing.T) {
 func TestResolveDataDirInteractive_PromptErrorPropagates(t *testing.T) {
 	cmd := newInstallTestCmd(&bytes.Buffer{}, &bytes.Buffer{})
 	// Empty queue → prompter returns an error rather than (false, nil).
-	deps := autostart.Deps{Prompter: &autostart.ScriptedPrompter{}}
+	deps := autostart.Deps{Prompter: &autostarttest.ScriptedPrompter{}}
 
 	_, err := resolveDataDirInteractive(cmd, deps, autostart.ResolveDataDirResult{
 		Action: autostart.ResolveActionPrompt,
@@ -518,7 +519,7 @@ func TestResolveServiceOptions_BuildsAbsolutePaths(t *testing.T) {
 		Home:        t.TempDir(),
 		User:        "tester",
 		Fingerprint: "fp-test",
-		Prompter:    &autostart.ScriptedPrompter{},
+		Prompter:    &autostarttest.ScriptedPrompter{},
 	}
 	opts, err := resolveServiceOptions(cmd, deps, f, false, serviceInstallOpts.Binary)
 	require.NoError(t, err)
@@ -549,7 +550,7 @@ func TestResolveServiceOptions_BinaryOverrideIsUsed(t *testing.T) {
 		Home:        t.TempDir(),
 		User:        "tester",
 		Fingerprint: "fp-test",
-		Prompter:    &autostart.ScriptedPrompter{},
+		Prompter:    &autostarttest.ScriptedPrompter{},
 	}
 	opts, err := resolveServiceOptions(cmd, deps, f, false, serviceInstallOpts.Binary)
 	require.NoError(t, err)
@@ -584,7 +585,7 @@ func TestResolveServiceOptions_SystemUsesEuidDefaultsWhenNotExplicit(t *testing.
 		Home:        t.TempDir(),
 		User:        "root",
 		Fingerprint: "fp-test",
-		Prompter:    &autostart.ScriptedPrompter{},
+		Prompter:    &autostarttest.ScriptedPrompter{},
 	}
 	opts, err := resolveServiceOptions(cmd, deps, f, true, serviceInstallOpts.Binary)
 	require.NoError(t, err)
@@ -616,7 +617,7 @@ func TestResolveServiceOptions_SystemStillHonorsExplicitFlags(t *testing.T) {
 		Home:        t.TempDir(),
 		User:        "root",
 		Fingerprint: "fp-test",
-		Prompter:    &autostart.ScriptedPrompter{},
+		Prompter:    &autostarttest.ScriptedPrompter{},
 	}
 	opts, err := resolveServiceOptions(cmd, deps, f, true, serviceInstallOpts.Binary)
 	require.NoError(t, err)
@@ -762,7 +763,7 @@ func TestRunServiceUninstall_NoUnitExists(t *testing.T) {
 
 func TestResolveDataDirInteractive_UnknownActionFallsThrough(t *testing.T) {
 	cmd := newInstallTestCmd(&bytes.Buffer{}, &bytes.Buffer{})
-	deps := autostart.Deps{Prompter: &autostart.ScriptedPrompter{}}
+	deps := autostart.Deps{Prompter: &autostarttest.ScriptedPrompter{}}
 
 	// Garbage action value falls through to the default return — returns the
 	// supplied path with no error.

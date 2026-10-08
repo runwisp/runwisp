@@ -248,3 +248,30 @@ func TestServiceOnlyTaskDropsWithNote(t *testing.T) {
 		t.Errorf("expected a dropped-key note, got %v", notes)
 	}
 }
+
+// slug is the kind's stable identifier, for tests.
+func (k NoteKind) slug() string { slug, _, _ := k.info(); return slug }
+
+// String makes a NoteKind readable in test failures.
+func (k NoteKind) String() string {
+	if slug := k.slug(); slug != "" {
+		return slug
+	}
+	return "note-kind-without-severity"
+}
+
+// String makes an ItemStatus readable in test failures.
+func (s ItemStatus) String() string {
+	switch s {
+	case StatusClean:
+		return "clean"
+	case StatusChanged:
+		return "changed"
+	case StatusBlocked:
+		return "blocked"
+	case StatusSkipped:
+		return "skipped"
+	default:
+		return "unknown"
+	}
+}

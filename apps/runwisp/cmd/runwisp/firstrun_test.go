@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostarttest"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cutover"
 	"github.com/stretchr/testify/assert"
@@ -250,7 +251,7 @@ func stubFirstRunOffer(t *testing.T, inst *fakeTakeoverInstaller) {
 
 		c := cutover.New(cutover.Deps{
 			Installer: inst,
-			Prompter:  &autostart.ScriptedPrompter{},
+			Prompter:  &autostarttest.ScriptedPrompter{},
 			Opts: autostart.InstallOptions{
 				Binary: "/usr/local/bin/runwisp", Config: f.CfgFile,
 				DataDir: dir, Host: "127.0.0.1", Port: 9477, System: true,

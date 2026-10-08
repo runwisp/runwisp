@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostarttest"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cutover"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
@@ -140,7 +141,7 @@ func newTakeoverHarness(t *testing.T) *takeoverHarness {
 
 		return cutover.New(cutover.Deps{
 			Installer: h.inst,
-			Prompter:  &autostart.ScriptedPrompter{YesNo: []bool{h.answer}},
+			Prompter:  &autostarttest.ScriptedPrompter{YesNo: []bool{h.answer}},
 			Opts: autostart.InstallOptions{
 				Binary: "/usr/local/bin/runwisp", Config: h.cfgPath,
 				DataDir: dir, Host: "127.0.0.1", Port: 9477, System: true,

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostarttest"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -298,7 +299,7 @@ func TestCompute_UntrustedConfigIsABlockerSoDryRunCanReportIt(t *testing.T) {
 	inst := &fakeInstaller{cronUnit: "cron.service", cronActive: true, plan: autostart.Plan{Kind: autostart.PlanInstall}}
 	c := New(Deps{
 		Installer: inst,
-		Prompter:  &autostart.ScriptedPrompter{},
+		Prompter:  &autostarttest.ScriptedPrompter{},
 		Opts:      autostart.InstallOptions{Config: cfgPath, System: true, Port: 9477},
 		GOOS:      "linux",
 		Scan: func(_ []string, p string) config.CronScan {

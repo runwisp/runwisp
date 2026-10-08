@@ -24,13 +24,13 @@ import (
 // newFakeInstaller wires a systemdInstaller against FakeFS + FakeRunner
 // and a scripted prompter. The returned binary path points at a real
 // temp file (because the installer hashes its content).
-func newFakeInstaller(t *testing.T, wsl bool) (*systemdInstaller, *autostarttest.FakeFS, *FakeRunner, *ScriptedPrompter, string) {
+func newFakeInstaller(t *testing.T, wsl bool) (*systemdInstaller, *autostarttest.FakeFS, *FakeRunner, *autostarttest.ScriptedPrompter, string) {
 	t.Helper()
 	binaryPath := filepath.Join(t.TempDir(), "runwisp")
 	require.NoError(t, os.WriteFile(binaryPath, []byte("fake-binary-content"), 0755))
 	fs := autostarttest.NewFakeFS()
 	cmd := NewFakeRunner()
-	prompter := &ScriptedPrompter{}
+	prompter := &autostarttest.ScriptedPrompter{Mismatch: ErrAborted}
 	deps := Deps{
 		FS:          fs,
 		Cmd:         cmd,
