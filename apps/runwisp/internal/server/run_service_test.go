@@ -121,13 +121,13 @@ func (m *mockTaskRunner) ServiceSnapshot(taskName string) (model.ServiceSnapshot
 // helpers
 
 func makeRunService(tasks map[string]*model.Task, repo *testutil.MockRunRepository, runner *mockTaskRunner) *runService {
-	return newRunService(repo, runner, runtime.NewTaskRegistry(tasks), nil, "", events.NewEventBus())
+	return newRunService(repo, runner, runtime.NewTaskRegistry(tasks), nil, events.NewEventBus())
 }
 
 // makeRunServiceWithBus is the wait-aware variant: TriggerRunAndWait observes
 // terminal events on the bus, so the test supplies (and subscribes to) it.
 func makeRunServiceWithBus(tasks map[string]*model.Task, repo *testutil.MockRunRepository, runner *mockTaskRunner, bus *events.Bus) *runService {
-	return newRunService(repo, runner, runtime.NewTaskRegistry(tasks), nil, "", bus)
+	return newRunService(repo, runner, runtime.NewTaskRegistry(tasks), nil, bus)
 }
 
 // ---- mapNotFound ----
@@ -1092,7 +1092,7 @@ func TestDeleteRuns_ActiveRunsRejectedConsistently(t *testing.T) {
 		require.NoError(t, db.CreateRun(ctx, r))
 	}
 
-	svc := newRunService(db, nil, runtime.NewTaskRegistry(nil), nil, "", events.NewEventBus())
+	svc := newRunService(db, nil, runtime.NewTaskRegistry(nil), nil, events.NewEventBus())
 
 	affected, skipped, err := svc.bulkSoftDelete(ctx,
 		model.RunSelector{IDs: []string{ended.ID, running.ID, pending.ID}})
@@ -1178,7 +1178,7 @@ func TestStopTask_WaitTimesOut(t *testing.T) {
 func TestListTasks_NilSchedulerWithCronTask(t *testing.T) {
 	var sched *runtime.Scheduler
 	tasks := map[string]*model.Task{"nightly": {Name: "nightly", Cron: "0 3 * * *", ManualTrigger: true}}
-	svc := newRunService(nil, nil, runtime.NewTaskRegistry(tasks), sched, "", events.NewEventBus())
+	svc := newRunService(nil, nil, runtime.NewTaskRegistry(tasks), sched, events.NewEventBus())
 
 	got := svc.ListTasks()
 	require.Len(t, got, 1)
@@ -1188,7 +1188,7 @@ func TestListTasks_NilSchedulerWithCronTask(t *testing.T) {
 
 func TestListTasks_AttachesLiveUsage(t *testing.T) {
 	tasks := map[string]*model.Task{"busy": {Name: "busy"}, "idle": {Name: "idle"}}
-	svc := newRunService(nil, nil, runtime.NewTaskRegistry(tasks), nil, "", nil)
+	svc := newRunService(nil, nil, runtime.NewTaskRegistry(tasks), nil, nil)
 	svc.taskUsage = func() map[string]model.ResourceUsage {
 		return map[string]model.ResourceUsage{"busy": {CPUPercent: 50, MemoryBytes: 2048}}
 	}

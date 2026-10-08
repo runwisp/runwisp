@@ -13,17 +13,8 @@ import (
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
-	"github.com/runwisp/runwisp/internal/storage"
 )
-
-type PaginationParams struct {
-	Limit, Offset int
-	Filter        model.RunFilter
-	SortField     storage.SortColumn
-	SortDirection storage.SortDirection
-}
 
 // appStreamPingInterval is how often pumpAppStream sends a keepalive ping
 // (and roughly how often a system sample arrives) on an otherwise idle
@@ -269,8 +260,7 @@ func (srv *Server) humaGetTask(ctx context.Context, input *TaskNameInput) (*Task
 }
 
 func (srv *Server) humaListRuns(ctx context.Context, input *RunsQueryInput) (*RunsOutput, error) {
-	p := input.toPaginationParams()
-	result, err := srv.runService.ListRuns(ctx, p)
+	result, err := srv.runService.ListRuns(ctx, input.toRunQuery())
 	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to get runs")
 	}

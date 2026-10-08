@@ -204,7 +204,7 @@ func New(opts Options) (*Server, error) {
 		opts.EventBus.Subscribe(t, s.appEvents.ingest)
 	}
 
-	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir, opts.EventBus)
+	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.EventBus)
 	s.runService.taskUsage = opts.TaskUsage
 	s.stats = newStatsProvider(opts.DaemonInfo, time.Now())
 	s.configStale = opts.ConfigStale
