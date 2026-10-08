@@ -7,19 +7,11 @@ import { formatBytes, formatDuration } from "../../utils/format.js";
 export interface RunVerdict {
     /** Verb phrase for the outcome, ending in its preposition when `timed`. */
     verb: string;
-    /**
-     * Whether the phrase expects a duration after it. False for statuses that
-     * never produced one (nothing ran, or nothing has yet), so the caller
-     * renders the verb alone rather than "skipped after —".
-     */
+    /** Whether a duration follows the verb; false when nothing ran yet. */
     timed: boolean;
 }
 
-/**
- * The run's outcome as a verb phrase, so a detail view can state it as one
- * sentence ("succeeded in 933ms") instead of a status badge competing with a
- * separate duration readout for the same glance.
- */
+// The run's outcome as a verb phrase, read as one sentence: "succeeded in 933ms".
 const RUN_VERDICTS: Record<RunStatus, RunVerdict> = {
     succeeded: { verb: "succeeded in", timed: true },
     failed: { verb: "failed after", timed: true },
@@ -54,12 +46,8 @@ export function runDuration(
 }
 
 /**
- * Gap between when a run was scheduled (`createdAt`, the cron tick) and when
- * it actually started (`startedAt`), formatted, or undefined when the two are
- * within a second of each other. This is the visible face of `jitter`: a
- * jittered run is created at its tick but starts later inside the window, and
- * this is by how much. It also surfaces queue-wait, since a queued run is
- * created when it joins the line and started when the line clears.
+ * How long a run waited between `createdAt` and `startedAt` (jitter or queue
+ * wait), or undefined when it started within a second.
  */
 export function runStartDelay(run: Pick<Run, "createdAt" | "startedAt">): string | undefined {
     if (!run.startedAt) return undefined;
@@ -68,14 +56,7 @@ export function runStartDelay(run: Pick<Run, "createdAt" | "startedAt">): string
     return formatDuration(delay);
 }
 
-/**
- * Display suffix for a run's instance slot. A service configured with more than
- * one instance gets a 1-based suffix (`#1`, `#2`, …) on every one of its runs;
- * a single-instance task (or any non-service, where `instanceCount` is 1)
- * returns an empty string so the bare task name is shown. `instanceIndex` is
- * the stored 0-based slot; `instanceCount` is the task's currently configured
- * instance count.
- */
+/** 1-based `#N` suffix for a multi-instance service run, else "". */
 export function instanceSuffix(instanceIndex: number, instanceCount: number): string {
     if (instanceCount > 1) {
         return `#${String(instanceIndex + 1)}`;
@@ -91,11 +72,7 @@ export function runLogDownloadUrl(runId: string): string {
     return RAW_LOG_PATH.replace("{runId}", encodeURIComponent(runId));
 }
 
-/**
- * Labels per trigger source: `short` for the one-word row badge, `long` where
- * extra words disambiguate (e.g. "REST API" vs a bare "API"). `cron` covers
- * both on-time firings and catch-up; `startup` is specifically `run_on_start`.
- */
+/** Labels per trigger source: `short` for the row badge, `long` for descriptions. */
 export const TRIGGER_LABELS: Record<Trigger, { short: string; long: string }> = {
     cron: { short: "Cron", long: "Scheduled (cron)" },
     api: { short: "API", long: "REST API" },
@@ -112,11 +89,7 @@ export function formatTriggeredByLabel(triggeredBy: Run["triggeredBy"]): string 
     return TRIGGER_LABELS[triggeredBy].short;
 }
 
-/**
- * "retry #N" label when a run is a retry of an earlier one, else undefined.
- * A run is a retry if it carries a positive attempt number or points back at
- * the run it re-attempts.
- */
+/** "retry #N" when the run re-attempts an earlier one, else undefined. */
 export function runRetryLabel(run: Pick<Run, "retryAttempt" | "retryOfRunId">): string | undefined {
     if (run.retryAttempt > 0 || run.retryOfRunId) {
         return `retry #${String(run.retryAttempt)}`;

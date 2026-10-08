@@ -1,29 +1,15 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-/**
- * User-facing copy for the "stalled" connection state, a live stream that was
- * opened but isn't responding. The honest message depends on whether this tab
- * is sharing one connection across tabs:
- *
- * - shared (the normal case): tab count is irrelevant, exactly one connection
- *   exists browser-wide, so a stall means that single connection isn't
- *   responding (e.g. a reverse proxy buffering the SSE response). Don't blame tabs.
- * - degraded (no Web Locks / BroadcastChannel): every tab holds its own
- *   EventSource, so too many open tabs really can exhaust the browser's
- *   per-origin connection limit. Here, telling the operator to close tabs is
- *   the correct fix.
- */
+// Copy for the "stalled" connection state. With a shared cross-tab connection
+// a stall is a single unresponsive stream (often a buffering proxy), so tabs
+// are not to blame; without one, each tab holds its own EventSource and too
+// many tabs really can exhaust the browser's per-origin connection limit.
 interface StalledCopy {
-    /** Short label for the status chip. */
     label: string;
-    /** One-line hint shown under the label. */
     hint: string;
-    /** Tooltip / aria description. */
     title: string;
-    /** Panel heading. */
     heading: string;
-    /** Panel body paragraph. */
     body: string;
 }
 

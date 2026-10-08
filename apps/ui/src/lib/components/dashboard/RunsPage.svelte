@@ -39,16 +39,11 @@
         // Runs that arrived or were removed live moments ago; they animate.
         motion: RunMotion;
         initialRunId?: string | null;
-        // True when the deep-linked run id (initialRunId) was fetched and doesn't
-        // exist. Distinguishes "deleted/bad permalink" from a stale selection that
-        // merely scrolled out of the loaded window.
+        // The deep-linked run was fetched and doesn't exist.
         runNotFound?: boolean;
-        // True while the deep-linked run (initialRunId) is being fetched because
-        // it isn't in the loaded list yet. Holds the detail panel on a loading
-        // state rather than flashing another run first.
+        // The deep-linked run is still being fetched; the panel holds on loading.
         runPending?: boolean;
-        // Notified when the user picks a run, so the route can mirror it into
-        // the address bar. The auto-fallback to newest is not reported.
+        // Reports explicit picks (not the auto-fallback) so the URL can mirror them.
         onSelectRun?: (runId: string | null) => void;
         fetchLogs: (runId: string, from: number, to: number) => Promise<LogEvent>;
         streamLogs: (
