@@ -100,7 +100,7 @@ func (d *RunDetailDialog) facts(row func(label, value string, color color.Color)
 	run := d.run
 	status := run.DisplayStatus()
 	out := []string{
-		row("Status", status, runStatusColor(status)),
+		row("Status", status, uikit.StatusColor(status)),
 		row("Run ID", run.ID, uikit.ColorText),
 	}
 	if run.Status == model.PhaseEnded {
@@ -135,25 +135,6 @@ func (d *RunDetailDialog) facts(row func(label, value string, color color.Color)
 		out = append(out, row("Params", strconv.Itoa(len(run.Params)), uikit.ColorTextMuted))
 	}
 	return out
-}
-
-// runStatusColor maps a display status to the row's value color, mirroring the
-// run-list badge palette.
-func runStatusColor(status string) color.Color {
-	switch status {
-	case "running":
-		return uikit.ColorRunning
-	case "succeeded":
-		return uikit.ColorSuccess
-	case "pending":
-		return uikit.ColorPending
-	case "failed", "crashed", "timeout", "start_failed", "log_overflow", "unhealthy":
-		return uikit.ColorError
-	case "stopped", "missed":
-		return uikit.ColorWarning
-	default:
-		return uikit.ColorText
-	}
 }
 
 // exitCodeColor greens a clean exit and reddens any non-zero code.

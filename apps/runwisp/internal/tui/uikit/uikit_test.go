@@ -102,6 +102,17 @@ func TestStatusStyle(t *testing.T) {
 	}
 }
 
+func TestStatusColor_FailuresTakeErrorColour(t *testing.T) {
+	for _, r := range []model.EndReason{
+		model.ReasonFailed, model.ReasonCrashed, model.ReasonTimeout,
+		model.ReasonStartFailed, model.ReasonLogOverflow, model.ReasonUnhealthy,
+	} {
+		assert.Equal(t, ColorError, StatusColor(string(r)), r)
+	}
+	assert.Equal(t, ColorWarning, StatusColor(string(model.ReasonStopped)))
+	assert.Equal(t, ColorTextMuted, StatusColor(string(model.ReasonSkipped)))
+}
+
 func TestPadLine(t *testing.T) {
 	result := PadLine("hello", 10, ColorBg)
 	assert.GreaterOrEqual(t, len([]rune(result)), 5)

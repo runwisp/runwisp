@@ -671,6 +671,24 @@ func TestBuildRowText_Branches(t *testing.T) {
 	})
 }
 
+// A status cut short by a narrow column keeps its own badge colour.
+func TestBuildRowText_TruncatedStatusKeepsColour(t *testing.T) {
+	reason := model.ReasonSuccess
+	w := NewExecWindow(nil)
+	w.ApplyFetch([]uikit.ExecListItem{
+		{Run: model.Run{ID: "r1", TaskName: "task", Status: model.PhaseEnded, EndReason: &reason}},
+	}, 0, 1)
+	l := NewExecList(w)
+	l.SetSize(80, 24)
+	cw := computeColWidths(60)
+	cw.status = 5
+	text := l.buildRowText(l.window.Item(0), 0, cw)
+	want := uikit.StatusStyle("succeeded").Render(uikit.TruncateToWidth("succeeded", 5))
+	if !strings.Contains(text, want) {
+		t.Fatalf("expected the success badge %q in %q", want, text)
+	}
+}
+
 // TestView_RenderBranches covers View()'s four data-shape branches: empty
 // list, in-bounds list, overflowing list with scrollbar, and zero-content
 // viewport. Coverage is preserved by exercising the same code paths; each

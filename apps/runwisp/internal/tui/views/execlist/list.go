@@ -312,8 +312,8 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	}
 	// Truncate without padding: the badge's trailing fill must take the row
 	// background, not the badge color.
-	statusStr := uikit.TruncateToWidth(item.Run.DisplayStatus(), cw.status)
-	statusBadge := uikit.StatusStyle(statusStr).Render(statusStr)
+	status := item.Run.DisplayStatus()
+	statusBadge := uikit.StatusStyle(status).Render(uikit.TruncateToWidth(status, cw.status))
 	statPad := max(cw.status-uikit.VisibleWidth(statusBadge), 0)
 	statusCell := statusBadge + rowStyle.Render(strings.Repeat(" ", statPad))
 	count := 1
