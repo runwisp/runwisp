@@ -12,6 +12,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   check-generated:
     name: Check Generated Code is Fresh
@@ -71,6 +74,10 @@ jobs:
     # covers the no-deps path. Run them locally with podman to exercise real TLS.
     env: &test-env
       RUNWISP_SKIP_PODMAN_TESTS: '1'
+    permissions:
+      contents: read
+      # OIDC token for the tokenless Codecov upload.
+      id-token: write
     steps: &test-steps
       - uses: actions/checkout@v6
 
@@ -93,6 +100,15 @@ jobs:
           name: coverage-go
           path: apps/runwisp/coverage.out
           retention-days: 1
+
+      # Public coverage report, linked from awesome-go. Never fails the build.
+      - name: Upload Go coverage to Codecov
+        if: runner.os == 'Linux' && github.event_name == 'push'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: apps/runwisp/coverage.out
+          use_oidc: true
+          fail_ci_if_error: false
 
   # A separate job rather than a matrix leg, so Sonar (needs: test) doesn't
   # wait on the slower macOS runner.

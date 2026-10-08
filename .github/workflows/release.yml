@@ -38,6 +38,9 @@ on:
         description: "Existing release tag to (re-)publish the Docker image for"
         required: true
 
+permissions:
+  contents: read
+
 jobs:
   build:
     if: github.event_name == 'push'
@@ -151,11 +154,17 @@ jobs:
 
       # Signed build provenance: `gh attestation verify <file> --repo runwisp/runwisp`.
       - name: Attest build provenance
+        id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             runwisp-*.tar.gz
             checksums-sha256.txt
+
+      # The same signed bundle as a release asset, which is where OpenSSF
+      # Scorecard's Signed-Releases check looks for it.
+      - name: Attach provenance bundle
+        run: cp "${{ steps.attest.outputs.bundle-path }}" runwisp.intoto.jsonl
 
       - name: Create draft release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
@@ -166,6 +175,7 @@ jobs:
           files: |
             runwisp-*.tar.gz
             checksums-sha256.txt
+            runwisp.intoto.jsonl
 
   npm-publish-workspace:
     if: github.event_name == 'release'

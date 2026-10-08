@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `runwisp tui --url` pins the daemon's TLS certificate on first connect, like `runwisp run --url`, and refuses to connect if it changes.
 
+### Security
+
+- Each GitHub release also carries its signed build provenance as `runwisp.intoto.jsonl`.
+
 ## [1.5.0] - 2026-10-07
 
 ### Added

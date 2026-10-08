@@ -18,7 +18,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/danielgtaylor/huma/v2 v2.39.1
 	github.com/go-chi/chi/v5 v5.3.2
-	github.com/go-chi/httprate v0.16.0
+	github.com/go-chi/httprate v0.16.1
 	github.com/go-chi/jwtauth/v5 v5.4.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
