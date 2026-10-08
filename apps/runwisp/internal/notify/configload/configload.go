@@ -8,7 +8,6 @@
 package configload
 
 import (
-	"maps"
 	"slices"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
@@ -33,7 +32,7 @@ type ResolvedNotify struct {
 func Resolve(cfg config.NotifyConfig, renderCtx render.TemplateContext) ResolvedNotify {
 	specs := make([]channel.NotifierSpec, 0, len(cfg.Notifiers))
 	for _, n := range cfg.Notifiers {
-		specs = append(specs, resolveNotifier(n, renderCtx))
+		specs = append(specs, channel.NotifierSpec{NotifierSpec: n, RenderContext: renderCtx})
 	}
 
 	rules := make([]notify.Rule, 0, len(cfg.Routes))
@@ -45,64 +44,6 @@ func Resolve(cfg config.NotifyConfig, renderCtx render.TemplateContext) Resolved
 		Notifiers: specs,
 		Rules:     rules,
 	}
-}
-
-func resolveNotifier(n config.NotifierSpec, renderCtx render.TemplateContext) channel.NotifierSpec {
-	spec := channel.NotifierSpec{
-		ID:            n.ID,
-		Type:          n.Type,
-		ParseMode:     n.ParseMode,
-		ChatID:        n.ChatID,
-		RenderContext: renderCtx,
-	}
-	switch n.Type {
-	case "slack":
-		spec.WebhookURL = n.WebhookURL
-		spec.SlackChannel = n.SlackChannel
-	case "discord":
-		spec.WebhookURL = n.WebhookURL
-	case "telegram":
-		spec.BotToken = n.BotToken
-	case "smtp":
-		spec.Host = n.Host
-		spec.Port = n.Port
-		spec.TLSMode = n.TLSMode
-		spec.TLSSkipVerify = n.TLSSkipVerify
-		spec.Username = n.Username
-		// Empty Password means an auth-less local relay (e.g. Postfix on
-		// 127.0.0.1:25); validation guarantees username/password come together.
-		spec.Password = n.Password
-		fillMailAddressing(&spec, n)
-	case "sendmail":
-		// A local MTA takes none of the relay settings: it already knows where
-		// to relay, which is the point of using it.
-		spec.SendmailPath = n.SendmailPath
-		fillMailAddressing(&spec, n)
-	case "ntfy":
-		spec.URL = n.URL
-		spec.Topic = n.Topic
-		spec.Token = n.Token
-	case "gotify":
-		spec.URL = n.URL
-		spec.Token = n.Token
-	case "pushover":
-		spec.Token = n.Token
-		spec.User = n.User
-	case "webhook":
-		spec.URL = n.URL
-		spec.Headers = maps.Clone(n.Headers)
-	}
-	return spec
-}
-
-// fillMailAddressing copies the From/To/CC/BCC addressing smtp and sendmail
-// share.
-func fillMailAddressing(spec *channel.NotifierSpec, n config.NotifierSpec) {
-	spec.From = n.From
-	spec.ReplyTo = n.ReplyTo
-	spec.Recipients = slices.Clone(n.Recipients)
-	spec.CC = slices.Clone(n.CC)
-	spec.BCC = slices.Clone(n.BCC)
 }
 
 func compileRoute(r config.NotificationRoute) notify.Rule {
