@@ -178,7 +178,8 @@ func (fx fixture) build(t *testing.T) (*Cutover, *fakeInstaller, string) {
 			inst.calls = append(inst.calls, "wire-cron")
 			return writeWired(path, patterns)
 		},
-	}, Options{AllowSkippedCronJobs: fx.allowSkipped})
+		AllowSkippedCronJobs: fx.allowSkipped,
+	})
 
 	return c, inst, cfgPath
 }

@@ -306,7 +306,7 @@ func TestCompute_UntrustedConfigIsABlockerSoDryRunCanReportIt(t *testing.T) {
 		},
 		Trusted:       func(string) error { return assert.AnError },
 		DaemonRunning: func() bool { return false },
-	}, Options{})
+	})
 
 	p, err := c.Compute(context.Background())
 	require.NoError(t, err)

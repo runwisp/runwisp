@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"github.com/runwisp/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/configedit"
 )
 
@@ -35,17 +36,8 @@ type Result struct {
 	SettingsStale bool
 }
 
-// Confirm asks the one question a cutover asks, after the caller has rendered the
-// plan it refers to.
-//
-// It lives here rather than in the calling command so the question is phrased in
-// the same place the plan is: PromptQuestion names the unit being retired, and a
-// caller that wrote its own prompt could ask about a unit the plan does not
-// touch. The Prompter already encodes --yes (auto-approve) and the non-TTY
-// refusal, so an unattended `takeover --yes` needs nothing extra here and an
-// unattended run without it fails rather than hanging.
-//
-// The default is yes: the operator typed a command whose entire purpose is this.
+// Confirm asks PromptQuestion(p), defaulting to yes. The Prompter already
+// handles --yes and the non-TTY refusal.
 func (c *Cutover) Confirm(p Plan) (bool, error) {
 	return c.deps.Prompter.Confirm(PromptQuestion(p), true)
 }
@@ -122,7 +114,7 @@ func (c *Cutover) applyConfig(p Plan, res *Result, out io.Writer) error {
 		}
 		// The same gate WireCron applies: a scaffold the daemon can't load would
 		// have cron masked under a service that crash-loops.
-		if _, err := c.deps.Load(path); err != nil {
+		if _, err := config.Load(path); err != nil {
 			_ = os.Remove(path)
 			return &userError{
 				title:   fmt.Sprintf("%s would not load, so nothing was written", path),

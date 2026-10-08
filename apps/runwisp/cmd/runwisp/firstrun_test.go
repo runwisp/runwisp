@@ -262,7 +262,7 @@ func stubFirstRunOffer(t *testing.T, inst *fakeTakeoverInstaller) {
 			Trusted:       func(string) error { return nil },
 			WriteConfig:   writeConfig,
 			DaemonRunning: func() bool { return false },
-		}, cutover.Options{})
+		})
 
 		plan, err := c.Compute(context.Background())
 		require.NoError(t, err)

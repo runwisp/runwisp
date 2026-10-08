@@ -14,7 +14,6 @@ import (
 
 	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/cutover"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/spf13/cobra"
@@ -291,7 +290,7 @@ func ensureServicePasswordFallback(out io.Writer, installer autostart.Installer,
 // A box left with cron firing jobs RunWisp also reads runs them twice, and
 // nothing else on this path would say so.
 func printCronStillOwnsNote(cmd *cobra.Command, f Flags, deps autostart.Deps, installer autostart.Installer, opts autostart.InstallOptions) {
-	plan, err := newCutover(f, deps, installer, opts, cutover.Options{}).Compute(context.Background())
+	plan, err := newCutover(f, deps, installer, opts).Compute(context.Background())
 	if err != nil || plan.Blocked() || plan.NothingToDo() || !plan.MasksCron || !plan.Evidence.CronActive {
 		return
 	}
