@@ -31,12 +31,12 @@ var (
 
 // StartTUI launches the interactive Bubble Tea TUI connected to a daemon via API.
 // If debugWriter is non-nil, it is wired to the program so that writes to it
-// appear in the TUI's debug view; a nil debugWriter marks the session remote
-// (cfg.IsRemote is derived from it).
+// appear in the TUI's debug view; a nil debugWriter means the daemon runs out
+// of process.
 // It blocks until the user quits. Returns the chosen uikit.QuitAction and any error.
 func StartTUI(cfg TUIConfig, debugWriter *DebugLogWriter) (uikit.QuitAction, error) {
-	cfg.IsRemote = debugWriter == nil
 	m := NewModel(cfg)
+	m.outOfProcess = debugWriter == nil
 
 	p := tea.NewProgram(m)
 
