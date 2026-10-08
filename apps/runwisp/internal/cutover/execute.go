@@ -102,9 +102,9 @@ func (c *Cutover) applyConfig(p Plan, res *Result, out io.Writer) error {
 	switch {
 	case p.pending(StepWriteConfig):
 		if _, err := os.Stat(path); err == nil {
-			return &userError{
-				title: fmt.Sprintf("%s appeared while RunWisp was asking", path),
-				details: "The plan was built when there was no config there, so RunWisp will not " +
+			return &UserError{
+				Title: fmt.Sprintf("%s appeared while RunWisp was asking", path),
+				Details: "The plan was built when there was no config there, so RunWisp will not " +
 					"overwrite it. Nothing was written and cron is untouched — re-run to plan against " +
 					"the file that is there now.",
 			}
@@ -116,9 +116,9 @@ func (c *Cutover) applyConfig(p Plan, res *Result, out io.Writer) error {
 		// have cron masked under a service that crash-loops.
 		if _, err := config.Load(path); err != nil {
 			_ = os.Remove(path)
-			return &userError{
-				title:   fmt.Sprintf("%s would not load, so nothing was written", path),
-				details: err.Error() + "\n\nCron is untouched.",
+			return &UserError{
+				Title:   fmt.Sprintf("%s would not load, so nothing was written", path),
+				Details: err.Error() + "\n\nCron is untouched.",
 			}
 		}
 		fmt.Fprintf(out, "Wrote %s\n", path)
@@ -143,11 +143,9 @@ func (c *Cutover) applyConfig(p Plan, res *Result, out io.Writer) error {
 // superset of the installer's own banner and taken consent for it. Asking twice
 // for one decision is how an operator learns to stop reading prompts.
 func (c *Cutover) install(ctx context.Context, p Plan, out io.Writer) (installed, stale bool, err error) {
-	if c.deps.Preflight != nil {
-		stale, err = c.deps.Preflight(ctx)
-		if err != nil {
-			return false, false, err
-		}
+	stale, err = c.deps.Preflight(ctx)
+	if err != nil {
+		return false, false, err
 	}
 
 	opts := p.Opts
@@ -163,9 +161,9 @@ func (c *Cutover) install(ctx context.Context, p Plan, out io.Writer) (installed
 			// Reachable only if something removed the config between the write
 			// above and here; the generic autostart wording would send the
 			// operator off to scaffold a file RunWisp just made.
-			return false, stale, &userError{
-				title:   fmt.Sprintf("%s went missing mid-install", p.Opts.Config),
-				details: "Nothing was masked. Re-run to start over.",
+			return false, stale, &UserError{
+				Title:   fmt.Sprintf("%s went missing mid-install", p.Opts.Config),
+				Details: "Nothing was masked. Re-run to start over.",
 			}
 		}
 		return false, stale, err
@@ -187,9 +185,9 @@ func cronUntouched(p Plan) string {
 func wireError(path string, err error) error {
 	var conflict *configedit.ConflictError
 	if errors.As(err, &conflict) {
-		return &userError{
-			title: fmt.Sprintf("%s would not load with include_cron added — nothing was written", path),
-			details: conflict.Err.Error() +
+		return &UserError{
+			Title: fmt.Sprintf("%s would not load with include_cron added — nothing was written", path),
+			Details: conflict.Err.Error() +
 				"\n\nThe file was restored exactly as it was, and cron is untouched. A likely cause is a " +
 				"task name that already exists: if you have run `runwisp import cron` before, those " +
 				"imported copies collide with the live crontab jobs. Retire the crontab " +
@@ -200,29 +198,24 @@ func wireError(path string, err error) error {
 	if errors.Is(err, configedit.ErrCronIncludeAlreadySet) {
 		// Compute classifies this as a blocker, so reaching it here means the
 		// config changed under us.
-		return &userError{
-			title:   fmt.Sprintf("%s gained an include_cron while RunWisp was asking", path),
-			details: "Nothing was written. Re-run to plan against the config that is there now.",
+		return &UserError{
+			Title:   fmt.Sprintf("%s gained an include_cron while RunWisp was asking", path),
+			Details: "Nothing was written. Re-run to plan against the config that is there now.",
 		}
 	}
 	return err
 }
 
-// userError is this package's operator-facing error, so a decision made here
-// is reportable without importing the CLI.
-type userError struct {
-	title   string
-	details string
+// UserError is this package's operator-facing error. cmd/runwisp re-wraps it
+// in its own type so the CLI keeps one rendering for every failure it prints.
+type UserError struct {
+	Title   string
+	Details string
 }
 
-func (e *userError) Error() string {
-	if e.details == "" {
-		return e.title
+func (e *UserError) Error() string {
+	if e.Details == "" {
+		return e.Title
 	}
-	return e.title + "\n\n" + e.details
+	return e.Title + "\n\n" + e.Details
 }
-
-// Title and Details let cmd/runwisp re-wrap this in its own error type, so the
-// CLI keeps one rendering for every failure it prints.
-func (e *userError) Title() string   { return e.title }
-func (e *userError) Details() string { return e.details }

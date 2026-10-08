@@ -307,6 +307,7 @@ func TestCompute_UntrustedConfigIsABlockerSoDryRunCanReportIt(t *testing.T) {
 			return config.ScanCronSources([]string{filepath.Join(cronDir, "*")}, p)
 		},
 		Trusted:       func(string) error { return assert.AnError },
+		Preflight:     func(context.Context) (bool, error) { return false, nil },
 		DaemonRunning: func() bool { return false },
 	})
 

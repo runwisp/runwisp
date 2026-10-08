@@ -98,6 +98,7 @@ func newTakeoverHarness(t *testing.T) *takeoverHarness {
 			Trusted: func(string) error { return nil },
 			// The seam under test: fed by this package's real PID-file probe, so
 			// the sampling order is exercised end to end rather than assumed.
+			Preflight:     func(context.Context) (bool, error) { return false, nil },
 			DaemonRunning: func() bool { return isDaemonRunning(f) },
 			Reload:        func(context.Context) error { h.reloads++; return nil },
 		}), nil

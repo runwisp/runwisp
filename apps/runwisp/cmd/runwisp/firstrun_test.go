@@ -263,6 +263,7 @@ func stubFirstRunOffer(t *testing.T, inst *autostartfake.Installer) {
 			},
 			Trusted:       func(string) error { return nil },
 			WriteConfig:   writeConfig,
+			Preflight:     func(context.Context) (bool, error) { return false, nil },
 			DaemonRunning: func() bool { return false },
 		})
 

@@ -249,9 +249,9 @@ func TestExecute_ConfigThatAppearedWhileAskingIsNeverClobbered(t *testing.T) {
 	_, err = c.Execute(context.Background(), p, &bytes.Buffer{})
 	require.Error(t, err)
 
-	var ue *userError
+	var ue *UserError
 	require.ErrorAs(t, err, &ue)
-	assert.Contains(t, ue.Title(), "appeared while RunWisp was asking")
+	assert.Contains(t, ue.Title, "appeared while RunWisp was asking")
 	assert.Empty(t, inst.Calls, "nothing may be installed or masked")
 
 	body, err := os.ReadFile(cfgPath)
@@ -279,12 +279,12 @@ func TestExecute_WireConflictNamesTheImportCollision(t *testing.T) {
 	_, err = c.Execute(context.Background(), p, &bytes.Buffer{})
 	require.Error(t, err)
 
-	var ue *userError
+	var ue *UserError
 	require.ErrorAs(t, err, &ue)
-	assert.Contains(t, ue.Title(), "nothing was written")
-	assert.Contains(t, ue.Details(), "duplicate task")
-	assert.Contains(t, ue.Details(), "import cron")
-	assert.Contains(t, ue.Details(), "crontab -r")
+	assert.Contains(t, ue.Title, "nothing was written")
+	assert.Contains(t, ue.Details, "duplicate task")
+	assert.Contains(t, ue.Details, "import cron")
+	assert.Contains(t, ue.Details, "crontab -r")
 	assert.Empty(t, inst.Calls, "a config that would not load must not become a masked cron")
 
 	body, err := os.ReadFile(cfgPath)
@@ -391,10 +391,10 @@ func TestExecute_ScaffoldThatDoesNotLoadIsRemovedBeforeAnythingIsMasked(t *testi
 	require.NoError(t, err)
 
 	_, err = c.Execute(context.Background(), p, &bytes.Buffer{})
-	var ue *userError
+	var ue *UserError
 	require.ErrorAs(t, err, &ue)
-	assert.Contains(t, ue.Title(), "would not load")
-	assert.Contains(t, ue.Details(), `task "broken"`)
+	assert.Contains(t, ue.Title, "would not load")
+	assert.Contains(t, ue.Details, `task "broken"`)
 	assert.Empty(t, inst.Calls, "nothing may be installed or masked")
 	assert.NoFileExists(t, cfgPath)
 }

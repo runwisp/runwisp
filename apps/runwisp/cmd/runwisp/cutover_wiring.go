@@ -117,20 +117,12 @@ func blockedCutoverError(p cutover.Plan) error {
 	}
 }
 
-// cutoverUserError is what internal/cutover's own operator-facing error exposes.
-// It cannot return a *userFacingError directly — that type is private to package
-// main — so it carries the two halves and this end rewraps them.
-type cutoverUserError interface {
-	Title() string
-	Details() string
-}
-
 // asUserFacing rewraps a cutover refusal so the CLI has exactly one rendering for
 // every failure it prints. Anything else passes through untouched.
 func asUserFacing(err error) error {
-	var ue cutoverUserError
+	var ue *cutover.UserError
 	if errors.As(err, &ue) {
-		return &userFacingError{title: ue.Title(), details: ue.Details()}
+		return &userFacingError{title: ue.Title, details: ue.Details}
 	}
 	return err
 }

@@ -106,6 +106,7 @@ func (fx fixture) build(t *testing.T) (*Cutover, *autostartfake.Installer, strin
 			return scan
 		},
 		Trusted:       func(string) error { return nil },
+		Preflight:     func(context.Context) (bool, error) { return false, nil },
 		DaemonRunning: func() bool { return fx.daemonRunning },
 		Reload:        func(context.Context) error { inst.Calls = append(inst.Calls, "reload"); return nil },
 		WriteConfig: func(path string, patterns []string) error {
