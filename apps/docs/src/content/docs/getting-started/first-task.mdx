@@ -1,0 +1,63 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Scheduling your first task
+description: Replace the starter task with your own cron job, apply it with runwisp reload, run it on demand, and read its output.
+---
+
+A task is a shell command that RunWisp starts on a schedule, or when you ask,
+and that exits when it's done. Open the `runwisp.toml` from
+[Installation](/getting-started/quick-start/) and replace `[tasks.hello]` with
+your own job:
+
+```toml title="runwisp.toml"
+[tasks.backup-db]
+cron       = "0 2 * * *"      # every day at 02:00
+on_overlap = "skip"           # skip a run if the last one is still going
+keep_runs  = 30               # keep the last 30 runs in the history
+run        = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
+```
+
+`cron` is the usual five-field expression, in the host's timezone. `run` goes
+to a shell, so pipes and `$(...)` work like they do in your terminal.
+
+## Apply the change
+
+```bash
+runwisp validate
+runwisp reload
+```
+
+`validate` checks the file and starts nothing. `reload` gives the file to the
+running daemon, which starts the schedule. If the file has an error, the reload
+is rejected and the daemon keeps running what it had.
+
+## Run it now
+
+You don't have to wait for 02:00:
+
+```bash
+runwisp run backup-db
+```
+
+The output streams to your terminal, and the command exits with the task's
+exit code. The run lands in the history like a scheduled one. In the TUI, the
+same thing is <kbd>r</kbd> on the task; in the Web UI, the **Run** button.
+
+## Read its output
+
+```bash
+runwisp logs backup-db
+```
+
+Every run keeps its output, exit code, start time, and duration. In the Web UI,
+click the task to see its runs, and click a run to read its log. See
+[Web UI](/getting-started/web-ui-tour/) and [TUI](/getting-started/tui-tour/).
+
+## Next steps
+
+- Timezones, catching up after downtime, and spreading out start times are in
+  [Scheduling](/concepts/scheduling/).
+- What happens when a run is still going at the next start time is in
+  [Overlapping runs](/concepts/concurrency/).
+- Every key a task accepts is in the [`[tasks.*]` reference](/configuration/tasks/).

@@ -1,8 +1,8 @@
 ---
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
-title: Quick start
-description: Install RunWisp, create a starter runwisp.toml, run your first task, and open the Web UI.
+title: Installation
+description: Install RunWisp, create a starter runwisp.toml, run the example task, and open the Web UI.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components";
@@ -66,17 +66,8 @@ of every run. It runs on Linux, macOS, and WSL, on `x86_64` or `arm64`.
         The binary is at `apps/runwisp/runwisp`.
     </TabItem>
     <TabItem label="Docker" icon="seti:docker">
-        ```bash
-        docker run -d --name runwisp \
-          -p 9477:9477 \
-          -e RUNWISP_PASSWORD=change-me \
-          -v ./runwisp:/etc/runwisp \
-          -v runwisp-data:/var/lib/runwisp \
-          runwisp/runwisp:latest
-        ```
-
-        See [Running in Docker](/getting-started/docker/) for image variants
-        and required settings.
+        The container needs a password and two volumes. See
+        [Running in Docker](/getting-started/docker/).
     </TabItem>
 
 </Tabs>
@@ -172,42 +163,8 @@ login off, see [Authentication](/operations/auth/).
     alt="Web UI dashboard: sidebar with tasks and services, daemon header with sparklines, recent activity feed below."
 />
 
-## 5. Make it yours
-
-Replace `[tasks.hello]` with your own commands:
-
-```toml title="runwisp.toml"
-[tasks.backup-db]
-cron       = "0 2 * * *"      # every day at 02:00
-on_overlap = "skip"           # skip a run if the last one is still going
-keep_runs  = 30
-run        = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
-
-[tasks.health-check]
-cron = "*/5 * * * *"
-run  = "curl -sf https://myapp.example.com/health"
-
-[services.worker]
-instances = 3                 # keep three copies running
-run       = "node /app/worker.js"
-```
-
-A [task](/configuration/tasks/) runs on a schedule or on demand and then exits.
-A [service](/configuration/services/) stays up, and RunWisp restarts it when it
-exits. [Tasks vs services](/concepts/tasks-vs-services/) explains the
-difference.
-
-After editing `runwisp.toml`, run `runwisp reload`. Some settings need
-`runwisp restart` instead; see [Reload](/operations/reload/).
-
 :::tip[See it with history]
 `runwisp demo` starts a throwaway instance with a sample config and hundreds
 of past runs. Its data is deleted when the daemon stops (quit the TUI and
 choose **Shut Down**).
 :::
-
-## Learn more
-
-- [Configuration overview](/configuration/overview/)
-- [Scheduling](/concepts/scheduling/)
-- [Web UI](/getting-started/web-ui-tour/)

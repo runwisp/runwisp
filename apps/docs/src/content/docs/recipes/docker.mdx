@@ -245,23 +245,8 @@ code reaches RunWisp directly.
 ## If RunWisp runs in a container
 
 A task runs inside the RunWisp container, so every tool it calls must be in
-that image. The plain image has only `bash`, `tzdata`, and `ca-certificates`.
-A task that calls a missing tool fails with `pg_dump: not found` in its log.
-To check what an image contains:
-
-```bash
-docker run --rm --entrypoint sh runwisp/runwisp:latest -c 'command -v pg_dump curl'
-```
-
-To add tools, extend the image:
-
-```dockerfile
-FROM runwisp/runwisp:latest
-RUN apk add --no-cache postgresql17-client curl
-```
-
-On a `-debian` tag, use `apt-get install`. The entrypoint, healthcheck, and
-environment defaults are kept.
+that image; see
+[Tasks run inside this container](/getting-started/docker/#tasks-run-inside-this-container).
 
 To run `docker` from a task (anything on this page), the container also needs:
 

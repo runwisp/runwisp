@@ -147,7 +147,11 @@ export default defineConfig({
                 {
                     label: "Getting Started",
                     items: [
-                        { label: "Quick start", slug: "getting-started/quick-start" },
+                        { label: "Installation", slug: "getting-started/quick-start" },
+                        { label: "Your first task", slug: "getting-started/first-task" },
+                        { label: "Running a service", slug: "getting-started/first-service" },
+                        { label: "Handling failures", slug: "getting-started/failures" },
+                        { label: "Running on a server", slug: "getting-started/server" },
                         { label: "Running in Docker", slug: "getting-started/docker" },
                         { label: "Web UI", slug: "getting-started/web-ui-tour" },
                         { label: "TUI", slug: "getting-started/tui-tour" },

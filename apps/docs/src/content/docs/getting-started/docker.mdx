@@ -126,16 +126,23 @@ entrypoint warns if you pass `--data` or `--socket`.
 When a task runs, RunWisp runs its `run` command with `/bin/sh -c` inside the
 RunWisp container. So every tool your tasks call must be in the image. The
 image has `bash`, `tzdata`, and `ca-certificates`, and nothing else: no curl,
-no git, no database clients, no Docker CLI. Add what you need with a
-Dockerfile, or run the task in another container. See
-[Docker tasks](/recipes/docker/#if-runwisp-runs-in-a-container).
+no git, no database clients, no Docker CLI. A task that calls a missing tool
+fails with `pg_dump: not found` in its log. To check what an image contains:
 
-:::caution[`include_cron` in a container]
-RunWisp [holds](/coming-from/cron/#held-jobs) crontab jobs only when it can
-see a running cron daemon, which it usually can't from inside a container. If
-you mount the host's crontabs while host cron still runs them, every job runs
-twice. Stop cron on the host first.
-:::
+```bash
+docker run --rm --entrypoint sh runwisp/runwisp:latest -c 'command -v pg_dump curl'
+```
+
+To add tools, extend the image:
+
+```dockerfile
+FROM runwisp/runwisp:latest
+RUN apk add --no-cache postgresql17-client curl
+```
+
+On a `-debian` tag, use `apt-get install`. The entrypoint, healthcheck, and
+environment defaults are kept. To run `docker` itself from a task, see
+[Docker tasks](/recipes/docker/#if-runwisp-runs-in-a-container).
 
 ## Healthcheck
 

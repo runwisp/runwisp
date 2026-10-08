@@ -31,6 +31,10 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
         label: "Getting started",
         slugs: [
             "getting-started/quick-start",
+            "getting-started/first-task",
+            "getting-started/first-service",
+            "getting-started/failures",
+            "getting-started/server",
             "getting-started/docker",
             "getting-started/web-ui-tour",
             "getting-started/tui-tour",
