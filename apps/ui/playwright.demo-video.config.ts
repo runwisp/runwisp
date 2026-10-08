@@ -10,8 +10,9 @@
 // `bun run ci` — regenerated on demand, committed as a docs asset.
 
 import { defineConfig, devices } from "@playwright/test";
+import { runPort } from "./e2e/fixtures/daemon-boot";
 
-const port = Number(process.env.SCREENSHOT_PORT) || 19299;
+const port = await runPort("SCREENSHOT_PORT");
 
 // 16:10 canvas. The DevTools screencast emits frames at this CSS-pixel size, but
 // deviceScaleFactor:2 makes Chrome render the page at 2× and downsample into each
