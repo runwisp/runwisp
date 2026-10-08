@@ -40,7 +40,7 @@ func TestUpsertTask(t *testing.T) {
 	eb := events.NewEventBus()
 	jm := NewTaskManager(exec, eb, time.Now)
 
-	task := testTask("task1", model.PolicyQueue, DefaultConcurrencyLimit)
+	task := testTask("task1", model.PolicyQueue, model.DefaultMaxConcurrent)
 	jm.UpsertTask(task)
 
 	djm := jm.(*defaultTaskManager)
@@ -257,7 +257,7 @@ func TestEvaluateConcurrency_QueuePreservesFIFOWhenSlotFree(t *testing.T) {
 	ts := &taskState{
 		task:  testTask("t", model.PolicyQueue, 2),
 		cond:  sync.NewCond(&sync.Mutex{}),
-		queue: []queuedRun{{run: &model.Run{ID: "queued-1"}}}, // one run already waiting
+		queue: []*model.Run{{ID: "queued-1"}}, // one run already waiting
 	}
 
 	// A slot is free (0 active < limit 2), but the queue is non-empty.
@@ -265,8 +265,8 @@ func TestEvaluateConcurrency_QueuePreservesFIFOWhenSlotFree(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, actionQueued, action, "a free slot must not let a new trigger jump the queue")
 	require.Len(t, ts.queue, 2)
-	assert.Equal(t, "queued-1", ts.queue[0].run.ID, "the existing queued run stays at the head")
-	assert.Equal(t, "new", ts.queue[1].run.ID, "the new trigger goes to the back")
+	assert.Equal(t, "queued-1", ts.queue[0].ID, "the existing queued run stays at the head")
+	assert.Equal(t, "new", ts.queue[1].ID, "the new trigger goes to the back")
 }
 
 // TestEvaluateConcurrency_TerminateSkipsAlreadyCancelled pins the terminate fix:

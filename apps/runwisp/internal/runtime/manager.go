@@ -355,9 +355,9 @@ func (m *defaultTaskManager) finalizeOrphanedQueue(ts *taskState) []*model.Run {
 		return nil
 	}
 	runs := make([]*model.Run, 0, len(ts.queue))
-	for _, q := range ts.queue {
-		m.endOrphanedPending(q.run)
-		runs = append(runs, q.run)
+	for _, run := range ts.queue {
+		m.endOrphanedPending(run)
+		runs = append(runs, run)
 	}
 	ts.queue = nil
 	return runs
@@ -537,14 +537,14 @@ func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *model.Run, resu
 		result.Failed++
 		return r
 	}
-	ts.queue = append(ts.queue, queuedRun{run: r})
+	ts.queue = append(ts.queue, r)
 	ts.cond.Signal()
 	result.Queued++
 	return nil
 }
 
 func (m *defaultTaskManager) restartOrFailPendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) *model.Run {
-	concurrencyLimit := m.getConcurrencyLimit(ts.task)
+	concurrencyLimit := ts.task.MaxConcurrentValue()
 	if len(ts.active) < concurrencyLimit {
 		m.startRun(ts.task, r)
 		result.Resumed++
@@ -641,7 +641,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	m.publishRun(events.EventRunCreated, run, "")
 
 	if !isService {
-		action, actionErr := m.evaluateConcurrency(ts, run, m.getConcurrencyLimit(ts.task))
+		action, actionErr := m.evaluateConcurrency(ts, run, ts.task.MaxConcurrentValue())
 		switch action {
 		case actionRejected:
 			run.End(ts.task, model.ReasonSkipped, -1, m.clock())

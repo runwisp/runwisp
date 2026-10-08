@@ -310,6 +310,18 @@ const DefaultCatchUp = 1
 // by ApplyDefaults; nil only occurs for tasks built outside config.Load.
 func (t *Task) CatchUpValue() int { return derefOr(t.CatchUp, DefaultCatchUp) }
 
+// DefaultMaxConcurrent is the max_concurrent applied when the key is omitted.
+const DefaultMaxConcurrent = 1
+
+// MaxConcurrentValue returns how many runs may overlap, falling back to
+// DefaultMaxConcurrent when unset.
+func (t *Task) MaxConcurrentValue() int {
+	if t.MaxConcurrent == 0 {
+		return DefaultMaxConcurrent
+	}
+	return t.MaxConcurrent
+}
+
 // DefaultMaxQueued is the built-in max_queued applied when the key is omitted.
 const DefaultMaxQueued = 100
 
