@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { CircleAlert, Clock } from "@lucide/svelte";
-    import ms, { type StringValue } from "ms";
+    import { formatDurationExact, parseDuration } from "../utils/format.js";
 
     type InputSize = "sm" | "md" | "lg";
 
@@ -56,28 +56,9 @@
     const errorBorder =
         "border-danger-surface focus:border-danger-surface focus:ring-danger-surface";
 
-    function formatMs(msValue: number): string {
-        if (typeof msValue !== "number" || isNaN(msValue)) return "";
-        try {
-            return ms(msValue);
-        } catch {
-            return "";
-        }
-    }
-
-    function parseToMs(str: string): number | null {
-        if (!str || !str.trim()) return null;
-        try {
-            const result = ms(str as StringValue);
-            return typeof result === "number" ? result : null;
-        } catch {
-            return null;
-        }
-    }
-
     function updateFromValue() {
         if (!isFocused) {
-            textValue = value != null ? formatMs(value) : "";
+            textValue = value != null ? formatDurationExact(value) : "";
         }
     }
 
@@ -89,11 +70,11 @@
         const val = e.currentTarget.value;
         textValue = val;
 
-        const msValue = parseToMs(val);
+        const msValue = parseDuration(val);
         value = msValue;
 
-        if (typeof msValue === "number") {
-            parsedHuman = ms(msValue, { long: true });
+        if (msValue !== null) {
+            parsedHuman = formatDurationExact(msValue);
             if (error) error = undefined;
         } else {
             parsedHuman = "";
@@ -106,7 +87,7 @@
 
     function handleBlur() {
         isFocused = false;
-        textValue = value != null ? formatMs(value) : "";
+        textValue = value != null ? formatDurationExact(value) : "";
         parsedHuman = "";
     }
 </script>

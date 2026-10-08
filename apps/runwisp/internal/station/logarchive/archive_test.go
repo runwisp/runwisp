@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,7 +49,7 @@ func TestArchiveSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	size, err := archive(context.Background(), srv.Client(), srv.URL, logPath, &backoff.ZeroBackOff{})
+	size, err := archive(context.Background(), srv.Client(), srv.URL, logPath, noDelays)
 	if err != nil {
 		t.Fatalf("archive: %v", err)
 	}
@@ -114,7 +113,7 @@ func TestArchiveRetriesOn5xx(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := archive(context.Background(), srv.Client(), srv.URL, logPath, &backoff.ZeroBackOff{}); err != nil {
+	if _, err := archive(context.Background(), srv.Client(), srv.URL, logPath, noDelays); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
 	if got := attempts.Load(); got != 2 {
@@ -131,17 +130,10 @@ func TestArchiveGivesUpAfterMaxAttempts(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := archive(context.Background(), srv.Client(), srv.URL, logPath, &backoff.ZeroBackOff{})
+	_, err := archive(context.Background(), srv.Client(), srv.URL, logPath, noDelays)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "upload failed after 3 attempts")
 	assert.Equal(t, int32(MaxAttempts), attempts.Load())
-}
-
-func TestRetryDelaysDoubleFromTwoSeconds(t *testing.T) {
-	b := newRetryDelays()
-	b.Reset()
-	assert.Equal(t, 2*time.Second, b.NextBackOff())
-	assert.Equal(t, 4*time.Second, b.NextBackOff())
 }
 
 func TestArchivePermanentError(t *testing.T) {
@@ -153,7 +145,7 @@ func TestArchivePermanentError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := archive(context.Background(), srv.Client(), srv.URL, logPath, &backoff.ZeroBackOff{})
+	_, err := archive(context.Background(), srv.Client(), srv.URL, logPath, noDelays)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -289,3 +281,6 @@ func TestPermanentError_Error(t *testing.T) {
 		t.Fatalf("unexpected error message: %q", msg)
 	}
 }
+
+// noDelays retries immediately so tests don't wait out the real 2s/4s delays.
+var noDelays [MaxAttempts - 1]time.Duration

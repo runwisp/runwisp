@@ -226,8 +226,8 @@ func backoffOverride(d time.Duration, logger *slog.Logger) func() *notify.HTTPPr
 			bo.MaxInterval = d
 		}
 		t.Backoff = bo
-		// The client's own per-request timeout must not outlive the budget: cenkalti's
-		// backoff only checks MaxElapsedTime between attempts, so an unbounded (or
+		// The client's own per-request timeout must not outlive the budget: the retry
+		// loop only checks MaxElapsedTime between attempts, so an unbounded (or
 		// merely larger) per-request timeout lets one hanging request alone block
 		// past a budget the operator asked for.
 		if t.Client.Timeout > d {

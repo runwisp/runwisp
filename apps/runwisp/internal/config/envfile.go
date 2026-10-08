@@ -27,17 +27,23 @@ func loadEnvFile(baseDir, path string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.Open(resolved)
+	return ReadEnvFile(resolved)
+}
+
+// ReadEnvFile parses the env file at path literally (see parseEnvFile) and
+// validates it like an inline `env` block. A missing file wraps fs.ErrNotExist.
+func ReadEnvFile(path string) (map[string]string, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("read env_file %s: %w", resolved, err)
+		return nil, fmt.Errorf("read env_file %s: %w", path, err)
 	}
 	defer f.Close()
 
 	values, err := parseEnvFile(f)
 	if err != nil {
-		return nil, fmt.Errorf("read env_file %s: %w", resolved, err)
+		return nil, fmt.Errorf("read env_file %s: %w", path, err)
 	}
-	if err := validateEnvMap(fmt.Sprintf("env_file %s", resolved), values); err != nil {
+	if err := validateEnvMap(fmt.Sprintf("env_file %s", path), values); err != nil {
 		return nil, err
 	}
 	return values, nil
