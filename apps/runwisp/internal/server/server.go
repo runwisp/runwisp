@@ -463,12 +463,6 @@ func removeStaleSocket(path string) error {
 // request context so Shutdown can end a long-lived stream immediately rather
 // than waiting for the client to disconnect.
 func (srv *Server) withShutdown(ctx context.Context) (context.Context, context.CancelFunc) {
-	if srv.shutdownCtx == nil {
-		// A Server built directly as a struct literal (as many unit tests do,
-		// exercising a single handler without New()) has no shutdown signal to
-		// wire up; behave like a plain derived context in that case.
-		return context.WithCancel(ctx)
-	}
 	merged, cancel := context.WithCancel(ctx)
 	stop := context.AfterFunc(srv.shutdownCtx, cancel)
 	return merged, func() {
@@ -479,9 +473,7 @@ func (srv *Server) withShutdown(ctx context.Context) (context.Context, context.C
 
 // Shutdown gracefully stops the HTTP server and metrics collector.
 func (srv *Server) Shutdown(ctx context.Context) error {
-	if srv.metrics != nil {
-		srv.metrics.Stop()
-	}
+	srv.metrics.Stop()
 
 	// Cancel every context handed out by withShutdown first, so active SSE
 	// handler goroutines (see appStreamHandler, sseDaemonLogHandler,

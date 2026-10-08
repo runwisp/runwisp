@@ -281,11 +281,7 @@ func (srv *Server) setupRoutes() error {
 
 	// Create huma API after all global middleware is registered (chi requirement)
 	config := huma.DefaultConfig("RunWisp API", version.Version)
-	scheme := srv.scheme
-	if scheme == "" {
-		scheme = "http"
-	}
-	config.Servers = []*huma.Server{{URL: fmt.Sprintf("%s://localhost:%d", scheme, srv.port)}}
+	config.Servers = []*huma.Server{{URL: fmt.Sprintf("%s://localhost:%d", srv.scheme, srv.port)}}
 	srv.api = humachi.New(srv.router, config)
 
 	// Health check (raw chi — trivial, no benefit from huma)

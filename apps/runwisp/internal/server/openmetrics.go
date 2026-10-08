@@ -35,9 +35,6 @@ func (srv *Server) handleOpenMetrics(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "run summary unavailable", http.StatusInternalServerError)
 		return
 	}
-	if summary == nil {
-		summary = &model.RunSummary{}
-	}
 	w.Header().Set("Content-Type", openMetricsContentType)
 	w.WriteHeader(http.StatusOK)
 

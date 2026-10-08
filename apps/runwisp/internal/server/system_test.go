@@ -163,7 +163,7 @@ func TestHumaGetMetricsHistory_ReturnsCollectorHistory(t *testing.T) {
 // call the sender at all.
 func TestSseDaemonLogHandler_RejectsWhenLimiterFull(t *testing.T) {
 	limiter := newStreamLimiter(0, 0) // zero capacity ⇒ acquire always fails
-	srv := &Server{streams: limiter}
+	srv := &Server{streams: limiter, shutdownCtx: context.Background()}
 
 	called := false
 	send := func(_ sse.Message) error {
@@ -181,6 +181,7 @@ func TestSseDaemonLogHandler_ReturnsEarlyWhenBufferNil(t *testing.T) {
 	srv := &Server{
 		streams:         newStreamLimiter(2, 2),
 		daemonLogBuffer: nil,
+		shutdownCtx:     context.Background(),
 	}
 	called := false
 	send := func(_ sse.Message) error {
@@ -201,6 +202,7 @@ func TestSseDaemonLogHandler_ReplaysBufferedLines(t *testing.T) {
 	srv := &Server{
 		streams:         newStreamLimiter(2, 2),
 		daemonLogBuffer: buf,
+		shutdownCtx:     context.Background(),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
