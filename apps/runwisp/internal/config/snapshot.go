@@ -188,10 +188,3 @@ func globHits(pattern string, crond bool) []string {
 	}
 	return hits
 }
-
-func resolveAgainst(baseDir, path string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(baseDir, path)
-}

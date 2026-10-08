@@ -103,13 +103,15 @@ func ApplyTrustedProxiesEnv(cfg *Config) error {
 func collectWatchFiles(cfg *Config, dirs entrySources) []string {
 	files := append([]string(nil), cfg.includeFiles...)
 	files = append(files, cfg.cronFiles...)
-	if cfg.Defaults.EnvFile != "" {
-		files = append(files, resolveAgainst(dirs.root, cfg.Defaults.EnvFile))
-	}
-	for owner, unit := range cfg.units() {
-		if unit.EnvFile != "" {
-			files = append(files, resolveAgainst(dirs.dir(owner), unit.EnvFile))
+	addEnvFile := func(baseDir, path string) {
+		// An unresolvable path already failed the load in loadEnvFile.
+		if resolved, err := resolvePath(baseDir, path); path != "" && err == nil {
+			files = append(files, resolved)
 		}
+	}
+	addEnvFile(dirs.root, cfg.Defaults.EnvFile)
+	for owner, unit := range cfg.units() {
+		addEnvFile(dirs.dir(owner), unit.EnvFile)
 	}
 	return files
 }
