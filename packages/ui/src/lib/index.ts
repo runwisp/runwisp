@@ -93,7 +93,9 @@ export {
     FAILURE_STATUS_TOKEN,
     humanizeStatus,
     exitCodeRange,
+    runFilterParams,
     type ExitCodeRange,
+    type RunFilterParams,
     type RunsListFilters,
 } from "./components/dashboard/run-filters.js";
 export { RUN_STATUS_CONFIG } from "./components/dashboard/status-config.js";

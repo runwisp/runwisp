@@ -308,6 +308,39 @@ export function isExitCodeExprValid(expr: string): boolean {
     return parseExitCodeRange(expr).valid;
 }
 
+/**
+ * The server-side filter fields for a filter state. The list query and the
+ * bulk selector both build on it, so "select all matching" targets exactly the
+ * rows on screen. Dimensions that are off are omitted.
+ */
+export interface RunFilterParams {
+    taskName?: string;
+    search?: string;
+    status?: string;
+    createdAfter?: string;
+    createdBefore?: string;
+    triggeredBy?: string;
+    exitCodeMin?: number;
+    exitCodeMax?: number;
+    retriesOnly?: true;
+}
+
+export function runFilterParams(f: RunsListFilters): RunFilterParams {
+    const params: RunFilterParams = {};
+    if (f.taskName) params.taskName = f.taskName;
+    const search = f.search.trim();
+    if (search) params.search = search;
+    if (f.statuses.length > 0) params.status = f.statuses.join(",");
+    if (f.createdAfter) params.createdAfter = f.createdAfter;
+    if (f.createdBefore) params.createdBefore = f.createdBefore;
+    if (f.triggeredBy) params.triggeredBy = f.triggeredBy;
+    const exit = exitCodeRange(f.exitCode);
+    if (exit.min !== undefined) params.exitCodeMin = exit.min;
+    if (exit.max !== undefined) params.exitCodeMax = exit.max;
+    if (f.retriesOnly === true) params.retriesOnly = true;
+    return params;
+}
+
 /** Chip label for an active exit-code filter, e.g. `Exit >100 <150`. */
 export function exitCodeChipLabel(expr: string | undefined): string {
     return `Exit ${(expr ?? "").trim()}`;

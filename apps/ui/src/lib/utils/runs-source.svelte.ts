@@ -6,6 +6,7 @@ import { displayStatus, TRIGGERS } from "@runwisp/common";
 import {
     runPhaseOrder,
     exitCodeRange,
+    runFilterParams,
     FAILURE_STATUS_TOKEN,
     RunMotion,
     type ExitCodeRange,
@@ -52,23 +53,12 @@ export interface RunsSource {
 
 type RunsQuery = NonNullable<Parameters<typeof runsApi.getAll>[0]>;
 
-function arraysEqual(a: string[], b: string[]): boolean {
-    if (a.length !== b.length) return false;
-    return a.every((v, i) => v === b[i]);
-}
-
+// Two filter states that send the same query need no refetch.
 function filtersEqual(a: RunsListFilters | null, b: RunsListFilters): boolean {
     if (!a) return false;
     return (
-        a.search === b.search &&
-        arraysEqual(a.statuses, b.statuses) &&
         a.sortDirection === b.sortDirection &&
-        a.taskName === b.taskName &&
-        a.createdAfter === b.createdAfter &&
-        a.createdBefore === b.createdBefore &&
-        a.triggeredBy === b.triggeredBy &&
-        a.exitCode === b.exitCode &&
-        a.retriesOnly === b.retriesOnly
+        JSON.stringify(runFilterParams(a)) === JSON.stringify(runFilterParams(b))
     );
 }
 
@@ -79,20 +69,13 @@ function asTrigger(value: string | undefined): Trigger | undefined {
 }
 
 function buildQuery(offset: number, f: RunsListFilters): RunsQuery {
-    const params: RunsQuery = { limit: PAGE_SIZE, offset };
-    if (f.taskName) params.taskName = f.taskName;
-    const search = f.search.trim();
-    if (search) params.search = search;
-    if (f.statuses.length > 0) params.status = f.statuses.join(",");
+    const { triggeredBy, exitCodeMin, exitCodeMax, ...rest } = runFilterParams(f);
+    const params: RunsQuery = { limit: PAGE_SIZE, offset, ...rest };
     if (f.sortDirection) params.sortDirection = f.sortDirection;
-    if (f.createdAfter) params.createdAfter = f.createdAfter;
-    if (f.createdBefore) params.createdBefore = f.createdBefore;
-    const trigger = asTrigger(f.triggeredBy);
+    const trigger = asTrigger(triggeredBy);
     if (trigger) params.triggeredBy = trigger;
-    const exit = exitCodeRange(f.exitCode);
-    if (exit.min !== undefined) params.exitCodeMin = String(exit.min);
-    if (exit.max !== undefined) params.exitCodeMax = String(exit.max);
-    if (f.retriesOnly === true) params.retriesOnly = true;
+    if (exitCodeMin !== undefined) params.exitCodeMin = String(exitCodeMin);
+    if (exitCodeMax !== undefined) params.exitCodeMax = String(exitCodeMax);
     return params;
 }
 

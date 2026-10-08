@@ -26,7 +26,7 @@
         clearDimension,
         statusChipLabel,
         triggerDescription,
-        exitCodeRange,
+        runFilterParams,
         exitCodeChipLabel,
         isWholeDay,
         type RunsListFilters,
@@ -282,20 +282,11 @@
     // popover dimensions only apply where the popover is shown; the task scope
     // (page-injected or popover-set) always applies.
     function buildSelectorFilter(): NonNullable<RunSelector["filter"]> {
-        const filter: NonNullable<RunSelector["filter"]> = {};
-        if (taskNameFilter) filter.taskName = taskNameFilter;
-        else if (filters.taskName) filter.taskName = filters.taskName;
-        if (!showFilters) return filter;
-        if (filters.statuses.length > 0) filter.status = filters.statuses.join(",");
-        const query = filters.search.trim();
-        if (query) filter.search = query;
-        if (filters.createdAfter) filter.createdAfter = filters.createdAfter;
-        if (filters.createdBefore) filter.createdBefore = filters.createdBefore;
-        if (filters.triggeredBy) filter.triggeredBy = filters.triggeredBy;
-        const exit = exitCodeRange(filters.exitCode);
-        if (exit.min !== undefined) filter.exitCodeMin = exit.min;
-        if (exit.max !== undefined) filter.exitCodeMax = exit.max;
-        if (filters.retriesOnly) filter.retriesOnly = true;
+        const filter: NonNullable<RunSelector["filter"]> = showFilters
+            ? runFilterParams(filters)
+            : {};
+        const taskName = taskNameFilter || filters.taskName;
+        if (taskName) filter.taskName = taskName;
         return filter;
     }
 
