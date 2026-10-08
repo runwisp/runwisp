@@ -42,14 +42,12 @@ func (d *CopyDialog) View(screenWidth, screenHeight int) string {
 		Align(lipgloss.Center).
 		Render(d.value)
 
-	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, []string{
+	lines := []string{
 		modalEmptyLine(innerWidth),
 		titleStr,
 		modalEmptyLine(innerWidth),
 		valueStr,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine("select text above · esc/enter close", innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
-	})
-	return box.view
+	}
+	lines = append(lines, modalFooter("select text above · esc/enter close", innerWidth)...)
+	return renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, lines).view
 }

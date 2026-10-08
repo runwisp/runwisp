@@ -84,11 +84,7 @@ func (d *RunDetailDialog) View(screenWidth, screenHeight int) string {
 	if hasParent {
 		footer = "enter open parent · esc close"
 	}
-	lines = append(lines,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine(footer, innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
-	)
+	lines = append(lines, modalFooter(footer, innerWidth)...)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorPrimary, lines)
 	return box.view

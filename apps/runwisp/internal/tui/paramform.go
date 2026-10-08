@@ -568,11 +568,7 @@ func (d *ParamFormDialog) View(screenWidth, screenHeight int) string {
 			modalLeftLine("⚠ "+d.errLine, innerWidth, uikit.ColorError),
 		)
 	}
-	lines = append(lines,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine(d.footerHint(), innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
-	)
+	lines = append(lines, modalFooter(d.footerHint(), innerWidth)...)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorPrimary, lines)
 	// Card visual row r sits at screen row box.top+1+r (row 0 is the accent bar).

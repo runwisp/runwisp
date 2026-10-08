@@ -218,15 +218,13 @@ func (d *ConfirmDialog) renderShuttingDownLines(innerWidth int, titleStr string)
 		Width(innerWidth).
 		Align(lipgloss.Center).
 		Render(spinnerPart + msgPart)
-	return []string{
+	lines := []string{
 		modalEmptyLine(innerWidth),
 		titleStr,
 		modalEmptyLine(innerWidth),
 		spinnerLine,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine("ctrl+c force quit", innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
 	}
+	return append(lines, modalFooter("ctrl+c force quit", innerWidth)...)
 }
 
 func (d *ConfirmDialog) renderButtonLines(innerWidth int, titleStr, msgStr string) (lines []string, yesBtnW, noBtnW int) {
@@ -278,13 +276,8 @@ func (d *ConfirmDialog) renderButtonLines(innerWidth int, titleStr, msgStr strin
 	for _, note := range d.noteLines {
 		lines = append(lines, modalSurfaceLine(note, innerWidth, uikit.ColorTextMuted, false))
 	}
-	lines = append(lines,
-		modalEmptyLine(innerWidth),
-		buttonsLine,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine(hintText, innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
-	)
+	lines = append(lines, modalEmptyLine(innerWidth), buttonsLine)
+	lines = append(lines, modalFooter(hintText, innerWidth)...)
 	return lines, lipgloss.Width(yesBtn), lipgloss.Width(noBtn)
 }
 
@@ -339,6 +332,16 @@ func modalSurfaceLine(text string, innerWidth int, fg color.Color, bold bool) st
 		style = style.Bold(true)
 	}
 	return style.Render(text)
+}
+
+// modalFooter is the muted key-hint line every modal closes with, framed by
+// blank rows.
+func modalFooter(hint string, innerWidth int) []string {
+	return []string{
+		modalEmptyLine(innerWidth),
+		modalSurfaceLine(hint, innerWidth, uikit.ColorTextMuted, false),
+		modalEmptyLine(innerWidth),
+	}
 }
 
 func modalEmptyLine(innerWidth int) string {

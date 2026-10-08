@@ -54,11 +54,7 @@ func (d *RunParamsDialog) View(screenWidth, screenHeight int) string {
 	for _, l := range d.lines {
 		lines = append(lines, modalLeftLine("  "+l, innerWidth, uikit.ColorText))
 	}
-	lines = append(lines,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine("esc close", innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
-	)
+	lines = append(lines, modalFooter("esc close", innerWidth)...)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, lines)
 	return box.view

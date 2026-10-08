@@ -93,11 +93,7 @@ func (d *TaskDetailDialog) View(screenWidth, screenHeight int) string {
 		modalSectionLine("Recent health", innerWidth),
 	)
 	lines = append(lines, d.healthRows(row)...)
-	lines = append(lines,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine("i / esc close", innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
-	)
+	lines = append(lines, modalFooter("i / esc close", innerWidth)...)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorPrimary, lines)
 	return box.view

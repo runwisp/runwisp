@@ -102,11 +102,7 @@ func (d *HelpDialog) View(screenWidth, screenHeight int) string {
 	}
 	end := min(d.scroll+viewport, len(content))
 	lines = append(lines, content[d.scroll:end]...)
-	lines = append(lines,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine(scrollHint(d.maxScroll(), "? / esc close"), innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
-	)
+	lines = append(lines, modalFooter(scrollHint(d.maxScroll(), "? / esc close"), innerWidth)...)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, lines)
 	return box.view
