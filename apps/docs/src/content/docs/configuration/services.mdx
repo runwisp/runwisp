@@ -218,7 +218,7 @@ restart_attempts = 2          # give up after 2 failed starts in a row
 
 ### health_check
 
-**type**: `table` **default**: none
+**type**: `table` **default**: none **since**: `1.3`
 
 A command that decides when an instance is healthy, and stops it when it stops
 passing. Without it, uptime ([`healthy_after`](#healthy_after)) is the only

@@ -196,7 +196,7 @@ otherwise it runs the task inside the CLI process.
 
 | Flag           | Description                                                                                              |
 | -------------- | -------------------------------------------------------------------------------------------------------- |
-| `--param k=v`  | Set a [parameter](/concepts/parameters/). Repeatable. Unset parameters use their default.                |
+| `--param k=v`  | Set a [parameter](/concepts/parameters/). Repeatable. Unset parameters use their default. Since 1.0.1.   |
 | `--daemon`     | Require a running daemon.                                                                                |
 | `--standalone` | Require no daemon; run in-process.                                                                       |
 | `--json`       | Print the outcome as one JSON document on stdout; log lines go to stderr.                                |
@@ -221,6 +221,8 @@ otherwise it runs the task inside the CLI process.
 ```
 
 ### `runwisp logs`
+
+**since**: `1.3`
 
 ```bash
 runwisp logs backup
@@ -276,6 +278,8 @@ Same as `SIGHUP`. See [Reload & restart](/operations/reload/).
 
 ### `runwisp start`
 
+**since**: `1.1`
+
 ```bash
 runwisp start <target...>
 runwisp start web worker
@@ -291,11 +295,11 @@ alone. For a task, this triggers a run, unless one is already active or
 queued, in which case it's a no-op. It never prints a run ID; use
 `runwisp run --detach` when you need one.
 
-| Flag         | Description                                                                                                                                |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--attach`   | Then follow the logs of the targets it acted on, like [`runwisp logs -f`](#runwisp-logs). Each run it starts is shown from its first line. |
-| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.                                                                                    |
-| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                                             |
+| Flag         | Description                                                                                                                                           |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--attach`   | Then follow the logs of the targets it acted on, like [`runwisp logs -f`](#runwisp-logs). Each run it starts is shown from its first line. Since 1.5. |
+| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.                                                                                               |
+| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                                                        |
 
 ### `runwisp restart`
 
@@ -317,12 +321,12 @@ task, the active run is cancelled, RunWisp waits for it to actually end, then
 triggers exactly one fresh run. A glob silently skips a target locked with
 `manual_trigger = false`; naming one directly is rejected.
 
-| Flag         | Description                                                                                                                                           |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--local`    | Use the per-user unit when both a system and a per-user unit exist.                                                                                   |
-| `--attach`   | With targets, then follow the logs of the ones it acted on, like [`runwisp logs -f`](#runwisp-logs). Each run it starts is shown from its first line. |
-| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.                                                                                               |
-| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                                                        |
+| Flag         | Description                                                                                                                                                      |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--local`    | Use the per-user unit when both a system and a per-user unit exist.                                                                                              |
+| `--attach`   | With targets, then follow the logs of the ones it acted on, like [`runwisp logs -f`](#runwisp-logs). Each run it starts is shown from its first line. Since 1.5. |
+| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.                                                                                                          |
+| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                                                                   |
 
 ### `runwisp stop`
 
@@ -346,14 +350,16 @@ cancelled and anything queued is dropped, but its cron schedule keeps firing
 (use [`runwisp pause`](#runwisp-pause) to skip it). A run ID stops only that
 run, wherever it came from.
 
-| Flag         | Description                                                                                                                                           |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--local`    | Use the per-user unit when both a system and a per-user unit exist.                                                                                   |
-| `--attach`   | With targets, then follow the logs of the ones it acted on, like [`runwisp logs -f`](#runwisp-logs). Each run it starts is shown from its first line. |
-| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.                                                                                               |
-| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                                                        |
+| Flag         | Description                                                                                                                                                      |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--local`    | Use the per-user unit when both a system and a per-user unit exist.                                                                                              |
+| `--attach`   | With targets, then follow the logs of the ones it acted on, like [`runwisp logs -f`](#runwisp-logs). Each run it starts is shown from its first line. Since 1.5. |
+| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.                                                                                                          |
+| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                                                                   |
 
 ### `runwisp pause`
+
+**since**: `1.3`
 
 ```bash
 runwisp pause <task...>
@@ -371,6 +377,8 @@ directly is rejected. An active run is left alone.
 | `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.          |
 
 ### `runwisp resume`
+
+**since**: `1.3`
 
 ```bash
 runwisp resume <task...>
