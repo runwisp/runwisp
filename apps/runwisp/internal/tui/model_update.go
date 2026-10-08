@@ -585,7 +585,7 @@ func (m Model) handleBulkAction(msg uikit.BulkActionMsg) (tea.Model, tea.Cmd) {
 		return m, m.dialogs.FlashError(msg.Action+" failed: "+msg.Err.Error(), 6*time.Second)
 	}
 	cmds := []tea.Cmd{m.fetchExecWindow()}
-	summary := fmt.Sprintf("%s %d run%s", msg.Action, msg.Affected, textutil.Pluralize(msg.Affected, "", "s"))
+	summary := msg.Action + " " + textutil.Count(msg.Affected, "run", "runs")
 	cmds = append(cmds, m.dialogs.Flash(summary, 4*time.Second))
 	return m, tea.Batch(cmds...)
 }
@@ -599,7 +599,7 @@ func (m Model) handleBulkDeleteResult(msg uikit.BulkDeleteResultMsg) (tea.Model,
 		return m, m.dialogs.FlashError("Delete failed: "+msg.Err.Error(), 6*time.Second)
 	}
 	cmds := []tea.Cmd{m.fetchExecWindow()}
-	label := fmt.Sprintf("Deleted %d run%s", msg.Affected, textutil.Pluralize(msg.Affected, "", "s"))
+	label := "Deleted " + textutil.Count(msg.Affected, "run", "runs")
 	if !msg.Restore.MatchAll && msg.Affected > 0 {
 		undo := m.streams.RestoreRuns(msg.Restore)
 		cmds = append(cmds, m.dialogs.FlashUndo(label, undo, 6*time.Second))

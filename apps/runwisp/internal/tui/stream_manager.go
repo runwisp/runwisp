@@ -17,7 +17,6 @@ import (
 )
 
 // StreamManager owns SSE event subscriptions, log streaming, and data fetching.
-// Extracted from Model to isolate I/O and async concerns.
 //
 // The base context is owned by this manager because each subscription derives
 // a child context from it; shutting the manager down cancels every in-flight
@@ -368,11 +367,11 @@ func (sm *StreamManager) RerunRuns(sel model.RunSelector) tea.Cmd {
 	})
 }
 
-// DeleteRunsUndoable soft-deletes every run matched by sel and reports the
-// selector back so the caller can offer an undo (restore). Distinct from
-// DeleteRuns, whose generic BulkActionMsg only flashes a count and would clobber
-// an undo toast.
-func (sm *StreamManager) DeleteRunsUndoable(sel model.RunSelector) tea.Cmd {
+// DeleteRuns soft-deletes every run matched by sel and reports the selector
+// back so the caller can offer an undo (restore). It answers with its own
+// BulkDeleteResultMsg rather than the generic BulkActionMsg, which only flashes
+// a count and would clobber the undo toast.
+func (sm *StreamManager) DeleteRuns(sel model.RunSelector) tea.Cmd {
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {

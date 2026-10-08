@@ -614,7 +614,7 @@ func (m *Model) bulkDeleteSelection() tea.Cmd {
 		return nil
 	}
 	m.execList.ClearSelection()
-	return m.streams.DeleteRunsUndoable(sel)
+	return m.streams.DeleteRuns(sel)
 }
 
 // bulkCancelSelection cancels the selected runs and clears the selection.

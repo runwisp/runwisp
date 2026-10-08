@@ -36,7 +36,6 @@ const (
 )
 
 // DialogManager owns dialog lifecycle, flash messages, and mouse-state sync.
-// Extracted from Model to isolate modal overlay concerns.
 type DialogManager struct {
 	open [dialogKinds]dialog
 
