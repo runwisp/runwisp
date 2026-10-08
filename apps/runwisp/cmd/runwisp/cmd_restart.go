@@ -17,9 +17,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var restartOpts struct {
-	Local bool
-}
+// restartLocal backs --local.
+var restartLocal bool
 
 var restartCmd = &cobra.Command{
 	Use:   "restart [target...]",
@@ -66,7 +65,7 @@ pin the per-user one when both a system and a user unit are present.`,
 }
 
 func init() {
-	restartCmd.Flags().BoolVar(&restartOpts.Local, "local", false, localFlagUsage)
+	restartCmd.Flags().BoolVar(&restartLocal, "local", false, localFlagUsage)
 	addRemoteFlags(restartCmd)
 	addAttachFlag(restartCmd)
 }
@@ -85,7 +84,7 @@ func runRestart(cmd *cobra.Command, args []string, f Flags, attach bool) error {
 
 	out := cmd.OutOrStdout()
 
-	installer, opts, st, ok := serviceState(cmd, f, restartOpts.Local)
+	installer, opts, st, ok := serviceState(cmd, f, restartLocal)
 	if ok && shouldDelegateRestart(st) {
 		return restartViaService(out, installer, opts, st, f)
 	}

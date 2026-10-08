@@ -15,9 +15,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var stopOpts struct {
-	Local bool
-}
+// stopLocal backs --local.
+var stopLocal bool
 
 var stopCmd = &cobra.Command{
 	Use:   "stop [target...]",
@@ -67,7 +66,7 @@ pin the per-user one when both a system and a user unit are present.`,
 }
 
 func init() {
-	stopCmd.Flags().BoolVar(&stopOpts.Local, "local", false, localFlagUsage)
+	stopCmd.Flags().BoolVar(&stopLocal, "local", false, localFlagUsage)
 	addRemoteFlags(stopCmd)
 	addAttachFlag(stopCmd)
 }
@@ -86,7 +85,7 @@ func runStop(cmd *cobra.Command, args []string, f Flags, attach bool) error {
 
 	out := cmd.OutOrStdout()
 
-	installer, opts, st, ok := serviceState(cmd, f, stopOpts.Local)
+	installer, opts, st, ok := serviceState(cmd, f, stopLocal)
 	if ok && shouldDelegateStop(st) {
 		return stopViaService(out, installer, opts, st, f)
 	}
