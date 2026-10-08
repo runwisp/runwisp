@@ -42,7 +42,7 @@ type Flags struct {
 }
 
 func (f Flags) DBPath() string {
-	return filepath.Join(f.DataDir, "runwisp.db")
+	return datadir.DBPath(f.DataDir)
 }
 
 func (f Flags) LogDir() string {

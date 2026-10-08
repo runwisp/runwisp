@@ -308,6 +308,17 @@ func (l *DaemonLock) Release() {
 	}
 }
 
+// DBPath returns the path to the SQLite database.
+func DBPath(dataDir string) string {
+	return filepath.Join(dataDir, "runwisp.db")
+}
+
+// LogPath returns the file a spawned or service-managed daemon's stdout and
+// stderr land in.
+func LogPath(dataDir string) string {
+	return filepath.Join(dataDir, "daemon.log")
+}
+
 // SocketPath returns the path to the daemon's Unix domain socket. The socket
 // lives inside the (0700) data dir, so its existence and reachability are
 // gated by filesystem permissions on the directory; the daemon additionally

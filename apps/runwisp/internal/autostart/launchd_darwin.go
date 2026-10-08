@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 )
 
 const (
@@ -71,10 +73,6 @@ func (l *launchdInstaller) plistPath() string {
 	return filepath.Join(l.deps.Home, launchdPlistDir, l.label()+".plist")
 }
 
-func (l *launchdInstaller) logPath(dataDir string) string {
-	return filepath.Join(dataDir, "daemon.log")
-}
-
 func (l *launchdInstaller) renderPlist(opts InstallOptions) ([]byte, string, error) {
 	binarySHA, _ := fileSHA(opts.Binary)
 	configHash := SettingsHash(opts)
@@ -86,7 +84,7 @@ func (l *launchdInstaller) renderPlist(opts InstallOptions) ([]byte, string, err
 		Port:        opts.Port,
 		Home:        l.deps.Home,
 		Path:        envPathDarwin(),
-		LogPath:     l.logPath(opts.DataDir),
+		LogPath:     datadir.LogPath(opts.DataDir),
 		ConfigHash:  configHash,
 		BinarySHA:   binarySHA,
 		Label:       l.label(),
@@ -300,7 +298,7 @@ func (l *launchdInstaller) Status(ctx context.Context, opts InstallOptions) (Sta
 		Binary:   opts.Binary,
 		DataDir:  opts.DataDir,
 		Linger:   true, // N/A on macOS — LaunchAgents fire on login.
-		LogsHint: "tail -f " + l.logPath(opts.DataDir),
+		LogsHint: "tail -f " + datadir.LogPath(opts.DataDir),
 	}
 	if existing, err := l.deps.FS.ReadFile(plistPath); err == nil {
 		st.UnitExists = true
