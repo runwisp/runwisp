@@ -366,3 +366,18 @@ func modalSeg(text string, fg color.Color) string {
 		Foreground(fg).
 		Render(text)
 }
+
+// isTextModalDismiss reports whether msg closes a read-only text modal: a close
+// key, or a right-click (left-click is reserved for terminal text selection).
+func isTextModalDismiss(msg tea.Msg) bool {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "esc", "enter", "backspace", "q":
+			return true
+		}
+	case tea.MouseClickMsg:
+		return msg.Button == tea.MouseRight
+	}
+	return false
+}
