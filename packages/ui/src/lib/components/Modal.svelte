@@ -22,6 +22,7 @@
     }
 
     import { trapFocus } from "../actions/focusTrap.js";
+    import { modalDialogHandlers, showModal } from "../actions/modal-dialog.js";
 
     let {
         open = $bindable(false),
@@ -51,41 +52,17 @@
         onClose?.();
     }
 
-    // showModal() puts the dialog in the top layer and makes the page behind it
-    // inert. The dialog stays open while mounted; `open` drives (un)mounting.
-    function showModal(node: HTMLDialogElement) {
-        node.showModal();
-    }
-
-    function handleCancel(e: Event) {
-        e.preventDefault();
-        if (closable) handleClose();
-    }
-
-    // Chrome ignores preventDefault() on a repeated Escape and closes anyway;
-    // reopen so a non-closable modal stays up while mounted.
-    function handleNativeClose(e: Event & { currentTarget: HTMLDialogElement }) {
-        if (open) e.currentTarget.showModal();
-    }
-
-    // Only a press that starts and ends on the backdrop closes the modal, so a
-    // text selection dragged out of the panel doesn't.
-    let pressedBackdrop = false;
-    function handlePointerDown(e: PointerEvent) {
-        pressedBackdrop = e.target === e.currentTarget;
-    }
-    function handleBackdropClick(e: MouseEvent) {
-        if (closable && pressedBackdrop && e.target === e.currentTarget) handleClose();
-    }
+    const dialogHandlers = modalDialogHandlers({
+        closable: () => closable,
+        isOpen: () => open,
+        close: handleClose,
+    });
 </script>
 
 {#if open}
     <dialog
         use:showModal
-        oncancel={handleCancel}
-        onclose={handleNativeClose}
-        onpointerdown={handlePointerDown}
-        onclick={handleBackdropClick}
+        {...dialogHandlers}
         aria-labelledby={title ? titleId : undefined}
         class="
 			fixed inset-0 m-0 flex h-full max-h-none w-full max-w-none
