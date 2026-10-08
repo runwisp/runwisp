@@ -93,7 +93,7 @@ func (p *Pane) renderOverlayRows(o lineRenderOpts, rows []Line) {
 	for _, row := range rows {
 		sliced, clippedRight := p.sliceRowText(row.Text, logContentWidth)
 		textStyle := styleForStream(row.Stream, o.stdoutStyle, o.stderrStyle, o.systemStyle)
-		lineContent := composeLineContent(sliced, o.baseForStream(row.Stream), false, clippedRight, o.padStyle, o.padStyle, textStyle)
+		lineContent := composeLineContent(sliced, o.baseForStream(row.Stream), false, clippedRight, textStyle)
 		lineContent = uikit.PadLine(lineContent, logContentWidth, uikit.ColorBg)
 		o.b.WriteString(gutter + lineContent)
 		o.b.WriteString("\n")
@@ -170,12 +170,6 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 		Width(lnw + 1).
 		Bold(true)
 
-	leftIndicatorStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted)
-
-	rightIndicatorStyle := lipgloss.NewStyle().
-		Foreground(uikit.ColorTextMuted).
-		Background(uikit.ColorBg)
-
 	for i := o.start; i < o.end; i++ {
 		absLineNum := p.absoluteLineNumber(i)
 		isHL := p.HighlightLine != 0 && int64(absLineNum) == p.HighlightLine
@@ -209,7 +203,7 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 			padBg = uikit.ColorWarning
 			base = "" // search-highlight rows carry no user ANSI
 		}
-		lineContent := composeLineContent(sliced, base, hasLeftIndicator, clippedRight, leftIndicatorStyle, rightIndicatorStyle, textStyle)
+		lineContent := composeLineContent(sliced, base, hasLeftIndicator, clippedRight, textStyle)
 		lineContent = uikit.PadLine(lineContent, logContentWidth, padBg)
 
 		o.b.WriteString(lineNum + lineContent)
@@ -240,18 +234,12 @@ func (p *Pane) renderLinesPlain(o lineRenderOpts) {
 		textAreaWidth--
 	}
 
-	leftIndicatorStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted)
-
-	rightIndicatorStyle := lipgloss.NewStyle().
-		Foreground(uikit.ColorTextMuted).
-		Background(uikit.ColorBg)
-
 	for i := o.start; i < o.end; i++ {
 		row := p.Lines[i]
 		sliced, clippedRight := p.sliceRowText(row.Text, textAreaWidth)
 
 		textStyle := styleForStream(row.Stream, o.stdoutStyle, o.stderrStyle, o.systemStyle)
-		lineContent := composeLineContent(sliced, o.baseForStream(row.Stream), hasLeftIndicator, clippedRight, leftIndicatorStyle, rightIndicatorStyle, textStyle)
+		lineContent := composeLineContent(sliced, o.baseForStream(row.Stream), hasLeftIndicator, clippedRight, textStyle)
 		lineContent = uikit.PadLine(lineContent, logContentWidth, uikit.ColorBg)
 
 		o.b.WriteString(o.padStyle.Render("  ") + lineContent)
@@ -270,20 +258,24 @@ func (p *Pane) sliceRowText(text string, textAreaWidth int) (sliced string, clip
 	return trimTrailingRuneIfClipped(sliced, clippedRight), clippedRight
 }
 
+// scrollIndicatorStyle draws the ◂ / ▸ marks shown when a row is scrolled
+// horizontally.
+var scrollIndicatorStyle = uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted)
+
 // composeLineContent renders one row's pre-padding content: optional left
 // scroll indicator + styled text + optional right scroll indicator. base is the
 // text style's opening SGR, re-asserted after any embedded reset in sliced so
 // captured ANSI output can't bleed the pane background/foreground.
-func composeLineContent(sliced, base string, hasLeftIndicator, clippedRight bool, leftStyle, rightStyle, textStyle lipgloss.Style) string {
+func composeLineContent(sliced, base string, hasLeftIndicator, clippedRight bool, textStyle lipgloss.Style) string {
 	sliced = uikit.ReassertResets(sliced, base)
 	var lineContent string
 	if hasLeftIndicator {
-		lineContent = leftStyle.Render("◂") + textStyle.Render(sliced)
+		lineContent = scrollIndicatorStyle.Render("◂") + textStyle.Render(sliced)
 	} else {
 		lineContent = textStyle.Render(sliced)
 	}
 	if clippedRight {
-		lineContent += rightStyle.Render("▸")
+		lineContent += scrollIndicatorStyle.Render("▸")
 	}
 	return lineContent
 }

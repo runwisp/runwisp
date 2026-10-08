@@ -523,35 +523,27 @@ func TestTrimTrailingRuneIfClipped_EmptyClipped(t *testing.T) {
 
 func TestComposeLineContent_NoIndicators(t *testing.T) {
 	ts := lipgloss.NewStyle()
-	ls := lipgloss.NewStyle()
-	rs := lipgloss.NewStyle()
-	out := composeLineContent("hello", "", false, false, ls, rs, ts)
+	out := composeLineContent("hello", "", false, false, ts)
 	assert.Contains(t, out, "hello")
 }
 
 func TestComposeLineContent_LeftIndicator(t *testing.T) {
 	ts := lipgloss.NewStyle()
-	ls := lipgloss.NewStyle()
-	rs := lipgloss.NewStyle()
-	out := composeLineContent("world", "", true, false, ls, rs, ts)
+	out := composeLineContent("world", "", true, false, ts)
 	assert.Contains(t, out, "world")
 	assert.Contains(t, out, "◂")
 }
 
 func TestComposeLineContent_RightIndicator(t *testing.T) {
 	ts := lipgloss.NewStyle()
-	ls := lipgloss.NewStyle()
-	rs := lipgloss.NewStyle()
-	out := composeLineContent("world", "", false, true, ls, rs, ts)
+	out := composeLineContent("world", "", false, true, ts)
 	assert.Contains(t, out, "world")
 	assert.Contains(t, out, "▸")
 }
 
 func TestComposeLineContent_BothIndicators(t *testing.T) {
 	ts := lipgloss.NewStyle()
-	ls := lipgloss.NewStyle()
-	rs := lipgloss.NewStyle()
-	out := composeLineContent("mid", "", true, true, ls, rs, ts)
+	out := composeLineContent("mid", "", true, true, ts)
 	assert.Contains(t, out, "◂")
 	assert.Contains(t, out, "mid")
 	assert.Contains(t, out, "▸")
@@ -562,7 +554,7 @@ func TestComposeLineContent_ReassertsBaseAfterReset(t *testing.T) {
 	base := "\x1b[48;2;1;2;3m"
 	// A mid-line reset (as captured process output emits) gets the base SGR
 	// re-applied so the pane background can't bleed to the terminal default.
-	out := composeLineContent("a\x1b[0mb", base, false, false, ts, ts, ts)
+	out := composeLineContent("a\x1b[0mb", base, false, false, ts)
 	assert.Contains(t, out, "\x1b[0m"+base)
 }
 
