@@ -22,6 +22,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/inapp"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
@@ -33,7 +34,7 @@ type Server struct {
 	api         huma.API
 	db          storage.RunRepository
 	notifyRepo  storage.NotificationRepository
-	notifyHub   NotificationHub
+	notifyHub   *inapp.Hub
 	taskManager runtime.TaskRunner
 	scheduler   *runtime.Scheduler
 	// tasks is the live task set, read per /api/daemon request so derived state that
@@ -102,8 +103,8 @@ type Server struct {
 
 type Options struct {
 	DB              storage.RunRepository
-	NotificationDB  storage.NotificationRepository // optional; nil disables /api/notifications
-	NotificationHub NotificationHub                // optional; nil disables live notification events on /api/events/stream
+	NotificationDB  storage.NotificationRepository // required: /api/notifications routes are always registered
+	NotificationHub *inapp.Hub                     // optional; nil disables live notification events on /api/events/stream
 	TaskManager     runtime.TaskRunner
 	Tasks           *runtime.TaskRegistry
 	// Scheduler is nil when scheduling is inactive (station mode); pause and

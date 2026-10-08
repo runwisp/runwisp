@@ -13,15 +13,6 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
-// NotificationHub is the interface the server requires from the in-app
-// notification hub. The concrete implementation lives in
-// internal/notify/channel/inapp; the server depends on the interface so it
-// can be tested with a fake.
-type NotificationHub interface {
-	Subscribe() (*inapp.Subscriber, func())
-	Publish(u inapp.Update)
-}
-
 // NotificationDTO is the JSON shape we expose. The storage type embeds
 // time.Time + a slice; this maps to ISO8601 strings that the TS client can
 // parse directly.
