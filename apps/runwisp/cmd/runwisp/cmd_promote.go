@@ -86,7 +86,7 @@ func runPromote(cmd *cobra.Command, args []string, f Flags, opts promoteOpts) er
 		}
 	}
 
-	if err := checkPromoteArgs(args, opts, cfg, layout); err != nil {
+	if err := checkPromoteArgs(args, opts, cfg); err != nil {
 		return err
 	}
 
@@ -121,7 +121,7 @@ func runPromote(cmd *cobra.Command, args []string, f Flags, opts promoteOpts) er
 
 // checkPromoteArgs rejects the two ways the invocation itself doesn't make sense,
 // listing what is available so the operator's next command is obvious.
-func checkPromoteArgs(args []string, opts promoteOpts, cfg *config.Config, layout configedit.Layout) error {
+func checkPromoteArgs(args []string, opts promoteOpts, cfg *config.Config) error {
 	if opts.all && len(args) > 0 {
 		return &userFacingError{
 			title:   "--all promotes everything, so it can't be combined with task names",

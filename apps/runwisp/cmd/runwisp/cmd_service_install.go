@@ -535,7 +535,7 @@ func resolveDataDirInteractive(cmd *cobra.Command, deps autostart.Deps, res auto
 		// Declined the suggested location — rather than dead-ending, offer the
 		// current directory (the common "install right here" intent) before
 		// giving up.
-		return resolveDataDirCurrentDir(cmd, deps)
+		return resolveDataDirCurrentDir(deps)
 	}
 	return res.Path, nil
 }
@@ -555,7 +555,7 @@ var dataDirDeclinedError = &userFacingError{
 // an explicit ".") so the current dir passes the same durability guards — a cwd
 // under /tmp is refused, and the offer is skipped rather than baking a doomed
 // path into the unit.
-func resolveDataDirCurrentDir(cmd *cobra.Command, deps autostart.Deps) (string, error) {
+func resolveDataDirCurrentDir(deps autostart.Deps) (string, error) {
 	cwdRes, err := autostart.ResolveDataDir(autostart.ResolveDataDirOptions{
 		Explicit:    ".",
 		ExplicitSet: true,
