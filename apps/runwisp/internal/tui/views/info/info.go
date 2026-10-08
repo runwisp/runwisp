@@ -164,28 +164,20 @@ func (v *InfoView) renderHealthSection(w int) []string {
 
 	lines = append(lines, uikit.PadLine("", w, uikit.ColorBgLight))
 
-	title := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorTextBright).
+	title := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextBright).
 		Bold(true).
 		Render("  System")
 	sub := ""
 	if v.stats != nil {
-		sub = lipgloss.NewStyle().
-			Background(uikit.ColorBgLight).
-			Foreground(uikit.ColorTextMuted).
+		sub = uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
 			Render("  ·  up " + v.stats.Uptime)
 	}
 	lines = append(lines, uikit.PadLine(title+sub, w, uikit.ColorBgLight))
 
-	hostLine := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorTextMuted).
+	hostLine := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
 		Render("  " + runtime.GOOS + "/" + runtime.GOARCH)
 	if v.stats != nil && v.stats.Host != "" {
-		hostLine += lipgloss.NewStyle().
-			Background(uikit.ColorBgLight).
-			Foreground(uikit.ColorTextMuted).
+		hostLine += uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
 			Render("  ·  " + v.stats.Host)
 	}
 	lines = append(lines, uikit.PadLine(hostLine, w, uikit.ColorBgLight))
@@ -208,7 +200,7 @@ func (v *InfoView) renderHealthSection(w int) []string {
 			v.memHistory, uikit.ColorSecondary)
 		lines = append(lines, memLines...)
 	} else {
-		waiting := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Render("  Loading metrics...")
+		waiting := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted).Render("  Loading metrics...")
 		lines = append(lines, uikit.PadLine(waiting, w, uikit.ColorBg))
 	}
 
@@ -219,9 +211,9 @@ func (v *InfoView) renderSparklineRow(w int, label, pct, detail string, history 
 	var lines []string
 
 	bgStyle := lipgloss.NewStyle().Background(uikit.ColorBg)
-	chartStyle := lipgloss.NewStyle().Background(uikit.ColorChartBg).Foreground(color)
+	chartStyle := uikit.OnBg(uikit.ColorChartBg, color)
 
-	labelStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(color).Bold(true).Render("  " + label + " ")
+	labelStr := uikit.OnBg(uikit.ColorBg, color).Bold(true).Render("  " + label + " ")
 	pctStr := uikit.InfoStatValueStyle.Render(pct)
 	detailStr := uikit.InfoStatLabelStyle.Render("  " + detail)
 
@@ -278,8 +270,8 @@ func (v *InfoView) renderActivitySection(w int) []string {
 		uikit.InfoStatValueStyle.Render(strconv.FormatInt(s.Total, 10)) + uikit.InfoStatLabelStyle.Render(" runs"),
 	}
 	if s.Total > 0 {
-		successStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorSuccess).Bold(true).Render(strconv.FormatInt(s.Success, 10))
-		failedStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorError).Bold(true).Render(strconv.FormatInt(s.Failed, 10))
+		successStr := uikit.OnBg(uikit.ColorBg, uikit.ColorSuccess).Bold(true).Render(strconv.FormatInt(s.Success, 10))
+		failedStr := uikit.OnBg(uikit.ColorBg, uikit.ColorError).Bold(true).Render(strconv.FormatInt(s.Failed, 10))
 		parts = append(parts, successStr+uikit.InfoStatLabelStyle.Render(" success"))
 		parts = append(parts, failedStr+uikit.InfoStatLabelStyle.Render(" failed"))
 
@@ -291,7 +283,7 @@ func (v *InfoView) renderActivitySection(w int) []string {
 		if rate < 70 {
 			rateColor = uikit.ColorError
 		}
-		rateStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(rateColor).Render(fmt.Sprintf("%.1f%%", rate))
+		rateStr := uikit.OnBg(uikit.ColorBg, rateColor).Render(fmt.Sprintf("%.1f%%", rate))
 		parts = append(parts, rateStr)
 	}
 	sep := uikit.InfoStatLabelStyle.Render("  ·  ")
@@ -300,7 +292,7 @@ func (v *InfoView) renderActivitySection(w int) []string {
 
 	if s.LastFailure != nil {
 		failLine := bgIndent() + uikit.InfoStatLabelStyle.Render("Last failure  ") +
-			lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Render(s.LastFailure.In(v.loc).Format(time.RFC3339))
+			uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted).Render(s.LastFailure.In(v.loc).Format(time.RFC3339))
 		lines = append(lines, uikit.PadLine(failLine, w, uikit.ColorBg))
 	}
 
@@ -406,11 +398,11 @@ func (v *InfoView) renderTasksSection(w int) []string {
 		default:
 			sched = "manual"
 		}
-		name := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextBright).Bold(true).Render(task.Name)
-		schedStyle := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Render(sched)
+		name := uikit.OnBg(uikit.ColorBg, uikit.ColorTextBright).Bold(true).Render(task.Name)
+		schedStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted).Render(sched)
 		line := bgIndent() + name + bgIndent() + schedStyle
 		if u, ok := v.taskUsage[task.Name]; ok {
-			line += bgIndent() + lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorRunning).Render(uikit.FormatUsage(u))
+			line += bgIndent() + uikit.OnBg(uikit.ColorBg, uikit.ColorRunning).Render(uikit.FormatUsage(u))
 		}
 		lines = append(lines, uikit.PadLine(line, w, uikit.ColorBg))
 	}
@@ -425,7 +417,7 @@ func (v *InfoView) renderWarningsSection(w int) []string {
 	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 
 	for _, warn := range v.info.ScheduleWarnings {
-		warnStyle := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorWarning).Render("⚠ " + warn)
+		warnStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorWarning).Render("⚠ " + warn)
 		lines = append(lines, uikit.PadLine(bgIndent()+warnStyle, w, uikit.ColorBg))
 	}
 

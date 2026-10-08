@@ -690,9 +690,7 @@ func visualRows(lines []string) int {
 // modalLeftLine renders a left-aligned full-width line on the modal surface,
 // the form counterpart to the centered modalSurfaceLine.
 func modalLeftLine(text string, innerWidth int, fg color.Color) string {
-	return lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(fg).
+	return uikit.OnBg(uikit.ColorBgLight, fg).
 		Width(innerWidth).
 		Align(lipgloss.Left).
 		Render(text)

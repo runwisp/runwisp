@@ -5,7 +5,6 @@ package tui
 
 import (
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/keys"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
@@ -126,15 +125,11 @@ func helpContentLines(innerWidth, keyColWidth int) []string {
 
 // helpEntryLine renders one "keys → description" row with a fixed key column.
 func helpEntryLine(b keys.Binding, keyColWidth, innerWidth int) string {
-	keyCol := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorTextBright).
+	keyCol := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextBright).
 		Width(keyColWidth).
 		Render("  " + b.Keys)
 	descWidth := max(innerWidth-keyColWidth, 1)
-	desc := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorTextMuted).
+	desc := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
 		Width(descWidth).
 		Render(b.Desc)
 	return keyCol + desc

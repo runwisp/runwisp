@@ -85,9 +85,7 @@ func (d *NewReleaseDialog) View(screenWidth, screenHeight int) string {
 	if d.linkFocused || d.linkHovered {
 		linkFg, linkBg = uikit.ColorBg, uikit.ColorWarning
 	}
-	linkLine := lipgloss.NewStyle().
-		Background(linkBg).
-		Foreground(linkFg).
+	linkLine := uikit.OnBg(linkBg, linkFg).
 		Bold(d.linkFocused || d.linkHovered).
 		Underline(true).
 		Width(innerWidth).

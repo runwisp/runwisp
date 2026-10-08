@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
@@ -20,6 +21,11 @@ const SidebarWidth = 28
 // and header don't stretch edge-to-edge. The panel is left-aligned against the
 // sidebar; any extra width is filled with the app background.
 const MaxContentWidth = 110
+
+// OnBg is a style that draws fg text on a bg fill.
+func OnBg(bg, fg color.Color) lipgloss.Style {
+	return lipgloss.NewStyle().Background(bg).Foreground(fg)
+}
 
 // PadLine right-pads content with a styled-background space run so the row
 // fills `width` cells without losing the background colour when terminals

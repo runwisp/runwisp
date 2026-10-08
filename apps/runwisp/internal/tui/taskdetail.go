@@ -12,7 +12,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
@@ -301,15 +300,11 @@ func paramNames(params []model.TaskParam) []string {
 // value is clipped to whatever width remains so a long path or dependency list
 // can't wrap and break the modal box.
 func taskDetailRow(label, value string, valueColor color.Color, labelCol, innerWidth int) string {
-	labelCell := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorTextMuted).
+	labelCell := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
 		Width(labelCol).
 		Render(label)
 	value = uikit.TruncateToWidth(value, innerWidth-labelCol)
-	valueCell := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(valueColor).
+	valueCell := uikit.OnBg(uikit.ColorBgLight, valueColor).
 		Render(value)
 	return uikit.PadLine(labelCell+valueCell, innerWidth, uikit.ColorBgLight)
 }

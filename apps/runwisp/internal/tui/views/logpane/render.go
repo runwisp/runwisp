@@ -31,16 +31,14 @@ func (p *Pane) RenderLines(b *strings.Builder, dimContent, loadingOlder bool) {
 		logFg = uikit.ColorTextDim
 	}
 
-	stdoutStyle := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(logFg)
-	stderrStyle := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorError)
-	systemStyle := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Italic(true)
+	stdoutStyle := uikit.OnBg(uikit.ColorBg, logFg)
+	stderrStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorError)
+	systemStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted).Italic(true)
 
 	padStyle := lipgloss.NewStyle().Background(uikit.ColorBg)
 
 	if loadingOlder && p.Scroll == 0 {
-		loadingStyle := lipgloss.NewStyle().
-			Background(uikit.ColorBg).
-			Foreground(uikit.ColorTextMuted).
+		loadingStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted).
 			Italic(true)
 		b.WriteString(uikit.PadLine(loadingStyle.Render("  Loading older logs…"), w, uikit.ColorBg))
 		b.WriteString("\n")
@@ -157,9 +155,7 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 		Background(uikit.ColorBg).
 		Width(lnw + 1)
 
-	highlightBg := lipgloss.NewStyle().
-		Background(uikit.ColorWarning).
-		Foreground(uikit.ColorBg).
+	highlightBg := uikit.OnBg(uikit.ColorWarning, uikit.ColorBg).
 		Width(lnw + 1).
 		Bold(true)
 
@@ -170,15 +166,11 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 		Background(uikit.ColorBg).
 		Width(lnw + 1)
 
-	cursorGutterStyle := lipgloss.NewStyle().
-		Background(uikit.ColorSecondary).
-		Foreground(uikit.ColorBg).
+	cursorGutterStyle := uikit.OnBg(uikit.ColorSecondary, uikit.ColorBg).
 		Width(lnw + 1).
 		Bold(true)
 
-	leftIndicatorStyle := lipgloss.NewStyle().
-		Background(uikit.ColorBg).
-		Foreground(uikit.ColorTextMuted)
+	leftIndicatorStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted)
 
 	rightIndicatorStyle := lipgloss.NewStyle().
 		Foreground(uikit.ColorTextMuted).
@@ -213,7 +205,7 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 		base := o.baseForStream(row.Stream)
 		padBg := uikit.ColorBg
 		if isHL {
-			textStyle = lipgloss.NewStyle().Background(uikit.ColorWarning).Foreground(uikit.ColorBg).Bold(true)
+			textStyle = uikit.OnBg(uikit.ColorWarning, uikit.ColorBg).Bold(true)
 			padBg = uikit.ColorWarning
 			base = "" // search-highlight rows carry no user ANSI
 		}
@@ -248,9 +240,7 @@ func (p *Pane) renderLinesPlain(o lineRenderOpts) {
 		textAreaWidth--
 	}
 
-	leftIndicatorStyle := lipgloss.NewStyle().
-		Background(uikit.ColorBg).
-		Foreground(uikit.ColorTextMuted)
+	leftIndicatorStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted)
 
 	rightIndicatorStyle := lipgloss.NewStyle().
 		Foreground(uikit.ColorTextMuted).

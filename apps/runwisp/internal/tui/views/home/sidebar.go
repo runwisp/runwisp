@@ -464,16 +464,12 @@ func (s *Sidebar) renderVersionLine() string {
 	}
 	if s.focused && s.versionFocused {
 		sep := uikit.SidebarVersionStyle.Render(" ")
-		marker := lipgloss.NewStyle().
-			Background(uikit.ColorWarning).
-			Foreground(uikit.ColorSidebarBg).
+		marker := uikit.OnBg(uikit.ColorWarning, uikit.ColorSidebarBg).
 			Bold(true).
 			Render(" ⚠ " + s.latestVersion + " ")
 		return base + sep + marker
 	}
-	marker := lipgloss.NewStyle().
-		Background(uikit.ColorSidebarBg).
-		Foreground(uikit.ColorWarning).
+	marker := uikit.OnBg(uikit.ColorSidebarBg, uikit.ColorWarning).
 		Render(" ⚠")
 	return base + marker
 }
@@ -597,9 +593,7 @@ func (s *Sidebar) filterHeaderHeight() int {
 // renderFilterLine draws the type-to-filter prompt shown above the item list.
 func (s *Sidebar) renderFilterLine(w int) string {
 	text := truncateToWidth(" / "+s.filter+"▏", w)
-	return lipgloss.NewStyle().
-		Background(uikit.ColorSidebarBg).
-		Foreground(uikit.ColorPrimary).
+	return uikit.OnBg(uikit.ColorSidebarBg, uikit.ColorPrimary).
 		Render(text)
 }
 

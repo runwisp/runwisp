@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
@@ -121,20 +120,13 @@ func scrollHint(maxScroll int, closeHint string) string {
 // colour survives; the row is clipped by display columns.
 func histContentLine(r histRow, innerWidth int) string {
 	if r.header {
-		return lipgloss.NewStyle().
-			Background(uikit.ColorBgLight).
-			Foreground(uikit.ColorSecondary).
-			Bold(true).
-			Width(innerWidth).
-			Render(r.text)
+		return modalSectionLine(r.text, innerWidth)
 	}
 	sliced, _ := uikit.SliceLineColumns(r.text, 0, innerWidth)
 	// Re-assert the modal's own colours after any embedded reset so captured
 	// ANSI can't bleed the surface background/foreground.
 	sliced = uikit.ReassertResets(sliced, uikit.BaseSGR(uikit.ColorText, uikit.ColorBgLight, false))
-	return lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorText).
+	return uikit.OnBg(uikit.ColorBgLight, uikit.ColorText).
 		Width(innerWidth).
 		Render(sliced)
 }

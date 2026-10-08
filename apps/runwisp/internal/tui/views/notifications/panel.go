@@ -375,7 +375,7 @@ func (p *Panel) renderCollapsed() string {
 		// another Render would inject ANSI reset codes mid-line, dropping the
 		// background back to the terminal default for everything after the
 		// embedded style.
-		summaryStyle := lipgloss.NewStyle().Background(uikit.ColorBgLight).Foreground(uikit.ColorTextDim)
+		summaryStyle := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextDim)
 		sev := severityStyle(latest.Severity).Background(uikit.ColorBgLight).Render(strings.ToUpper(latest.Severity))
 		leading := summaryStyle.Render("  ")
 		trailing := summaryStyle.Render(" · " + summarizeNotification(*latest) + " · " + uikit.RelativeTime(latest.LastOccurredAt, time.Now()))
@@ -424,9 +424,7 @@ func (p *Panel) rebuildContent() {
 	}
 	rest := max(p.viewport.Width()-1, 0)
 	if len(p.ordered) == 0 {
-		hint := lipgloss.NewStyle().
-			Background(uikit.ColorBg).
-			Foreground(uikit.ColorTextMuted).
+		hint := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted).
 			Render("  No notifications yet.")
 		p.viewport.SetContent(stripeFocusLine(hint, rest, uikit.ColorBg))
 		return
@@ -468,9 +466,9 @@ func (p *Panel) renderRow(n server.NotificationDTO, selected bool) string {
 	}
 	when := uikit.RelativeTime(n.LastOccurredAt, time.Now())
 
-	indentStyle := lipgloss.NewStyle().Background(bg).Foreground(uikit.ColorTextMuted)
-	titleStyle := lipgloss.NewStyle().Background(bg).Foreground(uikit.ColorText).Bold(selected)
-	whenStyle := lipgloss.NewStyle().Background(bg).Foreground(uikit.ColorTextMuted)
+	indentStyle := uikit.OnBg(bg, uikit.ColorTextMuted)
+	titleStyle := uikit.OnBg(bg, uikit.ColorText).Bold(selected)
+	whenStyle := uikit.OnBg(bg, uikit.ColorTextMuted)
 
 	line := indentStyle.Render(indicator) + sev + titleStyle.Render(" "+title) + whenStyle.Render("  "+when)
 	rest := max(p.viewport.Width()-1, 0)
@@ -521,14 +519,10 @@ func summarizeNotification(n server.NotificationDTO) string {
 func isUnread(n server.NotificationDTO) bool { return n.ReadAt == nil }
 
 var (
-	panelPrefixStyle = lipgloss.NewStyle().
-				Background(uikit.ColorBgLight).
-				Foreground(uikit.ColorTextBright).
+	panelPrefixStyle = uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextBright).
 				Bold(true)
 
-	panelHintStyle = lipgloss.NewStyle().
-			Background(uikit.ColorBgLight).
-			Foreground(uikit.ColorTextMuted)
+	panelHintStyle = uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted)
 )
 
 func severityStyle(severity string) lipgloss.Style {

@@ -323,9 +323,7 @@ func renderModalBox(screenWidth, screenHeight, dialogWidth int, accent color.Col
 }
 
 func modalSurfaceLine(text string, innerWidth int, fg color.Color, bold bool) string {
-	style := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(fg).
+	style := uikit.OnBg(uikit.ColorBgLight, fg).
 		Width(innerWidth).
 		Align(lipgloss.Center)
 	if bold {
@@ -353,9 +351,7 @@ func modalEmptyLine(innerWidth int) string {
 
 // modalSectionLine renders a left-aligned bold section header inside a modal.
 func modalSectionLine(title string, innerWidth int) string {
-	return lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorSecondary).
+	return uikit.OnBg(uikit.ColorBgLight, uikit.ColorSecondary).
 		Bold(true).
 		Width(innerWidth).
 		Render(title)
@@ -364,10 +360,7 @@ func modalSectionLine(title string, innerWidth int) string {
 // modalSeg renders one coloured inline segment on the modal surface, so a
 // composed line keeps the dialog's fill behind each piece.
 func modalSeg(text string, fg color.Color) string {
-	return lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(fg).
-		Render(text)
+	return uikit.OnBg(uikit.ColorBgLight, fg).Render(text)
 }
 
 // isTextModalDismiss reports whether msg closes a read-only text modal: a close

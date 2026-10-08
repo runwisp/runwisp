@@ -305,7 +305,7 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	} else if isHovered {
 		bg = uikit.ColorExecRowHover
 	}
-	rowStyle := lipgloss.NewStyle().Background(bg).Foreground(fg).Bold(bold)
+	rowStyle := uikit.OnBg(bg, fg).Bold(bold)
 	if item == nil {
 		// task + four single-space separators + the four fixed columns.
 		return rowStyle.Render("  " + padCell("loading…", cw.task+4+cw.fixedSum()))
@@ -368,14 +368,10 @@ func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, contentW int, c
 func (e *ExecList) renderFilterBanner(w int) string {
 	status := e.window.StatusFilter()
 	accent := uikit.StatusStyle(status).GetBackground()
-	label := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(accent).
+	label := uikit.OnBg(uikit.ColorBgLight, accent).
 		Bold(true).
 		Render("▌ FILTER: " + strings.ToUpper(status))
-	hint := lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorTextMuted).
+	hint := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
 		Render("  —  press f to change")
 	return uikit.PadLine(label+hint, w, uikit.ColorBgLight)
 }
@@ -388,9 +384,7 @@ func (e *ExecList) renderEmptySection(b *strings.Builder, vpH, w int) {
 	if e.window.HasStatusFilter() {
 		msg = "No runs match this filter."
 	}
-	emptyMsg := lipgloss.NewStyle().
-		Background(uikit.ColorBg).
-		Foreground(uikit.ColorTextMuted).
+	emptyMsg := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted).
 		PaddingLeft(2).
 		Render(msg)
 	b.WriteString(uikit.PadLine(emptyMsg, w, uikit.ColorBg))
@@ -417,7 +411,7 @@ func (e *ExecList) View() string {
 	sb := scrollbarRender{
 		state: sbState,
 		track: lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(lipgloss.Color("#3b3d57")).Render("│"),
-		thumb: lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorText).Render("┃"),
+		thumb: uikit.OnBg(uikit.ColorBg, uikit.ColorText).Render("┃"),
 	}
 
 	headerText := "  " +
