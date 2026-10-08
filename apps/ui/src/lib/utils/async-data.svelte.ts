@@ -1,8 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { toast, extractErrorMessage } from "@runwisp/ui";
-import { AuthRequiredError } from "$lib/api";
+import { toast } from "@runwisp/ui";
 import { connectionStore } from "$lib/stores/connection.svelte";
 
 export class AsyncData<T> {
@@ -50,9 +49,8 @@ export class AsyncData<T> {
             connectionStore.markConnected();
         } catch (err: unknown) {
             if (ac.signal.aborted) return;
-            if (err instanceof AuthRequiredError) return;
-            const isConnectionErr = connectionStore.reportFetchError(err);
-            const message = isConnectionErr ? "Connection lost" : extractErrorMessage(err);
+            const message = connectionStore.fetchErrorMessage(err);
+            if (message === null) return;
             this.#error = message;
             toast.error(message);
         } finally {

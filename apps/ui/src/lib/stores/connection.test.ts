@@ -15,6 +15,26 @@ import { AuthRequiredError } from "$lib/api";
 
 // ─── reportFetchError (exercises isConnectionError + formatError) ─────────────
 
+describe("connectionStore.fetchErrorMessage", () => {
+    it("returns null for AuthRequiredError so the login flow owns it", () => {
+        expect(connectionStore.fetchErrorMessage(new AuthRequiredError())).toBeNull();
+    });
+
+    it("says 'Connection lost' for a network failure", () => {
+        expect(connectionStore.fetchErrorMessage(new TypeError("Failed to fetch"))).toBe(
+            "Connection lost",
+        );
+        connectionStore.markConnected();
+    });
+
+    it("surfaces the server's message, else the fallback", () => {
+        expect(connectionStore.fetchErrorMessage(new Error("boom"), "x")).toBe("boom");
+        expect(connectionStore.fetchErrorMessage({}, "Failed to load tasks")).toBe(
+            "Failed to load tasks",
+        );
+    });
+});
+
 describe("connectionStore.reportFetchError", () => {
     it("returns false and makes no state change for AuthRequiredError", () => {
         const before = connectionStore.status;

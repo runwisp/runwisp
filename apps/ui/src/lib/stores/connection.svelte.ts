@@ -4,6 +4,7 @@
 import { SvelteSet } from "svelte/reactivity";
 import { systemApi, AuthRequiredError } from "$lib/api";
 import { createLogger } from "@runwisp/common";
+import { extractErrorMessage } from "@runwisp/ui";
 import { isRecord } from "$lib/utils/parse";
 import { handleUnauthorized } from "$lib/utils/auth-required";
 import { HTTP_STATUS } from "$lib/config/constants";
@@ -198,6 +199,14 @@ function createConnectionStore() {
         return false;
     }
 
+    /** The message to show for a failed REST fetch, or null for a 401 (the
+     * login flow owns that). A connection-shaped failure also marks the
+     * daemon unreachable. */
+    function fetchErrorMessage(err: unknown, fallback?: string): string | null {
+        if (err instanceof AuthRequiredError) return null;
+        return reportFetchError(err) ? "Connection lost" : extractErrorMessage(err, fallback);
+    }
+
     return {
         get status() {
             return status;
@@ -226,6 +235,7 @@ function createConnectionStore() {
         markConnected,
         markDisconnected,
         reportFetchError,
+        fetchErrorMessage,
         reportSourceUp,
         reportSourceStalled,
         reportSourceDown,
