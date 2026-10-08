@@ -5,6 +5,7 @@ package tui
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/home"
@@ -597,45 +598,25 @@ func (m Model) handleRunListSelectionKey(msg tea.KeyPressMsg) (Model, tea.Cmd, b
 		m.execList.ClearSelection()
 		return m, nil, true
 	case "d", "D":
-		return m, m.bulkDeleteSelection(), true
+		return m, m.applyToSelection(m.streams.DeleteRuns), true
 	case "c":
-		return m, m.bulkCancelSelection(), true
+		return m, m.applyToSelection(m.streams.CancelRuns), true
 	case "e":
-		return m, m.bulkRerunSelection(), true
+		return m, m.applyToSelection(m.streams.RerunRuns), true
 	}
 	return m, nil, false
 }
 
-// bulkDeleteSelection soft-deletes the selected runs and clears the selection.
-// The result returns as a BulkDeleteResultMsg so the handler can arm an undo.
-func (m *Model) bulkDeleteSelection() tea.Cmd {
+// applyToSelection clears the multi-selection and hands its selector to act
+// (delete, cancel or rerun). Deletes come back as a BulkDeleteResultMsg so the
+// handler can arm an undo.
+func (m *Model) applyToSelection(act func(model.RunSelector) tea.Cmd) tea.Cmd {
 	sel, ok := m.execList.SelectionSelector()
 	if !ok {
 		return nil
 	}
 	m.execList.ClearSelection()
-	return m.streams.DeleteRuns(sel)
-}
-
-// bulkCancelSelection cancels the selected runs and clears the selection.
-func (m *Model) bulkCancelSelection() tea.Cmd {
-	sel, ok := m.execList.SelectionSelector()
-	if !ok {
-		return nil
-	}
-	m.execList.ClearSelection()
-	return m.streams.CancelRuns(sel)
-}
-
-// bulkRerunSelection triggers a fresh run for each selected run and clears the
-// selection.
-func (m *Model) bulkRerunSelection() tea.Cmd {
-	sel, ok := m.execList.SelectionSelector()
-	if !ok {
-		return nil
-	}
-	m.execList.ClearSelection()
-	return m.streams.RerunRuns(sel)
+	return act(sel)
 }
 
 // handleSidebarFilterKey routes one key event through the sidebar's
