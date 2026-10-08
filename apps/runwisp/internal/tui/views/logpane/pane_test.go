@@ -250,7 +250,7 @@ func TestLogPane_HandleKeyScroll_HScroll(t *testing.T) {
 	p := newTestPane(100_000)
 	p.Cfg.HScroll = true
 	// Add a long line so MaxHScroll > 0
-	p.AppendLine(0, "stdout", fmt.Sprintf("%s", fmt.Sprintf("%-200s", "x")))
+	p.AppendLine(0, "stdout", fmt.Sprintf("%-200s", "x"))
 	p.Scroll = 0
 	p.Follow = false
 
@@ -564,29 +564,6 @@ func TestComposeLineContent_ReassertsBaseAfterReset(t *testing.T) {
 	// re-applied so the pane background can't bleed to the terminal default.
 	out := composeLineContent("a\x1b[0mb", base, false, false, ts, ts, ts)
 	assert.Contains(t, out, "\x1b[0m"+base)
-}
-
-// ---- padLineContent ----
-
-func TestPadLineContent_ShortContent(t *testing.T) {
-	ps := lipgloss.NewStyle()
-	out := padLineContent("hi", 10, ps)
-	// Should be padded to width 10.
-	vis := lipgloss.Width(out)
-	assert.Equal(t, 10, vis)
-}
-
-func TestPadLineContent_ExactWidth(t *testing.T) {
-	ps := lipgloss.NewStyle()
-	out := padLineContent("hello", 5, ps)
-	assert.Equal(t, "hello", out)
-}
-
-func TestPadLineContent_OverWidth(t *testing.T) {
-	ps := lipgloss.NewStyle()
-	out := padLineContent("hello world", 5, ps)
-	// No truncation — content returned as-is when wider than target.
-	assert.Equal(t, "hello world", out)
 }
 
 // ---- sliceRowText ----

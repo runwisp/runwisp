@@ -383,7 +383,7 @@ func (p *Panel) renderCollapsed() string {
 	}
 
 	if p.width > 0 {
-		body = truncateLine(body, p.width)
+		body = uikit.TruncateToWidth(body, p.width)
 	}
 	return uikit.PadLine(body, p.width, uikit.ColorBgLight)
 }
@@ -526,22 +526,6 @@ func relativeTime(t time.Time) string {
 		return ""
 	}
 	return uikit.RelativeTime(t, time.Now())
-}
-
-// truncateLine trims a (possibly ANSI-styled) line to at most max display
-// columns. It slices by visible column via uikit.SliceLineColumns — never by
-// raw bytes — so a cut never lands mid escape-sequence or mid-rune and garbles
-// the styled collapsed summary.
-func truncateLine(s string, maxWidth int) string {
-	if maxWidth <= 1 || lipgloss.Width(s) <= maxWidth {
-		return s
-	}
-	if maxWidth <= 3 {
-		sliced, _ := uikit.SliceLineColumns(s, 0, maxWidth)
-		return sliced
-	}
-	sliced, _ := uikit.SliceLineColumns(s, 0, maxWidth-1)
-	return sliced + "…"
 }
 
 func isUnread(n server.NotificationDTO) bool { return n.ReadAt == nil }

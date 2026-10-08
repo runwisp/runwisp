@@ -96,7 +96,7 @@ func (p *Pane) renderOverlayRows(o lineRenderOpts, rows []Line) {
 		sliced, clippedRight := p.sliceRowText(row.Text, logContentWidth)
 		textStyle := styleForStream(row.Stream, o.stdoutStyle, o.stderrStyle, o.systemStyle)
 		lineContent := composeLineContent(sliced, o.baseForStream(row.Stream), false, clippedRight, o.padStyle, o.padStyle, textStyle)
-		lineContent = padLineContent(lineContent, logContentWidth, o.padStyle)
+		lineContent = uikit.PadLine(lineContent, logContentWidth, uikit.ColorBg)
 		o.b.WriteString(gutter + lineContent)
 		o.b.WriteString("\n")
 	}
@@ -211,14 +211,14 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 
 		textStyle := styleForStream(row.Stream, o.stdoutStyle, o.stderrStyle, o.systemStyle)
 		base := o.baseForStream(row.Stream)
-		padStyle := o.padStyle
+		padBg := uikit.ColorBg
 		if isHL {
 			textStyle = lipgloss.NewStyle().Background(uikit.ColorWarning).Foreground(uikit.ColorBg).Bold(true)
-			padStyle = lipgloss.NewStyle().Background(uikit.ColorWarning)
+			padBg = uikit.ColorWarning
 			base = "" // search-highlight rows carry no user ANSI
 		}
 		lineContent := composeLineContent(sliced, base, hasLeftIndicator, clippedRight, leftIndicatorStyle, rightIndicatorStyle, textStyle)
-		lineContent = padLineContent(lineContent, logContentWidth, padStyle)
+		lineContent = uikit.PadLine(lineContent, logContentWidth, padBg)
 
 		o.b.WriteString(lineNum + lineContent)
 		o.b.WriteString("\n")
@@ -262,7 +262,7 @@ func (p *Pane) renderLinesPlain(o lineRenderOpts) {
 
 		textStyle := styleForStream(row.Stream, o.stdoutStyle, o.stderrStyle, o.systemStyle)
 		lineContent := composeLineContent(sliced, o.baseForStream(row.Stream), hasLeftIndicator, clippedRight, leftIndicatorStyle, rightIndicatorStyle, textStyle)
-		lineContent = padLineContent(lineContent, logContentWidth, o.padStyle)
+		lineContent = uikit.PadLine(lineContent, logContentWidth, uikit.ColorBg)
 
 		o.b.WriteString(o.padStyle.Render("  ") + lineContent)
 		o.b.WriteString("\n")
@@ -296,14 +296,4 @@ func composeLineContent(sliced, base string, hasLeftIndicator, clippedRight bool
 		lineContent += rightStyle.Render("▸")
 	}
 	return lineContent
-}
-
-// padLineContent right-pads the rendered content with background-colored
-// spaces so every log row fills the available width.
-func padLineContent(lineContent string, logContentWidth int, padStyle lipgloss.Style) string {
-	visWidth := lipgloss.Width(lineContent)
-	if visWidth >= logContentWidth {
-		return lineContent
-	}
-	return lineContent + padStyle.Render(strings.Repeat(" ", logContentWidth-visWidth))
 }

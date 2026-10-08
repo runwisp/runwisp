@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/internal/server"
 )
 
@@ -80,21 +78,6 @@ func TestNotificationsPanel_CursorTracksInsert(t *testing.T) {
 	p.Upsert(unreadNotification("01Z", "warn", now, "z"))
 	if sel := p.Selected(); sel == nil || sel.ID != "01B" {
 		t.Fatalf("cursor should still track 01B after insert above it, got %v", sel)
-	}
-}
-
-// TestTruncateLine_ANSIAware guards M5: truncating an ANSI-styled line must cut
-// by display column, never by raw bytes, so the visible content stays intact
-// instead of slicing through an escape sequence. The input carries explicit SGR
-// escapes because lipgloss renders colorless under test.
-func TestTruncateLine_ANSIAware(t *testing.T) {
-	styled := "\x1b[31m" + strings.Repeat("x", 40) + "\x1b[0m"
-	out := truncateLine(styled, 10)
-	if w := lipgloss.Width(out); w != 10 {
-		t.Fatalf("truncated display width: got %d want 10", w)
-	}
-	if visible := ansi.Strip(out); visible != strings.Repeat("x", 9)+"…" {
-		t.Fatalf("visible content corrupted by byte-slice: %q", visible)
 	}
 }
 
@@ -602,68 +585,6 @@ func TestNotificationsPanel_SelectedNilWhenCollapsedOrOutOfRange(t *testing.T) {
 	// Still collapsed — selection is meaningless.
 	if p.Selected() != nil {
 		t.Fatal("Selected while collapsed must be nil")
-	}
-}
-
-// ─── truncateLine ────────────────────────────────────────────────────────────
-
-// TestTruncateLine_ShortLineUnchanged verifies that a line whose visual width
-// is at or below max is returned verbatim.
-func TestTruncateLine_ShortLineUnchanged(t *testing.T) {
-	cases := []struct {
-		name string
-		s    string
-		max  int
-	}{
-		{"empty string", "", 10},
-		{"exactly at limit", "hello", 5},
-		{"well below limit", "hi", 20},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := truncateLine(tc.s, tc.max)
-			if got != tc.s {
-				t.Fatalf("truncateLine(%q, %d): want %q unchanged, got %q", tc.s, tc.max, tc.s, got)
-			}
-		})
-	}
-}
-
-// TestTruncateLine_LongLineGetsTruncated verifies that a line exceeding max is
-// shortened and terminated with the ellipsis rune "…".
-func TestTruncateLine_LongLineGetsTruncated(t *testing.T) {
-	s := "this is a rather long notification title"
-	maxWidth := 15
-	got := truncateLine(s, maxWidth)
-	if len([]rune(got)) > maxWidth {
-		t.Fatalf("truncateLine: result length %d exceeds max %d; got %q", len([]rune(got)), maxWidth, got)
-	}
-	if !strings.HasSuffix(got, "…") {
-		t.Fatalf("truncateLine: long line must end with '…'; got %q", got)
-	}
-}
-
-// TestTruncateLine_MaxTwoOrLessPassThrough verifies the edge branch where
-// max <= 1 returns the string unchanged (guard against division-by-zero-style
-// panics with tiny widths).
-func TestTruncateLine_MaxOnePassThrough(t *testing.T) {
-	s := "long enough to truncate"
-	got := truncateLine(s, 1)
-	if got != s {
-		t.Fatalf("truncateLine with max=1 must pass through unchanged; got %q", got)
-	}
-}
-
-// TestTruncateLine_MaxThreeCutsWithoutEllipsis verifies the 2<=max<=3 branch
-// that hard-cuts without appending the ellipsis rune (no room for "…").
-func TestTruncateLine_MaxThreeCutsWithoutEllipsis(t *testing.T) {
-	s := "abcdefgh"
-	got := truncateLine(s, 3)
-	if len(got) != 3 {
-		t.Fatalf("truncateLine with max=3: want 3 bytes, got %d (%q)", len(got), got)
-	}
-	if strings.HasSuffix(got, "…") {
-		t.Fatalf("truncateLine with max=3 must not append ellipsis; got %q", got)
 	}
 }
 

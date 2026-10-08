@@ -84,3 +84,12 @@ func TestOverlayAt_DropsRowsPastBaseAndPadsShortLines(t *testing.T) {
 	assert.Len(t, lines, 2)
 	assert.Equal(t, "cd  XX", ansi.Strip(lines[1]))
 }
+
+// Truncating an ANSI-styled line cuts by display column, never through an
+// escape sequence.
+func TestTruncateToWidth_ANSIAware(t *testing.T) {
+	styled := "\x1b[31m" + strings.Repeat("x", 40) + "\x1b[0m"
+	out := TruncateToWidth(styled, 10)
+	assert.Equal(t, 10, VisibleWidth(out))
+	assert.Equal(t, strings.Repeat("x", 9)+"…", ansi.Strip(out))
+}
