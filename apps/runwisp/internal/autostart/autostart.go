@@ -349,11 +349,6 @@ const (
 // separate remove-on-change logic needed.
 const EnvDropInName = "runwisp-env.conf"
 
-// serviceEnvVars mark a process as init-system-managed. A daemon that runwisp
-// spawns itself must not inherit these, or it self-reports as service-managed
-// merely because the spawning shell happened to run under systemd.
-var serviceEnvVars = []string{ServiceManagedEnv}
-
 // RunningUnderServiceManager reports whether the current process was launched
 // by an init system, via the ServiceManagedEnv marker our generated unit files
 // set. We deliberately do not sniff systemd's INVOCATION_ID: systemd sets it on
@@ -371,21 +366,11 @@ func RunningUnderServiceManager() bool {
 func WithoutServiceEnv(env []string) []string {
 	out := make([]string, 0, len(env))
 	for _, e := range env {
-		if hasServiceEnvPrefix(e) {
-			continue
+		if !strings.HasPrefix(e, ServiceManagedEnv+"=") {
+			out = append(out, e)
 		}
-		out = append(out, e)
 	}
 	return out
-}
-
-func hasServiceEnvPrefix(entry string) bool {
-	for _, key := range serviceEnvVars {
-		if strings.HasPrefix(entry, key+"=") {
-			return true
-		}
-	}
-	return false
 }
 
 // ErrConflict means the unit file exists but is missing the managed

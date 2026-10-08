@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -65,6 +64,9 @@ func (l *launchdInstaller) label() string {
 	return launchdLabelPrefix + "." + l.deps.Fingerprint
 }
 
+// uid is the numeric id of the gui/<uid> launchd domain.
+func (l *launchdInstaller) uid() string { return strconv.Itoa(l.deps.Euid) }
+
 func (l *launchdInstaller) plistPath() string {
 	return filepath.Join(l.deps.Home, launchdPlistDir, l.label()+".plist")
 }
@@ -74,10 +76,7 @@ func (l *launchdInstaller) logPath(dataDir string) string {
 }
 
 func (l *launchdInstaller) renderPlist(opts InstallOptions) ([]byte, string, error) {
-	binarySHA := ""
-	if data, err := os.ReadFile(opts.Binary); err == nil {
-		binarySHA = hashContent(data)
-	}
+	binarySHA, _ := fileSHA(opts.Binary)
 	configHash := SettingsHash(opts)
 	body, err := RenderLaunchdPlist(LaunchdParams{
 		Binary:      opts.Binary,
@@ -129,7 +128,7 @@ func (l *launchdInstaller) planSteps(plan Plan) []Step {
 	if plan.Kind == PlanNoop || plan.Kind == PlanConflict {
 		return nil
 	}
-	uid := strconv.Itoa(os.Getuid())
+	uid := l.uid()
 	return []Step{
 		{Action: ActionWriteUnit, Description: "Write LaunchAgent plist\n       " + plan.UnitPath},
 		{Action: ActionLaunchctlBootout, Description: "Run:  launchctl bootout gui/" + uid + "/" + l.label() + " (best effort)"},
@@ -151,11 +150,8 @@ func (l *launchdInstaller) Install(ctx context.Context, opts InstallOptions, out
 		return nil
 	}
 
-	if _, err := l.deps.FS.Stat(opts.Config); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return ErrConfigMissing
-		}
-		return fmt.Errorf("stat config: %w", err)
+	if err := requireConfig(l.deps.FS, opts.Config); err != nil {
+		return err
 	}
 
 	renderInstallBanner(out, plan, opts)
@@ -176,7 +172,7 @@ func (l *launchdInstaller) applyInstall(ctx context.Context, plan Plan, out io.W
 	}
 	fmt.Fprintf(out, "Wrote %s\n", plan.UnitPath)
 
-	uid := strconv.Itoa(os.Getuid())
+	uid := l.uid()
 	// bootout is best-effort — silent on first install.
 	_, _, _ = l.deps.Cmd.Run(ctx, "launchctl", "bootout", "gui/"+uid+"/"+l.label())
 	if _, stderr, err := l.deps.Cmd.Run(ctx, "launchctl", "bootstrap", "gui/"+uid, plan.UnitPath); err != nil {
@@ -197,7 +193,7 @@ func (l *launchdInstaller) computeUninstallPlan(_ context.Context, opts Uninstal
 	}
 	plan.UnitPath = plistPath
 	if plan.Kind == PlanUninstall {
-		uid := strconv.Itoa(os.Getuid())
+		uid := l.uid()
 		plan.Steps = []Step{
 			{Action: ActionLaunchctlBootout, Description: "Run:  launchctl bootout gui/" + uid + "/" + l.label()},
 			{Action: ActionRemoveUnit, Description: "Remove plist\n       " + plistPath},
@@ -229,15 +225,12 @@ func (l *launchdInstaller) Uninstall(ctx context.Context, opts UninstallOptions,
 	}
 
 	if opts.Purge {
-		if err := l.deps.Prompter.ConfirmLiteral(
-			fmt.Sprintf("Type 'delete' to permanently remove the data dir %s:", opts.DataDir),
-			"delete",
-		); err != nil {
+		if err := confirmPurge(l.deps.Prompter, opts.DataDir); err != nil {
 			return err
 		}
 	}
 
-	uid := strconv.Itoa(os.Getuid())
+	uid := l.uid()
 	if _, stderr, err := l.deps.Cmd.Run(ctx, "launchctl", "bootout", "gui/"+uid+"/"+l.label()); err != nil {
 		fmt.Fprintf(out, "Warning: launchctl bootout: %v %s\n", err, string(stderr))
 	}
@@ -246,11 +239,10 @@ func (l *launchdInstaller) Uninstall(ctx context.Context, opts UninstallOptions,
 	}
 	fmt.Fprintf(out, "Removed %s\n", plan.UnitPath)
 
-	if opts.Purge && opts.DataDir != "" {
-		if err := os.RemoveAll(opts.DataDir); err != nil {
-			return fmt.Errorf("remove data dir: %w", err)
+	if opts.Purge {
+		if err := purgeDataDir(out, opts.DataDir); err != nil {
+			return err
 		}
-		fmt.Fprintf(out, "Purged data dir %s\n", opts.DataDir)
 	}
 	fmt.Fprintln(out, "Uninstalled.")
 	return nil
@@ -260,7 +252,7 @@ func (l *launchdInstaller) Uninstall(ctx context.Context, opts UninstallOptions,
 // graceful shutdown exits 0, and KeepAlive{SuccessfulExit:false} does not
 // respawn successful exits, so the job stays down until login or Restart.
 func (l *launchdInstaller) Stop(ctx context.Context, _ InstallOptions) error {
-	uid := strconv.Itoa(os.Getuid())
+	uid := l.uid()
 	if _, stderr, err := l.deps.Cmd.Run(ctx, "launchctl", "kill", "SIGTERM", "gui/"+uid+"/"+l.label()); err != nil {
 		return fmt.Errorf("launchctl kill SIGTERM: %w: %s", err, string(stderr))
 	}
@@ -270,7 +262,7 @@ func (l *launchdInstaller) Stop(ctx context.Context, _ InstallOptions) error {
 // Restart implements Installer: kickstart -k kills the running instance (if
 // any) and starts a fresh one.
 func (l *launchdInstaller) Restart(ctx context.Context, _ InstallOptions) error {
-	uid := strconv.Itoa(os.Getuid())
+	uid := l.uid()
 	if _, stderr, err := l.deps.Cmd.Run(ctx, "launchctl", "kickstart", "-k", "gui/"+uid+"/"+l.label()); err != nil {
 		return fmt.Errorf("launchctl kickstart -k: %w: %s", err, string(stderr))
 	}
@@ -319,20 +311,14 @@ func (l *launchdInstaller) Status(ctx context.Context, opts InstallOptions) (Sta
 		st.Installed = parsed.managed
 		st.ExpectedConfigHash = SettingsHash(opts)
 	}
-	if data, err := os.ReadFile(opts.Binary); err == nil {
-		st.BinaryExists = true
-		st.BinaryOnDiskSHA = hashContent(data)
-	}
-	uid := strconv.Itoa(os.Getuid())
+	st.fillBinary(opts.Binary)
+	uid := l.uid()
 	if stdout, _, err := l.deps.Cmd.Run(ctx, "launchctl", "print", "gui/"+uid+"/"+l.label()); err == nil {
 		body := string(stdout)
 		st.Running = strings.Contains(body, "state = running")
 		st.Autostart = !strings.Contains(body, "disabled = true")
 	}
-	if info, err := l.deps.FS.Stat(opts.DataDir); err == nil && info.IsDir() {
-		st.DataDirWritable = isDirWritable(opts.DataDir)
-		st.DataDirLastWrite = info.ModTime()
-	}
+	st.fillDataDir(l.deps.FS, opts.DataDir)
 	return st, nil
 }
 

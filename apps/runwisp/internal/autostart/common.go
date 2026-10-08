@@ -4,8 +4,10 @@
 package autostart
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -80,4 +82,59 @@ func isDirWritable(dir string) bool {
 	_ = f.Close()
 	_ = os.Remove(probe)
 	return true
+}
+
+// fileSHA hashes the file at path; ok is false when it cannot be read.
+func fileSHA(path string) (sha string, ok bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	return hashContent(data), true
+}
+
+func (st *Status) fillBinary(path string) {
+	if sha, ok := fileSHA(path); ok {
+		st.BinaryExists = true
+		st.BinaryOnDiskSHA = sha
+	}
+}
+
+func (st *Status) fillDataDir(fsys FileSystem, dir string) {
+	if info, err := fsys.Stat(dir); err == nil && info.IsDir() {
+		st.DataDirWritable = isDirWritable(dir)
+		st.DataDirLastWrite = info.ModTime()
+	}
+}
+
+// requireConfig returns ErrConfigMissing when the unit would point at a config
+// that does not exist.
+func requireConfig(fsys FileSystem, path string) error {
+	if _, err := fsys.Stat(path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return ErrConfigMissing
+		}
+		return fmt.Errorf("stat config: %w", err)
+	}
+	return nil
+}
+
+// confirmPurge is the --purge footgun guard: the operator must type the word,
+// and --yes does not answer for them.
+func confirmPurge(p Prompter, dataDir string) error {
+	return p.ConfirmLiteral(
+		fmt.Sprintf("Type 'delete' to permanently remove the data dir %s:", dataDir),
+		"delete",
+	)
+}
+
+func purgeDataDir(out io.Writer, dataDir string) error {
+	if dataDir == "" {
+		return nil
+	}
+	if err := os.RemoveAll(dataDir); err != nil {
+		return fmt.Errorf("remove data dir %s: %w", dataDir, err)
+	}
+	fmt.Fprintf(out, "Purged data dir %s\n", dataDir)
+	return nil
 }
