@@ -1087,8 +1087,8 @@ func TestReloadSummary(t *testing.T) {
 		in   *model.ReloadResult
 		want string
 	}{
-		{"nil", nil, "✓ Config reloaded — no changes"},
-		{"empty", &model.ReloadResult{}, "✓ Config reloaded — no changes"},
+		{"nil", nil, "✓ Config reloaded: no changes"},
+		{"empty", &model.ReloadResult{}, "✓ Config reloaded: no changes"},
 		{
 			"mixed",
 			&model.ReloadResult{

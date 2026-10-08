@@ -735,7 +735,7 @@ func (m Model) handleReloadResult(msg uikit.ReloadResultMsg) (tea.Model, tea.Cmd
 // reloadSummary renders a one-line summary of what a reload changed.
 func reloadSummary(r *model.ReloadResult) string {
 	if r == nil || r.IsEmpty() {
-		return "✓ Config reloaded — no changes"
+		return "✓ Config reloaded: no changes"
 	}
 	var parts []string
 	if n := len(r.Added); n > 0 {

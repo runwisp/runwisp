@@ -10,8 +10,9 @@ const YEAR = 365 * DAY;
 
 /**
  * Returns a short human-readable phrase for the difference between `date` and
- * `now`. Mirrors `Relative()` in `internal/tui/rhythm/rhythm.go`: when changing
- * thresholds here, update both implementations and __rhythm_vectors.json.
+ * `now`. Mirrors `RelativeTime()` in `apps/runwisp/internal/tui/uikit/helpers.go`:
+ * when changing thresholds here, update both implementations and
+ * __rhythm_vectors.json.
  */
 export function relative(date: Date | string, now: Date = new Date()): string {
     const t = typeof date === "string" ? new Date(date) : date;
