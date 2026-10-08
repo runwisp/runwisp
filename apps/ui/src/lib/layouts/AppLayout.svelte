@@ -9,14 +9,14 @@
         Menu,
         PanelLeftClose,
         PanelLeftOpen,
+        RadioTower,
         Search,
+        ShieldOff,
         X,
     } from "@lucide/svelte";
     import { type Snippet, type Component, flushSync, tick } from "svelte";
     import { resolve } from "$app/paths";
     import { page } from "$app/stores";
-    import AuthDisabledBadge from "$lib/components/AuthDisabledBadge.svelte";
-    import StationModeBadge from "$lib/components/StationModeBadge.svelte";
     import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
     import FeedbackCard from "$lib/components/FeedbackCard.svelte";
     import HeaderSearch from "$lib/components/HeaderSearch.svelte";
@@ -24,10 +24,10 @@
     import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
     import TaskScheduleChip from "$lib/components/TaskScheduleChip.svelte";
     import TaskUsage from "$lib/components/TaskUsage.svelte";
-    import { headerSearchStore, systemStore } from "$lib/stores";
+    import { authStore, headerSearchStore, systemStore } from "$lib/stores";
     import { showScheduleChip } from "$lib/utils/task";
     import { StoredFlag } from "$lib/utils/stored-flag.svelte";
-    import { ThemeToggle, Logo, Heading } from "@runwisp/ui";
+    import { Badge, ThemeToggle, Logo, Heading } from "@runwisp/ui";
     import type { Task } from "@runwisp/common";
 
     let {
@@ -359,8 +359,30 @@
                         <Search size={18} />
                     </button>
                 {/if}
-                <StationModeBadge />
-                <AuthDisabledBadge />
+                {#if systemStore.stationEnabled}
+                    <Badge
+                        variant="info"
+                        class="shrink-0"
+                        tooltip="This runner is managed by RunWisp Station. Scheduling and dispatch happen in the station; this page shows what runs on this machine."
+                        tooltipPosition="bottom"
+                    >
+                        <RadioTower size={12} class="shrink-0" />
+                        <span class="hidden sm:inline md:@max-5xl:hidden">RunWisp Station</span>
+                    </Badge>
+                {/if}
+                <!-- Persistent on purpose: a daemon running with RUNWISP_AUTH=off
+                     must never be mistaken for a secured instance. -->
+                {#if authStore.current.loaded && !authStore.current.required}
+                    <Badge
+                        variant="warning"
+                        class="shrink-0"
+                        tooltip="RUNWISP_AUTH=off is set: the API and Web UI are reachable without a password. Local/dev use only."
+                        tooltipPosition="bottom"
+                    >
+                        <ShieldOff size={12} class="shrink-0" />
+                        <span class="hidden sm:inline md:@max-5xl:hidden">Auth disabled</span>
+                    </Badge>
+                {/if}
                 <ThemeToggle />
                 <NotificationBell />
             </div>
