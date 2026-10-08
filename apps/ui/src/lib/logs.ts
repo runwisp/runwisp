@@ -7,7 +7,7 @@ import { browserAuthEventSourceFactory } from "$lib/adapters/browser";
 import { getMessageEventData } from "$lib/utils/event-source";
 import { safeParseJSON } from "$lib/utils/parse";
 import { createReconnectingConnection } from "$lib/utils/sse-reconnect";
-import { createLogger } from "@runwisp/common";
+import { createLogger, type APIOperations } from "@runwisp/common";
 
 const logger = createLogger("LogStreamer");
 
@@ -18,18 +18,6 @@ const logPageLineSchema = z.object({
     text: z.string(),
     continued: z.boolean().optional(),
     frameCount: z.number().int().nonnegative().optional(),
-});
-
-export const logLineHistorySchema = z.object({
-    frames: z.array(z.array(z.string())),
-});
-
-export const logPageSchema = z.object({
-    lines: z.array(logPageLineSchema),
-    firstAvailable: z.number().int().nonnegative(),
-    totalLines: z.number().int().nonnegative(),
-    truncated: z.boolean(),
-    finalized: z.boolean(),
 });
 
 const regionSchema = z.object({
@@ -49,30 +37,13 @@ const doneSchema = z.object({
 });
 
 type LogPageLine = z.infer<typeof logPageLineSchema>;
-export type LogPage = z.infer<typeof logPageSchema>;
-
-const logSearchHitSchema = z.object({
-    runId: z.string(),
-    n: z.number().int().nonnegative(),
-    stream: z.string(),
-    text: z.string(),
-    ts: z.number().int(),
-});
-
-export const logSearchResponseSchema = z.object({
-    items: z.array(logSearchHitSchema),
-    nextCursor: z.string().optional().default(""),
-    exhausted: z.boolean(),
-    scannedRuns: z.number().int().nonnegative(),
-});
-
-export type LogSearchResponse = z.infer<typeof logSearchResponseSchema>;
+export type LogPage = APIOperations["getLogPage"]["responses"][200]["content"]["application/json"];
 
 /** Convert a daemon LogPage into the LogEvent shape consumed by LogConsole. */
 export function parseLogPage(page: LogPage): LogEvent {
     const slice: Record<number, string> = {};
     const frameCounts: Record<number, number> = {};
-    for (const l of page.lines) {
+    for (const l of page.lines ?? []) {
         slice[l.n] = l.text;
         if (l.frameCount !== undefined && l.frameCount > 0) frameCounts[l.n] = l.frameCount;
     }

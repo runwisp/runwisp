@@ -166,7 +166,7 @@
         // previous query's results, while this one is in flight.
         outputMatches = null;
         try {
-            const res = await tasksApi.searchLogs(task.name, {
+            const hits = await tasksApi.searchLogs(task.name, {
                 q: query,
                 regex: false,
                 case: false,
@@ -174,7 +174,7 @@
             });
             if (seq !== outputSearchSeq) return; // a newer query superseded this one
             const map = new SvelteMap<string, RunOutputMatch>();
-            for (const hit of res.items) {
+            for (const hit of hits) {
                 if (!map.has(hit.runId)) map.set(hit.runId, { line: hit.n, text: hit.text });
             }
             outputMatches = map;

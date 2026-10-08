@@ -6,14 +6,8 @@ import { z } from "zod";
 import type { APIPaths, APIOperations, AuthStatusBody, RunSelector } from "@runwisp/common";
 import { chapResponse } from "./chap";
 import { HTTP_STATUS } from "./config/constants";
-import { authFetch, handleUnauthorized } from "./utils/auth-required";
-import {
-    logPageSchema,
-    type LogPage,
-    logSearchResponseSchema,
-    type LogSearchResponse,
-    logLineHistorySchema,
-} from "./logs";
+import { handleUnauthorized } from "./utils/auth-required";
+import type { LogPage } from "./logs";
 import { authChallengeResponseSchema, authStatusResponseSchema } from "./types";
 import { isRecord } from "./utils/parse";
 
@@ -82,6 +76,8 @@ function unwrap<T extends object>(data: T | undefined): T {
 // The /api/runs query shape, sourced from the generated client so it can never
 // drift from what the server actually accepts.
 type RunsQueryParams = NonNullable<APIOperations["listRuns"]["parameters"]["query"]>;
+type LogPageQuery = NonNullable<APIOperations["getLogPage"]["parameters"]["query"]>;
+type LogSearchQuery = NonNullable<APIOperations["searchLogs"]["parameters"]["query"]>;
 
 // The bodiless per-task POST actions. errorMiddleware throws on any failure.
 type TaskActionPath =
@@ -92,13 +88,6 @@ type TaskActionPath =
 
 async function postTaskAction(path: TaskActionPath, taskName: string): Promise<void> {
     await apiClient.POST(path, { params: { path: { taskName } } });
-}
-
-// GETs a JSON endpoint outside the generated client and validates the body.
-async function getJson<T>(url: string, schema: z.ZodType<T>, errorPrefix: string): Promise<T> {
-    const response = await authFetch(url, { headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error(errorPrefix + ": " + String(response.status));
-    return schema.parse(await response.json());
 }
 
 export const authApi = {
@@ -152,47 +141,26 @@ export const tasksApi = {
         });
     },
 
-    getLogPage: async (
-        runId: string,
-        options?: { from?: number; limit?: number },
-    ): Promise<LogPage> => {
-        const params = new URLSearchParams();
-        if (options?.from !== undefined) params.set("from", String(options.from));
-        if (options?.limit !== undefined) params.set("limit", String(options.limit));
-        const qs = params.toString();
-        const url = "/api/runs/" + encodeURIComponent(runId) + "/log" + (qs ? "?" + qs : "");
-        return getJson(url, logPageSchema, "Log page fetch failed");
+    getLogPage: async (runId: string, query: LogPageQuery = {}): Promise<LogPage> => {
+        const { data } = await apiClient.GET("/api/runs/{runId}/log", {
+            params: { path: { runId }, query },
+        });
+        return unwrap(data);
     },
 
-    searchLogs: async (
-        taskName: string,
-        options: {
-            q: string;
-            regex: boolean;
-            case: boolean;
-            runId?: string;
-            limit?: number;
-            cursor?: string;
-        },
-    ): Promise<LogSearchResponse> => {
-        const params = new URLSearchParams();
-        params.set("q", options.q);
-        if (options.regex) params.set("regex", "true");
-        if (options.case) params.set("case", "true");
-        if (options.runId) params.set("runId", options.runId);
-        if (options.limit !== undefined) params.set("limit", String(options.limit));
-        if (options.cursor) params.set("cursor", options.cursor);
-
-        const url =
-            "/api/tasks/" + encodeURIComponent(taskName) + "/log/search?" + params.toString();
-        return getJson(url, logSearchResponseSchema, "Log search failed");
+    /** Matching lines across a task's runs, newest run first. */
+    searchLogs: async (taskName: string, query: LogSearchQuery) => {
+        const { data } = await apiClient.GET("/api/tasks/{taskName}/log/search", {
+            params: { path: { taskName }, query },
+        });
+        return unwrap(data).items ?? [];
     },
 
-    getLogLineHistory: async (runId: string, lineNum: number): Promise<string[][]> => {
-        const url =
-            "/api/runs/" + encodeURIComponent(runId) + "/log/line/" + String(lineNum) + "/history";
-        const history = await getJson(url, logLineHistorySchema, "Log line history fetch failed");
-        return history.frames;
+    getLogLineHistory: async (runId: string, lineNumber: number): Promise<string[][]> => {
+        const { data } = await apiClient.GET("/api/runs/{runId}/log/line/{lineNumber}/history", {
+            params: { path: { runId, lineNumber } },
+        });
+        return (unwrap(data).frames ?? []).map((frame) => frame ?? []);
     },
 };
 
