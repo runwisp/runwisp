@@ -229,7 +229,7 @@ func TestHumaGetLogRaw_MissingBothFilesIsEmpty(t *testing.T) {
 
 // TestHumaGetLogRaw_StreamsFullContent: unlike the JSON page
 // (LogPageMaxLimit), the SSE replay (replayLimit), or search
-// (LogSearchMaxLimit), /log/raw has no size cap and must return the entire
+// (logsearch.MaxHitsCeiling), /log/raw has no size cap and must return the entire
 // file untruncated no matter how large it is (see streamRawLog).
 func TestHumaGetLogRaw_StreamsFullContent(t *testing.T) {
 	srv, db, _ := logsTestServer(t)
