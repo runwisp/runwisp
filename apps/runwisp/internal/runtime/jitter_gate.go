@@ -8,18 +8,9 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/runwisp/runwisp/apps/runwisp/internal/afterfunc"
 )
-
-// stopper is the slice of *time.Timer the gate relies on: the ability to
-// cancel a not-yet-fired breach. Tests inject a fake to fire breaches
-// deterministically instead of waiting on the wall clock.
-type stopper interface {
-	Stop() bool
-}
-
-// afterFunc schedules fn after d and returns a handle to cancel it. Production
-// wires time.AfterFunc; gate tests substitute a controllable fake.
-type afterFunc func(d time.Duration, fn func()) stopper
 
 // heldRun is one submitted-but-not-yet-triggered jittered fire. slot is the
 // deadline — the latest the start may slip — and doubles as the release order
@@ -27,10 +18,10 @@ type afterFunc func(d time.Duration, fn func()) stopper
 // jittered run older than this no longer blocks the task.
 type heldRun struct {
 	taskName string
-	tick     time.Time     // cron tick, backdated onto the run's CreatedAt
-	slot     time.Time     // deadline = tick + spread offset
-	horizon  time.Duration // window length for the "free for this task" check
-	timer    stopper       // breach timer; nil once triggered
+	tick     time.Time         // cron tick, backdated onto the run's CreatedAt
+	slot     time.Time         // deadline = tick + spread offset
+	horizon  time.Duration     // window length for the "free for this task" check
+	timer    afterfunc.Stopper // breach timer; nil once triggered
 }
 
 // jitterGate is a daemon-wide, work-conserving gate that targets one in-flight
@@ -47,7 +38,7 @@ type heldRun struct {
 // scheduler's lock (its pause check), which is a leaf: gateMu → scheduler mutex.
 type jitterGate struct {
 	now     func() time.Time
-	after   afterFunc
+	after   afterfunc.Func
 	trigger func(taskName string, tick time.Time) (runID string, started bool)
 
 	mu       sync.Mutex
@@ -67,7 +58,7 @@ type gateRun struct {
 func newJitterGate(now func() time.Time, trigger func(string, time.Time) (string, bool)) *jitterGate {
 	return &jitterGate{
 		now:      now,
-		after:    func(d time.Duration, fn func()) stopper { return time.AfterFunc(d, fn) },
+		after:    afterfunc.Real,
 		trigger:  trigger,
 		inflight: make(map[string]gateRun),
 	}

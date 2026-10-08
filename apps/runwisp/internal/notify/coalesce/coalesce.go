@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/afterfunc"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
 )
 
@@ -43,17 +44,6 @@ type Config struct {
 // DefaultWindow is the default Config.Window value.
 const DefaultWindow = time.Hour
 
-// timerStopper is the slice of *time.Timer that coalesce relies on: the ability
-// to cancel a scheduled window-close flush. Tests inject a fake to fire
-// flushes deterministically instead of waiting on the wall clock.
-type timerStopper interface {
-	Stop() bool
-}
-
-// afterFunc schedules fn after d and returns a handle to cancel it. Production
-// wires time.AfterFunc; tests substitute a controllable fake.
-type afterFunc func(d time.Duration, fn func()) timerStopper
-
 // Channel wraps a delegate notify.Channel with outbound coalescing. It is
 // itself a notify.Channel — the dispatcher pumps events through it like any
 // other.
@@ -62,7 +52,7 @@ type Channel struct {
 	cfg    Config
 	clock  func() time.Time
 	logger *slog.Logger
-	after  afterFunc
+	after  afterfunc.Func
 	// failures surfaces a permanently-failed window-close summary as an in-app
 	// notify_delivery_failed event. Immediate (actionForward/Summary) deliveries
 	// already reach the dispatcher's failure path via the Execute return value;
@@ -85,7 +75,7 @@ type fpState struct {
 	lastSent  time.Time
 	pending   int
 	lastEvent *notify.Event
-	timer     timerStopper
+	timer     afterfunc.Stopper
 }
 
 func (st *fpState) stopTimer() {
@@ -109,7 +99,7 @@ func New(inner notify.Channel, cfg Config, clock func() time.Time, logger *slog.
 		cfg:         cfg,
 		clock:       clock,
 		logger:      logger,
-		after:       func(d time.Duration, fn func()) timerStopper { return time.AfterFunc(d, fn) },
+		after:       afterfunc.Real,
 		state:       make(map[string]*fpState),
 		timerDone:   ctx.Done(),
 		timerCancel: cancel,

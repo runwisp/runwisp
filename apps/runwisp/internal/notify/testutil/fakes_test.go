@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
 )
@@ -41,18 +40,5 @@ func TestFakeChannel(t *testing.T) {
 	}
 	if !ch.Closed() {
 		t.Fatal("Closed should be true")
-	}
-}
-
-func TestFakeClock(t *testing.T) {
-	start := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
-	c := NewFakeClock(start)
-	if !c.Now().Equal(start) {
-		t.Fatalf("Now: got %v want %v", c.Now(), start)
-	}
-	c.Advance(2 * time.Hour)
-	want := start.Add(2 * time.Hour)
-	if !c.Now().Equal(want) {
-		t.Fatalf("after Advance: got %v want %v", c.Now(), want)
 	}
 }

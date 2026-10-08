@@ -12,91 +12,10 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
-	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil/fakeclock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// manualTimers is a deterministic afterFunc for gate tests. Instead of arming a
-// wall-clock timer it records each breach callback, so a test fires them on
-// demand (fireAll) and asserts how many are still armed (pending). It mirrors
-// the injectable-timer seam used by internal/notify/coalesce, kept in-package
-// because the runtime test binary cannot import a testutil that imports runtime.
-type manualTimers struct {
-	mu     sync.Mutex
-	timers []*manualTimer
-}
-
-// manualTimer is one armed breach. Stop and fireAll both flip stopped under the
-// parent's lock, so the gate's Stop() (called under gateMu) and the test's
-// fireAll never race on it.
-type manualTimer struct {
-	owner   *manualTimers
-	delay   time.Duration
-	fn      func()
-	stopped bool
-}
-
-func (t *manualTimer) Stop() bool {
-	t.owner.mu.Lock()
-	defer t.owner.mu.Unlock()
-	was := t.stopped
-	t.stopped = true
-	return !was
-}
-
-func (m *manualTimers) after(d time.Duration, fn func()) stopper {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	t := &manualTimer{owner: m, delay: d, fn: fn}
-	m.timers = append(m.timers, t)
-	return t
-}
-
-// pending reports how many armed breaches have neither fired nor been stopped
-// (by a pull-forward or shutdown).
-func (m *manualTimers) pending() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	n := 0
-	for _, t := range m.timers {
-		if !t.stopped {
-			n++
-		}
-	}
-	return n
-}
-
-// armed returns the delays of the still-armed breaches, in arming order.
-func (m *manualTimers) armed() []time.Duration {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	var out []time.Duration
-	for _, t := range m.timers {
-		if !t.stopped {
-			out = append(out, t.delay)
-		}
-	}
-	return out
-}
-
-// fireAll invokes every still-armed breach exactly once, simulating each timer
-// reaching its slot deadline. Callbacks run without the lock held so a breach
-// can re-enter the gate (and Stop other timers) without deadlocking.
-func (m *manualTimers) fireAll() {
-	m.mu.Lock()
-	var due []*manualTimer
-	for _, t := range m.timers {
-		if !t.stopped {
-			t.stopped = true
-			due = append(due, t)
-		}
-	}
-	m.mu.Unlock()
-	for _, t := range due {
-		t.fn()
-	}
-}
 
 // stepExecutor is an executor.Executor that lets a test release runs one at a
 // time by ID, so the gate's pull-forward cascade can be driven deterministically
@@ -175,19 +94,19 @@ func (e *stepExecutor) noMoreStarts(t *testing.T) {
 }
 
 // newJitterTestManager wires a real defaultTaskManager onto a step executor and
-// an injected clock, then swaps the gate's timer seam for a manualTimers so
+// an injected clock, then swaps the gate's timer seam for fakeclock.Timers so
 // breaches fire on demand. The concrete manager is returned so a test can call
 // ScheduleJitteredRun directly and reach gate state.
-func newJitterTestManager(t *testing.T, clock func() time.Time) (*defaultTaskManager, *stepExecutor, *manualTimers, *events.Bus) {
+func newJitterTestManager(t *testing.T, clock func() time.Time) (*defaultTaskManager, *stepExecutor, *fakeclock.Timers, *events.Bus) {
 	t.Helper()
 	exec := newStepExecutor()
 	eb := events.NewEventBus()
 	jm, ok := NewTaskManager(exec, eb, clock).(*defaultTaskManager)
 	require.True(t, ok)
-	mt := &manualTimers{}
+	mt := &fakeclock.Timers{}
 	// Swap before any submit: the gate is untouched until the first
 	// ScheduleJitteredRun, so this is a plain assignment, not a racing one.
-	jm.gate.after = mt.after
+	jm.gate.after = mt.After
 	t.Cleanup(jm.Shutdown)
 	return jm, exec, mt, eb
 }
@@ -197,7 +116,7 @@ func newJitterTestManager(t *testing.T, clock func() time.Time) (*defaultTaskMan
 // back-to-back, never smeared out to its staggered slot — and no breach timer
 // ever fires.
 func TestJitterGate_PullsForwardWhenIdle(t *testing.T) {
-	clk := testutil.NewClock(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
+	clk := fakeclock.New(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
 	jm, exec, mt, eb := newJitterTestManager(t, clk.Now)
 	for _, n := range []string{"a", "b", "c"} {
 		jm.UpsertTask(testTask(n, model.PolicySkip, 1))
@@ -214,7 +133,7 @@ func TestJitterGate_PullsForwardWhenIdle(t *testing.T) {
 
 	// b and c wait on the gate, not the wall clock: their breach timers are
 	// armed but neither has started a run.
-	assert.Equal(t, 2, mt.pending(), "b and c are held behind a")
+	assert.Equal(t, 2, mt.Pending(), "b and c are held behind a")
 	assert.Equal(t, 0, jm.GetActiveRunCount("b"))
 	assert.Equal(t, 0, jm.GetActiveRunCount("c"))
 
@@ -225,14 +144,14 @@ func TestJitterGate_PullsForwardWhenIdle(t *testing.T) {
 	exec.release(exec.waitStarted(t)) // c, pulled forward
 	done.waitFor(t, 3)
 
-	assert.Equal(t, 0, mt.pending(), "every held fire was pulled forward; none breached")
+	assert.Equal(t, 0, mt.Pending(), "every held fire was pulled forward; none breached")
 }
 
 // TestJitterGate_ReleasesEarliestSlotFirst proves the gate drains in
 // earliest-deadline-first order, not submission order: a later-slot fire
 // submitted first still releases after an earlier-slot fire submitted second.
 func TestJitterGate_ReleasesEarliestSlotFirst(t *testing.T) {
-	clk := testutil.NewClock(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
+	clk := fakeclock.New(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
 	jm, exec, _, eb := newJitterTestManager(t, clk.Now)
 	for _, n := range []string{"blk", "late", "early"} {
 		jm.UpsertTask(testTask(n, model.PolicySkip, 1))
@@ -268,7 +187,7 @@ func TestJitterGate_ReleasesEarliestSlotFirst(t *testing.T) {
 // takes over the deadline the pulled-forward run no longer needs, so nothing
 // breaches at the tick and the deadlines stay spread across the window.
 func TestJitterGate_SameTickLateArrivalTakesOverSlot(t *testing.T) {
-	clk := testutil.NewClock(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
+	clk := fakeclock.New(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
 	jm, exec, mt, _ := newJitterTestManager(t, clk.Now)
 	for _, n := range []string{"a", "b", "c"} {
 		jm.UpsertTask(testTask(n, model.PolicySkip, 1))
@@ -286,7 +205,7 @@ func TestJitterGate_SameTickLateArrivalTakesOverSlot(t *testing.T) {
 
 	// b took c's +20m and handed it +10m, then a took that +10m. Without the
 	// swap a's breach is armed at 0 and it starts beside c.
-	assert.Equal(t, []time.Duration{20*time.Minute - time.Millisecond, 10*time.Minute - 2*time.Millisecond}, mt.armed())
+	assert.Equal(t, []time.Duration{20*time.Minute - time.Millisecond, 10*time.Minute - 2*time.Millisecond}, mt.Armed())
 	assert.Equal(t, 0, jm.GetActiveRunCount("a"), "a waits for c instead of breaching at the tick")
 	assert.Equal(t, 0, jm.GetActiveRunCount("b"))
 }
@@ -296,7 +215,7 @@ func TestJitterGate_SameTickLateArrivalTakesOverSlot(t *testing.T) {
 // runs anyway when its slot timer fires — staggered across the window rather
 // than bursting, and concurrent with the still-running holder.
 func TestJitterGate_BreachesHeldFiresAtSlot(t *testing.T) {
-	clk := testutil.NewClock(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
+	clk := fakeclock.New(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
 	jm, exec, mt, _ := newJitterTestManager(t, clk.Now)
 	for _, n := range []string{"a", "b", "c"} {
 		jm.UpsertTask(testTask(n, model.PolicySkip, 1))
@@ -308,18 +227,18 @@ func TestJitterGate_BreachesHeldFiresAtSlot(t *testing.T) {
 
 	jm.ScheduleJitteredRun("b", tick, tick.Add(10*time.Minute), 30*time.Minute)
 	jm.ScheduleJitteredRun("c", tick, tick.Add(20*time.Minute), 30*time.Minute)
-	require.Equal(t, 2, mt.pending(), "b and c are held behind the long-running a")
+	require.Equal(t, 2, mt.Pending(), "b and c are held behind the long-running a")
 
 	// Each slot deadline arrives while a is still in flight: b and c breach and
 	// run concurrently with it.
-	mt.fireAll()
+	mt.FireAll()
 	_ = exec.waitStarted(t)
 	_ = exec.waitStarted(t)
 
 	assert.Equal(t, 1, jm.GetActiveRunCount("a"), "the holder is still in flight")
 	assert.Equal(t, 1, jm.GetActiveRunCount("b"), "b breached at its slot and runs")
 	assert.Equal(t, 1, jm.GetActiveRunCount("c"), "c breached at its slot and runs")
-	assert.Equal(t, 0, mt.pending(), "both slot timers have fired")
+	assert.Equal(t, 0, mt.Pending(), "both slot timers have fired")
 }
 
 // TestJitterGate_UntrackedCompletionDoesNotAdvance proves only a gate-triggered
@@ -327,7 +246,7 @@ func TestJitterGate_BreachesHeldFiresAtSlot(t *testing.T) {
 // jittered fire forward. Services share this path — the gate only tracks runs
 // it triggered, and it never triggers a service or a plain task.
 func TestJitterGate_UntrackedCompletionDoesNotAdvance(t *testing.T) {
-	clk := testutil.NewClock(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
+	clk := fakeclock.New(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
 	jm, exec, mt, eb := newJitterTestManager(t, clk.Now)
 	for _, n := range []string{"jit-a", "jit-b", "plain"} {
 		jm.UpsertTask(testTask(n, model.PolicySkip, 1))
@@ -338,7 +257,7 @@ func TestJitterGate_UntrackedCompletionDoesNotAdvance(t *testing.T) {
 	jm.ScheduleJitteredRun("jit-a", tick, tick, 30*time.Minute) // holds the gate
 	idA := exec.waitStarted(t)
 	jm.ScheduleJitteredRun("jit-b", tick, tick.Add(10*time.Minute), 30*time.Minute)
-	require.Equal(t, 1, mt.pending(), "jit-b is held behind jit-a")
+	require.Equal(t, 1, mt.Pending(), "jit-b is held behind jit-a")
 
 	// A plain run starts and finishes. Its completion is not a gate completion.
 	_, err := jm.TriggerRunWithOptions("plain", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
@@ -346,7 +265,7 @@ func TestJitterGate_UntrackedCompletionDoesNotAdvance(t *testing.T) {
 	exec.release(exec.waitStarted(t))
 	done.waitFor(t, 1) // only the plain run has completed
 
-	assert.Equal(t, 1, mt.pending(), "jit-b is still held — a plain run never frees the gate")
+	assert.Equal(t, 1, mt.Pending(), "jit-b is still held — a plain run never frees the gate")
 	assert.Equal(t, 0, jm.GetActiveRunCount("jit-b"))
 
 	// Only the gate-held jit-a finishing advances jit-b.
@@ -361,7 +280,7 @@ func TestJitterGate_UntrackedCompletionDoesNotAdvance(t *testing.T) {
 // executing — the gate targets one run at a time but won't stall forever on a
 // runaway.
 func TestJitterGate_OverrunStopsBlockingPastWindow(t *testing.T) {
-	clk := testutil.NewClock(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
+	clk := fakeclock.New(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
 	jm, exec, _, _ := newJitterTestManager(t, clk.Now)
 	jm.UpsertTask(testTask("long", model.PolicySkip, 1))
 	jm.UpsertTask(testTask("waiter", model.PolicySkip, 1))
@@ -385,7 +304,7 @@ func TestJitterGate_OverrunStopsBlockingPastWindow(t *testing.T) {
 // and stops its timer, so nothing starts a run after the daemon begins shutting
 // down — even if a stray slot timer fires afterwards.
 func TestJitterGate_ShutdownAbandonsPending(t *testing.T) {
-	clk := testutil.NewClock(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
+	clk := fakeclock.New(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
 	jm, exec, mt, _ := newJitterTestManager(t, clk.Now)
 	jm.UpsertTask(testTask("a", model.PolicySkip, 1))
 	jm.UpsertTask(testTask("b", model.PolicySkip, 1))
@@ -394,12 +313,12 @@ func TestJitterGate_ShutdownAbandonsPending(t *testing.T) {
 	jm.ScheduleJitteredRun("a", tick, tick, 30*time.Minute) // holds the gate
 	_ = exec.waitStarted(t)
 	jm.ScheduleJitteredRun("b", tick, tick.Add(10*time.Minute), 30*time.Minute)
-	require.Equal(t, 1, mt.pending(), "b is held")
+	require.Equal(t, 1, mt.Pending(), "b is held")
 
 	jm.Shutdown() // cancels a, abandons b
 
-	assert.Equal(t, 0, mt.pending(), "shutdown stopped the held fire's breach timer")
-	mt.fireAll() // a stray fire must still not start b
+	assert.Equal(t, 0, mt.Pending(), "shutdown stopped the held fire's breach timer")
+	mt.FireAll() // a stray fire must still not start b
 	assert.Equal(t, 0, jm.GetActiveRunCount("b"), "no run is created for the abandoned fire")
 	exec.noMoreStarts(t)
 }
@@ -409,7 +328,7 @@ func TestJitterGate_ShutdownAbandonsPending(t *testing.T) {
 // that window. BeginShutdown drops held fires and refuses triggers while the
 // runs already in flight keep going.
 func TestBeginShutdown_StopsNewRunsAndKeepsActive(t *testing.T) {
-	clk := testutil.NewClock(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
+	clk := fakeclock.New(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
 	jm, exec, mt, _ := newJitterTestManager(t, clk.Now)
 	jm.UpsertTask(testTask("a", model.PolicySkip, 1))
 	jm.UpsertTask(testTask("b", model.PolicySkip, 1))
@@ -418,11 +337,11 @@ func TestBeginShutdown_StopsNewRunsAndKeepsActive(t *testing.T) {
 	jm.ScheduleJitteredRun("a", tick, tick, 30*time.Minute)
 	_ = exec.waitStarted(t)
 	jm.ScheduleJitteredRun("b", tick, tick.Add(10*time.Minute), 30*time.Minute)
-	require.Equal(t, 1, mt.pending(), "b is held")
+	require.Equal(t, 1, mt.Pending(), "b is held")
 
 	jm.BeginShutdown()
 
-	mt.fireAll()
+	mt.FireAll()
 	assert.Equal(t, 0, jm.GetActiveRunCount("b"), "the held fire is dropped")
 	_, err := jm.TriggerRunWithOptions("b", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.ErrorIs(t, err, errShuttingDown)
@@ -453,7 +372,7 @@ func gateInflightIDs(g *jitterGate) map[string]bool {
 // in-flight set that (for one jitter window) makes freeFor() wrongly report
 // the gate as busy for unrelated tasks, and leaks forever after that.
 func TestJitterGate_RemoveTaskRetiresOrphanedQueuedRunFromGate(t *testing.T) {
-	clk := testutil.NewClock(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
+	clk := fakeclock.New(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
 	jm, exec, mt, _ := newJitterTestManager(t, clk.Now)
 	jm.UpsertTask(testTask("t", model.PolicyQueue, 1))
 
@@ -466,8 +385,8 @@ func TestJitterGate_RemoveTaskRetiresOrphanedQueuedRunFromGate(t *testing.T) {
 	// timer despite the gate being congested, straight into t's own queue
 	// (OnOverlap=Queue, MaxConcurrent=1, a still holds the slot).
 	jm.ScheduleJitteredRun("t", tick.Add(time.Minute), tick.Add(time.Minute), 30*time.Minute)
-	require.Equal(t, 1, mt.pending(), "b is held behind a")
-	mt.fireAll()
+	require.Equal(t, 1, mt.Pending(), "b is held behind a")
+	mt.FireAll()
 	exec.noMoreStarts(t) // b is sitting in t's queue, not executing
 
 	inflight := gateInflightIDs(jm.gate)

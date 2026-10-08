@@ -4,7 +4,6 @@
 package procstat
 
 import (
-	"sync"
 	"testing"
 	"time"
 
@@ -12,29 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil/fakeclock"
 )
-
-// clock is a hand-driven time source. testutil.Clock can't be used here:
-// testutil imports executor, which imports this package. The sampler's
-// background loop reads it while the test advances it, so it is locked.
-type clock struct {
-	mu  sync.Mutex
-	now time.Time
-}
-
-func newClock() *clock { return &clock{now: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)} }
-
-func (c *clock) Now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.now
-}
-
-func (c *clock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.now = c.now.Add(d)
-}
 
 // fakeReader serves whatever the test last put in stats.
 type fakeReader struct{ stats map[int]groupStat }
@@ -43,13 +21,13 @@ func (f *fakeReader) read(map[int]struct{}) map[int]groupStat { return f.stats }
 
 // newTestSampler parks the background loop on a long sleep so the test drives
 // every sample by hand.
-func newTestSampler(clk *clock) (*Sampler, *fakeReader) {
+func newTestSampler(clk *fakeclock.Clock) (*Sampler, *fakeReader) {
 	fr := &fakeReader{}
 	return newSampler(fr.read, clk.Now, time.Hour), fr
 }
 
 func TestSamplerCPUPercentAndPeak(t *testing.T) {
-	clk := newClock()
+	clk := fakeclock.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	s, fr := newTestSampler(clk)
 	stop := s.Track("backup", "run1", 100)
 
@@ -71,7 +49,7 @@ func TestSamplerCPUPercentAndPeak(t *testing.T) {
 }
 
 func TestSamplerSumsRunsPerTask(t *testing.T) {
-	clk := newClock()
+	clk := fakeclock.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	s, fr := newTestSampler(clk)
 	s.Track("web", "a", 1)
 	s.Track("web", "b", 2)
@@ -84,14 +62,14 @@ func TestSamplerSumsRunsPerTask(t *testing.T) {
 }
 
 func TestSamplerUnsampledRunHasNoPeak(t *testing.T) {
-	clk := newClock()
+	clk := fakeclock.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	s, _ := newTestSampler(clk)
 	_, ok := s.Track("t", "r", 1)()
 	assert.False(t, ok)
 }
 
 func TestSamplerIntervalIsFastForYoungRuns(t *testing.T) {
-	clk := newClock()
+	clk := fakeclock.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	s := newSampler(func(map[int]struct{}) map[int]groupStat { return nil }, clk.Now, 100*time.Millisecond)
 	s.Track("t", "r", 1)
 	assert.Equal(t, 100*time.Millisecond, s.interval())
@@ -100,7 +78,7 @@ func TestSamplerIntervalIsFastForYoungRuns(t *testing.T) {
 }
 
 func TestSamplerSamplesNewRunBesideOldOneWithinFastInterval(t *testing.T) {
-	clk := newClock()
+	clk := fakeclock.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	stats := map[int]groupStat{1: {RSS: 1}, 2: {RSS: 2}}
 	s := newSampler(func(map[int]struct{}) map[int]groupStat { return stats }, clk.Now, 20*time.Millisecond)
 	defer s.Track("svc", "old", 1)()
