@@ -347,3 +347,22 @@ func modalEmptyLine(innerWidth int) string {
 		Width(innerWidth).
 		Render("")
 }
+
+// modalSectionLine renders a left-aligned bold section header inside a modal.
+func modalSectionLine(title string, innerWidth int) string {
+	return lipgloss.NewStyle().
+		Background(uikit.ColorBgLight).
+		Foreground(uikit.ColorSecondary).
+		Bold(true).
+		Width(innerWidth).
+		Render(title)
+}
+
+// modalSeg renders one coloured inline segment on the modal surface, so a
+// composed line keeps the dialog's fill behind each piece.
+func modalSeg(text string, fg color.Color) string {
+	return lipgloss.NewStyle().
+		Background(uikit.ColorBgLight).
+		Foreground(fg).
+		Render(text)
+}

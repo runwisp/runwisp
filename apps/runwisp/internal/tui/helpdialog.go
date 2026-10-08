@@ -119,23 +119,13 @@ func helpContentLines(innerWidth, keyColWidth int) []string {
 	for _, section := range keys.OverlaySections {
 		lines = append(lines,
 			modalEmptyLine(innerWidth),
-			helpSectionLine(section.Title, innerWidth),
+			modalSectionLine(section.Title, innerWidth),
 		)
 		for _, b := range section.Bindings {
 			lines = append(lines, helpEntryLine(b, keyColWidth, innerWidth))
 		}
 	}
 	return lines
-}
-
-// helpSectionLine renders a left-aligned bold section header.
-func helpSectionLine(title string, innerWidth int) string {
-	return lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorSecondary).
-		Bold(true).
-		Width(innerWidth).
-		Render(title)
 }
 
 // helpEntryLine renders one "keys → description" row with a fixed key column.

@@ -90,7 +90,7 @@ func (d *TaskDetailDialog) View(screenWidth, screenHeight int) string {
 	lines = append(lines, d.definitionRows(row, innerWidth)...)
 	lines = append(lines,
 		modalEmptyLine(innerWidth),
-		taskDetailSectionLine("Recent health", innerWidth),
+		modalSectionLine("Recent health", innerWidth),
 	)
 	lines = append(lines, d.healthRows(row)...)
 	lines = append(lines,
@@ -229,11 +229,11 @@ func (d *TaskDetailDialog) healthRows(row func(label, value string, color color.
 		return append(out, row("", "no runs yet", uikit.ColorTextMuted))
 	}
 
-	breakdown := seg(fmt.Sprintf("%d ok", s.Success), uikit.ColorSuccess) +
-		seg(" · ", uikit.ColorTextMuted) +
-		seg(fmt.Sprintf("%d failed", s.Failed), failureColor(s.Failed))
+	breakdown := modalSeg(fmt.Sprintf("%d ok", s.Success), uikit.ColorSuccess) +
+		modalSeg(" · ", uikit.ColorTextMuted) +
+		modalSeg(fmt.Sprintf("%d failed", s.Failed), failureColor(s.Failed))
 	if s.Other > 0 {
-		breakdown += seg(fmt.Sprintf(" · %d other", s.Other), uikit.ColorTextMuted)
+		breakdown += modalSeg(fmt.Sprintf(" · %d other", s.Other), uikit.ColorTextMuted)
 	}
 	out = append(out, row(fmt.Sprintf("Last %d", s.Window), breakdown, uikit.ColorText))
 
@@ -299,25 +299,6 @@ func paramNames(params []model.TaskParam) []string {
 		names[i] = params[i].Key
 	}
 	return names
-}
-
-// seg renders a colored inline segment on the modal surface background so
-// composed health strings keep the dialog's fill behind each piece.
-func seg(text string, color color.Color) string {
-	return lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(color).
-		Render(text)
-}
-
-// taskDetailSectionLine renders a left-aligned bold section header inside the modal.
-func taskDetailSectionLine(title string, innerWidth int) string {
-	return lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(uikit.ColorSecondary).
-		Bold(true).
-		Width(innerWidth).
-		Render(title)
 }
 
 // taskDetailRow renders a "label  value" line with a fixed label column. The

@@ -657,8 +657,8 @@ func (d *ParamFormDialog) renderField(i, innerWidth int) []string {
 		// the operator never has to discover them by trial — the muted cue sits
 		// beside the [x]/[ ] state and disappears once focus moves on.
 		out = append(out, modalLeftLineRich(innerWidth,
-			styledSeg("    "+value, uikit.ColorText),
-			styledSeg("      space / ←→ toggle", uikit.ColorTextMuted),
+			modalSeg("    "+value, uikit.ColorText),
+			modalSeg("      space / ←→ toggle", uikit.ColorTextMuted),
 		))
 	} else {
 		out = append(out, modalLeftLine("    "+value, innerWidth, uikit.ColorText))
@@ -703,7 +703,7 @@ func modalLeftLine(text string, innerWidth int, fg color.Color) string {
 }
 
 // modalLeftLineRich renders a left-aligned full-width modal line built from
-// independently coloured segments (see styledSeg), padding the remainder to
+// independently coloured segments (see modalSeg), padding the remainder to
 // innerWidth on the modal surface. The two-tone counterpart to modalLeftLine,
 // for rows where a value and a muted hint share one line.
 func modalLeftLineRich(innerWidth int, segments ...string) string {
@@ -712,13 +712,4 @@ func modalLeftLineRich(innerWidth int, segments ...string) string {
 		Width(innerWidth).
 		Align(lipgloss.Left).
 		Render(strings.Join(segments, ""))
-}
-
-// styledSeg renders one coloured segment on the modal surface for composing into
-// modalLeftLineRich.
-func styledSeg(text string, fg color.Color) string {
-	return lipgloss.NewStyle().
-		Background(uikit.ColorBgLight).
-		Foreground(fg).
-		Render(text)
 }
