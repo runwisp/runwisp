@@ -177,7 +177,7 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 }
 
 func (c *Channel) buildMsg(subject, htmlBody, textBody string) (*gomail.Msg, error) {
-	if err := c.rejectHeaderCRLF(subject); err != nil {
+	if err := notify.RejectMailHeaderCRLF("smtp", subject, c.from, c.replyTo, c.to, c.cc, c.bcc); err != nil {
 		return nil, err
 	}
 	m := gomail.NewMsg()
@@ -193,35 +193,6 @@ func (c *Channel) buildMsg(subject, htmlBody, textBody string) (*gomail.Msg, err
 	m.SetGenHeader("Auto-Submitted", "auto-generated")
 	m.SetGenHeader("X-Auto-Response-Suppress", "All")
 	return m, nil
-}
-
-// rejectHeaderCRLF is defense-in-depth: reject CRLF in any header-bound value
-// before handing to go-mail. Addresses come from TOML (trusted) and the subject
-// from the rendered template; this guard catches a future code path that lets
-// untrusted text reach a header.
-func (c *Channel) rejectHeaderCRLF(subject string) error {
-	if err := notify.RejectHeaderCRLF("smtp subject", subject); err != nil {
-		return err
-	}
-	if err := notify.RejectHeaderCRLF("smtp from", c.from); err != nil {
-		return err
-	}
-	for _, addr := range c.to {
-		if err := notify.RejectHeaderCRLF("smtp to", addr); err != nil {
-			return err
-		}
-	}
-	for _, addr := range c.cc {
-		if err := notify.RejectHeaderCRLF("smtp cc", addr); err != nil {
-			return err
-		}
-	}
-	for _, addr := range c.bcc {
-		if err := notify.RejectHeaderCRLF("smtp bcc", addr); err != nil {
-			return err
-		}
-	}
-	return notify.RejectHeaderCRLF("smtp reply-to", c.replyTo)
 }
 
 // setAddresses populates the From/To/Cc/Bcc/Reply-To headers on m.
