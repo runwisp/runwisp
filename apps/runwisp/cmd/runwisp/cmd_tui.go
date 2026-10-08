@@ -56,11 +56,7 @@ func runTUIClient(ctx context.Context, f Flags) error {
 		return fmt.Errorf("cannot reach daemon at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
 	}
 
-	err := runTUIConnect(ctx, client, f, tui.DaemonAttached)
-	if err != nil && errors.Is(err, apiclient.ErrRateLimited) {
-		return authRateLimitedError(f.Port)
-	}
-	return err
+	return runTUIConnect(ctx, client, f, tui.DaemonAttached)
 }
 
 // maxRemotePasswordPrompts bounds the interactive re-prompt loop so a wrong

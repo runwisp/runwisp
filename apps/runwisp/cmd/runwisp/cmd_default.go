@@ -23,14 +23,7 @@ func runDefault(ctx context.Context, f Flags) error {
 	client := apiclient.NewUnix(localAPISocketPath(f))
 
 	if client.HealthCheck(ctx) == nil {
-		err := runTUIConnect(ctx, client, f, tui.DaemonAttached)
-		if err == nil {
-			return nil
-		}
-		if errors.Is(err, apiclient.ErrRateLimited) {
-			return authRateLimitedError(f.Port)
-		}
-		return err
+		return runTUIConnect(ctx, client, f, tui.DaemonAttached)
 	}
 
 	// Spawn a background daemon or handle port conflicts.
