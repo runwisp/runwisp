@@ -227,7 +227,7 @@ func (m *Model) updateHoverState(x, y int) {
 
 // handleExecViewClick handles clicks on buttons and meta fields inside the exec view.
 func (m Model) handleExecViewClick(x, y int) (tea.Model, tea.Cmd) {
-	if m.execView == nil || m.execView.Run == nil {
+	if m.currentRun() == nil {
 		return m, nil
 	}
 	// Clear keyboard header focus on any click.

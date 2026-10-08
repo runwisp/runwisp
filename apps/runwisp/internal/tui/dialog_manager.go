@@ -35,6 +35,15 @@ const (
 	dialogKinds
 )
 
+// Flash durations: a quick acknowledgement, a passing status, an action's
+// result, and an error or undo offer the operator needs time to read or act on.
+const (
+	flashBrief  = 2 * time.Second
+	flashShort  = 3 * time.Second
+	flashResult = 4 * time.Second
+	flashLong   = 6 * time.Second
+)
+
 // DialogManager owns dialog lifecycle, flash messages, and mouse-state sync.
 type DialogManager struct {
 	open [dialogKinds]dialog
@@ -133,7 +142,7 @@ var clipboardWriteAll = clipboard.WriteAll
 // so the user can manually select the text.
 func (dm *DialogManager) CopyToClipboard(value string) tea.Cmd {
 	if err := clipboardWriteAll(value); err == nil {
-		return dm.Flash("Copied", 2*time.Second)
+		return dm.Flash("Copied", flashBrief)
 	}
 	dm.Show(dlgCopy, NewCopyDialog("Copy", value))
 	return dm.SyncMouseState()

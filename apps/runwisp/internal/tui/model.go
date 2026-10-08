@@ -504,7 +504,7 @@ func (m *Model) requestQuit() tea.Cmd {
 // open exec view wins: its header actions target the run's task, which the
 // sidebar doesn't know about when the run was opened from Home.
 func (m *Model) resolveTaskName() string {
-	if m.execView != nil && m.execView.Run != nil {
+	if m.currentRun() != nil {
 		return m.execView.Run.TaskName
 	}
 	if m.panelFocus == uikit.PanelMain {
@@ -532,7 +532,7 @@ func (m *Model) copyExecField() tea.Cmd {
 // showRunParams opens the read-only run-params modal for the focused run.
 // No-op when the run has no resolved parameters.
 func (m *Model) showRunParams() tea.Cmd {
-	if m.execView == nil || m.execView.Run == nil || len(m.execView.Run.Params) == 0 {
+	if m.currentRun() == nil || len(m.execView.Run.Params) == 0 {
 		return nil
 	}
 	run := m.execView.Run
@@ -590,7 +590,7 @@ func (m *Model) openWebUI() tea.Cmd {
 // non-graphical session (e.g. SSH) the URL is offered for clipboard copy
 // instead, with the modal dialog as the final fallback.
 func (m *Model) downloadExecLog() tea.Cmd {
-	if m.execView == nil || m.execView.Run == nil {
+	if m.currentRun() == nil {
 		return nil
 	}
 	run := m.execView.Run

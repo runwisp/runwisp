@@ -207,7 +207,7 @@ func (m Model) dispatchActionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.info.TaskUsage = msg.Usage
 			m.infoView.SetTaskUsage(msg.Usage)
 			m.info.StoppedServices = msg.Stopped
-			if m.execView != nil && m.execView.Run != nil {
+			if m.currentRun() != nil {
 				m.execView.SetServiceStopped(msg.Stopped[m.execView.Run.TaskName])
 			}
 		}
@@ -287,10 +287,10 @@ func (m Model) handleOpenRun(msg uikit.OpenRunMsg) (tea.Model, tea.Cmd) {
 			// notification that still points at the run.
 			return m, tea.Batch(
 				m.markRunNotificationsRead(msg.RunID),
-				m.dialogs.FlashError("That run no longer exists (deleted or cleaned up by retention)", 6*time.Second),
+				m.dialogs.FlashError("That run no longer exists (deleted or cleaned up by retention)", flashLong),
 			)
 		}
-		return m, m.dialogs.FlashError("Couldn't open run: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Couldn't open run: "+msg.Err.Error(), flashLong)
 	}
 	if msg.Run == nil {
 		return m, nil
@@ -508,7 +508,7 @@ func (m Model) handleOpenBrowser(msg uikit.OpenBrowserMsg) (tea.Model, tea.Cmd) 
 		m.debugView.AppendLine("Failed to open browser: " + msg.Err.Error())
 	}
 	if msg.BrowserOpened {
-		return m, m.dialogs.Flash("Opened browser", 3*time.Second)
+		return m, m.dialogs.Flash("Opened browser", flashShort)
 	}
 	if msg.URL != "" {
 		// No graphical session or browser failed — offer URL for manual copy.
@@ -540,9 +540,9 @@ func (m Model) handleTriggerRun(msg uikit.TriggerRunMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
 		// Concurrency limit or other error — close exec view to show the task list.
 		if m.execView != nil {
-			return m, tea.Batch(m.closeExecView(), m.dialogs.FlashError("Run failed: "+msg.Err.Error(), 6*time.Second))
+			return m, tea.Batch(m.closeExecView(), m.dialogs.FlashError("Run failed: "+msg.Err.Error(), flashLong))
 		}
-		return m, m.dialogs.FlashError("Run failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Run failed: "+msg.Err.Error(), flashLong)
 	}
 	if msg.Run != nil {
 		// Run/retry is confirmed up front (no undo toast); just flash the result.
@@ -550,7 +550,7 @@ func (m Model) handleTriggerRun(msg uikit.TriggerRunMsg) (tea.Model, tea.Cmd) {
 		if msg.Retry {
 			verb = "Retried run for " + msg.TaskName
 		}
-		return m, tea.Batch(m.openExecView(msg.Run), m.dialogs.Flash(verb, 4*time.Second))
+		return m, tea.Batch(m.openExecView(msg.Run), m.dialogs.Flash(verb, flashResult))
 	}
 	return m, nil
 }
@@ -563,10 +563,10 @@ func (m Model) handleStopRun(msg uikit.StopRunMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleDeleteRun(msg uikit.DeleteRunMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Deleted run for", msg.TaskName, msg.Err)
 	if msg.Err != nil {
-		return m, m.dialogs.FlashError("Delete failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Delete failed: "+msg.Err.Error(), flashLong)
 	}
 	var cmds []tea.Cmd
-	if m.execView != nil && m.execView.Run != nil && m.execView.Run.ID == msg.RunID {
+	if m.currentRun() != nil && m.execView.Run.ID == msg.RunID {
 		if cmd := m.closeExecView(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -574,7 +574,7 @@ func (m Model) handleDeleteRun(msg uikit.DeleteRunMsg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, m.fetchExecWindow())
 	// Soft delete is reversible — offer an undo that restores the run.
 	undo := m.streams.RestoreRuns(model.RunSelector{IDs: []string{msg.RunID}})
-	cmds = append(cmds, m.dialogs.FlashUndo("Deleted run", undo, 6*time.Second))
+	cmds = append(cmds, m.dialogs.FlashUndo("Deleted run", undo, flashLong))
 	return m, tea.Batch(cmds...)
 }
 
@@ -582,11 +582,11 @@ func (m Model) handleDeleteRun(msg uikit.DeleteRunMsg) (tea.Model, tea.Cmd) {
 // refreshes the list and flashes a count. Bulk delete is itself undoable.
 func (m Model) handleBulkAction(msg uikit.BulkActionMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
-		return m, m.dialogs.FlashError(msg.Action+" failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError(msg.Action+" failed: "+msg.Err.Error(), flashLong)
 	}
 	cmds := []tea.Cmd{m.fetchExecWindow()}
 	summary := msg.Action + " " + textutil.Count(msg.Affected, "run", "runs")
-	cmds = append(cmds, m.dialogs.Flash(summary, 4*time.Second))
+	cmds = append(cmds, m.dialogs.Flash(summary, flashResult))
 	return m, tea.Batch(cmds...)
 }
 
@@ -596,15 +596,15 @@ func (m Model) handleBulkAction(msg uikit.BulkActionMsg) (tea.Model, tea.Cmd) {
 // already soft-deleted before this action.
 func (m Model) handleBulkDeleteResult(msg uikit.BulkDeleteResultMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
-		return m, m.dialogs.FlashError("Delete failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Delete failed: "+msg.Err.Error(), flashLong)
 	}
 	cmds := []tea.Cmd{m.fetchExecWindow()}
 	label := "Deleted " + textutil.Count(msg.Affected, "run", "runs")
 	if !msg.Restore.MatchAll && msg.Affected > 0 {
 		undo := m.streams.RestoreRuns(msg.Restore)
-		cmds = append(cmds, m.dialogs.FlashUndo(label, undo, 6*time.Second))
+		cmds = append(cmds, m.dialogs.FlashUndo(label, undo, flashLong))
 	} else {
-		cmds = append(cmds, m.dialogs.Flash(label, 4*time.Second))
+		cmds = append(cmds, m.dialogs.Flash(label, flashResult))
 	}
 	return m, tea.Batch(cmds...)
 }
@@ -623,7 +623,7 @@ func (m Model) handleSchedulePause(msg uikit.SchedulePauseMsg) (tea.Model, tea.C
 		if errors.As(msg.Err, &statusErr) {
 			reason = statusErr.Detail()
 		}
-		return m, m.dialogs.Flash(failed+reason, 6*time.Second)
+		return m, m.dialogs.Flash(failed+reason, flashLong)
 	}
 	paused := maps.Clone(m.info.PausedTasks)
 	if paused == nil {
@@ -637,16 +637,16 @@ func (m Model) handleSchedulePause(msg uikit.SchedulePauseMsg) (tea.Model, tea.C
 	m.info.PausedTasks = paused
 	undo := m.streams.SetSchedulePaused(msg.TaskName, !msg.Paused)
 	label := fmt.Sprintf("%s the schedule of '%s' · press u to undo", verb, msg.TaskName)
-	return m, tea.Batch(m.streams.FetchTaskState(), m.dialogs.FlashUndo(label, undo, 6*time.Second))
+	return m, tea.Batch(m.streams.FetchTaskState(), m.dialogs.FlashUndo(label, undo, flashLong))
 }
 
 func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Restarted service", msg.TaskName, msg.Err)
 	if msg.Err != nil {
-		return m, m.dialogs.FlashError("Restart failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Restart failed: "+msg.Err.Error(), flashLong)
 	}
 	m.setServiceStopped(msg.TaskName, false)
-	if m.execView == nil || m.execView.Run == nil || m.execView.Run.TaskName != msg.TaskName {
+	if m.currentRun() == nil || m.execView.Run.TaskName != msg.TaskName {
 		return m, nil
 	}
 	// The open run is a pre-restart instance, now dead. Leave it for the fresh
@@ -663,10 +663,10 @@ func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea
 func (m Model) handleStopService(msg uikit.StopServiceMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Stopped service", msg.TaskName, msg.Err)
 	if msg.Err != nil {
-		return m, m.dialogs.FlashError("Stop failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Stop failed: "+msg.Err.Error(), flashLong)
 	}
 	m.setServiceStopped(msg.TaskName, true)
-	if m.execView != nil && m.execView.Run != nil && m.execView.Run.TaskName == msg.TaskName {
+	if m.currentRun() != nil && m.execView.Run.TaskName == msg.TaskName {
 		m.execView.SetServiceStopped(true)
 	}
 	return m, nil
@@ -701,10 +701,10 @@ func (m Model) handleLogLineHistory(msg uikit.LogLineHistoryMsg) (tea.Model, tea
 		return m, nil
 	}
 	if msg.Err != nil {
-		return m, m.dialogs.FlashError("Failed to load frame history", 3*time.Second)
+		return m, m.dialogs.FlashError("Failed to load frame history", flashShort)
 	}
 	if len(msg.Frames) == 0 {
-		return m, m.dialogs.Flash("No frame history for this line", 3*time.Second)
+		return m, m.dialogs.Flash("No frame history for this line", flashShort)
 	}
 	m.dialogs.Show(dlgLogHistory, NewLogHistoryDialog(msg.Line, msg.Frames, msg.Committed))
 	return m, nil
@@ -776,7 +776,7 @@ func (m *Model) applyDaemonInfo(info model.DaemonInfo) {
 // reloadConfig triggers an explicit config reload from inside the TUI. The
 // result arrives as a ReloadResultMsg.
 func (m *Model) reloadConfig() tea.Cmd {
-	return tea.Batch(m.dialogs.Flash("Reloading config…", 3*time.Second), m.streams.Reload())
+	return tea.Batch(m.dialogs.Flash("Reloading config…", flashShort), m.streams.Reload())
 }
 
 // handleReloadResult applies an operator-triggered reload: on success it adopts
@@ -785,7 +785,7 @@ func (m *Model) reloadConfig() tea.Cmd {
 // daemon's reason and leaves the running set untouched.
 func (m Model) handleReloadResult(msg uikit.ReloadResultMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
-		return m, m.dialogs.FlashError("Reload failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Reload failed: "+msg.Err.Error(), flashLong)
 	}
 
 	var cmds []tea.Cmd
@@ -799,7 +799,7 @@ func (m Model) handleReloadResult(msg uikit.ReloadResultMsg) (tea.Model, tea.Cmd
 		// A reload clears the pause of a task it made unpausable.
 		cmds = append(cmds, m.fetchExecWindow(), m.streams.FetchTaskState())
 	}
-	cmds = append(cmds, m.dialogs.Flash(reloadSummary(msg.Result), 5*time.Second))
+	cmds = append(cmds, m.dialogs.Flash(reloadSummary(msg.Result), flashLong))
 	return m, tea.Batch(cmds...)
 }
 
