@@ -4,6 +4,7 @@
 package executor
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -96,9 +97,13 @@ type Options struct {
 	EventBus               *events.Bus
 	StationDispatchEnabled bool
 	HasLocalTasks          bool
-	Docker                 Backend // container backend; nil when Docker is unavailable
-	Compose                Backend // compose backend; nil when docker compose is unavailable
-	MinFreeDisk            int64   // minimum free disk space in bytes; 0 = disabled
+	// Fingerprint identifies this daemon instance; it scopes managed-container
+	// reclaim in the compose backend.
+	Fingerprint string
+	// Docker and Compose override the real backends (tests); nil uses them.
+	Docker      Backend
+	Compose     Backend
+	MinFreeDisk int64 // minimum free disk space in bytes; 0 = disabled
 	// Clock is the wall-clock source for captured-output timestamps (system
 	// lines and the per-line timestamp index). nil defaults to time.Now;
 	// the demo seeder injects a backdated clock so historical runs carry
@@ -130,12 +135,8 @@ func New(opts Options) *RoutingExecutor {
 	// Availability separately governs what the Station peer may dispatch.
 	backends["http"] = &HTTPBackend{}
 	backends["shell"] = &ShellBackend{}
-	if opts.Docker != nil {
-		backends["container"] = opts.Docker
-	}
-	if opts.Compose != nil {
-		backends["compose"] = opts.Compose
-	}
+	backends["container"] = cmp.Or(opts.Docker, Backend(NewLazyContainerBackend()))
+	backends["compose"] = cmp.Or(opts.Compose, Backend(NewComposeBackend(opts.Fingerprint)))
 
 	// Always dispatchable: config-backed dispatch when local tasks exist.
 	if opts.HasLocalTasks {
@@ -152,18 +153,12 @@ func New(opts Options) *RoutingExecutor {
 		avail.Container = BackendStatus{Available: false, Reason: reason}
 		avail.Compose = BackendStatus{Available: false, Reason: reason}
 	} else {
+		// Container and compose report available even without Docker: both
+		// backends probe lazily, so a missing engine surfaces at run time.
 		avail.HTTP = BackendStatus{Available: true}
 		avail.Shell = BackendStatus{Available: true}
-		if opts.Docker != nil {
-			avail.Container = BackendStatus{Available: true}
-		} else {
-			avail.Container = BackendStatus{Available: false, Reason: "docker daemon unreachable"}
-		}
-		if opts.Compose != nil {
-			avail.Compose = BackendStatus{Available: true}
-		} else {
-			avail.Compose = BackendStatus{Available: false, Reason: "docker compose CLI unavailable"}
-		}
+		avail.Container = BackendStatus{Available: true}
+		avail.Compose = BackendStatus{Available: true}
 	}
 
 	clock := opts.Clock

@@ -466,36 +466,6 @@ func TestExecuteRoutesComposeToComposeBackend(t *testing.T) {
 	assert.True(t, ok, "backend should receive the ComposeExecution def")
 }
 
-func TestAvailabilityReflectsComposeOption(t *testing.T) {
-	tmpDir := t.TempDir()
-	eb := events.NewEventBus()
-
-	// Backend presence only governs compose availability once dispatch is enabled.
-	withCompose := New(Options{LogDir: tmpDir, EventBus: eb, StationDispatchEnabled: true, Compose: &recordingBackend{}, HasLocalTasks: true})
-	assert.True(t, withCompose.Availability().Compose.Available)
-
-	withoutCompose := New(Options{LogDir: tmpDir, EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
-	status := withoutCompose.Availability().Compose
-	assert.False(t, status.Available)
-	assert.Contains(t, status.Reason, "docker compose CLI unavailable")
-}
-
-// TestExecuteComposeWithoutBackendIsUnsupported covers the negative routing
-// path: when no compose backend is registered, a ComposeExecution task fails
-// with an "unsupported execution type" error rather than silently no-op'ing.
-func TestExecuteComposeWithoutBackendIsUnsupported(t *testing.T) {
-	tmpDir := t.TempDir()
-	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, HasLocalTasks: true})
-
-	run := &model.Run{ID: ulid.Make().String(), Status: model.PhaseRunning}
-	result := exec.Execute(context.Background(), newComposeTask("compose-missing"), run)
-
-	require.Error(t, result.Error)
-	assert.Equal(t, -1, result.ExitCode)
-	assert.Contains(t, result.Error.Error(), "unsupported execution type: compose")
-}
-
 func newTestExecutor(t *testing.T, opts Options) *RoutingExecutor {
 	t.Helper()
 	if opts.EventBus == nil {

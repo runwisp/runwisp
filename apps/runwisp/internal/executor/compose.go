@@ -62,6 +62,11 @@ type ComposeBackend struct {
 	// containers and used to scope reclaim/cleanup to our own containers.
 	fingerprint string
 
+	// probeMu guards avail. The probe runs under it so concurrent first starts
+	// share one `docker compose version` call.
+	probeMu sync.Mutex
+	avail   bool
+
 	// mu guards the maps below, which are created lazily so a bare struct
 	// literal is usable.
 	mu sync.Mutex
@@ -83,20 +88,27 @@ type composeSlot struct {
 }
 
 // NewComposeBackend returns a ComposeBackend ready for use. Availability is
-// not probed eagerly — wrap in NewLazyComposeBackend when you want startup
-// to survive a missing or slow docker CLI. fingerprint scopes managed-container
-// reclaim to this daemon instance.
+// probed on the first Start, not here, so the daemon boots even when the docker
+// CLI is missing or slow. fingerprint scopes managed-container reclaim to this
+// daemon instance.
 func NewComposeBackend(fingerprint string) *ComposeBackend {
 	return &ComposeBackend{dockerCmd: "docker", fingerprint: fingerprint}
 }
 
 // available probes `docker compose version` with a short timeout. Returns
 // false when the binary is missing, the daemon is unreachable, or the call
-// exceeds composeAvailableTimeout.
+// exceeds composeAvailableTimeout. Only success is cached: a transient failure
+// (docker still coming up) must not disable compose for the daemon's lifetime,
+// so it re-probes until the probe passes.
 func (b *ComposeBackend) available(ctx context.Context) bool {
-	probeCtx, cancel := context.WithTimeout(ctx, composeAvailableTimeout)
-	defer cancel()
-	return exec.CommandContext(probeCtx, b.dockerCmd, "compose", "version").Run() == nil
+	b.probeMu.Lock()
+	defer b.probeMu.Unlock()
+	if !b.avail {
+		probeCtx, cancel := context.WithTimeout(ctx, composeAvailableTimeout)
+		defer cancel()
+		b.avail = exec.CommandContext(probeCtx, b.dockerCmd, "compose", "version").Run() == nil
+	}
+	return b.avail
 }
 
 func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model.Run, def model.ExecutionDef) (*Process, error) {
@@ -106,6 +118,9 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 	}
 	if ce.File == "" {
 		return nil, fmt.Errorf("compose execution missing file path")
+	}
+	if !b.available(ctx) {
+		return nil, fmt.Errorf("docker compose unavailable: install Docker (with the compose plugin) or check that `docker compose version` succeeds")
 	}
 
 	instanceIndex := 0
@@ -516,44 +531,4 @@ func composeEnv(task *model.Task, run *model.Run, instanceIndex int) []string {
 		out[i] = k + "=" + merged[k]
 	}
 	return out
-}
-
-// LazyComposeBackend defers the docker compose availability probe until first
-// use. Mirrors LazyContainerBackend so the daemon boots fast even when the
-// docker CLI is slow to respond (or absent).
-type LazyComposeBackend struct {
-	mu          sync.Mutex
-	backend     *ComposeBackend
-	fingerprint string
-	avail       bool
-}
-
-// NewLazyComposeBackend returns a backend that probes `docker compose` on
-// first call to Start(). fingerprint scopes managed-container
-// reclaim to this daemon instance.
-func NewLazyComposeBackend(fingerprint string) *LazyComposeBackend {
-	return &LazyComposeBackend{fingerprint: fingerprint}
-}
-
-func (l *LazyComposeBackend) ensureProbed(ctx context.Context) (*ComposeBackend, bool) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.backend == nil {
-		l.backend = NewComposeBackend(l.fingerprint)
-	}
-	// Cache only success. A transient first-probe failure (docker still coming
-	// up) must not disable compose for the daemon's lifetime, so re-probe until
-	// it reports available — mirroring LazyContainerBackend's retry-on-failure.
-	if !l.avail {
-		l.avail = l.backend.available(ctx)
-	}
-	return l.backend, l.avail
-}
-
-func (l *LazyComposeBackend) Start(ctx context.Context, task *model.Task, run *model.Run, def model.ExecutionDef) (*Process, error) {
-	b, ok := l.ensureProbed(ctx)
-	if !ok {
-		return nil, fmt.Errorf("docker compose unavailable: install Docker (with the compose plugin) or check that `docker compose version` succeeds")
-	}
-	return b.Start(ctx, task, run, def)
 }
