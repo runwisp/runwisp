@@ -18,6 +18,7 @@ import (
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // RenderedMessage carries the output of a Renderer.
@@ -96,7 +97,7 @@ func funcMap(ctx TemplateContext) template.FuncMap {
 		"statusEmoji":   statusEmoji,
 		"statusVerb":    statusVerb,
 		"humanTime":     humanTime,
-		"humanDuration": humanDuration,
+		"humanDuration": textutil.FormatDuration,
 		"runDuration":   runDuration,
 		"triggerPhrase": triggerPhrase,
 		"eventSentence": eventSentence,
@@ -226,46 +227,17 @@ func humanTime(t time.Time) string {
 	return t.Format("2 Jan, 15:04")
 }
 
-// humanDuration formats a duration the way an operator would read aloud:
-// "0.3s", "12s", "3m 4s", "1h 12m". Negative or zero durations yield "0s"
-// so the renderer never emits a bare "-0.0s" eyesore.
-func humanDuration(d time.Duration) string {
-	if d <= 0 {
-		return "0s"
-	}
-	if d < time.Second {
-		seconds := float64(d) / float64(time.Second)
-		return fmt.Sprintf("%.1fs", seconds)
-	}
-	// Round before splitting into units so 59.6s carries into "1m", not "60s".
-	d = d.Round(time.Second)
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d/time.Second))
-	}
-	if d < time.Hour {
-		m := int(d / time.Minute)
-		s := int((d - time.Duration(m)*time.Minute) / time.Second)
-		if s == 0 {
-			return fmt.Sprintf("%dm", m)
-		}
-		return fmt.Sprintf("%dm %ds", m, s)
-	}
-	h := int(d / time.Hour)
-	m := int((d - time.Duration(h)*time.Hour) / time.Minute)
-	if m == 0 {
-		return fmt.Sprintf("%dh", h)
-	}
-	return fmt.Sprintf("%dh %dm", h, m)
-}
-
-// runDuration derives a humanized duration from run.EndedAt - run.StartedAt.
-// Returns the empty string when either endpoint is missing — the template
-// then omits the duration phrase entirely rather than printing "0s".
+// runDuration returns the run's formatted duration, or "" when it has none so
+// the template omits the duration phrase.
 func runDuration(r *model.Run) string {
-	if r == nil || r.StartedAt == nil || r.EndedAt == nil {
+	if r == nil {
 		return ""
 	}
-	return humanDuration(r.EndedAt.Sub(*r.StartedAt))
+	d, ok := r.Duration()
+	if !ok {
+		return ""
+	}
+	return textutil.FormatDuration(d)
 }
 
 // triggerPhrase maps a TriggeredBy to the operator-facing sentence prefix

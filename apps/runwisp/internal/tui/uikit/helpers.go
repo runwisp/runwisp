@@ -10,6 +10,7 @@ import (
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // SidebarWidth is the fixed width of the left sidebar panel in cells.
@@ -34,28 +35,14 @@ func PadLine(content string, width int, bg color.Color) string {
 // FormatDuration renders a run's elapsed time. When EndedAt is nil the duration
 // is measured against time.Now() so live cells tick forward.
 func FormatDuration(run model.Run) string {
-	if run.StartedAt == nil {
-		return "—"
+	d, ok := run.Duration()
+	if !ok {
+		if run.StartedAt == nil {
+			return "—"
+		}
+		d = time.Since(*run.StartedAt)
 	}
-	endTime := time.Now()
-	if run.EndedAt != nil {
-		endTime = *run.EndedAt
-	}
-	d := endTime.Sub(*run.StartedAt)
-	if d < time.Second {
-		return fmt.Sprintf("%dms", d.Milliseconds())
-	}
-	if d < time.Minute {
-		return fmt.Sprintf("%.1fs", d.Seconds())
-	}
-	if d < time.Hour {
-		mins := int(d.Minutes())
-		secs := int(d.Seconds()) % 60
-		return fmt.Sprintf("%dm%ds", mins, secs)
-	}
-	hrs := int(d.Hours())
-	mins := int(d.Minutes()) % 60
-	return fmt.Sprintf("%dh%dm", hrs, mins)
+	return textutil.FormatDuration(d)
 }
 
 // FormatUsage renders live usage as "CPU 12% · 48 MB" (100% is one core).

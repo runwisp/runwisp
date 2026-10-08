@@ -130,8 +130,6 @@ func reasonString(run *model.Run) string {
 // precision, or 0 when the run never started (e.g. skipped by a concurrency
 // policy) so the line still parses cleanly.
 func runDuration(run *model.Run) time.Duration {
-	if run.StartedAt == nil || run.EndedAt == nil {
-		return 0
-	}
-	return run.EndedAt.Sub(*run.StartedAt).Round(time.Millisecond)
+	d, _ := run.Duration()
+	return d.Round(time.Millisecond)
 }

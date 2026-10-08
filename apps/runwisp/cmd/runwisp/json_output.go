@@ -153,8 +153,8 @@ func runOutcome(r *model.Run) (endReason *string, failed bool, durationMS *int64
 		// the stats "failed" tile, which also excludes missed).
 		failed = r.IsFailure && *r.EndReason != model.ReasonMissed
 	}
-	if r.StartedAt != nil && r.EndedAt != nil {
-		ms := r.EndedAt.Sub(*r.StartedAt).Milliseconds()
+	if d, ok := r.Duration(); ok {
+		ms := d.Milliseconds()
 		durationMS = &ms
 	}
 	return endReason, failed, durationMS

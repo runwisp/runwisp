@@ -182,6 +182,15 @@ type Run struct {
 	OutputMatched bool `json:"-"`
 }
 
+// Duration is EndedAt minus StartedAt; ok is false until the run has both
+// (never started, or still running).
+func (r *Run) Duration() (d time.Duration, ok bool) {
+	if r.StartedAt == nil || r.EndedAt == nil {
+		return 0, false
+	}
+	return r.EndedAt.Sub(*r.StartedAt), true
+}
+
 // Copy creates a deep copy of the Run to prevent data races.
 func (r *Run) Copy() *Run {
 	if r == nil {

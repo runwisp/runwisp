@@ -95,7 +95,7 @@ func TestTelegram_RunFailed_WithURLAndTail(t *testing.T) {
 	got := renderTelegram(t, ctx, ev)
 	expected := "❌ <b>telegram-test-fail</b> failed\n" +
 		"\n" +
-		"Exited with code 1 after 0.3s.\n" +
+		"Exited with code 1 after 300ms.\n" +
 		"Triggered via the REST API · 14 May, 17:11.\n" +
 		"\n" +
 		"<blockquote>Error: connection refused\ndial tcp 127.0.0.1:5432: connect:\nconnection refused</blockquote>\n" +
@@ -132,7 +132,7 @@ func TestTelegram_RunFailed_NoURL_NoTail(t *testing.T) {
 	assert.NotContains(t, got, "🔗", "link line must be omitted when external_url is unset")
 	assert.NotContains(t, got, "<blockquote>", "blockquote must be omitted when log tail is empty")
 	assert.Contains(t, got, "<b>telegram-test-fail</b> failed")
-	assert.Contains(t, got, "Exited with code 1 after 0.3s.")
+	assert.Contains(t, got, "Exited with code 1 after 300ms.")
 	assert.Contains(t, got, "<i>from runwisp · bright-falcon</i>")
 }
 
@@ -160,7 +160,7 @@ func TestTelegram_RunSucceeded(t *testing.T) {
 	}
 	got := renderTelegram(t, ctx, ev)
 	assert.Contains(t, got, "✅ <b>nightly-backup</b> succeeded")
-	assert.Contains(t, got, "Completed in 12s.")
+	assert.Contains(t, got, "Completed in 12.4s.")
 	assert.Contains(t, got, "Scheduled run · 14 May, 17:11.")
 	assert.Contains(t, got, "View run</a>")
 	assert.NotContains(t, got, "<blockquote>", "no captured-output tail for successful runs")
@@ -192,7 +192,7 @@ func TestTelegram_RunTimeout_HasTail(t *testing.T) {
 	}
 	got := renderTelegram(t, ctx, ev)
 	assert.Contains(t, got, "⏱️ <b>long-task</b> timed out")
-	assert.Contains(t, got, "The task was killed after the configured timeout (5m elapsed).")
+	assert.Contains(t, got, "The task was killed after the configured timeout (5m0s elapsed).")
 	assert.Contains(t, got, "<blockquote>")
 }
 
@@ -285,7 +285,7 @@ func TestSlack_RunFailed_WithURLAndTail(t *testing.T) {
 
 	concatTexts := slackTexts(blocks)
 	assert.Contains(t, concatTexts, "❌ tg-fail failed")
-	assert.Contains(t, concatTexts, "Exited with code 1 after 0.3s.\nTriggered via the REST API · 14 May, 17:11.")
+	assert.Contains(t, concatTexts, "Exited with code 1 after 300ms.\nTriggered via the REST API · 14 May, 17:11.")
 	assert.Contains(t, concatTexts, "```\nError: connection refused\ndial tcp 127.0.0.1:5432: connect:\nconnection refused\n```")
 	assert.Contains(t, concatTexts, "View full run")
 	assert.Contains(t, concatTexts, "from runwisp · bright-falcon")
@@ -382,7 +382,7 @@ func TestDiscord_RunFailed_WithURLAndTail(t *testing.T) {
 	embed := parsed.Embeds[0]
 	assert.Equal(t, "❌ dc-fail failed", embed.Title)
 	assert.Equal(t, "https://r.example.com/tasks/dc-fail/01KRK9", embed.URL)
-	assert.Contains(t, embed.Description, "Exited with code 1 after 0.3s.\nTriggered via the REST API · 14 May, 17:11.")
+	assert.Contains(t, embed.Description, "Exited with code 1 after 300ms.\nTriggered via the REST API · 14 May, 17:11.")
 	assert.Contains(t, embed.Description, "```\nError: connection refused\ndial tcp 127.0.0.1:5432: connect:\nconnection refused\n```")
 	assert.Equal(t, 15548997, embed.Color, "error must render red")
 	assert.Equal(t, "from runwisp · bright-falcon", embed.Footer.Text)
