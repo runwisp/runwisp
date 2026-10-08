@@ -206,6 +206,7 @@ export default defineConfig({
                 {
                     label: "Production",
                     items: [
+                        { label: "Best practices", slug: "operations/best-practices" },
                         { label: "Running in Docker", slug: "getting-started/docker" },
                         { label: "Autostart", slug: "operations/autostart" },
                         { label: "Reload & restart", slug: "operations/reload" },

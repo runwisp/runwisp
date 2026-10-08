@@ -76,6 +76,7 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
     {
         label: "Production",
         slugs: [
+            "operations/best-practices",
             "getting-started/docker",
             "operations/autostart",
             "operations/reload",

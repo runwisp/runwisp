@@ -20,6 +20,7 @@ group          = "Health checks"
 description    = "External probe of the public API every 5 minutes"
 cron           = "*/5 * * * *"
 on_overlap     = "skip"
+catch_up       = 0
 timeout        = "30s"
 retry_attempts = 2
 retry_delay    = "30s"
@@ -42,6 +43,9 @@ curl --silent --show-error --fail-with-body \\
 - **`on_overlap = "skip"`:** a slow probe doesn't get a second one stacked on
   it. The dropped firing is recorded as `skipped`, which isn't a failure and
   doesn't alert.
+- **`catch_up = 0`:** probes missed while the daemon was down are not run
+  when it comes back. They would only report on a past you can't change. See
+  [`catch_up`](/configuration/tasks/#catch_up).
 - **`timeout = "30s"` with `curl --max-time 25`:** curl gives up first, so the
   log shows curl's own error message. The `timeout` is the backstop.
 - **`retry_attempts = 2`, `retry_delay = "30s"`, `retry_backoff = "linear"`:**
