@@ -105,23 +105,15 @@ func RelativeTime(t, now time.Time) string {
 	}
 }
 
-// FormatTimeAgo renders a short relative-time label ("5m ago", "Jan 02 15:04").
-// Past a day it shows the absolute time in loc (nil means the process zone).
+// FormatTimeAgo is RelativeTime up to a day, then the absolute time in loc
+// (nil means the process zone).
 func FormatTimeAgo(t time.Time, loc *time.Location) string {
-	d := time.Since(t)
-	switch {
-	case d < time.Second:
-		return "just now"
-	case d < time.Minute:
-		return fmt.Sprintf("%ds ago", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d.Hours()))
-	default:
-		if loc == nil {
-			loc = time.Local
-		}
-		return t.In(loc).Format("Jan 02 15:04")
+	now := time.Now()
+	if now.Sub(t) < 24*time.Hour {
+		return RelativeTime(t, now)
 	}
+	if loc == nil {
+		loc = time.Local
+	}
+	return t.In(loc).Format("Jan 02 15:04")
 }

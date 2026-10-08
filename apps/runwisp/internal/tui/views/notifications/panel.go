@@ -378,7 +378,7 @@ func (p *Panel) renderCollapsed() string {
 		summaryStyle := lipgloss.NewStyle().Background(uikit.ColorBgLight).Foreground(uikit.ColorTextDim)
 		sev := severityStyle(latest.Severity).Background(uikit.ColorBgLight).Render(strings.ToUpper(latest.Severity))
 		leading := summaryStyle.Render("  ")
-		trailing := summaryStyle.Render(" · " + summarizeNotification(*latest) + " · " + relativeTime(latest.LastOccurredAt))
+		trailing := summaryStyle.Render(" · " + summarizeNotification(*latest) + " · " + uikit.RelativeTime(latest.LastOccurredAt, time.Now()))
 		body = prefix + leading + sev + trailing + hint
 	}
 
@@ -466,7 +466,7 @@ func (p *Panel) renderRow(n server.NotificationDTO, selected bool) string {
 	if n.Count > 1 {
 		title = fmt.Sprintf("%s ×%d", title, n.Count)
 	}
-	when := relativeTime(n.LastOccurredAt)
+	when := uikit.RelativeTime(n.LastOccurredAt, time.Now())
 
 	indentStyle := lipgloss.NewStyle().Background(bg).Foreground(uikit.ColorTextMuted)
 	titleStyle := lipgloss.NewStyle().Background(bg).Foreground(uikit.ColorText).Bold(selected)
@@ -516,16 +516,6 @@ func summarizeNotification(n server.NotificationDTO) string {
 		return fmt.Sprintf("%s (×%d)", title, n.Count)
 	}
 	return title
-}
-
-// relativeTime is the single source of truth for relative-time labels — kept
-// in lockstep with the Web UI's rhythm phrase so operators see the same
-// "just now / 5m ago / 3d ago" wording in both surfaces.
-func relativeTime(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return uikit.RelativeTime(t, time.Now())
 }
 
 func isUnread(n server.NotificationDTO) bool { return n.ReadAt == nil }
