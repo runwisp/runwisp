@@ -70,10 +70,6 @@
     const selectClass =
         "h-9 w-full appearance-none rounded-[3px] border border-outline bg-surface-raised px-2.5 font-mono text-sm text-on-surface focus:border-ring focus:outline-none";
 
-    function statusDot(status: RunStatus): string {
-        return RUN_STATUS_CONFIG[status].dot.replace(" animate-pulse", "");
-    }
-
     // Reflect a tri-state bucket onto the native checkbox (no `indeterminate`
     // HTML attribute exists, it must be set on the DOM node).
     function indeterminate(node: HTMLInputElement, value: boolean) {
@@ -202,7 +198,10 @@
                                         onchange={() => toggleStatus(status)}
                                         class="size-3.5 shrink-0 cursor-pointer rounded border-outline accent-primary"
                                     />
-                                    <span class="size-2 shrink-0 rounded-full {statusDot(status)}"
+                                    <span
+                                        class="size-2 shrink-0 rounded-full {RUN_STATUS_CONFIG[
+                                            status
+                                        ].solidDot}"
                                     ></span>
                                     <span class="truncate text-on-surface">
                                         {humanizeStatus(status)}

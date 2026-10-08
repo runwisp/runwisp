@@ -682,7 +682,7 @@
     {@const dstatus = displayStatus(run.status, run.endReason)}
     {@const config = RUN_STATUS_CONFIG[dstatus]}
     {@const running = run.status === "running"}
-    {@const spine = config.dot.replace(" animate-pulse", "")}
+    {@const spine = config.solidDot}
     {@const startedAt = run.startedAt ?? run.createdAt}
     {@const retry = runRetryLabel(run)}
     {@const suffix = instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}

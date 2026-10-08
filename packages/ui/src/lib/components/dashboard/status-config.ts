@@ -23,7 +23,14 @@ interface RunStatusConfig {
     color: string;
     bg: string;
     dot: string;
+    /** `dot` without the running pulse, for static markers (spines, filter swatches). */
+    solidDot: string;
     badge: string;
+    /**
+     * Accent colour for statuses that mean "something to triage", or undefined.
+     * A deliberate stop or a skip is not an alarm, and success least of all.
+     */
+    alarm: string | undefined;
     /** One-sentence explanation of what this status means, for tooltips. */
     description: string;
 }
@@ -34,19 +41,25 @@ const DANGER = {
     color: "text-danger-surface",
     bg: "bg-danger-soft",
     dot: "bg-danger-surface",
+    solidDot: "bg-danger-surface",
     badge: "bg-danger-soft text-danger-soft-text",
+    alarm: "var(--color-danger-surface)",
 };
 const WARNING = {
     color: "text-warning-surface",
     bg: "bg-warning-soft",
     dot: "bg-warning-surface",
+    solidDot: "bg-warning-surface",
     badge: "bg-warning-soft text-warning-soft-text",
+    alarm: "var(--color-warning-surface)",
 };
 const NEUTRAL = {
     color: "text-on-surface-muted",
     bg: "bg-surface-sunken",
     dot: "bg-on-surface-faint",
+    solidDot: "bg-on-surface-faint",
     badge: "bg-surface-sunken text-on-surface",
+    alarm: undefined,
 };
 
 export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
@@ -55,7 +68,9 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         color: "text-info-surface",
         bg: "bg-info-soft",
         dot: "bg-info-surface animate-pulse",
+        solidDot: "bg-info-surface",
         badge: "bg-info-soft text-info-soft-text",
+        alarm: undefined,
         description: "This run is executing right now.",
     },
     succeeded: {
@@ -63,7 +78,9 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         color: "text-success-surface",
         bg: "bg-success-soft",
         dot: "bg-success-surface",
+        solidDot: "bg-success-surface",
         badge: "bg-success-soft text-success-soft-text",
+        alarm: undefined,
         description: "The run finished with exit code 0 - everything OK.",
     },
     failed: {
@@ -79,6 +96,7 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
     },
     stopped: {
         ...WARNING,
+        alarm: undefined,
         icon: CircleStop,
         description: "A human or an external script manually stopped this run before it finished.",
     },

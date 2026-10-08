@@ -281,26 +281,6 @@
     let runMenuOpen = $state(false);
     const runIdCopy = new CopyFeedback(1200);
 
-    // The accent for a status that means "something to triage", or undefined
-    // when there is nothing wrong. Tint is reserved for alarms (DESIGN.md) so a
-    // failure is the one lit thing on the page, a deliberate stop or a skip is
-    // not a failure, and success least of all. Doubles as the switch for the
-    // verdict phrase's colour, so wash and wording light up together.
-    function alarmAccent(displayed: string): string | undefined {
-        if (
-            displayed === "failed" ||
-            displayed === "crashed" ||
-            displayed === "log_overflow" ||
-            displayed === "missed" ||
-            displayed === "start_failed" ||
-            displayed === "unhealthy"
-        )
-            return "var(--color-danger-surface)";
-        if (displayed === "timeout" || displayed === "daemon_stopped" || displayed === "queue_full")
-            return "var(--color-warning-surface)";
-        return undefined;
-    }
-
     function handleConsoleKeydown(event: KeyboardEvent) {
         if (!run) return;
         if (event.key === "Escape" && consoleMaximized) {
@@ -377,7 +357,7 @@
     {@const live = run.status === "running" ? getLiveUsage(run.id) : undefined}
     {@const paramEntries = run.params ? Object.entries(run.params) : []}
     {@const suffix = instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}
-    {@const spine = config.dot.replace(" animate-pulse", "")}
+    {@const spine = config.solidDot}
     {@const isRunning = run.status === "running"}
     <!-- A code is worth the ink only when it is news: `exit 0` restates
          "succeeded", while a non-zero code is the first thing to triage on. -->
@@ -395,7 +375,7 @@
         status === "stopped" || status === "daemon_stopped" || status === "timeout"
             ? "warn"
             : "muted"}
-    {@const alarm = alarmAccent(status)}
+    {@const alarm = config.alarm}
     <!-- The panel: a status spine runs the full left edge across both the header
          readout and the console below, hugging the rail divider (artifact
          ".detail .spine"). -->

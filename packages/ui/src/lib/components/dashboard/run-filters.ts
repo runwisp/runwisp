@@ -3,6 +3,7 @@
 
 import { TRIGGERS, type Trigger } from "@runwisp/common";
 import { TRIGGER_LABELS } from "./run-helpers.js";
+import { RUN_STATUS_CONFIG } from "./status-config.js";
 
 /**
  * The filter shared by the runs list, the filter popover, the SSE-merge source
@@ -42,7 +43,7 @@ export const FAILURE_STATUS_TOKEN = "failure";
 /**
  * Outcome buckets: a UI grouping of the individual run statuses into five
  * plain-language picks. The popover's "Advanced" section still exposes the
- * individual statuses. `dot` mirrors the group's color in RUN_STATUS_CONFIG.
+ * individual statuses.
  */
 export interface StatusBucket {
     key: string;
@@ -52,24 +53,34 @@ export interface StatusBucket {
 }
 
 export const STATUS_BUCKETS: readonly StatusBucket[] = [
-    { key: "running", label: "Running", dot: "bg-info-surface", statuses: ["pending", "running"] },
-    { key: "succeeded", label: "Succeeded", dot: "bg-success-surface", statuses: ["succeeded"] },
+    {
+        key: "running",
+        label: "Running",
+        dot: RUN_STATUS_CONFIG.running.solidDot,
+        statuses: ["pending", "running"],
+    },
+    {
+        key: "succeeded",
+        label: "Succeeded",
+        dot: RUN_STATUS_CONFIG.succeeded.solidDot,
+        statuses: ["succeeded"],
+    },
     {
         key: "failed",
         label: "Failed",
-        dot: "bg-danger-surface",
+        dot: RUN_STATUS_CONFIG.failed.solidDot,
         statuses: [FAILURE_STATUS_TOKEN],
     },
     {
         key: "skipped",
         label: "Skipped",
-        dot: "bg-on-surface-faint",
+        dot: RUN_STATUS_CONFIG.skipped.solidDot,
         statuses: ["skipped", "dst_skipped", "queue_full"],
     },
     {
         key: "stopped",
         label: "Stopped",
-        dot: "bg-warning-surface",
+        dot: RUN_STATUS_CONFIG.stopped.solidDot,
         statuses: ["stopped", "daemon_stopped"],
     },
 ];
