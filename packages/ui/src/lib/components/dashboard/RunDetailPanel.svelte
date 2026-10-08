@@ -36,6 +36,7 @@
     import { isLogEvent, type LogEvent, type LogSlice } from "../../log-console/types.js";
     import { formatBytes, formatClockTime, formatCalendarDate } from "../../utils/format.js";
     import { formatShortId } from "../../utils/id.js";
+    import { isTypingTarget } from "../../utils/typing-target.js";
     import { TickingNow } from "../../utils/ticking-now.svelte.js";
     import { CopyFeedback } from "../../utils/clipboard.svelte.js";
     import { displayStatus, type ResourceUsage, type Run } from "@runwisp/common";
@@ -295,14 +296,7 @@
             !event.ctrlKey &&
             !event.altKey
         ) {
-            const target = event.target;
-            if (
-                target instanceof HTMLElement &&
-                (target.tagName === "INPUT" ||
-                    target.tagName === "TEXTAREA" ||
-                    target.isContentEditable)
-            )
-                return;
+            if (isTypingTarget(event.target)) return;
             event.preventDefault();
             consoleMaximized = !consoleMaximized;
         }

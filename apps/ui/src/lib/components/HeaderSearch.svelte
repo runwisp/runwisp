@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { Search, X, LoaderCircle } from "@lucide/svelte";
-    import { Kbd } from "@runwisp/ui";
+    import { Kbd, isTypingTarget } from "@runwisp/ui";
     import { headerSearchStore } from "$lib/stores";
 
     // Debounce typing before handing the query to the page, so a filter or a
@@ -33,15 +33,7 @@
             return;
         }
         // Don't steal ⌘K while the operator is typing in some other field.
-        const target = e.target;
-        if (
-            target !== inputEl &&
-            (target instanceof HTMLInputElement ||
-                target instanceof HTMLTextAreaElement ||
-                (target instanceof HTMLElement && target.isContentEditable))
-        ) {
-            return;
-        }
+        if (e.target !== inputEl && isTypingTarget(e.target)) return;
         e.preventDefault();
         focus();
     }

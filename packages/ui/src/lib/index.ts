@@ -117,6 +117,7 @@ export {
 } from "./utils/format.js";
 export { formatShortId } from "./utils/id.js";
 export { debounce } from "./utils/debounce.js";
+export { isTypingTarget } from "./utils/typing-target.js";
 export { TickingNow } from "./utils/ticking-now.svelte.js";
 export { CopyFeedback, copyText } from "./utils/clipboard.svelte.js";
 export { RunMotion } from "./utils/run-motion.js";
