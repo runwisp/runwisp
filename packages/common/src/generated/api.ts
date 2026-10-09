@@ -1542,7 +1542,7 @@ export interface components {
             workDir: string;
         };
         Task: {
-            /** @description For services: whether instances start at boot. False boots in the stopped state until started via API/UI. */
+            /** @description For services: whether instances start at boot. False boots in the stopped state until started via API/UI. For cron tasks: false starts the schedule paused when the task is first registered, until it is resumed. */
             autostart: boolean;
             /**
              * Format: int64
@@ -1743,7 +1743,7 @@ export interface components {
              * @example http://localhost:9477/schemas/TaskResponse.json
              */
             readonly $schema?: string;
-            /** @description For services: whether instances start at boot. False boots in the stopped state until started via API/UI. */
+            /** @description For services: whether instances start at boot. False boots in the stopped state until started via API/UI. For cron tasks: false starts the schedule paused when the task is first registered, until it is resumed. */
             autostart: boolean;
             /**
              * Format: int64

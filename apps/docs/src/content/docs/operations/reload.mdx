@@ -100,6 +100,9 @@ to finish before the daemon stops. See
 - **A stopped service stays stopped,** even if the new definition says
   [`autostart = true`](/configuration/services/#autostart). The reload prints a `!` warning about it. Start it with
   `runwisp start <service>`.
+- **A known cron task keeps firing,** even if the new definition says
+  [`autostart = false`](/configuration/tasks/#autostart). The reload prints a
+  `!` warning about it. Pause it with `runwisp pause <task>`.
 
 If you want `run_on_start` and catch-up to happen, use `runwisp restart`.
 A `run_on_start = "boot"` task that already ran this boot stays skipped.

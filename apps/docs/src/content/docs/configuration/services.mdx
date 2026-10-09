@@ -288,7 +288,9 @@ stopped until you start it from the UI or API.
 
 This is read from `runwisp.toml` at every boot, not saved: a manually started
 `autostart = false` service is stopped again after a daemon restart, and a
-manually stopped `autostart = true` service starts again.
+manually stopped `autostart = true` service starts again. A task's
+[`autostart`](/configuration/tasks/#autostart) works differently: it applies
+only the first time RunWisp sees the task.
 
 ```toml title="runwisp.toml"
 [services.migration-runner]

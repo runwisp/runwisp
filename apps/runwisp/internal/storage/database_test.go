@@ -777,7 +777,8 @@ func TestForgetTaskRegistrationsExcept(t *testing.T) {
 
 	at := time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)
 	for _, name := range []string{"kept", "gone"} {
-		require.NoError(t, db.EnsureTaskRegistered(ctx, name, at))
+		_, err := db.EnsureTaskRegistered(ctx, name, at, false)
+		require.NoError(t, err)
 	}
 	require.NoError(t, db.CreateRun(ctx, &model.Run{
 		ID: ulid.Make().String(), TaskName: "gone", Status: model.PhaseEnded,
@@ -809,10 +810,15 @@ func TestEnsureTaskRegistered(t *testing.T) {
 	firstSeen := time.Now().Truncate(time.Second)
 
 	// First call inserts the record.
-	require.NoError(t, db.EnsureTaskRegistered(ctx, "my-task", firstSeen))
+	inserted, err := db.EnsureTaskRegistered(ctx, "my-task", firstSeen, false)
+	require.NoError(t, err)
+	assert.True(t, inserted)
 
-	// Second call with a different time is idempotent (INSERT OR IGNORE).
-	require.NoError(t, db.EnsureTaskRegistered(ctx, "my-task", firstSeen.Add(time.Hour)))
+	// Second call with a different time is idempotent (INSERT OR IGNORE), and
+	// paused does not touch the existing row.
+	inserted, err = db.EnsureTaskRegistered(ctx, "my-task", firstSeen.Add(time.Hour), true)
+	require.NoError(t, err)
+	assert.False(t, inserted)
 
 	reg, err := db.GetTaskRegistration(ctx, "my-task")
 	require.NoError(t, err)
@@ -820,6 +826,16 @@ func TestEnsureTaskRegistered(t *testing.T) {
 	assert.Equal(t, "my-task", reg.TaskName)
 	// The stored value is the original firstSeen, not the later time.
 	assert.WithinDuration(t, firstSeen, reg.FirstSeenAt, time.Second)
+	assert.Nil(t, reg.PausedAt)
+
+	// A new row registered paused starts paused at its first-seen time.
+	inserted, err = db.EnsureTaskRegistered(ctx, "held-back", firstSeen, true)
+	require.NoError(t, err)
+	assert.True(t, inserted)
+	reg, err = db.GetTaskRegistration(ctx, "held-back")
+	require.NoError(t, err)
+	require.NotNil(t, reg.PausedAt)
+	assert.True(t, reg.PausedAt.Equal(firstSeen))
 }
 
 func TestGetTaskRegistration(t *testing.T) {
@@ -834,7 +850,8 @@ func TestGetTaskRegistration(t *testing.T) {
 
 	// After registering, returns a populated record.
 	firstSeen := time.Now().Truncate(time.Second)
-	require.NoError(t, db.EnsureTaskRegistered(ctx, "reg-task", firstSeen))
+	_, err = db.EnsureTaskRegistered(ctx, "reg-task", firstSeen, false)
+	require.NoError(t, err)
 
 	reg, err = db.GetTaskRegistration(ctx, "reg-task")
 	require.NoError(t, err)
@@ -860,7 +877,8 @@ func TestTaskSchedulePause(t *testing.T) {
 	assert.Nil(t, reg.ResumedAt)
 
 	// Re-pausing keeps the first pause time; first_seen_at is untouched.
-	require.NoError(t, db.EnsureTaskRegistered(ctx, "known", at.Add(-time.Hour)))
+	_, err = db.EnsureTaskRegistered(ctx, "known", at.Add(-time.Hour), false)
+	require.NoError(t, err)
 	require.NoError(t, db.PauseTaskSchedule(ctx, "known", at))
 	require.NoError(t, db.PauseTaskSchedule(ctx, "known", at.Add(time.Hour)))
 	reg, err = db.GetTaskRegistration(ctx, "known")
@@ -1097,7 +1115,8 @@ func TestSQLiteDatabase_ErrorPathsAfterClose(t *testing.T) {
 
 	assert.Error(t, db.ForgetTaskRegistrationsExcept(ctx, []string{"t"}))
 
-	assert.Error(t, db.EnsureTaskRegistered(ctx, "t", time.Now()))
+	_, err = db.EnsureTaskRegistered(ctx, "t", time.Now(), false)
+	assert.Error(t, err)
 
 	_, err = db.GetTaskRegistration(ctx, "t")
 	assert.Error(t, err)

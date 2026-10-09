@@ -59,8 +59,10 @@ func SnapshotCatchupAnchors(ctx context.Context, db storage.RunRepository, tasks
 		}
 		// Persist first-seen timestamp; INSERT OR IGNORE is a no-op on every
 		// restart after the first. On first startup firstSeenAt == now, so
-		// countMissedTicks returns 0 — no spurious initial run.
-		if err := db.EnsureTaskRegistered(ctx, task.Name, now); err != nil {
+		// countMissedTicks returns 0: no spurious initial run. An
+		// autostart = false task's new row starts paused; the scheduler loads
+		// that pause in RestorePauses, which runs after this.
+		if _, err := db.EnsureTaskRegistered(ctx, task.Name, now, task.StartsPaused()); err != nil {
 			slog.Warn("Failed to register task for catch-up", "task", task.Name, "err", err)
 			errs++
 			continue

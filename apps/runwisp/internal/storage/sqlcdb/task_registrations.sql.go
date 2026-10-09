@@ -50,22 +50,28 @@ func (q *Queries) DeleteTaskRegistrationsExcept(ctx context.Context, keep []stri
 	return err
 }
 
-const ensureTaskRegistered = `-- name: EnsureTaskRegistered :exec
+const ensureTaskRegistered = `-- name: EnsureTaskRegistered :execrows
 
-INSERT OR IGNORE INTO task_registrations (task_name, first_seen_at)
-VALUES (?, ?)
+INSERT OR IGNORE INTO task_registrations (task_name, first_seen_at, paused_at)
+VALUES (?, ?, ?)
 `
 
 type EnsureTaskRegisteredParams struct {
-	TaskName    string    `json:"task_name"`
-	FirstSeenAt time.Time `json:"first_seen_at"`
+	TaskName    string     `json:"task_name"`
+	FirstSeenAt time.Time  `json:"first_seen_at"`
+	PausedAt    *time.Time `json:"paused_at"`
 }
 
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
-func (q *Queries) EnsureTaskRegistered(ctx context.Context, arg EnsureTaskRegisteredParams) error {
-	_, err := q.db.ExecContext(ctx, ensureTaskRegistered, arg.TaskName, arg.FirstSeenAt)
-	return err
+// A new row may start paused (autostart = false). An existing row is left
+// untouched, so 0 rows affected means the task was already registered.
+func (q *Queries) EnsureTaskRegistered(ctx context.Context, arg EnsureTaskRegisteredParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, ensureTaskRegistered, arg.TaskName, arg.FirstSeenAt, arg.PausedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const getTaskRegistration = `-- name: GetTaskRegistration :one

@@ -56,7 +56,7 @@ func TestRunMissedTickCatchUp_RecordedRowAnchorsNextRestart(t *testing.T) {
 	// back, so the registration's last run is a past anchor: at */5 that's
 	// four missed ticks by 10:20.
 	anchor := time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)
-	require.NoError(t, db.EnsureTaskRegistered(context.Background(), task.Name, anchor.Add(-time.Hour)))
+	mustRegister(t, db, task.Name, anchor.Add(-time.Hour))
 	require.NoError(t, db.CreateRun(context.Background(), &model.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    task.Name,
@@ -121,7 +121,7 @@ func TestSnapshotCatchupAnchors_FreezesBeforeContaminatingWrites(t *testing.T) {
 
 	// The real last run before the daemon went down: six hours ago.
 	staleAnchor := time.Date(2026, 4, 7, 4, 0, 0, 0, time.UTC)
-	require.NoError(t, db.EnsureTaskRegistered(ctx, task.Name, staleAnchor.Add(-time.Hour)))
+	mustRegister(t, db, task.Name, staleAnchor.Add(-time.Hour))
 	require.NoError(t, db.CreateRun(ctx, &model.Run{
 		ID:        ulid.Make().String(),
 		TaskName:  task.Name,

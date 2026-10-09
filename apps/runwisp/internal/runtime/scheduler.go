@@ -574,6 +574,16 @@ func (scheduler *Scheduler) Pause(ctx context.Context, name string) error {
 	return nil
 }
 
+// adoptPause records in memory a pause the task's first registration already
+// persisted (autostart = false), so a reload-added or unheld task starts
+// paused without waiting for the next boot's RestorePauses.
+func (scheduler *Scheduler) adoptPause(name string, at time.Time) {
+	scheduler.mutex.Lock()
+	defer scheduler.mutex.Unlock()
+	scheduler.paused[name] = at
+	slog.Info("Cron schedule starts paused (autostart = false)", "task", name)
+}
+
 // Resume lets the task's cron ticks fire again from the next tick on. Ticks
 // that fell inside the pause are not caught up. A no-op when not paused.
 func (scheduler *Scheduler) Resume(ctx context.Context, name string) error {

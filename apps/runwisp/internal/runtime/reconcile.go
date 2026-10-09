@@ -356,9 +356,7 @@ func (r *Reconciler) applyAdded(task *model.Task) {
 	// make the whole hold window look like missed ticks once the hold lifts. It
 	// gets its anchor when it becomes schedulable (see anchorUnheld).
 	if !task.Held() {
-		if err := r.db.EnsureTaskRegistered(context.Background(), task.Name, r.now()); err != nil {
-			slog.Warn("Failed to register added task for catch-up tracking", "task", task.Name, "err", err)
-		}
+		r.register(task, "added")
 	}
 	r.publishTask(task)
 
@@ -382,8 +380,7 @@ func (r *Reconciler) applyAdded(task *model.Task) {
 // reschedules the cron entry; a changed service is recycled so the new command,
 // env, or instance count takes effect. It returns a non-fatal notice for the
 // reload result when the change deliberately does nothing an operator might have
-// expected (currently only an autostart false→true flip on a service that stays
-// stopped).
+// expected (an autostart flip that reload does not act on).
 func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *model.Task) string {
 	// A task that stopped being a service: cancel its old instances before the
 	// definition flips so the supervisor doesn't keep refilling them.
@@ -401,7 +398,7 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 	}
 
 	if !newTask.Kind.IsService() {
-		return ""
+		return r.autostartFlipWarning(oldTask, newTask)
 	}
 	if oldTask.Kind.IsService() {
 		// A genuine service-definition change: bounce the running instances so
@@ -419,12 +416,24 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 	return ""
 }
 
-// autostartFlipWarning surfaces the one reload case that silently does nothing an
-// operator plausibly expected: a service whose definition just flipped
-// autostart=false→true but that stays stopped, because reload is not a restart.
-// It queries the live supervisor rather than inferring from the definitions, so a
-// service the operator started by hand (now running) never triggers the nudge.
+// autostartFlipWarning surfaces the reload cases where an autostart flip
+// silently does nothing an operator plausibly expected, because reload is not a
+// restart:
+//   - a service that flipped autostart=false→true but stays stopped. The live
+//     supervisor is queried rather than inferred from the definitions, so a
+//     service the operator started by hand (now running) never triggers it.
+//   - a cron task that now has autostart = false but whose schedule is not
+//     paused. autostart = false only pauses a task when it is first registered,
+//     so a task RunWisp already knew keeps firing.
 func (r *Reconciler) autostartFlipWarning(oldTask, newTask *model.Task) string {
+	if !newTask.Kind.IsService() {
+		if oldTask.StartsPaused() || !newTask.StartsPaused() ||
+			(r.scheduler != nil && r.scheduler.IsPaused(newTask.Name)) {
+			return ""
+		}
+		return fmt.Sprintf("task %q has autostart = false but its schedule is not paused; autostart only applies when a task is first added; run 'runwisp pause %s' to pause it now",
+			newTask.Name, newTask.Name)
+	}
 	if oldTask.Autostart || !newTask.Autostart {
 		return ""
 	}
@@ -432,7 +441,7 @@ func (r *Reconciler) autostartFlipWarning(oldTask, newTask *model.Task) string {
 	if !ok || snap.State != model.ServiceStopped {
 		return ""
 	}
-	return fmt.Sprintf("service %q has autostart=true but is stopped — reload never starts a stopped service; run 'runwisp restart %s' to start it now",
+	return fmt.Sprintf("service %q has autostart=true but is stopped; reload never starts a stopped service; run 'runwisp restart %s' to start it now",
 		newTask.Name, newTask.Name)
 }
 
@@ -467,9 +476,24 @@ func (r *Reconciler) anchorUnheld(oldTask, newTask *model.Task) {
 	if !oldTask.Held() || newTask.Held() {
 		return
 	}
-	if err := r.db.EnsureTaskRegistered(context.Background(), newTask.Name, r.now()); err != nil {
-		slog.Warn("Failed to register unheld task for catch-up tracking",
-			"task", newTask.Name, "err", err)
+	r.register(newTask, "unheld")
+}
+
+// register stamps task's catch-up anchor (a no-op once it has one). The first
+// registration of an autostart = false task also pauses its schedule: the same
+// insert persists the pause, so only the scheduler's in-memory copy is set
+// here, before the caller adds the cron entry. what names the occasion in the
+// failure log.
+func (r *Reconciler) register(task *model.Task, what string) {
+	now := r.now()
+	paused := task.StartsPaused()
+	inserted, err := r.db.EnsureTaskRegistered(context.Background(), task.Name, now, paused)
+	if err != nil {
+		slog.Warn("Failed to register "+what+" task for catch-up tracking", "task", task.Name, "err", err)
+		return
+	}
+	if inserted && paused && r.scheduler != nil {
+		r.scheduler.adoptPause(task.Name, now)
 	}
 }
 

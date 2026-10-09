@@ -472,6 +472,9 @@ type taskWire struct {
 	// decodes as any and is resolved by parseRunOnStart. Exempt from ${...}
 	// substitution: the expander cannot write through an interface.
 	RunOnStart any `toml:"run_on_start,omitempty" expand:"-"`
+	// Autostart is a pointer so an omitted key (nil → default true) is
+	// distinguishable from an explicit `autostart = false`.
+	Autostart *bool `toml:"autostart,omitempty"`
 
 	MaxConcurrent int  `toml:"max_concurrent,omitempty"`
 	MaxQueued     *int `toml:"max_queued,omitempty"`
@@ -510,12 +513,35 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	task.CatchUp = w.CatchUp
 	task.RunOnStart = runOnStart != ""
 	task.RunOnStartMode = runOnStart
+	task.Autostart = w.Autostart == nil || *w.Autostart
+	if err := checkTaskAutostart(&task); err != nil {
+		return model.Task{}, err
+	}
 	task.MaxConcurrent = w.MaxConcurrent
 	task.MaxQueued = w.MaxQueued
 	task.RetryAttempts = w.RetryAttempts
 	task.RetryDelay = retryDelay
 	task.RetryBackoff = w.RetryBackoff
 	return task, nil
+}
+
+// checkTaskAutostart rejects autostart = false where the paused schedule it
+// asks for can't exist, could never be resumed, or is undercut by a run at
+// every start. It runs at decode time, where autostart is known to come from
+// the operator's TOML rather than a zero-valued Task built in code.
+func checkTaskAutostart(task *model.Task) error {
+	if task.Autostart {
+		return nil
+	}
+	switch {
+	case task.Cron == "":
+		return fmt.Errorf("task %q sets autostart = false but has no cron; autostart = false only pauses a cron schedule", task.Name)
+	case !task.ManualTrigger:
+		return fmt.Errorf("task %q sets autostart = false with manual_trigger = false; its paused schedule could never be resumed", task.Name)
+	case task.RunOnStart:
+		return fmt.Errorf("task %q sets autostart = false with run_on_start; a task that starts paused should not run at start, remove one of them", task.Name)
+	}
+	return nil
 }
 
 // parseRunOnStart resolves the run_on_start value: true is shorthand for
@@ -669,10 +695,6 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 	if err != nil {
 		return model.Task{}, err
 	}
-	autostart := true
-	if w.Autostart != nil {
-		autostart = *w.Autostart
-	}
 	task.Restart = w.Restart
 	if task.Restart == "" {
 		task.Restart = model.RestartAlways
@@ -683,7 +705,7 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 	task.HealthyAfter = healthyAfter
 	task.RestartAttempts = w.RestartAttempts
 	task.Priority = w.Priority
-	task.Autostart = autostart
+	task.Autostart = w.Autostart == nil || *w.Autostart
 	task.DependsOn = w.DependsOn
 	task.HealthCheck = healthCheck
 	return task, nil

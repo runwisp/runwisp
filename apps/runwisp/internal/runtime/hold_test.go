@@ -38,11 +38,12 @@ func newHoldCatchupDB() *holdCatchupDB {
 	}
 }
 
-func (d *holdCatchupDB) EnsureTaskRegistered(_ context.Context, name string, firstSeen time.Time) error {
-	if _, exists := d.registered[name]; !exists {
-		d.registered[name] = firstSeen
+func (d *holdCatchupDB) EnsureTaskRegistered(_ context.Context, name string, firstSeen time.Time, _ bool) (bool, error) {
+	if _, exists := d.registered[name]; exists {
+		return false, nil
 	}
-	return nil
+	d.registered[name] = firstSeen
+	return true, nil
 }
 
 func (d *holdCatchupDB) ForgetTaskRegistrationsExcept(context.Context, []string) error {

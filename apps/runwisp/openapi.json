@@ -1700,7 +1700,7 @@
         "additionalProperties": false,
         "properties": {
           "autostart": {
-            "description": "For services: whether instances start at boot. False boots in the stopped state until started via API/UI.",
+            "description": "For services: whether instances start at boot. False boots in the stopped state until started via API/UI. For cron tasks: false starts the schedule paused when the task is first registered, until it is resumed.",
             "type": "boolean"
           },
           "catchUp": {
@@ -2056,7 +2056,7 @@
             "type": "string"
           },
           "autostart": {
-            "description": "For services: whether instances start at boot. False boots in the stopped state until started via API/UI.",
+            "description": "For services: whether instances start at boot. False boots in the stopped state until started via API/UI. For cron tasks: false starts the schedule paused when the task is first registered, until it is resumed.",
             "type": "boolean"
           },
           "catchUp": {
