@@ -165,8 +165,8 @@ runwisp pause nightly-backup
 runwisp resume nightly-backup
 ```
 
-In the Web UI, click the schedule next to the task name at the top of its page.
-In the TUI, press <kbd>p</kbd> on the task. The REST API has `POST /api/tasks/{task}/pause` and `.../resume`.
+In the Web UI and the TUI, click **Pause** on the task's page, or press <kbd>p</kbd>
+on the task in the TUI. The REST API has `POST /api/tasks/{task}/pause` and `.../resume`.
 
 While a task is paused, its scheduled times are skipped. They add no runs and
 are not caught up when you resume or when the daemon restarts. You can still run

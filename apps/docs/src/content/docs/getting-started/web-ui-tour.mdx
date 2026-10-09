@@ -50,7 +50,7 @@ wrong attempts are covered in [Authentication](/operations/auth/).
   with a sort selector. **Attention** lists everything that isn't healthy. A
   task with a `held` badge comes from a crontab that cron still runs; see
   [Held jobs](/coming-from/cron/#held-jobs). A task whose schedule you paused
-  shows as **Paused**.
+  shows as **Paused**, and a service you stopped shows as **Stopped**.
 - **Recent activity**: the latest runs across all tasks, next to the Needs
   attention, Running now, and Up next panels.
 
@@ -86,13 +86,16 @@ are query parameters on [`GET /api/runs`](/api/).
 
 ## Task detail (`/tasks/{id}`)
 
-Click a task in the sidebar to open it. The header shows the task's
-description and one action: **Run**, **Stop** while a run is active, or
-**Restart** / **Stop** for a service.
+Click a task in the sidebar to open it. The top bar shows what you can do to
+the task itself:
 
-Next to a cron task's name in the top bar is its schedule. Click it to see the
-next run and to pause or resume the schedule (see
-[Pausing a schedule](/concepts/scheduling/#pausing-a-schedule)).
+- A cron task shows its schedule, and **Pause** or **Resume** next to it (see
+  [Pausing a schedule](/concepts/scheduling/#pausing-a-schedule)). Click the
+  schedule to see the next run.
+- A service has **Restart** and **Stop**, or **Start** while it is stopped.
+
+The selected run's header has the actions for that run: **Run**, **Stop**
+while it is running, **Download log**, and delete.
 
 Below are the task's run history and the log of the selected run.
 
