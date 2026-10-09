@@ -14,7 +14,7 @@ import (
 
 	"log/slog"
 
-	"github.com/robfig/cron/v3"
+	cron "github.com/netresearch/go-cron"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
@@ -37,7 +37,7 @@ type ScheduleResult struct {
 	Warnings []string
 }
 
-// Scheduler wraps robfig/cron to trigger tasks on a schedule. On fall-back
+// Scheduler wraps go-cron to trigger tasks on a schedule. On fall-back
 // DST days, when the wall clock revisits a minute, the second firing is
 // suppressed and recorded with end_reason = "dst_skipped".
 type Scheduler struct {
@@ -137,7 +137,7 @@ func NewScheduler(taskManager RunTrigger, tasks map[string]*model.Task, location
 		clock = time.Now
 	}
 	scheduler := &Scheduler{
-		cron:        cron.New(cron.WithLocation(location), cron.WithParser(cronspec.NewScheduleParser())),
+		cron:        cron.New(cron.WithLocation(location), cron.WithParser(cronspec.NewParser())),
 		location:    location,
 		taskManager: taskManager,
 		tasks:       tasks,
@@ -200,7 +200,7 @@ func (scheduler *Scheduler) Start() (ScheduleResult, error) {
 func (scheduler *Scheduler) computeJitterPlans() {
 	// Reproject into the daemon timezone before calling Next: a task with no
 	// per-task timezone parses to a schedule whose Location is time.Local, and
-	// robfig/cron's SpecSchedule.Next then evaluates in the input time's own
+	// go-cron's SpecSchedule.Next then evaluates in the input time's own
 	// Location, so a raw clock reading would use the host OS zone instead of
 	// scheduler.location. Mirrors catchup.go's now.In(loc).
 	now := scheduler.now().In(scheduler.location)
@@ -214,7 +214,7 @@ func (scheduler *Scheduler) computeJitterPlans() {
 			continue
 		}
 		spec, _ := scheduler.effectiveSpec(task)
-		sched, err := cronspec.NewScheduleParser().Parse(spec)
+		sched, err := cronspec.NewParser().Parse(spec)
 		if err != nil {
 			// Already surfaced as a scheduling warning by addTask; skip silently.
 			continue
@@ -315,7 +315,7 @@ func (scheduler *Scheduler) Stop() {
 // AddTask schedules a single task after the scheduler has started, used by the
 // reconciler when a reload adds a cron task. Tasks the scheduler doesn't own are
 // ignored — a service has no schedule, and a held task's schedule belongs to
-// something else (see model.Task.Schedulable). robfig/cron's AddFunc is safe to
+// something else (see model.Task.Schedulable). go-cron's AddFunc is safe to
 // call on a running cron.
 func (scheduler *Scheduler) AddTask(task *model.Task) error {
 	scheduler.mutex.Lock()
@@ -359,7 +359,7 @@ func resolveTaskSchedule(task *model.Task, defaultLoc *time.Location) (string, *
 		loc = time.Local
 	}
 	if task.Timezone != "" {
-		// CRON_TZ= prefix is honored by robfig/cron's standard parser and
+		// CRON_TZ= prefix is honored by go-cron's parser and
 		// overrides the default location for this entry.
 		spec = "CRON_TZ=" + task.Timezone + " " + task.Cron
 		// Best-effort resolve: if it doesn't parse, the caller's parser.Parse
@@ -379,7 +379,7 @@ func (scheduler *Scheduler) addTask(task *model.Task) error {
 	// whether it is on a fixed interval, which decides whether the DST
 	// fall-back dedup applies at all. The parser is the one the cron itself was
 	// built with, so the schedule is identical either way.
-	schedule, err := cronspec.NewScheduleParser().Parse(spec)
+	schedule, err := cronspec.NewParser().Parse(spec)
 	if err != nil {
 		return err
 	}
@@ -391,7 +391,7 @@ func (scheduler *Scheduler) addTask(task *model.Task) error {
 }
 
 // zonedSchedule evaluates a schedule in loc whatever zone the caller's clock
-// reads in. robfig/cron fixes its own location at construction, so pinning the
+// reads in. go-cron fixes its own location at construction, so pinning the
 // zone per entry is what lets SetLocation re-base one entry without rebuilding
 // the cron. A schedule with no timezone of its own otherwise follows the zone
 // of the time handed to Next.
@@ -421,7 +421,7 @@ func isFixedInterval(schedule cron.Schedule) bool {
 // recorded as ReasonDSTSkipped and never reaches the executor. fixedInterval
 // tasks (@every) are exempt — see isFixedInterval.
 func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location, fixedInterval bool) {
-	// Runs in robfig/cron's own goroutine, which has no panic recovery: an
+	// Runs in go-cron's own goroutine, which has no panic recovery: an
 	// unguarded panic here would crash the process and (with a TUI attached)
 	// leave the terminal in raw mode. Route it through the daemon's shutdown.
 	defer crashguard.Guard()

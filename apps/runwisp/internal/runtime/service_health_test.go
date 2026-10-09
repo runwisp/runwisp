@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/robfig/cron/v3"
+	cron "github.com/netresearch/go-cron"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -159,7 +159,7 @@ func TestProbeScheduleFollowsLiveDaemonZone(t *testing.T) {
 	m := &defaultTaskManager{}
 	parse := func(probe *model.Task) cron.Schedule {
 		spec, _ := resolveTaskSchedule(probe, nil)
-		schedule, err := cronspec.NewScheduleParser().Parse(spec)
+		schedule, err := cronspec.NewParser().Parse(spec)
 		require.NoError(t, err)
 		return probeSchedule{schedule, probe.Timezone == "", m}
 	}

@@ -12,7 +12,7 @@ import (
 
 	"log/slog"
 
-	"github.com/robfig/cron/v3"
+	cron "github.com/netresearch/go-cron"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
@@ -83,7 +83,7 @@ func SnapshotCatchupAnchors(ctx context.Context, db storage.RunRepository, tasks
 // snapshot phase are still reflected in the total.
 func RunMissedTickCatchUp(tasks map[string]*model.Task, runner RunTrigger, now time.Time, defaultLoc *time.Location, anchors map[string]time.Time, snapshotErrors int) CatchUpResult {
 	result := CatchUpResult{Errors: snapshotErrors}
-	parser := cronspec.NewScheduleParser()
+	parser := cronspec.NewParser()
 
 	for _, task := range tasks {
 		if !task.Schedulable() {

@@ -58,7 +58,7 @@ func catchupTask(catchUp int) *model.Task {
 func TestCatchupScheduleHonorsTaskTimezone(t *testing.T) {
 	task := &model.Task{Name: "tz", Cron: "0 12 * * *", Timezone: "America/New_York"}
 
-	schedule, loc, err := catchupSchedule(cronspec.NewScheduleParser(), task, time.UTC)
+	schedule, loc, err := catchupSchedule(cronspec.NewParser(), task, time.UTC)
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -170,7 +170,7 @@ func TestCountMissedTicks_DSTFallbackDuplicateNotDoubleCounted(t *testing.T) {
 	loc, err := time.LoadLocation("Europe/Bratislava")
 	assert.NoError(t, err)
 
-	parser := cronspec.NewScheduleParser()
+	parser := cronspec.NewParser()
 	sched, err := parser.Parse("CRON_TZ=Europe/Bratislava 0,30 2 * * *")
 	assert.NoError(t, err)
 
@@ -665,7 +665,7 @@ func TestCountMissedTicks_EveryNotDeduped(t *testing.T) {
 	loc, err := time.LoadLocation("Europe/Bratislava")
 	assert.NoError(t, err)
 
-	sched, err := cronspec.NewScheduleParser().Parse("@every 30m")
+	sched, err := cronspec.NewParser().Parse("@every 30m")
 	assert.NoError(t, err)
 
 	// 02:00 CEST through 03:00 CET on the fall-back day: four 30-minute ticks,

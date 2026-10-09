@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"time"
 
+	cron "github.com/netresearch/go-cron"
 	"github.com/oklog/ulid/v2"
-	"github.com/robfig/cron/v3"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
