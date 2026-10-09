@@ -66,6 +66,8 @@ docker run -d --name runwisp -p 9477:9477 \
 
 On first start, RunWisp writes a starter config to `./runwisp/runwisp.toml`. The image supports amd64 and arm64, with Alpine and Debian variants. See the [Docker guide](https://docs.runwisp.com/getting-started/docker/) for tags, environment variables, and volumes.
 
+To build from source, see [Getting started](CONTRIBUTING.md#getting-started) in the contributing guide.
+
 ## Quick Start
 
 Run:

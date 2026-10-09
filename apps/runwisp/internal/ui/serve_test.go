@@ -172,7 +172,8 @@ func TestHandlerAndMount(t *testing.T) {
 	router := chi.NewRouter()
 	require.NoError(t, Mount(router))
 
-	// The real embedded dist has an index.html (committed for tests).
+	// The embedded dist has an index.html: the built UI, or the placeholder
+	// scripts/ensure-ui-dist.sh writes when the UI was never built.
 	rr := get(t, router, "/")
 	assert.Equal(t, http.StatusOK, rr.Code)
 }

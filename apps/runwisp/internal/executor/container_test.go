@@ -251,7 +251,7 @@ func TestBuildContainerConfig(t *testing.T) {
 	assert.Equal(t, "test-image:latest", containerCfg.Image)
 	// Order is not part of the contract: buildProcessEnv merges layers through
 	// a map and emits them key-sorted.
-	assert.ElementsMatch(t, []string{"FOO=bar", "BAZ=qux"}, containerCfg.Env)
+	assert.ElementsMatch(t, []string{"FOO=bar", "BAZ=qux", "RUNWISP_INSTANCE_INDEX=0"}, containerCfg.Env)
 	_, has80 := containerCfg.ExposedPorts[network.MustParsePort("80/tcp")]
 	assert.True(t, has80)
 	_, has5432 := containerCfg.ExposedPorts[network.MustParsePort("5432/tcp")]
@@ -275,7 +275,7 @@ func TestBuildContainerConfigEmpty(t *testing.T) {
 	containerCfg, hostCfg := b.buildContainerConfig("img", ctr, nil, nil)
 
 	assert.Equal(t, "img", containerCfg.Image)
-	assert.Empty(t, containerCfg.Env)
+	assert.Equal(t, []string{"RUNWISP_INSTANCE_INDEX=0"}, containerCfg.Env)
 	assert.Empty(t, containerCfg.ExposedPorts)
 	assert.Empty(t, hostCfg.PortBindings)
 	assert.Empty(t, hostCfg.Mounts)
@@ -304,7 +304,7 @@ func TestBuildContainerConfig_CtrEnvNotFilteredAsDaemonEnv(t *testing.T) {
 
 	containerCfg, _ := b.buildContainerConfig("img", ctr, task, nil)
 
-	assert.ElementsMatch(t, []string{"RUNWISP_CONFIG_PATH=/etc/myapp/config", "DEBUG=1"}, containerCfg.Env)
+	assert.ElementsMatch(t, []string{"RUNWISP_CONFIG_PATH=/etc/myapp/config", "DEBUG=1", "RUNWISP_INSTANCE_INDEX=0"}, containerCfg.Env)
 }
 
 func TestStartRejectsNonContainerExecution(t *testing.T) {

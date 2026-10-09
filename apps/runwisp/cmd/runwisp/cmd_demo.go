@@ -83,6 +83,18 @@ func demoPathFlagsRejection(configChanged, dataChanged bool) error {
 		"use `runwisp demo --seed-only --config <path> --data <path>` to seed your own paths instead")
 }
 
+// demoTerminalRejection reports the error the full demo returns when it has no
+// terminal for its TUI: the daemon would outlive the failed TUI with nobody
+// attached. Checked before the temp dir and seeding, so nothing is left behind.
+// --no-tui is the headless path and never needs a terminal.
+func demoTerminalRejection(noTUI, interactive bool) error {
+	if noTUI || interactive {
+		return nil
+	}
+	return errors.New("demo needs an interactive terminal for its TUI; " +
+		"use `runwisp demo --no-tui` to keep it running in the background and print the Web UI password")
+}
+
 // runDemo sets up a throwaway temp dir, writes the embedded demo config, seeds
 // history (standalone only), spawns the background daemon against the temp dir,
 // and attaches the TUI — mirroring the plain `runwisp` flow.
@@ -103,6 +115,9 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 	// an explicit --config/--data can't be honored. Reject them and point at
 	// --seed-only, which does write to the supplied paths.
 	if err := demoPathFlagsRejection(cmd.Flags().Changed("config"), cmd.Flags().Changed("data")); err != nil {
+		return err
+	}
+	if err := demoTerminalRejection(demoFlags.NoTUI, isInteractiveTerminal()); err != nil {
 		return err
 	}
 
@@ -153,7 +168,13 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 		}
 		return nil
 	}
-	return runTUIConnect(cmd.Context(), client, f, tui.DaemonThrowaway)
+	if err := runTUIConnect(cmd.Context(), client, f, tui.DaemonThrowaway); err != nil {
+		// Quitting the TUI stops a throwaway daemon; a TUI that never ran must
+		// too, or the daemon keeps its temp dir with nobody attached to it.
+		_ = shutdownDaemon(f)
+		return err
+	}
+	return nil
 }
 
 // reportDemoNoTUI leaves the background daemon running and prints its Web UI password to stdout.

@@ -56,6 +56,6 @@ RUN ln -sf /usr/local/go/bin/go /usr/local/bin/go \
  && chown -R vscode:vscode "${NVM_DIR}" /home/vscode/.bashrc
 
 USER vscode
-RUN curl -fsSL https://bun.sh/install | bash -s -- bun-v1.3.3 \
+RUN curl -fsSL https://bun.sh/install | bash -s -- bun-v1.4.0 \
  && bunx playwright install --with-deps
 USER root

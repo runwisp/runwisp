@@ -409,7 +409,7 @@ func (b *ContainerBackend) buildContainerConfig(imageTag string, ctr *model.Cont
 			paramEnv = model.ParamEnvLayer(task.Parameters, run.Params)
 		}
 	}
-	env := buildProcessEnv(nil, ctrEnv, taskEnv, taskSecrets, paramEnv)
+	env := buildProcessEnv(nil, instanceIndexEnv(run), ctrEnv, taskEnv, taskSecrets, paramEnv)
 
 	exposedPorts := network.PortSet{}
 	portBindings := network.PortMap{}

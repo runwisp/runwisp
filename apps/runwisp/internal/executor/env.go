@@ -8,7 +8,10 @@ import (
 	"maps"
 	"os/user"
 	"slices"
+	"strconv"
 	"strings"
+
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // daemonEnvPrefix marks daemon-internal environment variables (the admin
@@ -18,6 +21,20 @@ import (
 // from the parent base so shell tasks match the container/compose backends,
 // which build env from task.Env/Secrets only.
 const daemonEnvPrefix = "RUNWISP_"
+
+// instanceIndexEnvKey names the variable holding a run's instance slot.
+const instanceIndexEnvKey = "RUNWISP_INSTANCE_INDEX"
+
+// instanceIndexEnv is the layer that tells a run which instance slot it holds
+// (0 for tasks and single-instance services). Every backend layers it beneath
+// task.Env, so a task can still override it.
+func instanceIndexEnv(run *model.Run) map[string]string {
+	idx := 0
+	if run != nil {
+		idx = run.InstanceIndex
+	}
+	return map[string]string{instanceIndexEnvKey: strconv.Itoa(idx)}
+}
 
 // cleanEnvPath is the PATH an env_base = "clean" run starts with: crond's own
 // compiled-in default (_PATH_DEFPATH). Deliberately not the daemon's PATH —
