@@ -116,3 +116,11 @@ func TestRunDemoSeedOnlyRejectsStation(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--seed-only cannot be combined with --station")
 }
+
+func TestDemoTerminalRejection(t *testing.T) {
+	assert.NoError(t, demoTerminalRejection(false, true), "a terminal runs the TUI")
+	assert.NoError(t, demoTerminalRejection(true, false), "--no-tui needs no terminal")
+	err := demoTerminalRejection(false, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--no-tui")
+}
