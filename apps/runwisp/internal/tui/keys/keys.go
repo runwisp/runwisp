@@ -15,8 +15,6 @@
 // shared, repeated segments live here.
 package keys
 
-import "strings"
-
 // Binding is one keyboard action. Keys/Desc render the overlay table row; Bar
 // is the compact help-bar segment (empty when the action never appears in the
 // bar).
@@ -129,16 +127,4 @@ var OverlaySections = []Section{
 	{Title: "Exec view", Bindings: []Binding{Retry, DownloadDel, Fullscreen, TopEnd, Page, FrameHist}},
 	{Title: "Run dialog", Bindings: []Binding{FlagToggle, ChooseOpt, IncludeOmit, RunCancel}},
 	{Title: "Notifications", Bindings: []Binding{NotifOpen, NotifRead, NotifReadAll, NotifCollapse}},
-}
-
-// JoinBar renders a help-bar line from the given bindings, skipping any without
-// a Bar segment, separated by the bar's two-space gap.
-func JoinBar(bindings ...Binding) string {
-	segs := make([]string, 0, len(bindings))
-	for _, b := range bindings {
-		if b.Bar != "" {
-			segs = append(segs, b.Bar)
-		}
-	}
-	return strings.Join(segs, "  ")
 }

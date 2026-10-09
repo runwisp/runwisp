@@ -371,7 +371,7 @@ func TestTaskHeader_ButtonsFollowTaskState(t *testing.T) {
 				labels = append(labels, b.label)
 			}
 			assert.Equal(t, tt.labels, labels)
-			assert.Equal(t, tt.hints, tt.h.Hints())
+			assert.Equal(t, tt.hints, strings.Join(tt.h.Hints(), "  "))
 			out, _ := tt.h.Render(80)
 			for _, l := range tt.labels {
 				assert.Contains(t, out, l)

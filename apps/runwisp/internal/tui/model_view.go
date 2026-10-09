@@ -55,10 +55,11 @@ func (m Model) View() tea.View {
 	return v
 }
 
-// renderHelpBar builds the bottom help bar and fills the line width with the
-// bar background.
+// renderHelpBar builds the bottom help bar, dropping low-priority hints until
+// it fits the terminal, and fills the line width with the bar background.
 func (m Model) renderHelpBar() string {
-	return uikit.PadLine(uikit.HelpBarStyle.Render(m.buildHelpText()), m.width, uikit.ColorBgLight)
+	text := m.buildHelpText().fit(m.width - uikit.HelpBarStyle.GetHorizontalFrameSize())
+	return uikit.PadLine(uikit.HelpBarStyle.Render(text), m.width, uikit.ColorBgLight)
 }
 
 // toastMaxWidth caps the toast box so long error messages wrap instead of
@@ -156,16 +157,19 @@ func padPanelRight(block string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) buildHelpText() string {
-	return m.buildContextHelpText() + "  " + keys.Help.Bar
+func (m Model) buildHelpText() helpBar {
+	return m.buildContextHelpText().add(prioHelp, keys.Help.Bar)
 }
 
-func (m Model) buildContextHelpText() string {
+func (m Model) buildContextHelpText() helpBar {
 	if m.sidebar.Filtering() {
-		return "type to filter  ↑↓ move  enter select  esc cancel"
+		return helpBar{}.add(prioAction, "type to filter").add(prioNav, "↑↓ move", "enter select", "esc cancel")
 	}
 	if m.notifications.IsExpanded() {
-		return keys.JoinBar(keys.Move, keys.NotifOpen, keys.NotifRead, keys.NotifReadAll, keys.NotifCollapse, keys.Quit)
+		return helpBar{}.add(prioNav, keys.Move.Bar).
+			add(prioAction, keys.NotifOpen.Bar, keys.NotifRead.Bar, keys.NotifReadAll.Bar).
+			add(prioNav, keys.NotifCollapse.Bar).
+			add(prioQuit, keys.Quit.Bar)
 	}
 	if m.runListFocused() && m.execList.SelectionActive() {
 		return m.buildSelectionHelpText()
@@ -179,100 +183,99 @@ func (m Model) buildContextHelpText() string {
 	return m.buildMainHelpText()
 }
 
-func (m Model) buildExecViewHelpText() string {
-	var parts []string
+func (m Model) buildExecViewHelpText() helpBar {
+	var bar helpBar
 	if m.execView.Fullscreen() {
-		scroll := []keys.Binding{keys.ExitFull, keys.Scroll}
+		bar = bar.add(prioNav, keys.ExitFull.Bar, keys.Scroll.Bar)
 		if m.execView.MaxHScroll() > 0 {
-			scroll = append(scroll, keys.Pan)
+			bar = bar.add(prioNav, keys.Pan.Bar)
 		}
-		scroll = append(scroll, keys.LogJump)
-		return strings.Join([]string{keys.JoinBar(scroll...), "select text with mouse", keys.Quit.Bar}, "  ")
+		return bar.add(prioNav, keys.LogJump.Bar, "select text with mouse").add(prioQuit, keys.Quit.Bar)
 	}
 	switch m.execView.HeaderFocus {
 	case execlist.HeaderFocusBack, execlist.HeaderFocusAction, execlist.HeaderFocusDelete:
-		parts = append(parts, "enter activate  ←→ switch  ↓ details")
+		bar = bar.add(prioAction, "enter activate").add(prioNav, "←→ switch", "↓ details")
 	case execlist.HeaderFocusID:
-		parts = append(parts, "enter copy  ←→ switch  ↓ details")
+		bar = bar.add(prioAction, "enter copy").add(prioNav, "←→ switch", "↓ details")
 	case execlist.HeaderFocusStarted, execlist.HeaderFocusDuration:
-		parts = append(parts, "enter copy  ←→ switch  ↑ buttons  ↓ log")
+		bar = bar.add(prioAction, "enter copy").add(prioNav, "←→ switch", "↑ buttons", "↓ log")
 	default:
-		scroll := []keys.Binding{keys.BackToList, keys.Scroll}
+		bar = bar.add(prioNav, keys.BackToList.Bar, keys.Scroll.Bar)
 		if m.execView.MaxHScroll() > 0 {
-			scroll = append(scroll, keys.Pan)
+			bar = bar.add(prioNav, keys.Pan.Bar)
 		}
-		scroll = append(scroll, keys.LogJump, keys.Fullscreen)
-		parts = append(parts, keys.JoinBar(scroll...))
+		bar = bar.add(prioNav, keys.LogJump.Bar, keys.Fullscreen.Bar)
 	}
-	parts = m.appendExecViewActionHints(parts)
-	parts = append(parts, keys.Quit.Bar)
-	return strings.Join(parts, "  ")
+	return m.appendExecViewActionHints(bar).add(prioQuit, keys.Quit.Bar)
 }
 
-func (m Model) appendExecViewActionHints(parts []string) []string {
+func (m Model) appendExecViewActionHints(bar helpBar) helpBar {
 	if m.execView.Run == nil {
-		return parts
+		return bar
 	}
-	parts = append(parts, keys.TaskInfo.Bar)
+	bar = bar.add(prioAction, keys.TaskInfo.Bar)
 	switch m.execView.Action() {
 	case execlist.ActionStop:
-		parts = append(parts, keys.Stop.Bar)
+		bar = bar.add(prioAction, keys.Stop.Bar)
 	case execlist.ActionStopService:
-		parts = append(parts, "s stop service")
+		bar = bar.add(prioAction, "s stop service")
 	case execlist.ActionRetry:
-		parts = append(parts, "r retry")
+		bar = bar.add(prioAction, "r retry")
 	case execlist.ActionRestartService:
-		parts = append(parts, keys.Restart.Bar)
+		bar = bar.add(prioAction, keys.Restart.Bar)
 	}
 	if m.hasLaunchTicket() {
-		parts = append(parts, "d download")
+		bar = bar.add(prioAction, "d download")
 	}
 	if m.execView.CanDelete() {
-		parts = append(parts, "D delete")
+		bar = bar.add(prioAction, "D delete")
 	}
-	return parts
+	return bar
 }
 
-func (m Model) buildSidebarHelpText() string {
+func (m Model) buildSidebarHelpText() helpBar {
+	bar := helpBar{}.add(prioNav, keys.Move.Bar, "enter select")
 	if name := m.sidebar.CursorTaskName(); name != "" {
-		actionHint := m.taskHeader(name).Hints()
-		return keys.Move.Bar + "  enter select  " + actionHint + "  " + keys.TaskInfo.Bar + "  " + keys.FilterTasks.Bar + "  → main panel  " + keys.Quit.Bar
+		bar = bar.add(prioAction, m.taskHeader(name).Hints()...).add(prioAction, keys.TaskInfo.Bar)
 	}
-	return keys.Move.Bar + "  enter select  " + keys.FilterTasks.Bar + "  → main panel  " + keys.Quit.Bar
+	return bar.add(prioNav, keys.FilterTasks.Bar, "→ main panel").add(prioQuit, keys.Quit.Bar)
 }
 
-func (m Model) buildMainHelpText() string {
+func (m Model) buildMainHelpText() helpBar {
 	if m.homeCursor >= 0 {
+		enter := "enter copy"
 		fields := home.Fields(m.info, m.hasLaunchTicket())
 		if m.homeCursor < len(fields) && fields[m.homeCursor] == home.FieldOpenWebUI {
-			return keys.JoinBar(keys.Move, keys.Open, keys.ToSidebar, keys.Quit)
+			enter = keys.Open.Bar
 		}
-		return keys.Move.Bar + "  enter copy  " + keys.ToSidebar.Bar + "  " + keys.Quit.Bar
+		return helpBar{}.add(prioNav, keys.Move.Bar).add(prioAction, enter).
+			add(prioNav, keys.ToSidebar.Bar).add(prioQuit, keys.Quit.Bar)
 	}
 	if m.sidebar.ActivePage() == uikit.PageInfo {
-		return keys.JoinBar(keys.Scroll, keys.BackSidebar, keys.Quit)
+		return helpBar{}.add(prioNav, keys.Scroll.Bar, keys.BackSidebar.Bar).add(prioQuit, keys.Quit.Bar)
 	}
 	if m.sidebar.ActivePage() == uikit.PageDebug {
-		return keys.JoinBar(keys.Scroll, keys.LogJump, keys.BackSidebar, keys.Quit)
+		return helpBar{}.add(prioNav, keys.Scroll.Bar, keys.LogJump.Bar, keys.BackSidebar.Bar).add(prioQuit, keys.Quit.Bar)
 	}
+	bar := helpBar{}.add(prioNav, keys.Move.Bar, keys.Open.Bar)
 	if name := m.sidebar.ActiveTask(); name != "" {
-		base := keys.JoinBar(keys.Move, keys.Open) + "  " + m.taskHeader(name).Hints() + "  " +
-			keys.JoinBar(keys.Filter, keys.TaskInfo) + "  " + keys.ToSidebar.Bar
-		if m.sidebar.ActivePage() == uikit.PageHome && m.notifications.PanelHeight() > 0 {
-			base += "  " + keys.NotifPanel.Bar
-		}
-		return base + "  " + keys.Quit.Bar
+		bar = bar.add(prioAction, m.taskHeader(name).Hints()...).
+			add(prioNav, keys.Filter.Bar).
+			add(prioAction, keys.TaskInfo.Bar).
+			add(prioNav, keys.ToSidebar.Bar)
+	} else {
+		bar = bar.add(prioNav, keys.Filter.Bar, keys.Select.Bar, keys.ToSidebar.Bar)
 	}
-	base := keys.JoinBar(keys.Move, keys.Open, keys.Filter, keys.Select, keys.ToSidebar)
 	if m.sidebar.ActivePage() == uikit.PageHome && m.notifications.PanelHeight() > 0 {
-		base += "  " + keys.NotifPanel.Bar
+		bar = bar.add(prioNav, keys.NotifPanel.Bar)
 	}
-	return base + "  " + keys.Quit.Bar
+	return bar.add(prioQuit, keys.Quit.Bar)
 }
 
 // buildSelectionHelpText renders the bottom-bar action set shown while one or
 // more runs are multi-selected in the executions list.
-func (m Model) buildSelectionHelpText() string {
+func (m Model) buildSelectionHelpText() helpBar {
 	count := fmt.Sprintf("%d selected", m.execList.SelectionCount())
-	return count + "  " + keys.JoinBar(keys.BulkDelete, keys.BulkCancel, keys.BulkRerun, keys.SelectAll, keys.ClearSelect)
+	return helpBar{}.add(prioAction, count, keys.BulkDelete.Bar, keys.BulkCancel.Bar, keys.BulkRerun.Bar).
+		add(prioNav, keys.SelectAll.Bar, keys.ClearSelect.Bar)
 }

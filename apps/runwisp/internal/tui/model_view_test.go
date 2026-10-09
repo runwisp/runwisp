@@ -139,7 +139,7 @@ func TestBuildHelpText_NotificationsExpandedHint(t *testing.T) {
 	m := newTestModel(nil)
 	m.notifications.Upsert(testNotif("n1"))
 	m.notifications.Toggle()
-	got := m.buildHelpText()
+	got := m.buildHelpText().String()
 	if !strings.Contains(got, "mark read") {
 		t.Fatalf("expanded-notifications hint missing: %q", got)
 	}
@@ -150,7 +150,7 @@ func TestBuildHelpText_ExecViewHintIncludesQuit(t *testing.T) {
 	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
-	got := m.buildHelpText()
+	got := m.buildHelpText().String()
 	if !strings.Contains(got, "q/^C quit") {
 		t.Fatalf("expected quit hint in exec-view help, got: %q", got)
 	}
@@ -161,7 +161,7 @@ func TestBuildSidebarHelpText_ServiceShowsRestart(t *testing.T) {
 	// Place the cursor on the service entry (item 1) without pressing Enter so
 	// CursorTaskName returns the service.
 	m.sidebar.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
-	got := m.buildSidebarHelpText()
+	got := m.buildSidebarHelpText().String()
 	if !strings.Contains(got, "restart") {
 		t.Fatalf("expected restart hint for service, got: %q", got)
 	}
@@ -169,7 +169,7 @@ func TestBuildSidebarHelpText_ServiceShowsRestart(t *testing.T) {
 
 func TestBuildSidebarHelpText_NoCursorTaskOmitsActionHint(t *testing.T) {
 	m := newTestModel(nil)
-	got := m.buildSidebarHelpText()
+	got := m.buildSidebarHelpText().String()
 	if strings.Contains(got, " r ") {
 		t.Fatalf("expected no action hint when cursor isn't on a task, got: %q", got)
 	}
@@ -251,7 +251,7 @@ func TestRenderMainContent_HomeWithNotificationsPrependsPanelView(t *testing.T) 
 func TestBuildHelpText_SidebarFocusedRoutes(t *testing.T) {
 	m := newTestModel(nil)
 	// default: PanelSidebar, no execView, no expanded notifications.
-	got := m.buildHelpText()
+	got := m.buildHelpText().String()
 	if !strings.Contains(got, "sidebar") && !strings.Contains(got, "navigate") {
 		t.Fatalf("expected sidebar help text, got: %q", got)
 	}
@@ -261,7 +261,7 @@ func TestBuildHelpText_SidebarFocusedRoutes(t *testing.T) {
 func TestBuildHelpText_MainPanelRoutes(t *testing.T) {
 	m := newTestModel(nil)
 	m.focusMainPanel()
-	got := m.buildHelpText()
+	got := m.buildHelpText().String()
 	if got == "" {
 		t.Fatal("expected non-empty main help text")
 	}
@@ -277,7 +277,7 @@ func TestBuildExecViewHelpText_FullscreenIncludesScroll(t *testing.T) {
 	ev := execlist.NewExecView(run)
 	ev.ToggleFullscreen()
 	m.execView = &ev
-	got := m.buildExecViewHelpText()
+	got := m.buildExecViewHelpText().String()
 	if !strings.Contains(got, "exit fullscreen") {
 		t.Fatalf("expected exit-fullscreen hint, got: %q", got)
 	}
@@ -290,7 +290,7 @@ func TestBuildExecViewHelpText_HeaderFocusBack(t *testing.T) {
 	ev := execlist.NewExecView(run)
 	ev.HeaderFocus = execlist.HeaderFocusBack
 	m.execView = &ev
-	got := m.buildExecViewHelpText()
+	got := m.buildExecViewHelpText().String()
 	if !strings.Contains(got, "activate") {
 		t.Fatalf("expected activate hint for HeaderFocusBack, got: %q", got)
 	}
@@ -303,7 +303,7 @@ func TestBuildExecViewHelpText_HeaderFocusID(t *testing.T) {
 	ev := execlist.NewExecView(run)
 	ev.HeaderFocus = execlist.HeaderFocusID
 	m.execView = &ev
-	got := m.buildExecViewHelpText()
+	got := m.buildExecViewHelpText().String()
 	if !strings.Contains(got, "copy") {
 		t.Fatalf("expected copy hint for HeaderFocusID, got: %q", got)
 	}
@@ -317,7 +317,7 @@ func TestBuildExecViewHelpText_HeaderFocusStarted(t *testing.T) {
 	ev := execlist.NewExecView(run)
 	ev.HeaderFocus = execlist.HeaderFocusStarted
 	m.execView = &ev
-	got := m.buildExecViewHelpText()
+	got := m.buildExecViewHelpText().String()
 	if !strings.Contains(got, "buttons") {
 		t.Fatalf("expected buttons hint for HeaderFocusStarted, got: %q", got)
 	}
@@ -330,7 +330,7 @@ func TestBuildExecViewHelpText_HeaderFocusNone(t *testing.T) {
 	ev := execlist.NewExecView(run)
 	ev.HeaderFocus = execlist.HeaderFocusNone
 	m.execView = &ev
-	got := m.buildExecViewHelpText()
+	got := m.buildExecViewHelpText().String()
 	if !strings.Contains(got, "fullscreen") {
 		t.Fatalf("expected fullscreen hint for default scroll branch, got: %q", got)
 	}
@@ -342,7 +342,7 @@ func TestBuildExecViewHelpText_HeaderFocusNone(t *testing.T) {
 // model showing ev.
 func execViewHints(m Model, ev execlist.ExecView) string {
 	m.execView = &ev
-	return strings.Join(m.appendExecViewActionHints(nil), " ")
+	return m.appendExecViewActionHints(nil).String()
 }
 
 // TestAppendExecViewActionHints_AllActionsAndExtras covers the four Action
@@ -384,8 +384,8 @@ func TestAppendExecViewActionHints_AllActionsAndExtras(t *testing.T) {
 		m := newTestModel(nil)
 		ev := execlist.NewExecView(nil)
 		m.execView = &ev
-		parts := m.appendExecViewActionHints([]string{"original"})
-		if len(parts) != 1 || parts[0] != "original" {
+		parts := m.appendExecViewActionHints(helpBar{{"original", prioNav}})
+		if len(parts) != 1 || parts[0].text != "original" {
 			t.Fatalf("expected unchanged parts, got: %v", parts)
 		}
 	})
@@ -399,7 +399,7 @@ func TestBuildMainHelpText_PageDebug(t *testing.T) {
 	// Without tasks, items are [Home(0), Info(1), Debug(2)]
 	selectSidebarItem(&m, 2) // Debug
 	m.focusMainPanel()
-	got := m.buildMainHelpText()
+	got := m.buildMainHelpText().String()
 	if !strings.Contains(got, "scroll") {
 		t.Fatalf("expected scroll hint on PageDebug, got: %q", got)
 	}
@@ -412,7 +412,7 @@ func TestBuildMainHelpText_HomeCursorOnOpenWebUI(t *testing.T) {
 	m.info.Port = 8181
 	m.launchTicketFunc = func() (string, error) { return "tkt", nil }
 	m.focusHomeField(0) // FieldOpenWebUI is index 0 when launch ticket present
-	got := m.buildMainHelpText()
+	got := m.buildMainHelpText().String()
 	if !strings.Contains(got, "open") {
 		t.Fatalf("expected open hint for FieldOpenWebUI cursor, got: %q", got)
 	}
@@ -423,7 +423,7 @@ func TestBuildMainHelpText_HomeWithNotifications(t *testing.T) {
 	m := newTestModel(nil)
 	m.focusMainPanel()
 	m.notifications.Upsert(testNotif("n1"))
-	got := m.buildMainHelpText()
+	got := m.buildMainHelpText().String()
 	if !strings.Contains(got, "n notifications") {
 		t.Fatalf("expected notifications hint, got: %q", got)
 	}

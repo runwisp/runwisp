@@ -8,14 +8,6 @@ import (
 	"testing"
 )
 
-func TestJoinBar_SkipsEmptyBarSegments(t *testing.T) {
-	got := JoinBar(Move, SearchLogs, Quit) // SearchLogs has no Bar segment
-	want := "↑↓ navigate  q/^C quit"
-	if got != want {
-		t.Fatalf("JoinBar = %q, want %q", got, want)
-	}
-}
-
 // Every row shown in the help overlay must carry both a key chord and a
 // description — a blank cell would render an empty, confusing line.
 func TestOverlaySections_RowsAreComplete(t *testing.T) {

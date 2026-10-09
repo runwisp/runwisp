@@ -304,14 +304,14 @@ func (h TaskHeader) Offers(b TaskButton) bool {
 	return false
 }
 
-// Hints is the help-bar segment for the header's buttons, e.g. "r restart  s stop".
-func (h TaskHeader) Hints() string {
+// Hints is the help-bar hints for the header's buttons, e.g. ["r restart", "s stop"].
+func (h TaskHeader) Hints() []string {
 	btns := h.buttons()
-	bindings := make([]keys.Binding, len(btns))
+	hints := make([]string, len(btns))
 	for i, btn := range btns {
-		bindings[i] = btn.key
+		hints[i] = btn.key.Bar
 	}
-	return keys.JoinBar(bindings...)
+	return hints
 }
 
 // renderButtons renders the buttons one column apart and returns them with

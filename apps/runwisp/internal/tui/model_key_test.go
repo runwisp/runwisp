@@ -553,7 +553,7 @@ func TestHandleKeyS_StopsServiceFromTaskPage(t *testing.T) {
 			got, _, handled := handleKeyS(m, keyMsg("s"))
 			assert.Equal(t, tt.want, handled)
 			assert.Equal(t, tt.want, got.dialogs.Has(dlgConfirm))
-			assert.Equal(t, tt.want, strings.Contains(got.buildHelpText(), "s stop"), "help bar lists s only when it acts")
+			assert.Equal(t, tt.want, strings.Contains(got.buildHelpText().String(), "s stop"), "help bar lists s only when it acts")
 		})
 	}
 }

@@ -6,6 +6,7 @@ package tui
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -118,7 +119,7 @@ func TestHandleSchedulePause_ErrorShowsDaemonDetail(t *testing.T) {
 func TestTaskHeaderPauseHint(t *testing.T) {
 	m := newTestModel(pauseTestTasks())
 	m.info.PausedTasks = map[string]time.Time{"held": time.Now()}
-	hints := func(name string) string { return m.taskHeader(name).Hints() }
+	hints := func(name string) string { return strings.Join(m.taskHeader(name).Hints(), "  ") }
 
 	assert.Contains(t, hints("backup"), keys.Pause.Bar)
 	assert.Contains(t, hints("held"), keys.Resume.Bar, "a paused task can be resumed even while held")
