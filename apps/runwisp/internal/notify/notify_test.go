@@ -5,6 +5,7 @@ package notify
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -123,6 +124,46 @@ func TestServiceStop_FastWhenIdle(t *testing.T) {
 	assert.Less(t, elapsed, deadline/2,
 		"Stop must return promptly when there's no work to drain; took %s of %s",
 		elapsed, deadline)
+}
+
+// TestServiceStop_SkipsRetryBackoff pins that shutdown doesn't wait out a
+// failing delivery's backoff: the attempt in flight finishes, but no retry is
+// scheduled. A notifier pointed at an unreachable endpoint (the demo's
+// .invalid Slack webhook) used to hold the daemon for the whole drain deadline.
+func TestServiceStop_SkipsRetryBackoff(t *testing.T) {
+	attempted := make(chan struct{}, 1)
+	dead := &executeChannel{id: "dead"}
+	dead.execFn = func(ctx context.Context, _ *Event) error {
+		return RetryWithBackoff(ctx, BackoffConfig{InitialInterval: time.Minute}, func(context.Context) error {
+			select {
+			case attempted <- struct{}{}:
+			default:
+			}
+			return errors.New("unreachable")
+		})
+	}
+	svc := New(Config{
+		Bus:      events.NewEventBus(),
+		Channels: []Channel{dead},
+		Rules:    []Rule{{Match: MatchAll(), ActionIDs: []string{"dead"}}},
+	})
+	svc.Start(context.Background())
+	svc.onBusEvent(failedRunEvent())
+
+	select {
+	case <-attempted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("delivery was never attempted")
+	}
+
+	deadline := 5 * time.Second
+	stopCtx, cancel := context.WithTimeout(context.Background(), deadline)
+	defer cancel()
+	start := time.Now()
+	svc.Stop(stopCtx)
+
+	assert.Less(t, time.Since(start), time.Second, "Stop must not sit in the retry backoff until its deadline")
+	assert.Equal(t, int64(1), dead.hits.Load())
 }
 
 // TestOnBusEvent_SendsToIngress covers the happy-path branch of onBusEvent —

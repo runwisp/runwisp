@@ -113,13 +113,27 @@ func SetNextRetryInterval(ctx context.Context, d time.Duration) {
 	}
 }
 
+// stopRetriesKey is the context.Value key for the channel withStopRetries
+// attaches; once it's closed, RetryWithBackoff stops scheduling retries.
+type stopRetriesKey struct{}
+
+// withStopRetries returns ctx carrying stop. After stop closes,
+// RetryWithBackoff still lets the attempt in flight finish but gives up instead
+// of waiting to retry, so a dead endpoint can't hold Service.Stop for its whole
+// deadline.
+func withStopRetries(ctx context.Context, stop <-chan struct{}) context.Context {
+	return context.WithValue(ctx, stopRetriesKey{}, stop)
+}
+
 // RetryWithBackoff runs op until it succeeds, returns a Permanent error, ctx
-// ends, or the next wait would exceed cfg.MaxElapsedTime. Waits follow cfg's
+// ends, retries are stopped (see withStopRetries), or the next wait would
+// exceed cfg.MaxElapsedTime. Waits follow cfg's
 // exponential curve with ±50% jitter. op is called with a context derived from
 // ctx that carries the loop's override slot (see SetNextRetryInterval).
 func RetryWithBackoff(ctx context.Context, cfg BackoffConfig, op func(ctx context.Context) error) error {
 	cfg = cfg.orDefaults()
 	curve := backoff.Exponential{Initial: cfg.InitialInterval, Max: cfg.MaxInterval, Multiplier: cfg.Multiplier, Jitter: 0.5}
+	stop, _ := ctx.Value(stopRetriesKey{}).(<-chan struct{}) // nil blocks forever
 	var override time.Duration
 	rctx := context.WithValue(ctx, retryOverrideKey{}, &override)
 	start := time.Now()
@@ -144,6 +158,8 @@ func RetryWithBackoff(ctx context.Context, cfg BackoffConfig, op func(ctx contex
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-stop:
+			return err
 		case <-time.After(delay):
 		}
 	}

@@ -38,6 +38,7 @@ type Service struct {
 	unsubscribe     func()
 	detachOnce      sync.Once
 	cancel          context.CancelFunc // cancels workCtx — workers + runDispatch
+	stopRetries     chan struct{}      // closed by Stop so draining deliveries skip their retry backoff
 	retentionCancel context.CancelFunc // cancels the retention loop; fired upfront in Stop so it never gates wg.Wait
 	wg              sync.WaitGroup
 
@@ -108,6 +109,8 @@ func (s *Service) Start(ctx context.Context) {
 
 	workCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
+	s.stopRetries = make(chan struct{})
+	workCtx = withStopRetries(workCtx, s.stopRetries)
 	s.disp.startWorkers(workCtx)
 
 	s.wg.Add(1)
@@ -158,6 +161,10 @@ func (s *Service) Stop(ctx context.Context) {
 	s.ingressClosed = true
 	close(s.ingressCh)
 	s.ingressMu.Unlock()
+
+	// Queued deliveries still get their attempt, but none waits out a retry
+	// backoff: a dead endpoint would otherwise hold shutdown until ctx ends.
+	close(s.stopRetries)
 
 	done := make(chan struct{})
 	go func() {
