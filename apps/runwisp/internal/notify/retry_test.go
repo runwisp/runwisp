@@ -18,7 +18,7 @@ import (
 // TestRetryWithBackoff_RateLimitOverrideHonorsMaxElapsedTime pins that a server
 // that returns a Retry-After delay on every attempt (simulated by op always
 // calling SetNextRetryInterval) still gives up after MaxElapsedTime, even
-// though the override path skips the library's own elapsed-time check.
+// though the override replaces the exponential delay.
 func TestRetryWithBackoff_RateLimitOverrideHonorsMaxElapsedTime(t *testing.T) {
 	cfg := BackoffConfig{
 		InitialInterval: time.Millisecond,
@@ -101,19 +101,25 @@ func TestParseRetryAfterHeader_LargeSeconds(t *testing.T) {
 	assert.Equal(t, time.Hour, ParseRetryAfterHeader(h))
 }
 
-// TestNewExponential_ZeroMaxElapsedTimeUsesLibraryDefault is a regression
-// test for NewExponential applying MaxElapsedTime unconditionally, unlike
-// InitialInterval/MaxInterval/Multiplier which are only applied when > 0. The
-// zero value is documented (see BackoffConfig's other fields, and
-// cenkalti/backoff's own "0 means never stop" semantics for
-// ExponentialBackOff.MaxElapsedTime) to mean "use the library default"
-// everywhere else in this struct, but an unset MaxElapsedTime instead wipes
-// out backoff.NewExponentialBackOff's 15-minute default with 0 — turning an
-// omitted config knob into unbounded retry.
-func TestNewExponential_ZeroMaxElapsedTimeUsesLibraryDefault(t *testing.T) {
-	cfg := BackoffConfig{InitialInterval: time.Second}
-	b := cfg.NewExponential()
-	assert.NotZero(t, b.MaxElapsedTime, "omitted MaxElapsedTime should fall back to the library default, not 0 (unbounded)")
+// TestBackoffConfig_UnsetFieldsUseDefaults pins that an omitted knob (above
+// all MaxElapsedTime) falls back to DefaultBackoff instead of meaning
+// "retry forever".
+func TestBackoffConfig_UnsetFieldsUseDefaults(t *testing.T) {
+	got := BackoffConfig{InitialInterval: time.Millisecond}.orDefaults()
+	want := DefaultBackoff()
+	want.InitialInterval = time.Millisecond
+	assert.Equal(t, want, got)
+}
+
+func TestRetryWithBackoff_PermanentStopsAndUnwraps(t *testing.T) {
+	cause := errors.New("bad request")
+	calls := 0
+	err := RetryWithBackoff(context.Background(), BackoffConfig{InitialInterval: time.Millisecond}, func(context.Context) error {
+		calls++
+		return Permanent(cause)
+	})
+	assert.Equal(t, cause, err)
+	assert.Equal(t, 1, calls)
 }
 
 func TestIsPermanentHTTPStatus(t *testing.T) {

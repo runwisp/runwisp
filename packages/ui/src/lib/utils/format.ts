@@ -108,3 +108,45 @@ export function formatDuration(ms: number): string {
     const remM = m % 60;
     return remM > 0 ? String(h) + "h " + String(remM) + "m" : String(h) + "h";
 }
+
+// Largest first, so formatDurationExact can peel units off greedily.
+const DURATION_UNITS: [unit: string, ms: number][] = [
+    ["d", 86_400_000],
+    ["h", 3_600_000],
+    ["m", 60_000],
+    ["s", 1000],
+    ["ms", 1],
+];
+
+/**
+ * parseDuration reads "5m 30s", "1h30m", "1.5h" or "250ms" into milliseconds.
+ * Returns null when any part of the text isn't a number followed by a unit.
+ */
+export function parseDuration(text: string): number | null {
+    const compact = text.replace(/\s+/g, "");
+    // Atomic number match (lookahead-capture + backreference) so a long digit
+    // run with no unit fails fast instead of backtracking.
+    const parts = [...compact.matchAll(/(?=(\d+(?:\.\d+)?))\1(ms|d|h|m|s)/g)];
+    if (parts.length === 0 || parts.map((p) => p[0]).join("") !== compact) return null;
+    let total = 0;
+    for (const [, amount, unit] of parts) {
+        const size = DURATION_UNITS.find(([u]) => u === unit)?.[1];
+        if (!amount || size === undefined) return null;
+        total += Number(amount) * size;
+    }
+    return Math.round(total);
+}
+
+/** formatDurationExact renders milliseconds as "1h 5m 30s", keeping every non-zero unit. */
+export function formatDurationExact(ms: number): string {
+    const parts: string[] = [];
+    let rest = Math.round(ms);
+    for (const [unit, size] of DURATION_UNITS) {
+        const amount = Math.floor(rest / size);
+        if (amount > 0) {
+            parts.push(String(amount) + unit);
+            rest -= amount * size;
+        }
+    }
+    return parts.length > 0 ? parts.join(" ") : "0ms";
+}

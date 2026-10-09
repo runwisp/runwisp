@@ -6,8 +6,6 @@ package notify
 import (
 	"fmt"
 	"strings"
-
-	"github.com/cenkalti/backoff/v4"
 )
 
 // RejectHeaderCRLF returns a permanent error when value contains a CR or LF.
@@ -18,7 +16,7 @@ import (
 // cannot remove a newline from a configured value.
 func RejectHeaderCRLF(field, value string) error {
 	if strings.ContainsAny(value, "\r\n") {
-		return backoff.Permanent(fmt.Errorf("%s contains CR or LF, which is not allowed in a mail header", field))
+		return Permanent(fmt.Errorf("%s contains CR or LF, which is not allowed in a mail header", field))
 	}
 	return nil
 }

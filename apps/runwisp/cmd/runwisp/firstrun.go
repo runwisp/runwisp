@@ -12,12 +12,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mattn/go-isatty"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/configedit"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cutover"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"golang.org/x/term"
 )
 
 // scaffoldIfMissing checks for a runwisp.toml at f.CfgFile. If it is absent and
@@ -38,7 +38,7 @@ func scaffoldIfMissing(f Flags) (installed bool, err error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return false, err
 	}
-	if !isatty.IsTerminal(os.Stdin.Fd()) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return false, nil
 	}
 	return promptAndScaffold(f, os.Stdin, os.Stderr)

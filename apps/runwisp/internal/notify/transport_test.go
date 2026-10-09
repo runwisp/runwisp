@@ -17,8 +17,8 @@ import (
 
 // TestHTTPProvider_RateLimitDoesNotDoubleWait guards against a regression
 // where a 429 response makes the retry loop wait Retry-After PLUS the
-// backoff library's own independently-computed exponential interval on top
-// (see SetNextRetryInterval / rateLimitAwareBackOff). The backoff config
+// retry loop's own independently-computed exponential interval on top
+// (see SetNextRetryInterval). The backoff config
 // here uses a 1s InitialInterval specifically so a doubled wait (at least
 // ~600ms even with -50% jitter) is unmistakably distinguishable from a
 // single ~100ms Retry-After wait — a loose "less than some generous
@@ -57,11 +57,11 @@ func TestHTTPProvider_RateLimitDoesNotDoubleWait(t *testing.T) {
 	elapsed := time.Duration(secondAttemptAt.Load())
 	assert.Greater(t, elapsed, retryAfter-50*time.Millisecond, "should wait roughly the Retry-After delay")
 	assert.Less(t, elapsed, 400*time.Millisecond,
-		"second attempt should follow the Retry-After delay alone, not Retry-After plus the backoff library's own ~1s interval")
+		"second attempt should follow the Retry-After delay alone, not Retry-After plus the retry loop's own ~1s interval")
 }
 
 // TestHTTPProvider_RateLimitRespectsContextCancel ensures the single wait
-// that now happens inside the backoff library's own retry loop (instead of
+// that now happens inside RetryWithBackoff (instead of
 // a manual time.After in handleRateLimit) still returns promptly on context
 // cancellation rather than waiting out the full Retry-After delay.
 func TestHTTPProvider_RateLimitRespectsContextCancel(t *testing.T) {
@@ -95,7 +95,7 @@ func TestHTTPProvider_RateLimitRespectsContextCancel(t *testing.T) {
 
 // TestHTTPProvider_RateLimitZeroDelayFallsBackToNormalBackoff covers the
 // d == 0 branch of handleRateLimit (no Retry-After header, no Body429Fn hit):
-// the fix must not set an override in that case, leaving the library's
+// the fix must not set an override in that case, leaving the loop's
 // normal exponential backoff in control of the retry.
 func TestHTTPProvider_RateLimitZeroDelayFallsBackToNormalBackoff(t *testing.T) {
 	var hits atomic.Int32

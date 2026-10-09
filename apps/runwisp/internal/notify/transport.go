@@ -10,8 +10,6 @@ import (
 	"io"
 	"net/http"
 	"time"
-
-	"github.com/cenkalti/backoff/v4"
 )
 
 // HTTPProvider wraps an http.Client with backoff + Retry-After handling for the
@@ -46,7 +44,7 @@ func (p *HTTPProvider) Post(ctx context.Context, url, contentType string, body [
 func (p *HTTPProvider) doHTTPRequest(ctx context.Context, url, contentType string, body []byte, extra http.Header) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return backoff.Permanent(err)
+		return Permanent(err)
 	}
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("User-Agent", p.UserAgent)
@@ -71,7 +69,7 @@ func (p *HTTPProvider) checkHTTPResponse(ctx context.Context, statusCode int, he
 	case statusCode == http.StatusTooManyRequests:
 		return p.handleRateLimit(ctx, statusCode, header, body)
 	case IsPermanentHTTPStatus(statusCode):
-		return backoff.Permanent(fmt.Errorf("permanent: status=%d body=%s", statusCode, truncateBody(body)))
+		return Permanent(fmt.Errorf("permanent: status=%d body=%s", statusCode, truncateBody(body)))
 	default:
 		return fmt.Errorf("transient: status=%d body=%s", statusCode, truncateBody(body))
 	}

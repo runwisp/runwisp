@@ -11,12 +11,12 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/mattn/go-isatty"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/configedit"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // importOpts holds the import subcommands' flag values. Following the Flags
@@ -165,7 +165,7 @@ func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []st
 	switch {
 	case len(sources) == 0:
 		// Read from stdin or guide the operator.
-		if isatty.IsTerminal(stdin.Fd()) {
+		if term.IsTerminal(int(stdin.Fd())) {
 			return &userFacingError{
 				title:   "no supervisord config given",
 				details: "Pass a config file, or pipe one in — e.g. `cat supervisord.conf | runwisp import supervisord`.",
@@ -195,7 +195,7 @@ func runImportSystemd(stdout, stderr io.Writer, stdin *os.File, sources []string
 	var err error
 	switch {
 	case len(sources) == 0:
-		if isatty.IsTerminal(stdin.Fd()) {
+		if term.IsTerminal(int(stdin.Fd())) {
 			return &userFacingError{
 				title:   "no systemd unit given",
 				details: "Pass a .service file, or pipe one in — e.g. `cat myapp.service | runwisp import systemd`.",
@@ -253,7 +253,7 @@ func resolveImportSource(args []string, stdin *os.File, what string) (string, er
 	if len(args) == 1 {
 		return args[0], nil
 	}
-	if !isatty.IsTerminal(stdin.Fd()) {
+	if !term.IsTerminal(int(stdin.Fd())) {
 		return "-", nil
 	}
 	return "", &userFacingError{
@@ -461,7 +461,7 @@ func configEditError(err error, layout configedit.Layout) error {
 // existing file on a terminal and refusing on a non-terminal unless --force.
 func confirmAndWrite(stderr io.Writer, stdin *os.File, target, toml string, opts importOpts) error {
 	if _, err := os.Stat(target); err == nil && !opts.force {
-		prompter := autostart.NewStdioPrompter(stdin, stderr, isatty.IsTerminal(stdin.Fd()), false)
+		prompter := autostart.NewStdioPrompter(stdin, stderr, term.IsTerminal(int(stdin.Fd())), false)
 		ok, err := prompter.Confirm(fmt.Sprintf("%s already exists. Overwrite?", target), false)
 		if err != nil {
 			if errors.Is(err, autostart.ErrNeedsYes) {

@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/go-chi/jwtauth/v5"
-	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/chap"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
@@ -221,24 +220,21 @@ func TokenFromCookie(r *http.Request) string {
 // ttlStore holds single-use tokens with TTL expiry, minted by gen. Both the
 // challenge nonce and the browser launch ticket are "generate a random token,
 // redeem it once before it expires" — they differ only in size, TTL, and how
-// the token is generated.
+// the token is generated. A full store drops expired tokens, then the oldest,
+// so a flood of challenge requests can't grow it without bound.
 type ttlStore struct {
-	// mu makes consume's get-then-remove atomic: the LRU locks each call
-	// individually, so without this two requests presenting the same token could
-	// both observe it before either removed it, redeeming a single-use token
-	// twice. This is the login boundary, so single-use must actually be single.
+	// mu makes consume's lookup-then-delete atomic: two requests presenting the
+	// same token must not both redeem it. This is the login boundary, so
+	// single-use must actually be single.
 	mu      sync.Mutex
-	entries *expirable.LRU[string, time.Time]
+	entries map[string]time.Time // token → expiry
+	size    int
 	ttl     time.Duration
 	gen     func() (string, error)
 }
 
 func newTTLStore(size int, ttl time.Duration, gen func() (string, error)) *ttlStore {
-	return &ttlStore{
-		entries: expirable.NewLRU[string, time.Time](size, nil, ttl),
-		ttl:     ttl,
-		gen:     gen,
-	}
+	return &ttlStore{entries: make(map[string]time.Time, size), size: size, ttl: ttl, gen: gen}
 }
 
 func (s *ttlStore) create() (string, error) {
@@ -246,21 +242,38 @@ func (s *ttlStore) create() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	now := time.Now()
 	s.mu.Lock()
-	s.entries.Add(token, time.Now().Add(s.ttl))
-	s.mu.Unlock()
+	defer s.mu.Unlock()
+	if len(s.entries) >= s.size {
+		s.evict(now)
+	}
+	s.entries[token] = now.Add(s.ttl)
 	return token, nil
+}
+
+// evict drops every expired token; if none had expired, it drops the oldest.
+func (s *ttlStore) evict(now time.Time) {
+	var oldest string
+	var oldestExp time.Time
+	for token, exp := range s.entries {
+		if now.After(exp) {
+			delete(s.entries, token)
+		} else if oldest == "" || exp.Before(oldestExp) {
+			oldest, oldestExp = token, exp
+		}
+	}
+	if len(s.entries) >= s.size {
+		delete(s.entries, oldest)
+	}
 }
 
 func (s *ttlStore) consume(token string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	exp, ok := s.entries.Get(token)
-	if !ok || time.Now().After(exp) {
-		return false
-	}
-	s.entries.Remove(token)
-	return true
+	exp, ok := s.entries[token]
+	delete(s.entries, token)
+	return ok && !time.Now().After(exp)
 }
 
 // newNonceStore holds single-use challenge nonces.

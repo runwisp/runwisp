@@ -4,6 +4,7 @@
 package notify
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"net/http"
@@ -11,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/backoff"
 )
 
-// BackoffConfig controls outbound retry behavior. Mirrors the public fields of
-// cenkalti/backoff/v4 ExponentialBackOff for the subset we use.
+// BackoffConfig controls outbound retry behavior. A zero field falls back to
+// DefaultBackoff's value for it.
 type BackoffConfig struct {
 	InitialInterval time.Duration
 	MaxInterval     time.Duration
@@ -33,29 +34,16 @@ func DefaultBackoff() BackoffConfig {
 	}
 }
 
-// IsZero reports whether c is the zero value (no fields set). Callers use this
-// to decide whether to substitute DefaultBackoff for an unset config.
-func (c BackoffConfig) IsZero() bool {
-	return c.InitialInterval == 0 && c.MaxInterval == 0 && c.MaxElapsedTime == 0 && c.Multiplier == 0
-}
-
-// NewExponential constructs a configured cenkalti backoff.
-func (c BackoffConfig) NewExponential() *backoff.ExponentialBackOff {
-	b := backoff.NewExponentialBackOff()
-	if c.InitialInterval > 0 {
-		b.InitialInterval = c.InitialInterval
+// orDefaults fills every unset field from DefaultBackoff, so an omitted knob
+// never means "retry forever".
+func (c BackoffConfig) orDefaults() BackoffConfig {
+	d := DefaultBackoff()
+	return BackoffConfig{
+		InitialInterval: cmp.Or(c.InitialInterval, d.InitialInterval),
+		MaxInterval:     cmp.Or(c.MaxInterval, d.MaxInterval),
+		MaxElapsedTime:  cmp.Or(c.MaxElapsedTime, d.MaxElapsedTime),
+		Multiplier:      cmp.Or(c.Multiplier, d.Multiplier),
 	}
-	if c.MaxInterval > 0 {
-		b.MaxInterval = c.MaxInterval
-	}
-	if c.MaxElapsedTime > 0 {
-		b.MaxElapsedTime = c.MaxElapsedTime
-	}
-	if c.Multiplier > 0 {
-		b.Multiplier = c.Multiplier
-	}
-	b.Reset()
-	return b
 }
 
 // ParseRetryAfterHeader extracts a delay from an HTTP Retry-After header.
@@ -99,66 +87,66 @@ func IsPermanentHTTPStatus(code int) bool {
 		code != http.StatusRequestTimeout && code != http.StatusTooManyRequests
 }
 
-// rateLimitAwareBackOff wraps a backoff.BackOff so a rate-limited HTTP
-// response (429 + Retry-After) can hand the retry loop its own next-interval
-// instead of letting the library additionally compute and wait out its usual
-// exponential interval on top of a delay the caller already honored once.
-type rateLimitAwareBackOff struct {
-	*backoff.ExponentialBackOff
-	override time.Duration
-}
+// permanentError marks an error RetryWithBackoff must not retry.
+type permanentError struct{ err error }
 
-func (b *rateLimitAwareBackOff) NextBackOff() time.Duration {
-	if b.override > 0 {
-		d := b.override
-		b.override = 0
-		// Honor the server-supplied delay, but still enforce MaxElapsedTime:
-		// the library only checks it inside its own NextBackOff, which this
-		// branch skips, so a 429 + Retry-After on every call would retry forever.
-		if b.MaxElapsedTime > 0 && b.GetElapsedTime()+d > b.MaxElapsedTime {
-			return backoff.Stop
-		}
-		return d
-	}
-	return b.ExponentialBackOff.NextBackOff()
-}
+func (e *permanentError) Error() string { return e.err.Error() }
+func (e *permanentError) Unwrap() error { return e.err }
+
+// Permanent wraps err so RetryWithBackoff gives up immediately and returns err
+// itself (without the wrapper).
+func Permanent(err error) error { return &permanentError{err: err} }
 
 // retryOverrideKey is the context.Value key RetryWithBackoff uses to expose
-// its backoff instance to op, so op can call SetNextRetryInterval.
+// its next-delay override to op, so op can call SetNextRetryInterval.
 type retryOverrideKey struct{}
 
 // SetNextRetryInterval overrides the delay RetryWithBackoff's retry loop
 // waits before its next call to op, using the ctx that RetryWithBackoff
 // passed into op. Intended for a server-supplied delay (e.g. HTTP 429
 // Retry-After) that op has already decided to honor: the loop then waits
-// exactly that long, once, instead of appending its own independently
-// computed exponential interval on top. d <= 0, or a ctx not sourced from
-// RetryWithBackoff, is a no-op — the library's normal backoff applies.
+// exactly that long, once, instead of its own exponential interval. d <= 0, or
+// a ctx not sourced from RetryWithBackoff, is a no-op.
 func SetNextRetryInterval(ctx context.Context, d time.Duration) {
-	if d <= 0 {
-		return
-	}
-	if bo, ok := ctx.Value(retryOverrideKey{}).(*rateLimitAwareBackOff); ok {
-		bo.override = d
+	if override, ok := ctx.Value(retryOverrideKey{}).(*time.Duration); ok && d > 0 {
+		*override = d
 	}
 }
 
-// RetryWithBackoff runs op under cfg's exponential backoff, unwrapping any
-// *backoff.PermanentError so callers see the underlying cause without the
-// wrapper appearing in the error chain or log line. op is called with a
-// context derived from ctx that carries the retry loop's backoff instance —
-// see SetNextRetryInterval.
+// RetryWithBackoff runs op until it succeeds, returns a Permanent error, ctx
+// ends, or the next wait would exceed cfg.MaxElapsedTime. Waits follow cfg's
+// exponential curve with ±50% jitter. op is called with a context derived from
+// ctx that carries the loop's override slot (see SetNextRetryInterval).
 func RetryWithBackoff(ctx context.Context, cfg BackoffConfig, op func(ctx context.Context) error) error {
-	bo := &rateLimitAwareBackOff{ExponentialBackOff: cfg.NewExponential()}
-	rctx := context.WithValue(ctx, retryOverrideKey{}, bo)
-	if err := backoff.Retry(func() error { return op(rctx) }, backoff.WithContext(bo, rctx)); err != nil {
-		var perm *backoff.PermanentError
-		if errors.As(err, &perm) {
-			return perm.Err
+	cfg = cfg.orDefaults()
+	curve := backoff.Exponential{Initial: cfg.InitialInterval, Max: cfg.MaxInterval, Multiplier: cfg.Multiplier, Jitter: 0.5}
+	var override time.Duration
+	rctx := context.WithValue(ctx, retryOverrideKey{}, &override)
+	start := time.Now()
+	for {
+		err := op(rctx)
+		if err == nil {
+			return nil
 		}
-		return err
+		if perm, ok := errors.AsType[*permanentError](err); ok {
+			return perm.err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		delay := curve.Next()
+		if override > 0 {
+			delay, override = override, 0
+		}
+		if time.Since(start)+delay > cfg.MaxElapsedTime {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
 	}
-	return nil
 }
 
 // redactedError wraps err so Error() has secrets redacted from its message

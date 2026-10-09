@@ -12,10 +12,10 @@ import (
 
 	"log/slog"
 
-	"github.com/mattn/go-isatty"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui"
+	"golang.org/x/term"
 )
 
 // runDefault detects a running daemon or spawns one, then opens the TUI.
@@ -75,7 +75,7 @@ func ensurePortFreeOrHandle(ctx context.Context, f Flags) (spawn bool, err error
 	}
 
 	info := probeRunwispInstance(f.Host, f.Port)
-	interactive := isatty.IsTerminal(os.Stdin.Fd())
+	interactive := term.IsTerminal(int(os.Stdin.Fd()))
 	choice, resErr := resolvePortConflict(f, bindErr, info, interactive, os.Stdin, os.Stderr)
 	if resErr != nil {
 		return false, resErr

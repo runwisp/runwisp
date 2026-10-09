@@ -44,7 +44,6 @@
         "@runwisp/common": "workspace:*",
         "@runwisp/ui": "workspace:*",
         "@types/event-source-polyfill": "^1.0.5",
-        "ansi-to-html": "^0.7.2",
         "event-source-polyfill": "^1.0.31",
         "openapi-fetch": "^0.17.0",
         "zod": "^4.4.3"

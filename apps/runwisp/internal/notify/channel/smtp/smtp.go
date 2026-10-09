@@ -20,7 +20,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/cenkalti/backoff/v4"
 	gomail "github.com/wneessen/go-mail"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
@@ -102,10 +101,6 @@ func New(cfg Config) (*Channel, error) {
 		return nil, fmt.Errorf("smtp channel %q: renderer is required", cfg.ID)
 	}
 	mode := normalizeTLSMode(cfg.TLSMode, cfg.Port)
-	bo := cfg.Backoff
-	if bo.IsZero() {
-		bo = notify.DefaultBackoff()
-	}
 
 	c := &Channel{
 		id:            cfg.ID,
@@ -120,7 +115,7 @@ func New(cfg Config) (*Channel, error) {
 		to:            append([]string(nil), cfg.Recipients...),
 		cc:            append([]string(nil), cfg.CC...),
 		bcc:           append([]string(nil), cfg.BCC...),
-		backoff:       bo,
+		backoff:       cfg.Backoff,
 		renderer:      cfg.Renderer,
 	}
 	if cfg.NewClient != nil {
@@ -264,7 +259,7 @@ func defaultClient(host string, port int, tlsMode string, tlsSkipVerify bool, us
 }
 
 // classify maps a go-mail SendError or net/smtp textproto.Error into the
-// backoff library's transient / permanent distinction. SendError carries an
+// retry loop's transient / permanent distinction. SendError carries an
 // explicit IsTemp() flag. textproto.Error is what bubbles up from go-mail's
 // dial sequence (HELO/STARTTLS/AUTH/MAIL/RCPT/DATA) when the server returns a
 // 4xx/5xx reply — go-mail wraps it as "dial failed: SMTP AUTH failed: ..."
@@ -277,12 +272,12 @@ func (c *Channel) classify(err error) error {
 		if sendErr.IsTemp() {
 			return err
 		}
-		return backoff.Permanent(err)
+		return notify.Permanent(err)
 	}
 	var tpErr *textproto.Error
 	if errors.As(err, &tpErr) {
 		if tpErr.Code >= 500 && tpErr.Code < 600 {
-			return backoff.Permanent(err)
+			return notify.Permanent(err)
 		}
 		return err
 	}

@@ -5,9 +5,11 @@ package auth
 
 import (
 	"crypto/tls"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/chap"
 	"github.com/stretchr/testify/assert"
@@ -54,6 +56,29 @@ func TestNonceStore_MultipleConcurrentNonces(t *testing.T) {
 
 	assert.True(t, store.consume(nonce1))
 	assert.True(t, store.consume(nonce2))
+}
+
+func TestTTLStore_ExpiredTokenRejected(t *testing.T) {
+	store := newTTLStore(10, -time.Second, func() (string, error) { return "tok", nil })
+	token, err := store.create()
+	require.NoError(t, err)
+	assert.False(t, store.consume(token))
+}
+
+func TestTTLStore_FullStoreStaysBounded(t *testing.T) {
+	n := 0
+	store := newTTLStore(2, time.Minute, func() (string, error) {
+		n++
+		return fmt.Sprintf("tok-%d", n), nil
+	})
+	for range 3 {
+		_, err := store.create()
+		require.NoError(t, err)
+	}
+	// Bounded, and the newest token always survives. (Which older one goes is
+	// not asserted: two tokens minted in the same clock tick tie.)
+	assert.Len(t, store.entries, 2)
+	assert.True(t, store.consume("tok-3"))
 }
 
 func computeChallenge(password, nonce string) string {

@@ -18,7 +18,6 @@ import (
 
 	"log/slog"
 
-	"github.com/mattn/go-isatty"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/clilog"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
@@ -35,6 +34,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/update"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/version"
+	"golang.org/x/term"
 )
 
 // daemonMode controls which subsystems runDaemon initializes.
@@ -323,7 +323,7 @@ func configWarningsFn(r *runtime.Reconciler, boot *config.Config) func() []strin
 // either is redirected, attaching the TUI would block forever on input that
 // never arrives.
 func isInteractiveTerminal() bool {
-	return isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd())
+	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
 }
 
 // resolveHeadless flips a TUI request (headless=false) to headless when stdin
