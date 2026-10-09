@@ -35,7 +35,7 @@ async function globalSetup(_config: FullConfig): Promise<void> {
     });
     const baseURL = `http://127.0.0.1:${port}`;
 
-    // Obtain a JWT once to avoid rate-limit issues across tests
+    // Obtain a session token once to avoid rate-limit issues across tests
     const token = await obtainToken(baseURL, password);
 
     const state: DaemonState = {

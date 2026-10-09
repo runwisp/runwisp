@@ -18,8 +18,8 @@ type localTrustedKey struct{}
 
 // IsLocalTrusted reports whether r was delivered on the Unix socket listener
 // by a peer matching the daemon's UID. It is the basis for the
-// authOrLocalTrusted middleware that skips JWT verification on the socket
-// path; loopback TCP requests still go through CHAP/JWT.
+// authOrLocalTrusted middleware that skips session-token verification on the socket
+// path; loopback TCP requests still need a session token.
 func IsLocalTrusted(r *http.Request) bool {
 	return IsLocalTrustedCtx(r.Context())
 }

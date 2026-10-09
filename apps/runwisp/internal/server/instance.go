@@ -20,7 +20,7 @@ type InstanceOutput struct {
 
 // humaGetInstance answers "who are you and where do you live?" for a second
 // `runwisp` that found this daemon holding its port. It is local-only: the
-// route is public (no JWT/CHAP) so a launcher with no password can reach it,
+// route is public (no CHAP or session token) so a launcher with no password can reach it,
 // but the handler returns 403 to any non-loopback TCP caller so the datadir,
 // config and socket paths it discloses never reach the network.
 func (srv *Server) humaGetInstance(ctx context.Context, _ *struct{}) (*InstanceOutput, error) {

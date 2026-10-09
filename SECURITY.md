@@ -49,7 +49,7 @@ Before reporting, understand the boundaries RunWisp commits to:
   - **Local clients (CLI, TUI)** connect to the daemon over a Unix domain socket at `<datadir>/runwisp.sock` (mode `0600` inside the `0700` data dir). The daemon verifies the peer UID at accept time via `SO_PEERCRED` (Linux) / `LOCAL_PEERCRED` (macOS); a foreign UID is closed immediately. No password is involved — the socket presence is the credential.
   - **Network clients (Web UI, remote REST)** log in with a password using a challenge-response handshake, so the password never travels in plaintext even over HTTP. A successful login issues a session in a secure cookie.
   - The TUI's "Open in browser" action mints a single-use launch ticket over the local socket; the browser redeems it on `127.0.0.1` to receive a session cookie. The password never leaves the host.
-- **No secrets on disk.** The daemon password is either supplied via `RUNWISP_PASSWORD` (in-memory only) or freshly generated each boot (ephemeral). The JWT signing key is **derived** from the password and the per-install fingerprint via HKDF-SHA-256; it is never written. Setting a fresh `RUNWISP_PASSWORD` and restarting invalidates every existing session.
+- **No secrets on disk.** The daemon password is either supplied via `RUNWISP_PASSWORD` (in-memory only) or freshly generated each boot (ephemeral). The session signing key is **derived** from the password and the per-install fingerprint via PBKDF2-HMAC-SHA-256; it is never written. Setting a fresh `RUNWISP_PASSWORD` and restarting invalidates every existing session.
 - **No required network.** The daemon must work fully offline; outbound integrations (`internal/station/`, notification channels, TLS cert lookups) are strictly opt-in.
 
 This is single-tenant by design. RunWisp does not ship SSO, directory integration, or fine-grained RBAC — those are stated non-goals.
@@ -58,7 +58,7 @@ This is single-tenant by design. RunWisp does not ship SSO, directory integratio
 
 We welcome reports against:
 
-- Authentication bypass or session forgery against the password challenge-response, the session cookie, or the HKDF-derived JWT signing key
+- Authentication bypass or session forgery against the password challenge-response, the session cookie, or the password-derived session signing key
 - Unix-socket trust bypass — anything that lets a foreign UID drive the daemon despite `SO_PEERCRED` / `LOCAL_PEERCRED`, or that lets a network caller reach socket-only endpoints (e.g. `GET /api/local/credentials`)
 - Launch-ticket flaws — replay, forgery, or off-host redemption of a ticket meant for `127.0.0.1`
 - Authorization flaws — unauthorized triggering, listing, stopping, or observing of tasks via REST or the control-plane protocol

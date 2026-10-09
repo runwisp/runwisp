@@ -4,30 +4,23 @@
 package main
 
 import (
-	"encoding/base64"
-	"encoding/json"
-	"strings"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 )
 
-// The CLI caches the JWT minted by a remote daemon so repeated `runwisp run
+// The CLI caches the session token minted by a remote daemon so repeated `runwisp run
 // --url` invocations reuse one session instead of re-running CHAP each time.
 // Re-handshaking would burn two hits (challenge + login) against the daemon's
-// per-IP auth rate limit on every call; reusing the 24h JWT keeps a script
+// per-IP auth rate limit on every call; reusing the 24h token keeps a script
 // that triggers often well under that ceiling. The cache is a best-effort
 // optimization: a stale or unreadable entry simply falls through to a fresh
 // handshake, and the trigger path re-authenticates on a 401 regardless.
 
 // cacheSkew trims a margin off a token's expiry so we re-handshake slightly
-// early rather than send a JWT the daemon is about to reject.
+// early rather than send a token the daemon is about to reject.
 const cacheSkew = 60 * time.Second
-
-type cachedToken struct {
-	Token     string `json:"token"`
-	ExpiresAt int64  `json:"expires_at"` // unix seconds; 0 means "unknown"
-}
 
 // tokenCachePath returns the per-user cache file path. It lives under the OS
 // cache dir, not the daemon's --data dir: a remote client has no data dir of
@@ -37,23 +30,22 @@ func tokenCachePath() (string, error) {
 	return runwispCacheFile("tokens.json")
 }
 
-// loadCachedToken returns a non-expired cached JWT for baseURL, or "" when
-// none is usable. Any error (missing file, corrupt JSON, no cache dir) yields
-// "" so the caller falls through to a fresh handshake.
+// loadCachedToken returns a non-expired cached session token for baseURL, or
+// "" when none is usable. Any error (missing file, corrupt JSON, no cache dir,
+// a token whose expiry can't be read) yields "" so the caller falls through
+// to a fresh handshake.
 func loadCachedToken(baseURL string) string {
 	path, err := tokenCachePath()
 	if err != nil {
 		return ""
 	}
-	cache := loadJSONCacheMap[cachedToken](path)
-	entry, ok := cache[apiclient.NormalizeBaseURL(baseURL)]
-	if !ok || entry.Token == "" {
+	// The token carries its own expiry, so the cache maps URL to token alone.
+	token := loadJSONCacheMap[string](path)[apiclient.NormalizeBaseURL(baseURL)]
+	expiry, ok := auth.TokenExpiry(token)
+	if !ok || !time.Now().Add(cacheSkew).Before(expiry) {
 		return ""
 	}
-	if entry.ExpiresAt != 0 && time.Now().Add(cacheSkew).Unix() >= entry.ExpiresAt {
-		return ""
-	}
-	return entry.Token
+	return token
 }
 
 // storeCachedToken persists token for baseURL, read-modify-writing the cache
@@ -64,27 +56,5 @@ func storeCachedToken(baseURL, token string) {
 	if err != nil {
 		return
 	}
-	storeJSONCacheEntry(path, "token", apiclient.NormalizeBaseURL(baseURL), cachedToken{Token: token, ExpiresAt: jwtExpiry(token)})
-}
-
-// jwtExpiry pulls the `exp` claim (unix seconds) out of a JWT without
-// verifying its signature — the daemon already vouched for the token, we only
-// want its lifetime so we can drop it before it goes stale. Returns 0 when the
-// claim can't be read; callers treat 0 as "unknown" and lean on 401-retry.
-func jwtExpiry(token string) int64 {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return 0
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return 0
-	}
-	var claims struct {
-		Exp int64 `json:"exp"`
-	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return 0
-	}
-	return claims.Exp
+	storeJSONCacheEntry(path, "token", apiclient.NormalizeBaseURL(baseURL), token)
 }

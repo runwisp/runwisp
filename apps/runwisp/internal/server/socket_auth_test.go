@@ -27,11 +27,11 @@ import (
 )
 
 // TestAuthOrLocalTrusted_BypassWithLocalContext verifies the middleware's
-// fast path: a request flagged with localTrustedKey skips JWT verification
+// fast path: a request flagged with localTrustedKey skips session-token verification
 // entirely. This is the contract that lets the local CLI/TUI talk to the
 // daemon without ever holding a password.
 func TestAuthOrLocalTrusted_BypassWithLocalContext(t *testing.T) {
-	authSvc, err := auth.NewService("pw", "jwt-secret-for-bypass-test", nil)
+	authSvc, err := auth.NewService("pw", []byte("session-key-for-bypass-test"), nil)
 	require.NoError(t, err)
 
 	called := false
@@ -49,12 +49,12 @@ func TestAuthOrLocalTrusted_BypassWithLocalContext(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-// TestAuthOrLocalTrusted_RejectsTCPWithoutJWT verifies the slow path: a
-// request without the local flag and without a JWT is unauthorized. Without
+// TestAuthOrLocalTrusted_RejectsTCPWithoutSession verifies the slow path: a
+// request without the local flag and without a session token is unauthorized. Without
 // this, removing the password from disk would silently expose the API to
 // any local user that could reach the TCP port.
-func TestAuthOrLocalTrusted_RejectsTCPWithoutJWT(t *testing.T) {
-	authSvc, err := auth.NewService("pw", "jwt-secret-for-reject-test", nil)
+func TestAuthOrLocalTrusted_RejectsTCPWithoutSession(t *testing.T) {
+	authSvc, err := auth.NewService("pw", []byte("session-key-for-reject-test"), nil)
 	require.NoError(t, err)
 
 	called := false
@@ -67,13 +67,13 @@ func TestAuthOrLocalTrusted_RejectsTCPWithoutJWT(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
 
-	assert.False(t, called, "handler must NOT run without local flag or JWT")
+	assert.False(t, called, "handler must NOT run without local flag or session token")
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 // TestSocketServer_EndToEnd boots the real server, opens its Unix socket,
 // hits a protected route without any auth headers, and expects 200. The
-// matching TCP path with the same handler returns 401 because no JWT was
+// matching TCP path with the same handler returns 401 because no session token was
 // supplied. This is the regression test for the central refactor.
 func TestSocketServer_EndToEnd(t *testing.T) {
 	s, repo, _, _ := setupServerWithSocket(t)
@@ -82,13 +82,13 @@ func TestSocketServer_EndToEnd(t *testing.T) {
 	repo.On("QueryRuns", mock.Anything, storage.RunQuery{Limit: 50}).Return(runs, nil)
 	repo.On("CountRunsFiltered", mock.Anything, model.RunFilter{}).Return(int64(0), nil)
 
-	// --- TCP path: no JWT, no local flag → 401 ---
+	// --- TCP path: no session token, no local flag → 401 ---
 	tcpReq := httptest.NewRequest("GET", "/api/runs", nil)
 	tcpW := httptest.NewRecorder()
 	s.router.ServeHTTP(tcpW, tcpReq)
-	assert.Equal(t, http.StatusUnauthorized, tcpW.Code, "TCP without JWT must be 401")
+	assert.Equal(t, http.StatusUnauthorized, tcpW.Code, "TCP without session token must be 401")
 
-	// --- Socket path: local-trusted flag on context, no JWT → 200 ---
+	// --- Socket path: local-trusted flag on context, no session token → 200 ---
 	socketReq := httptest.NewRequest("GET", "/api/runs", nil)
 	socketReq = socketReq.WithContext(context.WithValue(socketReq.Context(), localTrustedKey{}, true))
 	socketW := httptest.NewRecorder()

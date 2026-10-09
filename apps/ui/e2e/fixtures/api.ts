@@ -6,7 +6,7 @@ import { displayStatus, type Run, type RunStatus } from "@runwisp/common";
 
 /**
  * Helpers that talk to the daemon's REST API directly (Playwright's
- * `page.request`, carrying the JWT from the `daemonState` fixture).
+ * `page.request`, carrying the session token from the `daemonState` fixture).
  *
  * The daemon API is the source of truth — the UI is "read-only + trigger", so
  * these helpers let a spec establish *what actually happened* and then assert

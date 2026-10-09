@@ -44,7 +44,7 @@ func openAPISpecJSON() ([]byte, error) {
 		LogDir:     os.TempDir(),
 		EventBus:   events.NewEventBus(),
 		Password:   "openapi-generation",
-		JWTSecret:  "openapi-generation",
+		SessionKey: []byte("openapi-generation"),
 		DaemonInfo: &model.DaemonInfo{},
 	})
 	if err != nil {

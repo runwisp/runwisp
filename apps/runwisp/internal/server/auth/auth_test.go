@@ -4,10 +4,13 @@
 package auth
 
 import (
+	"crypto/pbkdf2"
+	"crypto/sha256"
 	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,15 +20,40 @@ import (
 )
 
 func TestNewService_RejectsEmptySecret(t *testing.T) {
-	svc, err := NewService("pass", "", nil)
-	assert.ErrorIs(t, err, ErrEmptyJWTSecret)
+	svc, err := NewService("pass", nil, nil)
+	assert.ErrorIs(t, err, ErrEmptySessionKey)
 	assert.Nil(t, svc)
 }
 
-func TestNewService_ExplicitSecret(t *testing.T) {
-	svc, err := NewService("pass", "my-secret", nil)
+// DeriveSessionKey must be deterministic so browser sessions survive a daemon
+// restart when RUNWISP_PASSWORD is stable, must change with the password so
+// rotating it revokes every session, and must be salted per install so the
+// same password on another host can't mint sessions here.
+func TestDeriveSessionKey(t *testing.T) {
+	derive := func(password, fingerprint string) []byte {
+		key, err := DeriveSessionKey(password, fingerprint)
+		require.NoError(t, err)
+		return key
+	}
+	base := derive("secret", "alpha-fingerprint")
+	assert.Len(t, base, 32)
+	assert.Equal(t, base, derive("secret", "alpha-fingerprint"), "deterministic")
+	assert.NotEqual(t, base, derive("other-secret", "alpha-fingerprint"), "rotates with the password")
+	assert.NotEqual(t, base, derive("secret", "beta-fingerprint"), "salted per install")
+}
+
+// TestDeriveSessionKey_UsesExpensiveKDF pins the derivation to PBKDF2 at
+// chap.Iterations. The fingerprint salt is built from non-secret inputs and a
+// session token rides the same cleartext channel as the CHAP transcript on
+// TLS-less deployments, so a captured token must not be a cheaper offline
+// oracle for the password than the CHAP transcript is. A regression to a fast
+// single-pass KDF would silently reopen that shortcut.
+func TestDeriveSessionKey_UsesExpensiveKDF(t *testing.T) {
+	got, err := DeriveSessionKey("secret", "alpha-fingerprint")
 	require.NoError(t, err)
-	assert.NotNil(t, svc.JWTAuth())
+	want, err := pbkdf2.Key(sha256.New, "secret", []byte(sessionKDFInfo+"\x00alpha-fingerprint"), chap.Iterations, 32)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
 }
 
 func TestNonceStore_CreateAndConsume(t *testing.T) {
@@ -87,7 +115,7 @@ func computeChallenge(password, nonce string) string {
 
 func newServiceOrFail(t *testing.T, password string, trusted TrustedProxyChecker) *Service {
 	t.Helper()
-	svc, err := NewService(password, "test-jwt-secret", trusted)
+	svc, err := NewService(password, []byte("test-session-key"), trusted)
 	require.NoError(t, err)
 	return svc
 }
@@ -136,7 +164,7 @@ func TestLogin_NonceReplay(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidNonce)
 }
 
-func TestLogin_JWTContainsExpAndIat(t *testing.T) {
+func TestLogin_IssuesValidSessionToken(t *testing.T) {
 	svc := newServiceOrFail(t, "secret", nil)
 
 	nonce, err := svc.nonces.create()
@@ -145,19 +173,78 @@ func TestLogin_JWTContainsExpAndIat(t *testing.T) {
 	token, err := svc.Login(nonce, computeChallenge("secret", nonce))
 	require.NoError(t, err)
 
-	tok, err := svc.jwtAuth.Decode(token)
+	assert.True(t, svc.ValidToken(token))
+	exp, ok := TokenExpiry(token)
+	require.True(t, ok)
+	assert.WithinDuration(t, time.Now().Add(SessionDuration), exp, 5*time.Second)
+}
+
+func TestValidToken(t *testing.T) {
+	svc := newServiceOrFail(t, "pass", nil)
+	token := svc.IssueToken(time.Hour)
+	exp, mac, _ := strings.Cut(token, ".")
+
+	otherKey, err := NewService("pass", []byte("another-session-key"), nil)
 	require.NoError(t, err)
-	exp, ok := tok.Expiration()
-	assert.True(t, ok, "token should have expiration")
-	assert.False(t, exp.IsZero())
-	iat, ok := tok.IssuedAt()
-	assert.True(t, ok, "token should have issued-at")
-	assert.False(t, iat.IsZero())
+	expired := svc.IssueToken(-time.Second)
+	// Extending the expiry without re-signing must fail: the MAC covers exp.
+	extended := "9999999999." + mac
+
+	assert.True(t, svc.ValidToken(token))
+	assert.False(t, svc.ValidToken(""), "empty")
+	assert.False(t, svc.ValidToken(exp), "no MAC")
+	assert.False(t, svc.ValidToken(extended), "tampered expiry")
+	assert.False(t, svc.ValidToken(exp+".AAAA"), "wrong MAC")
+	assert.False(t, svc.ValidToken(expired), "expired")
+	assert.False(t, otherKey.ValidToken(token), "signed with a different key (password rotated)")
+}
+
+func TestTokenExpiry(t *testing.T) {
+	exp, ok := TokenExpiry("1700000000.mac")
+	require.True(t, ok)
+	assert.Equal(t, int64(1700000000), exp.Unix())
+
+	for _, bad := range []string{"", "1700000000", "soon.mac", "header.payload.sig"} {
+		_, ok := TokenExpiry(bad)
+		assert.False(t, ok, "%q must have no readable expiry", bad)
+	}
+}
+
+func TestTokenFromRequest(t *testing.T) {
+	withCookie := func(r *http.Request) *http.Request {
+		r.AddCookie(&http.Cookie{Name: CookieName, Value: "from-cookie"})
+		return r
+	}
+	tests := []struct {
+		name          string
+		authorization string
+		cookie        bool
+		want          string
+	}{
+		{"bearer header", "Bearer from-header", false, "from-header"},
+		{"bearer scheme is case-insensitive", "bearer from-header", false, "from-header"},
+		{"bearer wins over cookie", "Bearer from-header", true, "from-header"},
+		{"cookie only", "", true, "from-cookie"},
+		{"non-bearer scheme falls back to cookie", "Basic dXNlcjpwYXNz", true, "from-cookie"},
+		{"nothing", "", false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest("GET", "/api/tasks", nil)
+			if tt.authorization != "" {
+				r.Header.Set("Authorization", tt.authorization)
+			}
+			if tt.cookie {
+				r = withCookie(r)
+			}
+			assert.Equal(t, tt.want, TokenFromRequest(r))
+		})
+	}
 }
 
 func TestBuildAuthCookie(t *testing.T) {
 	svc := newServiceOrFail(t, "pass", nil)
-	c := svc.BuildAuthCookie("test-token", JWTTokenDuration, false)
+	c := svc.BuildAuthCookie("test-token", SessionDuration, false)
 
 	assert.Equal(t, CookieName, c.Name)
 	assert.Equal(t, "test-token", c.Value)
@@ -165,12 +252,12 @@ func TestBuildAuthCookie(t *testing.T) {
 	assert.True(t, c.HttpOnly)
 	assert.False(t, c.Secure)
 	assert.Equal(t, http.SameSiteStrictMode, c.SameSite)
-	assert.Equal(t, int(JWTTokenDuration.Seconds()), c.MaxAge)
+	assert.Equal(t, int(SessionDuration.Seconds()), c.MaxAge)
 }
 
 func TestBuildAuthCookie_Secure(t *testing.T) {
 	svc := newServiceOrFail(t, "pass", nil)
-	c := svc.BuildAuthCookie("test-token", JWTTokenDuration, true)
+	c := svc.BuildAuthCookie("test-token", SessionDuration, true)
 	assert.True(t, c.Secure)
 }
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/spf13/cobra"
@@ -33,7 +34,6 @@ type remoteDaemonStub struct {
 }
 
 func (s *remoteDaemonStub) handler(t *testing.T) http.HandlerFunc {
-	const freshToken = "fresh-jwt-token"
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/health":
@@ -98,7 +98,7 @@ func TestRunExecViaRemote_StreamsAndPropagatesExitCode(t *testing.T) {
 	assert.Equal(t, int32(1), stub.authCount.Load(), "exactly one CHAP handshake")
 
 	// The minted token is cached for reuse.
-	assert.Equal(t, "fresh-jwt-token", loadCachedToken(srv.URL))
+	assert.Equal(t, freshToken, loadCachedToken(srv.URL))
 }
 
 func TestRunExecViaRemote_SuccessReturnsZero(t *testing.T) {
@@ -114,12 +114,15 @@ func TestRunExecViaRemote_SuccessReturnsZero(t *testing.T) {
 
 func TestRunExecViaRemote_ReauthOnExpiredToken(t *testing.T) {
 	useTempCacheDir(t)
-	stub := &remoteDaemonStub{exitCode: 0, endReason: model.ReasonSuccess, staleToken: "stale-jwt"}
+	// Well-formed and unexpired, but the daemon rejects it (e.g. its password
+	// rotated since the token was cached).
+	stale := testSessions.IssueToken(time.Hour)
+	stub := &remoteDaemonStub{exitCode: 0, endReason: model.ReasonSuccess, staleToken: stale}
 	srv := httptest.NewServer(stub.handler(t))
 	defer srv.Close()
 
 	// Seed a cached (stale) token; the first trigger 401s and we re-handshake.
-	storeCachedToken(srv.URL, "stale-jwt")
+	storeCachedToken(srv.URL, stale)
 
 	code, err := runExecViaRemote(t.Context(), "backup", srv.URL, "pw", false, false, nil)
 	require.NoError(t, err)
@@ -158,7 +161,6 @@ func TestRunExecViaRemote_MissingPassword(t *testing.T) {
 // stop over the network — the same client path run --url uses.
 func TestControlTargets_StopViaRemote(t *testing.T) {
 	useTempCacheDir(t)
-	const freshToken = "fresh-jwt-token"
 	var stoppedPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {

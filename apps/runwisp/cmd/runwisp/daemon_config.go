@@ -5,28 +5,19 @@ package main
 
 import (
 	"context"
-	"crypto/pbkdf2"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/runwisp/runwisp/apps/runwisp/internal/chap"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/fingerprint"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/station"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/version"
 )
-
-// jwtKDFInfo namespaces the JWT signing-key derivation (folded into the PBKDF2
-// salt). Bumping it is the way to force every existing browser session to be
-// invalidated on the next restart without changing the operator's
-// RUNWISP_PASSWORD.
-const jwtKDFInfo = "runwisp-jwt-v1"
 
 // daemonConfig holds resolved configuration and secrets for the daemon.
 type daemonConfig struct {
@@ -35,7 +26,7 @@ type daemonConfig struct {
 	Config            *config.Config
 	Password          string
 	PasswordEphemeral bool
-	JWTSecret         string
+	SessionKey        []byte
 	NoAuth            bool
 }
 
@@ -72,7 +63,7 @@ func loadDaemonConfig(ctx context.Context, configRepo *storage.SQLiteDatabase, m
 		return nil, err
 	}
 
-	jwtSecret, err := deriveJWTSecret(password, fp)
+	sessionKey, err := auth.DeriveSessionKey(password, fp)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +74,7 @@ func loadDaemonConfig(ctx context.Context, configRepo *storage.SQLiteDatabase, m
 		Config:            cfg,
 		Password:          password,
 		PasswordEphemeral: ephemeral,
-		JWTSecret:         jwtSecret,
+		SessionKey:        sessionKey,
 		NoAuth:            noAuth,
 	}, nil
 }
@@ -115,7 +106,7 @@ func resolveAuthMode() (noAuth bool, err error) {
 
 // resolvePassword returns the daemon password. If RUNWISP_PASSWORD is set, the
 // env value is used and ephemeral=false (sessions stay stable across restarts
-// because deriveJWTSecret will produce the same JWT key). Otherwise a fresh
+// because auth.DeriveSessionKey will produce the same key). Otherwise a fresh
 // random password is minted in memory for this boot only; ephemeral=true.
 //
 // The password is never read from or written to disk. Persisting it would
@@ -132,32 +123,6 @@ func resolvePassword() (password string, ephemeral bool, err error) {
 		return "", false, err
 	}
 	return pw, true, nil
-}
-
-// deriveJWTSecret produces the HS256 JWT signing key from the daemon password,
-// salted by the per-install fingerprint. Properties:
-//
-//   - Stable across restarts when both inputs are stable, so a browser
-//     session backed by RUNWISP_PASSWORD survives a daemon restart.
-//   - Rotates automatically when the password rotates — including the
-//     ephemeral-password case, where each boot mints a new password and
-//     thus invalidates any prior session.
-//   - Different per machine/cwd thanks to the fingerprint salt; the same
-//     password on another host does not yield the same signing key.
-//
-// It uses the same expensive KDF (PBKDF2-HMAC-SHA256 at chap.Iterations) as
-// the CHAP login. The JWT travels in the same channel as the CHAP transcript
-// (cleartext on TLS-less deployments) and the fingerprint salt is built from
-// non-secret inputs, so a cheaper KDF would give an eavesdropper holding any
-// JWT a fast offline oracle for a weak RUNWISP_PASSWORD, bypassing the CHAP
-// iteration cost.
-func deriveJWTSecret(password, fp string) (string, error) {
-	salt := []byte(jwtKDFInfo + "\x00" + fp)
-	key, err := pbkdf2.Key(sha256.New, password, salt, chap.Iterations, 32)
-	if err != nil {
-		return "", fmt.Errorf("derive JWT secret: %w", err)
-	}
-	return base64.RawURLEncoding.EncodeToString(key), nil
 }
 
 // resolveFingerprint resolves the daemon's per-install fingerprint: an env

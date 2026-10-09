@@ -67,7 +67,7 @@ const maxRemotePasswordPrompts = 3
 // runTUIViaRemote attaches the TUI to a daemon over HTTP. It dials the daemon
 // the way run --url does (pinned cert, health probe), checks whether auth is
 // required (so a RUNWISP_AUTH=off daemon connects with none), authenticates
-// via CHAP when needed (reusing a cached JWT), then hands the client to the
+// via CHAP when needed (reusing a cached session token), then hands the client to the
 // shared TUI launch path.
 func runTUIViaRemote(ctx context.Context, baseURL, envPassword string) error {
 	client, err := dialRemote(ctx, baseURL, envPassword)

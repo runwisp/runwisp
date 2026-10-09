@@ -17,7 +17,7 @@ import (
 )
 
 // This file is the transport adapter for the auth subsystem: it wires huma
-// operations to the core CHAP/JWT flow in internal/server/auth, adds the
+// operations to the core CHAP/session flow in internal/server/auth, adds the
 // local-trusted / secure-request context lookups that depend on keys owned by
 // this package, and hosts the one helper that's inherently HTTP-layer
 // (launch-redirect sanitization). Loopback/local-peer detection lives in
@@ -40,7 +40,7 @@ func (srv *Server) registerAuthRoutes() {
 func (srv *Server) humaAuthStatus(_ context.Context, input *AuthStatusInput) (*AuthStatusOutput, error) {
 	// With RUNWISP_AUTH=off every caller is implicitly authenticated; the UI
 	// reads authRequired=false and skips the login modal.
-	authenticated := srv.noAuth || srv.auth.DecodeCookieToken(input.Token)
+	authenticated := srv.noAuth || srv.auth.ValidToken(input.Token)
 	return &AuthStatusOutput{Body: AuthStatusBody{
 		AuthRequired:  !srv.noAuth,
 		Authenticated: authenticated,
@@ -97,18 +97,14 @@ func (srv *Server) humaAuthChallenge(_ context.Context, _ *struct{}) (*AuthChall
 
 func (srv *Server) humaLogin(ctx context.Context, input *AuthLoginInput) (*AuthLoginOutput, error) {
 	token, err := srv.auth.Login(input.Body.Nonce, input.Body.Response)
+	if errors.Is(err, auth.ErrInvalidNonce) {
+		return nil, huma.Error401Unauthorized("Invalid or expired challenge")
+	}
 	if err != nil {
-		switch {
-		case errors.Is(err, auth.ErrInvalidNonce):
-			return nil, huma.Error401Unauthorized("Invalid or expired challenge")
-		case errors.Is(err, auth.ErrInvalidPassword):
-			return nil, huma.Error401Unauthorized("Invalid password")
-		default:
-			return nil, huma.Error500InternalServerError("Failed to generate token", err)
-		}
+		return nil, huma.Error401Unauthorized("Invalid password")
 	}
 	return &AuthLoginOutput{
-		SetCookie: srv.auth.BuildAuthCookie(token, auth.JWTTokenDuration, isSecureCtx(ctx)),
+		SetCookie: srv.auth.BuildAuthCookie(token, auth.SessionDuration, isSecureCtx(ctx)),
 		Body:      AuthLoginBody{Token: token},
 	}, nil
 }
@@ -130,7 +126,7 @@ func (srv *Server) registerCreateLaunchTicketRoute(api huma.API) {
 
 // humaCreateLaunchTicket generates a launch ticket. The route sits in the
 // protected group (authOrLocalTrusted), so the caller is already either a
-// local-trusted peer (Unix socket / loopback) or the holder of a valid JWT —
+// local-trusted peer (Unix socket / loopback) or the holder of a valid session —
 // i.e. an already-authenticated session. That is the mint gate: a launch
 // ticket only ever hands its bearer a session the minter could already obtain,
 // so a remote TUI that authenticated via CHAP may mint one for its browser.
@@ -160,14 +156,11 @@ func (srv *Server) humaRedeemLaunchTicket(ctx context.Context, input *LaunchTick
 		return nil, huma.Error401Unauthorized("Invalid or expired launch ticket")
 	}
 
-	token, err := srv.auth.IssueToken(auth.JWTTokenDuration)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to generate token", err)
-	}
+	token := srv.auth.IssueToken(auth.SessionDuration)
 	return &LaunchTicketRedeemOutput{
 		Status:    http.StatusSeeOther,
 		Location:  sanitizeLaunchRedirect(input.Redirect),
-		SetCookie: srv.auth.BuildAuthCookie(token, auth.JWTTokenDuration, isSecureCtx(ctx)),
+		SetCookie: srv.auth.BuildAuthCookie(token, auth.SessionDuration, isSecureCtx(ctx)),
 	}, nil
 }
 

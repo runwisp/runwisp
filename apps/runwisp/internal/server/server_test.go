@@ -72,7 +72,7 @@ func setupServerWithOpts(t *testing.T, mutate func(*Options)) (*Server, *testuti
 		LogDir:      tmpDir,
 		EventBus:    eb,
 		Password:    "secret",
-		JWTSecret:   "test-jwt-secret",
+		SessionKey:  []byte("test-session-key"),
 	}
 	if mutate != nil {
 		mutate(&opts)
@@ -891,12 +891,7 @@ func TestGetLogPage_FromZero_FirstLine(t *testing.T) {
 }
 
 func addAuth(req *http.Request, s *Server) {
-	_, ts, _ := s.auth.JWTAuth().Encode(map[string]any{
-		"exp": time.Now().Add(time.Hour).Unix(),
-		"iss": auth.JWTIssuer,
-		"aud": auth.JWTAudience,
-	})
-	req.Header.Set("Authorization", "Bearer "+ts)
+	req.Header.Set("Authorization", "Bearer "+s.auth.IssueToken(time.Hour))
 }
 
 // setupServerWithService returns a server containing a service task alongside

@@ -270,7 +270,7 @@ func connectRemote(ctx context.Context, baseURL, password string) (*apiclient.Cl
 }
 
 // runExecViaRemote dispatches the run to a remote daemon over the network. It
-// reuses a cached JWT when one is valid, falling back to a CHAP handshake, and
+// reuses a cached session token when one is valid, falling back to a CHAP handshake, and
 // (unless detached) follows the SSE log stream to propagate the exit code.
 func runExecViaRemote(ctx context.Context, taskName, baseURL, password string, detach, asJSON bool, params map[string]*string) (int, error) {
 	client, err := connectRemote(ctx, baseURL, password)

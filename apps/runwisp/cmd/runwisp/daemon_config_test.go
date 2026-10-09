@@ -4,14 +4,10 @@
 package main
 
 import (
-	"crypto/pbkdf2"
-	"crypto/sha256"
-	"encoding/base64"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/runwisp/runwisp/apps/runwisp/internal/chap"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,7 +45,7 @@ func TestLoadConfigFile_MissingWithoutStationErrors(t *testing.T) {
 }
 
 // loadDaemonConfig integrates loadConfigFile + fingerprint resolution +
-// resolvePassword + deriveJWTSecret. We exercise the standalone path with a
+// resolvePassword + auth.DeriveSessionKey. We exercise the standalone path with a
 // stable RUNWISP_PASSWORD so PasswordEphemeral is deterministic.
 func TestLoadDaemonConfig_StandaloneWithStablePassword(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "stable-test-secret")
@@ -68,7 +64,7 @@ func TestLoadDaemonConfig_StandaloneWithStablePassword(t *testing.T) {
 	assert.Equal(t, "test-fp-123", cfg.Fingerprint)
 	assert.Equal(t, "stable-test-secret", cfg.Password)
 	assert.False(t, cfg.PasswordEphemeral, "env password must not be ephemeral")
-	assert.NotEmpty(t, cfg.JWTSecret)
+	assert.NotEmpty(t, cfg.SessionKey)
 	require.Len(t, cfg.Config.Tasks, 1)
 	assert.Equal(t, "example", cfg.Config.Tasks[0].Name)
 	assert.False(t, cfg.StationConfig.Enabled)
@@ -126,7 +122,7 @@ func TestLoadDaemonConfig_FingerprintPersistsAcrossCalls(t *testing.T) {
 
 // TestResolvePassword_EnvVarUsedInMemory guards the contract that when
 // RUNWISP_PASSWORD is set, the value is returned in memory only and
-// ephemeral=false (so deriveJWTSecret yields a stable JWT key).
+// ephemeral=false (so auth.DeriveSessionKey yields a stable session key).
 func TestResolvePassword_EnvVarUsedInMemory(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "from-env-secret")
 
@@ -144,7 +140,7 @@ func TestResolvePassword_EnvVarUsedInMemory(t *testing.T) {
 
 // TestResolvePassword_EphemeralWhenEnvAbsent verifies that with no env var,
 // a fresh in-memory password is minted and flagged as ephemeral. Sessions
-// then rotate every boot because deriveJWTSecret keys off the password.
+// then rotate every boot because auth.DeriveSessionKey keys off the password.
 func TestResolvePassword_EphemeralWhenEnvAbsent(t *testing.T) {
 	if err := os.Unsetenv("RUNWISP_PASSWORD"); err != nil {
 		t.Fatal(err)
@@ -213,83 +209,5 @@ func TestResolveAuthMode_ConflictWithPassword(t *testing.T) {
 
 	if _, err := resolveAuthMode(); err == nil {
 		t.Fatal("expected error when RUNWISP_AUTH=off and RUNWISP_PASSWORD are both set")
-	}
-}
-
-// TestDeriveJWTSecret_DeterministicWithSameInputs is the property that lets
-// browser sessions survive a daemon restart when RUNWISP_PASSWORD is stable.
-func TestDeriveJWTSecret_DeterministicWithSameInputs(t *testing.T) {
-	a, err := deriveJWTSecret("secret", "alpha-fingerprint")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := deriveJWTSecret("secret", "alpha-fingerprint")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a != b {
-		t.Fatalf("deriveJWTSecret must be deterministic; got %q vs %q", a, b)
-	}
-	if a == "" {
-		t.Fatal("derived secret must not be empty")
-	}
-}
-
-// TestDeriveJWTSecret_RotatesWhenPasswordChanges is the property that makes
-// changing RUNWISP_PASSWORD invalidate every prior session. The new password
-// derives a fresh JWT key, so old JWTs signed with the previous key fail.
-func TestDeriveJWTSecret_RotatesWhenPasswordChanges(t *testing.T) {
-	a, err := deriveJWTSecret("password-one", "alpha-fingerprint")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := deriveJWTSecret("password-two", "alpha-fingerprint")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a == b {
-		t.Fatal("changing the password must change the derived JWT secret")
-	}
-}
-
-// TestDeriveJWTSecret_PerInstallFingerprintSalt guards against cross-host
-// JWT reuse: the same password on another machine/cwd produces a different
-// key, so a leaked password alone doesn't let an attacker mint sessions for
-// a different RunWisp install.
-func TestDeriveJWTSecret_PerInstallFingerprintSalt(t *testing.T) {
-	a, err := deriveJWTSecret("shared-password", "host-a")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := deriveJWTSecret("shared-password", "host-b")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a == b {
-		t.Fatal("different fingerprint salts must yield different JWT secrets")
-	}
-}
-
-// TestDeriveJWTSecret_UsesExpensiveKDF pins the derivation to PBKDF2 at
-// chap.Iterations. The fingerprint salt is built from non-secret inputs, so the
-// signing key's resistance to recovery rests on the password entropy plus the
-// KDF cost. The JWT rides the same cleartext channel as the CHAP transcript on
-// TLS-less deployments; a captured JWT must not be a cheaper offline oracle for
-// the password than the CHAP transcript is. A regression to a fast single-pass
-// KDF (the previous HKDF) would silently reopen that shortcut, so we assert the
-// exact expected PBKDF2 output.
-func TestDeriveJWTSecret_UsesExpensiveKDF(t *testing.T) {
-	got, err := deriveJWTSecret("secret", "alpha-fingerprint")
-	if err != nil {
-		t.Fatal(err)
-	}
-	salt := []byte(jwtKDFInfo + "\x00" + "alpha-fingerprint")
-	key, err := pbkdf2.Key(sha256.New, "secret", salt, chap.Iterations, 32)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := base64.RawURLEncoding.EncodeToString(key)
-	if got != want {
-		t.Fatalf("deriveJWTSecret must use PBKDF2 at chap.Iterations; got %q want %q", got, want)
 	}
 }

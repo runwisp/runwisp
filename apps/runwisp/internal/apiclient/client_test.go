@@ -83,7 +83,7 @@ func TestAuthenticate(t *testing.T) {
 				http.Error(w, "bad nonce", http.StatusBadRequest)
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]string{"token": "jwt-token-xyz"})
+			json.NewEncoder(w).Encode(map[string]string{"token": "token-xyz"})
 		default:
 			http.NotFound(w, r)
 		}
@@ -95,7 +95,7 @@ func TestAuthenticate(t *testing.T) {
 
 	err := c.Authenticate(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, "jwt-token-xyz", c.Token())
+	assert.Equal(t, "token-xyz", c.Token())
 }
 
 func TestSetTokenSkipsHandshake(t *testing.T) {
@@ -106,7 +106,7 @@ func TestSetTokenSkipsHandshake(t *testing.T) {
 			sawAuth = true
 			http.Error(w, "should not authenticate", http.StatusInternalServerError)
 		case "/api/tasks/my-task/run":
-			assert.Equal(t, "Bearer cached-jwt", r.Header.Get("Authorization"))
+			assert.Equal(t, "Bearer cached-token", r.Header.Get("Authorization"))
 			json.NewEncoder(w).Encode(model.Run{ID: "new-run"})
 		default:
 			http.NotFound(w, r)
@@ -115,8 +115,8 @@ func TestSetTokenSkipsHandshake(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	c.SetToken("cached-jwt")
-	assert.Equal(t, "cached-jwt", c.Token())
+	c.SetToken("cached-token")
+	assert.Equal(t, "cached-token", c.Token())
 
 	run, err := c.TriggerRun(t.Context(), "my-task", nil, "")
 	require.NoError(t, err)
@@ -130,14 +130,14 @@ func TestTokenReturnsMintedValue(t *testing.T) {
 		case "/api/auth/challenge":
 			json.NewEncoder(w).Encode(map[string]string{"nonce": "n"})
 		case "/api/auth/login":
-			json.NewEncoder(w).Encode(map[string]string{"token": "fresh-jwt"})
+			json.NewEncoder(w).Encode(map[string]string{"token": "fresh-token"})
 		}
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL, "pw")
 	require.NoError(t, c.Authenticate(t.Context()))
-	assert.Equal(t, "fresh-jwt", c.Token())
+	assert.Equal(t, "fresh-token", c.Token())
 }
 
 func TestAuthenticate_ChallengeError(t *testing.T) {

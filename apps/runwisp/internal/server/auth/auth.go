@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Package auth implements the daemon's CHAP login + JWT issuance flow. It
+// Package auth implements the daemon's CHAP login + session-token flow. It
 // owns the Service struct, its single-use stores (nonces, launch
 // tickets), and the cookie/secure-flag logic. Transport concerns
 // (local-trusted gating, chi route registration, rate-limiting) stay in
@@ -10,17 +10,21 @@
 package auth
 
 import (
+	"crypto/hmac"
+	"crypto/pbkdf2"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-chi/jwtauth/v5"
-	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/chap"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 )
@@ -32,9 +36,7 @@ const (
 	MaxAuthAttempts = 5
 	AuthRateWindow  = 5 * time.Minute
 
-	JWTTokenDuration = 24 * time.Hour
-	JWTIssuer        = "runwisp"
-	JWTAudience      = "runwisp-api"
+	SessionDuration = 24 * time.Hour
 
 	// MaxRequestBodySize caps the auth login request body. The handler only
 	// reads a tiny JSON object; anything larger is hostile.
@@ -47,12 +49,43 @@ const (
 
 	nonceTTL        = 5 * time.Minute
 	launchTicketTTL = 60 * time.Second
+
+	// sessionKDFInfo namespaces the session-key derivation (folded into the
+	// PBKDF2 salt). Bumping it is the way to invalidate every existing session
+	// on the next restart without changing the operator's RUNWISP_PASSWORD.
+	sessionKDFInfo = "runwisp-session-v1"
 )
 
-// ErrEmptyJWTSecret is returned by NewService when the supplied JWT secret
-// is empty. The caller is responsible for resolving the secret (typically
-// from internal/datadir) before constructing the service.
-var ErrEmptyJWTSecret = errors.New("auth: jwtSecret must not be empty")
+// ErrEmptySessionKey is returned by NewService when the supplied session key
+// is empty. The caller derives it with DeriveSessionKey before constructing
+// the service.
+var ErrEmptySessionKey = errors.New("auth: sessionKey must not be empty")
+
+// DeriveSessionKey produces the session-token HMAC key from the daemon
+// password, salted by the per-install fingerprint. Properties:
+//
+//   - Stable across restarts when both inputs are stable, so a browser
+//     session backed by RUNWISP_PASSWORD survives a daemon restart.
+//   - Rotates automatically when the password rotates — including the
+//     ephemeral-password case, where each boot mints a new password and
+//     thus invalidates any prior session.
+//   - Different per machine/cwd thanks to the fingerprint salt; the same
+//     password on another host does not yield the same key.
+//
+// It uses the same expensive KDF (PBKDF2-HMAC-SHA256 at chap.Iterations) as
+// the CHAP login. The session token travels in the same channel as the CHAP
+// transcript (cleartext on TLS-less deployments) and the fingerprint salt is
+// built from non-secret inputs, so a cheaper KDF would give an eavesdropper
+// holding any token a fast offline oracle for a weak RUNWISP_PASSWORD,
+// bypassing the CHAP iteration cost.
+func DeriveSessionKey(password, fingerprint string) ([]byte, error) {
+	salt := []byte(sessionKDFInfo + "\x00" + fingerprint)
+	key, err := pbkdf2.Key(sha256.New, password, salt, chap.Iterations, 32)
+	if err != nil {
+		return nil, fmt.Errorf("derive session key: %w", err)
+	}
+	return key, nil
+}
 
 // TrustedProxyChecker reports whether the immediate TCP peer of r is in
 // the operator's trusted-proxy set. Injected from the parent server
@@ -60,40 +93,32 @@ var ErrEmptyJWTSecret = errors.New("auth: jwtSecret must not be empty")
 // doesn't own. Pass nil for daemons that sit directly on the network.
 type TrustedProxyChecker func(*http.Request) bool
 
-// Service handles challenge-response authentication and JWT token issuance.
-// It is safe for concurrent use.
+// Service handles challenge-response authentication and session-token
+// issuance. It is safe for concurrent use.
 type Service struct {
-	jwtAuth        *jwtauth.JWTAuth
+	sessionKey     []byte
 	password       string
 	nonces         *ttlStore
 	launchTickets  *ttlStore
 	trustedProxies TrustedProxyChecker
 }
 
-// NewService builds a Service. jwtSecret must be non-empty; callers resolve
-// it from the data dir (see internal/datadir) before reaching this point.
-// trustedProxies is consulted when deciding whether to honor
+// NewService builds a Service. sessionKey must be non-empty; callers derive
+// it with DeriveSessionKey. trustedProxies is consulted when deciding whether to honor
 // X-Forwarded-Proto on cookie issuance; pass nil for direct-internet
 // deployments.
-func NewService(password, jwtSecret string, trustedProxies TrustedProxyChecker) (*Service, error) {
-	if jwtSecret == "" {
-		return nil, ErrEmptyJWTSecret
+func NewService(password string, sessionKey []byte, trustedProxies TrustedProxyChecker) (*Service, error) {
+	if len(sessionKey) == 0 {
+		return nil, ErrEmptySessionKey
 	}
 	return &Service{
-		jwtAuth: jwtauth.New(
-			"HS256", []byte(jwtSecret), nil,
-			jwt.WithIssuer(JWTIssuer),
-			jwt.WithAudience(JWTAudience),
-		),
+		sessionKey:     sessionKey,
 		password:       password,
 		nonces:         newNonceStore(),
 		launchTickets:  newLaunchTicketStore(),
 		trustedProxies: trustedProxies,
 	}, nil
 }
-
-// JWTAuth returns the underlying jwtauth instance for use in middleware.
-func (s *Service) JWTAuth() *jwtauth.JWTAuth { return s.jwtAuth }
 
 // Password returns the in-memory daemon password. Disclosure is gated by
 // the local-credentials endpoint in the server package; this accessor
@@ -120,36 +145,38 @@ func (s *Service) ConsumeLaunchTicket(ticket string) bool {
 	return s.launchTickets.consume(ticket)
 }
 
-// IssueToken signs a fresh JWT with the standard runwisp claims. ttl
-// controls the exp claim relative to now.
-func (s *Service) IssueToken(ttl time.Duration) (string, error) {
-	now := time.Now()
-	_, tokenString, err := s.jwtAuth.Encode(map[string]any{
-		"exp": now.Add(ttl).Unix(),
-		"iat": now.Unix(),
-		"iss": JWTIssuer,
-		"aud": JWTAudience,
-	})
-	return tokenString, err
+// IssueToken mints a session token that expires ttl from now. The token is
+// "<exp>.<mac>": exp is the expiry in unix seconds, left readable so clients
+// can drop a cached token before it goes stale (see TokenExpiry), and mac is
+// HMAC-SHA256 of exp under the session key, so only this daemon can mint or
+// extend one. The key is derived from the daemon password, so rotating the
+// password revokes every outstanding token.
+func (s *Service) IssueToken(ttl time.Duration) string {
+	exp := strconv.FormatInt(time.Now().Add(ttl).Unix(), 10)
+	return exp + "." + s.sign(exp)
 }
 
-// DecodeCookieToken parses a JWT extracted from the session cookie and
-// reports whether it is non-empty and unexpired. The boolean lets the
-// status endpoint distinguish "no cookie" from "stale cookie" without
-// callers learning JWT internals.
-func (s *Service) DecodeCookieToken(token string) (valid bool) {
-	if token == "" {
-		return false
-	}
-	tok, err := s.jwtAuth.Decode(token)
-	if err != nil {
-		return false
-	}
-	exp, ok := tok.Expiration()
-	if !ok {
-		return false
-	}
-	return time.Now().Before(exp)
+func (s *Service) sign(exp string) string {
+	mac := hmac.New(sha256.New, s.sessionKey)
+	mac.Write([]byte(exp))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// ValidToken reports whether token was minted by this daemon and has not
+// expired. An empty token is invalid.
+func (s *Service) ValidToken(token string) bool {
+	expiry, ok := TokenExpiry(token)
+	exp, mac, _ := strings.Cut(token, ".")
+	return ok && time.Now().Before(expiry) && hmac.Equal([]byte(mac), []byte(s.sign(exp)))
+}
+
+// TokenExpiry reads the expiry out of a session token without checking its
+// MAC. Only the daemon can tell whether a token is genuine; clients use this
+// to stop reusing a cached token the daemon is about to reject.
+func TokenExpiry(token string) (time.Time, bool) {
+	exp, _, ok := strings.Cut(token, ".")
+	unix, err := strconv.ParseInt(exp, 10, 64)
+	return time.Unix(unix, 0), ok && err == nil
 }
 
 // BuildAuthCookie builds the session cookie value. secure is decided by the
@@ -191,7 +218,7 @@ var ErrInvalidNonce = errors.New("invalid or expired challenge")
 var ErrInvalidPassword = errors.New("invalid password")
 
 // Login is the CHAP login flow: it consumes the single-use nonce, verifies
-// the signed response, and issues a fresh JWT on success. It has no
+// the signed response, and issues a fresh session token on success. It has no
 // HTTP-layer concerns (cookies, status codes) so the caller — a huma handler
 // in the parent server package — can decide how to deliver the token.
 func (s *Service) Login(nonce, response string) (token string, err error) {
@@ -204,12 +231,28 @@ func (s *Service) Login(nonce, response string) (token string, err error) {
 		return "", ErrInvalidPassword
 	}
 
-	return s.IssueToken(JWTTokenDuration)
+	return s.IssueToken(SessionDuration), nil
 }
 
-// TokenFromCookie reads the session cookie value off r, returning "" when
-// the cookie is absent. Use this as a jwtauth.TokenSource.
-func TokenFromCookie(r *http.Request) string {
+// BearerToken extracts the credential from an Authorization header value of
+// the form "Bearer <token>" (scheme case-insensitive). It returns "" for any
+// other scheme or an empty token.
+func BearerToken(authorization string) string {
+	scheme, token, found := strings.Cut(authorization, " ")
+	if !found || !strings.EqualFold(scheme, "Bearer") {
+		return ""
+	}
+	return strings.TrimSpace(token)
+}
+
+// TokenFromRequest returns the caller's session token: a Bearer
+// Authorization header wins, else the session cookie. Any other
+// Authorization scheme (e.g. ambient proxy Basic auth) is ignored. Returns
+// "" when neither carries a token.
+func TokenFromRequest(r *http.Request) string {
+	if token := BearerToken(r.Header.Get("Authorization")); token != "" {
+		return token
+	}
 	c, err := r.Cookie(CookieName)
 	if err != nil {
 		return ""

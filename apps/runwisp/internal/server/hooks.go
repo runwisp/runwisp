@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 )
 
 // hookMaxFailures rejected token attempts per client IP within
@@ -56,7 +57,7 @@ func hookFailureLimiter() func(http.Handler) http.Handler {
 }
 
 // registerHookRoutes wires the token-authenticated control routes onto r, a
-// chi sub-router outside the session (JWT/CSRF) group, sharing the main
+// chi sub-router outside the session (token/CSRF) group, sharing the main
 // OpenAPI document — the pattern of registerRateLimitedAuthRoutes.
 func (srv *Server) registerHookRoutes(r chi.Router) {
 	cfg := huma.DefaultConfig("", "")
@@ -168,11 +169,7 @@ func presentedToken(authorization, query string) string {
 	if authorization == "" {
 		return query
 	}
-	scheme, token, found := strings.Cut(authorization, " ")
-	if !found || !strings.EqualFold(scheme, "Bearer") {
-		return ""
-	}
-	return token
+	return auth.BearerToken(authorization)
 }
 
 // matchHookToken returns the entry whose token equals presented. Both sides
