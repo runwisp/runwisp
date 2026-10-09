@@ -18,12 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The TUI shows run durations the same way notifications do (`3m 4s`, `12s`), and runs started in the last 30 seconds read `just now`.
 - A daemon bound to any loopback address, such as `127.0.0.2` or `::1`, is treated as local: it serves plain HTTP by default and skips the exposed-address warning.
 - Web UI and remote CLI sessions use a simpler signed token instead of a JWT. Browsers and `runwisp --url` clients sign in once more after upgrading.
+- Stop, Start and Pause are now on the task header in the TUI and Web UI, without opening a run first.
+- The Web UI dashboard shows a stopped service as **Stopped** instead of idle.
 
 ### Fixed
 
 - Pressing Enter on a run in the Web UI runs list selects it once instead of twice.
 - Services with `instances` get `RUNWISP_INSTANCE_INDEX` with every backend, not only with compose.
 - `runwisp demo` without a terminal stops right away and points at `--no-tui`, instead of leaving a demo daemon running in the background.
+- The TUI help bar fits narrow terminals: it drops the least useful hints first and always keeps `? help` visible.
 
 ## [1.5.1] - 2026-10-08
 

@@ -87,6 +87,11 @@ describe("formatTaskNextRunLabel", () => {
         expect(formatTaskNextRunLabel(overview)).toBe("Always on");
     });
 
+    it("returns 'Stopped' for a stopped service", () => {
+        const overview = makeOverview({ task: makeTask({ kind: "service" }), state: "stopped" });
+        expect(formatTaskNextRunLabel(overview)).toBe("Stopped");
+    });
+
     it("returns 'Manual only' when nextRunMs is undefined and isApiOnly is true", () => {
         const overview = makeOverview({ nextRunMs: undefined, isApiOnly: true });
         expect(formatTaskNextRunLabel(overview)).toBe("Manual only");

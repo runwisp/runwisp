@@ -36,7 +36,6 @@
     }
 
     let triggering = $state(false);
-    let serviceBusy = $state(false);
     let selectRunId = $state<string | null>(null);
 
     const live = createLiveRuns(() => taskName);
@@ -51,8 +50,8 @@
     const DEFAULT_CONCURRENCY_LIMIT = 1;
     let activeRunCount = $derived(live.source.items.filter((r) => r.status === "running").length);
 
-    // Refetch the shared task list on open (and after service actions); the
-    // layout keeps it current on reloads. AsyncData drives the load/error UI.
+    // Refetch the shared task list on open; the layout keeps it current on
+    // reloads. AsyncData drives the load/error UI.
     const taskData = new AsyncData(() => taskStore.load());
 
     let task = $derived(taskStore.items.find((t) => t.name === taskName) ?? null);
@@ -88,25 +87,6 @@
             toast.error(extractErrorMessage(err, "Failed to stop run"));
         }
     }
-
-    const SERVICE_ACTIONS = {
-        restart: { call: tasksApi.restartService, done: "Restarting", failed: "restart" },
-        stop: { call: tasksApi.stopService, done: "Stopped", failed: "stop" },
-    };
-
-    async function handleServiceAction(action: keyof typeof SERVICE_ACTIONS) {
-        const { call, done, failed } = SERVICE_ACTIONS[action];
-        serviceBusy = true;
-        try {
-            await call(taskName);
-            void taskData.fetch();
-            toast.success(`${done} "${taskName}"`);
-        } catch (err) {
-            toast.error(extractErrorMessage(err, `Failed to ${failed} "${taskName}"`));
-        } finally {
-            serviceBusy = false;
-        }
-    }
 </script>
 
 <AsyncDataView data={taskData}>
@@ -124,11 +104,8 @@
             bind:filters
             {concurrencyReached}
             {triggering}
-            {serviceBusy}
             onRun={handleRun}
             onStop={handleStop}
-            onRestart={() => handleServiceAction("restart")}
-            onStopService={() => handleServiceAction("stop")}
             initialRunId={runIdParam}
             initialHighlightLine={highlightLine}
             {selectRunId}

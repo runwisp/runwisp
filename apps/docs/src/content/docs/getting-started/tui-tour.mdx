@@ -50,9 +50,17 @@ crontabs that cron still runs, the header shows how many are
 
 ## Task detail
 
-Select a task or service in the sidebar to see its schedule, a **Run Now** (or
-**Restart**) button, and its run history. **Run Now** asks for confirmation, or
-opens a form if the task has [parameters](/concepts/parameters/).
+Select a task or service in the sidebar to see its schedule, its run history,
+and buttons for what you can do to it right away, without opening a run:
+
+- A task has **Run Now** (<kbd>r</kbd>) and, if it has a cron schedule,
+  **Pause** or **Resume** (<kbd>p</kbd>).
+- A service has **Restart** (<kbd>r</kbd>) and **Stop** (<kbd>s</kbd>). A stopped
+  service has **Start** (<kbd>r</kbd>) instead.
+
+Click a button or press its key. **Run Now** asks for confirmation, or opens a
+form if the task has [parameters](/concepts/parameters/). Restart, Start and
+Stop ask first too.
 
 ![TUI task detail for healthcheck-api: header with task name, cron schedule, next-fire countdown, and Run Now button; run history table below showing status, start time, duration, and trigger columns.](../../../assets/screenshots/tui-task-detail.png)
 
@@ -115,8 +123,8 @@ connection drops. The TUI reconnects by itself.
 | <kbd>Enter</kbd>                                    | Open, activate, or copy a field                       |
 | <kbd>Esc</kbd> / <kbd>⌫</kbd>                       | Back                                                  |
 | <kbd>/</kbd>                                        | Filter tasks (sidebar) or search the task's logs      |
-| <kbd>r</kbd>                                        | Run now (task), restart (service), or retry (run)     |
-| <kbd>s</kbd>                                        | Stop a run or service                                 |
+| <kbd>r</kbd>                                        | Run now (task), restart or start (service), or retry  |
+| <kbd>s</kbd>                                        | Stop a service, or the open run                       |
 | <kbd>p</kbd>                                        | Pause or resume a task's schedule                     |
 | <kbd>R</kbd>                                        | Reload `runwisp.toml` ([Reload](/operations/reload/)) |
 | <kbd>n</kbd>                                        | Notifications panel (on Home)                         |

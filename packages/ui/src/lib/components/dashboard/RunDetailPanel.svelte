@@ -36,10 +36,6 @@
         onRunAgain,
         onStop,
         onRunTask,
-        onStopService,
-        onRestartService,
-        serviceStopped = false,
-        serviceBusy = false,
         onBack,
         onToggleList,
         listVisible = true,
@@ -80,12 +76,6 @@
         // Trigger the task from the empty state (no run selected yet), the
         // cold-start path so a never-run task is still launchable from here.
         onRunTask?: (() => void) | undefined;
-        // Service lifecycle controls. When either is set the cluster swaps the
-        // Run control for Stop / Restart (chosen by serviceStopped).
-        onStopService?: (() => void) | undefined;
-        onRestartService?: (() => void) | undefined;
-        serviceStopped?: boolean;
-        serviceBusy?: boolean;
         // Return to the run list when the panel replaces it (a phone), shown as
         // a back arrow in the header's top-left corner.
         onBack?: (() => void) | undefined;
@@ -285,13 +275,9 @@
                         taskName={run.taskName}
                         {isRunning}
                         {canDelete}
-                        {serviceStopped}
-                        {serviceBusy}
                         {onRun}
                         {onRunAgain}
                         {onStop}
-                        {onStopService}
-                        {onRestartService}
                         {onDelete}
                     />
                 </div>

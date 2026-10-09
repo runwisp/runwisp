@@ -610,7 +610,7 @@ func TestConfirmRestartService_MultipleInstancesUsesPluralPrompt(t *testing.T) {
 func TestBuildMainHelpText(t *testing.T) {
 	t.Run("home page, sidebar focused, contains navigation hint", func(t *testing.T) {
 		m := newTestModel(nil)
-		text := m.buildMainHelpText()
+		text := m.buildMainHelpText().String()
 		if text == "" || !strings.Contains(text, "↑↓") {
 			t.Fatalf("expected non-empty text with navigation hint, got %q", text)
 		}
@@ -619,7 +619,7 @@ func TestBuildMainHelpText(t *testing.T) {
 	t.Run("home page, home field focused (cursor >= 0)", func(t *testing.T) {
 		m := newTestModel(nil)
 		m.focusHomeField(0)
-		if m.buildMainHelpText() == "" {
+		if m.buildMainHelpText().String() == "" {
 			t.Fatal("expected non-empty help text for homeCursor>=0")
 		}
 	})
@@ -627,7 +627,7 @@ func TestBuildMainHelpText(t *testing.T) {
 	t.Run("info page", func(t *testing.T) {
 		m := newTestModel([]model.Task{{Name: "t1"}})
 		selectSidebarItem(&m, 2)
-		if m.buildMainHelpText() == "" {
+		if m.buildMainHelpText().String() == "" {
 			t.Fatal("expected non-empty help text for PageInfo")
 		}
 	})
@@ -635,7 +635,7 @@ func TestBuildMainHelpText(t *testing.T) {
 	t.Run("active service task", func(t *testing.T) {
 		m := newTestModel([]model.Task{{Name: "svc", Kind: model.KindService}})
 		selectSidebarItem(&m, 1)
-		if m.buildMainHelpText() == "" {
+		if m.buildMainHelpText().String() == "" {
 			t.Fatal("expected non-empty help text with active service task")
 		}
 	})

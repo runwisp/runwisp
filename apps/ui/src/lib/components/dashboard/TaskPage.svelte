@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import { Play, Square, RefreshCcw } from "@lucide/svelte";
+    import { Play, Square } from "@lucide/svelte";
     import { untrack } from "svelte";
     import { SvelteMap } from "svelte/reactivity";
     import { isService, type Task } from "@runwisp/common";
@@ -22,7 +22,7 @@
     import { createRunSelection } from "$lib/utils/run-selection.svelte";
     import { HistoryRail } from "$lib/utils/history-rail.svelte";
     import ParamForm from "./ParamForm.svelte";
-    import { isServiceStopped, taskInstanceCount } from "$lib/utils/task";
+    import { taskInstanceCount } from "$lib/utils/task";
 
     let {
         task,
@@ -30,11 +30,8 @@
         filters = $bindable(),
         concurrencyReached,
         triggering,
-        serviceBusy,
         onRun,
         onStop,
-        onRestart,
-        onStopService,
         initialRunId,
         initialHighlightLine,
         selectRunId,
@@ -45,11 +42,8 @@
         filters: RunsListFilters;
         concurrencyReached: boolean;
         triggering: boolean;
-        serviceBusy: boolean;
         onRun: (params?: Record<string, string | null>) => void;
         onStop: (runId: string) => void;
-        onRestart: () => void;
-        onStopService: () => void;
         initialRunId: string | null;
         initialHighlightLine: number | null;
         selectRunId: string | null;
@@ -100,8 +94,6 @@
         runFormSeq++;
     }
     let stopConfirmOpen = $state(false);
-    let restartConfirmOpen = $state(false);
-    let stopServiceConfirmOpen = $state(false);
 
     // Output search filters the rail by what each run printed. The search box
     // lives in the app header now; this page owns the async query (it has the
@@ -196,12 +188,6 @@
     // says so), so concurrency must not gate the button, only its warning.
     // Disabled only when the task forbids API triggering or a trigger is mid-flight.
     const runTriggerable = $derived(!taskIsService && task.manualTrigger && !triggering);
-
-    // manualTrigger means something different on a service: whether it can be
-    // stopped/restarted from here at all, rather than run-triggered. false
-    // locks it to its restart policy until a runwisp.toml edit + reload.
-    const serviceControllable = $derived(taskIsService && task.manualTrigger);
-    const serviceStopped = $derived(isServiceStopped(task));
 
     // In station mode the station owns scheduling/dispatch; triggering here is the
     // operator's "run it here, now" escape hatch against the local runner.
@@ -308,14 +294,6 @@
                 onRunAgain={runTriggerable && hasParams ? openRunAgain : undefined}
                 onRunTask={runTriggerable ? openRun : undefined}
                 onStop={!taskIsService ? () => (stopConfirmOpen = true) : undefined}
-                onStopService={serviceControllable
-                    ? () => (stopServiceConfirmOpen = true)
-                    : undefined}
-                onRestartService={serviceControllable
-                    ? () => (restartConfirmOpen = true)
-                    : undefined}
-                {serviceStopped}
-                {serviceBusy}
                 onBack={rail.phone ? rail.back : undefined}
                 onToggleList={rail.collapsible ? rail.toggleList : undefined}
                 listVisible={panes.list}
@@ -369,30 +347,6 @@
     onConfirm={() => {
         if (selection.selectedRun) onStop(selection.selectedRun.id);
     }}
-/>
-
-<AlertDialog
-    bind:open={restartConfirmOpen}
-    title={serviceStopped ? "Start Service" : "Restart Service"}
-    description={serviceStopped
-        ? `Start ${task.name}?`
-        : instanceCount > 1
-          ? `Cancel and restart all ${instanceCount} instances of ${task.name}?`
-          : `Cancel and restart ${task.name}?`}
-    confirmLabel={serviceStopped ? "Start Now" : "Restart Now"}
-    confirmVariant="primary"
-    confirmIcon={serviceStopped ? Play : RefreshCcw}
-    onConfirm={onRestart}
-/>
-
-<AlertDialog
-    bind:open={stopServiceConfirmOpen}
-    title="Stop Service"
-    description={`Stop ${task.name}? The daemon will not restart it until you click Start or the daemon itself restarts.`}
-    confirmLabel="Stop Now"
-    confirmVariant="danger"
-    confirmIcon={Square}
-    onConfirm={onStopService}
 />
 
 {#snippet runModalBody()}

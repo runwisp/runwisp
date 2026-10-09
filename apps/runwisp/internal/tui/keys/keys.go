@@ -15,8 +15,6 @@
 // shared, repeated segments live here.
 package keys
 
-import "strings"
-
 // Binding is one keyboard action. Keys/Desc render the overlay table row; Bar
 // is the compact help-bar segment (empty when the action never appears in the
 // bar).
@@ -52,12 +50,14 @@ var (
 	Back        = Binding{Keys: "esc / ⌫", Desc: "back"}
 )
 
-// Task / run actions. RunNow and Restart are the two conditional forms the bar
-// picks between; the overlay shows the combined Run row.
+// Task / run actions. RunNow, Restart and Start are the conditional forms the
+// bar picks between; the overlay shows the combined Run row.
 var (
-	Run      = Binding{Keys: "r", Desc: "run now (task) · restart (service)"}
+	Run      = Binding{Keys: "r", Desc: "run now (task) · restart / start (service)"}
 	RunNow   = Binding{Bar: "r run now"}
 	Restart  = Binding{Bar: "r restart"}
+	Start    = Binding{Bar: "r start"}
+	Stop     = Binding{Keys: "s", Desc: "stop service · stop run (log view)", Bar: "s stop"}
 	OpenRun  = Binding{Keys: "enter", Desc: "open the selected run"}
 	TaskInfo = Binding{Keys: "i", Desc: "inspect — task health, or run details in a log view", Bar: "i details"}
 	Undo     = Binding{Keys: "u", Desc: "undo the last action (while the toast shows)", Bar: "u undo"}
@@ -84,7 +84,6 @@ var (
 
 // Exec-view log actions.
 var (
-	Stop        = Binding{Keys: "s", Desc: "stop run / service"}
 	Retry       = Binding{Keys: "r", Desc: "retry · restart"}
 	DownloadDel = Binding{Keys: "d / D", Desc: "download log / delete run"}
 	Fullscreen  = Binding{Keys: "f", Desc: "fullscreen logs", Bar: "f fullscreen"}
@@ -123,21 +122,9 @@ var (
 var OverlaySections = []Section{
 	{Title: "Global", Bindings: []Binding{Help, Quit, NotifPanel, ReloadConfig, SearchLogs}},
 	{Title: "Navigate", Bindings: []Binding{Move, SwitchPanel, Open, Back, FilterTasks}},
-	{Title: "Task", Bindings: []Binding{Run, Pause, OpenRun, TaskInfo, Undo}},
+	{Title: "Task", Bindings: []Binding{Run, Stop, Pause, OpenRun, TaskInfo, Undo}},
 	{Title: "Run list", Bindings: []Binding{Filter, Select, SelectAll, BulkDelete, BulkCancel, BulkRerun, ClearSelect}},
-	{Title: "Exec view", Bindings: []Binding{Stop, Retry, DownloadDel, Fullscreen, TopEnd, Page, FrameHist}},
+	{Title: "Exec view", Bindings: []Binding{Retry, DownloadDel, Fullscreen, TopEnd, Page, FrameHist}},
 	{Title: "Run dialog", Bindings: []Binding{FlagToggle, ChooseOpt, IncludeOmit, RunCancel}},
 	{Title: "Notifications", Bindings: []Binding{NotifOpen, NotifRead, NotifReadAll, NotifCollapse}},
-}
-
-// JoinBar renders a help-bar line from the given bindings, skipping any without
-// a Bar segment, separated by the bar's two-space gap.
-func JoinBar(bindings ...Binding) string {
-	segs := make([]string, 0, len(bindings))
-	for _, b := range bindings {
-		if b.Bar != "" {
-			segs = append(segs, b.Bar)
-		}
-	}
-	return strings.Join(segs, "  ")
 }

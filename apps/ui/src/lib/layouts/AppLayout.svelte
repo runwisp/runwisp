@@ -23,6 +23,7 @@
     import NotificationBell from "$lib/components/NotificationBell.svelte";
     import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
     import TaskScheduleChip from "$lib/components/TaskScheduleChip.svelte";
+    import TaskControls from "$lib/components/TaskControls.svelte";
     import TaskUsage from "$lib/components/TaskUsage.svelte";
     import { authStore, headerSearchStore, systemStore } from "$lib/stores";
     import { showScheduleChip } from "$lib/utils/task";
@@ -305,6 +306,7 @@
                     {#if showScheduleChip(activeTask, systemStore.schedulingActive)}
                         <TaskScheduleChip task={activeTask} />
                     {/if}
+                    <TaskControls task={activeTask} />
                     <span class="hidden shrink-0 @2xl:inline">
                         <TaskUsage task={activeTask} />
                     </span>

@@ -69,6 +69,12 @@
             accentClass: "border-l-wisp-300",
             toneClass: "bg-primary-soft text-primary-soft-text",
         },
+        stopped: {
+            label: "Stopped",
+            badge: "warning",
+            accentClass: "border-l-warning-300",
+            toneClass: "bg-warning-soft text-warning-soft-text",
+        },
         paused: {
             label: "Paused",
             badge: "warning",

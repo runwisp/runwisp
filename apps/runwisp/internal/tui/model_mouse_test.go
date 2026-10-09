@@ -4,14 +4,17 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/home"
+	"github.com/stretchr/testify/assert"
 )
 
 // TestMouseHandlers_Guards covers no-op branches of mouse handlers: non-home
@@ -142,13 +145,49 @@ func TestScrollWheelDown_OnHomePageScrollsExecList(t *testing.T) {
 
 // ─── handleHomePageClick ─────────────────────────────────────────────────────
 
-func TestHandleHomePageClick_ClickOnTaskButtonTriggers(t *testing.T) {
-	tasks := []model.Task{{Name: "backup"}}
+// clickTaskButton clicks the task header button whose label contains label,
+// on an 80-column terminal.
+func clickTaskButton(t *testing.T, m Model, label string) (Model, tea.Cmd) {
+	t.Helper()
+	m.handleWindowSize(tea.WindowSizeMsg{Width: 80, Height: 30})
+	out, btnY := m.taskHeader(m.sidebar.ActiveTask()).Render(m.contentWidth())
+	row := ansi.Strip(strings.Split(out, "\n")[btnY])
+	i := strings.Index(row, label)
+	if i < 0 {
+		t.Fatalf("no %q button on the header row %q", label, row)
+	}
+	x := uikit.SidebarWidth + ansi.StringWidth(row[:i])
+	updated, cmd := m.handleHomePageClick(x, m.layout.taskBtnY)
+	return updated.(Model), cmd
+}
+
+func TestHandleHomePageClick_TaskHeaderButtons(t *testing.T) {
+	tasks := []model.Task{
+		{Name: "backup", Cron: "0 3 * * *", ManualTrigger: true},
+		{Name: "web", Kind: model.KindService, ManualTrigger: true},
+	}
+
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
-	m.layout.taskBtnY = 7
-	// client is nil → confirmAction returns nil. We still exercise the branch.
-	_, _ = m.handleHomePageClick(uikit.SidebarWidth, 7)
+	got, _ := clickTaskButton(t, m, "Run Now")
+	assert.Equal(t, "Run Task", got.dialogs.confirm().title)
+
+	m = newTestModel(tasks)
+	selectSidebarItem(&m, 1)
+	got, cmd := clickTaskButton(t, m, "Pause")
+	assert.NotNil(t, cmd, "pause acts at once, like p")
+	assert.False(t, got.dialogs.Has(dlgConfirm))
+
+	m = newTestModel(tasks)
+	selectSidebarItem(&m, 2)
+	got, _ = clickTaskButton(t, m, "Stop")
+	assert.Equal(t, "Stop Service", got.dialogs.confirm().title)
+
+	m = newTestModel(tasks)
+	selectSidebarItem(&m, 2)
+	m.info.StoppedServices = map[string]bool{"web": true}
+	got, _ = clickTaskButton(t, m, "Start")
+	assert.Equal(t, "Start Service", got.dialogs.confirm().title)
 }
 
 func TestHandleHomePageClick_ClickOnHomeFieldFocusesField(t *testing.T) {

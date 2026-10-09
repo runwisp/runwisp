@@ -2,25 +2,16 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import { CalendarClock, Pause, Play } from "@lucide/svelte";
-    import {
-        Button,
-        Popover,
-        extractErrorMessage,
-        formatRelativeTimeWithAbsolute,
-        humanizeCron,
-        toast,
-    } from "@runwisp/ui";
+    // Shows the schedule; pausing it is TaskControls' Pause button beside it.
+    import { CalendarClock, Pause } from "@lucide/svelte";
+    import { Popover, formatRelativeTimeWithAbsolute, humanizeCron } from "@runwisp/ui";
     import type { Task } from "@runwisp/common";
-    import { tasksApi } from "$lib/api";
     import { systemStore, taskStore } from "$lib/stores";
     import { canTogglePause } from "$lib/utils/task";
-    import { UNDO_MS } from "$lib/utils/run-actions";
 
     let { task }: { task: Task } = $props();
 
     let open = $state(false);
-    let busy = $state(false);
 
     const schedule = $derived(humanizeCron(task.cron ?? ""));
     const timezone = $derived(task.timezone ?? systemStore.timezone);
@@ -35,41 +26,6 @@
     $effect(() => {
         if (open) void taskStore.refresh();
     });
-
-    async function setPaused(name: string, pause: boolean): Promise<void> {
-        await (pause ? tasksApi.pauseSchedule(name) : tasksApi.resumeSchedule(name));
-        await taskStore.refresh();
-    }
-
-    async function toggle(): Promise<void> {
-        const name = task.name;
-        const pause = !task.pausedAt;
-        busy = true;
-        try {
-            await setPaused(name, pause);
-            open = false;
-            toast.success(pause ? `Paused the schedule of "${name}"` : `Resumed "${name}"`, {
-                duration: UNDO_MS,
-                action: {
-                    label: "Undo",
-                    onClick: () => {
-                        setPaused(name, !pause).catch((err: unknown) => {
-                            toast.error(extractErrorMessage(err, "Failed to undo"));
-                        });
-                    },
-                },
-            });
-        } catch (err) {
-            toast.error(
-                extractErrorMessage(
-                    err,
-                    pause ? "Failed to pause the schedule" : "Failed to resume the schedule",
-                ),
-            );
-        } finally {
-            busy = false;
-        }
-    }
 </script>
 
 <Popover bind:open placement="bottom-start" mobileSheet class="shrink-0">
@@ -111,18 +67,6 @@
         </p>
 
         {#if togglable}
-            <Button
-                variant={task.pausedAt ? "primary" : "secondary"}
-                size="sm"
-                loading={busy}
-                onclick={() => void toggle()}
-            >
-                {#if task.pausedAt}
-                    <Play size={14} /> Resume schedule
-                {:else}
-                    <Pause size={14} /> Pause schedule
-                {/if}
-            </Button>
             <p class="text-xs text-on-surface-faint">
                 Skipped ticks are not caught up. Manual runs still work.
             </p>

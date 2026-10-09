@@ -52,7 +52,7 @@ export function formatTaskLastResultLabel(task: TaskOverview): string {
 
 export function formatTaskNextRunLabel(task: TaskOverview, now: Date = new Date()): string {
     if (isService(task.task.kind)) {
-        return "Always on";
+        return task.state === "stopped" ? "Stopped" : "Always on";
     }
 
     if (task.task.pausedAt) {
