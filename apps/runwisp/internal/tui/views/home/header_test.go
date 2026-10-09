@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/stretchr/testify/assert"
@@ -33,7 +34,7 @@ func TestRenderHomeHeader_PasswordIsMasked(t *testing.T) {
 		{name: "password-selected", cursor: 1}, // 0 = Web UI, 1 = Password (no launch ticket)
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			header, _ := RenderHeader(info, false, 80, tc.cursor, -1)
+			header, _ := RenderHeader(info, false, 80, tc.cursor, -1, false)
 			assert.NotContains(t, header, secret,
 				"plaintext password must never appear in the rendered home header")
 			assert.Contains(t, header, "Password", "label should still be present")
@@ -50,7 +51,7 @@ func TestRenderHomeHeader_HintWhenPasswordSelected(t *testing.T) {
 		PasswordEphemeral: true,
 		Password:          "anything",
 	}
-	header, _ := RenderHeader(info, false, 80, 1, -1)
+	header, _ := RenderHeader(info, false, 80, 1, -1, false)
 	assert.Contains(t, header, "press Enter to copy",
 		"selected password row should show the copy hint")
 }
@@ -61,7 +62,7 @@ func TestRenderHomeHeader_OmitsPasswordWhenNotEphemeral(t *testing.T) {
 		PasswordEphemeral: false,
 		Password:          "should-be-ignored",
 	}
-	header, _ := RenderHeader(info, false, 80, -1, -1)
+	header, _ := RenderHeader(info, false, 80, -1, -1, false)
 	assert.NotContains(t, header, "Password",
 		"env-var case must not render a Password field at all")
 	assert.NotContains(t, header, "should-be-ignored")
@@ -80,7 +81,7 @@ func TestRenderHomeHeader_AuthDisabled(t *testing.T) {
 		Password:          minted,
 	}
 
-	header, _ := RenderHeader(info, false, 80, -1, -1)
+	header, _ := RenderHeader(info, false, 80, -1, -1, false)
 	assert.Contains(t, header, "disabled (RUNWISP_AUTH=off)")
 	assert.NotContains(t, header, minted,
 		"the internally minted password must never appear when auth is disabled")
@@ -228,7 +229,7 @@ func TestRenderHeader_StationConnected(t *testing.T) {
 		Port:           9477,
 		StationEnabled: true,
 	}
-	header, _ := RenderHeader(info, false, 80, -1, -1)
+	header, _ := RenderHeader(info, false, 80, -1, -1, false)
 	assert.Contains(t, header, "Station connected")
 }
 
@@ -237,26 +238,26 @@ func TestRenderHeader_ConfigStale(t *testing.T) {
 		Port:        9477,
 		ConfigStale: true,
 	}
-	header, _ := RenderHeader(info, false, 80, -1, -1)
+	header, _ := RenderHeader(info, false, 80, -1, -1, false)
 	assert.Contains(t, header, "runwisp.toml changed")
 	assert.Contains(t, header, "press R to reload")
 }
 
 func TestRenderHeader_ConfigFresh_NoNotice(t *testing.T) {
 	info := uikit.StartupInfo{Port: 9477}
-	header, _ := RenderHeader(info, false, 80, -1, -1)
+	header, _ := RenderHeader(info, false, 80, -1, -1, false)
 	assert.NotContains(t, header, "runwisp.toml changed")
 }
 
 func TestRenderHeader_FieldsStartY(t *testing.T) {
 	info := uikit.StartupInfo{Port: 9477}
-	_, fieldsStartY := RenderHeader(info, false, 80, -1, -1)
+	_, fieldsStartY := RenderHeader(info, false, 80, -1, -1, false)
 	assert.True(t, fieldsStartY >= 4, "fieldsStartY should be >= 4, got %d", fieldsStartY)
 }
 
 func TestRenderHeader_Hovered(t *testing.T) {
 	info := uikit.StartupInfo{Port: 9477}
-	header, _ := RenderHeader(info, false, 80, -1, 0)
+	header, _ := RenderHeader(info, false, 80, -1, 0, false)
 	assert.NotEmpty(t, header)
 }
 
@@ -265,14 +266,14 @@ func TestRenderHeader_LaunchTicketRendersOpenWebUIAction(t *testing.T) {
 	// hasLaunchTicket=true puts FieldOpenWebUI first; cursor 0 = selected,
 	// hover 0 = (ignored because selected wins). Exercises renderActionRow's
 	// selected branch.
-	header, _ := RenderHeader(info, true, 80, 0, -1)
+	header, _ := RenderHeader(info, true, 80, 0, -1, false)
 	assert.Contains(t, header, "Open Web UI")
 }
 
 func TestRenderHeader_LaunchTicketHoveredOpenWebUI(t *testing.T) {
 	info := uikit.StartupInfo{Port: 9477}
 	// cursor=-1, hover=0 exercises renderActionRow's hovered (not selected) branch.
-	header, _ := RenderHeader(info, true, 80, -1, 0)
+	header, _ := RenderHeader(info, true, 80, -1, 0, false)
 	assert.Contains(t, header, "Open Web UI")
 }
 
@@ -293,14 +294,14 @@ func TestRenderHeader_ShowsHeldChip(t *testing.T) {
 		Port:  9477,
 		Tasks: []model.Task{{Name: "backup", Cron: "0 3 * * *", HeldBy: model.HeldByCron}},
 	}
-	out, _ := RenderHeader(info, false, 100, -1, -1)
+	out, _ := RenderHeader(info, false, 100, -1, -1, false)
 	assert.Contains(t, out, "1 held by cron")
 	assert.Contains(t, out, "runwisp takeover")
 }
 
 func TestRenderHeader_NoHeldChipWhenNothingIsHeld(t *testing.T) {
 	info := uikit.StartupInfo{Port: 9477, Tasks: []model.Task{{Name: "backup", Cron: "0 3 * * *"}}}
-	out, _ := RenderHeader(info, false, 100, -1, -1)
+	out, _ := RenderHeader(info, false, 100, -1, -1, false)
 	assert.NotContains(t, out, "held by cron")
 }
 
@@ -335,7 +336,7 @@ func TestRenderTaskHeader_ShowsLiveUsage(t *testing.T) {
 
 func TestRenderHeader_ShowsPausedChip(t *testing.T) {
 	info := uikit.StartupInfo{Port: 9477, PausedTasks: map[string]time.Time{"backup": time.Now()}}
-	out, _ := RenderHeader(info, false, 100, -1, -1)
+	out, _ := RenderHeader(info, false, 100, -1, -1, false)
 	assert.Contains(t, out, "1 schedule paused")
 }
 
@@ -344,5 +345,18 @@ func TestNextCronRun_ShownInGivenZone(t *testing.T) {
 	result := NextCronRun("15 3 * * *", loc)
 	if !strings.HasPrefix(result, "03:15:00 (in ") {
 		t.Fatalf("next run should read 03:15:00 in the task's zone, got %q", result)
+	}
+}
+
+func TestRenderHeader_StarButton(t *testing.T) {
+	for _, w := range []int{80, 17, 16} {
+		header, _ := RenderHeader(uikit.StartupInfo{Port: 9477}, false, w, -1, -1, false)
+		lines := strings.Split(header, "\n")
+		assert.Equal(t, w, lipgloss.Width(lines[StarButtonY]), "width %d", w)
+		from, to, ok := starButtonSpan(w)
+		assert.Equal(t, w >= 17, ok, "width %d", w)
+		assert.Equal(t, ok, strings.Contains(lines[StarButtonY], starButtonLabel), "width %d", w)
+		assert.Equal(t, ok, StarButtonAt(from, w), "width %d", w)
+		assert.False(t, StarButtonAt(to, w), "width %d", w)
 	}
 }

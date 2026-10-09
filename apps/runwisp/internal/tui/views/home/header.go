@@ -30,6 +30,30 @@ const (
 // in the copy modal.
 const PasswordMaskWidth = 22
 
+// RepoURL is where the star button on the Home title row points.
+const RepoURL = "https://github.com/runwisp/runwisp"
+
+// StarButtonY is the header row holding the star button (the "Home" title row).
+const StarButtonY = 1
+
+const starButtonLabel = "★ Star"
+
+// starButtonSpan returns the panel columns [from, to) of the star button,
+// right-aligned with a one-column margin like the Run Now button; ok is false
+// when the panel is too narrow to fit it beside the title.
+func starButtonSpan(w int) (from, to int, ok bool) {
+	to = w - 1
+	from = to - lipgloss.Width(uikit.BtnBackStyle.Render(starButtonLabel))
+	return from, to, from >= 2+lipgloss.Width("Home")+2
+}
+
+// StarButtonAt reports whether panel column x on StarButtonY hits the star
+// button of a header rendered at width w.
+func StarButtonAt(x, w int) bool {
+	from, to, ok := starButtonSpan(w)
+	return ok && x >= from && x < to
+}
+
 // Fields returns the list of active fields based on the startup info.
 // hasLaunchTicket indicates whether the one-click browser open action is available.
 func Fields(info uikit.StartupInfo, hasLaunchTicket bool) []Field {
@@ -54,7 +78,7 @@ func Fields(info uikit.StartupInfo, hasLaunchTicket bool) []Field {
 // homeHover is the index of the hovered field; -1 means none.
 // Returns the rendered string and the 0-based Y line offset where interactive
 // field rows begin (used for mouse hit-testing).
-func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, homeHover int) (string, int) {
+func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, homeHover int, starHovered bool) (string, int) {
 	var b strings.Builder
 	fields := Fields(info, hasLaunchTicket)
 	lineCount := 0
@@ -66,11 +90,20 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 	title := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextBright).
 		Bold(true).
 		Render("  Home")
+	muted := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted)
+	// A quiet star button on the title row: mouse-only, no prompt, no network
+	// call, and dropped when the panel is too narrow to fit it beside the title.
+	if from, _, ok := starButtonSpan(w); ok {
+		style := uikit.BtnBackStyle
+		if starHovered {
+			style = uikit.BtnBackHoverStyle
+		}
+		title += muted.Render(strings.Repeat(" ", from-lipgloss.Width(title))) + style.Render(starButtonLabel)
+	}
 	b.WriteString(uikit.PadLine(title, w, uikit.ColorBgLight))
 	b.WriteString("\n")
 	lineCount++
 
-	muted := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted)
 	var parts []string
 	if info.StationEnabled {
 		parts = append(parts, muted.Render("Station connected"))

@@ -137,7 +137,8 @@ func (m Model) renderHomeContent(panelW int, panelView string) string {
 		header, _ := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), panelW, runNowHovered, m.isPaused(m.sidebar.ActiveTask()), m.taskUsage(m.sidebar.ActiveTask()), m.taskLoc(m.taskDisplayByName(m.sidebar.ActiveTask())))
 		return header + panelView + m.execList.View()
 	}
-	header, _ := home.RenderHeader(m.info, m.hasLaunchTicket(), panelW, m.homeCursor, m.mouse.homeHover)
+	starHovered := m.mouse.hoverY == home.StarButtonY && home.StarButtonAt(m.mouse.hoverX-uikit.SidebarWidth, panelW)
+	header, _ := home.RenderHeader(m.info, m.hasLaunchTicket(), panelW, m.homeCursor, m.mouse.homeHover, starHovered)
 	return header + panelView + m.execList.View()
 }
 
