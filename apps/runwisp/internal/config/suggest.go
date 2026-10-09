@@ -46,7 +46,6 @@ var crossKindKeyHints = map[string]string{
 	"restart_backoff":  "restart_backoff is only valid on [services.*]",
 	"healthy_after":    "healthy_after is only valid on [services.*]",
 	"priority":         "priority is only valid on [services.*]",
-	"autostart":        "autostart is only valid on [services.*]",
 	"instances":        "instances is only valid on [services.*]",
 	"depends_on":       "depends_on is only valid on [services.*]",
 	"health_check":     "health_check is only valid on [services.*]",

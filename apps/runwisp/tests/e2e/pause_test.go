@@ -92,6 +92,34 @@ run = "true"
 		5*time.Second, 100*time.Millisecond)
 }
 
+// TestAutostartFalseBootsPausedUntilResumed boots a fast cron task with
+// autostart = false: its schedule must start paused and fire nothing until it
+// is resumed through the API, after which it fires on its own.
+func TestAutostartFalseBootsPausedUntilResumed(t *testing.T) {
+	t.Parallel()
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	configPath := writeNotifyConfig(t, `
+[tasks.fast]
+cron = "@every 1s"
+autostart = false
+run = "true"
+`)
+	daemon := startDaemon(t, projectDir, binaryPath, configPath)
+	client := socketClient(t, daemon.dataDir)
+
+	fast := taskByName(t, client, "fast")
+	require.NotNil(t, fast.PausedAt, "autostart = false starts the schedule paused")
+	require.Nil(t, fast.NextRunAt)
+	require.Never(t, func() bool { n, ok := runCount(client, "fast"); return ok && n != 0 },
+		3*time.Second, 200*time.Millisecond, "a task that starts paused must not fire")
+
+	require.NoError(t, client.ResumeTask(t.Context(), "fast"))
+	require.Eventually(t, func() bool { n, ok := runCount(client, "fast"); return ok && n > 0 },
+		10*time.Second, 100*time.Millisecond, "a resumed task fires on its schedule")
+}
+
 // seedPause writes a schedule pause straight into the data dir before boot,
 // dated by offset (negative = in the past).
 func seedPause(t *testing.T, dataDir, taskName string, offset time.Duration) {

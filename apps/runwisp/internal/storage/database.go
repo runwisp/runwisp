@@ -54,7 +54,11 @@ type RunRepository interface {
 	MarkCrashedRuns(ctx context.Context) (int64, error)
 	GetPendingRuns(ctx context.Context) ([]model.Run, error)
 	GetRunSummary(ctx context.Context) (*model.RunSummary, error)
-	EnsureTaskRegistered(ctx context.Context, taskName string, firstSeen time.Time) error
+	// EnsureTaskRegistered records the task's first-seen time unless it is
+	// already registered, and reports whether it inserted a new row. paused
+	// makes a new row start with its schedule paused at firstSeen; an existing
+	// row is never touched.
+	EnsureTaskRegistered(ctx context.Context, taskName string, firstSeen time.Time, paused bool) (inserted bool, err error)
 	GetTaskRegistration(ctx context.Context, taskName string) (*model.TaskRegistration, error)
 	// ForgetTaskRegistrationsExcept deletes the registration (first-seen
 	// time, last run, schedule pause) of every task not named in keep, so a
@@ -444,11 +448,13 @@ func (db *SQLiteDatabase) GetPendingRuns(ctx context.Context) ([]model.Run, erro
 	return runsFromRows(rows), nil
 }
 
-func (db *SQLiteDatabase) EnsureTaskRegistered(ctx context.Context, taskName string, firstSeen time.Time) error {
-	return db.q.EnsureTaskRegistered(ctx, sqlcdb.EnsureTaskRegisteredParams{
-		TaskName:    taskName,
-		FirstSeenAt: firstSeen,
-	})
+func (db *SQLiteDatabase) EnsureTaskRegistered(ctx context.Context, taskName string, firstSeen time.Time, paused bool) (bool, error) {
+	arg := sqlcdb.EnsureTaskRegisteredParams{TaskName: taskName, FirstSeenAt: firstSeen}
+	if paused {
+		arg.PausedAt = &firstSeen
+	}
+	n, err := db.q.EnsureTaskRegistered(ctx, arg)
+	return n > 0, err
 }
 
 func (db *SQLiteDatabase) GetTaskRegistration(ctx context.Context, taskName string) (*model.TaskRegistration, error) {

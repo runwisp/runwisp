@@ -505,7 +505,7 @@ func TestReconcile_RemovedTaskStartsFreshWhenReAdded(t *testing.T) {
 	task := &model.Task{Name: "nightly", Cron: "0 3 * * *", Run: "a"}
 	old := taskSet(task)
 	firstSeen := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	require.NoError(t, db.EnsureTaskRegistered(ctx, task.Name, firstSeen))
+	mustRegister(t, db, task.Name, firstSeen)
 	require.NoError(t, db.CreateRun(ctx, &model.Run{
 		ID: "run-1", TaskName: task.Name, Status: model.PhaseEnded,
 		TriggeredBy: model.TriggeredByCron, CreatedAt: firstSeen.Add(time.Hour),

@@ -95,9 +95,9 @@ func (m *MockRunRepository) GetRunSummary(ctx context.Context) (*model.RunSummar
 	return args.Get(0).(*model.RunSummary), args.Error(1)
 }
 
-func (m *MockRunRepository) EnsureTaskRegistered(ctx context.Context, taskName string, firstSeen time.Time) error {
-	args := m.Called(ctx, taskName, firstSeen)
-	return args.Error(0)
+func (m *MockRunRepository) EnsureTaskRegistered(ctx context.Context, taskName string, firstSeen time.Time, paused bool) (bool, error) {
+	args := m.Called(ctx, taskName, firstSeen, paused)
+	return args.Bool(0), args.Error(1)
 }
 
 func (m *MockRunRepository) GetTaskRegistration(ctx context.Context, taskName string) (*model.TaskRegistration, error) {

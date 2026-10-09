@@ -106,7 +106,7 @@ func (s *seeder) run(ctx context.Context) (int, error) {
 		if !ok {
 			ts = s.now
 		}
-		if err := s.db.EnsureTaskRegistered(ctx, name, ts); err != nil {
+		if _, err := s.db.EnsureTaskRegistered(ctx, name, ts, s.cfg.Tasks[i].StartsPaused()); err != nil {
 			return 0, fmt.Errorf("register task %q: %w", name, err)
 		}
 	}

@@ -134,10 +134,12 @@ type Task struct {
 	// Priority orders service start at boot only (lower starts first; ties break
 	// on name). It is not a dependency or readiness gate. Service-only.
 	Priority int `toml:"-" json:"priority,omitempty" doc:"For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency."`
-	// Autostart controls whether a service comes up at boot. When false the
-	// service boots in the stopped state and must be started via the API/UI.
-	// Desired state is not persisted — it is re-derived from TOML each boot.
-	Autostart bool `toml:"-" json:"autostart" doc:"For services: whether instances start at boot. False boots in the stopped state until started via API/UI."`
+	// Autostart controls whether a unit starts on its own; config-loaded units
+	// default to true. A service with false boots in the stopped state and must
+	// be started via the API/UI; that is re-derived from TOML each boot. A cron
+	// task with false gets its schedule paused the first time RunWisp registers
+	// it, and once resumed stays resumed (see StartsPaused).
+	Autostart bool `toml:"-" json:"autostart" doc:"For services: whether instances start at boot. False boots in the stopped state until started via API/UI. For cron tasks: false starts the schedule paused when the task is first registered, until it is resumed."`
 	// DependsOn names other services that must become healthy before this one
 	// starts at boot. Boot ordering only — not a workflow DAG: no cascade
 	// restarts, no run-to-completion edges. Service-only. A dependent that
@@ -372,6 +374,10 @@ func (t *Task) ManuallyControllable() bool { return t.ManualTrigger }
 // separately. A pause on a task that stops being Pausable (a reload removes
 // its cron or sets manual_trigger = false) is cleared: TOML wins.
 func (t *Task) Pausable() bool { return !t.Kind.IsService() && t.Cron != "" && t.ManualTrigger }
+
+// StartsPaused reports whether this task's schedule is paused when RunWisp
+// registers it for the first time: autostart = false on a pausable cron task.
+func (t *Task) StartsPaused() bool { return !t.Autostart && t.Pausable() }
 
 // TriggerBlockReason identifies which of Triggerable's two conditions fails,
 // so a manual-trigger surface (REST, cloud dispatch, standalone CLI run) can

@@ -1,9 +1,11 @@
 -- SPDX-FileCopyrightText: PoppyCake, s.r.o.
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
--- name: EnsureTaskRegistered :exec
-INSERT OR IGNORE INTO task_registrations (task_name, first_seen_at)
-VALUES (?, ?);
+-- name: EnsureTaskRegistered :execrows
+-- A new row may start paused (autostart = false). An existing row is left
+-- untouched, so 0 rows affected means the task was already registered.
+INSERT OR IGNORE INTO task_registrations (task_name, first_seen_at, paused_at)
+VALUES (?, ?, ?);
 
 -- name: GetTaskRegistration :one
 SELECT * FROM task_registrations WHERE task_name = ?;

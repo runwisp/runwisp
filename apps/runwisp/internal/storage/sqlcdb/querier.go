@@ -26,7 +26,9 @@ type Querier interface {
 	DeleteTaskRegistrationsExcept(ctx context.Context, keep []string) error
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
-	EnsureTaskRegistered(ctx context.Context, arg EnsureTaskRegisteredParams) error
+	// A new row may start paused (autostart = false). An existing row is left
+	// untouched, so 0 rows affected means the task was already registered.
+	EnsureTaskRegistered(ctx context.Context, arg EnsureTaskRegisteredParams) (int64, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	GetConfigValue(ctx context.Context, key string) (string, error)

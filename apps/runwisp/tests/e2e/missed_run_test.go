@@ -105,7 +105,8 @@ func seedAnchorRun(t *testing.T, dataDir, taskName string, offset time.Duration)
 	// Register first, as the daemon does at boot: CreateRun records the run as
 	// the task's last run only on an existing registration.
 	at := time.Now().Add(offset)
-	require.NoError(t, db.EnsureTaskRegistered(context.Background(), taskName, at))
+	_, err = db.EnsureTaskRegistered(context.Background(), taskName, at, false)
+	require.NoError(t, err)
 	require.NoError(t, db.CreateRun(context.Background(), &model.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    taskName,

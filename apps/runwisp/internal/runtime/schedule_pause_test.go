@@ -18,7 +18,7 @@ import (
 )
 
 func pausableTask(name string) *model.Task {
-	return &model.Task{Name: name, Cron: "0 3 * * *", Run: "echo hi", ManualTrigger: true}
+	return &model.Task{Name: name, Cron: "0 3 * * *", Run: "echo hi", ManualTrigger: true, Autostart: true}
 }
 
 func newPauseDB(t *testing.T) *storage.SQLiteDatabase {
@@ -27,6 +27,14 @@ func newPauseDB(t *testing.T) *storage.SQLiteDatabase {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	return db
+}
+
+// mustRegister seeds an existing (unpaused) registration row, as a previous
+// boot would have left it.
+func mustRegister(t *testing.T, db *storage.SQLiteDatabase, name string, firstSeen time.Time) {
+	t.Helper()
+	_, err := db.EnsureTaskRegistered(context.Background(), name, firstSeen, false)
+	require.NoError(t, err)
 }
 
 func TestSchedulerPause_SkipsTicksUntilResume(t *testing.T) {
@@ -248,7 +256,7 @@ func TestSnapshotCatchupAnchors_PauseWindowIsNotMissed(t *testing.T) {
 	task.ManualTrigger = true
 	tasks := map[string]*model.Task{task.Name: task}
 
-	require.NoError(t, db.EnsureTaskRegistered(ctx, task.Name, now.Add(-2*time.Hour)))
+	mustRegister(t, db, task.Name, now.Add(-2*time.Hour))
 	require.NoError(t, db.PauseTaskSchedule(ctx, task.Name, now.Add(-90*time.Minute)))
 
 	anchors, errs := SnapshotCatchupAnchors(ctx, db, tasks, now)

@@ -212,6 +212,7 @@
         "jitter": { "$ref": "#/$defs/duration", "description": "Cap how far this cron task's start may slip; needs cron." },
         "run_on_start": { "anyOf": [{ "type": "boolean" }, { "enum": ["daemon", "boot"] }], "default": false, "description": "Fire once at start, on top of any cron. true or \"daemon\": every daemon start. \"boot\": once per machine or container boot, like cron @reboot." },
         "manual_trigger": { "type": "boolean", "default": true, "description": "Allow CLI/API/UI trigger; false = cron-only." },
+        "autostart": { "type": "boolean", "default": true, "description": "false: the cron schedule starts paused the first time the task is registered, until resumed. Needs cron; not with manual_trigger = false or run_on_start." },
         "catch_up": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 1, "description": "Max missed cron ticks to re-run at startup after downtime: 0 skips, 1 re-runs the most recent, N re-runs up to the N most recent. A value above 1 requires on_overlap = queue." },
         "timeout": { "$ref": "#/$defs/duration", "description": "Per-attempt cap (inherits [defaults])." },
         "graceful_stop": { "$ref": "#/$defs/duration", "description": "Grace before SIGKILL on stop. Default 5s." },

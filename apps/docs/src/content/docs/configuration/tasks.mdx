@@ -146,6 +146,30 @@ of PID 1. On macOS it uses the boot session UUID. Where neither is available,
 `"boot"` runs on every daemon start, like `true`. A container that shares the
 host's PID namespace (`--pid=host`) follows the host's boots.
 
+### autostart
+
+**type**: `boolean` **default**: `true` **since**: `1.6`
+
+With `false`, the task's [`cron`](#cron) schedule starts paused the first time
+RunWisp schedules the task: on the first daemon start with it, on the reload
+that adds it or gives it a `cron`, or when `runwisp takeover` hands it over
+from the system cron. It
+fires nothing until you resume it from the Web UI, the TUI (`p`), or
+`runwisp resume`. After that it stays resumed across restarts.
+
+```toml title="runwisp.toml"
+[tasks.nightly-export]
+# ...
+cron      = "0 2 * * *"
+autostart = false # check the first run by hand, then resume
+```
+
+- Needs [`cron`](#cron).
+- Can't be combined with `manual_trigger = false` (the schedule could never be
+  resumed) or with [`run_on_start`](#run_on_start).
+- Setting it to `false` on a task RunWisp already knows doesn't pause it. The
+  reload prints a warning; run `runwisp pause <name>` to pause it now.
+
 ### catch_up
 
 **type**: `integer` **default**: `1` **min**: `0` **max**: `10000`
@@ -653,7 +677,6 @@ The config fails to load with any of these:
   [`healthy_after`](/configuration/services/#healthy_after),
   [`instances`](/configuration/services/#instances),
   [`priority`](/configuration/services/#priority),
-  [`autostart`](/configuration/services/#autostart),
   [`depends_on`](/configuration/services/#depends_on). A task uses
   [`retry_attempts`](#retry_attempts) instead of restarts.
 - A name already used by a `[services.*]` entry.
