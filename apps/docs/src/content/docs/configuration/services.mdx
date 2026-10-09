@@ -95,6 +95,8 @@ How many copies of the process run at once.
 - Each instance is its own run with an `instance_index` (`0`, `1`, `2`, …). The
   Web UI and TUI show them as `name#1`, `name#2`; a single instance is plain
   `name`.
+- Each instance gets its index in the `RUNWISP_INSTANCE_INDEX` environment
+  variable. A value in [`env`](#env) overrides it.
 - All instances share the config and the log view.
 - When one instance exits, only that one is restarted.
 

@@ -498,7 +498,7 @@ func composeContainerName(project, service string, idx int) string {
 // rejected at config load, so order is immaterial in valid configs).
 func composeMergedEnv(task *model.Task, run *model.Run, instanceIndex int) map[string]string {
 	merged := map[string]string{
-		"RUNWISP_INSTANCE_INDEX": strconv.Itoa(instanceIndex),
+		instanceIndexEnvKey: strconv.Itoa(instanceIndex),
 	}
 	maps.Copy(merged, task.Env)
 	maps.Copy(merged, task.Secrets)

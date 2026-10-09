@@ -80,7 +80,7 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 	// the RUNWISP_* secrets (password, station token) that buildProcessEnv strips.
 	// The run-as identity (HOME/USER/LOGNAME) seeds beneath the task's own env
 	// so task.Env can still override it.
-	cmd.Env = buildProcessEnv(append(base, identity...), task.Env, task.Secrets, paramEnv)
+	cmd.Env = buildProcessEnv(append(base, identity...), instanceIndexEnv(run), task.Env, task.Secrets, paramEnv)
 
 	dir, err := resolveWorkingDir(shell.WorkingDir, runUserHome)
 	if err != nil {

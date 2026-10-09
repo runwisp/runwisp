@@ -94,7 +94,7 @@ func TestShellBackend_CleanEnvBaseStillHidesDaemonSecrets(t *testing.T) {
 
 	names := envNames(t, &model.ShellExecution{EnvBase: model.EnvBaseClean})
 	for _, n := range names {
-		require.False(t, strings.HasPrefix(n, "RUNWISP_"),
+		require.False(t, strings.HasPrefix(n, "RUNWISP_") && n != instanceIndexEnvKey,
 			"daemon-internal %s reached a clean-base run", n)
 	}
 }
@@ -112,7 +112,7 @@ func TestShellBackend_InheritEnvBaseStillHidesDaemonSecrets(t *testing.T) {
 	for _, base := range []model.EnvBase{model.EnvBaseInherit, ""} {
 		names := envNames(t, &model.ShellExecution{EnvBase: base})
 		for _, n := range names {
-			require.False(t, strings.HasPrefix(n, "RUNWISP_"),
+			require.False(t, strings.HasPrefix(n, "RUNWISP_") && n != instanceIndexEnvKey,
 				"daemon-internal %s reached a plain inherit-base run", n)
 		}
 		// A non-secret daemon variable must still pass through — the filter

@@ -177,5 +177,44 @@ func TestContainerBuildContainerConfigNoTaskEnv(t *testing.T) {
 		Env: []model.KeyValue{{Key: "A", Value: "1"}},
 	}
 	cfg, _ := b.buildContainerConfig("image:tag", ctr, &model.Task{Name: "t"}, nil)
-	assert.Equal(t, []string{"A=1"}, cfg.Env)
+	assert.Equal(t, []string{"A=1", "RUNWISP_INSTANCE_INDEX=0"}, cfg.Env)
+}
+
+// TestShellBackend_InstanceIndex: every instance of a shell service sees its
+// own RUNWISP_INSTANCE_INDEX, like compose services always did, and task env
+// can still override it.
+func TestShellBackend_InstanceIndex(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"from run", nil, "2"},
+		{"task env wins", map[string]string{"RUNWISP_INSTANCE_INDEX": "x"}, "x"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "idx.out")
+			task := &model.Task{Name: "svc", GracefulStop: durPtr(time.Second), Env: tc.env}
+			run := &model.Run{InstanceIndex: 2}
+
+			proc, err := (&ShellBackend{}).Start(context.Background(), task, run,
+				&model.ShellExecution{Script: `printf %s "$RUNWISP_INSTANCE_INDEX" > ` + out})
+			require.NoError(t, err)
+			io.Copy(io.Discard, proc.Stdout)
+			io.Copy(io.Discard, proc.Stderr)
+			code, _ := proc.Wait()
+			require.Equal(t, 0, code)
+
+			data, err := os.ReadFile(out)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, string(data))
+		})
+	}
+}
+
+func TestContainerBuildContainerConfigInstanceIndex(t *testing.T) {
+	b := &ContainerBackend{}
+	cfg, _ := b.buildContainerConfig("image:tag", &model.ContainerExecution{}, &model.Task{Name: "t"}, &model.Run{InstanceIndex: 3})
+	assert.Contains(t, cfg.Env, "RUNWISP_INSTANCE_INDEX=3")
 }

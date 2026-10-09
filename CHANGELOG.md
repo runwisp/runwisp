@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Pressing Enter on a run in the Web UI runs list selects it once instead of twice.
+- Services with `instances` get `RUNWISP_INSTANCE_INDEX` with every backend, not only with compose.
 
 ## [1.5.1] - 2026-10-08
 
