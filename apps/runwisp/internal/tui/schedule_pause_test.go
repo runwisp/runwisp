@@ -115,15 +115,16 @@ func TestHandleSchedulePause_ErrorShowsDaemonDetail(t *testing.T) {
 	assert.Nil(t, got.dialogs.TakeUndo())
 }
 
-func TestPauseHint(t *testing.T) {
+func TestTaskHeaderPauseHint(t *testing.T) {
 	m := newTestModel(pauseTestTasks())
 	m.info.PausedTasks = map[string]time.Time{"held": time.Now()}
+	hints := func(name string) string { return m.taskHeader(name).Hints() }
 
-	assert.Equal(t, keys.Pause.Bar, m.pauseHint("backup"))
-	assert.Equal(t, keys.Resume.Bar, m.pauseHint("held"), "a paused task can be resumed even while held")
+	assert.Contains(t, hints("backup"), keys.Pause.Bar)
+	assert.Contains(t, hints("held"), keys.Resume.Bar, "a paused task can be resumed even while held")
 	for _, name := range []string{"locked", "adhoc", "web", "missing"} {
-		assert.Empty(t, m.pauseHint(name), name)
+		assert.NotContains(t, hints(name), "p ", name)
 	}
 	delete(m.info.PausedTasks, "held")
-	assert.Empty(t, m.pauseHint("held"), "a held task can't be paused")
+	assert.NotContains(t, hints("held"), "p ", "a held task can't be paused")
 }

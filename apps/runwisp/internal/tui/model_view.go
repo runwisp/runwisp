@@ -133,8 +133,11 @@ func (m Model) renderMainContent() string {
 
 func (m Model) renderHomeContent(panelW int, panelView string) string {
 	if m.sidebar.ActiveTask() != "" {
-		runNowHovered := m.mouse.hoverY == m.layout.taskBtnY && m.mouse.hoverX >= uikit.SidebarWidth
-		header, _ := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), panelW, runNowHovered, m.isPaused(m.sidebar.ActiveTask()), m.taskUsage(m.sidebar.ActiveTask()), m.taskLoc(m.taskDisplayByName(m.sidebar.ActiveTask())))
+		h := m.taskHeader(m.sidebar.ActiveTask())
+		if m.mouse.hoverY == m.layout.taskBtnY {
+			h.Hovered = h.ButtonAt(m.mouse.hoverX-uikit.SidebarWidth, panelW)
+		}
+		header, _ := h.Render(panelW)
 		return header + panelView + m.execList.View()
 	}
 	starHovered := m.mouse.hoverY == home.StarButtonY && home.StarButtonAt(m.mouse.hoverX-uikit.SidebarWidth, panelW)
@@ -213,7 +216,7 @@ func (m Model) appendExecViewActionHints(parts []string) []string {
 	parts = append(parts, keys.TaskInfo.Bar)
 	switch m.execView.Action() {
 	case execlist.ActionStop:
-		parts = append(parts, "s stop")
+		parts = append(parts, keys.Stop.Bar)
 	case execlist.ActionStopService:
 		parts = append(parts, "s stop service")
 	case execlist.ActionRetry:
@@ -230,30 +233,9 @@ func (m Model) appendExecViewActionHints(parts []string) []string {
 	return parts
 }
 
-// pauseHint is the help-bar segment for `p` on the named task, or "" when its
-// schedule can't be toggled from here.
-func (m *Model) pauseHint(name string) string {
-	task := m.taskDisplayByName(name)
-	switch {
-	case task == nil || !task.Pausable():
-		return ""
-	case m.isPaused(name):
-		return keys.Resume.Bar
-	case task.Held():
-		return ""
-	}
-	return keys.Pause.Bar
-}
-
 func (m Model) buildSidebarHelpText() string {
 	if name := m.sidebar.CursorTaskName(); name != "" {
-		actionHint := keys.RunNow.Bar
-		if m.isService(name) {
-			actionHint = keys.Restart.Bar
-		}
-		if hint := m.pauseHint(name); hint != "" {
-			actionHint += "  " + hint
-		}
+		actionHint := m.taskHeader(name).Hints()
 		return keys.Move.Bar + "  enter select  " + actionHint + "  " + keys.TaskInfo.Bar + "  " + keys.FilterTasks.Bar + "  → main panel  " + keys.Quit.Bar
 	}
 	return keys.Move.Bar + "  enter select  " + keys.FilterTasks.Bar + "  → main panel  " + keys.Quit.Bar
@@ -274,14 +256,7 @@ func (m Model) buildMainHelpText() string {
 		return keys.JoinBar(keys.Scroll, keys.LogJump, keys.BackSidebar, keys.Quit)
 	}
 	if name := m.sidebar.ActiveTask(); name != "" {
-		actionHint := keys.RunNow.Bar
-		if m.isService(name) {
-			actionHint = keys.Restart.Bar
-		}
-		if hint := m.pauseHint(name); hint != "" {
-			actionHint += "  " + hint
-		}
-		base := keys.JoinBar(keys.Move, keys.Open) + "  " + actionHint + "  " +
+		base := keys.JoinBar(keys.Move, keys.Open) + "  " + m.taskHeader(name).Hints() + "  " +
 			keys.JoinBar(keys.Filter, keys.TaskInfo) + "  " + keys.ToSidebar.Bar
 		if m.sidebar.ActivePage() == uikit.PageHome && m.notifications.PanelHeight() > 0 {
 			base += "  " + keys.NotifPanel.Bar

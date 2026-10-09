@@ -13,6 +13,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/keys"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
@@ -236,25 +237,148 @@ func renderActionRow(b *strings.Builder, label string, labelColor color.Color, w
 	b.WriteString("\n")
 }
 
-// RenderTaskHeader renders the task info header with a Run Now button. paused
-// reports that an operator paused the task's cron schedule; usage, when
-// non-nil, is the live CPU and memory of the task's running processes.
-// The runNowBtnY output is the screen-relative Y offset of the Run Now button row
-// within this header (0-based from header start).
-func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, paused bool, usage *model.ResourceUsage, loc *time.Location) (string, int) {
+// TaskButton identifies a clickable button on the task header's title row.
+type TaskButton int
+
+const (
+	TaskButtonNone  TaskButton = iota
+	TaskButtonRun              // Run Now (task), Restart or Start (service): key r
+	TaskButtonStop             // Stop (running service): key s
+	TaskButtonPause            // Pause or Resume (cron schedule): key p
+)
+
+// TaskHeader is what the task header shows for one task. Its buttons are the
+// task-level actions, and the help bar lists the same set (Hints), so the two
+// never disagree about what r, s and p do.
+type TaskHeader struct {
+	Name    string
+	Task    *model.Task
+	Paused  bool                 // an operator paused the cron schedule
+	Stopped bool                 // an operator stopped the service
+	Usage   *model.ResourceUsage // live CPU and memory of running processes
+	Loc     *time.Location
+	Hovered TaskButton
+}
+
+type headerButton struct {
+	id    TaskButton
+	label string
+	key   keys.Binding
+	style lipgloss.Style
+	hover lipgloss.Style
+}
+
+// buttons lists the title-row buttons left to right. Stop needs a running
+// service that manual_trigger leaves under operator control; Pause needs a
+// pausable schedule that cron doesn't hold (a paused one can always resume).
+func (h TaskHeader) buttons() []headerButton {
+	t := h.Task
+	if t != nil && t.Kind.IsService() {
+		if h.Stopped {
+			return []headerButton{{TaskButtonRun, "▶ Start (r)", keys.Start, uikit.BtnRunNowStyle, uikit.BtnRunNowHoverStyle}}
+		}
+		btns := []headerButton{{TaskButtonRun, "↻ Restart (r)", keys.Restart, uikit.BtnRunNowStyle, uikit.BtnRunNowHoverStyle}}
+		if t.ManuallyControllable() {
+			btns = append(btns, headerButton{TaskButtonStop, "■ Stop (s)", keys.Stop, uikit.BtnStopStyle, uikit.BtnStopHoverStyle})
+		}
+		return btns
+	}
+	btns := []headerButton{{TaskButtonRun, "▶ Run Now (r)", keys.RunNow, uikit.BtnRunNowStyle, uikit.BtnRunNowHoverStyle}}
+	switch {
+	case t == nil || !t.Pausable():
+	case h.Paused:
+		btns = append(btns, headerButton{TaskButtonPause, "▶ Resume (p)", keys.Resume, uikit.BtnRetryStyle, uikit.BtnRetryHoverStyle})
+	case !t.Held():
+		btns = append(btns, headerButton{TaskButtonPause, "⏸ Pause (p)", keys.Pause, uikit.BtnBackStyle, uikit.BtnBackHoverStyle})
+	}
+	return btns
+}
+
+// Offers reports whether the header shows button b, i.e. whether its key acts.
+func (h TaskHeader) Offers(b TaskButton) bool {
+	for _, btn := range h.buttons() {
+		if btn.id == b {
+			return true
+		}
+	}
+	return false
+}
+
+// Hints is the help-bar segment for the header's buttons, e.g. "r restart  s stop".
+func (h TaskHeader) Hints() string {
+	btns := h.buttons()
+	bindings := make([]keys.Binding, len(btns))
+	for i, btn := range btns {
+		bindings[i] = btn.key
+	}
+	return keys.JoinBar(bindings...)
+}
+
+// renderButtons renders the buttons one column apart and returns them with
+// each button's panel-column span, right-aligned to w with a one-column margin.
+func (h TaskHeader) renderButtons(w int) (string, []buttonSpan) {
+	btns := h.buttons()
+	gap := lipgloss.NewStyle().Background(uikit.ColorBgLight).Render(" ")
+	parts := make([]string, 0, 2*len(btns))
+	widths := make([]int, len(btns))
+	total := len(btns) - 1
+	for i, btn := range btns {
+		style := btn.style
+		if h.Hovered == btn.id {
+			style = btn.hover
+		}
+		rendered := style.Render(btn.label)
+		widths[i] = lipgloss.Width(rendered)
+		total += widths[i]
+		if i > 0 {
+			parts = append(parts, gap)
+		}
+		parts = append(parts, rendered)
+	}
+	spans := make([]buttonSpan, len(btns))
+	x := w - 1 - total
+	for i, btn := range btns {
+		spans[i] = buttonSpan{btn.id, x, x + widths[i]}
+		x += widths[i] + 1
+	}
+	return strings.Join(parts, ""), spans
+}
+
+type buttonSpan struct {
+	id       TaskButton
+	from, to int
+}
+
+// ButtonAt returns the button at panel column x on the title row of a header
+// rendered at width w, or TaskButtonNone.
+func (h TaskHeader) ButtonAt(x, w int) TaskButton {
+	_, spans := h.renderButtons(w)
+	for _, s := range spans {
+		if x >= s.from && x < s.to {
+			return s.id
+		}
+	}
+	return TaskButtonNone
+}
+
+// Render draws the task header: the name with the task-level buttons
+// right-aligned on the title row, then the schedule line. btnY is the
+// header-relative row holding the buttons.
+func (h TaskHeader) Render(w int) (out string, btnY int) {
 	var b strings.Builder
-	lineCount := 0
+	task := h.Task
 
 	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
-	lineCount++
 
 	name := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextBright).
 		Bold(true).
-		Render("  " + taskName)
-	b.WriteString(uikit.PadLine(name, w, uikit.ColorBgLight))
+		Render("  " + h.Name)
+	btns, _ := h.renderButtons(w)
+	gap := max(w-lipgloss.Width(name)-lipgloss.Width(btns)-1, 2)
+	titleLine := name + uikit.FillBg(gap, uikit.ColorBgLight) + btns
+	b.WriteString(uikit.PadLine(titleLine, w, uikit.ColorBgLight))
 	b.WriteString("\n")
-	lineCount++
 
 	schedule := "manual"
 	if task != nil {
@@ -262,13 +386,16 @@ func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, p
 	}
 	held := task != nil && task.HeldBy != model.HeldByNothing
 	schedInfo := "  Schedule: " + schedule
-	if !held && !paused && task != nil && !task.Kind.IsService() {
-		if nextRun := NextCronRun(schedule, loc); nextRun != "" {
+	if !held && !h.Paused && task != nil && !task.Kind.IsService() {
+		if nextRun := NextCronRun(schedule, h.Loc); nextRun != "" {
 			schedInfo += "  •  Next: " + nextRun
 		}
 	}
-	if usage != nil {
-		schedInfo += "  •  " + uikit.FormatUsage(*usage)
+	if h.Stopped {
+		schedInfo += "  •  stopped"
+	}
+	if h.Usage != nil {
+		schedInfo += "  •  " + uikit.FormatUsage(*h.Usage)
 	}
 	schedText := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
 		Render(schedInfo)
@@ -278,37 +405,18 @@ func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, p
 		// per-task metadata slot in the TUI, so it is where the fact belongs.
 		schedText += uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
 			Render("  •  ⏸ held — cron still owns this job")
-	} else if paused {
+	} else if h.Paused {
 		// Same slot and tone as held: the schedule is listed but nothing fires.
 		schedText += uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
-			Render("  •  ⏸ paused, p resumes")
+			Render("  •  ⏸ paused")
 	}
-
-	style := uikit.BtnRunNowStyle
-	if runNowHovered {
-		style = uikit.BtnRunNowHoverStyle
-	}
-	btnLabel := "▶ Run Now (r)"
-	if task != nil && task.Kind.IsService() {
-		btnLabel = "↻ Restart (r)"
-	}
-	btn := style.Render(btnLabel)
-
-	schedWidth := lipgloss.Width(schedText)
-	btnWidth := lipgloss.Width(btn)
-	gap := max(w-schedWidth-btnWidth-1, 2)
-
-	schedLine := schedText +
-		lipgloss.NewStyle().Background(uikit.ColorBgLight).Render(strings.Repeat(" ", gap)) +
-		btn
-	btnLineY := lineCount
-	b.WriteString(uikit.PadLine(schedLine, w, uikit.ColorBgLight))
+	b.WriteString(uikit.PadLine(schedText, w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
 	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
-	return b.String(), btnLineY
+	return b.String(), 1
 }
 
 // NextCronRun parses a cron schedule expression and returns the next run time

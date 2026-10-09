@@ -457,6 +457,9 @@ func handleKeyS(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 		}
 		return m, nil, true
 	}
+	if m.taskHeader(m.resolveTaskName()).Offers(home.TaskButtonStop) {
+		return m, m.confirmAction(confirmActionStopService), true
+	}
 	return m, nil, false
 }
 

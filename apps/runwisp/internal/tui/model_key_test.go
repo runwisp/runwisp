@@ -13,6 +13,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/logsearch"
+	"github.com/stretchr/testify/assert"
 )
 
 func keyMsg(s string) tea.KeyPressMsg {
@@ -520,6 +521,40 @@ func TestHandleKeyS_NoExecViewReturnsFalse(t *testing.T) {
 	_, _, handled := handleKeyS(m, keyMsg("s"))
 	if handled {
 		t.Fatal("expected handled=false when no execView")
+	}
+}
+
+// `s` stops a service straight from its task page, no run needs to be open.
+// It stays a no-op where the header offers no Stop button.
+func TestHandleKeyS_StopsServiceFromTaskPage(t *testing.T) {
+	tasks := []model.Task{
+		{Name: "web", Kind: model.KindService, ManualTrigger: true},
+		{Name: "locked", Kind: model.KindService},
+		{Name: "backup", Cron: "0 3 * * *", ManualTrigger: true},
+	}
+	for _, tt := range []struct {
+		name    string
+		item    int
+		stopped bool
+		want    bool
+	}{
+		{"running service", 1, false, true},
+		{"stopped service", 1, true, false},
+		{"locked service", 2, false, false},
+		{"cron task", 3, false, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := newTestModel(tasks)
+			selectSidebarItem(&m, tt.item)
+			m.focusMainPanel()
+			if tt.stopped {
+				m.info.StoppedServices = map[string]bool{"web": true}
+			}
+			got, _, handled := handleKeyS(m, keyMsg("s"))
+			assert.Equal(t, tt.want, handled)
+			assert.Equal(t, tt.want, got.dialogs.Has(dlgConfirm))
+			assert.Equal(t, tt.want, strings.Contains(got.buildHelpText(), "s stop"), "help bar lists s only when it acts")
+		})
 	}
 }
 

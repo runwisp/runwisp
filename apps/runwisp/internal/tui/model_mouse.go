@@ -147,9 +147,16 @@ func (m Model) handleMainPanelClick(x, y int) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleHomePageClick(x, y int) (tea.Model, tea.Cmd) {
-	if m.sidebar.ActiveTask() != "" {
+	if name := m.sidebar.ActiveTask(); name != "" {
 		if y == m.layout.taskBtnY {
-			return m, m.confirmAction(confirmActionTrigger)
+			switch m.taskHeader(name).ButtonAt(x-uikit.SidebarWidth, m.contentWidth()) {
+			case home.TaskButtonRun:
+				return m, m.confirmAction(confirmActionTrigger)
+			case home.TaskButtonStop:
+				return m, m.confirmAction(confirmActionStopService)
+			case home.TaskButtonPause:
+				return m, m.streams.SetSchedulePaused(name, !m.isPaused(name))
+			}
 		}
 	} else {
 		if y == home.StarButtonY && home.StarButtonAt(x-uikit.SidebarWidth, m.contentWidth()) {

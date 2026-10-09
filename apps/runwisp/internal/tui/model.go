@@ -43,7 +43,7 @@ type mouseState struct {
 // Values are invalidated (recomputed) on every WindowSizeMsg or active-task change.
 type headerLayout struct {
 	taskH       int // newline count of the task header
-	taskBtnY    int // Y line of the Run Now button within the task header
+	taskBtnY    int // Y line of the task header buttons
 	homeH       int // newline count of the home header
 	homeFieldsY int // Y line where the first interactive home field begins
 }
@@ -344,7 +344,7 @@ func (m *Model) recalcExecListHeight() {
 	listH := mainH
 	if m.sidebar.ActivePage() == uikit.PageHome || m.sidebar.ActiveTask() != "" {
 		if m.sidebar.ActiveTask() != "" {
-			header, btnY := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, false, m.isPaused(m.sidebar.ActiveTask()), m.taskUsage(m.sidebar.ActiveTask()), m.taskLoc(m.taskDisplayByName(m.sidebar.ActiveTask())))
+			header, btnY := m.taskHeader(m.sidebar.ActiveTask()).Render(m.contentWidth())
 			m.layout.taskBtnY = btnY
 			m.layout.taskH = strings.Count(header, "\n")
 			listH -= m.layout.taskH
@@ -387,6 +387,20 @@ func (m *Model) taskLoc(task *model.Task) *time.Location {
 		m.taskZones[task.Timezone] = loc
 	}
 	return loc
+}
+
+// taskHeader describes the named task's header: its state and the task-level
+// buttons it offers. The help bar and the r/s keys read the same value.
+func (m *Model) taskHeader(name string) home.TaskHeader {
+	task := m.taskDisplayByName(name)
+	return home.TaskHeader{
+		Name:    name,
+		Task:    task,
+		Paused:  m.isPaused(name),
+		Stopped: m.info.StoppedServices[name],
+		Usage:   m.taskUsage(name),
+		Loc:     m.taskLoc(task),
+	}
 }
 
 // isPaused reports whether an operator paused the named task's cron schedule.

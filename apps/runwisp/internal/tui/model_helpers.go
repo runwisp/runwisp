@@ -186,6 +186,13 @@ func (m *Model) confirmRestartService() tea.Cmd {
 	if taskName == "" {
 		return nil
 	}
+	if m.info.StoppedServices[taskName] {
+		return m.showConfirmDialog(
+			"Start Service",
+			fmt.Sprintf("Start service\n'%s'?", taskName),
+			m.streams.RestartService(taskName),
+		)
+	}
 	instances := m.serviceInstances(taskName)
 	var prompt string
 	if instances > 1 {
