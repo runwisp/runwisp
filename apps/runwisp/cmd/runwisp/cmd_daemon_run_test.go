@@ -305,7 +305,7 @@ func TestSuperviseServerStart_SelfSignalsOnStartError(t *testing.T) {
 	// an error and the supervisor self-signal SIGTERM.
 	srv, err := server.New(server.Options{
 		Password:   "x",
-		JWTSecret:  "test-secret-test-secret-test-1234",
+		SessionKey: []byte("test-secret-test-secret-test-1234"),
 		SocketPath: "",
 		EventBus:   events.NewEventBus(),
 	})

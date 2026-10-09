@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/chap"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
@@ -58,7 +59,7 @@ func (d fakeDaemon) start(t *testing.T) *httptest.Server {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]string{"token": "fake-jwt"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"token": freshToken})
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -166,12 +167,13 @@ func TestAuthenticateRemoteTUI_UsesCachedToken(t *testing.T) {
 	isolatedTokenCache(t)
 	baseURL := "http://daemon.example:9477"
 	// Seed the cache so authentication short-circuits without any network call.
-	storeCachedToken(baseURL, "cached-jwt")
+	cached := testSessions.IssueToken(time.Hour)
+	storeCachedToken(baseURL, cached)
 
 	client, err := authenticateRemoteTUI(t.Context(), baseURL, "")
 	require.NoError(t, err)
 	require.NotNil(t, client)
-	assert.Equal(t, "cached-jwt", client.Token())
+	assert.Equal(t, cached, client.Token())
 }
 
 func TestAuthenticateRemoteTUI_EnvPasswordStoresToken(t *testing.T) {
@@ -181,9 +183,9 @@ func TestAuthenticateRemoteTUI_EnvPasswordStoresToken(t *testing.T) {
 	client, err := authenticateRemoteTUI(t.Context(), srv.URL, "s3cret")
 	require.NoError(t, err)
 	require.NotNil(t, client)
-	assert.Equal(t, "fake-jwt", client.Token())
+	assert.Equal(t, freshToken, client.Token())
 	// The freshly minted token must be cached for the next invocation.
-	assert.Equal(t, "fake-jwt", loadCachedToken(srv.URL))
+	assert.Equal(t, freshToken, loadCachedToken(srv.URL))
 }
 
 func TestAuthenticateRemoteTUI_WrongEnvPasswordFails(t *testing.T) {

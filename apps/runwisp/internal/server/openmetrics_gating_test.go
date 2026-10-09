@@ -49,7 +49,7 @@ func setupServerForMetrics(t *testing.T, metricsEnabled bool, metricsListen stri
 		LogDir:         tmpDir,
 		EventBus:       eb,
 		Password:       "secret",
-		JWTSecret:      "test-jwt-secret",
+		SessionKey:     []byte("test-session-key"),
 		MetricsEnabled: metricsEnabled,
 		MetricsListen:  metricsListen,
 		DaemonInfo:     &model.DaemonInfo{},

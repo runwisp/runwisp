@@ -23,7 +23,7 @@ const openMetricsContentType = "application/openmetrics-text; version=1.0.0; cha
 
 // handleOpenMetrics renders the daemon's run/task/process state as an
 // OpenMetrics text payload. It is registered outside the protected router
-// group so external scrapers can hit it without a JWT — operators bind to
+// group so external scrapers can hit it without a session token — operators bind to
 // loopback or firewall the port to keep it private.
 func (srv *Server) handleOpenMetrics(w http.ResponseWriter, r *http.Request) {
 	// Query before the first byte: once the 200 header is out, a DB failure can

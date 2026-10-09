@@ -48,7 +48,7 @@ func TestInstance_SocketReturnsIdentity(t *testing.T) {
 func TestInstance_LoopbackTCPReturnsIdentity(t *testing.T) {
 	s := newServerForInstanceTest(t)
 
-	// No local-trusted flag and no JWT: a plain loopback TCP caller. The
+	// No local-trusted flag and no session token: a plain loopback TCP caller. The
 	// endpoint is public, so the loopback gate (not the auth middleware) is
 	// what admits it — this is exactly the launcher's path on a port conflict.
 	req := httptest.NewRequest("GET", "/api/daemon/identity", nil)

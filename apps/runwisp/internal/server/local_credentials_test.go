@@ -62,7 +62,7 @@ func newServerForCredentialsTest(t *testing.T, password string, ephemeral bool) 
 		EventBus:          eb,
 		Password:          password,
 		PasswordEphemeral: ephemeral,
-		JWTSecret:         "test-jwt-secret",
+		SessionKey:        []byte("test-session-key"),
 	})
 	require.NoError(t, err)
 	return s
@@ -118,7 +118,7 @@ func TestLocalCredentials_NoAuthReturns409(t *testing.T) {
 		"the minted password must never appear in the response body")
 }
 
-func TestLocalCredentials_TCPWithJWTReturns403(t *testing.T) {
+func TestLocalCredentials_TCPWithSessionReturns403(t *testing.T) {
 	s := newServerForCredentialsTest(t, "in-memory-pw", true)
 
 	req := httptest.NewRequest("GET", "/api/local/credentials", nil)
@@ -128,12 +128,12 @@ func TestLocalCredentials_TCPWithJWTReturns403(t *testing.T) {
 	s.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code,
-		"a valid JWT on a TCP request must NOT reach the credentials endpoint")
+		"a valid session token on a TCP request must NOT reach the credentials endpoint")
 	assert.NotContains(t, w.Body.String(), "in-memory-pw",
 		"the ephemeral password must never appear when 403 is returned")
 }
 
-func TestLocalCredentials_TCPNoJWTReturns401(t *testing.T) {
+func TestLocalCredentials_TCPNoSessionReturns401(t *testing.T) {
 	s := newServerForCredentialsTest(t, "in-memory-pw", true)
 
 	req := httptest.NewRequest("GET", "/api/local/credentials", nil)

@@ -23,7 +23,7 @@ import (
 // It is used by the TUI and CLI commands to interact with a running daemon.
 //
 // Construct it with New for remote (TCP) daemons, or NewUnix to talk to a
-// local daemon over its Unix socket. Unix-socket clients skip CHAP/JWT
+// local daemon over its Unix socket. Unix-socket clients skip CHAP and the session token
 // entirely: the daemon trusts the connection based on filesystem
 // permissions plus a PEERCRED check at accept time.
 type Client struct {
@@ -44,7 +44,7 @@ func NormalizeBaseURL(baseURL string) string {
 }
 
 // New constructs a Client for a remote daemon. baseURL must be an http(s)
-// URL; the client will run CHAP via Authenticate to obtain a JWT. It performs
+// URL; the client will run CHAP via Authenticate to obtain a session token. It performs
 // no certificate pinning — over HTTPS it relies on the system trust store, so
 // it suits tests (plain-HTTP httptest servers) and callers behind a CA-signed
 // reverse proxy. The user-facing `run --url` path uses NewPinned instead.
@@ -97,9 +97,9 @@ func NewUnix(socketPath string) *Client {
 	}
 }
 
-// Authenticate performs CHAP authentication and stores the JWT token.
+// Authenticate performs CHAP authentication and stores the session token.
 // On Unix-socket clients this is a no-op — the daemon does not require a
-// JWT for socket-delivered requests.
+// session token for socket-delivered requests.
 func (c *Client) Authenticate(ctx context.Context) error {
 	if c.local {
 		return nil
@@ -123,13 +123,13 @@ func (c *Client) Authenticate(ctx context.Context) error {
 	return nil
 }
 
-// SetToken seeds the client with a previously obtained JWT, letting callers
+// SetToken seeds the client with a previously obtained session token, letting callers
 // reuse a cached session instead of re-running CHAP on every invocation.
 func (c *Client) SetToken(token string) {
 	c.token = token
 }
 
-// Token returns the JWT the client is currently using (empty on Unix-socket
+// Token returns the session token the client is currently using (empty on Unix-socket
 // clients, which never hold one). Callers persist it to reuse the session.
 func (c *Client) Token() string {
 	return c.token

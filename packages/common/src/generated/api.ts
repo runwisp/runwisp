@@ -268,7 +268,7 @@ export interface paths {
         };
         /**
          * Retrieve the daemon's ephemeral password (Unix socket only)
-         * @description Returns the in-memory ephemeral password to a local CLI/TUI client arriving on the Unix socket. Always 403 over TCP — even with a valid JWT. Always 404 when the daemon is configured with RUNWISP_PASSWORD.
+         * @description Returns the in-memory ephemeral password to a local CLI/TUI client arriving on the Unix socket. Always 403 over TCP — even with a valid session token. Always 404 when the daemon is configured with RUNWISP_PASSWORD.
          */
         get: operations["getLocalCredentials"];
         put?: never;
@@ -813,7 +813,7 @@ export interface components {
              * @example http://localhost:9477/schemas/AuthLoginBody.json
              */
             readonly $schema?: string;
-            /** @description JWT session token, also set as the runwisp_jwt cookie */
+            /** @description Session token, also set as the runwisp_jwt cookie */
             token: string;
         };
         AuthLoginRequest: {

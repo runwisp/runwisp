@@ -15,7 +15,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
-	"github.com/go-chi/jwtauth/v5"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/ui"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/update"
@@ -66,29 +65,20 @@ func maxBodySize(limit int64) func(http.Handler) http.Handler {
 	}
 }
 
-// authOrLocalTrusted short-circuits JWT verification for requests delivered
-// on the Unix socket. Filesystem permissions (0600 socket + 0700 datadir)
-// and SO_PEERCRED at accept time already gated access; running CHAP/JWT on
-// top would add no security and would force the local CLI/TUI to keep a
-// password around just to talk to the daemon that owns its data dir.
-//
-// For TCP requests (no local-trusted flag), the usual jwtauth verifier and
-// authenticator chain runs unchanged.
+// authOrLocalTrusted requires a valid session token on TCP requests and
+// skips the check for requests delivered on the Unix socket. Filesystem
+// permissions (0600 socket + 0700 datadir) and SO_PEERCRED at accept time
+// already gated socket access; running CHAP on top would add no security and
+// would force the local CLI/TUI to keep a password around just to talk to the
+// daemon that owns its data dir.
 func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
-	verify := jwtauth.Verify(
-		authSvc.JWTAuth(),
-		jwtauth.TokenFromHeader,
-		auth.TokenFromCookie,
-	)
-	authenticator := jwtauth.Authenticator(authSvc.JWTAuth())
 	return func(next http.Handler) http.Handler {
-		fallback := verify(authenticator(next))
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if IsLocalTrusted(r) {
-				next.ServeHTTP(w, r)
+			if !IsLocalTrusted(r) && !authSvc.ValidToken(auth.TokenFromRequest(r)) {
+				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 				return
 			}
-			fallback.ServeHTTP(w, r)
+			next.ServeHTTP(w, r)
 		})
 	}
 }
@@ -161,8 +151,8 @@ func securityHeaders(next http.Handler) http.Handler {
 //     apiclient) send neither and keep working under RUNWISP_AUTH=off.
 //
 // It is inert for safe methods (GET/HEAD/OPTIONS), local-trusted requests on
-// the Unix socket (CLI/TUI), and explicit Bearer requests when JWT auth is
-// enabled. In auth-off mode, Authorization may be ambient proxy/basic auth, so
+// the Unix socket (CLI/TUI), and explicit Bearer requests when session auth
+// is enabled. In auth-off mode, Authorization may be ambient proxy/basic auth, so
 // it does not exempt a browser request. Headless clients without browser source
 // headers keep working in either mode.
 func csrfGuard(allowBearer bool) func(http.Handler) http.Handler {
@@ -200,8 +190,7 @@ func csrfExempt(r *http.Request, allowBearer bool) bool {
 	if !allowBearer {
 		return false
 	}
-	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
-	return len(authorization) > len("Bearer ") && strings.EqualFold(authorization[:len("Bearer ")], "Bearer ")
+	return auth.BearerToken(r.Header.Get("Authorization")) != ""
 }
 
 func csrfSourceRejected(r *http.Request) bool {
@@ -330,7 +319,7 @@ func (srv *Server) setupRoutes() error {
 		srv.registerHookRoutes(r)
 	})
 
-	// Protected routes. With RUNWISP_AUTH=off the JWT gate is skipped entirely
+	// Protected routes. With RUNWISP_AUTH=off the session gate is skipped entirely
 	// — an explicit operator opt-in, warned about loudly at startup — but the
 	// body-size cap stays in place.
 	srv.router.Group(func(r chi.Router) {

@@ -93,7 +93,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	}
 	defer lock.Release()
 
-	// Open database first — config values (fingerprint, jwt_secret) live there.
+	// Open database first — config values (fingerprint) live there.
 	db, err := storage.New(f.DBPath())
 	if err != nil {
 		return err
@@ -165,7 +165,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		EventBus:          svc.EventBus,
 		Password:          cfg.Password,
 		PasswordEphemeral: cfg.PasswordEphemeral,
-		JWTSecret:         cfg.JWTSecret,
+		SessionKey:        cfg.SessionKey,
 		NoAuth:            cfg.NoAuth,
 		TrustedProxies:    cfg.Config.Daemon.TrustedProxies,
 		DaemonInfo:        daemonInfo,
@@ -635,7 +635,7 @@ func printNoAuthBanner(host string, nonLoopback bool) {
 
 // printNonLoopbackBanner writes an unmissable stderr banner when the daemon
 // is binding to an address reachable beyond localhost. Plain HTTP over a real
-// network exposes the auth cookie and JWT in cleartext; we want operators to
+// network exposes the auth cookie and session token in cleartext; we want operators to
 // see this clearly without forcing them to add extra flags or terminate the
 // process — they may know what they're doing (private LAN, behind a TLS proxy,
 // etc.) and just need a visible reminder, not a roadblock.

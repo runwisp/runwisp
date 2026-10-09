@@ -119,8 +119,8 @@ type Options struct {
 	EventBus          *events.Bus
 	Password          string                                // Authentication password (required even with NoAuth — keeps the cookie/launch-ticket machinery alive)
 	PasswordEphemeral bool                                  // True when the daemon minted Password in memory at boot (no RUNWISP_PASSWORD)
-	JWTSecret         string                                // JWT signing secret (derived in-memory)
-	NoAuth            bool                                  // RUNWISP_AUTH=off: serve all /api/* routes over TCP without JWT/CHAP
+	SessionKey        []byte                                // session-token HMAC key (auth.DeriveSessionKey, in-memory)
+	NoAuth            bool                                  // RUNWISP_AUTH=off: serve all /api/* routes over TCP without CHAP or a session token
 	TrustedProxies    []string                              // [daemon] trusted_proxies as config resolved it (RUNWISP_TRUSTED_PROXIES applied)
 	DaemonInfo        *model.DaemonInfo                     // Static identity/config info for /api/daemon
 	ConfigStale       func() bool                           // Per-request staleness probe for /api/daemon (optional; nil reports never-stale)
@@ -181,7 +181,7 @@ func New(opts Options) (*Server, error) {
 	}
 	s.trustedProxies.Store(&trustedProxies)
 
-	s.auth, err = auth.NewService(opts.Password, opts.JWTSecret, func(r *http.Request) bool {
+	s.auth, err = auth.NewService(opts.Password, opts.SessionKey, func(r *http.Request) bool {
 		return isFromTrustedProxy(r, s.proxies())
 	})
 	if err != nil {

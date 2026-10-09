@@ -42,7 +42,7 @@ func TestAuthStatus_NoAuth(t *testing.T) {
 }
 
 // TestProtectedRoute_NoAuth_TCPAllowed verifies the point of the feature: an
-// unauthenticated TCP request (no JWT, no cookie, not on the socket) reaches
+// unauthenticated TCP request (no session token, no cookie, not on the socket) reaches
 // protected routes when NoAuth is set. The default-mode inverse — 401 for the
 // same request — is covered by TestAuthFlow in server_test.go and
 // socket_auth_test.go, guarding that no-auth never leaks into the default.
@@ -82,7 +82,7 @@ func TestNoAuth_CrossOriginUnsafeRequestRefused(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, post(map[string]string{
 		"Authorization": "Bearer proxy-injected-token",
 		"Origin":        "https://evil.example",
-	}), "auth-off mode must not treat proxy-injected bearer credentials as verified JWT auth")
+	}), "auth-off mode must not treat proxy-injected bearer credentials as verified session auth")
 	assert.Equal(t, http.StatusForbidden, post(map[string]string{"Sec-Fetch-Site": "cross-site"}))
 	assert.NotEqual(t, http.StatusForbidden, post(nil), "headless clients send no Origin")
 	assert.NotEqual(t, http.StatusForbidden, post(map[string]string{"Origin": "http://example.com"}),

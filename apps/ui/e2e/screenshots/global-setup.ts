@@ -10,7 +10,7 @@
 //   1. `runwisp demo --seed-only` writes the embedded demo config and seeds the
 //      data dir, then exits (no daemon, no TUI).
 //   2. start `runwisp daemon` against that config/data via the same
-//      startDaemon helper as the e2e setup, and hand the JWT to the specs via
+//      startDaemon helper as the e2e setup, and hand the session token to the specs via
 //      .state.json.
 //
 // It writes the same .state.json the e2e harness uses, so the screenshot config

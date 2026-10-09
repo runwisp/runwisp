@@ -61,9 +61,9 @@ func TestCSRFGuard(t *testing.T) {
 		})
 	}
 
-	// With JWT auth enabled, an explicit Bearer credential is not ambient
+	// With session auth enabled, an explicit Bearer credential is not ambient
 	// browser state, so it may use the API cross-origin. The protected route's
-	// JWT middleware still verifies the token after this guard.
+	// session middleware still verifies the token after this guard.
 	bearerReq := csrfReq(http.MethodPost, true, map[string]string{
 		"Authorization": "Bearer token",
 		"Origin":        "https://evil.example",

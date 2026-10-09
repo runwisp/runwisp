@@ -23,7 +23,7 @@ RunWisp replaces **crond + supervisord** with one small Go binary that a single 
 - **Plugin systems / arbitrary extensibility** — the surface is TOML + shell commands + REST. No JS hooks, no Lua, no WASM.
 - **Replacing the user's shell or package manager** — `run:` is a shell command the user already knows how to write. Don't invent a DSL on top of it.
 - **Being a log aggregator** — we capture per-run stdout/stderr for visibility. We are not Loki, not ELK.
-- **Enterprise identity systems** — CHAP + JWT answers "does this operator control this daemon?". SSO, directory integration, org/team modeling, fine-grained RBAC policies are outside the daemon's scope.
+- **Enterprise identity systems** — CHAP + a signed session token answers "does this operator control this daemon?". SSO, directory integration, org/team modeling, fine-grained RBAC policies are outside the daemon's scope.
 - **Long-horizon analytics / reporting** — retention is per-task and bounded. Anything that needs cross-task, cross-instance, or indefinite history lives outside the daemon.
 
 When in doubt, ask: _"Does this help **one** operator run **their** tasks on **one** machine better?"_ If no, it probably doesn't belong in `apps/runwisp`.
@@ -44,8 +44,8 @@ When in doubt, ask: _"Does this help **one** operator run **their** tasks on **o
 - The daemon runs **with the privilege of whoever started it**, executing **user-authored shell** from TOML. Therefore:
   - TOML is trusted input; the REST API / UI is not.
   - Never execute user-provided strings from HTTP/WS bodies as shell. `run =` comes from disk only.
-  - Secrets (JWT secret, passwords) live under the data dir (`internal/datadir/`) with restrictive perms; never log them; never transmit them over any outbound integration.
-- CHAP (challenge-response) auth is the login boundary. JWT is the session. Don't bypass either for "convenience" endpoints. The only sanctioned bypass is the explicit operator opt-in `RUNWISP_AUTH=off`, which disables the boundary wholesale, warns loudly at startup, and is mutually exclusive with `RUNWISP_PASSWORD`.
+  - Secrets (the password and the session key derived from it) stay in memory or under the data dir (`internal/datadir/`) with restrictive perms; never log them; never transmit them over any outbound integration.
+- CHAP (challenge-response) auth is the login boundary. A signed session token (`internal/server/auth`) is the session. Don't bypass either for "convenience" endpoints. The only sanctioned bypass is the explicit operator opt-in `RUNWISP_AUTH=off`, which disables the boundary wholesale, warns loudly at startup, and is mutually exclusive with `RUNWISP_PASSWORD`.
 
 ## 🧠 DECISION HEURISTICS (use when the spec is silent)
 
@@ -86,7 +86,7 @@ When in doubt, ask: _"Does this help **one** operator run **their** tasks on **o
   - `internal/events/`: In-memory pub/sub event bus for run lifecycle and log-line events.
   - `internal/apiclient/`: HTTP client used by CLI commands and TUI to talk to a running daemon.
   - `internal/tui/`: Bubbletea TUI.
-  - `internal/datadir/`: Data directory helpers — PID file, password resolution, JWT secret generation.
+  - `internal/datadir/`: Data directory helpers — PID file, password resolution.
   - `internal/fingerprint/`: Deterministic human-readable instance fingerprint (machine-id + cwd).
   - `internal/logutil/`: Log file indexing and metadata helpers.
   - `internal/logsearch/`: On-demand substring/regex search across a task's log files.

@@ -4,24 +4,22 @@
 package main
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// fakeJWT builds an unsigned-but-well-formed JWT carrying the given exp claim
-// (unix seconds). Only the payload segment is meaningful to jwtExpiry.
-func fakeJWT(exp int64) string {
-	payload, _ := json.Marshal(map[string]int64{"exp": exp})
-	seg := base64.RawURLEncoding.EncodeToString(payload)
-	return "header." + seg + ".signature"
-}
+// testSessions mints session tokens for the fake daemons in this package. They
+// never check the MAC; only the token format and expiry matter to the CLI.
+var testSessions, _ = auth.NewService("pw", []byte("test-session-key"), nil)
+
+// freshToken is what the fake daemons hand out on a successful CHAP login.
+var freshToken = testSessions.IssueToken(time.Hour)
 
 // useTempCacheDir points os.UserCacheDir at a temp directory across platforms
 // (XDG_CACHE_HOME on Linux, HOME on macOS).
@@ -38,7 +36,7 @@ func TestTokenCache_RoundTrip(t *testing.T) {
 
 	assert.Empty(t, loadCachedToken(url), "no token before any store")
 
-	token := fakeJWT(time.Now().Add(time.Hour).Unix())
+	token := testSessions.IssueToken(time.Hour)
 	storeCachedToken(url, token)
 
 	assert.Equal(t, token, loadCachedToken(url))
@@ -50,18 +48,18 @@ func TestTokenCache_DropsExpired(t *testing.T) {
 	useTempCacheDir(t)
 	const url = "https://runwisp.example.com"
 
-	storeCachedToken(url, fakeJWT(time.Now().Add(-time.Minute).Unix()))
+	storeCachedToken(url, testSessions.IssueToken(-time.Minute))
 	assert.Empty(t, loadCachedToken(url), "an expired token must not be returned")
 }
 
-func TestTokenCache_UnknownExpiryIsKept(t *testing.T) {
+func TestTokenCache_UnreadableExpiryIsMiss(t *testing.T) {
 	useTempCacheDir(t)
 	const url = "https://runwisp.example.com"
 
-	// A token with no parseable exp claim has ExpiresAt 0 ("unknown") and is
-	// still handed back — the trigger path's 401-retry is the safety net.
-	storeCachedToken(url, "not-a-jwt")
-	assert.Equal(t, "not-a-jwt", loadCachedToken(url))
+	// A token whose expiry can't be read (e.g. a JWT cached by an older
+	// release) is a miss, so the caller handshakes instead of sending it.
+	storeCachedToken(url, "header.payload.signature")
+	assert.Empty(t, loadCachedToken(url))
 }
 
 func TestTokenCache_CorruptFile(t *testing.T) {
@@ -74,14 +72,14 @@ func TestTokenCache_CorruptFile(t *testing.T) {
 
 	// Corrupt cache reads as "no token", and a subsequent store overwrites it.
 	assert.Empty(t, loadCachedToken("https://x"))
-	token := fakeJWT(time.Now().Add(time.Hour).Unix())
+	token := testSessions.IssueToken(time.Hour)
 	storeCachedToken("https://x", token)
 	assert.Equal(t, token, loadCachedToken("https://x"))
 }
 
 func TestTokenCache_MissingURLInPopulatedCache(t *testing.T) {
 	useTempCacheDir(t)
-	storeCachedToken("https://a.example.com", fakeJWT(time.Now().Add(time.Hour).Unix()))
+	storeCachedToken("https://a.example.com", testSessions.IssueToken(time.Hour))
 
 	// A different daemon URL has no entry in the otherwise-valid cache.
 	assert.Empty(t, loadCachedToken("https://b.example.com"))
@@ -114,31 +112,15 @@ func TestTokenCache_UnwritablePath(t *testing.T) {
 	t.Setenv("HOME", blocker)
 
 	assert.NotPanics(t, func() {
-		storeCachedToken("https://x", fakeJWT(time.Now().Add(time.Hour).Unix()))
+		storeCachedToken("https://x", testSessions.IssueToken(time.Hour))
 	})
 	assert.Empty(t, loadCachedToken("https://x"), "nothing was persisted")
 }
 
-func TestJWTExpiry(t *testing.T) {
-	t.Run("reads the exp claim", func(t *testing.T) {
-		assert.Equal(t, int64(1700000000), jwtExpiry(fakeJWT(1700000000)))
-	})
-	t.Run("wrong segment count is unknown", func(t *testing.T) {
-		assert.Equal(t, int64(0), jwtExpiry("only.two"))
-	})
-	t.Run("non-base64 payload is unknown", func(t *testing.T) {
-		assert.Equal(t, int64(0), jwtExpiry("header.!!!not-base64!!!.sig"))
-	})
-	t.Run("non-JSON payload is unknown", func(t *testing.T) {
-		seg := base64.RawURLEncoding.EncodeToString([]byte("not json"))
-		assert.Equal(t, int64(0), jwtExpiry("header."+seg+".sig"))
-	})
-}
-
 func TestTokenCache_SeparateURLs(t *testing.T) {
 	useTempCacheDir(t)
-	a := fakeJWT(time.Now().Add(time.Hour).Unix())
-	b := fakeJWT(time.Now().Add(time.Hour).Unix())
+	a := testSessions.IssueToken(time.Hour)
+	b := testSessions.IssueToken(time.Hour)
 	storeCachedToken("https://a.example.com", a)
 	storeCachedToken("https://b.example.com", b)
 	assert.Equal(t, a, loadCachedToken("https://a.example.com"))

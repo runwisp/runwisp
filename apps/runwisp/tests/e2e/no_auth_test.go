@@ -34,7 +34,7 @@ func TestNoAuth_UnauthenticatedTCPAccess(t *testing.T) {
 		"RUNWISP_AUTH=off",
 	)
 
-	// Protected endpoint over TCP with no JWT, no cookie, no Authenticate call.
+	// Protected endpoint over TCP with no session token, no cookie, no Authenticate call.
 	client := apiclient.New(daemon.baseURL, "")
 	tasks, err := client.ListTasks(t.Context())
 	require.NoError(t, err,

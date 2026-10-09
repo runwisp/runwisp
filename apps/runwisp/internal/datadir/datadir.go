@@ -61,7 +61,7 @@ func ensureDir(dir string, chmod func(string, os.FileMode) error) error {
 // attack where another local user replaces a file with a symlink to a
 // sensitive target the caller can write (e.g. ~/.ssh/authorized_keys). It is
 // the shared primitive for any secret-bearing file (PID file, daemon secrets,
-// the CLI's cached JWT); callers must EnsureDir the parent first.
+// the CLI's cached session token); callers must EnsureDir the parent first.
 //
 // The write is atomic: data lands in a temp file in the same directory (so
 // the final rename is same-filesystem), is fsync'd, and only then replaces

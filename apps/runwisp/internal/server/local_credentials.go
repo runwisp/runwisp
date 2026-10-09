@@ -36,7 +36,7 @@ type LocalCredentialsOutput struct {
 // route-level authOrLocalTrusted middleware:
 //
 //   - Gate 1 (IsLocalTrustedCtx) rejects anything not on the Unix listener,
-//     including JWT-authenticated TCP callers and launch-ticket browser
+//     including session-authenticated TCP callers and launch-ticket browser
 //     sessions. This is what makes the endpoint impossible to reach over the
 //     network even with a valid login.
 //   - Gate 2 refuses to disclose env-var-supplied passwords by status code
@@ -77,7 +77,7 @@ func (srv *Server) registerLocalCredentialsRoute(api huma.API) {
 		Path:        "/api/local/credentials",
 		Summary:     "Retrieve the daemon's ephemeral password (Unix socket only)",
 		Description: "Returns the in-memory ephemeral password to a local CLI/TUI client arriving on the Unix socket. " +
-			"Always 403 over TCP — even with a valid JWT. Always 404 when the daemon is configured with RUNWISP_PASSWORD.",
+			"Always 403 over TCP — even with a valid session token. Always 404 when the daemon is configured with RUNWISP_PASSWORD.",
 		Tags: []string{"System"},
 	}, srv.handleGetLocalCredentials)
 }

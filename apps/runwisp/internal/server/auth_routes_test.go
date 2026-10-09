@@ -18,42 +18,38 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- Router-level JWT verification ---
+// --- Router-level session-token verification ---
 
-func TestProtectedRoute_RejectsTokenWithWrongAudience(t *testing.T) {
+// TestProtectedRoute_SessionToken covers where the gate reads the token from;
+// what makes a token valid is covered by auth.TestValidToken.
+func TestProtectedRoute_SessionToken(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
-	_, ts, err := s.auth.JWTAuth().Encode(map[string]any{
-		"exp": time.Now().Add(time.Hour).Unix(),
-		"iss": auth.JWTIssuer,
-		"aud": "some-other-api",
-	})
-	require.NoError(t, err)
-
-	req := httptest.NewRequest("GET", "/api/tasks", nil)
-	req.Header.Set("Authorization", "Bearer "+ts)
-	w := httptest.NewRecorder()
-	s.router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-}
-
-func TestProtectedRoute_RejectsTokenWithWrongIssuer(t *testing.T) {
-	s, _, _, _ := setupServer(t)
-
-	_, ts, err := s.auth.JWTAuth().Encode(map[string]any{
-		"exp": time.Now().Add(time.Hour).Unix(),
-		"iss": "someone-else",
-		"aud": auth.JWTAudience,
-	})
-	require.NoError(t, err)
-
-	req := httptest.NewRequest("GET", "/api/tasks", nil)
-	req.Header.Set("Authorization", "Bearer "+ts)
-	w := httptest.NewRecorder()
-	s.router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	tests := []struct {
+		name string
+		set  func(*http.Request)
+		want int
+	}{
+		{"valid bearer", func(r *http.Request) {
+			r.Header.Set("Authorization", "Bearer "+s.auth.IssueToken(time.Hour))
+		}, http.StatusOK},
+		{"valid cookie", func(r *http.Request) {
+			r.AddCookie(&http.Cookie{Name: auth.CookieName, Value: s.auth.IssueToken(time.Hour)})
+		}, http.StatusOK},
+		{"invalid bearer does not fall back to a valid cookie", func(r *http.Request) {
+			r.Header.Set("Authorization", "Bearer garbage")
+			r.AddCookie(&http.Cookie{Name: auth.CookieName, Value: s.auth.IssueToken(time.Hour)})
+		}, http.StatusUnauthorized},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api/tasks", nil)
+			tt.set(req)
+			w := httptest.NewRecorder()
+			s.router.ServeHTTP(w, req)
+			assert.Equal(t, tt.want, w.Code)
+		})
+	}
 }
 
 // --- Trusted-proxy parsing (server-package helper) ---
@@ -280,7 +276,7 @@ func TestHandleCreateLaunchTicket_LoopbackSucceeds(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/auth/launch-ticket", nil)
 	req.RemoteAddr = "127.0.0.1:54321"
 	// The protected-routes middleware allows local-trusted requests without
-	// JWT, so we must mark this one as such.
+	// session token, so we must mark this one as such.
 	req = req.WithContext(context.WithValue(req.Context(), localTrustedKey{}, true))
 
 	w := httptest.NewRecorder()
@@ -293,13 +289,13 @@ func TestHandleCreateLaunchTicket_LoopbackSucceeds(t *testing.T) {
 }
 
 // TestHandleCreateLaunchTicket_NonLoopbackAuthenticatedSucceeds covers remote
-// minting: a request from a non-local origin that carries a valid JWT (an
+// minting: a request from a non-local origin that carries a valid session token (an
 // already-authenticated session, e.g. a remote TUI that logged in via CHAP)
 // may mint a launch ticket for its browser.
 func TestHandleCreateLaunchTicket_NonLoopbackAuthenticatedSucceeds(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
-	// Mint a valid JWT cookie via the launch path.
+	// Mint a valid session cookie via the launch path.
 	ticket, err := s.auth.CreateLaunchTicket()
 	require.NoError(t, err)
 	launchReq := httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket="+ticket, nil)
@@ -316,7 +312,7 @@ func TestHandleCreateLaunchTicket_NonLoopbackAuthenticatedSucceeds(t *testing.T)
 	}
 	require.NotNil(t, authCookie)
 
-	// Re-use the JWT cookie from a non-loopback address — the authenticated
+	// Re-use the session cookie from a non-loopback address — the authenticated
 	// session is the mint gate, not the origin.
 	req := httptest.NewRequest("POST", "/api/auth/launch-ticket", nil)
 	req.RemoteAddr = "192.168.1.100:54321"
@@ -326,7 +322,7 @@ func TestHandleCreateLaunchTicket_NonLoopbackAuthenticatedSucceeds(t *testing.T)
 	s.router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code,
-		"a valid JWT from a remote origin must be allowed to mint")
+		"a valid session token from a remote origin must be allowed to mint")
 	var body map[string]string
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
 	assert.NotEmpty(t, body["ticket"])
@@ -422,7 +418,7 @@ func TestAuthStatus_Unauthenticated(t *testing.T) {
 func TestAuthStatus_AuthenticatedViaCookie(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
-	// First, get a valid JWT by redeeming a launch ticket.
+	// First, get a valid session token by redeeming a launch ticket.
 	ticket, err := s.auth.CreateLaunchTicket()
 	require.NoError(t, err)
 

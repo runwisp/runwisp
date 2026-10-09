@@ -24,7 +24,7 @@ async function loadDaemonState(): Promise<DaemonState> {
 
 /**
  * Extended test fixture that provides an authenticated page.
- * The daemon authenticates the browser via an HttpOnly session cookie (the JWT
+ * The daemon authenticates the browser via an HttpOnly session cookie (the session token
  * is never exposed to page JS), so the fixture seeds that cookie into the
  * browser context before navigation, mirroring a real logged-in session.
  */

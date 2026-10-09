@@ -3,7 +3,7 @@
 
 // Shared daemon-boot helpers used by both the e2e harness (global-setup.ts) and
 // the docs screenshot harness (screenshots/global-setup.ts). Both spawn the real
-// binary, wait for it to come up, and exchange the password for a JWT via the
+// binary, wait for it to come up, and exchange the password for a session token via the
 // challenge-response handshake — identical steps, one source of truth.
 
 import { spawn } from "node:child_process";
@@ -134,7 +134,7 @@ export async function waitForHealth(baseURL: string, timeout: number): Promise<v
     throw new Error(`Daemon did not become healthy within ${timeout}ms at ${baseURL}`);
 }
 
-/** Run the challenge-response handshake and return a session JWT. */
+/** Run the challenge-response handshake and return a session token. */
 export async function obtainToken(baseURL: string, password: string): Promise<string> {
     const challengeRes = await fetch(`${baseURL}/api/auth/challenge`);
     if (!challengeRes.ok) throw new Error(`Challenge request failed: ${challengeRes.status}`);

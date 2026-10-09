@@ -72,7 +72,7 @@
 
         try {
             // The login response sets the HttpOnly session cookie server-side;
-            // the browser holds no copy of the JWT. We just flip local auth state.
+            // the browser holds no copy of the session token. We just flip local auth state.
             await authApi.login(password);
             authStore.markAuthenticated();
             isOpen = false;

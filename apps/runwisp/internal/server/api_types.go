@@ -343,7 +343,7 @@ type AuthLoginOutput struct {
 }
 
 type AuthLoginBody struct {
-	Token string `json:"token" doc:"JWT session token, also set as the runwisp_jwt cookie"`
+	Token string `json:"token" doc:"Session token, also set as the runwisp_jwt cookie"`
 }
 
 type LaunchTicketBody struct {

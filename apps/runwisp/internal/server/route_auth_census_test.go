@@ -19,7 +19,7 @@ import (
 )
 
 // publicRoutes is every route that answers a TCP caller with no session
-// without a 401 from the JWT gate, keyed "METHOD /chi/pattern", with the status
+// without a 401 from the session gate, keyed "METHOD /chi/pattern", with the status
 // that caller gets. Adding a route outside the protected group means adding it
 // here, deliberately, with a comment saying what guards it instead.
 var publicRoutes = map[string]int{
@@ -53,7 +53,7 @@ var routeParam = regexp.MustCompile(`\{[^}]+\}`)
 
 // TestRouteAuthCensus walks every route on the chi router and calls it over
 // TCP (httptest's default non-loopback RemoteAddr, no local-socket flag) with
-// no session. Anything not in publicRoutes must hit the JWT gate's 401, so a
+// no session. Anything not in publicRoutes must hit the session gate's 401, so a
 // new route registered outside the protected group fails here until someone
 // adds it to the allowlist on purpose.
 func TestRouteAuthCensus(t *testing.T) {
