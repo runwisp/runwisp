@@ -345,6 +345,10 @@ func TestServiceFatalAfterStartRetries(t *testing.T) {
 	assert.Equal(t, 0, snap.RunningInstances)
 	require.Len(t, snap.Instances, 1)
 	assert.Equal(t, model.ServiceInstanceFatal, snap.Instances[0].State)
+	assert.Equal(t, 3, snap.Instances[0].StartFails, "the UI says how many starts failed")
+	if assert.NotNil(t, snap.Instances[0].LastExitCode) {
+		assert.Equal(t, 1, *snap.Instances[0].LastExitCode, "and with which exit code")
+	}
 
 	callsAtFatal := execCalls.Load()
 	assert.Equal(t, int64(3), callsAtFatal, "restart_attempts=2 → 3 fast failures, then give up")

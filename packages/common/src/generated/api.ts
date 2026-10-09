@@ -1480,6 +1480,50 @@ export interface components {
              */
             total: number;
         };
+        ServiceInstanceStatus: {
+            /**
+             * Format: int64
+             * @description 0-based slot, as RUNWISP_INSTANCE_INDEX
+             */
+            index: number;
+            /**
+             * Format: int64
+             * @description Exit code of the instance's latest run; absent until one has exited since the daemon started
+             */
+            lastExitCode?: number;
+            /**
+             * Format: int64
+             * @description Exits since the instance last ran healthy
+             */
+            restartCount: number;
+            /**
+             * Format: int64
+             * @description Failed starts in a row since the instance last ran healthy; it gives up once this passes restartAttempts
+             */
+            startFails: number;
+            /**
+             * Format: date-time
+             * @description When the instance's current run started; absent unless running
+             */
+            startedAt?: string;
+            /**
+             * @description restarting: between an exit and the next respawn; fatal: gave up after too many failed starts and won't respawn until started
+             * @enum {string}
+             */
+            state: "running" | "restarting" | "stopped" | "fatal";
+        };
+        ServiceStatus: {
+            /** Format: int64 */
+            desiredInstances: number;
+            instances: components["schemas"]["ServiceInstanceStatus"][] | null;
+            /** Format: int64 */
+            runningInstances: number;
+            /**
+             * @description stopped: an operator stopped it, or autostart = false and it was never started; fatal: every instance gave up; degraded: some instances are down
+             * @enum {string}
+             */
+            state: "running" | "degraded" | "stopped" | "fatal";
+        };
         SystemSampleSSEEvent: {
             /** @description Live CPU and memory use per running run, keyed by run ID; only measured shell runs appear */
             runs?: {
@@ -1805,6 +1849,8 @@ export interface components {
              * @enum {string}
              */
             kind?: "task" | "service";
+            /** @description The newest run of this task that started (pending, skipped and missed runs don't count); absent when none has. */
+            lastRun?: components["schemas"]["Run"];
             /**
              * Format: int64
              * @description Per-run log size cap in bytes
@@ -1878,6 +1924,8 @@ export interface components {
              * @description Base delay before each retry, in nanoseconds; 0 retries with no delay
              */
             retryDelay?: number;
+            /** @description The run command as written in runwisp.toml; absent for tasks without one (container and compose tasks). */
+            run?: string;
             /** @description For tasks: fire once at daemon startup, in addition to any cron schedule */
             runOnStart: boolean;
             /**
@@ -1887,6 +1935,8 @@ export interface components {
             runOnStartMode?: "daemon" | "boot";
             /** @description Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values are not. */
             secretsFile?: string;
+            /** @description For services: the supervisor's view of each instance. Absent for tasks. */
+            service?: components["schemas"]["ServiceStatus"];
             /** @description For services: true while the service is stopped (by an operator, or never started because autostart = false) and the daemon will not respawn it until it is started. Absent for running or restarting services and for tasks. */
             serviceStopped?: boolean;
             /** @description Absolute path to the shell interpreter for run scripts; defaults to /bin/sh */

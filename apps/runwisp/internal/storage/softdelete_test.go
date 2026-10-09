@@ -407,3 +407,33 @@ func TestSelectorMatchAllNewGateWithExceptIDs(t *testing.T) {
 	_, err = db.GetRun(ctx, cronRun.ID)
 	require.NoError(t, err)
 }
+
+func TestLatestStartedRuns(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	at := func(min int) *time.Time {
+		ts := time.Date(2026, 10, 9, 3, min, 0, 0, time.UTC)
+		return &ts
+	}
+	older := newTerminalRun("job")
+	older.StartedAt = at(0)
+	newest := newTerminalRun("job")
+	newest.StartedAt = at(5)
+	deleted := newTerminalRun("job")
+	deleted.StartedAt = at(9)
+	pending := newTerminalRun("job") // never started: skipped, missed and queued rows
+	pending.Status = model.PhasePending
+	pending.EndReason = nil
+	for _, r := range []*model.Run{older, newest, deleted, pending} {
+		require.NoError(t, db.CreateRun(ctx, r))
+	}
+	_, err := db.SoftDeleteRuns(ctx, model.RunSelector{IDs: []string{deleted.ID}}, time.Now())
+	require.NoError(t, err)
+
+	got, err := db.LatestStartedRuns(ctx, []string{"job", "never-ran"})
+	require.NoError(t, err)
+	require.Len(t, got, 1, "tasks without a started run are absent")
+	assert.Equal(t, newest.ID, got["job"].ID)
+}

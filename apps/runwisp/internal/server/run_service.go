@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -64,32 +65,55 @@ func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks *runti
 	return &runService{db: db, taskManager: jm, tasks: tasks, scheduler: sched, eventBus: bus, taskUsage: noUsage}
 }
 
-func (s *runService) ListTasks() []model.TaskResponse {
-	tasks := make([]model.TaskResponse, 0, s.tasks.Len())
-	usage := s.taskUsage()
+func (s *runService) ListTasks(ctx context.Context) []model.TaskResponse {
+	all := make([]*model.Task, 0, s.tasks.Len())
 	s.tasks.Range(func(_ string, task *model.Task) bool {
-		tasks = append(tasks, s.toTaskResponse(task, usage))
+		all = append(all, task)
 		return true
 	})
+	usage := s.taskUsage()
+	lastRuns := s.lastRuns(ctx, all)
+	tasks := make([]model.TaskResponse, 0, len(all))
+	for _, task := range all {
+		tasks = append(tasks, s.toTaskResponse(task, usage, lastRuns))
+	}
 	slices.SortFunc(tasks, func(a, b model.TaskResponse) int { return strings.Compare(a.Name, b.Name) })
 	return tasks
 }
 
-func (s *runService) GetTask(name string) (*model.TaskResponse, error) {
+func (s *runService) GetTask(ctx context.Context, name string) (*model.TaskResponse, error) {
 	task, ok := s.tasks.Get(name)
 	if !ok {
 		return nil, ErrTaskNotFound
 	}
-	tr := s.toTaskResponse(task, s.taskUsage())
+	tr := s.toTaskResponse(task, s.taskUsage(), s.lastRuns(ctx, []*model.Task{task}))
 	return &tr, nil
 }
 
 func noUsage() map[string]model.ResourceUsage { return nil }
 
-func (s *runService) toTaskResponse(task *model.Task, usage map[string]model.ResourceUsage) model.TaskResponse {
-	tr := model.TaskResponse{Task: *task}
+// lastRuns looks up each task's newest started run. A storage error only costs
+// the lastRun field: the task list itself must still load.
+func (s *runService) lastRuns(ctx context.Context, tasks []*model.Task) map[string]model.Run {
+	names := make([]string, len(tasks))
+	for i, task := range tasks {
+		names[i] = task.Name
+	}
+	runs, err := s.db.LatestStartedRuns(ctx, names)
+	if err != nil {
+		slog.Warn("Failed to load last runs for the task list", "error", err)
+		return nil
+	}
+	return runs
+}
+
+func (s *runService) toTaskResponse(task *model.Task, usage map[string]model.ResourceUsage, lastRuns map[string]model.Run) model.TaskResponse {
+	tr := model.TaskResponse{Task: *task, RunCommand: task.Run}
 	if u, ok := usage[task.Name]; ok {
 		tr.Usage = &u
+	}
+	if r, ok := lastRuns[task.Name]; ok {
+		tr.LastRun = &r
 	}
 	if task.Cron != "" && s.scheduler != nil {
 		tr.NextRunAt = s.scheduler.GetNextRun(task.Name)
@@ -98,6 +122,14 @@ func (s *runService) toTaskResponse(task *model.Task, usage map[string]model.Res
 	if task.Kind.IsService() && s.taskManager != nil {
 		snap, ok := s.taskManager.ServiceSnapshot(task.Name)
 		tr.ServiceStopped = ok && snap.State == model.ServiceStopped
+		if ok {
+			tr.Service = &model.ServiceStatus{
+				State:            snap.State,
+				DesiredInstances: snap.DesiredInstances,
+				RunningInstances: snap.RunningInstances,
+				Instances:        snap.Instances,
+			}
+		}
 	}
 	return tr
 }

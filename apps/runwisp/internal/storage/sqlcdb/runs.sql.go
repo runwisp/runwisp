@@ -144,6 +144,41 @@ func (q *Queries) DeleteRunsByIDs(ctx context.Context, ids []string) error {
 	return err
 }
 
+const getLatestStartedRun = `-- name: GetLatestStartedRun :one
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms FROM runs
+WHERE task_name = ? AND deleted_at IS NULL AND started_at IS NOT NULL
+ORDER BY started_at DESC, id DESC
+LIMIT 1
+`
+
+// The newest run of a task that actually started: pending, skipped and missed
+// rows never mask the state of the run before them.
+func (q *Queries) GetLatestStartedRun(ctx context.Context, taskName string) (Run, error) {
+	row := q.db.QueryRowContext(ctx, getLatestStartedRun, taskName)
+	var i Run
+	err := row.Scan(
+		&i.ID,
+		&i.ExecutionID,
+		&i.TaskName,
+		&i.Status,
+		&i.EndReason,
+		&i.ExitCode,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.TriggeredBy,
+		&i.CreatedAt,
+		&i.RetryAttempt,
+		&i.RetryOfRunID,
+		&i.InstanceIndex,
+		&i.ParamsJson,
+		&i.DeletedAt,
+		&i.IsFailure,
+		&i.PeakMemoryBytes,
+		&i.CpuTimeMs,
+	)
+	return i, err
+}
+
 const getPendingRuns = `-- name: GetPendingRuns :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms FROM runs WHERE status = 'pending' AND deleted_at IS NULL
 ORDER BY created_at ASC

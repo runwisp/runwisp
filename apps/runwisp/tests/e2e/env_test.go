@@ -111,6 +111,13 @@ INLINE_SECRET = "%s"
 	assert.Contains(t, body2, "from-env-file", "env_file values are part of the visible env")
 	assert.NotContains(t, body2, fileSecretValue, "secrets_file values must never reach the API surface")
 	assert.NotContains(t, body2, inlineSecretValue, "inline secrets values must never reach the API surface")
+
+	// The run command is part of the API too, and this one names the secret
+	// keys itself (it greps for them), so check the keys without it.
+	tasks[0].RunCommand = ""
+	rawJSON, err = json.Marshal(tasks)
+	require.NoError(t, err)
+	body2 = string(rawJSON)
 	assert.NotContains(t, body2, "FILE_SECRET", "secrets keys must never reach the API surface")
 	assert.NotContains(t, body2, "INLINE_SECRET", "secrets keys must never reach the API surface")
 }

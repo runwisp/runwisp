@@ -6,6 +6,7 @@ package testutil
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -37,6 +38,19 @@ func (m *MockRunRepository) GetRun(ctx context.Context, id string) (*model.Run, 
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*model.Run), args.Error(1)
+}
+
+// LatestStartedRuns reports no runs unless the test expects the call: only the
+// task list's lastRun field uses it, and most tests listing tasks don't care.
+func (m *MockRunRepository) LatestStartedRuns(ctx context.Context, taskNames []string) (map[string]model.Run, error) {
+	if !slices.ContainsFunc(m.ExpectedCalls, func(c *mock.Call) bool { return c.Method == "LatestStartedRuns" }) {
+		return map[string]model.Run{}, nil
+	}
+	args := m.Called(ctx, taskNames)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]model.Run), args.Error(1)
 }
 
 func (m *MockRunRepository) GetRunByExecutionID(ctx context.Context, executionID string) (*model.Run, error) {

@@ -63,4 +63,16 @@ run = "sleep 3"
 	require.NotNil(t, run.PeakMemoryBytes, "the finished run records its peak memory")
 	assert.Positive(t, *run.PeakMemoryBytes)
 	require.NotNil(t, run.CPUTimeMs, "the finished run records its CPU time")
+
+	// The task list carries what the Web UI's task page shows without a
+	// second request: the newest run and the run command.
+	tasks, err := client.ListTasks(t.Context())
+	require.NoError(t, err)
+	for _, task := range tasks {
+		if task.Name == taskName {
+			require.NotNil(t, task.LastRun, "the task reports its newest run")
+			assert.Equal(t, triggered.ID, task.LastRun.ID)
+			assert.Equal(t, "sleep 3", task.RunCommand)
+		}
+	}
 }

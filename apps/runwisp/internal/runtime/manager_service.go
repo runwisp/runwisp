@@ -256,7 +256,12 @@ func (m *defaultTaskManager) ServiceSnapshot(taskName string) (model.ServiceSnap
 	running := 0
 	fatal := 0
 	for i := 0; i < desired; i++ {
-		st := model.ServiceInstanceStatus{Index: i, RestartCount: ts.supervisor.Attempts(i)}
+		st := model.ServiceInstanceStatus{
+			Index:        i,
+			RestartCount: ts.supervisor.Attempts(i),
+			StartFails:   ts.supervisor.StartFails(i),
+			LastExitCode: ts.supervisor.LastExitCode(i),
+		}
 		switch {
 		case ts.supervisor.IsLive(i):
 			st.State = model.ServiceInstanceRunning

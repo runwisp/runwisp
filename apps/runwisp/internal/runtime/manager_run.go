@@ -107,7 +107,7 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 	// Supervisor bookkeeping happens before run.End so a FATAL transition can
 	// rewrite the end reason: RecordExit needs runDuration, and whether the
 	// instance has exhausted its start-retry budget decides the audit row.
-	nextRestartAttempt, serviceFatal, fatalAttempts := m.retireRun(task, run, runDuration, outcome.endReason)
+	nextRestartAttempt, serviceFatal, fatalAttempts := m.retireRun(task, run, runDuration, outcome.endReason, result.ExitCode)
 
 	if serviceFatal {
 		outcome.endReason = model.ReasonStartFailed
@@ -136,7 +136,7 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 // a service instance is now FATAL, and the recorded start-fail count when
 // FATAL (zero otherwise). Non-service tasks re-run via retry_* (see
 // scheduleFollowup), which retireRun has no bookkeeping role in.
-func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDuration time.Duration, endReason model.EndReason) (nextRestartAttempt int, serviceFatal bool, fatalAttempts int) {
+func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDuration time.Duration, endReason model.EndReason, exitCode int) (nextRestartAttempt int, serviceFatal bool, fatalAttempts int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	// This run is still in its taskState's active list, so the state has not
@@ -154,6 +154,7 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 		startRetries := model.OrDefault(task.RestartAttempts, config.DefaultStartRetries)
 		nextRestartAttempt, serviceFatal = ts.supervisor.RecordExit(
 			run.InstanceIndex, runDuration, startRetries, wasFailure)
+		ts.supervisor.SetLastExitCode(run.InstanceIndex, exitCode)
 		if serviceFatal {
 			fatalAttempts = ts.supervisor.StartFails(run.InstanceIndex)
 		}

@@ -459,7 +459,7 @@ Read (GET):
 /api/system                                     system stats
 /api/system/metrics                             historical system metrics
 /api/daemon/log/stream                          daemon log (SSE)
-/api/tasks                                       list tasks
+/api/tasks                                       list tasks; each carries live state: nextRunAt, pausedAt, usage, lastRun (newest started run), run (command), service (per-instance state, startFails, lastExitCode)
 /api/tasks/{task}                                one task
 /api/runs/{runId}                               one run
 /api/runs/{runId}/log                           log-lines page
