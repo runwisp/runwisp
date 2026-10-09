@@ -11,3 +11,4 @@ export { systemStore } from "./system.svelte.js";
 export { feedbackStore } from "./feedback.svelte.js";
 export { headerSearchStore } from "./header-search.svelte.js";
 export { notificationStore } from "./notifications.svelte.js";
+export { taskBarStore } from "./task-bar.svelte.js";

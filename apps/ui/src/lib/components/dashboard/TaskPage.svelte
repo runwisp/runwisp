@@ -9,6 +9,7 @@
     import type { RunsListFilters, RunOutputMatch } from "@runwisp/ui";
     import {
         activeFilterCount,
+        formatRelativeTimeWithAbsolute,
         RunsList,
         RunDetailPanel,
         Button,
@@ -17,12 +18,15 @@
         AlertDialog,
     } from "@runwisp/ui";
     import { tasksApi } from "$lib/api";
+    import TaskStrip from "$lib/components/task/TaskStrip.svelte";
+    import TaskDetailsSheet from "$lib/components/task/TaskDetailsSheet.svelte";
+    import { HeaderFold } from "$lib/utils/header-fold.svelte";
     import { headerSearchStore, systemStore } from "$lib/stores";
     import type { LiveRuns } from "$lib/utils/live-runs.svelte";
     import { createRunSelection } from "$lib/utils/run-selection.svelte";
     import { HistoryRail } from "$lib/utils/history-rail.svelte";
     import ParamForm from "./ParamForm.svelte";
-    import { taskInstanceCount } from "$lib/utils/task";
+    import { hasCron, taskInstanceCount } from "$lib/utils/task";
 
     let {
         task,
@@ -218,43 +222,72 @@
         ),
     );
 
-    const envEntries = $derived(
-        task.env ? Object.entries(task.env).sort(([a], [b]) => a.localeCompare(b)) : [],
-    );
-    const showEnvPanel = $derived(envEntries.length > 0 || !!task.envFile || !!task.secretsFile);
+    // The header folds out of the log's way as the reader scrolls (see HeaderFold).
+    const fold = new HeaderFold();
+    let root = $state<HTMLElement | null>(null);
+    $effect(() => (root ? fold.attach(root) : undefined));
+    let detailsOpen = $state(false);
+
+    // The newest running run, for the strip's "Running" state word.
+    // The run list is live; the task's lastRun is only as fresh as the last
+    // task fetch, so it only counts while the list hasn't got that run.
+    const running = $derived.by(() => {
+        const items = live.source.items;
+        const listed = items.find((r) => r.status === "running");
+        if (listed) return listed;
+        const last = task.lastRun;
+        if (last?.status !== "running" || items.some((r) => r.id === last.id)) return undefined;
+        return last;
+    });
+
+    function openRunById(runId: string) {
+        selection.userSelectedRunId = runId;
+        rail.picked();
+    }
+
+    // No Run button beside the empty state: the strip's is right above it.
+    const empty = $derived.by(() => {
+        if (task.heldBy) {
+            return {
+                title: "No runs recorded",
+                description:
+                    "While cron holds this job, it runs outside RunWisp. Hand it over to see its runs here.",
+            };
+        }
+        if (hasCron(task) && task.nextRunAt && systemStore.schedulingActive) {
+            return {
+                title: "No runs yet",
+                description: `The first run is ${formatRelativeTimeWithAbsolute(task.nextRunAt)}.`,
+            };
+        }
+        if (taskIsService) {
+            return {
+                title: "No runs yet",
+                description: "Each instance's output shows here once it starts.",
+            };
+        }
+        return {
+            title: "No runs yet",
+            description: `Use Run above, runwisp run ${task.name}, or the REST API.`,
+        };
+    });
 </script>
 
 <!-- Card-less, full-bleed: the rail and detail panel fill the content area
      edge-to-edge (cancelling AppLayout's p-6), divided only by the rail's
      right border. The topbar/sidebar are the outer frame; no nested card. -->
-<div class="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col">
-    {#if showEnvPanel}
-        <section
-            aria-label="Task environment"
-            class="shrink-0 border-b border-outline bg-surface-raised px-6 py-3"
-        >
-            <h2 class="font-mono text-2xs font-medium tracking-[0.16em] text-info uppercase">
-                Environment
-            </h2>
-            {#if envEntries.length > 0}
-                <dl class="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 font-mono text-xs">
-                    {#each envEntries as [key, value] (key)}
-                        <dt class="text-on-surface">{key}</dt>
-                        <dd class="break-all text-on-surface-muted">{value}</dd>
-                    {/each}
-                </dl>
-            {/if}
-            {#if task.envFile}
-                <p class="mt-2 font-mono text-xs text-on-surface-faint">
-                    Includes values from {task.envFile}
-                </p>
-            {/if}
-            {#if task.secretsFile}
-                <p class="mt-2 font-mono text-xs text-on-surface-faint">
-                    Secrets from {task.secretsFile} (values not exposed)
-                </p>
-            {/if}
-        </section>
+<div bind:this={root} class="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col">
+    {#if !rail.phone || panes.list}
+        <TaskStrip
+            {task}
+            {running}
+            {fold}
+            phone={rail.phone}
+            {detailsOpen}
+            onDetails={() => (detailsOpen = !detailsOpen)}
+            onRun={openRun}
+            onOpenRun={openRunById}
+        />
     {/if}
 
     <div class="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -279,6 +312,7 @@
                 getInstanceCount={() => instanceCount}
                 motion={live.source.motion}
                 outputSearch
+                usageBars
                 {outputQuery}
                 {outputMatches}
                 {outputSearchPending}
@@ -289,10 +323,12 @@
             <RunDetailPanel
                 run={selection.selectedRun}
                 {...live.logSession}
+                headerLayout="line"
+                stopLabel="Stop run"
+                emptyTitle={empty.title}
+                emptyDescription={empty.description}
                 onDelete={selection.deleteSingle}
-                onRun={runTriggerable ? openRun : undefined}
                 onRunAgain={runTriggerable && hasParams ? openRunAgain : undefined}
-                onRunTask={runTriggerable ? openRun : undefined}
                 onStop={!taskIsService ? () => (stopConfirmOpen = true) : undefined}
                 onBack={rail.phone ? rail.back : undefined}
                 onToggleList={rail.collapsible ? rail.toggleList : undefined}
@@ -348,6 +384,8 @@
         if (selection.selectedRun) onStop(selection.selectedRun.id);
     }}
 />
+
+<TaskDetailsSheet {task} bind:open={detailsOpen} />
 
 {#snippet runModalBody()}
     {#if concurrencyReached}

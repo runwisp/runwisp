@@ -6,6 +6,9 @@ import { toast } from "@runwisp/ui";
 import { connectionStore } from "$lib/stores/connection.svelte";
 import type { Task } from "@runwisp/common";
 
+/** How long refreshSoon waits, so a burst of run events costs one refetch. */
+const REFRESH_SOON_MS = 1000;
+
 interface TaskStoreDeps {
     getTasks?: () => Promise<Task[]>;
     /** Reports a fetch failure to the connection tracker and returns the message
@@ -18,6 +21,7 @@ class TaskStore {
     #items = $state<Task[]>([]);
     #loaded = $state(false);
     #loadFailed = $state(false);
+    #refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
     readonly #getTasks: () => Promise<Task[]>;
     readonly #fetchErrorMessage: (err: unknown, fallback: string) => string | null;
@@ -69,6 +73,16 @@ class TaskStore {
             if (!this.#loaded) this.#loadFailed = true;
             if (notify) this.#notifyError(message);
         }
+    }
+
+    /** Refetch shortly. Calls inside the window ride on the first one, so a
+     * burst of simultaneous cron fires costs a single refetch. */
+    refreshSoon(): void {
+        if (this.#refreshTimer) return;
+        this.#refreshTimer = setTimeout(() => {
+            this.#refreshTimer = null;
+            void this.refresh();
+        }, REFRESH_SOON_MS);
     }
 }
 

@@ -5,6 +5,15 @@ import type { Component } from "svelte";
 import { AppWindow, CalendarClock, CalendarOff, CircleDot, PowerOff } from "@lucide/svelte";
 import { isService, type Task } from "@runwisp/common";
 
+/** Why a held task produces no runs, and how to hand it over. */
+export const HELD_BY_CRON_HELP =
+    "Held: a system cron daemon still owns this job, so RunWisp is not " +
+    "running it; cron is. RunWisp records no history or output for it " +
+    "until cron is retired. Run `sudo runwisp takeover` to hand it over, " +
+    "or stop cron and disable it at boot (for example " +
+    "`sudo systemctl disable --now cron`): RunWisp picks it up on its own " +
+    "within a minute.";
+
 /** Whether the task has a cron schedule. */
 export function hasCron(task: Pick<Task, "cron">): task is Pick<Task, "cron"> & { cron: string } {
     return Boolean(task.cron?.trim());
@@ -47,12 +56,6 @@ export function serviceLabel(task: Pick<Task, "kind" | "instances">): string {
  */
 export function isServiceStopped(task: Pick<Task, "kind" | "serviceStopped">): boolean {
     return isService(task.kind) && (task.serviceStopped ?? false);
-}
-
-/** Whether the top bar shows a schedule chip for the task: a cron task on a
- * daemon that schedules locally (in station mode the station owns it). */
-export function showScheduleChip(task: Task, schedulingActive: boolean): boolean {
-    return schedulingActive && !isService(task.kind) && hasCron(task);
 }
 
 /** Whether the operator may pause or resume the task's schedule. Mirrors the

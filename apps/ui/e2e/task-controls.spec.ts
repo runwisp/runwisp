@@ -6,7 +6,7 @@ import { test, expect } from "./fixtures/test-base";
 // autostart = false: the service starts out stopped.
 const SERVICE = "idle-service";
 
-test.describe("task header controls", () => {
+test.describe("task strip service controls", () => {
     // The daemon is shared across specs; leave the service stopped as it began.
     test.afterEach(async ({ authenticatedPage: page, daemonState }) => {
         await page.request.post(`/api/tasks/${SERVICE}/stop`, {
@@ -24,23 +24,24 @@ test.describe("task header controls", () => {
         await expect(card).toHaveCount(1);
     });
 
-    test("a service starts and stops from the header without opening a run", async ({
+    test("a service starts and stops from the task strip without opening a run", async ({
         authenticatedPage: page,
     }) => {
         await page.goto(`/tasks/${SERVICE}`);
-        const header = page.getByRole("main").locator("header");
-        await expect(header.getByRole("button", { name: "Stop service" })).toHaveCount(0);
+        const strip = page.getByTestId("task-strip");
+        await expect(strip.getByTestId("task-state")).toHaveText("Stopped");
+        await expect(strip.getByRole("button", { name: "Stop service" })).toHaveCount(0);
 
-        await header.getByRole("button", { name: "Start service" }).click();
+        await strip.getByRole("button", { name: "Start", exact: true }).click();
         await page.getByRole("dialog").getByRole("button", { name: "Start Now" }).click();
         await expect(page.getByText(`Starting "${SERVICE}"`)).toBeVisible();
 
-        await expect(header.getByRole("button", { name: "Restart service" })).toBeVisible();
-        await header.getByRole("button", { name: "Stop service" }).click();
+        await expect(strip.getByRole("button", { name: "Restart" })).toBeVisible();
+        await strip.getByRole("button", { name: "Stop service" }).click();
         await page.getByRole("dialog").getByRole("button", { name: "Stop Now" }).click();
         await expect(page.getByText(`Stopped "${SERVICE}"`)).toBeVisible();
 
-        await expect(header.getByRole("button", { name: "Start service" })).toBeVisible();
-        await expect(header.getByRole("button", { name: "Stop service" })).toHaveCount(0);
+        await expect(strip.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+        await expect(strip.getByRole("button", { name: "Stop service" })).toHaveCount(0);
     });
 });

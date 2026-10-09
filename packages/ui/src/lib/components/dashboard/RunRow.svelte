@@ -60,6 +60,7 @@
     const startedAt = $derived(run.startedAt ?? run.createdAt);
     const retry = $derived(runRetryLabel(run));
     const amounts = $derived(usage ? runUsageAmounts(run) : undefined);
+    const tight = $derived(usage === undefined ? "" : "@max-[19rem]:hidden");
     const LEVEL_COLOR = ["bg-success-surface", "bg-warning-surface", "bg-danger-surface"];
     // With bulk actions on, the status dot fades out on row hover, or whenever a
     // selection exists, so the row checkbox can take its place over it.
@@ -69,7 +70,7 @@
 </script>
 
 <button
-    class="btn-scale group relative w-full rounded-[3px] border text-left select-none {showTaskName
+    class="btn-scale group @container relative w-full rounded-[3px] border text-left select-none {showTaskName
         ? 'p-3'
         : 'px-3 py-[11px]'} {active
         ? 'border-outline bg-surface-raised shadow-sm'
@@ -129,8 +130,11 @@
                 >
                     {formatTimeHM(startedAt)} · {formatDayMonth(startedAt)}
                 </span>
-                <span class="text-on-surface-faint">·</span>
-                <span class="font-mono text-[12.5px] font-semibold capitalize {config.color}"
+                <!-- With usage bars a tight rail drops the status word; the dot
+                     keeps its colour. -->
+                <span class="text-on-surface-faint {tight}">·</span>
+                <span
+                    class="font-mono text-[12.5px] font-semibold capitalize {config.color} {tight}"
                     >{dstatus}</span
                 >
                 {#if suffix}

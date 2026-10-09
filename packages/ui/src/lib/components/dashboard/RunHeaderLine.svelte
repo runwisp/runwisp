@@ -196,6 +196,7 @@
             class="flex shrink-0 items-baseline gap-x-1.5 text-[15px]"
             data-testid="run-verdict"
             data-status={status}
+            data-run={run.id}
             title={config.description}
         >
             <config.icon

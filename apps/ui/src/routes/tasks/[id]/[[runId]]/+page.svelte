@@ -8,7 +8,7 @@
     import { toast, extractErrorMessage, ErrorState, RunsList, RunDetailPanel } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { tasksApi } from "$lib/api";
-    import { taskStore } from "$lib/stores";
+    import { runUpdatesStore, taskStore } from "$lib/stores";
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { createLiveRuns } from "$lib/utils/live-runs.svelte";
     import { navigateToRun } from "$lib/utils/run-url";
@@ -62,6 +62,16 @@
         if (taskName) void taskData.fetch();
         return () => taskData.abort();
     });
+
+    // The strip reads the task's newest run and service state: keep them
+    // current as this task's runs start and end.
+    $effect(() =>
+        runUpdatesStore.subscribeToUpdates((event) => {
+            const name =
+                event.type === "run.deleted" ? event.data.taskName : event.data.run.taskName;
+            if (name === taskName) taskStore.refreshSoon();
+        }),
+    );
 
     $effect(() => live.deepLink.resolve(taskName ? runIdParam : null, live.source.items));
 

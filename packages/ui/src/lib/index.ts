@@ -116,6 +116,7 @@ export { toast } from "./utils/toast.svelte.js";
 export { extractErrorMessage } from "./utils/error.js";
 export {
     formatBytes,
+    formatDayMonth,
     formatRelativeTime,
     formatRelativeTimeWithAbsolute,
     formatDuration,

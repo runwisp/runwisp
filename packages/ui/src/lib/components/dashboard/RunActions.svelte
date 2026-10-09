@@ -103,6 +103,7 @@
         <button
             type="button"
             onclick={() => onStop(runId)}
+            aria-label={stopLabel}
             class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[3px] border border-danger-soft-border bg-surface-raised px-3 font-mono text-sm font-medium text-danger-surface hover:bg-danger-soft active:translate-y-px"
         >
             <Square size={15} fill="currentColor" stroke="none" />

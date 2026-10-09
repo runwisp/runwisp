@@ -117,6 +117,25 @@ describe("TaskStore.refresh", () => {
         expect(store.items).toEqual(tasks);
     });
 
+    it("refreshSoon batches a burst into one refetch", async () => {
+        vi.useFakeTimers();
+        const getTasks = vi.fn(() => Promise.resolve(tasks));
+        const store = createTaskStore({
+            getTasks,
+            fetchErrorMessage: () => null,
+            notifyError: () => {},
+        });
+
+        store.refreshSoon();
+        store.refreshSoon();
+        await vi.runAllTimersAsync();
+        store.refreshSoon();
+        await vi.runAllTimersAsync();
+        vi.useRealTimers();
+
+        expect(getTasks).toHaveBeenCalledTimes(2);
+    });
+
     it("keeps the current list and stays quiet on failure", async () => {
         const notifyError = vi.fn();
         const fetchErrorMessage = vi.fn(() => "Connection lost");

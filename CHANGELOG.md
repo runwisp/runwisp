@@ -13,13 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cron ranges can wrap around: `22-2` in the hour field runs from 22:00 to 02:00, and `FRI-MON` runs Friday to Monday.
 - Cron tasks accept `autostart = false`: the schedule starts paused until you resume it from the Web UI, the TUI or `runwisp resume`.
 - `GET /api/tasks` includes each task's newest run (`lastRun`), its `run` command, and for services the state of every instance with its failed starts and last exit code (`service`).
+- The Web UI task page has a task strip that says what the task is doing and what comes next, such as the next run, a failed last run, or which service instance gave up and why, with the task's actions next to it.
+- **Details** on the Web UI task page shows the task's configuration in `runwisp.toml` key names, including its `run` command.
+- Scrolling a run's output on the Web UI task page folds the task strip into the top bar to give the log more room. Scrolling back up brings it back.
+- The run list on the Web UI task page shows two small CPU and RAM bars per run, colored by how the run compares with the task's usual run.
 
 ### Changed
 
 - The TUI shows run durations the same way notifications do (`3m 4s`, `12s`), and runs started in the last 30 seconds read `just now`.
 - A daemon bound to any loopback address, such as `127.0.0.2` or `::1`, is treated as local: it serves plain HTTP by default and skips the exposed-address warning.
 - Web UI and remote CLI sessions use a simpler signed token instead of a JWT. Browsers and `runwisp --url` clients sign in once more after upgrading.
-- Stop, Start and Pause are now on the task header in the TUI and Web UI, without opening a run first.
+- Stop, Start and Pause are on the task header in the TUI and on the task strip in the Web UI, without opening a run first.
+- The Web UI run header on the task page fits on one line. Facts that don't fit move into a ⋯ menu.
+- Run usage reads `CPU 1m 52s · RAM 48 MB`: CPU time the run used, and its most memory.
+- A task's environment moved from the Web UI task page into **Details**.
 - The Web UI dashboard shows a stopped service as **Stopped** instead of idle.
 
 ### Fixed

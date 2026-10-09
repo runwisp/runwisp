@@ -22,11 +22,7 @@
     import HeaderSearch from "$lib/components/HeaderSearch.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
     import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
-    import TaskScheduleChip from "$lib/components/TaskScheduleChip.svelte";
-    import TaskControls from "$lib/components/TaskControls.svelte";
-    import TaskUsage from "$lib/components/TaskUsage.svelte";
-    import { authStore, headerSearchStore, systemStore } from "$lib/stores";
-    import { showScheduleChip } from "$lib/utils/task";
+    import { authStore, headerSearchStore, systemStore, taskBarStore } from "$lib/stores";
     import { StoredFlag } from "$lib/utils/stored-flag.svelte";
     import { Badge, ThemeToggle, Logo, Heading } from "@runwisp/ui";
     import type { Task } from "@runwisp/common";
@@ -75,6 +71,9 @@
     // away for room; from 3xl it always shows. Below lg it is the drawer.
     const sidebarHidden = new StoredFlag("runwisp:sidebar-hidden");
     let searchOpen = $state(false);
+    // While the task page's header is folded its row sits in the bar, and the
+    // search field makes room for it by becoming a button, as on phones.
+    const taskRow = $derived(taskBarStore.row);
     let headerSearch = $state<HeaderSearch | null>(null);
     let firstLink = $state<HTMLElement | null>(null);
 
@@ -267,7 +266,7 @@
         <header
             class="@container relative flex h-[52px] items-center justify-between gap-2 border-b border-outline bg-surface-raised px-6"
         >
-            <div class="flex min-w-0 items-center gap-3">
+            <div class="flex min-w-0 items-center gap-3 {taskRow ? 'flex-1' : ''}">
                 <button
                     type="button"
                     aria-label="Open navigation"
@@ -295,21 +294,23 @@
                 </button>
                 <!-- The breadcrumb root is the first thing to go when the bar
                      gets tight; the task name and schedule matter more. -->
-                <span class="hidden font-mono text-on-surface-faint @5xl:inline">RunWisp</span>
-                <span class="hidden font-mono text-on-surface-faint @5xl:inline">/</span>
+                {#if !taskRow}
+                    <span class="hidden font-mono text-on-surface-faint @5xl:inline">RunWisp</span>
+                    <span class="hidden font-mono text-on-surface-faint @5xl:inline">/</span>
+                {/if}
                 {#if activeTask}
                     <!-- On a task page the breadcrumb is the page's primary heading:
                          the task name appears here and nowhere else. -->
-                    <Heading level={1} size="md" class="min-w-0 truncate">
+                    <Heading
+                        level={1}
+                        size="md"
+                        class="min-w-0 truncate {taskRow ? 'max-w-[200px] shrink-0' : ''}"
+                    >
                         {activeTask.name}
                     </Heading>
-                    {#if showScheduleChip(activeTask, systemStore.schedulingActive)}
-                        <TaskScheduleChip task={activeTask} />
+                    {#if taskRow}
+                        {@render taskRow()}
                     {/if}
-                    <TaskControls task={activeTask} />
-                    <span class="hidden shrink-0 @2xl:inline">
-                        <TaskUsage task={activeTask} />
-                    </span>
                 {:else}
                     <span class="font-mono font-semibold text-on-surface capitalize"
                         >{activeTaskName ?? activePage}</span
@@ -323,14 +324,18 @@
             <div
                 class="{searchOpen
                     ? 'absolute inset-0 z-10 flex items-center gap-2 bg-surface-raised px-4'
-                    : 'hidden'} md:static md:z-auto md:flex md:min-w-24 md:flex-1 md:justify-center md:bg-transparent md:px-4 lg:px-8"
+                    : 'hidden'} {taskRow
+                    ? ''
+                    : 'md:static md:z-auto md:flex md:min-w-24 md:flex-1 md:justify-center md:bg-transparent md:px-4 lg:px-8'}"
                 onfocusout={onSearchFocusOut}
             >
                 {#if searchOpen}
                     <button
                         type="button"
                         aria-label="Close search"
-                        class="shrink-0 rounded-[3px] p-2 text-on-surface-muted hover:bg-surface-sunken hover:text-primary md:hidden"
+                        class="shrink-0 rounded-[3px] p-2 text-on-surface-muted hover:bg-surface-sunken hover:text-primary {taskRow
+                            ? ''
+                            : 'md:hidden'}"
                         onclick={closeSearch}
                     >
                         <ArrowLeft size={20} />
@@ -344,7 +349,9 @@
                     <button
                         type="button"
                         aria-label="Search"
-                        class="rounded-[3px] p-2 text-on-surface-muted hover:bg-surface-sunken hover:text-primary md:hidden"
+                        class="rounded-[3px] p-2 text-on-surface-muted hover:bg-surface-sunken hover:text-primary {taskRow
+                            ? ''
+                            : 'md:hidden'}"
                         onclick={openSearch}
                     >
                         <Search size={18} />

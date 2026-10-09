@@ -147,7 +147,7 @@ test("parameter form", async ({ authenticatedPage: page }) => {
         await page.goto(`/tasks/${PARAM_TASK}`);
         await expect(page.getByRole("heading", { name: PARAM_TASK, level: 1 })).toBeVisible();
 
-        await page.getByRole("button", { name: "Run", exact: true }).click();
+        await page.getByTestId("task-strip").getByRole("button", { name: "Run…" }).click();
         const dialog = page.getByRole("dialog", { name: "Run Task" });
         await expect(dialog).toBeVisible();
         // Wait for the form to populate before capturing.
