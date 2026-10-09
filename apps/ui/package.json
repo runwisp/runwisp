@@ -18,7 +18,7 @@
         "@tailwindcss/forms": "^0.5.11",
         "@tailwindcss/typography": "^0.5.20",
         "@tailwindcss/vite": "^4.3.3",
-        "@types/node": "^26.6.4",
+        "@types/node": "^26.6.5",
         "@vitest/coverage-v8": "^5.0.3",
         "@xterm/xterm": "^6.0.0",
         "cookie": "^0.7.2",
