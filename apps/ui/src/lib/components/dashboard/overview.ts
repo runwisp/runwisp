@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { displayStatus, type RunStatus, type Run, type Task } from "@runwisp/common";
-import { hasCron } from "$lib/utils/task";
+import { displayStatus, isService, type RunStatus, type Run, type Task } from "@runwisp/common";
+import { hasCron, isServiceStopped } from "$lib/utils/task";
 
 export type OverviewTaskState =
-    "attention" | "running" | "paused" | "scheduled" | "manual" | "idle";
+    "attention" | "running" | "stopped" | "paused" | "scheduled" | "manual" | "idle";
 export type OverviewTaskFilter = "all" | "attention" | "running" | "scheduled" | "manual";
 export type OverviewTaskSortKey = "attention" | "last_activity" | "next_run" | "name";
 
@@ -23,10 +23,11 @@ export type OverviewTaskCounts = Record<OverviewTaskFilter, number>;
 const TASK_STATE_ORDER: Record<OverviewTaskState, number> = {
     attention: 0,
     running: 1,
-    paused: 2,
-    scheduled: 3,
-    manual: 4,
-    idle: 5,
+    stopped: 2,
+    paused: 3,
+    scheduled: 4,
+    manual: 5,
+    idle: 6,
 };
 const LOWEST_PRIORITY_TIME = -1;
 
@@ -43,13 +44,16 @@ export function buildTaskOverviews(
         const lastRun = activeRun ?? recentRunsByTask.get(task.name);
         const lastStatus = lastRun ? displayStatus(lastRun.status, lastRun.endReason) : undefined;
         const nextRunMs = toTimestamp(task.nextRunAt);
-        const isApiOnly = task.manualTrigger && !hasCron(task);
+        // A service is never API-triggered: its manualTrigger gates stop/start.
+        const isApiOnly = !isService(task.kind) && task.manualTrigger && !hasCron(task);
 
         let state: OverviewTaskState = "idle";
         if (activeRun) {
             state = "running";
         } else if (lastRun?.isFailure === true) {
             state = "attention";
+        } else if (isServiceStopped(task)) {
+            state = "stopped";
         } else if (task.pausedAt) {
             state = "paused";
         } else if (nextRunMs !== undefined) {

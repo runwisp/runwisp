@@ -84,6 +84,16 @@ describe("buildTaskOverviews", () => {
         expect(result.at(0)?.nextRunMs).toBeDefined();
     });
 
+    it("sets stopped state for an operator-stopped service, not idle", () => {
+        const tasks = [
+            makeTask("web", { kind: "service", manualTrigger: true, serviceStopped: true }),
+            makeTask("api", { kind: "service", manualTrigger: true }),
+        ];
+        const [stopped, running] = buildTaskOverviews(tasks, [], []);
+        expect(stopped?.state).toBe("stopped");
+        expect(running?.state).toBe("idle");
+    });
+
     it("sets paused state for a paused cron task, which is neither scheduled nor manual", () => {
         const tasks = [
             makeTask("nightly", {

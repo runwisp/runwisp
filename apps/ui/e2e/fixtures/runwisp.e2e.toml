@@ -60,6 +60,13 @@ cron = "0 0 1 1 *"
 timezone = "UTC"
 run = "echo nightly"
 
+# Header controls for task-controls.spec. Not autostarted, so it sits stopped
+# (and runs nothing) except while that spec starts it.
+[services.idle-service]
+description = "Service for task-controls.spec"
+run = "sleep 3600"
+autostart = false
+
 # Two names that differ only in punctuation; the UI must keep them apart.
 [tasks.twin-task]
 run = "true"

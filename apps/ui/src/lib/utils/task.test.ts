@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
+import { AppWindow, PowerOff } from "@lucide/svelte";
 import type { Task } from "@runwisp/common";
 import {
     canTogglePause,
@@ -9,6 +10,8 @@ import {
     isServiceStopped,
     serviceLabel,
     showScheduleChip,
+    taskIcon,
+    taskTriggerTooltip,
 } from "./task";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
@@ -99,5 +102,14 @@ describe("isServiceStopped", () => {
 
     it("is false for a task", () => {
         expect(isServiceStopped({ kind: "task", serviceStopped: true })).toBe(false);
+    });
+});
+
+describe("taskIcon", () => {
+    it("marks a stopped service in the sidebar", () => {
+        const svc = makeTask({ kind: "service" });
+        expect(taskIcon({ ...svc, serviceStopped: true })).toBe(PowerOff);
+        expect(taskIcon(svc)).toBe(AppWindow);
+        expect(taskTriggerTooltip({ ...svc, serviceStopped: true })).toBe("Service · stopped");
     });
 });

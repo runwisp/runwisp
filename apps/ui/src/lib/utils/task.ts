@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { Component } from "svelte";
-import { AppWindow, CalendarClock, CalendarOff, CircleDot } from "@lucide/svelte";
+import { AppWindow, CalendarClock, CalendarOff, CircleDot, PowerOff } from "@lucide/svelte";
 import { isService, type Task } from "@runwisp/common";
 
 /** Whether the task has a cron schedule. */
@@ -63,13 +63,15 @@ export function canTogglePause(task: Task): boolean {
 }
 
 export function taskIcon(task: Task): Component {
-    if (isService(task.kind)) return AppWindow;
+    if (isService(task.kind)) return isServiceStopped(task) ? PowerOff : AppWindow;
     if (hasCron(task)) return task.pausedAt ? CalendarOff : CalendarClock;
     return CircleDot;
 }
 
 export function taskTriggerTooltip(task: Task): string {
-    if (isService(task.kind)) return serviceLabel(task);
+    if (isService(task.kind)) {
+        return isServiceStopped(task) ? `${serviceLabel(task)} · stopped` : serviceLabel(task);
+    }
     if (hasCron(task)) {
         return task.pausedAt ? `Cron · ${task.cron} · paused` : `Cron · ${task.cron}`;
     }
