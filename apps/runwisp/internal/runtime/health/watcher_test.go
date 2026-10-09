@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/robfig/cron/v3"
+	cron "github.com/netresearch/go-cron"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 

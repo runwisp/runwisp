@@ -342,13 +342,13 @@ func TestSchedulerEverySecondDSTFallbackSuppressed(t *testing.T) {
 }
 
 // TestSchedulerWiresDSTGapRecovery proves the scheduler consults a schedule
-// that recovers a spring-forward gap tick, rather than robfig's raw one that
-// drops it. The cron engine (scheduler.go) and the jitter gap math both parse
-// through cronspec.NewScheduleParser; this asserts the schedule the scheduler
-// actually stores fires "0 2 * * *" at the 03:00 gap end on the 2024-03-31
-// spring-forward day in Europe/Bratislava, where 02:00 never occurs. (The cron
-// loop's own clock is robfig-internal and not injectable, so the firing *time*
-// — not a live trigger count — is the deterministic contract here.)
+// that recovers a spring-forward gap tick instead of dropping it. The cron
+// engine (scheduler.go) and the jitter gap math both parse through
+// cronspec.NewParser; this asserts the schedule the scheduler actually stores
+// fires "0 2 * * *" at the 03:00 gap end on the 2024-03-31 spring-forward day
+// in Europe/Bratislava, where 02:00 never occurs. (The cron loop runs on the
+// real clock, so the firing *time*, not a live trigger count, is the
+// deterministic contract here.)
 func TestSchedulerWiresDSTGapRecovery(t *testing.T) {
 	runner := &fakeTaskRunner{}
 	loc, err := time.LoadLocation("Europe/Bratislava")
@@ -486,7 +486,7 @@ func TestSchedulerJitterClampsSlotToLiveGap(t *testing.T) {
 // timezone (scheduler.location), not the host OS's time.Local — the same
 // reprojection catchup.go does explicitly via now.In(loc) before calling
 // Schedule.Next. A task with no per-task timezone parses to a bare schedule
-// whose Location defaults to time.Local; robfig/cron's SpecSchedule.Next then
+// whose Location defaults to time.Local; go-cron's SpecSchedule.Next then
 // evaluates directly off the clock reading's own Location() whenever it
 // matches time.Local, silently falling back to the host's zone instead of the
 // operator's configured one.

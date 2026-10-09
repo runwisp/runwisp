@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/robfig/cron/v3"
+	cron "github.com/netresearch/go-cron"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,21 +66,19 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-// TestParsersRejectWhatValidateRejects: the never-fires and sub-second @every
+// TestParserRejectsWhatValidateRejects: the never-fires and sub-second @every
 // checks live in the parser, so callers that parse without Validate (the
 // scheduler, the TUI's next-run hint, the demo seeder) never see a schedule
 // whose Next is the zero time.
-func TestParsersRejectWhatValidateRejects(t *testing.T) {
+func TestParserRejectsWhatValidateRejects(t *testing.T) {
 	for _, spec := range []string{"0 0 30 2 *", "@every 1ms"} {
 		_, err := NewParser().Parse(spec)
-		assert.Error(t, err, spec)
-		_, err = NewScheduleParser().Parse(spec)
 		assert.Error(t, err, spec)
 	}
 }
 
 // TestSundayIsSeven is the regression test for the day-of-week 7 rejection.
-// robfig/cron bounds dow at 0-6, so `47 6 * * 7` — the line Debian's and
+// robfig/cron, RunWisp's earlier cron library, bounded dow at 0-6, so `47 6 * * 7` — the line Debian's and
 // Ubuntu's own /etc/crontab ships to run /etc/cron.weekly — was refused with
 // "end of range (7) above maximum (6)" and the box's housekeeping silently
 // stopped being scheduled. Every 7-form must now parse and fire exactly like the
@@ -107,7 +105,7 @@ func TestSundayIsSeven(t *testing.T) {
 		{name: "range with a step", spec: "0 3 * * 5-7/2", equiv: "0 3 * * 0,5"},
 		// A bare 7 is already vixie's field max, so no step can ever add a value
 		// beyond Sunday itself — this must resolve to Sunday only, not wrap around
-		// into other days under robfig's 0-6 bounds.
+		// into other days.
 		{name: "bare 7 with a step", spec: "0 3 * * 7/2", equiv: "0 3 * * 0"},
 		{name: "bare 7 with a step of 1", spec: "0 3 * * 7/1", equiv: "0 3 * * 0"},
 		// A bare "N/step" (no explicit high) takes vixie's implicit field max of 7,
@@ -115,12 +113,12 @@ func TestSundayIsSeven(t *testing.T) {
 		{name: "bare step from 1 reaches sunday", spec: "0 3 * * 1/2", equiv: "0 3 * * 1,3,5,0"},
 		{name: "bare step from 5 reaches sunday", spec: "0 3 * * 5/2", equiv: "0 3 * * 5,0"},
 		{name: "bare step from 3 reaches sunday", spec: "0 3 * * 3/2", equiv: "0 3 * * 3,5,0"},
-		// A bare "N/step" that never lands on 7 must be unchanged from robfig's view.
+		// A bare "N/step" that never lands on 7 is plain 0-6 arithmetic.
 		{name: "bare step from 0 unchanged", spec: "0 3 * * 0/2", equiv: "0 3 * * 0,2,4,6"},
 		{name: "list with a stepped 7", spec: "0 3 * * 1,7/3", equiv: "0 3 * * 0,1"},
 		{name: "six-field form", spec: "30 47 6 * * 7", equiv: "30 47 6 * * 0"},
 		{name: "with a CRON_TZ prefix", spec: "CRON_TZ=UTC 47 6 * * 7", equiv: "CRON_TZ=UTC 47 6 * * 0"},
-		// The rewrite must not reach any other field, nor a step of 7.
+		// Sunday-as-7 must not reach any other field, nor a step of 7.
 		{name: "step of 7 in dow untouched", spec: "0 3 * * */7", equiv: "0 3 * * 0"},
 		{name: "step of 7 in minutes untouched", spec: "*/7 * * * *", equiv: "*/7 * * * *"},
 		{name: "7 in the other fields untouched", spec: "7 7 7 7 *", equiv: "7 7 7 7 *"},
@@ -128,9 +126,9 @@ func TestSundayIsSeven(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sched, err := NewScheduleParser().Parse(tt.spec)
+			sched, err := NewParser().Parse(tt.spec)
 			require.NoError(t, err)
-			want, err := NewScheduleParser().Parse(tt.equiv)
+			want, err := NewParser().Parse(tt.equiv)
 			require.NoError(t, err)
 
 			from := tuesday
@@ -146,7 +144,7 @@ func TestSundayIsSeven(t *testing.T) {
 // TestStockDebianWeeklyLineFiresOnSunday pins the actual behaviour the alias
 // exists for, rather than only an equivalence between two specs.
 func TestStockDebianWeeklyLineFiresOnSunday(t *testing.T) {
-	sched, err := NewScheduleParser().Parse("47 6 * * 7")
+	sched, err := NewParser().Parse("47 6 * * 7")
 	require.NoError(t, err)
 
 	next := sched.Next(time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC))
@@ -155,7 +153,7 @@ func TestStockDebianWeeklyLineFiresOnSunday(t *testing.T) {
 }
 
 // TestSupersetOfStandardParser guards the contract that cronspec's grammar is a
-// superset of robfig's standard parser — the one cron.New would use without an
+// superset of go-cron's standard parser — the one cron.New would use without an
 // explicit WithParser. Every spec the standard parser accepts, cronspec must
 // also accept (no 5-field regression); cronspec additionally accepts a leading
 // seconds field. If parseOptions ever dropped a standard option, validation and
@@ -203,7 +201,7 @@ func TestSpringForwardGapRecovered(t *testing.T) {
 	loc, err := time.LoadLocation("Europe/Bratislava")
 	require.NoError(t, err)
 
-	parser := NewScheduleParser()
+	parser := NewParser()
 	// Evaluate from just after midnight on the spring-forward day.
 	from := time.Date(2024, 3, 31, 0, 30, 0, 0, loc)
 
@@ -258,7 +256,7 @@ func TestSpringForwardFiresOnce(t *testing.T) {
 	loc, err := time.LoadLocation("Europe/Bratislava")
 	require.NoError(t, err)
 
-	sched, err := NewScheduleParser().Parse("0 2 * * *")
+	sched, err := NewParser().Parse("0 2 * * *")
 	require.NoError(t, err)
 
 	first := sched.Next(time.Date(2024, 3, 31, 0, 30, 0, 0, loc))
@@ -269,59 +267,10 @@ func TestSpringForwardFiresOnce(t *testing.T) {
 	assert.True(t, want.Equal(next), "want %s, got %s", want, next.In(loc))
 }
 
-// TestScheduleParser_RejectsInvalidSpec confirms the DST-recovering parser
-// surfaces grammar errors from the underlying parser unchanged.
-func TestScheduleParser_RejectsInvalidSpec(t *testing.T) {
-	_, err := NewScheduleParser().Parse("every day at noon")
-	assert.Error(t, err)
-}
-
-// TestScheduleParser_EveryPassesThrough confirms an @every schedule
-// (ConstantDelaySchedule, not a wall-clock SpecSchedule) bypasses the DST-gap
-// wrapper and still advances by its fixed duration.
-func TestScheduleParser_EveryPassesThrough(t *testing.T) {
-	sched, err := NewScheduleParser().Parse("@every 1h")
-	require.NoError(t, err)
-
-	from := time.Date(2024, 6, 15, 0, 30, 0, 0, time.UTC)
-	got := sched.Next(from)
-	assert.True(t, from.Add(time.Hour).Equal(got), "want %s, got %s", from.Add(time.Hour), got)
-}
-
-// TestScheduleParser_NeverMatchingSpecReturnsZero covers the IsZero short-circuit:
-// "Feb 30" never occurs, so the underlying Next returns the zero time and the
-// wrapper hands it straight back without DST math. Our parsers reject the spec,
-// so the wrapper is built around robfig's directly.
-func TestScheduleParser_NeverMatchingSpecReturnsZero(t *testing.T) {
-	inner, err := cron.NewParser(parseOptions).Parse("0 0 30 2 *")
-	require.NoError(t, err)
-	spec, ok := inner.(*cron.SpecSchedule)
-	require.True(t, ok)
-	sched := dstGapSchedule{inner: spec}
-
-	got := sched.Next(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
-	assert.True(t, got.IsZero(), "a spec that can never fire must yield the zero time")
-}
-
-// TestNonDSTDayUnaffected guards that the wrapper is a no-op on an ordinary day
-// with no transition between the evaluation point and the next firing.
-func TestNonDSTDayUnaffected(t *testing.T) {
-	loc, err := time.LoadLocation("Europe/Bratislava")
-	require.NoError(t, err)
-
-	sched, err := NewScheduleParser().Parse("0 2 * * *")
-	require.NoError(t, err)
-
-	from := time.Date(2024, 6, 15, 0, 30, 0, 0, loc)
-	got := sched.Next(from)
-	want := time.Date(2024, 6, 15, 2, 0, 0, 0, loc)
-	assert.True(t, want.Equal(got), "want %s, got %s", want, got.In(loc))
-}
-
 // TestSteppedStarDaysAreAnded is the regression test for "*/N" in a day field.
 // vixie and cronie set DOM_STAR / DOW_STAR whenever the field starts with '*',
-// so "0 0 */2 * 1" is odd days that are also Mondays. robfig drops its star flag
-// for any step above 1 and ORed the two fields instead, firing on every odd day
+// so "0 0 */2 * 1" is odd days that are also Mondays. go-cron drops its star flag
+// for any step above 1 and ORs the two fields instead, firing on every odd day
 // plus every Monday.
 func TestSteppedStarDaysAreAnded(t *testing.T) {
 	from := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC) // a Saturday
@@ -361,7 +310,7 @@ func TestSteppedStarDaysAreAnded(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sched, err := NewScheduleParser().Parse(tt.spec)
+			sched, err := NewParser().Parse(tt.spec)
 			require.NoError(t, err)
 			var got []time.Time
 			for next := from; len(got) < len(tt.want); {
@@ -370,5 +319,50 @@ func TestSteppedStarDaysAreAnded(t *testing.T) {
 			}
 			assert.Equal(t, tt.want, got)
 		})
+	}
+}
+
+// TestOversizedStepsSelectRangeStart guards configs written for robfig/cron and
+// vixie cron, which accept a step at or above its range size and fire only on
+// the range start. go-cron rejects them, so cronspec rewrites them.
+func TestOversizedStepsSelectRangeStart(t *testing.T) {
+	tests := []struct {
+		name  string
+		spec  string
+		equiv string
+	}{
+		{name: "star step equal to the range", spec: "*/60 * * * *", equiv: "0 * * * *"},
+		{name: "star step above the range", spec: "0 */24 * * *", equiv: "0 0 * * *"},
+		{name: "range step", spec: "0-5/10 * * * *", equiv: "0 * * * *"},
+		{name: "wraparound range step", spec: "0 22-2/30 * * *", equiv: "0 22 * * *"},
+		{name: "named month", spec: "0 0 1 jan/12 *", equiv: "0 0 1 1 *"},
+		{name: "list keeps its other terms", spec: "0,*/60 9 * * *", equiv: "0 9 * * *"},
+		{name: "six-field seconds", spec: "*/60 * * * * *", equiv: "0 * * * * *"},
+		{name: "behind a CRON_TZ prefix", spec: "CRON_TZ=UTC */60 * * * *", equiv: "CRON_TZ=UTC 0 * * * *"},
+	}
+	from := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sched, err := NewParser().Parse(tt.spec)
+			require.NoError(t, err)
+			want, err := NewParser().Parse(tt.equiv)
+			require.NoError(t, err)
+			got, exp := from, from
+			for range 5 {
+				got, exp = sched.Next(got), want.Next(exp)
+				require.Equal(t, exp, got)
+			}
+		})
+	}
+
+	// The day-of-month is still a '*' field to vixie, so the 1st is ANDed with
+	// Monday: the next Monday the 1st, not the next 1st or the next Monday.
+	sched, err := NewParser().Parse("0 0 */40 * 1")
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC), sched.Next(from))
+
+	for _, spec := range []string{"*/0 * * * *", "*/x * * * *", "61/60 * * * *"} {
+		_, err := NewParser().Parse(spec)
+		assert.Error(t, err, spec)
 	}
 }

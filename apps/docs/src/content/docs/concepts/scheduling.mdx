@@ -37,9 +37,10 @@ The usual 5 fields: minute, hour, day of month, month, day of week.
 | `@yearly` / `@annually` | January 1st at 00:00                  |
 | `@every 1h30m`          | every 90 minutes                      |
 
-Fields take lists (`1,15`), ranges (`1-5`), and steps (`*/10`). In the day of
-week field, both `0` and `7` mean Sunday. `@every` is a fixed interval that
-doesn't line up with the clock.
+Fields take lists (`1,15`), ranges (`1-5`), and steps (`*/10`). A range can
+wrap around: `22-2` in the hour field runs from 22:00 to 02:00, and `FRI-MON`
+runs Friday to Monday. In the day of week field, both `0` and `7` mean Sunday.
+`@every` is a fixed interval that doesn't line up with the clock.
 
 For more than once a minute, add a seconds field in front. Plain 5-field
 expressions run at second `:00`.

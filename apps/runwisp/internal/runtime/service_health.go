@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/robfig/cron/v3"
+	cron "github.com/netresearch/go-cron"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
@@ -29,7 +29,7 @@ func (m *defaultTaskManager) watchRun(ctx context.Context, task *model.Task, run
 		return
 	}
 	spec, _ := resolveTaskSchedule(probe, nil)
-	schedule, err := cronspec.NewScheduleParser().Parse(spec)
+	schedule, err := cronspec.NewParser().Parse(spec)
 	if err != nil {
 		// Load validated this exact spec, so this is unreachable short of a
 		// hand-built task; say so rather than silently never checking.

@@ -21,10 +21,10 @@ require (
 	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.2
+	github.com/netresearch/go-cron v0.16.1
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/pmezard/go-difflib v1.0.0
-	github.com/robfig/cron/v3 v3.0.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1

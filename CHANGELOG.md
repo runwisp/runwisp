@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - The TUI Home screen has a small **Star** button that opens the GitHub repo.
+- Cron ranges can wrap around: `22-2` in the hour field runs from 22:00 to 02:00, and `FRI-MON` runs Friday to Monday.
 
 ### Changed
 
