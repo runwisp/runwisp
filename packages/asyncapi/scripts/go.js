@@ -107,7 +107,9 @@ export function generateGo(document) {
             );
     }
 
-    const importLines = [...imports].sort().map((path) => `\t"${path}"`);
+    const importLines = [...imports]
+        .sort((a, b) => a.localeCompare(b))
+        .map((path) => `\t"${path}"`);
     const importBlock = imports.size
         ? `\nimport (\n${importLines.join("\n")}\n)\n`
         : "";

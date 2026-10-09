@@ -150,7 +150,7 @@ export type OutboundDaemonMessage = z.infer<typeof outboundDaemonMessageSchema>;
 
 function writeGo(document) {
     resetDir(goOutputDir);
-    const source = execSync("gofmt", { input: generateGo(document) });
+    const source = execSync("gofmt", { input: generateGo(document) }); // NOSONAR: dev-time codegen, PATH is the developer's own
     writeFileSync(join(goOutputDir, "protocol.go"), source);
 }
 
