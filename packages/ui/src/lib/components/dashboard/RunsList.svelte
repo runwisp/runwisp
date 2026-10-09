@@ -17,7 +17,7 @@
     import type { RunOutputMatch } from "./types.js";
     import type { Run, RunSelector } from "@runwisp/common";
     import { runFilterParams, type RunsListFilters } from "./run-filters.js";
-    import { instanceSuffix } from "./run-helpers.js";
+    import { instanceSuffix, runUsageScale } from "./run-helpers.js";
     import { formatDateTime } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
@@ -48,6 +48,7 @@
         outputQuery = "",
         outputMatches = null,
         outputSearchPending = false,
+        usageBars = false,
     }: {
         items: Run[];
         total: number;
@@ -90,7 +91,12 @@
         // True while a query is typed but its results aren't in yet (debounce
         // window or request in flight), the rail shows its searching shimmer.
         outputSearchPending?: boolean;
+        // Task rail only: two small bars per finished run, CPU time over RAM,
+        // scaled to the largest loaded run and colored against the usual one.
+        usageBars?: boolean;
     } = $props();
+
+    const usageScale = $derived(usageBars ? runUsageScale(items) : undefined);
 
     // Task-rail rows are one dense line (44px); the cross-task /runs view adds
     // the task name on a second line (64px).
@@ -458,6 +464,7 @@
         {outputQuery}
         {bulkActions}
         {selectionActive}
+        usage={usageBars ? (usageScale ?? null) : undefined}
         onselect={selectRun}
     />
 {/snippet}

@@ -22,6 +22,7 @@
     import RunActions from "./RunActions.svelte";
     import RunConsoleFrame from "./RunConsoleFrame.svelte";
     import RunFacts from "./RunFacts.svelte";
+    import RunHeaderLine from "./RunHeaderLine.svelte";
     import { RUN_STATUS_CONFIG } from "./status-config.js";
     import { runDuration, RUN_VERDICTS, instanceSuffix } from "./run-helpers.js";
 
@@ -45,6 +46,10 @@
         motion,
         notFound = false,
         loading = false,
+        headerLayout = "stacked",
+        stopLabel,
+        emptyTitle,
+        emptyDescription,
     }: {
         run: Run | undefined;
         fetchLogs: (
@@ -102,6 +107,15 @@
         // True while there is no run to show *yet* (the run list or a deep-linked
         // run is still loading), so the empty state doesn't claim "No runs yet".
         loading?: boolean;
+        // "stacked": verdict over a fact line, with room for the task name.
+        // "line": one line whose facts fold into ⋯ when it runs out of room,
+        // for a page that already names the task.
+        headerLayout?: "stacked" | "line";
+        // Label of the stop button, "Stop" by default.
+        stopLabel?: string;
+        // Empty-state copy for when no run is selected, replacing the default.
+        emptyTitle?: string;
+        emptyDescription?: string;
     } = $props();
 
     function easeInFresh(node: HTMLElement, runId: string) {
@@ -168,121 +182,141 @@
             class="absolute inset-y-0 left-0 z-[3] w-1 {spine} {isRunning ? 'spine-flow' : ''}"
             aria-hidden="true"
         ></div>
-        <!-- Detailed header: a readout whose ink scales with how much went wrong.
+        {#snippet actions()}
+            <RunActions
+                runId={run.id}
+                taskName={run.taskName}
+                {isRunning}
+                {canDelete}
+                {onRun}
+                {onRunAgain}
+                {onStop}
+                {onDelete}
+                {stopLabel}
+            />
+        {/snippet}
+        {#if headerLayout === "line"}
+            <RunHeaderLine
+                {run}
+                {status}
+                {duration}
+                {suffix}
+                live={isRunning ? getLiveUsage(run.id) : undefined}
+                {onBack}
+                {onToggleList}
+                {listVisible}
+                {actions}
+            />
+        {:else}
+            <!-- Detailed header: a readout whose ink scales with how much went wrong.
              Every run states its outcome in one phrase over one quiet fact line;
              only a run worth triaging colours the phrase and tints the surface.
              Nothing here is a fixed slot, every fact renders only when it is
              true, so the header's height is itself a signal. -->
-        <div
-            class="head-region @container relative shrink-0 border-b border-outline-faint"
-            style="--rw-oc: {alarm ?? 'var(--color-surface-raised)'}"
-        >
-            <div class="pt-[18px] pr-[22px] pb-[16px] pl-[26px]">
-                <!-- The actions wrap onto their own row rather than squeeze the
+            <div
+                class="head-region @container relative shrink-0 border-b border-outline-faint"
+                style="--rw-oc: {alarm ?? 'var(--color-surface-raised)'}"
+            >
+                <div class="pt-[18px] pr-[22px] pb-[16px] pl-[26px]">
+                    <!-- The actions wrap onto their own row rather than squeeze the
                      readout below a legible width on a narrow panel. -->
-                <div class="flex flex-wrap items-start gap-x-3 gap-y-3">
-                    {#if onBack}
-                        <button
-                            type="button"
-                            onclick={() => onBack()}
-                            class="-mt-1 -ml-2 shrink-0 rounded-[3px] p-1.5 text-on-surface-muted hover:bg-surface-sunken hover:text-primary"
-                            title="Back to runs"
-                            aria-label="Back to runs"
-                        >
-                            <ArrowLeft size={20} />
-                        </button>
-                    {:else if onToggleList}
-                        <button
-                            type="button"
-                            onclick={() => onToggleList()}
-                            class="-mt-1 -ml-2 shrink-0 rounded-[3px] p-1.5 text-on-surface-muted hover:bg-surface-sunken hover:text-primary"
-                            title={listVisible ? "Hide run list" : "Show run list"}
-                            aria-label={listVisible ? "Hide run list" : "Show run list"}
-                            aria-expanded={listVisible}
-                        >
-                            {#if listVisible}
-                                <PanelLeftClose size={20} />
-                            {:else}
-                                <PanelLeftOpen size={20} />
-                            {/if}
-                        </button>
-                    {/if}
-                    <div class="min-w-60 flex-1">
-                        <!-- Identity, but only where the page around the panel isn't
+                    <div class="flex flex-wrap items-start gap-x-3 gap-y-3">
+                        {#if onBack}
+                            <button
+                                type="button"
+                                onclick={() => onBack()}
+                                class="-mt-1 -ml-2 shrink-0 rounded-[3px] p-1.5 text-on-surface-muted hover:bg-surface-sunken hover:text-primary"
+                                title="Back to runs"
+                                aria-label="Back to runs"
+                            >
+                                <ArrowLeft size={20} />
+                            </button>
+                        {:else if onToggleList}
+                            <button
+                                type="button"
+                                onclick={() => onToggleList()}
+                                class="-mt-1 -ml-2 shrink-0 rounded-[3px] p-1.5 text-on-surface-muted hover:bg-surface-sunken hover:text-primary"
+                                title={listVisible ? "Hide run list" : "Show run list"}
+                                aria-label={listVisible ? "Hide run list" : "Show run list"}
+                                aria-expanded={listVisible}
+                            >
+                                {#if listVisible}
+                                    <PanelLeftClose size={20} />
+                                {:else}
+                                    <PanelLeftOpen size={20} />
+                                {/if}
+                            </button>
+                        {/if}
+                        <div class="min-w-60 flex-1">
+                            <!-- Identity, but only where the page around the panel isn't
                          already saying it: the cross-task runs list needs the task
                          name, a task's own page already has it in the breadcrumb. -->
-                        {#if showTaskName || suffix}
-                            <div
-                                class="mb-1.5 font-mono text-[11.5px] font-medium tracking-[0.06em] text-on-surface-muted"
-                            >
-                                {showTaskName ? `${run.taskName}${suffix}` : `instance ${suffix}`}
-                            </div>
-                        {/if}
+                            {#if showTaskName || suffix}
+                                <div
+                                    class="mb-1.5 font-mono text-[11.5px] font-medium tracking-[0.06em] text-on-surface-muted"
+                                >
+                                    {showTaskName
+                                        ? `${run.taskName}${suffix}`
+                                        : `instance ${suffix}`}
+                                </div>
+                            {/if}
 
-                        <!-- Verdict: the outcome as one sentence, and the only large
+                            <!-- Verdict: the outcome as one sentence, and the only large
                          type in the panel. It is prose, so the phrase is sans and
                          only the tokens inside it, the duration, a failing exit,
                          are mono (DESIGN.md's mono-vs-sans rule). The glyph is bare
                          (no plate, no ring) so it reads as part of the sentence,
                          and it alone carries the outcome colour on a healthy run:
                          green words are ink spent on nothing being wrong. -->
-                        <Tooltip content={config.description} position="right" wide>
-                            <h2
-                                class="flex flex-wrap items-center gap-x-2.5 text-[22px] @max-2xl:text-[18px] @max-xs:text-[16px]"
-                                data-testid="run-verdict"
-                                data-status={status}
-                            >
-                                <DetailIcon
-                                    size={18}
-                                    strokeWidth={2.25}
-                                    class="shrink-0 {config.color} {isRunning
-                                        ? 'animate-spin'
-                                        : ''}"
-                                />
-                                <span
-                                    class="font-sans font-semibold tracking-[-0.01em] {alarm
-                                        ? config.color
-                                        : 'text-on-surface'}">{verdict.verb}</span
+                            <Tooltip content={config.description} position="right" wide>
+                                <h2
+                                    class="flex flex-wrap items-center gap-x-2.5 text-[22px] @max-2xl:text-[18px] @max-xs:text-[16px]"
+                                    data-testid="run-verdict"
+                                    data-status={status}
                                 >
-                                {#if verdict.timed && duration}
+                                    <DetailIcon
+                                        size={18}
+                                        strokeWidth={2.25}
+                                        class="shrink-0 {config.color} {isRunning
+                                            ? 'animate-spin'
+                                            : ''}"
+                                    />
                                     <span
-                                        class="font-mono text-[0.86em] font-medium text-on-surface tabular-nums"
-                                        data-testid="run-duration">{duration}</span
+                                        class="font-sans font-semibold tracking-[-0.01em] {alarm
+                                            ? config.color
+                                            : 'text-on-surface'}">{verdict.verb}</span
                                     >
-                                {/if}
-                                {#if showCode}
-                                    <!-- Grouped with its own separator so a wrap can
+                                    {#if verdict.timed && duration}
+                                        <span
+                                            class="font-mono text-[0.86em] font-medium text-on-surface tabular-nums"
+                                            data-testid="run-duration">{duration}</span
+                                        >
+                                    {/if}
+                                    {#if showCode}
+                                        <!-- Grouped with its own separator so a wrap can
                                      never leave the dot dangling at a line end. -->
-                                    <span
-                                        class="inline-flex items-center gap-x-2.5 font-mono text-[0.86em] font-medium tabular-nums"
-                                    >
-                                        <span class="text-on-surface-faint" aria-hidden="true"
-                                            >·</span
+                                        <span
+                                            class="inline-flex items-center gap-x-2.5 font-mono text-[0.86em] font-medium tabular-nums"
                                         >
-                                        <span class="text-danger-surface" data-testid="run-exit"
-                                            >exit {run.exitCode}</span
-                                        >
-                                    </span>
-                                {/if}
-                            </h2>
-                        </Tooltip>
+                                            <span class="text-on-surface-faint" aria-hidden="true"
+                                                >·</span
+                                            >
+                                            <span class="text-danger-surface" data-testid="run-exit"
+                                                >exit {run.exitCode}</span
+                                            >
+                                        </span>
+                                    {/if}
+                                </h2>
+                            </Tooltip>
 
-                        <RunFacts {run} live={isRunning ? getLiveUsage(run.id) : undefined} />
+                            <RunFacts {run} live={isRunning ? getLiveUsage(run.id) : undefined} />
+                        </div>
+
+                        {@render actions()}
                     </div>
-
-                    <RunActions
-                        runId={run.id}
-                        taskName={run.taskName}
-                        {isRunning}
-                        {canDelete}
-                        {onRun}
-                        {onRunAgain}
-                        {onStop}
-                        {onDelete}
-                    />
                 </div>
             </div>
-        </div>
+        {/if}
 
         <RunConsoleFrame
             {run}
@@ -330,12 +364,15 @@
         class="flex min-w-0 flex-1 flex-col items-center justify-center gap-4 bg-surface-sunken/30"
     >
         <EmptyState
-            title={notFound ? "Run not found" : onRunTask ? "No runs yet" : "Select a run"}
+            title={notFound
+                ? "Run not found"
+                : (emptyTitle ?? (onRunTask ? "No runs yet" : "Select a run"))}
             description={notFound
                 ? "This run doesn't exist. It may have been deleted by retention, or the link is wrong. Pick a run from the list to continue."
-                : onRunTask
-                  ? "This task hasn't run yet. Trigger it to see its output here."
-                  : "Pick a run from the list to view details and logs."}
+                : (emptyDescription ??
+                  (onRunTask
+                      ? "This task hasn't run yet. Trigger it to see its output here."
+                      : "Pick a run from the list to view details and logs."))}
             icon={notFound ? SearchX : MousePointerClick}
         />
         {#if onRunTask && !notFound}

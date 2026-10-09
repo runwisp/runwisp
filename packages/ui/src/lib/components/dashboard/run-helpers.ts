@@ -111,14 +111,71 @@ export function runRetryLabel(run: Pick<Run, "retryAttempt" | "retryOfRunId">): 
 }
 
 /**
- * "peak 48 MB · CPU 1s" for a run whose resources were measured (shell runs
- * only), else undefined.
+ * "CPU 1m 52s · RAM 48 MB" for a run whose resources were measured (shell
+ * runs only), else undefined. CPU is the CPU time the run used, RAM the most
+ * memory it held.
  */
 export function runUsageLabel(run: Pick<Run, "peakMemoryBytes" | "cpuTimeMs">): string | undefined {
     const parts: string[] = [];
-    if (run.peakMemoryBytes !== undefined) parts.push("peak " + formatBytes(run.peakMemoryBytes));
     if (run.cpuTimeMs !== undefined) parts.push("CPU " + formatDuration(run.cpuTimeMs));
+    if (run.peakMemoryBytes !== undefined) parts.push("RAM " + formatBytes(run.peakMemoryBytes));
     return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+/** CPU time (ms) and peak memory (bytes) of one run, or of a task's typical run. */
+export interface RunUsageAmounts {
+    cpu: number;
+    ram: number;
+}
+
+/**
+ * How a task's runs compare: `max` is its largest run (the full length of a
+ * usage bar), `usual` the median run (what "normal for this task" means).
+ */
+export interface RunUsageScale {
+    max: RunUsageAmounts;
+    usual: RunUsageAmounts;
+}
+
+/** A finished run's measured usage, or undefined when it wasn't measured. */
+export function runUsageAmounts(
+    run: Pick<Run, "status" | "cpuTimeMs" | "peakMemoryBytes">,
+): RunUsageAmounts | undefined {
+    if (run.status !== "ended") return undefined;
+    if (run.cpuTimeMs === undefined || run.peakMemoryBytes === undefined) return undefined;
+    return { cpu: run.cpuTimeMs, ram: run.peakMemoryBytes };
+}
+
+function median(values: number[]): number {
+    const sorted = values.toSorted((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)] ?? 0;
+}
+
+/** The scale for a task's usage bars, over the measured runs given. */
+export function runUsageScale(
+    runs: readonly Pick<Run, "status" | "cpuTimeMs" | "peakMemoryBytes">[],
+): RunUsageScale | undefined {
+    const amounts = runs.flatMap((run) => runUsageAmounts(run) ?? []);
+    if (amounts.length === 0) return undefined;
+    const cpu = amounts.map((a) => a.cpu);
+    const ram = amounts.map((a) => a.ram);
+    return {
+        max: { cpu: Math.max(...cpu), ram: Math.max(...ram) },
+        usual: { cpu: median(cpu), ram: median(ram) },
+    };
+}
+
+/**
+ * How unusual a run's amount is for its task: 0 about as usual, 1 at 1.5×
+ * the usual run, 2 at twice it or more. A task that always uses the same
+ * amount stays at 0, however large that amount is.
+ */
+export function usageLevel(value: number, usual: number): 0 | 1 | 2 {
+    if (usual <= 0) return 0;
+    const ratio = value / usual;
+    if (ratio >= 2) return 2;
+    if (ratio >= 1.5) return 1;
+    return 0;
 }
 
 /**

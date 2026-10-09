@@ -8,7 +8,11 @@
         formatTriggeredByLabel,
         runRetryLabel,
         runRowReadout,
+        runUsageAmounts,
+        runUsageLabel,
+        usageLevel,
         highlightParts,
+        type RunUsageScale,
     } from "./run-helpers.js";
     import type { RunOutputMatch } from "./types.js";
     import {
@@ -16,6 +20,8 @@
         formatFullDateTime,
         formatTimeHM,
         formatDayMonth,
+        formatBytes,
+        formatDuration,
     } from "../../utils/format.js";
 
     let {
@@ -27,6 +33,7 @@
         outputQuery,
         bulkActions,
         selectionActive,
+        usage,
         onselect,
     }: {
         run: Run;
@@ -39,6 +46,11 @@
         outputQuery: string;
         bulkActions: boolean;
         selectionActive: boolean;
+        /**
+         * The task's usage scale when the rail shows CPU/RAM bars, null while
+         * no run has usage yet (rows keep the bars' room), undefined for none.
+         */
+        usage: RunUsageScale | null | undefined;
         onselect: (runId: string) => void;
     } = $props();
 
@@ -47,6 +59,8 @@
     const running = $derived(run.status === "running");
     const startedAt = $derived(run.startedAt ?? run.createdAt);
     const retry = $derived(runRetryLabel(run));
+    const amounts = $derived(usage ? runUsageAmounts(run) : undefined);
+    const LEVEL_COLOR = ["bg-success-surface", "bg-warning-surface", "bg-danger-surface"];
     // With bulk actions on, the status dot fades out on row hover, or whenever a
     // selection exists, so the row checkbox can take its place over it.
     const dotFade = $derived(
@@ -123,6 +137,20 @@
                     <span class="font-mono text-2xs text-on-surface-faint">{suffix}</span>
                 {/if}
             </span>
+            {#if usage && amounts}
+                <span
+                    class="flex w-6 shrink-0 cursor-help flex-col gap-0.5"
+                    title="{runUsageLabel(run)}. Usual for this task: CPU {formatDuration(
+                        usage.usual.cpu,
+                    )} · RAM {formatBytes(usage.usual.ram)}"
+                    data-testid="run-usage-bars"
+                >
+                    {@render bar(amounts.cpu, usage.max.cpu, usage.usual.cpu)}
+                    {@render bar(amounts.ram, usage.max.ram, usage.usual.ram)}
+                </span>
+            {:else if usage !== undefined}
+                <span class="w-6 shrink-0" aria-hidden="true"></span>
+            {/if}
             <span
                 class="shrink-0 font-mono text-[11.5px] text-on-surface-faint tabular-nums"
                 title={retry ?? undefined}
@@ -149,6 +177,15 @@
         aria-hidden="true"
     ></div>
 </button>
+
+{#snippet bar(value: number, max: number, usual: number)}
+    <span class="block h-[3px] overflow-hidden rounded-[1px] bg-outline-faint">
+        <span
+            class="block h-full {LEVEL_COLOR[usageLevel(value, usual)]}"
+            style="width: {String(max > 0 ? Math.max(4, Math.round((100 * value) / max)) : 4)}%"
+        ></span>
+    </span>
+{/snippet}
 
 {#snippet dot()}
     <span

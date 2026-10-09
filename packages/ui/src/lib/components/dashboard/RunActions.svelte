@@ -16,6 +16,7 @@
         onRunAgain,
         onStop,
         onDelete,
+        stopLabel = "Stop",
     }: {
         runId: string;
         taskName: string;
@@ -25,6 +26,7 @@
         onRunAgain: (() => void) | undefined;
         onStop: ((runId: string) => void) | undefined;
         onDelete: ((runId: string) => void) | undefined;
+        stopLabel?: string | undefined;
     } = $props();
 
     // Inline-confirm popover for delete.
@@ -83,6 +85,20 @@
             {/if}
         </div>
     {/if}
+    {#if onRunAgain && !onRun && !isRunning}
+        <!-- No Run button here (the page has its own), so re-running with this
+             run's parameters stands alone. -->
+        <button
+            type="button"
+            onclick={() => onRunAgain()}
+            title="Run again, reusing this run's parameters"
+            aria-label="Run again"
+            class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[3px] border border-primary-soft-border bg-surface-raised px-3 font-mono text-sm font-medium text-primary hover:bg-primary-soft active:translate-y-px @max-md:px-2.5"
+        >
+            <RotateCw size={15} />
+            <span class="@max-md:hidden">Run again</span>
+        </button>
+    {/if}
     {#if isRunning && onStop}
         <button
             type="button"
@@ -90,7 +106,7 @@
             class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[3px] border border-danger-soft-border bg-surface-raised px-3 font-mono text-sm font-medium text-danger-surface hover:bg-danger-soft active:translate-y-px"
         >
             <Square size={15} fill="currentColor" stroke="none" />
-            <span class="@max-xs:hidden">Stop</span>
+            <span class="@max-xs:hidden">{stopLabel}</span>
         </button>
     {/if}
     <a

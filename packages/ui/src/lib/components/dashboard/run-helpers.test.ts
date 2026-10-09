@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Run } from "@runwisp/common";
 import {
     runDuration,
     runStartDelay,
@@ -12,6 +13,8 @@ import {
     formatTriggeredByLabel,
     runRetryLabel,
     runUsageLabel,
+    runUsageScale,
+    usageLevel,
     instanceSuffix,
     runLogDownloadUrl,
 } from "./run-helpers.js";
@@ -139,9 +142,9 @@ describe("runUsageLabel", () => {
         expect(runUsageLabel({})).toBeUndefined();
     });
 
-    it("joins peak memory and CPU time", () => {
-        expect(runUsageLabel({ peakMemoryBytes: 48 * 1024 * 1024, cpuTimeMs: 1500 })).toBe(
-            "peak 48 MB · CPU 1s",
+    it("joins CPU time and memory, never saying peak", () => {
+        expect(runUsageLabel({ peakMemoryBytes: 48 * 1024 * 1024, cpuTimeMs: 112_000 })).toBe(
+            "CPU 1m 52s · RAM 48 MB",
         );
     });
 
@@ -218,5 +221,53 @@ describe("highlightParts", () => {
         const parts = highlightParts("x".repeat(40) + "needle", "needle");
         expect(parts.before).toBe("…" + "x".repeat(14));
         expect(parts.match).toBe("needle");
+    });
+});
+
+describe("runUsageScale", () => {
+    const run = (
+        cpuTimeMs?: number,
+        peakMemoryBytes?: number,
+        status: Run["status"] = "ended",
+    ) => ({
+        status,
+        ...(cpuTimeMs === undefined ? {} : { cpuTimeMs }),
+        ...(peakMemoryBytes === undefined ? {} : { peakMemoryBytes }),
+    });
+
+    it("is undefined when no finished run was measured", () => {
+        expect(runUsageScale([])).toBeUndefined();
+        expect(runUsageScale([run(5, 10, "running"), run(undefined, 10)])).toBeUndefined();
+    });
+
+    it("scales to the largest run and takes the median as usual", () => {
+        expect(runUsageScale([run(100, 1400), run(110, 2900), run(30, 640), run(1, 1)])).toEqual({
+            max: { cpu: 110, ram: 2900 },
+            usual: { cpu: 100, ram: 1400 },
+        });
+    });
+
+    it("leaves out live and unmeasured runs", () => {
+        expect(runUsageScale([run(10, 10), run(999, 999, "running"), run(undefined, 999)])).toEqual(
+            {
+                max: { cpu: 10, ram: 10 },
+                usual: { cpu: 10, ram: 10 },
+            },
+        );
+    });
+});
+
+describe("usageLevel", () => {
+    it("is 0 as usual, 1 from 1.5x, 2 from twice the usual run", () => {
+        expect(usageLevel(1400, 1400)).toBe(0);
+        expect(usageLevel(2099, 1400)).toBe(0);
+        expect(usageLevel(2100, 1400)).toBe(1);
+        expect(usageLevel(2799, 1400)).toBe(1);
+        expect(usageLevel(2800, 1400)).toBe(2);
+        expect(usageLevel(10, 1400)).toBe(0);
+    });
+
+    it("never flags a task whose usual run used nothing", () => {
+        expect(usageLevel(50, 0)).toBe(0);
     });
 });

@@ -104,6 +104,10 @@ export {
     runPhaseOrder,
     formatTriggeredByLabel,
     instanceSuffix,
+    runUsageLabel,
+    runUsageScale,
+    usageLevel,
+    type RunUsageScale,
 } from "./components/dashboard/run-helpers.js";
 export { humanizeCron } from "./components/dashboard/cron-format.js";
 export type { DaemonStats } from "./components/dashboard/types.js";
@@ -124,3 +128,4 @@ export { TickingNow } from "./utils/ticking-now.svelte.js";
 export { CopyFeedback, copyText } from "./utils/clipboard.svelte.js";
 export { RunMotion } from "./utils/run-motion.js";
 export { arrival, leave, shift } from "./actions/row-motion.js";
+export { foldToFit, foldUntilFits, type FoldToFitOptions } from "./actions/fold-to-fit.js";
