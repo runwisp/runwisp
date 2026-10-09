@@ -25,7 +25,7 @@
         "eslint": "^10.12.0",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-sonarjs": "^4.2.2",
-        "eslint-plugin-svelte": "^3.23.0",
+        "eslint-plugin-svelte": "^3.23.1",
         "globals": "^17.13.0",
         "prettier": "^3.9.9",
         "prettier-plugin-svelte": "^4.1.1",
@@ -39,7 +39,7 @@
         "vitest": "^5.0.3"
     },
     "dependencies": {
-        "@lucide/svelte": "^1.53.0",
+        "@lucide/svelte": "^1.54.0",
         "@noble/hashes": "^2.4.0",
         "@runwisp/common": "workspace:*",
         "@runwisp/ui": "workspace:*",

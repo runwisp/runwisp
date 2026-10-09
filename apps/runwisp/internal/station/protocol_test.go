@@ -15,24 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLinesItemStreamFromString(t *testing.T) {
-	tests := []struct {
-		in   string
-		want protocol.LinesItemStream
-	}{
-		{"stdout", protocol.LinesItemStreamStdout},
-		{"stderr", protocol.LinesItemStreamStderr},
-		{"system", protocol.LinesItemStreamSystem},
-		{"", protocol.LinesItemStreamStdout}, // default fallback
-		{"unknown", protocol.LinesItemStreamStdout},
-	}
-	for _, tt := range tests {
-		t.Run(tt.in, func(t *testing.T) {
-			assert.Equal(t, tt.want, protocol.ValuesToLinesItemStream[tt.in])
-		})
-	}
-}
-
 func TestDecodeStrict_TrailingDataIsRejected(t *testing.T) {
 	// decoder.More() must surface trailing JSON payloads as an error so the
 	// peer can't smuggle a second envelope into a single frame.
@@ -129,7 +111,7 @@ func TestNewPingMessage_CarriesSystemStats(t *testing.T) {
 	ping := NewPingMessage(provider())
 	require.NotNil(t, ping.SystemStats)
 	assert.Equal(t, 12.5, ping.SystemStats.CpuUsage)
-	assert.Equal(t, int(16<<30), ping.SystemStats.MemTotal)
+	assert.Equal(t, int64(16<<30), ping.SystemStats.MemTotal)
 	assert.Equal(t, "linux", ping.SystemStats.Os)
 	assert.Equal(t, "amd64", ping.SystemStats.Arch)
 	assert.Equal(t, 8, ping.SystemStats.CpuCores)
@@ -162,7 +144,7 @@ func TestNewServiceStatusMessage(t *testing.T) {
 		RunningInstances: 2,
 		Instances: []model.ServiceInstanceStatus{
 			{Index: 0, State: model.ServiceInstanceRunning, Pid: 42, RestartCount: 1},
-			// Second instance carries an exit code so the *LastExitCode branch is taken.
+			// Second instance carries an exit code but no pid.
 			{Index: 1, State: "fatal", RestartCount: 4, LastExitCode: &exit},
 		},
 	}
@@ -170,50 +152,17 @@ func TestNewServiceStatusMessage(t *testing.T) {
 	msg := NewServiceStatusMessage(snapshot)
 	assert.Equal(t, "service:status", msg.Type)
 	assert.Equal(t, "station-svc", msg.TaskID)
-	require.NotNil(t, msg.State)
-	assert.Equal(t, protocol.ServiceStateRunning, *msg.State)
+	assert.Equal(t, protocol.ServiceStateRunning, msg.State)
 	assert.Equal(t, 3, msg.DesiredInstances)
 	assert.Equal(t, 2, msg.RunningInstances)
 
 	require.Len(t, msg.Instances, 2)
 	assert.Equal(t, 0, msg.Instances[0].Index)
-	require.NotNil(t, msg.Instances[0].State)
-	assert.Equal(t, protocol.ServiceInstanceStateRunning, *msg.Instances[0].State)
-	assert.Equal(t, 42, msg.Instances[0].Pid)
-	// LastExitCode unset on the wire when the daemon reports no exit code.
-	assert.Equal(t, 0, msg.Instances[0].LastExitCode)
-	// Second instance's exit code is carried through.
-	assert.Equal(t, 137, msg.Instances[1].LastExitCode)
+	assert.Equal(t, protocol.ServiceInstanceStateRunning, msg.Instances[0].State)
+	assert.Equal(t, 42, *msg.Instances[0].Pid)
+	// pid/lastExitCode unset on the wire when the daemon reports none.
+	assert.Nil(t, msg.Instances[1].Pid)
+	assert.Nil(t, msg.Instances[0].LastExitCode)
+	assert.Equal(t, 137, *msg.Instances[1].LastExitCode)
 	assert.Equal(t, 4, msg.Instances[1].RestartCount)
-}
-
-func TestServiceStateEnum(t *testing.T) {
-	assert.Equal(t, protocol.ServiceStateDegraded, serviceStateEnum(model.ServiceDegraded))
-	assert.Equal(t, protocol.ServiceStateStopped, serviceStateEnum("stopped"))
-	// Unrecognized state defaults to running rather than zero-valued by luck.
-	assert.Equal(t, protocol.ServiceStateRunning, serviceStateEnum("nonsense"))
-}
-
-func TestServiceInstanceStateEnum(t *testing.T) {
-	assert.Equal(t, protocol.ServiceInstanceStateStopped, serviceInstanceStateEnum("stopped"))
-	assert.Equal(t, protocol.ServiceInstanceStateRestarting, serviceInstanceStateEnum("restarting"))
-	assert.Equal(t, protocol.ServiceInstanceStateRunning, serviceInstanceStateEnum("nonsense"))
-}
-
-func TestHitsItemStreamFromString(t *testing.T) {
-	tests := []struct {
-		in   string
-		want protocol.HitsItemStream
-	}{
-		{"stdout", protocol.HitsItemStreamStdout},
-		{"stderr", protocol.HitsItemStreamStderr},
-		{"system", protocol.HitsItemStreamSystem},
-		{"", protocol.HitsItemStreamStdout}, // default fallback
-		{"unknown", protocol.HitsItemStreamStdout},
-	}
-	for _, tt := range tests {
-		t.Run(tt.in, func(t *testing.T) {
-			assert.Equal(t, tt.want, protocol.ValuesToHitsItemStream[tt.in])
-		})
-	}
 }

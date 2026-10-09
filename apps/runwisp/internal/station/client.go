@@ -178,8 +178,8 @@ func (client *Client) RecoverArchiveBacklog(ctx context.Context) {
 		if update == nil {
 			return
 		}
-		update.LogPath = result.LogPath
-		update.LogSize = result.LogSize
+		update.LogPath = &result.LogPath
+		update.LogSize = &result.LogSize
 		client.tracker.QueueUpdate(*update, client.conn.sendIfReady)
 	})
 }

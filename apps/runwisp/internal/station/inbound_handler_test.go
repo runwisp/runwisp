@@ -64,7 +64,7 @@ func TestHandleExecutionDispatch_EmptyExecutionID(t *testing.T) {
 	h := newTestInboundHandler()
 	acked := false
 	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
-		Execution: &protocol.Execution{ExecutionID: ""},
+		Execution: &protocol.ExecutionPayload{ExecutionID: ""},
 	}, func() { acked = true })
 	require.Error(t, err)
 	var ce *StationError
@@ -79,7 +79,7 @@ func TestHandleExecutionDispatch_InvalidScript(t *testing.T) {
 	h := newDispatchInboundHandler(runner, &stubRunRepo{}, avail)
 
 	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
-		Execution: &protocol.Execution{
+		Execution: &protocol.ExecutionPayload{
 			ExecutionID: "exec-1",
 			Script:      []byte(`{bad json`),
 		},
@@ -95,7 +95,7 @@ func TestHandleExecutionDispatch_Success(t *testing.T) {
 	script := shellScript(t, "echo hello")
 	acked := 0
 	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
-		Execution: &protocol.Execution{
+		Execution: &protocol.ExecutionPayload{
 			ExecutionID: "exec-abc",
 			TaskID:      "my-task",
 			Script:      script,
@@ -117,7 +117,7 @@ func TestHandleExecutionDispatch_AdHocInputValuesForwarded(t *testing.T) {
 
 	script := shellScript(t, "echo hello")
 	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
-		Execution: &protocol.Execution{
+		Execution: &protocol.ExecutionPayload{
 			ExecutionID: "exec-adhoc",
 			TaskID:      "my-task",
 			Script:      script,
@@ -146,7 +146,7 @@ func TestHandleExecutionDispatch_TriggerError_NilRun(t *testing.T) {
 
 	script := shellScript(t, "echo hi")
 	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
-		Execution: &protocol.Execution{
+		Execution: &protocol.ExecutionPayload{
 			ExecutionID: "exec-fail",
 			TaskID:      "some-task",
 			Script:      script,
@@ -170,7 +170,7 @@ func TestHandleExecutionDispatch_TriggerError_WithRun(t *testing.T) {
 
 	script := shellScript(t, "echo hi")
 	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
-		Execution: &protocol.Execution{
+		Execution: &protocol.ExecutionPayload{
 			ExecutionID: "exec-conflict",
 			TaskID:      "task",
 			Script:      script,
@@ -190,7 +190,7 @@ func TestHandleExecutionDispatch_DuplicateActive_ReAcksWithoutTrigger(t *testing
 	script := shellScript(t, "echo hi")
 	acked := 0
 	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
-		Execution: &protocol.Execution{
+		Execution: &protocol.ExecutionPayload{
 			ExecutionID: "exec-dup",
 			TaskID:      "task",
 			Script:      script,
@@ -220,7 +220,7 @@ func TestHandleExecutionDispatch_DuplicateTerminal_ReQueuesTerminalUpdate(t *tes
 	script := shellScript(t, "echo hi")
 	acked := 0
 	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
-		Execution: &protocol.Execution{
+		Execution: &protocol.ExecutionPayload{
 			ExecutionID: execID,
 			TaskID:      "task",
 			Script:      script,
@@ -244,7 +244,7 @@ func TestHandleExecutionDispatch_DuplicateReserved_ReAcksBeforeRunning(t *testin
 	h.tracker = NewExecutionTracker()
 
 	script := shellScript(t, "echo hi")
-	msg := protocol.ExecutionDispatchMessage{Execution: &protocol.Execution{
+	msg := protocol.ExecutionDispatchMessage{Execution: &protocol.ExecutionPayload{
 		ExecutionID: "exec-win", TaskID: "task", Script: script,
 	}}
 
@@ -266,7 +266,7 @@ func TestHandleExecutionDispatch_ReservationReleasedAfterTriggerError(t *testing
 	h.tracker = NewExecutionTracker()
 
 	script := shellScript(t, "echo hi")
-	msg := protocol.ExecutionDispatchMessage{Execution: &protocol.Execution{
+	msg := protocol.ExecutionDispatchMessage{Execution: &protocol.ExecutionPayload{
 		ExecutionID: "exec-retry", TaskID: "task", Script: script,
 	}}
 

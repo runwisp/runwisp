@@ -38,7 +38,7 @@ type EventBridge struct {
 
 	// pendingLogs coalesces live log lines per execution between flushes.
 	batchMu     sync.Mutex
-	pendingLogs map[string][]protocol.LinesItem
+	pendingLogs map[string][]protocol.LogLineEntry
 }
 
 func NewEventBridge(
@@ -52,7 +52,7 @@ func NewEventBridge(
 		handler:     handler,
 		tracker:     tracker,
 		sendReady:   sendReady,
-		pendingLogs: make(map[string][]protocol.LinesItem),
+		pendingLogs: make(map[string][]protocol.LogLineEntry),
 	}
 }
 
@@ -162,8 +162,8 @@ func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run, update pr
 	case err != nil:
 		slog.Warn("log archival failed; archive coordinates not reported", "executionId", executionID, "err", err)
 	case result != nil:
-		update.LogPath = result.LogPath
-		update.LogSize = result.LogSize
+		update.LogPath = &result.LogPath
+		update.LogSize = &result.LogSize
 		b.tracker.QueueUpdate(update, b.sendReady)
 	}
 
@@ -204,17 +204,16 @@ func (b *EventBridge) handleLogLineEvent(event events.Event) {
 	if !b.handler.IsLogListener(logEvent.ExecutionID) {
 		return
 	}
-	stream := protocol.ValuesToLinesItemStream[logEvent.Stream]
-	item := protocol.LinesItem{
+	item := protocol.LogLineEntry{
 		N:         logEvent.LineNum,
 		Ts:        logEvent.Timestamp,
-		Stream:    &stream,
+		Stream:    protocol.Stream(logEvent.Stream),
 		Text:      logEvent.Text,
 		Continued: logEvent.Continued,
 	}
 	execID := logEvent.ExecutionID
 
-	var full []protocol.LinesItem
+	var full []protocol.LogLineEntry
 	b.batchMu.Lock()
 	b.pendingLogs[execID] = append(b.pendingLogs[execID], item)
 	if len(b.pendingLogs[execID]) >= logBatchMaxLines {
@@ -255,7 +254,7 @@ func (b *EventBridge) flushLogBatches() {
 		return
 	}
 	batches := b.pendingLogs
-	b.pendingLogs = make(map[string][]protocol.LinesItem)
+	b.pendingLogs = make(map[string][]protocol.LogLineEntry)
 	b.batchMu.Unlock()
 
 	for execID, lines := range batches {
@@ -277,6 +276,6 @@ func (b *EventBridge) flushLogBatch(execID string) {
 // sendLogBatch pushes one coalesced frame. Best-effort: a full outbound queue
 // drops the batch rather than blocking the run, and the viewer backfills the
 // gap via log:replayRequest.
-func (b *EventBridge) sendLogBatch(execID string, lines []protocol.LinesItem) {
+func (b *EventBridge) sendLogBatch(execID string, lines []protocol.LogLineEntry) {
 	_ = b.sendReady(NewLogLinesMessage(execID, lines))
 }

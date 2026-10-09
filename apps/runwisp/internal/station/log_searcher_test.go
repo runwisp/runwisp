@@ -44,7 +44,7 @@ func TestSearchExecutionLog_MatchesSubstring(t *testing.T) {
 	assert.Equal(t, "ERROR: boom", hits[0].Text)
 	assert.Equal(t, int64(1), hits[0].N)
 	require.NotNil(t, hits[0].Stream)
-	assert.Equal(t, protocol.HitsItemStreamStderr, *hits[0].Stream)
+	assert.Equal(t, protocol.StreamStderr, hits[0].Stream)
 	assert.Equal(t, "ERROR: again", hits[1].Text)
 	assert.True(t, exhausted, "whole log scanned")
 }
@@ -206,15 +206,15 @@ func TestReadExecutionLogReplay_ReadsAllLines(t *testing.T) {
 
 	assert.Equal(t, int64(0), items[0].N)
 	require.NotNil(t, items[0].Stream)
-	assert.Equal(t, protocol.LinesItemStreamStdout, *items[0].Stream)
+	assert.Equal(t, protocol.StreamStdout, items[0].Stream)
 	assert.Equal(t, "first", items[0].Text)
 
 	require.NotNil(t, items[1].Stream)
-	assert.Equal(t, protocol.LinesItemStreamStderr, *items[1].Stream)
+	assert.Equal(t, protocol.StreamStderr, items[1].Stream)
 	assert.Equal(t, "boom", items[1].Text)
 
 	require.NotNil(t, items[2].Stream)
-	assert.Equal(t, protocol.LinesItemStreamStdout, *items[2].Stream)
+	assert.Equal(t, protocol.StreamStdout, items[2].Stream)
 	assert.Equal(t, "third", items[2].Text)
 
 	assert.True(t, final, "fully-consumed terminal run is final")
