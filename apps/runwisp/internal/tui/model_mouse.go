@@ -141,17 +141,20 @@ func (m Model) handleMainPanelClick(x, y int) (tea.Model, tea.Cmd) {
 		return m.handleExecViewClick(x, y)
 	}
 	if m.sidebar.ActivePage() == uikit.PageHome {
-		return m.handleHomePageClick(y)
+		return m.handleHomePageClick(x, y)
 	}
 	return m, nil
 }
 
-func (m Model) handleHomePageClick(y int) (tea.Model, tea.Cmd) {
+func (m Model) handleHomePageClick(x, y int) (tea.Model, tea.Cmd) {
 	if m.sidebar.ActiveTask() != "" {
 		if y == m.layout.taskBtnY {
 			return m, m.confirmAction(confirmActionTrigger)
 		}
 	} else {
+		if y == home.StarButtonY && home.StarButtonAt(x-uikit.SidebarWidth, m.contentWidth()) {
+			return m, func() tea.Msg { return browseMsg(home.RepoURL) }
+		}
 		fieldsStartY := m.layout.homeFieldsY
 		fields := home.Fields(m.info, m.hasLaunchTicket())
 		fieldIdx := y - fieldsStartY

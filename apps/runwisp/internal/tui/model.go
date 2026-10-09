@@ -349,7 +349,7 @@ func (m *Model) recalcExecListHeight() {
 			m.layout.taskH = strings.Count(header, "\n")
 			listH -= m.layout.taskH
 		} else {
-			header, fieldsStartY := home.RenderHeader(m.info, m.hasLaunchTicket(), mainW, -1, -1)
+			header, fieldsStartY := home.RenderHeader(m.info, m.hasLaunchTicket(), mainW, -1, -1, false)
 			m.layout.homeH = strings.Count(header, "\n")
 			m.layout.homeFieldsY = fieldsStartY
 			listH -= m.layout.homeH

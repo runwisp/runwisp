@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- The TUI Home screen shows the GitHub repo link in its title row.
+- The TUI Home screen has a small **Star** button that opens the GitHub repo.
 
 ### Changed
 
