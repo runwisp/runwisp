@@ -135,3 +135,41 @@ func TestReconcile_AutostartFlipOnRegisteredTaskWarns(t *testing.T) {
 	assert.Contains(t, warnings[0], "runwisp pause nightly")
 	assert.False(t, sched.IsPaused("nightly"), "reload never pauses a task RunWisp already knew")
 }
+
+// A task that gains its cron in a reload becomes schedulable then, so that is
+// its first registration: an autostart = false task starts paused right away
+// instead of firing until the next boot registers it paused.
+func TestReconcile_GainedCronAutostartFalseTaskStartsPaused(t *testing.T) {
+	db := newPauseDB(t)
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	manual := pausableTask("report")
+	manual.Cron = ""
+	old := taskSet(manual)
+	r, sched := newAutostartReconciler(t, db, old, now)
+
+	updated := taskSet(autostartOffTask("report"))
+	r.apply(config.DiffTasks(old, updated), old, updated)
+
+	assert.True(t, sched.IsPaused("report"))
+	assertPersistedPause(t, db, "report")
+}
+
+// A cron-less task added by reload gets no registration, like at boot, so
+// gaining a cron later is still its first registration.
+func TestReconcile_AddedCronlessTaskThenGainsCronStartsPaused(t *testing.T) {
+	db := newPauseDB(t)
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	empty := taskSet()
+	r, sched := newAutostartReconciler(t, db, empty, now)
+
+	manual := pausableTask("report")
+	manual.Cron = ""
+	added := taskSet(manual)
+	r.apply(config.DiffTasks(empty, added), empty, added)
+
+	scheduled := taskSet(autostartOffTask("report"))
+	r.apply(config.DiffTasks(added, scheduled), added, scheduled)
+
+	assert.True(t, sched.IsPaused("report"))
+	assertPersistedPause(t, db, "report")
+}

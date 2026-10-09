@@ -251,11 +251,11 @@ func (r *Reconciler) RefreshCronHolds(state cronprobe.State) CronHoldChange {
 			continue
 		}
 		// The same sequence applyChanged runs for a schedule change, which is what
-		// this is: anchorUnheld stamps the catch-up anchor at the moment RunWisp
-		// becomes responsible for the ticks, and rescheduleChanged adds or drops the
+		// this is: anchorNewlySchedulable stamps the catch-up anchor at the moment
+		// RunWisp becomes responsible for the ticks, and rescheduleChanged adds or drops the
 		// cron entry according to the new Schedulable().
 		r.publishTask(newTask)
-		r.anchorUnheld(oldTask, newTask)
+		r.anchorNewlySchedulable(oldTask, newTask)
 		if r.scheduler != nil {
 			r.rescheduleChanged(newTask)
 		}
@@ -352,10 +352,11 @@ func (r *Reconciler) applyRemoved(name string) {
 // rather than replaying a backlog. Crucially it does NOT fire run_on_start and
 // does NOT run catch-up — those are boot-only.
 func (r *Reconciler) applyAdded(task *model.Task) {
-	// A held task is left unregistered: stamping its catch-up anchor now would
-	// make the whole hold window look like missed ticks once the hold lifts. It
-	// gets its anchor when it becomes schedulable (see anchorUnheld).
-	if !task.Held() {
+	// Only a schedulable task is registered, as at boot. A held task stamped now
+	// would make the whole hold window look like missed ticks once the hold
+	// lifts, and a cron-less one has no ticks to anchor. Either gets its anchor
+	// when it becomes schedulable (see anchorNewlySchedulable).
+	if task.Schedulable() {
 		r.register(task, "added")
 	}
 	r.publishTask(task)
@@ -391,7 +392,7 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 	}
 
 	r.publishTask(newTask)
-	r.anchorUnheld(oldTask, newTask)
+	r.anchorNewlySchedulable(oldTask, newTask)
 
 	if r.scheduler != nil && (change.Has(config.ReasonSchedule) || change.Has(config.ReasonKind)) {
 		r.rescheduleChanged(newTask)
@@ -465,18 +466,20 @@ func (r *Reconciler) rescheduleChanged(newTask *model.Task) {
 	}
 }
 
-// anchorUnheld stamps the catch-up anchor at the moment a task stops being held,
-// because that is the moment RunWisp becomes responsible for its ticks. Without
-// it the task would carry no anchor until the next boot's catch-up pass, and a
-// crash in between would leave the real downtime gap unmeasurable — the anchor
-// would be stamped at the *restart*, silently swallowing it.
+// anchorNewlySchedulable stamps the catch-up anchor at the moment a task becomes
+// schedulable (its cron hold lifts, or it gains a cron), because that is the
+// moment RunWisp becomes responsible for its ticks. Without it the task would
+// carry no anchor until the next boot's catch-up pass, and a crash in between
+// would leave the real downtime gap unmeasurable: the anchor would be stamped
+// at the *restart*, silently swallowing it. It is also the task's first
+// registration, so an autostart = false task starts paused here.
 //
 // INSERT OR IGNORE, so a task that already has an anchor keeps it.
-func (r *Reconciler) anchorUnheld(oldTask, newTask *model.Task) {
-	if !oldTask.Held() || newTask.Held() {
+func (r *Reconciler) anchorNewlySchedulable(oldTask, newTask *model.Task) {
+	if oldTask.Schedulable() || !newTask.Schedulable() {
 		return
 	}
-	r.register(newTask, "unheld")
+	r.register(newTask, "newly scheduled")
 }
 
 // register stamps task's catch-up anchor (a no-op once it has one). The first

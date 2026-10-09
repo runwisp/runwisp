@@ -151,8 +151,9 @@ host's PID namespace (`--pid=host`) follows the host's boots.
 **type**: `boolean` **default**: `true` **since**: `1.6`
 
 With `false`, the task's [`cron`](#cron) schedule starts paused the first time
-RunWisp sees the task: on the first daemon start with it, on the reload that
-adds it, or when `runwisp takeover` hands it over from the system cron. It
+RunWisp schedules the task: on the first daemon start with it, on the reload
+that adds it or gives it a `cron`, or when `runwisp takeover` hands it over
+from the system cron. It
 fires nothing until you resume it from the Web UI, the TUI (`p`), or
 `runwisp resume`. After that it stays resumed across restarts.
 
