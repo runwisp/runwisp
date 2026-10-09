@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Services with `instances` get `RUNWISP_INSTANCE_INDEX` with every backend, not only with compose.
 - `runwisp demo` without a terminal stops right away and points at `--no-tui`, instead of leaving a demo daemon running in the background.
 - The TUI help bar fits narrow terminals: it drops the least useful hints first and always keeps `? help` visible.
+- The daemon stops promptly when a notifier is unreachable. A failing delivery gets its current attempt and is reported in the bell, instead of retrying until `shutdown_timeout` runs out.
 
 ## [1.5.1] - 2026-10-08
 
