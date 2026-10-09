@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp demo` without a terminal stops right away and points at `--no-tui`, instead of leaving a demo daemon running in the background.
 - The TUI help bar fits narrow terminals: it drops the least useful hints first and always keeps `? help` visible.
 - The daemon stops promptly when a notifier is unreachable. A failing delivery gets its current attempt and is reported in the bell, instead of retrying until `shutdown_timeout` runs out.
+- Pressing Ctrl+C on `runwisp logs -f` or `--attach` stops cleanly instead of sometimes reporting `lost the connection to the daemon`.
 
 ## [1.5.1] - 2026-10-08
 
