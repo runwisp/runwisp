@@ -53,9 +53,9 @@ jobs:
       version: ${{ steps.version.outputs.VERSION }}
       is_prerelease: ${{ steps.npm_tag.outputs.PRERELEASE }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
@@ -104,7 +104,7 @@ jobs:
         run: ./scripts/build-all.sh
 
       - name: Upload dist artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: binaries
           path: apps/runwisp/dist/
@@ -119,7 +119,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: |
             CHANGELOG.md
@@ -142,7 +142,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Download binaries
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: binaries
           path: dist
@@ -168,7 +168,7 @@ jobs:
         run: cp "${{ steps.attest.outputs.bundle-path }}" runwisp.intoto.jsonl
 
       - name: Create draft release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           draft: true
           prerelease: ${{ needs.build.outputs.is_prerelease == 'true' }}
@@ -194,12 +194,12 @@ jobs:
           - packages/common
           - packages/ui
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.release.tag_name }}
           sparse-checkout: ${{ matrix.package }}
 
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
@@ -291,12 +291,12 @@ jobs:
       matrix:
         platform: [linux-x64, linux-arm64, darwin-x64, darwin-arm64]
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.release.tag_name }}
           sparse-checkout: npm/${{ matrix.platform }}
 
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
@@ -360,7 +360,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.release.tag_name }}
           sparse-checkout: npm/runwisp
@@ -371,7 +371,7 @@ jobs:
       - name: Use repo README for the npm page
         run: cp README.md npm/runwisp/README.md
 
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
@@ -427,7 +427,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.release.tag_name }}
       - name: Move docs-release to the released commit
@@ -466,12 +466,12 @@ jobs:
           echo "::error::HOMEBREW_TAP_TOKEN is not set or empty; the Homebrew tap was not updated."
           exit 1
 
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.release.tag_name }}
           sparse-checkout: packaging/homebrew
 
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: runwisp/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -514,7 +514,7 @@ jobs:
       # keeps whatever ref it was dispatched from — letting a Dockerfile/
       # entrypoint fix be re-published against an existing release's binaries
       # without cutting a new one.
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
           sparse-checkout: docker
@@ -596,15 +596,15 @@ jobs:
             echo "TAGS_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3
-      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v3
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v3
 
-      - uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         id: push
         with:
           context: docker

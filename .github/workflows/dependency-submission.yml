@@ -23,7 +23,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
@@ -33,7 +33,7 @@ jobs:
         run: bun scripts/bun-lock-to-spdx.ts bun.lock.spdx.json
 
       - name: Submit dependency snapshot
-        uses: advanced-security/spdx-dependency-submission-action@169d22427d74f3faf93504e70b03eede8dab272a # v0.2.0
+        uses: advanced-security/spdx-dependency-submission-action@b009efcf8b9d562a4569d2028c276522232e631f # v0.4.0
         with:
           filePath: "."
           filePattern: "bun.lock.spdx.json"
