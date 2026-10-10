@@ -63,7 +63,8 @@ type Row = (key: string, render: Render, note?: string) => DetailRow[];
  * A row builder for task. The API serves resolved values, so a key left out of
  * runwisp.toml arrives as its built-in default: a row that renders the same for
  * task and for the default unit of its kind is hidden, any other value (0
- * included) is shown.
+ * included) is shown. retry_attempts, priority and keep_for are omitted from
+ * the API at 0, which is also their default, so a written 0 hides with them.
  */
 function rowsOf(task: Task, defaults: Task): Row {
     return (key, render, note) => {
