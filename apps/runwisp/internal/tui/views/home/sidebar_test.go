@@ -4,6 +4,7 @@
 package home
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -101,6 +102,29 @@ func TestSidebar_SetLabelReplacesBrandLine(t *testing.T) {
 	view := s.View()
 	assert.Contains(t, view, "storage-nas")
 	assert.NotContains(t, view, "misty-pond")
+}
+
+// TestSidebar_LongValuesStayInsideWidth: an overlong label, group, task name or
+// version (with the update marker, focused or not) must neither widen a row
+// past the sidebar nor, via an embedded newline, add rows.
+func TestSidebar_LongValuesStayInsideWidth(t *testing.T) {
+	long := strings.Repeat("very-long-name-", 6)
+	tasks := []model.Task{{Name: long, Group: "日本語のグループ名がとても長い場合\nsecond line"}, {Name: "b", Group: "g"}}
+	s := NewSidebar("RunWisp", "1.2.3-"+long, "host."+long+"\nexample.com", tasks)
+	s.SetUpdate(true, "9.9.9-"+long)
+	s.SetTaskMarks(map[string]uikit.TaskMark{long: {Glyph: "●"}})
+	s.SetSize(uikit.SidebarWidth, 20)
+
+	check := func(name string) {
+		lines := strings.Split(strings.TrimRight(s.View(), "\n"), "\n")
+		assert.Len(t, lines, 20, name)
+		for i, line := range lines {
+			assert.Equal(t, uikit.SidebarWidth, uikit.VisibleWidth(line), "%s: line %d %q", name, i, line)
+		}
+	}
+	check("unfocused version")
+	s.FocusVersion()
+	check("focused version")
 }
 
 func TestSidebar_SetFocused(t *testing.T) {

@@ -6,6 +6,7 @@ package home
 import (
 	"slices"
 	"strings"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -511,7 +512,7 @@ func (s *Sidebar) View() string {
 	rendered++
 
 	if s.label != "" {
-		label := truncateToWidth(s.label, max(0, w-3))
+		label := truncateToWidth(oneLine(s.label), max(0, w-3))
 		writeSidebarLine(&b, uikit.SidebarFingerprintStyle.Render("   "+label), w)
 		rendered++
 	}
@@ -548,7 +549,7 @@ func (s *Sidebar) renderItem(index int) string {
 	item := s.items[index]
 
 	if item.kind == entryGroupHeader {
-		text := " " + truncateToWidth(item.label, max(1, s.width-1))
+		text := " " + truncateToWidth(oneLine(item.label), max(1, s.width-1))
 		if width := lipgloss.Width(text); width < s.width {
 			text += strings.Repeat(" ", s.width-width)
 		}
@@ -672,8 +673,10 @@ func (s *Sidebar) ensureVisible() {
 	s.scroll = max(min(s.scroll, maxScroll), 0)
 }
 
+// writeSidebarLine clips content to width before padding, so no row (e.g. a
+// long version string) can spill into the main panel.
 func writeSidebarLine(b *strings.Builder, content string, width int) {
-	b.WriteString(uikit.PadLine(content, width, uikit.ColorSidebarBg))
+	b.WriteString(uikit.PadLine(truncateToWidth(content, width), width, uikit.ColorSidebarBg))
 	b.WriteString("\n")
 }
 
@@ -684,4 +687,15 @@ func truncateToWidth(value string, maxWidth int) string {
 		return value
 	}
 	return uikit.TruncateToWidth(value, maxWidth)
+}
+
+// oneLine drops control characters from free-text TOML values ([daemon] name,
+// group) so a newline or tab can't break the sidebar's one-row-per-entry layout.
+func oneLine(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, value)
 }
