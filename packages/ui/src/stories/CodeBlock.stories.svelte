@@ -7,6 +7,8 @@
 
     const helloTask = '[tasks.hello]\ncron = "*/5 * * * *"\nrun  = "echo hello"';
     const backupTask = '[tasks.backup]\ncron = "0 3 * * *"\nkeep_runs = 60';
+    const longLine =
+        "export RUNWISP_STATION_TOKEN=rw_live_8f2c1d9e4b7a6053c1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4";
 
     const { Story } = defineMeta({
         title: "Data Display/CodeBlock",
@@ -38,6 +40,17 @@
 
 <Story name="Surface variant" asChild>
     <CodeBlock variant="surface" size="sm" copyable={false} code={helloTask} />
+</Story>
+
+<!-- A line wider than the block scrolls without running under the copy button. -->
+<Story name="Long line" asChild>
+    <div class="flex max-w-md flex-col gap-3">
+        <CodeBlock code={longLine} />
+        <CodeBlock code={longLine} size="sm" prompt="$" />
+        <CodeBlock code={longLine} variant="surface" />
+        <CodeBlock code={longLine} variant="surface" size="sm" />
+        <CodeBlock code="runwisp station" size="sm" />
+    </div>
 </Story>
 
 <!-- Rich children render the markup; `code` keeps the copied text plain. -->
