@@ -17,6 +17,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/station/logarchive"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
@@ -118,6 +119,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 	connMgr := newConnectionManager(tracker)
 
 	uploader := NewLogUploader(deps.PendingUploadRepo, deps.RunRepo, deps.LogDir, deps.Now)
+	uploader.TrustHost(logarchive.HostPort(cfg.BaseURL))
 	if cfg.AllowInsecure {
 		uploader.AllowInsecure()
 	}

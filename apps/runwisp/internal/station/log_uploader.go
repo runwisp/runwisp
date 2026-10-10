@@ -41,6 +41,7 @@ type LogUploader struct {
 	logDir     string
 	httpClient *http.Client
 	insecure   bool
+	trusted    string
 	now        func() time.Time
 
 	mu      sync.Mutex
@@ -61,7 +62,7 @@ func NewLogUploader(repo storage.PendingLogUploadRepository, runRepo ExternalRun
 		repo:       repo,
 		runRepo:    runRepo,
 		logDir:     logDir,
-		httpClient: logarchive.SafeClient(false),
+		httpClient: logarchive.SafeClient(false, ""),
 		now:        func() time.Time { return now().UTC() },
 		pending:    make(map[string]uploadEntry),
 	}
@@ -71,7 +72,14 @@ func NewLogUploader(repo storage.PendingLogUploadRepository, runRepo ExternalRun
 // (RUNWISP_STATION_ALLOW_INSECURE). Call before the first Archive.
 func (u *LogUploader) AllowInsecure() {
 	u.insecure = true
-	u.httpClient = logarchive.SafeClient(true)
+	u.httpClient = logarchive.SafeClient(true, u.trusted)
+}
+
+// TrustHost exempts the Station's own "host:port" (logarchive.HostPort) from
+// the public-IP upload guard. Call before the first Archive.
+func (u *LogUploader) TrustHost(hostPort string) {
+	u.trusted = hostPort
+	u.httpClient = logarchive.SafeClient(u.insecure, hostPort)
 }
 
 // RegisterDispatch persists the upload coordinates the station handed us. An
