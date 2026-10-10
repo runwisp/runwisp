@@ -58,7 +58,11 @@ export function generateGo(document) {
         const ptr = schema.nullable ? "*" : "";
         switch (schema.type) {
             case "string":
-                if (schema.format !== "date-time") return `${ptr}string`;
+                // sentAt is the peer's clock, informational only: kept a string
+                // (as the Zod side does) so an odd value can't reject the frame.
+                if (schema.format !== "date-time" || propName === "sentAt") {
+                    return `${ptr}string`;
+                }
                 imports.add("time");
                 return `${ptr}time.Time`;
             case "integer":

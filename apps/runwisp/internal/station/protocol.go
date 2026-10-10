@@ -27,8 +27,8 @@ var ErrUnsupportedMessageType = errors.New("unsupported message type")
 
 const ProtocolVersion = 2
 
-func newEnvelopeFields() (int, time.Time) {
-	return ProtocolVersion, time.Now().UTC()
+func newEnvelopeFields() (int, string) {
+	return ProtocolVersion, time.Now().UTC().Format(time.RFC3339Nano)
 }
 
 // NewPingMessage builds a heartbeat frame. stats, when non-nil, piggybacks a
