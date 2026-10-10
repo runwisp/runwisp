@@ -15,6 +15,7 @@ import {
     runUsageLabel,
     runUsageScale,
     usageLevel,
+    USAGE_FLOOR,
     instanceSuffix,
     runLogDownloadUrl,
 } from "./run-helpers.js";
@@ -267,7 +268,15 @@ describe("usageLevel", () => {
         expect(usageLevel(10, 1400)).toBe(0);
     });
 
-    it("never flags a task whose usual run used nothing", () => {
+    it("never flags a task whose usual run used nothing, without a floor", () => {
         expect(usageLevel(50, 0)).toBe(0);
+    });
+
+    it("judges a zero or tiny usual run against the floor", () => {
+        // A mostly idle task (median CPU 0) that burned 30s of CPU.
+        expect(usageLevel(30_000, 0, USAGE_FLOOR.cpu)).toBe(2);
+        expect(usageLevel(1, 0, USAGE_FLOOR.cpu)).toBe(0);
+        expect(usageLevel(3, 1, USAGE_FLOOR.cpu)).toBe(0);
+        expect(usageLevel(2800, 1400, USAGE_FLOOR.cpu)).toBe(2);
     });
 });

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { LogCache } from "./LogCache.svelte.js";
-import { WrapLayout } from "./wrap-layout.svelte.js";
+import { WrapLayout, wrapColumns } from "./wrap-layout.svelte.js";
 
 // 10 columns: (width 96 - gutter 0 - padding 16) / charWidth 8.
 const WIDTH = 96;
@@ -27,6 +27,25 @@ function setup(lines: string[], wrap: boolean) {
     layout.measureRange(0, lines.length - 1);
     return { cache, layout };
 }
+
+describe("wrapColumns", () => {
+    it("is the columns left after the gutter and padding", () => {
+        expect(wrapColumns(true, WIDTH, 0, CHAR_WIDTH)).toBe(10);
+        expect(wrapColumns(true, 200, 40, 8)).toBe(18);
+    });
+
+    it("keeps one count across the pixels of a resize, so it alone can drive a remeasure", () => {
+        const counts = new Set([96, 97, 100, 103].map((w) => wrapColumns(true, w, 0, CHAR_WIDTH)));
+        expect([...counts]).toEqual([10]);
+        expect(wrapColumns(true, 104, 0, CHAR_WIDTH)).toBe(11);
+    });
+
+    it("is 1 with wrapping off or before the font is measured", () => {
+        expect(wrapColumns(false, WIDTH, 0, CHAR_WIDTH)).toBe(1);
+        expect(wrapColumns(true, WIDTH, 0, 0)).toBe(1);
+        expect(wrapColumns(true, 10, 0, CHAR_WIDTH)).toBe(1);
+    });
+});
 
 describe("WrapLayout", () => {
     it("treats every line as one row when wrapping is off", () => {

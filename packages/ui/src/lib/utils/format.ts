@@ -118,22 +118,43 @@ const DURATION_UNITS: [unit: string, ms: number][] = [
     ["ms", 1],
 ];
 
+// Every unit name parseDuration takes, in ms. The `ms` package's set.
+const UNIT_ALIASES: [ms: number, names: string[]][] = [
+    [1, ["ms", "msec", "msecs", "millisecond", "milliseconds"]],
+    [1000, ["s", "sec", "secs", "second", "seconds"]],
+    [60_000, ["m", "min", "mins", "minute", "minutes"]],
+    [3_600_000, ["h", "hr", "hrs", "hour", "hours"]],
+    [86_400_000, ["d", "day", "days"]],
+    [604_800_000, ["w", "week", "weeks"]],
+    [31_557_600_000, ["y", "yr", "yrs", "year", "years"]],
+];
+const UNIT_MS = new Map(UNIT_ALIASES.flatMap(([size, names]) => names.map((n) => [n, size])));
+
 /**
- * parseDuration reads "5m 30s", "1h30m", "1.5h" or "250ms" into milliseconds.
- * Returns null when any part of the text isn't a number followed by a unit.
+ * parseDuration reads a duration into milliseconds. It takes what the `ms`
+ * package does ("500" as milliseconds, ".5h", "2 hours", "30 sec", "1w", "1y",
+ * any case) plus compound forms: "5m 30s", "1h30m". Returns null when any part
+ * isn't a number with a unit (only a lone number may go without one).
  */
 export function parseDuration(text: string): number | null {
-    const compact = text.replace(/\s+/g, "");
-    // Atomic number match (lookahead-capture + backreference) so a long digit
-    // run with no unit fails fast instead of backtracking.
-    const parts = [...compact.matchAll(/(?=(\d+(?:\.\d+)?))\1(ms|d|h|m|s)/g)];
-    if (parts.length === 0 || parts.map((p) => p[0]).join("") !== compact) return null;
+    const s = text.trim().toLowerCase();
+    // Bounded like `ms`, which also keeps the number pattern's backtracking cheap.
+    if (!s || s.length > 100) return null;
+    const segment = /(-?\d*\.?\d+)\s*([a-z]*)\s*/y;
     let total = 0;
-    for (const [, amount, unit] of parts) {
-        const size = DURATION_UNITS.find(([u]) => u === unit)?.[1];
-        if (!amount || size === undefined) return null;
+    let segments = 0;
+    let bare = false;
+    while (segment.lastIndex < s.length) {
+        const match = segment.exec(s);
+        if (!match) return null;
+        const [, amount = "", unit = ""] = match;
+        const size = unit ? UNIT_MS.get(unit) : 1;
+        if (size === undefined) return null;
+        bare ||= !unit;
         total += Number(amount) * size;
+        segments++;
     }
+    if (bare && segments > 1) return null;
     return Math.round(total);
 }
 

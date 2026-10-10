@@ -166,13 +166,22 @@ export function runUsageScale(
 }
 
 /**
+ * The least a usual run counts as using, so a tiny or zero baseline (a mostly
+ * idle task's median CPU time is often 0) doesn't hide a run that burns real
+ * CPU or memory, nor flag 3ms against 1ms. CPU time in ms, memory in bytes.
+ */
+export const USAGE_FLOOR: RunUsageAmounts = { cpu: 1000, ram: 16 * 1024 * 1024 };
+
+/**
  * How unusual a run's amount is for its task: 0 about as usual, 1 at 1.5×
  * the usual run, 2 at twice it or more. A task that always uses the same
- * amount stays at 0, however large that amount is.
+ * amount stays at 0, however large that amount is. `floor` is the least the
+ * usual run counts as (see USAGE_FLOOR).
  */
-export function usageLevel(value: number, usual: number): 0 | 1 | 2 {
-    if (usual <= 0) return 0;
-    const ratio = value / usual;
+export function usageLevel(value: number, usual: number, floor = 0): 0 | 1 | 2 {
+    const baseline = Math.max(usual, floor);
+    if (baseline <= 0) return 0;
+    const ratio = value / baseline;
     if (ratio >= 2) return 2;
     if (ratio >= 1.5) return 1;
     return 0;
