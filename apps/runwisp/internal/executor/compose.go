@@ -21,8 +21,13 @@ import (
 )
 
 // composeAvailableTimeout caps the `docker compose version` probe we use to
-// decide whether the backend is wired up at all.
-const composeAvailableTimeout = 2 * time.Second
+// decide whether the backend is wired up at all. A missing CLI or plugin fails
+// fast, so the cap only bites on a slow or hung CLI, and a probe that runs out
+// fails the run (a service's failed start counts toward restart_attempts).
+// The call execs the docker CLI and the compose plugin, two large binaries
+// that a busy or cold machine (a Raspberry Pi booting off an SD card) can take
+// seconds to load, so leave generous headroom.
+const composeAvailableTimeout = 10 * time.Second
 
 // composeHousekeepingTimeout bounds the `docker ps`/`docker rm -f` calls made by
 // reclaim-on-start and Process.Cleanup (both via removeManagedRun). Without
