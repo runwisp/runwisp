@@ -3,10 +3,31 @@
 
 <script module>
     import { defineMeta } from "@storybook/addon-svelte-csf";
-    import { LifeBuoy, Trash } from "@lucide/svelte";
+    import { LifeBuoy, Pencil, Trash } from "@lucide/svelte";
     import Accordion from "$lib/components/Accordion.svelte";
     import AccordionItem from "$lib/components/AccordionItem.svelte";
     import Toggle from "$lib/components/Toggle.svelte";
+
+    const blocks = [
+        {
+            label: "Node.js 22",
+            enabled: true,
+            frameClass: "border-outline bg-surface-raised",
+            run: "RUN apk add --no-cache nodejs npm",
+        },
+        {
+            label: "Python 3.12",
+            enabled: false,
+            frameClass: "border-outline-faint bg-surface",
+            run: "RUN apk add --no-cache python3",
+        },
+        {
+            label: "Go 1.27 (stale)",
+            enabled: true,
+            frameClass: "border-warning-soft-border bg-warning-soft/30",
+            run: "RUN apk add --no-cache go",
+        },
+    ];
 
     const { Story } = defineMeta({
         title: "Navigation/Accordion",
@@ -58,4 +79,42 @@
         {/snippet}
         <pre class="font-mono text-xs">RUN apk add --no-cache nodejs npm</pre>
     </AccordionItem>
+</Story>
+
+<!-- `leading` sits before the title and never toggles the panel; `frameClass`
+     tints the frame by state. -->
+<Story name="Framed with leading control and tint" asChild>
+    <div class="flex max-w-lg flex-col gap-2">
+        {#each blocks as block (block.label)}
+            <AccordionItem
+                variant="framed"
+                frameClass={block.frameClass}
+                class={block.enabled ? "" : "opacity-60"}
+            >
+                {#snippet leading()}
+                    <Toggle checked={block.enabled} size="sm" />
+                {/snippet}
+                {#snippet title()}
+                    <span class="block truncate">{block.label}</span>
+                {/snippet}
+                {#snippet actions()}
+                    <button
+                        type="button"
+                        aria-label="Edit"
+                        class="rounded-[3px] p-1 text-on-surface-faint hover:bg-surface-sunken hover:text-on-surface"
+                    >
+                        <Pencil size={14} />
+                    </button>
+                    <button
+                        type="button"
+                        aria-label="Remove"
+                        class="rounded-[3px] p-1 text-on-surface-faint hover:bg-danger-soft hover:text-danger-surface"
+                    >
+                        <Trash size={14} />
+                    </button>
+                {/snippet}
+                <pre class="font-mono text-xs">{block.run}</pre>
+            </AccordionItem>
+        {/each}
+    </div>
 </Story>
