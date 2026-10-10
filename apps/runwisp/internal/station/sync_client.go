@@ -5,6 +5,7 @@ package station
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -108,8 +109,10 @@ func NewTaskSyncClient(syncURL string, timeout time.Duration) *TaskSyncClient {
 	}
 }
 
-func (client *TaskSyncClient) SyncTasks(ctx context.Context, token string, tasks map[string]*model.Task) (*TaskSyncResult, error) {
-	syncTasks := buildSyncTasks(tasks)
+// SyncTasks posts tasks to the Station. daemonTZ is the IANA zone cron tasks
+// without their own timezone run in (see effectiveTimezone).
+func (client *TaskSyncClient) SyncTasks(ctx context.Context, token string, tasks map[string]*model.Task, daemonTZ string) (*TaskSyncResult, error) {
+	syncTasks := buildSyncTasks(tasks, daemonTZ)
 	requestBody := taskSyncPayload{
 		Tasks:  syncTasks,
 		SyncID: buildTaskSyncID(syncTasks),
@@ -183,7 +186,7 @@ func (client *TaskSyncClient) SyncTasks(ctx context.Context, token string, tasks
 	return result, nil
 }
 
-func buildSyncTasks(tasks map[string]*model.Task) []syncTask {
+func buildSyncTasks(tasks map[string]*model.Task, daemonTZ string) []syncTask {
 	names := slices.Sorted(maps.Keys(tasks))
 
 	syncTasks := make([]syncTask, 0, len(names))
@@ -192,7 +195,7 @@ func buildSyncTasks(tasks map[string]*model.Task) []syncTask {
 		if t == nil {
 			continue
 		}
-		task, ok := buildOneSyncTask(t)
+		task, ok := buildOneSyncTask(t, daemonTZ)
 		if ok {
 			syncTasks = append(syncTasks, task)
 		}
@@ -202,7 +205,7 @@ func buildSyncTasks(tasks map[string]*model.Task) []syncTask {
 
 // buildOneSyncTask converts a single model.Task into its station sync representation.
 // Returns (task, false) if the execution definition cannot be marshalled.
-func buildOneSyncTask(t *model.Task) (syncTask, bool) {
+func buildOneSyncTask(t *model.Task, daemonTZ string) (syncTask, bool) {
 	task := syncTask{
 		Name:          t.Name,
 		Group:         t.Group,
@@ -264,7 +267,7 @@ func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 		// Services carry no cron, so they never emit a schedule.
 		applyServiceSyncFields(&task, t)
 	} else {
-		applyTaskScheduleSyncFields(&task, t)
+		applyTaskScheduleSyncFields(&task, t, daemonTZ)
 	}
 	return task, true
 }
@@ -273,7 +276,7 @@ func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 // schedule (disabled for autostart = false, the same tasks the daemon starts
 // paused), jitter, and the catch-up policy. Kept separate from buildOneSyncTask,
 // like applyServiceSyncFields, to hold down its cognitive complexity.
-func applyTaskScheduleSyncFields(task *syncTask, t *model.Task) {
+func applyTaskScheduleSyncFields(task *syncTask, t *model.Task, daemonTZ string) {
 	cron := strings.TrimSpace(t.Cron)
 	if cron == "" {
 		return
@@ -281,7 +284,7 @@ func applyTaskScheduleSyncFields(task *syncTask, t *model.Task) {
 	task.Schedules = []syncTaskSchedule{
 		{
 			Cron:     cron,
-			Timezone: "UTC",
+			Timezone: effectiveTimezone(t, daemonTZ),
 			Enabled:  !t.StartsPaused(),
 		},
 	}
@@ -301,6 +304,13 @@ func applyTaskScheduleSyncFields(task *syncTask, t *model.Task) {
 			task.MaxCatchUpRuns = &runs
 		}
 	}
+}
+
+// effectiveTimezone is the zone the standalone scheduler would evaluate t's cron
+// in: its own timezone, else the daemon's. Config load validates both as IANA
+// names, so no lookup happens here.
+func effectiveTimezone(t *model.Task, daemonTZ string) string {
+	return cmp.Or(t.Timezone, daemonTZ)
 }
 
 // catchUpPolicy maps the TOML catch_up count to the Station's policy name:

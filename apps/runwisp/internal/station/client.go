@@ -59,6 +59,10 @@ type Dependencies struct {
 	LogDir       string
 	Availability executor.Availability
 	OnConnected  func()
+	// Timezone returns the live [daemon] timezone (an IANA name, kept current by
+	// reloads), the zone synced schedules default to. nil or an unloadable name
+	// falls back to UTC.
+	Timezone func() string
 	// RequestRestart asks the daemon to restart its own process when station
 	// sends agent:restart. nil rejects the command (e.g. not service-managed).
 	RequestRestart func() error
@@ -98,6 +102,8 @@ type Client struct {
 	// payload hash of the last successful sync, guarded by syncMu.
 	syncMu     sync.Mutex
 	lastSyncID string
+	timezone   func() string
+	warnedZone string // last invalid daemon zone already warned about; guarded by syncMu
 	resyncCh   chan struct{}
 }
 
@@ -147,6 +153,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		uploader:     uploader,
 		conn:         connMgr,
 		eventBus:     deps.EventBus,
+		timezone:     deps.Timezone,
 		resyncCh:     make(chan struct{}, 1),
 	}
 
@@ -350,7 +357,7 @@ func (client *Client) startResync(ctx context.Context) (stop func()) {
 func (client *Client) resyncIfChanged(ctx context.Context) error {
 	client.syncMu.Lock()
 	defer client.syncMu.Unlock()
-	if id := buildTaskSyncID(buildSyncTasks(client.snapshotForSync())); id == client.lastSyncID {
+	if id := buildTaskSyncID(buildSyncTasks(client.snapshotForSync(), client.daemonZone())); id == client.lastSyncID {
 		return nil
 	}
 	return client.syncTasksLocked(ctx)
@@ -363,14 +370,14 @@ func (client *Client) syncTasks(ctx context.Context) error {
 }
 
 func (client *Client) syncTasksLocked(ctx context.Context) error {
-	snapshot := client.snapshotForSync()
+	snapshot, zone := client.snapshotForSync(), client.daemonZone()
 	syncCtx, cancelSync := context.WithTimeout(ctx, requestTimeout)
-	syncResult, syncErr := client.syncClient.SyncTasks(syncCtx, client.config.StationToken, snapshot)
+	syncResult, syncErr := client.syncClient.SyncTasks(syncCtx, client.config.StationToken, snapshot, zone)
 	cancelSync()
 	if syncErr != nil {
 		return syncErr
 	}
-	client.lastSyncID = buildTaskSyncID(buildSyncTasks(snapshot))
+	client.lastSyncID = buildTaskSyncID(buildSyncTasks(snapshot, zone))
 
 	slog.Info(
 		"task snapshot synced",
@@ -380,6 +387,25 @@ func (client *Client) syncTasksLocked(ctx context.Context) error {
 		"total", syncResult.Summary.Total,
 	)
 	return nil
+}
+
+// daemonZone is the zone tasks without their own timezone are synced in. The
+// Station loads it with time.LoadLocation, so an empty or unloadable name (never
+// produced by config load, which resolves the host zone to an IANA name) falls
+// back to UTC, with one warning per distinct bad value. Callers hold syncMu.
+func (client *Client) daemonZone() string {
+	if client.timezone == nil {
+		return "UTC"
+	}
+	name := client.timezone()
+	if _, err := time.LoadLocation(name); err == nil && name != "" && name != "Local" {
+		return name
+	}
+	if client.warnedZone != name {
+		client.warnedZone = name
+		slog.Warn("daemon timezone is not an IANA name the Station can load; syncing schedules in UTC", "timezone", name)
+	}
+	return "UTC"
 }
 
 // snapshotForSync builds the task set reported in tasks.sync: the TOML-loaded
