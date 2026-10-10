@@ -127,21 +127,8 @@ func parseRunwispDotenv(data string) map[string]string {
 // dotenvValue unquotes one trimmed dotenv value. An unterminated quote is
 // read as an unquoted value.
 func dotenvValue(v string) string {
-	if v != "" && (v[0] == '"' || v[0] == '\'') {
-		var b strings.Builder
-		for i := 1; i < len(v); i++ {
-			c := v[i]
-			if c == v[0] {
-				return b.String()
-			}
-			if c == '\\' && v[0] == '"' && i+1 < len(v) {
-				i++
-				if c = v[i]; c == 'n' {
-					c = '\n'
-				}
-			}
-			b.WriteByte(c)
-		}
+	if quoted, ok := dotenvUnquote(v); ok {
+		return quoted
 	}
 	for i := 0; i < len(v); i++ {
 		if v[i] == '#' && (i == 0 || v[i-1] == ' ' || v[i-1] == '\t') {
@@ -150,4 +137,28 @@ func dotenvValue(v string) string {
 		}
 	}
 	return strings.TrimSpace(v)
+}
+
+// dotenvUnquote reads a value opening with ' or ", up to its closing quote.
+// Double quotes take \n, \" and \\ escapes. ok is false when v isn't quoted
+// or the quote never closes.
+func dotenvUnquote(v string) (string, bool) {
+	if v == "" || (v[0] != '"' && v[0] != '\'') {
+		return "", false
+	}
+	var b strings.Builder
+	for i := 1; i < len(v); i++ {
+		c := v[i]
+		if c == v[0] {
+			return b.String(), true
+		}
+		if c == '\\' && v[0] == '"' && i+1 < len(v) {
+			i++
+			if c = v[i]; c == 'n' {
+				c = '\n'
+			}
+		}
+		b.WriteByte(c)
+	}
+	return "", false
 }

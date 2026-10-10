@@ -171,12 +171,14 @@ func normalizeVisitHost(hostport string) (string, bool) {
 		}
 		return strings.ToLower(hostport), true
 	}
-	for _, c := range host {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '.' || c == '_') {
-			return "", false
-		}
+	if strings.ContainsFunc(host, notHostnameRune) {
+		return "", false
 	}
 	return strings.ToLower(hostport), true
+}
+
+func notHostnameRune(c rune) bool {
+	return !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '.' || c == '_')
 }
 
 // savePeerAddr captures the original TCP peer address into context, along with
