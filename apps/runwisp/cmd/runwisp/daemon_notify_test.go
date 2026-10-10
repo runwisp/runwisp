@@ -204,7 +204,7 @@ func TestInitNotify_NoNotifiersNoRoutesReturnsZero(t *testing.T) {
 
 	cfg := &config.Config{Notify: config.NotifyConfig{}}
 
-	svc, err := initNotify(cfg, nil, "fp", inapp.NewHub(32), db, events.NewEventBus(), slog.Default())
+	svc, err := initNotify(cfg, nil, "fp", nil, inapp.NewHub(32), db, events.NewEventBus(), slog.Default())
 	require.NoError(t, err)
 	assert.Nil(t, svc, "expected no service when nothing is configured")
 }
@@ -227,7 +227,7 @@ func TestInitNotify_InappRouteWiresService(t *testing.T) {
 		},
 	}
 
-	svc, err := initNotify(cfg, nil, "fp", inapp.NewHub(32), db, events.NewEventBus(), slog.Default())
+	svc, err := initNotify(cfg, nil, "fp", nil, inapp.NewHub(32), db, events.NewEventBus(), slog.Default())
 	require.NoError(t, err)
 	require.NotNil(t, svc, "expected Service when inapp route is wired")
 }

@@ -23,7 +23,8 @@ import (
 var ErrNotFound = errors.New("record not found")
 
 const (
-	ConfigKeyFingerprint = "fingerprint"
+	ConfigKeyFingerprint         = "fingerprint"
+	ConfigKeyDetectedExternalURL = "detected_external_url"
 
 	maxSearchQueryLength = 100
 	retentionBatchSize   = 1000

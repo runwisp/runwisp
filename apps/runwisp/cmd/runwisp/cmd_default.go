@@ -180,7 +180,8 @@ func launchConnectedTUI(ctx context.Context, client *apiclient.Client, mode tuiC
 }
 
 // resolveTUIListenURL determines the operator-reachable Web UI base URL.
-// The daemon's external_url wins; otherwise uses connection URL or http://localhost:<port>.
+// The daemon's external URL (configured, or detected from the last sign-in)
+// wins; otherwise uses connection URL or http://localhost:<port>.
 func resolveTUIListenURL(info *model.DaemonInfo, mode tuiConnectMode) string {
 	if info != nil && info.ExternalURL != "" {
 		return info.ExternalURL

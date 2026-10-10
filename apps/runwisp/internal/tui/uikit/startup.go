@@ -35,7 +35,8 @@ type StartupInfo struct {
 	LogDir     string
 	Port       int
 	// ListenURL is the accurate, operator-reachable base URL of the Web UI
-	// ([daemon] external_url when set, else http://<bind-host>:<port> with
+	// (the daemon's external URL, configured or detected from the last
+	// sign-in, else http://<bind-host>:<port> with
 	// wildcard binds mapped to localhost). Empty when the Web UI is disabled.
 	ListenURL string
 
@@ -128,8 +129,8 @@ func (s *StartupInfo) ApplyDaemonInfo(info model.DaemonInfo) {
 }
 
 // WebURL returns the operator-reachable base URL of the Web UI for copy and
-// browser-launch actions. It prefers the resolved ListenURL ([daemon]
-// external_url, or the daemon's reachable host:port for a remote connection),
+// browser-launch actions. It prefers the resolved ListenURL (the daemon's
+// external URL, or its reachable host:port for a remote connection),
 // falling back to http://localhost:<port> for a local daemon. Returns "" when
 // neither is known (no Web UI / not yet populated).
 func (s StartupInfo) WebURL() string {

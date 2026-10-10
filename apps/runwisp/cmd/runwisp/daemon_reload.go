@@ -139,7 +139,7 @@ func (a *settingsApplier) prepareNotify(old, updated *config.Config) (changed bo
 	if readErr != nil {
 		return false, nil, fmt.Errorf("notifications: %w", readErr)
 	}
-	next, err := initNotify(updated, templates, a.fingerprint, a.svc.Notify.Hub, a.svc.DB, a.svc.EventBus, slog.Default())
+	next, err := initNotify(updated, templates, a.fingerprint, a.svc.DetectedURL, a.svc.Notify.Hub, a.svc.DB, a.svc.EventBus, slog.Default())
 	if err != nil {
 		return false, nil, fmt.Errorf("notifications: %w", err)
 	}

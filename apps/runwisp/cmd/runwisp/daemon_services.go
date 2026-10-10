@@ -45,6 +45,9 @@ type daemonServices struct {
 	MemoryReclaimer  *runtime.MemoryReclaimer
 	DebugServer      *debugServer
 	Notify           *liveNotify
+	// DetectedURL is the Web UI address of the latest signed-in visit, the
+	// notification link base when [daemon] external_url is unset.
+	DetectedURL      *detectedURL
 	ScheduleResult   runtime.ScheduleResult
 	CrashedRuns      int64
 	PendingSummary   uikit.PendingRunsSummary
@@ -133,7 +136,8 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db *storage.SQLi
 
 	debugSrv := startDebugServer()
 
-	notifyLive := startNotify(cfg, db, eventBus, addWarning)
+	detected := loadDetectedURL(ctx, db)
+	notifyLive := startNotify(cfg, db, detected, eventBus, addWarning)
 
 	if mode == modeStandalone {
 		// Run catch-up now that notify is subscribed, so a missed-run gap
@@ -156,6 +160,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db *storage.SQLi
 		MemoryReclaimer:     memoryReclaimer,
 		DebugServer:         debugSrv,
 		Notify:              notifyLive,
+		DetectedURL:         detected,
 		ScheduleResult:      boot.schedResult,
 		CrashedRuns:         crashed,
 		PendingSummary:      pendingSummary,
@@ -241,12 +246,12 @@ func startStandaloneScheduling(ctx context.Context, db *storage.SQLiteDatabase, 
 // startNotify initializes the notify subsystem and starts its service, routing
 // an init failure to a warning (non-fatal: the daemon must boot even when
 // notify is misconfigured).
-func startNotify(cfg *daemonConfig, db *storage.SQLiteDatabase, eventBus *events.Bus, addWarning func(string, ...any)) *liveNotify {
+func startNotify(cfg *daemonConfig, db *storage.SQLiteDatabase, detected *detectedURL, eventBus *events.Bus, addWarning func(string, ...any)) *liveNotify {
 	live := newLiveNotify()
 	templates, err := readNotifyTemplates(cfg.Config.Notify, os.ReadFile)
 	var svc *notify.Service
 	if err == nil {
-		svc, err = initNotify(cfg.Config, templates, cfg.Fingerprint, live.Hub, db, eventBus, slog.Default())
+		svc, err = initNotify(cfg.Config, templates, cfg.Fingerprint, detected, live.Hub, db, eventBus, slog.Default())
 	}
 	if err != nil {
 		addWarning("Failed to initialize notify subsystem: %v", err)

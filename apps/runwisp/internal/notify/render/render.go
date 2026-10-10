@@ -37,16 +37,24 @@ type Renderer interface {
 // template's func map at construction time so individual channels don't
 // have to know about base URLs, fingerprints, or how to read log files.
 //
-// All fields are optional. Zero values produce safe defaults: empty
-// ExternalURL suppresses run-link rendering, empty Fingerprint omits the
+// All fields are optional. Zero values produce safe defaults: a nil or
+// empty-returning ExternalURL suppresses run-link rendering (it is read at
+// render time, so a URL detected after startup applies), empty Fingerprint omits the
 // footer token (unless Name is set), nil OutputTail returns the empty string (the template branch
 // that wraps it then collapses).
 type TemplateContext struct {
-	ExternalURL string
+	ExternalURL func() string
 	// Name is [daemon] name; instanceName prefers it over Fingerprint.
 	Name        string
 	Fingerprint string
 	OutputTail  func(logPath string, maxLines, maxBytes int) string
+}
+
+func (c TemplateContext) externalURL() string {
+	if c.ExternalURL == nil {
+		return ""
+	}
+	return c.ExternalURL()
 }
 
 // TemplateRenderer is the workhorse: a parsed text/template plus a title
@@ -106,8 +114,8 @@ func funcMap(ctx TemplateContext) template.FuncMap {
 		"eventSentence": eventSentence,
 		"eventTrigger":  eventTrigger,
 		"linkLabel":     linkLabel,
-		"runURL":        func(r *model.Run) string { return runURL(ctx.ExternalURL, r) },
-		"taskURL":       func(name string) string { return taskURL(ctx.ExternalURL, name) },
+		"runURL":        func(r *model.Run) string { return runURL(ctx.externalURL(), r) },
+		"taskURL":       func(name string) string { return taskURL(ctx.externalURL(), name) },
 		"outputTail": func(ev *notify.Event) string {
 			if ctx.OutputTail == nil || ev == nil {
 				return ""
@@ -438,7 +446,7 @@ func linkLabel(k notify.Kind) string {
 }
 
 // runURL builds the deep-link to a specific run in the embedded dashboard.
-// Returns "" when the operator hasn't configured external_url or when the
+// Returns "" when there is no external URL (configured or detected) or when the
 // run/task name is missing — callers wrap the result in a template
 // conditional so the link line vanishes cleanly rather than rendering an
 // orphan anchor.

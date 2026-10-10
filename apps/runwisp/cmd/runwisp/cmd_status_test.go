@@ -126,6 +126,37 @@ func TestRunStatus_ConfigStaleWarns(t *testing.T) {
 	assert.Contains(t, buf.String(), "runwisp.toml has changed")
 }
 
+func TestRunStatus_ShowsWebUIAddressAndSource(t *testing.T) {
+	cases := map[string]struct {
+		info model.DaemonInfo
+		want string
+	}{
+		"configured": {model.DaemonInfo{Port: 9477, ExternalURL: "https://rw.example.com", ExternalURLSource: "config"}, "Web UI: https://rw.example.com (external_url)"},
+		"detected":   {model.DaemonInfo{Port: 9477, ExternalURL: "http://rw.lan:9477", ExternalURLSource: "detected"}, "Web UI: http://rw.lan:9477 (from the last sign-in; set external_url to pin it)"},
+		"unknown":    {model.DaemonInfo{Port: 9477}, ""},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})
+			mux.HandleFunc("/api/daemon", func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(tc.info)
+			})
+			f := serveStatusSocket(t, mux)
+
+			var buf bytes.Buffer
+			require.NoError(t, runStatus(t.Context(), &buf, f, false))
+			if tc.want == "" {
+				assert.NotContains(t, buf.String(), "Web UI:")
+			} else {
+				assert.Contains(t, buf.String(), tc.want)
+			}
+		})
+	}
+}
+
 // A paused schedule records no cron runs, so status is where it shows up.
 func TestRunStatus_ListsPausedSchedules(t *testing.T) {
 	pausedAt := time.Date(2026, 9, 29, 14, 0, 0, 0, time.UTC)

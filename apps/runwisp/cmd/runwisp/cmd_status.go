@@ -61,6 +61,7 @@ func runStatus(ctx context.Context, out io.Writer, f Flags, asJSON bool) error {
 	info, infoErr := client.GetDaemonInfo(ctx)
 	if infoErr == nil {
 		fmt.Fprintf(out, "RunWisp is healthy at :%d\n", info.Port)
+		printWebUIAddress(out, info)
 	} else {
 		fmt.Fprintln(out, "RunWisp is healthy")
 	}
@@ -105,6 +106,7 @@ func buildStatusDoc(ctx context.Context, client *apiclient.Client) statusJSONDoc
 		doc.Version = info.Version
 		doc.Port = info.Port
 		doc.ExternalURL = info.ExternalURL
+		doc.ExternalURLSource = info.ExternalURLSource
 		doc.SchedulingActive = info.SchedulingActive
 		doc.ConfigStale = info.ConfigStale
 		doc.ConfigWarnings = info.ConfigWarnings
@@ -140,4 +142,16 @@ func printSystemStats(out io.Writer, stats *model.SystemStats) {
 	fmt.Fprintf(out, "  Uptime:   %s\n", stats.Uptime)
 	fmt.Fprintf(out, "  CPU:      %d cores\n", stats.CPUCores)
 	fmt.Fprintf(out, "  Host:     %s\n", stats.Host)
+}
+
+// printWebUIAddress names the address notification links point at, and where
+// it came from, so an operator can tell a pinned external_url from one the
+// daemon picked up from a sign-in.
+func printWebUIAddress(out io.Writer, info *model.DaemonInfo) {
+	switch info.ExternalURLSource {
+	case "config":
+		fmt.Fprintf(out, "Web UI: %s (external_url)\n", info.ExternalURL)
+	case "detected":
+		fmt.Fprintf(out, "Web UI: %s (from the last sign-in; set external_url to pin it)\n", info.ExternalURL)
+	}
 }

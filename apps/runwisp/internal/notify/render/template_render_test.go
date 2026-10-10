@@ -88,7 +88,7 @@ func TestTelegram_RunFailed_WithURLAndTail(t *testing.T) {
 		LogPath:   logPath,
 	}
 	ctx := TemplateContext{
-		ExternalURL: "https://runwisp.example.com",
+		ExternalURL: func() string { return "https://runwisp.example.com" },
 		Fingerprint: "bright-falcon",
 		OutputTail:  NewOutputTail(),
 	}
@@ -154,7 +154,7 @@ func TestTelegram_RunSucceeded(t *testing.T) {
 		Run:       run,
 	}
 	ctx := TemplateContext{
-		ExternalURL: "https://r.example.com",
+		ExternalURL: func() string { return "https://r.example.com" },
 		Fingerprint: "bright-falcon",
 		OutputTail:  NewOutputTail(),
 	}
@@ -186,7 +186,7 @@ func TestTelegram_RunTimeout_HasTail(t *testing.T) {
 		LogPath:   logPath,
 	}
 	ctx := TemplateContext{
-		ExternalURL: "https://r.example.com",
+		ExternalURL: func() string { return "https://r.example.com" },
 		Fingerprint: "bright-falcon",
 		OutputTail:  NewOutputTail(),
 	}
@@ -205,7 +205,7 @@ func TestTelegram_RunCrashed_NoRun(t *testing.T) {
 		Reason:    "exec format error",
 	}
 	ctx := TemplateContext{
-		ExternalURL: "https://r.example.com",
+		ExternalURL: func() string { return "https://r.example.com" },
 		Fingerprint: "bright-falcon",
 		OutputTail:  NewOutputTail(),
 	}
@@ -224,7 +224,7 @@ func TestTelegram_LogDiskPressure_TaskLink(t *testing.T) {
 		TaskName:  "noisy-task",
 	}
 	ctx := TemplateContext{
-		ExternalURL: "https://r.example.com",
+		ExternalURL: func() string { return "https://r.example.com" },
 		Fingerprint: "bright-falcon",
 		OutputTail:  NewOutputTail(),
 	}
@@ -271,7 +271,7 @@ func TestSlack_RunFailed_WithURLAndTail(t *testing.T) {
 		LogPath:   logPath,
 	}
 	ctx := TemplateContext{
-		ExternalURL: "https://r.example.com",
+		ExternalURL: func() string { return "https://r.example.com" },
 		Fingerprint: "bright-falcon",
 		OutputTail:  NewOutputTail(),
 	}
@@ -377,7 +377,7 @@ func TestDiscord_RunFailed_WithURLAndTail(t *testing.T) {
 		LogPath:   logPath,
 	}
 	ctx := TemplateContext{
-		ExternalURL: "https://r.example.com",
+		ExternalURL: func() string { return "https://r.example.com" },
 		Fingerprint: "bright-falcon",
 		OutputTail:  NewOutputTail(),
 	}
@@ -431,7 +431,7 @@ func TestDiscord_LogDiskPressure_TaskLinkAndYellow(t *testing.T) {
 		Timestamp: eventTime(t),
 		TaskName:  "noisy-task",
 	}
-	ctx := TemplateContext{ExternalURL: "https://r.example.com", Fingerprint: "fp"}
+	ctx := TemplateContext{ExternalURL: func() string { return "https://r.example.com" }, Fingerprint: "fp"}
 	got := renderDiscord(t, ctx, ev)
 	var parsed discordPayload
 	require.NoError(t, json.Unmarshal([]byte(got), &parsed), got)

@@ -89,7 +89,7 @@ timezone = "Europe/Bratislava"
 
 ### `external_url`
 
-**type**: `string` **default**: unset
+**type**: `string` **default**: the address you last signed in to the Web UI from
 
 The public address of this daemon's Web UI, for example
 `https://runwisp.example.com` behind a reverse proxy or `http://192.168.1.50:9477`
@@ -98,7 +98,13 @@ the form `<external_url>/tasks/<task>/<id>`.
 
 - Must be `http` or `https` with a host. A trailing slash is removed.
 - The daemon never connects to this URL.
-- When unset, notifications leave out the link.
+- Since 1.6, when unset, the daemon uses the address of the most recent signed-in
+  Web UI visit, and remembers it across restarts. A visit from another address
+  replaces it. Behind a reverse proxy, the forwarded host and scheme count only
+  from a [trusted proxy](#trusted_proxies). Set `external_url` to pin one
+  address. `runwisp status` shows which address is in use.
+- With `RUNWISP_AUTH=off` nobody signs in, so nothing is detected: set
+  `external_url` or notifications leave out the link.
 
 ```toml title="runwisp.toml"
 [daemon]

@@ -35,7 +35,7 @@ func TestAuthOrLocalTrusted_BypassWithLocalContext(t *testing.T) {
 	require.NoError(t, err)
 
 	called := false
-	handler := authOrLocalTrusted(authSvc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := authOrLocalTrusted(authSvc, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -58,7 +58,7 @@ func TestAuthOrLocalTrusted_RejectsTCPWithoutSession(t *testing.T) {
 	require.NoError(t, err)
 
 	called := false
-	handler := authOrLocalTrusted(authSvc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := authOrLocalTrusted(authSvc, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	}))

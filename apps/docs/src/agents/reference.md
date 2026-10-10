@@ -34,7 +34,7 @@ name:                 string      — display label shown instead of the fingerp
 allow_station_dispatch: bool =false — accept peer-dispatched ad-hoc shell/container/compose runs (opt-in; one-shot, never edits TOML; HTTP & existing-task triggers always allowed)
 shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flight runs on shutdown
 timezone:             IANA string =host system zone — TZ for cron eval when a task pins none
-external_url:         string      — public Web UI base for notification deep-links; absolute http(s) w/ host
+external_url:         string =last signed-in Web UI address — public Web UI base for notification deep-links; absolute http(s) w/ host; unset = detected from the latest signed-in visit (persisted; never with RUNWISP_AUTH=off)
 check_updates:        bool =true  — poll concierge.runwisp.com for a newer release; shows an indicator, never auto-updates; also gates the Web UI feedback prompt; false = fully offline
 metrics_enabled:      bool =false — master switch for /metrics
 metrics_listen:       host:port   — dedicated metrics listener; setting it enables metrics on its own
@@ -306,7 +306,7 @@ runwisp daemon               — start headless daemon (no TUI)
 runwisp tui                  — attach a TUI to a running daemon
 runwisp validate             — validate runwisp.toml without starting anything; --json for the structured document (see above)
 runwisp list                 — list configured tasks and schedules; --json for a machine-readable document
-runwisp status               — is the daemon alive?; --json for daemon health + every task's last run (+ pausedAt when its schedule is paused); human output lists paused schedules
+runwisp status               — is the daemon alive?; --json for daemon health + every task's last run (+ pausedAt when its schedule is paused) + externalUrl/externalUrlSource (config|detected); human output lists paused schedules and the Web UI address
 runwisp run <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive
                              — exit code = the process's exit code; 1 when the run failed (failures pattern, timeout, stop) but the process exited 0
                              — --param key=value (repeatable) supplies task parameter values; a param not mentioned uses its declared default

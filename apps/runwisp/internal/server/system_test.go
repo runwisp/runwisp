@@ -67,6 +67,36 @@ func TestHumaGetInfo(t *testing.T) {
 	assert.Equal(t, "test-fp", out.Body.Fingerprint)
 }
 
+// /api/daemon reports the link base notifications use: a configured
+// external_url wins, else the address detected from the latest sign-in.
+func TestHumaGetInfo_ExternalURLSource(t *testing.T) {
+	detected := func() string { return "http://rw.lan:9477" }
+	cases := []struct {
+		name                string
+		configured          string
+		detected            func() string
+		wantURL, wantSource string
+	}{
+		{"configured wins", "https://pinned.example.com", detected, "https://pinned.example.com", "config"},
+		{"detected fills in", "", detected, "http://rw.lan:9477", "detected"},
+		{"nothing seen yet", "", func() string { return "" }, "", ""},
+		{"no detection wired", "", nil, "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := &Server{
+				stats:       newStatsProvider(&model.DaemonInfo{ExternalURL: tc.configured}, time.Now()),
+				configStale: neverStale,
+				detectedURL: tc.detected,
+			}
+			out, err := srv.humaGetInfo(context.Background(), &struct{}{})
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantURL, out.Body.ExternalURL)
+			assert.Equal(t, tc.wantSource, out.Body.ExternalURLSource)
+		})
+	}
+}
+
 // The Web UI's feedback card waits for an hour of uptime, counted from startedAt;
 // it must be the same instant /api/system's uptime counts from.
 func TestHumaGetInfo_StartedAtIsTheStatsStartTime(t *testing.T) {
