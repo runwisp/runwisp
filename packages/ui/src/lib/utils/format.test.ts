@@ -10,6 +10,7 @@ import {
     formatDuration,
     formatDurationExact,
     parseDuration,
+    formatRelativeCompact,
     formatRelativeTime,
     formatRelativeTimeWithAbsolute,
     formatTimeHM,
@@ -124,10 +125,83 @@ describe("formatRelativeTimeWithAbsolute", () => {
 });
 
 describe("formatRelativeTime", () => {
+    const now = new Date("2024-01-10T12:00:00Z");
+    const at = (seconds: number): Date => new Date(now.getTime() + seconds * 1000);
+
     it("advances as the supplied now advances", () => {
         const date = new Date("2024-01-01T12:00:00Z");
         expect(formatRelativeTime(date, new Date("2024-01-01T14:00:00Z"))).toBe("2 hours ago");
         expect(formatRelativeTime(date, new Date("2024-01-01T15:00:00Z"))).toBe("3 hours ago");
+    });
+
+    it("always shows a number by default", () => {
+        expect(formatRelativeTime(at(0), now)).toBe("in 0 seconds");
+        expect(formatRelativeTime(at(-86_400), now)).toBe("1 day ago");
+        expect(formatRelativeTime(at(86_400), now)).toBe("in 1 day");
+    });
+
+    it.each([
+        [0, "now"],
+        [-16, "16 seconds ago"],
+        [16, "in 16 seconds"],
+        [-60, "1 minute ago"],
+        [-5 * 60, "5 minutes ago"],
+        [-3600, "1 hour ago"],
+        [2 * 3600, "in 2 hours"],
+        [-86_400, "yesterday"],
+        [86_400, "tomorrow"],
+        [-3 * 86_400, "3 days ago"],
+    ])("numeric auto: %is from now reads %s", (seconds, expected) => {
+        expect(formatRelativeTime(at(seconds), now, { numeric: "auto" })).toBe(expected);
+    });
+
+    it("accepts a timestamp, an ISO string or a Date", () => {
+        const date = at(-120);
+        expect(formatRelativeTime(date.getTime(), now)).toBe("2 minutes ago");
+        expect(formatRelativeTime(date.toISOString(), now)).toBe("2 minutes ago");
+        expect(formatRelativeTime(date, now)).toBe("2 minutes ago");
+    });
+
+    it("throws on an invalid date", () => {
+        expect(() => formatRelativeTime("not a date", now)).toThrow(RangeError);
+        expect(() => formatRelativeTime("not a date", now, { numeric: "auto" })).toThrow(
+            RangeError,
+        );
+    });
+});
+
+describe("formatRelativeCompact", () => {
+    const now = new Date("2024-01-10T12:00:00Z");
+    const ago = (seconds: number): number => now.getTime() - seconds * 1000;
+
+    it.each([
+        [0, "0s"],
+        [16.9, "16s"],
+        [59, "59s"],
+        [60, "1m"],
+        [3 * 60 + 59, "3m"],
+        [59 * 60, "59m"],
+        [3600, "1h"],
+        [23 * 3600 + 3599, "23h"],
+        [86_400, "1d"],
+        [45 * 86_400, "45d"],
+        [400 * 86_400, "400d"],
+    ])("%is ago reads %s", (seconds, expected) => {
+        expect(formatRelativeCompact(ago(seconds), now)).toBe(expected);
+    });
+
+    it("clamps a future date to 0s", () => {
+        expect(formatRelativeCompact(ago(-90), now)).toBe("0s");
+    });
+
+    it("accepts an ISO string or a Date", () => {
+        expect(formatRelativeCompact(new Date(ago(180)).toISOString(), now)).toBe("3m");
+        expect(formatRelativeCompact(new Date(ago(180)), now)).toBe("3m");
+    });
+
+    it("does not guard an invalid date", () => {
+        // Same as the station helper it replaces; callers pass server timestamps.
+        expect(formatRelativeCompact("not a date", now)).toBe("NaNd");
     });
 });
 

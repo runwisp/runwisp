@@ -117,8 +117,10 @@ export { extractErrorMessage } from "./utils/error.js";
 export {
     formatBytes,
     formatDayMonth,
+    formatRelativeCompact,
     formatRelativeTime,
     formatRelativeTimeWithAbsolute,
+    type RelativeTimeOptions,
     formatDuration,
     formatFullDateTime,
 } from "./utils/format.js";
