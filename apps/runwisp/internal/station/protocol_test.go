@@ -107,7 +107,7 @@ func TestNewPingMessage_CarriesSystemStats(t *testing.T) {
 			CPUCores: 8, Uptime: "1h", Version: "1.2.3", Host: "box",
 			OS: "linux", Arch: "amd64", Name: "runwisp", WorkDir: "/secret/path",
 		}
-	})
+	}, func() string { return "storage-nas" })
 	ping := NewPingMessage(provider())
 	require.NotNil(t, ping.SystemStats)
 	assert.Equal(t, 12.5, ping.SystemStats.CpuUsage)
@@ -115,6 +115,7 @@ func TestNewPingMessage_CarriesSystemStats(t *testing.T) {
 	assert.Equal(t, "linux", ping.SystemStats.Os)
 	assert.Equal(t, "amd64", ping.SystemStats.Arch)
 	assert.Equal(t, 8, ping.SystemStats.CpuCores)
+	assert.Equal(t, "storage-nas", ping.SystemStats.InstanceName)
 
 	// Identity-only / path-leaking fields are intentionally not on the wire.
 	out, err := json.Marshal(ping)
@@ -123,7 +124,7 @@ func TestNewPingMessage_CarriesSystemStats(t *testing.T) {
 }
 
 func TestMakeSystemStatsProvider_NilSource(t *testing.T) {
-	assert.Nil(t, makeSystemStatsProvider(nil))
+	assert.Nil(t, makeSystemStatsProvider(nil, nil))
 }
 
 func TestNewExecutionAckMessage(t *testing.T) {

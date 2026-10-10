@@ -62,6 +62,9 @@ type Dependencies struct {
 	// piggybacks for the control plane's per-runner metrics view. nil sends a
 	// plain ping (the station falls back to identity-only runner info).
 	SystemStats func() model.SystemStats
+	// InstanceName, when set, returns the live [daemon] name the heartbeat
+	// snapshot carries. Only read when SystemStats is set.
+	InstanceName func() string
 	// Now is the wall-clock source used by sub-components that persist
 	// timestamps (currently only the log uploader). Production wires
 	// time.Now; tests inject a fixed clock for deterministic fixtures.
@@ -147,7 +150,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 
 	client.sessions = &sessionRunner{
 		handler:     client.handler,
-		systemStats: makeSystemStatsProvider(deps.SystemStats),
+		systemStats: makeSystemStatsProvider(deps.SystemStats, deps.InstanceName),
 	}
 
 	client.bridge = NewEventBridge(

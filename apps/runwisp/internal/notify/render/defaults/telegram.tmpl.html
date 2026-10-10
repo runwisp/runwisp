@@ -14,4 +14,4 @@
 🔗 <a href="{{ $url }}">{{ linkLabel .Kind }}</a>
 {{- end }}
 
-<i>from runwisp{{ with fingerprint }} · {{ tgEscape . }}{{ end }}</i>
+<i>from runwisp{{ with instanceName }} · {{ tgEscape . }}{{ end }}</i>

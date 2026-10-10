@@ -171,6 +171,11 @@ func (srv *Server) SystemStats() model.SystemStats {
 	return srv.stats.GetSystemStats()
 }
 
+// InstanceName returns the live [daemon] name, kept current by reloads.
+func (srv *Server) InstanceName() string {
+	return srv.stats.GetDaemonInfo().Name
+}
+
 func (srv *Server) humaGetMetricsHistory(ctx context.Context, input *struct{}) (*MetricsHistoryOutput, error) {
 	return &MetricsHistoryOutput{Body: MetricsHistoryBody{Items: srv.metrics.History()}}, nil
 }

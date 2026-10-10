@@ -6,6 +6,7 @@ package home
 import (
 	"slices"
 	"strings"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -36,11 +37,13 @@ const (
 // task even while the displayed list is narrowed), whereas cursor/scroll/hovered
 // index the displayed items.
 type Sidebar struct {
-	name        string
-	version     string
-	fingerprint string
-	allItems    []sidebarItem
-	items       []sidebarItem
+	name    string
+	version string
+	// label identifies the instance under the brand: [daemon] name, else the
+	// fingerprint. Kept fresh by SetLabel from the /api/daemon poll.
+	label    string
+	allItems []sidebarItem
+	items    []sidebarItem
 
 	width     int
 	height    int
@@ -70,16 +73,16 @@ type Sidebar struct {
 // hit-test against this constant is exact.
 const versionRow = 2
 
-func NewSidebar(name, version, fingerprint string, tasks []model.Task) Sidebar {
+func NewSidebar(name, version, label string, tasks []model.Task) Sidebar {
 	all := buildItems(tasks)
 	return Sidebar{
-		name:        name,
-		version:     version,
-		fingerprint: fingerprint,
-		allItems:    all,
-		items:       all,
-		hovered:     -1,
-		focused:     true,
+		name:     name,
+		version:  version,
+		label:    label,
+		allItems: all,
+		items:    all,
+		hovered:  -1,
+		focused:  true,
 	}
 }
 
@@ -191,6 +194,12 @@ func (s *Sidebar) SetFocused(focused bool) {
 
 func (s *Sidebar) SetHovered(idx int) {
 	s.hovered = idx
+}
+
+// SetLabel replaces the instance label under the brand, so a reload that
+// changes [daemon] name shows up without restarting the TUI.
+func (s *Sidebar) SetLabel(label string) {
+	s.label = label
 }
 
 // SetUpdate records the background update-check result. Losing availability
@@ -484,7 +493,7 @@ func (s *Sidebar) SetTaskMarks(marks map[string]uikit.TaskMark) {
 }
 
 func (s *Sidebar) brandHeight() int {
-	if s.fingerprint != "" {
+	if s.label != "" {
 		return 5
 	}
 	return 4
@@ -502,9 +511,9 @@ func (s *Sidebar) View() string {
 	writeSidebarLine(&b, s.renderVersionLine(), w)
 	rendered++
 
-	if s.fingerprint != "" {
-		fingerprint := truncateToWidth(s.fingerprint, max(0, w-3))
-		writeSidebarLine(&b, uikit.SidebarFingerprintStyle.Render("   "+fingerprint), w)
+	if s.label != "" {
+		label := truncateToWidth(oneLine(s.label), max(0, w-3))
+		writeSidebarLine(&b, uikit.SidebarFingerprintStyle.Render("   "+label), w)
 		rendered++
 	}
 
@@ -540,7 +549,7 @@ func (s *Sidebar) renderItem(index int) string {
 	item := s.items[index]
 
 	if item.kind == entryGroupHeader {
-		text := " " + truncateToWidth(item.label, max(1, s.width-1))
+		text := " " + truncateToWidth(oneLine(item.label), max(1, s.width-1))
 		if width := lipgloss.Width(text); width < s.width {
 			text += strings.Repeat(" ", s.width-width)
 		}
@@ -664,8 +673,10 @@ func (s *Sidebar) ensureVisible() {
 	s.scroll = max(min(s.scroll, maxScroll), 0)
 }
 
+// writeSidebarLine clips content to width before padding, so no row (e.g. a
+// long version string) can spill into the main panel.
 func writeSidebarLine(b *strings.Builder, content string, width int) {
-	b.WriteString(uikit.PadLine(content, width, uikit.ColorSidebarBg))
+	b.WriteString(uikit.PadLine(truncateToWidth(content, width), width, uikit.ColorSidebarBg))
 	b.WriteString("\n")
 }
 
@@ -676,4 +687,15 @@ func truncateToWidth(value string, maxWidth int) string {
 		return value
 	}
 	return uikit.TruncateToWidth(value, maxWidth)
+}
+
+// oneLine drops control characters from free-text TOML values ([daemon] name,
+// group) so a newline or tab can't break the sidebar's one-row-per-entry layout.
+func oneLine(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, value)
 }

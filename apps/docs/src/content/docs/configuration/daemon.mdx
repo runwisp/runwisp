@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: "[daemon]"
-description: "Daemon-wide settings: shutdown_timeout, timezone, external_url, TLS, metrics, trusted proxies, include, and include_cron."
+description: "Daemon-wide settings: name, shutdown_timeout, timezone, external_url, TLS, metrics, trusted proxies, include, and include_cron."
 ---
 
 `[daemon]` holds settings for the whole daemon. The table is optional.
@@ -17,6 +17,7 @@ before the config file is read.
 
 ```toml title="runwisp.toml"
 [daemon]
+name             = "storage-nas"
 shutdown_timeout = "10s"
 timezone         = "Europe/Bratislava"
 external_url     = "https://runwisp.example.com"
@@ -29,6 +30,24 @@ metrics_listen   = ""
 trusted_proxies  = ["127.0.0.1/32"]
 include          = ["conf.d/*.toml"]
 # include_cron   = ["/etc/crontab", "/etc/cron.d/*"]
+```
+
+### `name`
+
+**type**: `string` **default**: unset **since**: `1.6`
+
+A label for this daemon, so you can tell several of them apart. The TUI
+sidebar, the Web UI, the browser tab title, and notification footers show it
+in place of the instance fingerprint.
+
+- Leading and trailing spaces are removed.
+- When unset, those places show the fingerprint.
+- `${HOSTNAME}` gives the machine's hostname, even when the variable isn't
+  exported (see [substitution](/configuration/substitution/#var-environment-variables)).
+
+```toml title="runwisp.toml"
+[daemon]
+name = "${HOSTNAME}"
 ```
 
 ### `shutdown_timeout`

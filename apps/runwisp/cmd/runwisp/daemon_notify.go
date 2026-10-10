@@ -123,6 +123,7 @@ func initNotify(
 
 	renderCtx := render.TemplateContext{
 		ExternalURL: cfg.Daemon.ExternalURL,
+		Name:        cfg.Daemon.Name,
 		Fingerprint: fingerprint,
 		OutputTail:  render.NewOutputTail(),
 	}

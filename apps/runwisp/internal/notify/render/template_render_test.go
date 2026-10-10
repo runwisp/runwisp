@@ -307,6 +307,13 @@ func TestSlack_RunFailed_WithURLAndTail(t *testing.T) {
 	assert.True(t, foundButton, "expected action button with run URL")
 }
 
+func TestFooter_NamePreferredOverFingerprint(t *testing.T) {
+	ev := &notify.Event{Kind: notify.KindRunFailed, Severity: notify.SevError, Timestamp: eventTime(t), TaskName: "t"}
+	got := renderTelegram(t, TemplateContext{Name: "storage-nas", Fingerprint: "bright-falcon"}, ev)
+	assert.Contains(t, got, "from runwisp · storage-nas")
+	assert.NotContains(t, got, "bright-falcon")
+}
+
 func TestSlack_RunFailed_NoURL(t *testing.T) {
 	start := eventTime(t)
 	end := start.Add(300 * time.Millisecond)

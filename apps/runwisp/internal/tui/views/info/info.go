@@ -380,6 +380,7 @@ func (v *InfoView) renderConfigSection(w int) []string {
 		{"Data Dir", v.info.DataDir},
 		{"Database", v.info.DBPath},
 		{"Log Dir", v.info.LogDir},
+		{"Name", v.info.Name},
 		{"Fingerprint", v.info.Fingerprint},
 	}
 

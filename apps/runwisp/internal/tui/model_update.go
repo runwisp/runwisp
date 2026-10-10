@@ -703,6 +703,7 @@ func (m *Model) applyDaemonInfo(info model.DaemonInfo) {
 		m.execWindow.SetLocation(m.loc)
 	}
 	m.sidebar.SetUpdate(info.UpdateAvailable, info.LatestVersion)
+	m.sidebar.SetLabel(m.info.Label())
 }
 
 // reloadConfig triggers an explicit config reload from inside the TUI. The

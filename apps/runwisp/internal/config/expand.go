@@ -18,6 +18,7 @@ import (
 // Rules:
 //   - ${VAR} resolves through lookupEnv; an unset variable is a hard error
 //     naming the variable and the TOML path. Set-but-empty substitutes "".
+//     The daemon's lookupEnv is withHostname, so ${HOSTNAME} always resolves.
 //   - ${file:path} reads the file (strings.TrimSpace'd); relative paths
 //     resolve against baseDir (the declaring file's directory), "~/" against the
 //     user's home. An unreadable file is a hard error.
@@ -28,6 +29,20 @@ import (
 func expandConfig(raw *tomlConfig, baseDir string, lookupEnv func(string) (string, bool)) error {
 	e := &expander{baseDir: baseDir, lookupEnv: lookupEnv}
 	return e.walkValue(reflect.ValueOf(raw).Elem(), "")
+}
+
+// withHostname wraps lookupEnv so an unset HOSTNAME falls back to hostname().
+// Shells set HOSTNAME without exporting it on most distros, and service
+// managers never set it, so `name = "${HOSTNAME}"` would otherwise only load
+// from some terminals.
+func withHostname(lookupEnv func(string) (string, bool), hostname func() (string, error)) func(string) (string, bool) {
+	return func(name string) (string, bool) {
+		if v, ok := lookupEnv(name); ok || name != "HOSTNAME" {
+			return v, ok
+		}
+		h, err := hostname()
+		return h, err == nil
+	}
 }
 
 type expander struct {

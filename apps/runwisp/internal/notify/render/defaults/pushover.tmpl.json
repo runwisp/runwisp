@@ -1,7 +1,7 @@
 {{- /* Pushover notification. The token and user keys are set by the channel, not here. Priority: 0 (normal) on errors and warnings, -1 (quiet) otherwise; 1 would bypass quiet hours and 2 needs retry/expire. */ -}}
 {{- $tail := "" -}}{{- if or (eq .Kind "run.failed") (eq .Kind "run.timeout") -}}{{- $tail = outputTail . -}}{{- end -}}
 {{- $url := "" -}}{{- if eq .Kind "log.disk_pressure" -}}{{- $url = taskURL .TaskName -}}{{- else -}}{{- $url = runURL .Run -}}{{- end -}}
-{{- $footer := "from runwisp" -}}{{- with fingerprint -}}{{- $footer = printf "from runwisp · %s" . -}}{{- end -}}
+{{- $footer := "from runwisp" -}}{{- with instanceName -}}{{- $footer = printf "from runwisp · %s" . -}}{{- end -}}
 {{- $message := printf "%s\n%s · %s." (eventSentence .) (eventTrigger .) (humanTime .Timestamp) -}}
 {{- if $tail -}}{{- $message = printf "%s\n\n%s" $message $tail -}}{{- end -}}
 {{- $message = printf "%s\n\n%s" $message $footer -}}

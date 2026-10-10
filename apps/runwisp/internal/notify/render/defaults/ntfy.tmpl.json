@@ -1,7 +1,7 @@
 {{- /* ntfy notification — JSON publish. The topic is set by the channel, not here. Priority: 4 (high) on errors, 3 (default) on warnings, 2 (low, silent) otherwise. */ -}}
 {{- $tail := "" -}}{{- if or (eq .Kind "run.failed") (eq .Kind "run.timeout") -}}{{- $tail = outputTail . -}}{{- end -}}
 {{- $url := "" -}}{{- if eq .Kind "log.disk_pressure" -}}{{- $url = taskURL .TaskName -}}{{- else -}}{{- $url = runURL .Run -}}{{- end -}}
-{{- $footer := "from runwisp" -}}{{- with fingerprint -}}{{- $footer = printf "from runwisp · %s" . -}}{{- end -}}
+{{- $footer := "from runwisp" -}}{{- with instanceName -}}{{- $footer = printf "from runwisp · %s" . -}}{{- end -}}
 {{- $message := printf "%s\n%s · %s." (eventSentence .) (eventTrigger .) (humanTime .Timestamp) -}}
 {{- if $tail -}}{{- $message = printf "%s\n\n%s" $message $tail -}}{{- end -}}
 {{- $message = printf "%s\n\n%s" $message $footer -}}

@@ -147,6 +147,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "name": { "type": "string", "description": "Display label for this instance, shown instead of the fingerprint in the TUI, Web UI and notification footers. ${HOSTNAME} falls back to the machine's hostname when unset." },
         "allow_station_dispatch": { "type": "boolean", "default": false, "description": "Accept peer-dispatched ad-hoc runs (opt-in; one-shot, never edits TOML)." },
         "shutdown_timeout": { "$ref": "#/$defs/duration", "description": "SIGTERM→SIGKILL drain budget for in-flight runs on shutdown. Default 10s." },
         "external_url": { "type": "string", "description": "Public Web UI base for notification deep-links; absolute http(s) with host." },

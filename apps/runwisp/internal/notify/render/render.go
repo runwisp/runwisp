@@ -8,6 +8,7 @@ package render
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -38,10 +39,12 @@ type Renderer interface {
 //
 // All fields are optional. Zero values produce safe defaults: empty
 // ExternalURL suppresses run-link rendering, empty Fingerprint omits the
-// footer token, nil OutputTail returns the empty string (the template branch
+// footer token (unless Name is set), nil OutputTail returns the empty string (the template branch
 // that wraps it then collapses).
 type TemplateContext struct {
 	ExternalURL string
+	// Name is [daemon] name; instanceName prefers it over Fingerprint.
+	Name        string
 	Fingerprint string
 	OutputTail  func(logPath string, maxLines, maxBytes int) string
 }
@@ -111,7 +114,8 @@ func funcMap(ctx TemplateContext) template.FuncMap {
 			}
 			return ctx.OutputTail(ev.LogPath, 3, 300)
 		},
-		"fingerprint": func() string { return ctx.Fingerprint },
+		"fingerprint":  func() string { return ctx.Fingerprint },
+		"instanceName": func() string { return cmp.Or(ctx.Name, ctx.Fingerprint) },
 	}
 }
 

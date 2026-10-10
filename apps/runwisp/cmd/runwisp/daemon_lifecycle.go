@@ -58,6 +58,7 @@ func startStationClient(
 		},
 		RequestRestart: func() error { return requestSelfRestart(cfg.Config.Daemon.AllowStationDispatch, fatalCh) },
 		SystemStats:    srv.SystemStats,
+		InstanceName:   srv.InstanceName,
 	})
 	if clientErr != nil {
 		slog.Error("Failed to create station client", "err", clientErr)

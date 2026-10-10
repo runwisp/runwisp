@@ -77,6 +77,7 @@ func (a *settingsApplier) prepare(old, updated *config.Config) ([]string, func()
 	}
 
 	// Applied by the notify rebuild and the daemon info refresh below.
+	set(old.Daemon.Name != updated.Daemon.Name, "daemon.name", func() {})
 	set(old.Daemon.ExternalURL != updated.Daemon.ExternalURL, "daemon.external_url", func() {})
 	set(old.Daemon.CheckUpdates != updated.Daemon.CheckUpdates, "daemon.check_updates", func() {
 		a.updates.SetEnabled(updated.Daemon.CheckUpdates)
@@ -111,6 +112,7 @@ func (a *settingsApplier) prepare(old, updated *config.Config) ([]string, func()
 		// reconciler re-bases the schedules). Idempotent, so it isn't keyed.
 		if a.srv != nil {
 			a.srv.UpdateDaemonInfo(func(info *model.DaemonInfo) {
+				info.Name = updated.Daemon.Name
 				info.ExternalURL = updated.Daemon.ExternalURL
 				info.ResolvedTimezone = updated.Scheduler.Timezone
 				info.TimezoneSource = updated.Scheduler.Source
@@ -131,7 +133,7 @@ func (a *settingsApplier) prepareNotify(old, updated *config.Config) (changed bo
 	}
 	templates, readErr := readNotifyTemplates(updated.Notify, read)
 	changed = !reflect.DeepEqual(old.Notify, updated.Notify) || !maps.Equal(a.svc.Notify.templates, templates)
-	if !changed && old.Daemon.ExternalURL == updated.Daemon.ExternalURL {
+	if !changed && old.Daemon.ExternalURL == updated.Daemon.ExternalURL && old.Daemon.Name == updated.Daemon.Name {
 		return false, nil, nil
 	}
 	if readErr != nil {

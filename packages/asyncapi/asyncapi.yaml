@@ -815,6 +815,12 @@ components:
         host:
           type: string
           description: Hostname of the runner machine.
+        instanceName:
+          type: string
+          description: |
+            The daemon's `[daemon] name` display label, read per heartbeat so a
+            config reload shows up on the next ping. Empty when unset (show the
+            fingerprint instead). Add-only field; old daemons omit it.
         os:
           type: string
           description: Operating system (e.g. linux, darwin, windows).

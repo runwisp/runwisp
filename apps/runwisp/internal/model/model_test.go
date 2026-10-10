@@ -81,6 +81,7 @@ func TestDaemonInfo_JSONShapeIsLocked(t *testing.T) {
 		"externalUrl",
 		"fingerprint",
 		"latestVersion",
+		"name",
 		"port",
 		"resolvedTimezone",
 		"schedulingActive",

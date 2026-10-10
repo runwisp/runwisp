@@ -198,6 +198,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 
 		TLSFingerprint: tlsCfg.Fingerprint,
 
+		Name:           daemonInfo.Name,
 		Fingerprint:    cfg.Fingerprint,
 		Capabilities:   daemonInfo.Capabilities,
 		Tasks:          daemonInfo.Tasks,

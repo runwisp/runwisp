@@ -5,6 +5,7 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -78,6 +79,25 @@ func TestSubstitute(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestWithHostname(t *testing.T) {
+	host := func() (string, error) { return "box", nil }
+	noHost := func() (string, error) { return "", errors.New("no hostname") }
+
+	v, ok := withHostname(fakeEnv(nil), host)("HOSTNAME")
+	assert.True(t, ok)
+	assert.Equal(t, "box", v, "unset HOSTNAME falls back to the hostname")
+
+	v, ok = withHostname(fakeEnv(map[string]string{"HOSTNAME": "env"}), host)("HOSTNAME")
+	assert.True(t, ok)
+	assert.Equal(t, "env", v, "an exported HOSTNAME wins")
+
+	_, ok = withHostname(fakeEnv(nil), noHost)("HOSTNAME")
+	assert.False(t, ok, "no hostname stays unset so the load errors")
+
+	_, ok = withHostname(fakeEnv(nil), host)("OTHER")
+	assert.False(t, ok, "only HOSTNAME gets the fallback")
 }
 
 func TestSubstitute_FilePathResolution(t *testing.T) {
