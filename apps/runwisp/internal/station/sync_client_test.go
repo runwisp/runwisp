@@ -236,6 +236,77 @@ func TestBuildOneSyncTask(t *testing.T) {
 	})
 }
 
+func TestBuildOneSyncTask_JitterAndCatchUp(t *testing.T) {
+	ms := func(d time.Duration) *time.Duration { return &d }
+	n := func(i int) *int { return &i }
+	build := func(task model.Task) syncTask {
+		task.Name, task.Run, task.Cron = "t", "echo", "0 3 * * *"
+		st, ok := buildOneSyncTask(&task)
+		require.True(t, ok)
+		return st
+	}
+
+	t.Run("unset sends nothing", func(t *testing.T) {
+		st := build(model.Task{})
+		assert.Nil(t, st.Jitter)
+		assert.Empty(t, st.CatchUp)
+		assert.Nil(t, st.MaxCatchUpRuns)
+		raw, err := json.Marshal(st)
+		require.NoError(t, err)
+		for _, key := range []string{"jitter", "catchUp", "maxCatchUpRuns"} {
+			assert.NotContains(t, string(raw), `"`+key+`"`)
+		}
+	})
+
+	t.Run("jitter is milliseconds, explicit zero is sent", func(t *testing.T) {
+		st := build(model.Task{Jitter: ms(30 * time.Minute)})
+		require.NotNil(t, st.Jitter)
+		assert.Equal(t, 1_800_000, *st.Jitter)
+		st = build(model.Task{Jitter: ms(0)})
+		require.NotNil(t, st.Jitter)
+		assert.Zero(t, *st.Jitter)
+	})
+
+	t.Run("catch_up maps to policy and cap", func(t *testing.T) {
+		for _, c := range []struct {
+			in     int
+			policy string
+			cap    *int
+		}{
+			{0, "skip", nil},
+			{1, "latest", nil},
+			{2, "all", n(2)},
+			{24, "all", n(24)},
+		} {
+			st := build(model.Task{CatchUp: n(c.in)})
+			assert.Equal(t, c.policy, st.CatchUp, "catch_up=%d", c.in)
+			assert.Equal(t, c.cap, st.MaxCatchUpRuns, "catch_up=%d", c.in)
+		}
+	})
+
+	t.Run("services carry none of them", func(t *testing.T) {
+		st, ok := buildOneSyncTask(&model.Task{Name: "svc", Kind: model.KindService, Run: "x", Jitter: ms(time.Minute), CatchUp: n(5)})
+		require.True(t, ok)
+		assert.Nil(t, st.Jitter)
+		assert.Empty(t, st.CatchUp)
+	})
+}
+
+// autostart = false starts a cron task's schedule paused, so the Station gets it
+// disabled; a task that can't be paused (manual_trigger = false) stays enabled.
+func TestBuildOneSyncTask_AutostartFalseDisablesSchedule(t *testing.T) {
+	enabled := func(task model.Task) bool {
+		task.Name, task.Run, task.Cron = "t", "echo", "0 3 * * *"
+		st, ok := buildOneSyncTask(&task)
+		require.True(t, ok)
+		require.Len(t, st.Schedules, 1)
+		return st.Schedules[0].Enabled
+	}
+	assert.True(t, enabled(model.Task{Autostart: true, ManualTrigger: true}))
+	assert.False(t, enabled(model.Task{Autostart: false, ManualTrigger: true}))
+	assert.True(t, enabled(model.Task{Autostart: false, ManualTrigger: false}), "an unpausable schedule can't start paused")
+}
+
 func TestBuildTaskSyncID(t *testing.T) {
 	t.Run("empty slice produces non-empty hash", func(t *testing.T) {
 		id := buildTaskSyncID([]syncTask{})

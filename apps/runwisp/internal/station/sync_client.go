@@ -62,6 +62,11 @@ type syncTask struct {
 	Enabled             *bool              `json:"enabled,omitempty"`
 	Script              json.RawMessage    `json:"script,omitempty"`
 	Schedules           []syncTaskSchedule `json:"schedules,omitempty"`
+	// Cron-task fields, add-only so an older Station ignores them. Jitter is
+	// milliseconds; CatchUp is the Station's policy name (see catchUpPolicy).
+	Jitter         *int   `json:"jitter,omitempty"`
+	CatchUp        string `json:"catchUp,omitempty"`
+	MaxCatchUpRuns *int   `json:"maxCatchUpRuns,omitempty"`
 	// InputDefinition mirrors this task's declared model.TaskParam list, keyed
 	// by TaskParam.Key (the wire shape station's SyncTaskParamDTO expects has no
 	// separate identity field — the map key IS the identity).
@@ -258,16 +263,58 @@ func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 	if t.Kind.IsService() {
 		// Services carry no cron, so they never emit a schedule.
 		applyServiceSyncFields(&task, t)
-	} else if cron := strings.TrimSpace(t.Cron); cron != "" {
-		task.Schedules = []syncTaskSchedule{
-			{
-				Cron:     cron,
-				Timezone: "UTC",
-				Enabled:  true,
-			},
-		}
+	} else {
+		applyTaskScheduleSyncFields(&task, t)
 	}
 	return task, true
+}
+
+// applyTaskScheduleSyncFields populates the cron-task fields of a sync row: the
+// schedule (disabled for autostart = false, the same tasks the daemon starts
+// paused), jitter, and the catch-up policy. Kept separate from buildOneSyncTask,
+// like applyServiceSyncFields, to hold down its cognitive complexity.
+func applyTaskScheduleSyncFields(task *syncTask, t *model.Task) {
+	cron := strings.TrimSpace(t.Cron)
+	if cron == "" {
+		return
+	}
+	task.Schedules = []syncTaskSchedule{
+		{
+			Cron:     cron,
+			Timezone: "UTC",
+			Enabled:  !t.StartsPaused(),
+		},
+	}
+	// nil means neither the task nor [defaults] sets jitter: send nothing and
+	// let the Station keep its own. An explicit 0 is sent, as "no jitter".
+	if t.Jitter != nil {
+		ms := durationToMillis(*t.Jitter)
+		task.Jitter = &ms
+	}
+	// Config load always resolves catch_up (built-in 1 when neither the task nor
+	// [defaults] sets it), so a loaded cron task always reports one. The built-in
+	// matches the Station's own default ("latest").
+	if t.CatchUp != nil {
+		task.CatchUp = catchUpPolicy(*t.CatchUp)
+		if *t.CatchUp > 1 {
+			runs := *t.CatchUp
+			task.MaxCatchUpRuns = &runs
+		}
+	}
+}
+
+// catchUpPolicy maps the TOML catch_up count to the Station's policy name:
+// 0 re-runs nothing, 1 only the most recent missed tick, N > 1 up to N of them
+// (the cap travels separately as maxCatchUpRuns).
+func catchUpPolicy(n int) string {
+	switch {
+	case n <= 0:
+		return "skip"
+	case n == 1:
+		return "latest"
+	default:
+		return "all"
+	}
 }
 
 // buildSyncInputDefinition converts a task's declared params into the wire
