@@ -53,6 +53,16 @@ func TestValidate(t *testing.T) {
 		{name: "out of range second", spec: "61 * * * * *", wantErr: true},
 		{name: "garbage", spec: "every day at noon", wantErr: true},
 		{name: "bad timezone", spec: "0 3 * * *", timezone: "Mars/Olympus", wantErr: true},
+		{name: "manual descriptor", spec: "@manual", wantErr: true},
+		{name: "triggered descriptor", spec: "@triggered", wantErr: true},
+		{name: "none descriptor", spec: "@none", wantErr: true},
+		{name: "manual descriptor with timezone", spec: "@manual", timezone: "UTC", wantErr: true},
+		{name: "wrapped day-of-week range", spec: "0 3 * * FRI-MON/2"},
+		{name: "wrapped day-of-week out of range", spec: "0 3 * * 9-3", wantErr: true},
+		{name: "wrapped hour out of range", spec: "0 30-2 * * *", wantErr: true},
+		{name: "wrapped minute out of range", spec: "70-2 * * * *", wantErr: true},
+		{name: "wrapped month out of range", spec: "0 0 1 13-2 *", wantErr: true},
+		{name: "wrapped hour", spec: "0 22-2 * * *"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -71,7 +81,7 @@ func TestValidate(t *testing.T) {
 // scheduler, the TUI's next-run hint, the demo seeder) never see a schedule
 // whose Next is the zero time.
 func TestParserRejectsWhatValidateRejects(t *testing.T) {
-	for _, spec := range []string{"0 0 30 2 *", "@every 1ms"} {
+	for _, spec := range []string{"0 0 30 2 *", "@every 1ms", "@manual", "@triggered", "@none", "CRON_TZ=UTC @manual"} {
 		_, err := NewParser().Parse(spec)
 		assert.Error(t, err, spec)
 	}
@@ -123,6 +133,14 @@ func TestSundayIsSeven(t *testing.T) {
 		{name: "step of 7 in minutes untouched", spec: "*/7 * * * *", equiv: "*/7 * * * *"},
 		{name: "7 in the other fields untouched", spec: "7 7 7 7 *", equiv: "7 7 7 7 *"},
 		{name: "named sunday still works", spec: "0 3 * * SUN", equiv: "0 3 * * 0"},
+		// Wrap-around ranges walk the 7-day week: Sunday is in it once, not twice.
+		{name: "stepped wrap fri-mon", spec: "0 3 * * FRI-MON/2", equiv: "0 3 * * 0,5"},
+		{name: "stepped wrap sat-mon", spec: "0 3 * * SAT-MON/2", equiv: "0 3 * * 1,6"},
+		{name: "stepped wrap from 7", spec: "0 3 * * 7-3/2", equiv: "0 3 * * 0,2"},
+		{name: "unstepped wrap", spec: "0 3 * * fri-tue", equiv: "0 3 * * 0,1,2,5,6"},
+		{name: "wrap in a list", spec: "0 3 * * 3,6-1/2", equiv: "0 3 * * 1,3,6"},
+		{name: "stepped wrap six-field", spec: "0 0 3 * * 5-1/2", equiv: "0 0 3 * * 0,5"},
+		{name: "hour wrap untouched", spec: "0 22-2/2 * * *", equiv: "0 0,2,22 * * *"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -245,6 +263,62 @@ func TestSpringForwardGapRecovered(t *testing.T) {
 			got := sched.Next(from)
 			assert.True(t, tt.want.Equal(got),
 				"want %s, got %s", tt.want.Format("2006-01-02 15:04:05 MST"), got.In(loc).Format("2006-01-02 15:04:05 MST"))
+		})
+	}
+}
+
+// TestSpringForwardGapBeyondOneHourStep covers gaps go-cron's own h → h+2
+// recovery misses: a gap at midnight and a 30-minute shift. Each tick must run
+// once at the first valid instant after the gap, not wrap to the next match.
+func TestSpringForwardGapBeyondOneHourStep(t *testing.T) {
+	santiago, err := time.LoadLocation("America/Santiago")
+	require.NoError(t, err)
+	lordHowe, err := time.LoadLocation("Australia/Lord_Howe")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name string
+		spec string
+		from time.Time
+		want time.Time
+	}{
+		{
+			// Chile skips 00:00-01:00 on 2025-09-07.
+			name: "midnight gap",
+			spec: "0 0 * * *",
+			from: time.Date(2025, 9, 6, 12, 0, 0, 0, santiago),
+			want: time.Date(2025, 9, 7, 1, 0, 0, 0, santiago),
+		},
+		{
+			// 2025-09-07 is a Sunday: the week's only tick is in the gap.
+			name: "weekly in a midnight gap",
+			spec: "@weekly",
+			from: time.Date(2025, 9, 6, 12, 0, 0, 0, santiago),
+			want: time.Date(2025, 9, 7, 1, 0, 0, 0, santiago),
+		},
+		{
+			// Lord Howe skips 02:00-02:30 on 2025-10-05.
+			name: "thirty-minute gap",
+			spec: "0 2 * * *",
+			from: time.Date(2025, 10, 5, 0, 30, 0, 0, lordHowe),
+			want: time.Date(2025, 10, 5, 2, 30, 0, 0, lordHowe),
+		},
+		{
+			name: "pinned zone, evaluated from UTC",
+			spec: "CRON_TZ=America/Santiago 0 0 * * *",
+			from: time.Date(2025, 9, 6, 16, 0, 0, 0, time.UTC),
+			want: time.Date(2025, 9, 7, 1, 0, 0, 0, santiago),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sched, err := NewParser().Parse(tt.spec)
+			require.NoError(t, err)
+			got := sched.Next(tt.from)
+			require.True(t, tt.want.Equal(got), "want %s, got %s", tt.want, got)
+			// Fires once: the next tick is the following regular one.
+			after := sched.Next(got)
+			assert.True(t, after.Sub(got) >= 23*time.Hour, "repeat at %s", after)
 		})
 	}
 }

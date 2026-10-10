@@ -14,6 +14,7 @@ import (
 	// runtime test binary does not, so it is pinned here.
 	_ "time/tzdata"
 
+	cron "github.com/netresearch/go-cron"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
@@ -676,4 +677,22 @@ func TestCountMissedTicks_EveryNotDeduped(t *testing.T) {
 	got, _, truncated := countMissedTicks(sched, lastRun, now, 1000)
 	assert.False(t, truncated)
 	assert.Equal(t, 4, got, "all four fixed-interval ticks were missed; none is a DST duplicate")
+}
+
+// TestCountMissedTicks_StopsOnZeroNext: a schedule whose Next is the zero time
+// (go-cron's @manual) used to spin forever at startup, the zero tick reading as
+// a DST duplicate of itself on every pass.
+func TestCountMissedTicks_StopsOnZeroNext(t *testing.T) {
+	lastRun := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	done := make(chan int, 1)
+	go func() {
+		got, _, _ := countMissedTicks(cron.TriggeredSchedule{}, lastRun, lastRun.Add(time.Hour), 1000)
+		done <- got
+	}()
+	select {
+	case got := <-done:
+		assert.Equal(t, 0, got)
+	case <-time.After(5 * time.Second):
+		t.Fatal("countMissedTicks did not return for a schedule that never fires")
+	}
 }

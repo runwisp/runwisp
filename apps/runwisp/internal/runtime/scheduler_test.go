@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	cron "github.com/netresearch/go-cron"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
@@ -721,6 +722,78 @@ func TestSchedulerEveryFiresThroughDSTFallback(t *testing.T) {
 
 	assert.Len(t, runner.triggers, 4, "every @every firing in the rewound hour is a real run")
 	assert.Empty(t, runner.skips, "a fixed-interval schedule has no wall-clock time to repeat")
+}
+
+// TestSchedulerEngineKeepsFallBackTicks drives the real go-cron engine on its
+// FakeClock across the Europe/Bratislava fall-back (2024-10-27, 03:00 CEST →
+// 02:00 CET). go-cron dedups a repeated wall-clock time in its own location
+// before the job runs; evaluated in the daemon zone that dropped ticks of a
+// UTC-pinned task and of @every, and swallowed the repeat fireOnce must record
+// as dst_skipped.
+func TestSchedulerEngineKeepsFallBackTicks(t *testing.T) {
+	bratislava, err := time.LoadLocation("Europe/Bratislava")
+	require.NoError(t, err)
+	start := time.Date(2024, 10, 26, 23, 15, 0, 0, time.UTC) // 01:15 CEST
+	until := time.Date(2024, 10, 27, 2, 45, 0, 0, time.UTC)  // 03:45 CET
+
+	tests := []struct {
+		name         string
+		task         *model.Task
+		wantTriggers int
+		wantSkips    int
+	}{
+		{
+			// 00:00, 01:00, 02:00 UTC: the first two read 02:00 in Bratislava.
+			name:         "hourly task pinned to UTC",
+			task:         &model.Task{Name: "t", Cron: "0 * * * *", Timezone: "UTC"},
+			wantTriggers: 3,
+		},
+		{
+			// 00:15, 01:15, 02:15 UTC: real hours apart, two read 02:15.
+			name:         "every hour",
+			task:         &model.Task{Name: "t", Cron: "@every 1h"},
+			wantTriggers: 3,
+		},
+		{
+			// 02:30 CEST runs; the repeated 02:30 CET is recorded, not dropped.
+			name:         "wall-clock tick in the repeated hour",
+			task:         &model.Task{Name: "t", Cron: "30 2 * * *"},
+			wantTriggers: 1,
+			wantSkips:    1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeTaskRunner{}
+			clock := cron.NewFakeClock(start)
+			sched := NewScheduler(runner, map[string]*model.Task{"t": tt.task}, bratislava, clock.Now)
+			sched.cron = newCronEngine(cron.WithClock(clock))
+			_, err := sched.Start()
+			require.NoError(t, err)
+			defer sched.Stop()
+
+			fires := func() int {
+				runner.mu.Lock()
+				defer runner.mu.Unlock()
+				return len(runner.triggers) + len(runner.skips)
+			}
+			for {
+				clock.BlockUntil(1)
+				next := sched.cron.Entries()[0].Next
+				if next.IsZero() || next.After(until) {
+					break
+				}
+				before := fires()
+				clock.Set(next)
+				require.Eventually(t, func() bool { return fires() > before }, 5*time.Second, time.Millisecond)
+			}
+
+			runner.mu.Lock()
+			defer runner.mu.Unlock()
+			assert.Len(t, runner.triggers, tt.wantTriggers)
+			assert.Len(t, runner.skips, tt.wantSkips)
+		})
+	}
 }
 
 // TestSchedulerSetLocationRebasesOnlyDaemonZoneTasks proves a [daemon]

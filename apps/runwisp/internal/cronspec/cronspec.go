@@ -8,14 +8,16 @@
 // grammar can never drift between validation and execution.
 //
 // go-cron already gives the grammar its vixie-cron edges: day-of-week 7 is
-// Sunday, a tick inside a spring-forward DST gap fires at the gap end, and
-// @every rejects intervals below 1s.
+// Sunday and @every rejects intervals below 1s. A tick inside a spring-forward
+// DST gap fires once at the first valid instant after it (see dstGapSchedule).
 package cronspec
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	cron "github.com/netresearch/go-cron"
 )
@@ -34,25 +36,176 @@ func NewParser() cron.ScheduleParser {
 }
 
 // specParser is go-cron's parser plus the vixie behaviours it only offers
-// behind options that are still in review upstream. Each patch below names the
-// PR that replaces it; once all three land this type goes away and NewParser
-// returns cron.NewParser directly.
+// behind options that are still in review upstream (each such patch names the
+// PR that replaces it), plus the rejections, day-of-week wrap and DST-gap
+// recovery RunWisp's documented grammar needs on top.
 type specParser struct {
 	inner cron.Parser
 }
 
 func (p specParser) Parse(spec string) (cron.Schedule, error) {
-	sched, err := p.inner.Parse(p.lenientSteps(spec))
+	if err := rangeStartAboveMax(spec); err != nil {
+		return nil, err
+	}
+	sched, err := p.inner.Parse(p.lenientSteps(wrappedDowRanges(spec)))
 	if err != nil {
 		return nil, err
+	}
+	if cron.IsTriggered(sched) {
+		// go-cron's @manual / @triggered / @none never fire on their own: their
+		// Next is the zero time, which callers would read as a tick in year 1.
+		// A task that only runs on demand simply has no cron.
+		return nil, fmt.Errorf("%q never fires on its own; leave cron unset for a task that only runs on demand",
+			strings.Join(fieldsAfterTZ(spec), " "))
 	}
 	if s, ok := sched.(*cron.SpecSchedule); ok {
 		markStarDays(s, spec)
 		if neverFires(s) {
 			return nil, errors.New("schedule never fires (the day of month does not exist in the given months)")
 		}
+		return dstGapSchedule{inner: s}, nil
 	}
 	return sched, nil
+}
+
+// fieldMax is each field's highest value, in 6-field order (day-of-week 7 is
+// Sunday).
+var fieldMax = [6]int{59, 59, 23, 31, 12, 7}
+
+// rangeStartAboveMax rejects a range whose start is past its field's maximum
+// ("30-2" in the hour field). go-cron reads any start above the end as a
+// wrap-around and only bounds-checks the end, so it would accept these and fire
+// on folded-over values.
+func rangeStartAboveMax(spec string) error {
+	body := fieldsAfterTZ(spec)
+	if len(body) != 5 && len(body) != 6 {
+		return nil
+	}
+	for i, field := range body {
+		pos := i + 6 - len(body)
+		for _, term := range strings.Split(field, ",") {
+			base, _, _ := strings.Cut(term, "/")
+			lo, _, isRange := strings.Cut(base, "-")
+			if n, err := strconv.Atoi(lo); err == nil && isRange && n > fieldMax[pos] {
+				return fmt.Errorf("beginning of range (%d) above maximum (%d): %q", n, fieldMax[pos], term)
+			}
+		}
+	}
+	return nil
+}
+
+// wrappedDowRanges rewrites every wrap-around day-of-week range (FRI-MON,
+// 7-3/2) into an explicit day list. go-cron wraps day-of-week over 0-7, so
+// Sunday sits in the cycle twice and a stepped wrap lands on the wrong days
+// (FRI-MON/2 came out Fri,Sun,Mon). The list walks the 7-day week instead,
+// counting 7 as Sunday. Only the last field is touched; a term that doesn't
+// parse is left for go-cron to reject.
+func wrappedDowRanges(spec string) string {
+	body := fieldsAfterTZ(spec)
+	if len(body) != 5 && len(body) != 6 {
+		return spec
+	}
+	fields := strings.Fields(spec)
+	terms := strings.Split(fields[len(fields)-1], ",")
+	for i, term := range terms {
+		terms[i] = wrappedDowTerm(term)
+	}
+	fields[len(fields)-1] = strings.Join(terms, ",")
+	return strings.Join(fields, " ")
+}
+
+var dowNames = map[string]int{"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}
+
+// dowValue parses one day-of-week bound: 0-7 or a three-letter name.
+func dowValue(s string) (int, bool) {
+	if n, err := strconv.Atoi(s); err == nil {
+		return n, n >= 0 && n <= 7
+	}
+	n, ok := dowNames[strings.ToLower(s)]
+	return n, ok
+}
+
+// wrappedDowTerm expands one "lo-hi[/step]" term whose lo is above hi, and
+// returns any other term unchanged.
+func wrappedDowTerm(term string) string {
+	base, stepText, hasStep := strings.Cut(term, "/")
+	loText, hiText, isRange := strings.Cut(base, "-")
+	lo, okLo := dowValue(loText)
+	hi, okHi := dowValue(hiText)
+	if !isRange || !okLo || !okHi || lo <= hi {
+		return term
+	}
+	step := 1
+	if hasStep {
+		var err error
+		if step, err = strconv.Atoi(stepText); err != nil || step < 1 {
+			return term
+		}
+	}
+	lo %= 7
+	if hi < lo {
+		hi += 7
+	}
+	var days []string
+	for d := lo; d <= hi; d += step {
+		days = append(days, strconv.Itoa(d%7))
+	}
+	return strings.Join(days, ",")
+}
+
+// dstGapSchedule wraps a SpecSchedule so a wall-clock tick that lands inside a
+// spring-forward DST gap (a local time that never occurs because the clock
+// jumps forward) fires once at the first valid instant after the gap instead
+// of vanishing. go-cron only recovers an hour the clock jumps over by exactly
+// one (h → h+2): a gap at midnight ("0 0 * * *" in America/Santiago) or a
+// 30-minute shift (Australia/Lord_Howe) would wrap to the next matching day
+// with no run and no record. The spec is re-evaluated on a gapless clock pinned
+// to the pre-gap offset; a match inside the missing window is exactly the
+// instant time.Date yields when it normalizes that non-existent local time
+// forward.
+type dstGapSchedule struct {
+	inner *cron.SpecSchedule
+}
+
+func (d dstGapSchedule) Next(from time.Time) time.Time {
+	naive := d.inner.Next(from)
+	if naive.IsZero() {
+		return naive
+	}
+
+	// The location the spec is evaluated in: its own (CRON_TZ) when pinned,
+	// else the location of the time handed in, mirroring SpecSchedule.Next's
+	// own time.Local fallback.
+	loc := d.inner.Location
+	if loc == time.Local {
+		loc = from.Location()
+	}
+
+	// A spring-forward transition lies between from and naive only if the UTC
+	// offset increased across them. A fall-back makes a wall time repeat, not
+	// disappear, and is deduped in the scheduler instead.
+	_, fromOff := from.In(loc).Zone()
+	_, naiveOff := naive.In(loc).Zone()
+	if naiveOff <= fromOff {
+		return naive
+	}
+
+	fixed := *d.inner
+	fixed.Location = time.FixedZone("dstgap", fromOff)
+	recovered := fixed.Next(from.In(fixed.Location))
+	if recovered.IsZero() || !recovered.Before(naive) {
+		return naive
+	}
+
+	// Only a wall time that is genuinely missing in loc counts: time.Date
+	// normalizes a non-existent local time forward, changing its fields, and
+	// reproduces a real one unchanged.
+	w := recovered.In(fixed.Location)
+	norm := time.Date(w.Year(), w.Month(), w.Day(), w.Hour(), w.Minute(), w.Second(), w.Nanosecond(), loc)
+	if norm.Hour() == w.Hour() && norm.Minute() == w.Minute() && norm.Second() == w.Second() {
+		return naive
+	}
+	return recovered.In(loc)
 }
 
 // fieldMin is each field's lowest value, in 6-field order.
