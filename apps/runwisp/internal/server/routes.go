@@ -6,8 +6,10 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -71,44 +73,110 @@ func maxBodySize(limit int64) func(http.Handler) http.Handler {
 // already gated socket access; running CHAP on top would add no security and
 // would force the local CLI/TUI to keep a password around just to talk to the
 // daemon that owns its data dir.
-//
-// signedIn (optional) runs for each TCP request that passed the token check,
-// never for socket requests.
-func authOrLocalTrusted(authSvc *auth.Service, signedIn func(*http.Request)) func(http.Handler) http.Handler {
+func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !IsLocalTrusted(r) {
-				if !authSvc.ValidToken(auth.TokenFromRequest(r)) {
-					http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
-					return
-				}
-				if signedIn != nil {
-					signedIn(r)
-				}
+			if !IsLocalTrusted(r) && !authSvc.ValidToken(auth.TokenFromRequest(r)) {
+				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-// observeVisit reports the base URL a signed-in browser used to reach the
-// daemon, so notification links can point there when external_url is unset.
-// The scheme and X-Forwarded-Host are only taken from a trusted proxy; anyone
-// else gets the raw Host header, which is what their browser dialled.
-func (srv *Server) observeVisit(r *http.Request) {
+// signInSourceKey carries a signInSource from stashSignInSource to the login
+// and launch-ticket handlers, which only see the request context.
+const signInSourceKey contextKey = "signInSource"
+
+// signInSource is where an auth request came from: the Web UI base URL it
+// dialled, and whether it carried a browser Origin header.
+type signInSource struct {
+	baseURL string
+	browser bool
+}
+
+// stashSignInSource records the request's signInSource in its context when
+// its base URL is well-formed. Mounted on the rate-limited auth group only, so
+// ordinary API traffic never pays for it.
+func (srv *Server) stashSignInSource(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if base := srv.visitBaseURL(r); base != "" {
+			src := signInSource{baseURL: base, browser: r.Header.Get("Origin") != ""}
+			r = r.WithContext(context.WithValue(r.Context(), signInSourceKey, src))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// recordSignIn reports a successful Web UI sign-in's base URL so notification
+// links can point there when external_url is unset. browserOnly skips requests
+// without an Origin header: the password login is shared with `--url` CLI
+// calls and the remote TUI, whose Go client never sends one, while a browser
+// always does on a fetch POST. Those clients must not move the link base to
+// whatever address they dialled (often localhost).
+func (srv *Server) recordSignIn(ctx context.Context, browserOnly bool) {
+	if srv.onSignedInVisit == nil {
+		return
+	}
+	src, ok := ctx.Value(signInSourceKey).(signInSource)
+	if !ok || (browserOnly && !src.browser) {
+		return
+	}
+	srv.onSignedInVisit(src.baseURL)
+}
+
+// visitBaseURL returns the scheme://host[:port] a client used to reach the
+// daemon, or "" when that host is not a plain hostname or IP literal. The
+// scheme and X-Forwarded-Host are only taken from a trusted proxy; anyone else
+// gets the raw Host header, which is what their browser dialled. The result
+// ends up in notification links, so anything beyond host[:port] (userinfo,
+// path, query, quotes, markup) is refused.
+func (srv *Server) visitBaseURL(r *http.Request) string {
 	host := r.Host
 	if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" && isFromTrustedProxy(r, srv.proxies()) {
 		host, _, _ = strings.Cut(fwd, ",")
 		host = strings.TrimSpace(host)
 	}
-	if host == "" {
-		return
+	host, ok := normalizeVisitHost(host)
+	if !ok {
+		return ""
 	}
 	scheme := "http"
 	if isSecureCtx(r.Context()) {
 		scheme = "https"
 	}
-	srv.onSignedInVisit(scheme + "://" + host)
+	return scheme + "://" + host
+}
+
+// normalizeVisitHost validates host[:port] and lowercases it. The host must be
+// a DNS-style name (letters, digits, '-', '.', '_'), an IPv4 literal, or a
+// bracketed IPv6 literal without a zone; a port, if present, is 1-65535.
+func normalizeVisitHost(hostport string) (string, bool) {
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = hostport
+		if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+			host = host[1 : len(host)-1]
+		}
+	} else if n, perr := strconv.ParseUint(port, 10, 16); perr != nil || n == 0 {
+		return "", false
+	}
+	if host == "" || len(host) > 253 {
+		return "", false
+	}
+	if strings.HasPrefix(hostport, "[") {
+		if !strings.Contains(host, ":") || net.ParseIP(host) == nil {
+			return "", false
+		}
+		return strings.ToLower(hostport), true
+	}
+	for _, c := range host {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '.' || c == '_') {
+			return "", false
+		}
+	}
+	return strings.ToLower(hostport), true
 }
 
 // savePeerAddr captures the original TCP peer address into context, along with
@@ -333,6 +401,7 @@ func (srv *Server) setupRoutes() error {
 	// share one limit to prevent nonce-store flooding (DoS on the auth flow).
 	srv.router.Group(func(r chi.Router) {
 		r.Use(httprate.LimitByIP(auth.MaxAuthAttempts, auth.AuthRateWindow))
+		r.Use(srv.stashSignInSource)
 		srv.registerRateLimitedAuthRoutes(r)
 	})
 
@@ -354,11 +423,7 @@ func (srv *Server) setupRoutes() error {
 		r.Use(maxBodySize(maxProtectedBodySize))
 		r.Use(csrfGuard(!srv.noAuth))
 		if !srv.noAuth {
-			var signedIn func(*http.Request)
-			if srv.onSignedInVisit != nil {
-				signedIn = srv.observeVisit
-			}
-			r.Use(authOrLocalTrusted(srv.auth, signedIn))
+			r.Use(authOrLocalTrusted(srv.auth))
 		}
 
 		// Huma operations (registered on the chi sub-router group)

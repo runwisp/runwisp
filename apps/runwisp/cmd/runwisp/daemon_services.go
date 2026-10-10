@@ -45,7 +45,7 @@ type daemonServices struct {
 	MemoryReclaimer  *runtime.MemoryReclaimer
 	DebugServer      *debugServer
 	Notify           *liveNotify
-	// DetectedURL is the Web UI address of the latest signed-in visit, the
+	// DetectedURL is the Web UI address of the latest Web UI sign-in, the
 	// notification link base when [daemon] external_url is unset.
 	DetectedURL      *detectedURL
 	ScheduleResult   runtime.ScheduleResult

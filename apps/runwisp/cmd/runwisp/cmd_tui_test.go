@@ -321,9 +321,21 @@ func TestResolveTUIListenURL(t *testing.T) {
 		},
 		{
 			name: "local prefers external_url",
-			info: &model.DaemonInfo{Port: 9477, ExternalURL: "https://runwisp.example.com"},
+			info: &model.DaemonInfo{Port: 9477, ExternalURL: "https://runwisp.example.com", ExternalURLSource: "config"},
 			mode: tuiConnectMode{},
 			want: "https://runwisp.example.com",
+		},
+		{
+			name: "local ignores a detected address",
+			info: &model.DaemonInfo{Port: 9477, ExternalURL: "http://rw.lan:9477", ExternalURLSource: "detected"},
+			mode: tuiConnectMode{},
+			want: "http://localhost:9477",
+		},
+		{
+			name: "remote ignores a detected address",
+			info: &model.DaemonInfo{Port: 9477, ExternalURL: "http://rw.lan:9477", ExternalURLSource: "detected"},
+			mode: tuiConnectMode{remote: true, connBaseURL: "http://10.0.0.5:9477"},
+			want: "http://10.0.0.5:9477",
 		},
 	}
 	for _, tc := range cases {

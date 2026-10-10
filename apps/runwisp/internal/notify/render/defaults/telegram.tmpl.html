@@ -11,7 +11,7 @@
 {{- $url := "" }}{{ if eq .Kind "log.disk_pressure" }}{{ $url = taskURL .TaskName }}{{ else }}{{ $url = runURL .Run }}{{ end }}
 {{- if $url }}
 
-🔗 <a href="{{ $url }}">{{ linkLabel .Kind }}</a>
+🔗 <a href="{{ tgEscape $url }}">{{ linkLabel .Kind }}</a>
 {{- end }}
 
 <i>from runwisp{{ with instanceName }} · {{ tgEscape . }}{{ end }}</i>

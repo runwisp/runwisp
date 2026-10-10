@@ -103,6 +103,7 @@ func (srv *Server) humaLogin(ctx context.Context, input *AuthLoginInput) (*AuthL
 	if err != nil {
 		return nil, huma.Error401Unauthorized("Invalid password")
 	}
+	srv.recordSignIn(ctx, true)
 	return &AuthLoginOutput{
 		SetCookie: srv.auth.BuildAuthCookie(token, auth.SessionDuration, isSecureCtx(ctx)),
 		Body:      AuthLoginBody{Token: token},
@@ -156,6 +157,9 @@ func (srv *Server) humaRedeemLaunchTicket(ctx context.Context, input *LaunchTick
 		return nil, huma.Error401Unauthorized("Invalid or expired launch ticket")
 	}
 
+	// Redeeming is always a browser navigation (it sets the session cookie and
+	// redirects), so it counts as a Web UI sign-in without an Origin header.
+	srv.recordSignIn(ctx, false)
 	token := srv.auth.IssueToken(auth.SessionDuration)
 	return &LaunchTicketRedeemOutput{
 		Status:    http.StatusSeeOther,
