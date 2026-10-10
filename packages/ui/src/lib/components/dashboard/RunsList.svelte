@@ -2,7 +2,15 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { Clock, ArrowUpDown, Square, Trash, RotateCw } from "@lucide/svelte";
+    import {
+        Clock,
+        ArrowUpDown,
+        PanelLeftClose,
+        PanelLeftOpen,
+        Square,
+        Trash,
+        RotateCw,
+    } from "@lucide/svelte";
     import { untrack } from "svelte";
     import { createVirtualizer } from "@tanstack/svelte-virtual";
     import Button from "../Button.svelte";
@@ -17,7 +25,7 @@
     import type { RunOutputMatch } from "./types.js";
     import type { Run, RunSelector } from "@runwisp/common";
     import { runFilterParams, type RunsListFilters } from "./run-filters.js";
-    import { instanceSuffix } from "./run-helpers.js";
+    import { instanceSuffix, runUsageScale } from "./run-helpers.js";
     import { formatDateTime } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
@@ -35,7 +43,6 @@
         tasks = [],
         showTaskName = false,
         taskNameFilter,
-        headerLabel = "Run History",
         emptyText = "No runs yet",
         emptyDescription,
         bulkActions = false,
@@ -48,6 +55,9 @@
         outputQuery = "",
         outputMatches = null,
         outputSearchPending = false,
+        usageBars = false,
+        folded = false,
+        onToggleFold,
     }: {
         items: Run[];
         total: number;
@@ -64,7 +74,6 @@
         tasks?: { name: string }[];
         showTaskName?: boolean;
         taskNameFilter?: string;
-        headerLabel?: string;
         emptyText?: string;
         emptyDescription?: string;
         bulkActions?: boolean;
@@ -90,7 +99,16 @@
         // True while a query is typed but its results aren't in yet (debounce
         // window or request in flight), the rail shows its searching shimmer.
         outputSearchPending?: boolean;
+        // Task rail only: two small bars per finished run, CPU time over RAM,
+        // scaled to the largest loaded run and colored against the usual one.
+        usageBars?: boolean;
+        // Folds the list to a thin strip that still counts the runs, giving the
+        // run detail the width. Omitted where the screen keeps the list open.
+        folded?: boolean;
+        onToggleFold?: (() => void) | undefined;
     } = $props();
+
+    const usageScale = $derived(usageBars ? runUsageScale(items) : undefined);
 
     // Task-rail rows are one dense line (44px); the cross-task /runs view adds
     // the task name on a second line (64px).
@@ -228,6 +246,14 @@
         };
     }
 
+    // The count stands in for a title: "12 runs", or matches while searching.
+    // Empty until the first page lands, when the count isn't known yet.
+    const countLabel = $derived.by(() => {
+        if (outputSearchActive) return `${String(matchedRuns.length)} of ${String(items.length)}`;
+        if (loading && items.length === 0) return "";
+        return `${String(total)} ${total === 1 ? "run" : "runs"}`;
+    });
+
     let masterCheckboxRef: HTMLInputElement | undefined = $state();
     $effect(() => {
         if (!masterCheckboxRef) return;
@@ -235,195 +261,214 @@
     });
 </script>
 
-<!-- A borderless rail that fills its column, divided from the detail panel by
-     a single right border. -->
-<div
-    class="flex h-full w-full flex-col overflow-hidden border-b border-outline bg-surface md:w-[300px] md:shrink-0 md:border-r md:border-b-0"
->
-    <div
-        class="flex shrink-0 items-center gap-2 border-b px-3 py-2 {hasSelection
-            ? 'border-outline-faint bg-primary-soft/40'
-            : 'border-transparent bg-surface'}"
+{#if folded && onToggleFold}
+    <button
+        type="button"
+        class="flex w-[30px] shrink-0 flex-col items-center gap-2 border-r border-outline bg-surface pt-2.5 font-mono text-xs text-on-surface-muted hover:bg-surface-sunken hover:text-primary"
+        title="Show run list"
+        aria-label="Show run list"
+        aria-expanded="false"
+        onclick={onToggleFold}
     >
-        {#if bulkActions}
-            <label
-                class="flex shrink-0 cursor-pointer items-center"
-                title={hasSelection ? "Clear selection" : "Select all"}
-            >
-                <input
-                    bind:this={masterCheckboxRef}
-                    type="checkbox"
-                    checked={selection.allSelected}
-                    onchange={handleMasterToggle}
-                    class="h-3.5 w-3.5 cursor-pointer rounded border-outline accent-primary"
-                    aria-label={hasSelection ? "Clear selection" : "Select all"}
-                />
-            </label>
-        {/if}
-
-        {#if hasSelection}
-            <span class="font-mono text-xs font-medium text-on-surface tabular-nums">
-                {selectionCount} selected
-            </span>
-            <div class="ml-auto flex items-center gap-1">
-                {#if onBulkRerun}
-                    <Button
-                        variant="ghost"
-                        size="xs"
-                        class="h-7 w-7 px-0"
-                        onclick={() => emitBulk(onBulkRerun, () => true)}
-                        title="Re-run task{selectionCount === 1 ? '' : 's'}"
-                    >
-                        {#snippet icon()}<RotateCw size={14} />{/snippet}
-                    </Button>
-                {/if}
-                {#if onBulkCancel && anyRunning}
-                    <Button
-                        variant="ghost"
-                        size="xs"
-                        class="h-7 w-7 px-0"
-                        onclick={() => emitBulk(onBulkCancel, (r) => r.status === "running")}
-                        title="Cancel running run{selectionCount === 1 ? '' : 's'}"
-                    >
-                        {#snippet icon()}<Square size={14} />{/snippet}
-                    </Button>
-                {/if}
-                {#if onBulkDelete && anyTerminal}
-                    <Button
-                        variant="danger"
-                        size="xs"
-                        class="h-7 w-7 px-0"
-                        onclick={() =>
-                            emitBulk(
-                                onBulkDelete,
-                                (r) => r.status !== "running" && r.status !== "pending",
-                            )}
-                        title="Delete run{selectionCount === 1 ? '' : 's'}"
-                    >
-                        {#snippet icon()}<Trash size={14} />{/snippet}
-                    </Button>
-                {/if}
-            </div>
-        {:else}
-            <span
-                class="shrink-0 font-mono text-xs font-semibold tracking-[0.14em] whitespace-nowrap text-on-surface-muted uppercase"
-            >
-                {headerLabel}
-            </span>
-            <span
-                class="shrink-0 font-mono text-xs whitespace-nowrap text-on-surface-faint tabular-nums"
-            >
-                {#if outputSearchActive}
-                    {matchedRuns.length} of {items.length}
-                {:else if loading && items.length === 0}
-                    <!-- Count unknown until the first page lands. -->
-                {:else}
-                    {total}
-                    {total === 1 ? "run" : "runs"}
-                {/if}
-            </span>
-            <div class="ml-auto flex items-center gap-1">
-                {#if showFilters}
-                    <RunFilterPopover bind:filters {showTask} {tasks} />
-                {/if}
-                <Button
-                    variant="ghost"
-                    size="xs"
-                    class="h-7 w-7 px-0"
-                    onclick={toggleSortDirection}
-                    title="Toggle sort order"
+        <PanelLeftOpen size={16} />
+        <span class="tabular-nums [writing-mode:vertical-rl]">{countLabel}</span>
+    </button>
+{:else}
+    <!-- A borderless rail that fills its column, divided from the detail panel by
+     a single right border. -->
+    <div
+        class="flex h-full w-full flex-col overflow-hidden border-b border-outline bg-surface md:w-[300px] md:shrink-0 md:border-r md:border-b-0"
+    >
+        <div
+            class="flex shrink-0 items-center gap-2 border-b px-3 py-2 {hasSelection
+                ? 'border-outline-faint bg-primary-soft/40'
+                : 'border-transparent bg-surface'}"
+        >
+            {#if bulkActions}
+                <label
+                    class="flex shrink-0 cursor-pointer items-center"
+                    title={hasSelection ? "Clear selection" : "Select all"}
                 >
-                    {#snippet icon()}
-                        <ArrowUpDown
-                            size={14}
-                            class="text-on-surface-muted {filters.sortDirection === 'asc'
-                                ? 'rotate-180'
-                                : ''}"
-                        />
-                    {/snippet}
-                </Button>
-            </div>
-        {/if}
-    </div>
+                    <input
+                        bind:this={masterCheckboxRef}
+                        type="checkbox"
+                        checked={selection.allSelected}
+                        onchange={handleMasterToggle}
+                        class="h-3.5 w-3.5 cursor-pointer rounded border-outline accent-primary"
+                        aria-label={hasSelection ? "Clear selection" : "Select all"}
+                    />
+                </label>
+            {/if}
 
-    {#if showFilters}
-        <RunFilterChips bind:filters {showTask} />
-    {/if}
-
-    <div bind:this={scrollElement} class="min-h-0 flex-1 overflow-y-auto p-2">
-        {#if outputSearchActive}
-            <!-- Output-search results: the rail filters to runs that printed the
-                 query, each annotated with the matching line. -->
-            {#if outputSearchPending}
-                <RunListSkeleton label="Searching output" {showTaskName} />
-            {:else if matchedRuns.length === 0}
-                <div class="px-4 py-8 text-center text-xs leading-relaxed text-on-surface-muted">
-                    No output matches
-                    <b class="font-mono text-on-surface">“{outputQuery.trim()}”</b>.<br />
-                    Try a different term.
+            {#if hasSelection}
+                <span class="font-mono text-xs font-medium text-on-surface tabular-nums">
+                    {selectionCount} selected
+                </span>
+                <div class="ml-auto flex items-center gap-1">
+                    {#if onBulkRerun}
+                        <Button
+                            variant="ghost"
+                            size="xs"
+                            class="h-7 w-7 px-0"
+                            onclick={() => emitBulk(onBulkRerun, () => true)}
+                            title="Re-run task{selectionCount === 1 ? '' : 's'}"
+                        >
+                            {#snippet icon()}<RotateCw size={14} />{/snippet}
+                        </Button>
+                    {/if}
+                    {#if onBulkCancel && anyRunning}
+                        <Button
+                            variant="ghost"
+                            size="xs"
+                            class="h-7 w-7 px-0"
+                            onclick={() => emitBulk(onBulkCancel, (r) => r.status === "running")}
+                            title="Cancel running run{selectionCount === 1 ? '' : 's'}"
+                        >
+                            {#snippet icon()}<Square size={14} />{/snippet}
+                        </Button>
+                    {/if}
+                    {#if onBulkDelete && anyTerminal}
+                        <Button
+                            variant="danger"
+                            size="xs"
+                            class="h-7 w-7 px-0"
+                            onclick={() =>
+                                emitBulk(
+                                    onBulkDelete,
+                                    (r) => r.status !== "running" && r.status !== "pending",
+                                )}
+                            title="Delete run{selectionCount === 1 ? '' : 's'}"
+                        >
+                            {#snippet icon()}<Trash size={14} />{/snippet}
+                        </Button>
+                    {/if}
                 </div>
             {:else}
-                <div class="flex flex-col gap-0.5">
-                    {#each matchedRuns as run (run.id)}
-                        <div class="group/row relative flex items-stretch gap-1">
-                            {#if bulkActions}
-                                {@render rowCheckboxOverlay(run)}
-                            {/if}
-                            {@render runRow(run, outputMatches?.get(run.id))}
-                        </div>
-                    {/each}
+                <span
+                    class="shrink-0 font-mono text-xs whitespace-nowrap text-on-surface-muted tabular-nums"
+                >
+                    {countLabel}
+                </span>
+                <div class="ml-auto flex items-center gap-1">
+                    {#if showFilters}
+                        <RunFilterPopover bind:filters {showTask} {tasks} />
+                    {/if}
+                    <Button
+                        variant="ghost"
+                        size="xs"
+                        class="h-7 w-7 px-0"
+                        onclick={toggleSortDirection}
+                        title="Toggle sort order"
+                    >
+                        {#snippet icon()}
+                            <ArrowUpDown
+                                size={14}
+                                class="text-on-surface-muted {filters.sortDirection === 'asc'
+                                    ? 'rotate-180'
+                                    : ''}"
+                            />
+                        {/snippet}
+                    </Button>
+                    {#if onToggleFold}
+                        <Button
+                            variant="ghost"
+                            size="xs"
+                            class="h-7 w-7 px-0"
+                            onclick={onToggleFold}
+                            title="Hide run list"
+                            aria-label="Hide run list"
+                            aria-expanded="true"
+                        >
+                            {#snippet icon()}
+                                <PanelLeftClose size={14} class="text-on-surface-muted" />
+                            {/snippet}
+                        </Button>
+                    {/if}
                 </div>
             {/if}
-        {:else if items.length === 0 && loading}
-            <RunListSkeleton label="Loading runs" {showTaskName} />
-        {:else if items.length === 0}
-            <EmptyState
-                title={emptyText}
-                description={emptyDescription}
-                icon={Clock}
-                iconSize={32}
-                class="py-8"
-            />
-        {:else}
-            <div
-                style:height="{$virtualizer.getTotalSize()}px"
-                style:width="100%"
-                style:position="relative"
-            >
-                {#each $virtualizer.getVirtualItems() as row (items[row.index]?.id ?? row.index)}
-                    {@const run = items[row.index]}
-                    {#if run}
-                        <!-- The transform transition slides rows aside when a live
+        </div>
+
+        {#if showFilters}
+            <RunFilterChips bind:filters {showTask} />
+        {/if}
+
+        <div bind:this={scrollElement} class="min-h-0 flex-1 overflow-y-auto p-2">
+            {#if outputSearchActive}
+                <!-- Output-search results: the rail filters to runs that printed the
+                 query, each annotated with the matching line. -->
+                {#if outputSearchPending}
+                    <RunListSkeleton label="Searching output" {showTaskName} />
+                {:else if matchedRuns.length === 0}
+                    <div
+                        class="px-4 py-8 text-center text-xs leading-relaxed text-on-surface-muted"
+                    >
+                        No output matches
+                        <b class="font-mono text-on-surface">“{outputQuery.trim()}”</b>.<br />
+                        Try a different term.
+                    </div>
+                {:else}
+                    <div class="flex flex-col gap-0.5">
+                        {#each matchedRuns as run (run.id)}
+                            <div class="group/row relative flex items-stretch gap-1">
+                                {#if bulkActions}
+                                    {@render rowCheckboxOverlay(run)}
+                                {/if}
+                                {@render runRow(run, outputMatches?.get(run.id))}
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+            {:else if items.length === 0 && loading}
+                <RunListSkeleton label="Loading runs" {showTaskName} />
+            {:else if items.length === 0}
+                <EmptyState
+                    title={emptyText}
+                    description={emptyDescription}
+                    icon={Clock}
+                    iconSize={32}
+                    class="py-8"
+                />
+            {:else}
+                <div
+                    style:height="{$virtualizer.getTotalSize()}px"
+                    style:width="100%"
+                    style:position="relative"
+                >
+                    {#each $virtualizer.getVirtualItems() as row (items[row.index]?.id ?? row.index)}
+                        {@const run = items[row.index]}
+                        {#if run}
+                            <!-- The transform transition slides rows aside when a live
                              run is inserted or removed. Navigation never animates:
                              filter/sort/task changes remount rows, pagination
                              appends, and scrolling doesn't move a row. `leave`
                              is global because this {#if}, not the row's each
                              item, is the block it would otherwise wait for; it
                              only plays for runs removed live. -->
-                        <div
-                            data-run-id={run.id}
-                            use:arrival={motion?.arrived(run.id) ?? false}
-                            out:leave|global={motion?.removed}
-                            class="group/row flex items-center gap-1 transition-transform duration-200 ease-out motion-reduce:transition-none"
-                            style:transition-delay="var(--rw-shift-delay, 0ms)"
-                            style:position="absolute"
-                            style:top="0"
-                            style:left="0"
-                            style:width="100%"
-                            style:height="{row.size}px"
-                            style:transform="translateY({row.start}px)"
-                        >
-                            {#if bulkActions}
-                                {@render rowCheckboxOverlay(run)}
-                            {/if}
-                            {@render runRow(run, undefined)}
-                        </div>
-                    {/if}
-                {/each}
-            </div>
-        {/if}
+                            <div
+                                data-run-id={run.id}
+                                use:arrival={motion?.arrived(run.id) ?? false}
+                                out:leave|global={motion?.removed}
+                                class="group/row flex items-center gap-1 transition-transform duration-200 ease-out motion-reduce:transition-none"
+                                style:transition-delay="var(--rw-shift-delay, 0ms)"
+                                style:position="absolute"
+                                style:top="0"
+                                style:left="0"
+                                style:width="100%"
+                                style:height="{row.size}px"
+                                style:transform="translateY({row.start}px)"
+                            >
+                                {#if bulkActions}
+                                    {@render rowCheckboxOverlay(run)}
+                                {/if}
+                                {@render runRow(run, undefined)}
+                            </div>
+                        {/if}
+                    {/each}
+                </div>
+            {/if}
+        </div>
     </div>
-</div>
+{/if}
 
 <!-- Row checkbox: sits over the status dot (which fades out beneath it) so the
      row keeps the artifact's geometry. Lives in the row wrapper (not the button)
@@ -458,6 +503,7 @@
         {outputQuery}
         {bulkActions}
         {selectionActive}
+        usage={usageBars ? (usageScale ?? null) : undefined}
         onselect={selectRun}
     />
 {/snippet}

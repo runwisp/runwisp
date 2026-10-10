@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 	"github.com/spf13/cobra"
@@ -560,6 +561,21 @@ func TestAttach_RestartShowsOnlyNewRun(t *testing.T) {
 
 	assert.Equal(t, "Task \"backup\" restarted.\nnew first\nnew middle\nnew last\n", out)
 	assert.NotContains(t, slogBuf.String(), "01J00000000000000000000002", "the replaced run's end is not reported")
+}
+
+// endedCtx has ended, but the cancel has not reached contexts derived from it:
+// the moment Ctrl+C has closed the event stream and not yet the follower.
+type endedCtx struct{ context.Context }
+
+func (endedCtx) Err() error { return context.Canceled }
+
+// Ctrl+C closes the event stream through the caller's ctx before the
+// follower's own ctx hears of it; that is a clean stop, not a lost daemon.
+func TestFollowLogs_StreamClosedByCallerCancelIsCleanStop(t *testing.T) {
+	events := make(chan apiclient.RunStreamEvent)
+	close(events)
+	ctx := endedCtx{context.Background()}
+	require.NoError(t, followLogs(ctx, nil, nil, nil, nil, events, nil, logsOptions{Follow: true}))
 }
 
 // A stop --attach shows the tail of the run it stopped and reports the stop

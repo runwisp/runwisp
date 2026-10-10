@@ -1178,9 +1178,9 @@ func TestStopTask_WaitTimesOut(t *testing.T) {
 func TestListTasks_NilSchedulerWithCronTask(t *testing.T) {
 	var sched *runtime.Scheduler
 	tasks := map[string]*model.Task{"nightly": {Name: "nightly", Cron: "0 3 * * *", ManualTrigger: true}}
-	svc := newRunService(nil, nil, runtime.NewTaskRegistry(tasks), sched, events.NewEventBus())
+	svc := newRunService(new(testutil.MockRunRepository), nil, runtime.NewTaskRegistry(tasks), sched, events.NewEventBus())
 
-	got := svc.ListTasks()
+	got := svc.ListTasks(context.Background())
 	require.Len(t, got, 1)
 	assert.Nil(t, got[0].NextRunAt)
 	assert.Nil(t, got[0].PausedAt)
@@ -1188,17 +1188,17 @@ func TestListTasks_NilSchedulerWithCronTask(t *testing.T) {
 
 func TestListTasks_AttachesLiveUsage(t *testing.T) {
 	tasks := map[string]*model.Task{"busy": {Name: "busy"}, "idle": {Name: "idle"}}
-	svc := newRunService(nil, nil, runtime.NewTaskRegistry(tasks), nil, nil)
+	svc := newRunService(new(testutil.MockRunRepository), nil, runtime.NewTaskRegistry(tasks), nil, nil)
 	svc.taskUsage = func() map[string]model.ResourceUsage {
 		return map[string]model.ResourceUsage{"busy": {CPUPercent: 50, MemoryBytes: 2048}}
 	}
 
-	got := svc.ListTasks()
+	got := svc.ListTasks(context.Background())
 	require.Len(t, got, 2)
 	assert.Equal(t, &model.ResourceUsage{CPUPercent: 50, MemoryBytes: 2048}, got[0].Usage)
 	assert.Nil(t, got[1].Usage)
 
-	one, err := svc.GetTask("busy")
+	one, err := svc.GetTask(context.Background(), "busy")
 	require.NoError(t, err)
 	assert.Equal(t, int64(2048), one.Usage.MemoryBytes)
 }
@@ -1219,13 +1219,64 @@ func TestListTasks_ServiceStopped(t *testing.T) {
 	runner.On("ServiceSnapshot", "stopped").Return(model.ServiceSnapshot{State: model.ServiceStopped}, true)
 
 	got := map[string]bool{}
-	for _, tr := range svc.ListTasks() {
+	for _, tr := range svc.ListTasks(context.Background()) {
 		got[tr.Name] = tr.ServiceStopped
 	}
 	assert.Equal(t, map[string]bool{"job": false, "running": false, "stopped": true}, got)
 
-	one, err := svc.GetTask("stopped")
+	one, err := svc.GetTask(context.Background(), "stopped")
 	require.NoError(t, err)
 	assert.True(t, one.ServiceStopped)
 	runner.AssertNotCalled(t, "ServiceSnapshot", "job")
+}
+
+// The task DTO carries the newest started run, the run command, and each
+// service instance's state, so the task page can say what is going on without
+// a second request.
+func TestListTasks_LastRunRunCommandAndService(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"job": {Name: "job", Kind: model.KindTask, Run: "echo hi"},
+		"svc": {Name: "svc", Kind: model.KindService, Run: "./worker"},
+	}
+	svc := newRunService(repo, runner, runtime.NewTaskRegistry(tasks), nil, events.NewEventBus())
+
+	last := model.Run{ID: "01J", TaskName: "job", IsFailure: true}
+	repo.On("LatestStartedRuns", mock.Anything, mock.Anything).Return(map[string]model.Run{"job": last}, nil)
+	exit := 137
+	runner.On("ServiceSnapshot", "svc").Return(model.ServiceSnapshot{
+		State: model.ServiceDegraded, DesiredInstances: 2, RunningInstances: 1,
+		Instances: []model.ServiceInstanceStatus{
+			{Index: 0, State: model.ServiceInstanceRunning},
+			{Index: 1, State: model.ServiceInstanceRestarting, RestartCount: 3, StartFails: 3, LastExitCode: &exit},
+		},
+	}, true)
+
+	got := svc.ListTasks(context.Background())
+	require.Len(t, got, 2)
+	job, service := got[0], got[1]
+	assert.Equal(t, "echo hi", job.RunCommand)
+	require.NotNil(t, job.LastRun)
+	assert.True(t, job.LastRun.IsFailure)
+	assert.Nil(t, job.Service)
+
+	assert.Nil(t, service.LastRun)
+	require.NotNil(t, service.Service)
+	assert.Equal(t, model.ServiceDegraded, service.Service.State)
+	require.Len(t, service.Service.Instances, 2)
+	assert.Equal(t, 3, service.Service.Instances[1].StartFails)
+	assert.Equal(t, &exit, service.Service.Instances[1].LastExitCode)
+}
+
+// A storage error costs only the lastRun field; the task list still loads.
+func TestListTasks_LastRunErrorKeepsList(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	tasks := map[string]*model.Task{"job": {Name: "job"}}
+	svc := newRunService(repo, nil, runtime.NewTaskRegistry(tasks), nil, events.NewEventBus())
+	repo.On("LatestStartedRuns", mock.Anything, mock.Anything).Return(nil, errors.New("disk on fire"))
+
+	got := svc.ListTasks(context.Background())
+	require.Len(t, got, 1)
+	assert.Nil(t, got[0].LastRun)
 }

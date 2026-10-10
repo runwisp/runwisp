@@ -75,7 +75,7 @@ test.describe("task execution", () => {
         await page.goto("/tasks/echo-task");
         await expect(page.getByRole("heading", { name: "echo-task", level: 1 })).toBeVisible();
 
-        const runButton = page.getByRole("button", { name: /^Run( task)?$/ });
+        const runButton = page.getByTestId("task-strip").getByRole("button", { name: "Run now" });
         await runButton.click();
 
         const dialog = page.getByRole("dialog");
@@ -152,8 +152,8 @@ test.describe("task execution", () => {
         daemonState,
     }) => {
         // Two ended runs so there's an older run distinct from the default
-        // (newest) selection. The run-id chip in the detail panel renders the
-        // full ULID, so getByText(id) keys assertions to the selected run.
+        // (newest) selection. The verdict carries the shown run's full ULID,
+        // which keys assertions to the selected run.
         const older = await triggerRunViaAPI(page, "echo-task", daemonState.token);
         await waitForRunEnded(page, "echo-task", older.id, daemonState.token);
         // ...so the rail has at least two runs to switch between.
@@ -163,7 +163,8 @@ test.describe("task execution", () => {
         // Deep link straight to the OLDER run via its path segment — it must
         // override the default newest-run selection (the read path).
         await page.goto(`/tasks/echo-task/${older.id}`);
-        await expect(page.getByText(older.id)).toBeVisible({ timeout: 10_000 });
+        const verdict = page.getByTestId("run-verdict");
+        await expect(verdict).toHaveAttribute("data-run", older.id, { timeout: 10_000 });
 
         // Selecting the newest run from its rail row must push it into the URL
         // path (the write path). Run rows are <button>s in <main> carrying the
@@ -175,12 +176,12 @@ test.describe("task execution", () => {
             .first()
             .click();
         await expect(page).toHaveURL(new RegExp(`/tasks/echo-task/${newer.id}`));
-        await expect(page.getByText(newer.id)).toBeVisible();
+        await expect(verdict).toHaveAttribute("data-run", newer.id);
 
         // Reloading the synced URL restores that run, not the default.
         await page.reload();
         await expect(page).toHaveURL(new RegExp(`/tasks/echo-task/${newer.id}`));
-        await expect(page.getByText(newer.id)).toBeVisible({ timeout: 10_000 });
+        await expect(verdict).toHaveAttribute("data-run", newer.id, { timeout: 10_000 });
     });
 
     test("switching tasks shows a loading state, not an empty one, while runs load", async ({

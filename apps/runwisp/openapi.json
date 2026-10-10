@@ -1580,6 +1580,92 @@
         ],
         "type": "object"
       },
+      "ServiceInstanceStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "description": "0-based slot, as RUNWISP_INSTANCE_INDEX",
+            "format": "int64",
+            "type": "integer"
+          },
+          "lastExitCode": {
+            "description": "Exit code of the instance's latest run; absent until one has exited since the daemon started",
+            "format": "int64",
+            "type": "integer"
+          },
+          "restartCount": {
+            "description": "Exits since the instance last ran healthy",
+            "format": "int64",
+            "type": "integer"
+          },
+          "startFails": {
+            "description": "Failed starts in a row since the instance last ran healthy; it gives up once this passes restartAttempts",
+            "format": "int64",
+            "type": "integer"
+          },
+          "startedAt": {
+            "description": "When the instance's current run started; absent unless running",
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "description": "restarting: between an exit and the next respawn; fatal: gave up after too many failed starts and won't respawn until started",
+            "enum": [
+              "running",
+              "restarting",
+              "stopped",
+              "fatal"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "state",
+          "restartCount",
+          "startFails"
+        ],
+        "type": "object"
+      },
+      "ServiceStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "desiredInstances": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "instances": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceInstanceStatus"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "runningInstances": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "state": {
+            "description": "stopped: an operator stopped it, or autostart = false and it was never started; fatal: every instance gave up; degraded: some instances are down",
+            "enum": [
+              "running",
+              "degraded",
+              "stopped",
+              "fatal"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "desiredInstances",
+          "runningInstances",
+          "instances"
+        ],
+        "type": "object"
+      },
       "SystemSampleSSEEvent": {
         "additionalProperties": false,
         "properties": {
@@ -2147,6 +2233,10 @@
             ],
             "type": "string"
           },
+          "lastRun": {
+            "$ref": "#/components/schemas/Run",
+            "description": "The newest run of this task that started (pending, skipped and missed runs don't count); absent when none has."
+          },
           "logMaxSize": {
             "description": "Per-run log size cap in bytes",
             "format": "int64",
@@ -2256,6 +2346,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "run": {
+            "description": "The run command as written in runwisp.toml; absent for tasks without one (container and compose tasks).",
+            "type": "string"
+          },
           "runOnStart": {
             "description": "For tasks: fire once at daemon startup, in addition to any cron schedule",
             "type": "boolean"
@@ -2271,6 +2365,10 @@
           "secretsFile": {
             "description": "Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values are not.",
             "type": "string"
+          },
+          "service": {
+            "$ref": "#/components/schemas/ServiceStatus",
+            "description": "For services: the supervisor's view of each instance. Absent for tasks."
           },
           "serviceStopped": {
             "description": "For services: true while the service is stopped (by an operator, or never started because autostart = false) and the daemon will not respawn it until it is started. Absent for running or restarting services and for tasks.",

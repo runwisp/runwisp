@@ -60,12 +60,19 @@ cron = "0 0 1 1 *"
 timezone = "UTC"
 run = "echo nightly"
 
-# Header controls for task-controls.spec. Not autostarted, so it sits stopped
+# Service controls for task-controls.spec. Not autostarted, so it sits stopped
 # (and runs nothing) except while that spec starts it.
 [services.idle-service]
 description = "Service for task-controls.spec"
 run = "sleep 3600"
 autostart = false
+
+# Output long enough to scroll, for the header fold in task-strip.spec, plus
+# env for its Details sheet.
+[tasks.long-output-task]
+description = "Prints enough lines to scroll the console"
+run = 'for i in $(seq 1 400); do echo "long-line-$i"; done'
+env = { BUCKET = "acme" }
 
 # Two names that differ only in punctuation; the UI must keep them apart.
 [tasks.twin-task]

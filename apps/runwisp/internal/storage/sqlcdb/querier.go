@@ -32,6 +32,9 @@ type Querier interface {
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	GetConfigValue(ctx context.Context, key string) (string, error)
+	// The newest run of a task that actually started: pending, skipped and missed
+	// rows never mask the state of the run before them.
+	GetLatestStartedRun(ctx context.Context, taskName string) (Run, error)
 	GetNotificationByID(ctx context.Context, id string) (Notification, error)
 	GetPendingRuns(ctx context.Context) ([]Run, error)
 	GetRun(ctx context.Context, id string) (Run, error)

@@ -98,7 +98,7 @@
     {/if}
     {#if usage}
         <span class="text-outline-hover" aria-hidden="true">·</span>
-        <span data-testid="run-usage" title="Peak memory and CPU time of the run's processes"
+        <span data-testid="run-usage" title="CPU time and most memory the run's processes used"
             >{usage}</span
         >
     {/if}

@@ -81,6 +81,7 @@ type LogSearchQuery = NonNullable<APIOperations["searchLogs"]["parameters"]["que
 
 // The bodiless per-task POST actions. errorMiddleware throws on any failure.
 type TaskActionPath =
+    | "/api/tasks/{taskName}/start"
     | "/api/tasks/{taskName}/restart"
     | "/api/tasks/{taskName}/stop"
     | "/api/tasks/{taskName}/pause"
@@ -130,6 +131,7 @@ export const tasksApi = {
         return unwrap(data);
     },
 
+    startService: (taskName: string) => postTaskAction("/api/tasks/{taskName}/start", taskName),
     restartService: (taskName: string) => postTaskAction("/api/tasks/{taskName}/restart", taskName),
     stopService: (taskName: string) => postTaskAction("/api/tasks/{taskName}/stop", taskName),
     pauseSchedule: (taskName: string) => postTaskAction("/api/tasks/{taskName}/pause", taskName),

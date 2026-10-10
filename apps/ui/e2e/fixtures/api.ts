@@ -61,11 +61,19 @@ export async function triggerRunViaUI(page: Page, taskName: string): Promise<Run
             response.request().method() === "POST" &&
             new URL(response.url()).pathname === `/api/tasks/${taskName}/run`,
     );
-    await page.getByRole("button", { name: /^Run( task)?$/ }).click();
-    await page.getByRole("button", { name: "Run Now" }).click();
+    await runFromStrip(page);
     const response = await triggered;
     expect(response.status(), `trigger ${taskName} via UI`).toBeLessThan(400);
     return (await response.json()) as Run;
+}
+
+/** Open the Run dialog from the task strip and confirm it. */
+export async function runFromStrip(page: Page): Promise<void> {
+    await page
+        .getByTestId("task-strip")
+        .getByRole("button", { name: /^Run( now|…)$/ })
+        .click();
+    await page.getByRole("dialog").getByRole("button", { name: "Run Now" }).click();
 }
 
 /** Fetch a single run via `GET /api/runs/{id}`. Run ULIDs are globally unique,

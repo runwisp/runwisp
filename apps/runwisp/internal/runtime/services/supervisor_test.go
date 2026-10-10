@@ -336,3 +336,17 @@ func TestMarkLiveUngatedUsesUptime(t *testing.T) {
 	assert.Equal(t, 0, next)
 	assert.Zero(t, s.StartFails(0))
 }
+
+func TestLastExitCode(t *testing.T) {
+	s := newSupervisorForTest("svc", 2)
+	assert.Nil(t, s.LastExitCode(0), "nil until a run exits")
+
+	s.SetLastExitCode(0, 137)
+	s.SetLastExitCode(0, 1)
+	got := s.LastExitCode(0)
+	require.NotNil(t, got)
+	assert.Equal(t, 1, *got, "the latest exit wins")
+	*got = 99
+	assert.Equal(t, 1, *s.LastExitCode(0), "callers get a copy")
+	assert.Nil(t, s.LastExitCode(1), "slots are independent")
+}

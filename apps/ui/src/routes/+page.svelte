@@ -16,7 +16,6 @@
 
     const RECENT_RUN_LIMIT = 16;
     const RUNNING_RUN_LIMIT = 8;
-    const TASKS_REFRESH_DELAY_MS = 1000;
 
     const isRunning = (run: Run) => run.status === "running";
 
@@ -109,7 +108,7 @@
             if (event.type === "run.created") {
                 dashState.totalRuns += 1;
                 if (systemStore.schedulingActive) {
-                    scheduleTasksRefresh();
+                    taskStore.refreshSoon();
                 }
             }
         });
@@ -118,10 +117,6 @@
 
         return () => {
             unsubscribe();
-            if (tasksRefreshTimer) {
-                clearTimeout(tasksRefreshTimer);
-                tasksRefreshTimer = null;
-            }
         };
     });
 
@@ -150,18 +145,6 @@
             });
         }
     });
-
-    let tasksRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-
-    // The first event arms a timer and later ones inside the window ride on it,
-    // so a burst of simultaneous cron fires costs a single /api/tasks refetch.
-    function scheduleTasksRefresh() {
-        if (tasksRefreshTimer) return;
-        tasksRefreshTimer = setTimeout(() => {
-            tasksRefreshTimer = null;
-            void taskStore.refresh();
-        }, TASKS_REFRESH_DELAY_MS);
-    }
 
     async function handleTaskClick(taskName: string) {
         await goto(resolve(`/tasks/${taskName}`));

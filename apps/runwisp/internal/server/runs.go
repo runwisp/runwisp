@@ -248,11 +248,11 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 }
 
 func (srv *Server) humaListTasks(ctx context.Context, input *struct{}) (*TasksOutput, error) {
-	return &TasksOutput{Body: TasksResponseBody{Items: srv.runService.ListTasks()}}, nil
+	return &TasksOutput{Body: TasksResponseBody{Items: srv.runService.ListTasks(ctx)}}, nil
 }
 
 func (srv *Server) humaGetTask(ctx context.Context, input *TaskNameInput) (*TaskOutput, error) {
-	task, err := srv.runService.GetTask(input.TaskName)
+	task, err := srv.runService.GetTask(ctx, input.TaskName)
 	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to fetch task")
 	}

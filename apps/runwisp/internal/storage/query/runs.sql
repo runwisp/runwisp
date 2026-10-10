@@ -18,6 +18,14 @@ WHERE id = ?;
 -- name: GetRun :one
 SELECT * FROM runs WHERE id = ? AND deleted_at IS NULL LIMIT 1;
 
+-- name: GetLatestStartedRun :one
+-- The newest run of a task that actually started: pending, skipped and missed
+-- rows never mask the state of the run before them.
+SELECT * FROM runs
+WHERE task_name = ? AND deleted_at IS NULL AND started_at IS NOT NULL
+ORDER BY started_at DESC, id DESC
+LIMIT 1;
+
 -- name: GetRunByExecutionID :one
 SELECT * FROM runs WHERE execution_id = ? AND deleted_at IS NULL LIMIT 1;
 

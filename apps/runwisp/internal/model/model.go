@@ -584,18 +584,6 @@ const (
 	ServiceFatal    = "fatal"
 )
 
-// ServiceInstanceStatus is one instance slot's reported state. Pid/StartedAt/
-// LastExitCode are best-effort: populated when the daemon has a live or just-
-// exited run for the slot, zero/nil otherwise.
-type ServiceInstanceStatus struct {
-	Index        int
-	State        string
-	Pid          int
-	StartedAt    *time.Time
-	RestartCount int
-	LastExitCode *int
-}
-
 // ServiceSnapshot is the supervisor + live-run view of one service, built by
 // the runtime manager and forwarded to station as a service:status message.
 type ServiceSnapshot struct {

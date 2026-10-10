@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { test, expect } from "./fixtures/test-base";
-import { runVerdict } from "./fixtures/api";
+import { runFromStrip, runVerdict } from "./fixtures/api";
 
 test.describe("frame history", () => {
     test("settled progress bar exposes rewindable frames inline", async ({
@@ -11,8 +11,7 @@ test.describe("frame history", () => {
         await page.goto("/tasks/progress-task");
         await expect(page.getByRole("heading", { name: "progress-task", level: 1 })).toBeVisible();
 
-        await page.getByRole("button", { name: "Run Task" }).click();
-        await page.getByRole("button", { name: "Run Now" }).click();
+        await runFromStrip(page);
 
         await expect(runVerdict(page, "succeeded")).toBeVisible({ timeout: 30_000 });
 

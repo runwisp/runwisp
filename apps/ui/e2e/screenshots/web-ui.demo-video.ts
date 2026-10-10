@@ -116,9 +116,9 @@ test("web ui showcase tour", async ({ authenticatedPage: page }) => {
     await beat(page, 600);
 
     // ── Beat 3: Trigger a run ────────────────────────────────────────────────
-    const runButton = page.getByRole("button", { name: /^Run( task)?$/ }).first();
+    const runButton = page.getByTestId("task-strip").getByRole("button", { name: /^Run( now|…)$/ });
     await cursor.click(runButton);
-    const runNow = page.getByRole("button", { name: "Run Now" });
+    const runNow = page.getByRole("dialog").getByRole("button", { name: "Run Now" });
     await expect(runNow).toBeVisible();
     await cursor.click(runNow);
 

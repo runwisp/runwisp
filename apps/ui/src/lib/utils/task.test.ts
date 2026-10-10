@@ -9,7 +9,6 @@ import {
     instanceCountResolver,
     isServiceStopped,
     serviceLabel,
-    showScheduleChip,
     taskIcon,
     taskTriggerTooltip,
 } from "./task";
@@ -24,18 +23,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
         ...overrides,
     };
 }
-
-describe("showScheduleChip", () => {
-    it("shows for a cron task while the daemon schedules", () => {
-        expect(showScheduleChip(makeTask(), true)).toBe(true);
-    });
-
-    it("hides for services, cron-less tasks, and station mode", () => {
-        expect(showScheduleChip(makeTask({ kind: "service" }), true)).toBe(false);
-        expect(showScheduleChip(makeTask({ cron: "" }), true)).toBe(false);
-        expect(showScheduleChip(makeTask(), false)).toBe(false);
-    });
-});
 
 describe("canTogglePause", () => {
     it("allows a manual_trigger task", () => {

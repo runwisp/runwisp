@@ -5,6 +5,7 @@ import { test, expect } from "./fixtures/test-base";
 import {
     expectRunDetailMatchesApi,
     getLatestRun,
+    runFromStrip,
     runVerdict,
     waitForRunEnded,
 } from "./fixtures/api";
@@ -24,8 +25,7 @@ test.describe("run lifecycle", () => {
         await page.goto("/tasks/slow-task");
         await expect(page.getByRole("heading", { name: "slow-task", level: 1 })).toBeVisible();
 
-        await page.getByRole("button", { name: /^Run( task)?$/ }).click();
-        await page.getByRole("button", { name: "Run Now" }).click();
+        await runFromStrip(page);
 
         // The run-detail panel must show the live-running state: RUNNING badge,
         // streamed output, and the console's "Streaming" indicator — all gated on
@@ -40,8 +40,8 @@ test.describe("run lifecycle", () => {
         if (!running) return;
         expect(running.status).toBe("running");
 
-        // Stop it via the UI (Stop → confirm "Stop Now").
-        await page.getByRole("button", { name: "Stop", exact: true }).click();
+        // Stop it via the UI (Stop run → confirm "Stop Now").
+        await page.getByRole("button", { name: "Stop run", exact: true }).click();
         await page.getByRole("button", { name: "Stop Now" }).click();
 
         // The daemon records an operator-initiated stop as endReason "stopped".
@@ -61,11 +61,10 @@ test.describe("run lifecycle", () => {
         await page.goto("/tasks/timed-task");
         await expect(page.getByRole("heading", { name: "timed-task", level: 1 })).toBeVisible();
 
-        // Trigger via the UI (Run → confirm Run Now). The page opens the detail
+        // Trigger via the UI (Run now → confirm Run Now). The page opens the detail
         // panel on the new run AND lists its row, both fed by the same live runs
         // source — so both update via SSE without a page refresh.
-        await page.getByRole("button", { name: /^Run( task)?$/ }).click();
-        await page.getByRole("button", { name: "Run Now" }).click();
+        await runFromStrip(page);
 
         // The run-list row is a <button> in <main> whose text carries the
         // (lowercase) status word; the detail badge is an uppercase span, so this

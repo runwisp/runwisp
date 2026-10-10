@@ -15,52 +15,45 @@ test.describe("schedule pause", () => {
         expect(resumed.status()).toBe(204);
     });
 
-    test("the header Pause button pauses the schedule, which survives a reload", async ({
+    test("Pause in the task strip pauses the schedule, which survives a reload", async ({
         authenticatedPage: page,
     }) => {
         await page.goto(`/tasks/${TASK}`);
-        const header = page.getByRole("main").locator("header");
-        const chip = page.getByTestId("schedule-chip");
-        await expect(chip).toBeVisible();
-        await expect(chip).not.toContainText("Schedule paused");
+        const strip = page.getByTestId("task-strip");
+        const state = strip.getByTestId("task-state");
+        await expect(state).toHaveText("Scheduled");
+        await expect(strip.getByTestId("task-sentence")).toContainText("next run in");
 
-        await chip.click();
-        await expect(page.getByText(/^Next run in /)).toBeVisible();
-        await page.keyboard.press("Escape");
-
-        await header.getByRole("button", { name: "Pause schedule" }).click();
+        await strip.getByRole("button", { name: "Pause", exact: true }).click();
         await expect(page.getByText(`Paused the schedule of "${TASK}"`)).toBeVisible();
-        await expect(chip).toContainText("Schedule paused");
+        await expect(state).toHaveText("Paused");
 
         await page.reload();
-        await expect(chip).toContainText("Schedule paused");
+        await expect(state).toHaveText("Paused");
 
-        await header.getByRole("button", { name: "Resume schedule" }).click();
-        await expect(chip).not.toContainText("Schedule paused");
-        await expect(header.getByRole("button", { name: "Pause schedule" })).toBeVisible();
+        await strip.getByRole("button", { name: "Resume schedule" }).click();
+        await expect(state).toHaveText("Scheduled");
+        await expect(strip.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
     });
 
     test("Undo in the toast lifts the pause again", async ({ authenticatedPage: page }) => {
         await page.goto(`/tasks/${TASK}`);
-        const chip = page.getByTestId("schedule-chip");
+        const strip = page.getByTestId("task-strip");
+        const state = strip.getByTestId("task-state");
 
-        await page
-            .getByRole("main")
-            .locator("header")
-            .getByRole("button", { name: "Pause schedule" })
-            .click();
-        await expect(chip).toContainText("Schedule paused");
+        await strip.getByRole("button", { name: "Pause", exact: true }).click();
+        await expect(state).toHaveText("Paused");
 
         await page.getByRole("button", { name: "Undo" }).click();
-        await expect(chip).not.toContainText("Schedule paused");
+        await expect(state).toHaveText("Scheduled");
     });
 
-    test("a task without a cron schedule has no chip and no Pause", async ({
+    test("a task without a cron schedule is Manual only, with no Pause", async ({
         authenticatedPage: page,
     }) => {
         await page.goto("/tasks/echo-task");
-        await expect(page.getByRole("heading", { name: "echo-task" })).toBeVisible();
-        await expect(page.getByTestId("schedule-chip")).toHaveCount(0);
-        await expect(page.getByRole("button", { name: "Pause schedule" })).toHaveCount(0);
+        const strip = page.getByTestId("task-strip");
+        await expect(strip.getByTestId("task-state")).toHaveText("Manual only");
+        await expect(strip.getByRole("button", { name: "Pause", exact: true })).toHaveCount(0);
     });
 });

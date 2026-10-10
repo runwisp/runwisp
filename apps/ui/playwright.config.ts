@@ -49,6 +49,7 @@ export default defineConfig({
                 "run-motion.spec.ts",
                 "schedule-pause.spec.ts",
                 "task-controls.spec.ts",
+                "task-strip.spec.ts",
             ],
             use: { ...devices["Desktop Chrome"] },
         },

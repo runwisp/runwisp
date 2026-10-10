@@ -147,7 +147,10 @@
     // Live-region overlay rows, rendered in place below the committed lines.
     let overlayRows = $derived(cache.overlayRows);
 
-    let totalHeight = $derived.by(() => {
+    // Height of the log itself; the scroll surface (totalHeight) is never
+    // shorter than the viewport. Exposed as data-content-height so a page can
+    // tell when the whole log fits without scrolling.
+    let contentHeight = $derived.by(() => {
         const linesHeight = layout.totalRows * lineHeight + truncationBannerHeight;
         const overlayHeight = overlayRows.length * lineHeight;
         // Reserve a row for the streaming cursor only when it stands on its own
@@ -159,16 +162,16 @@
         // tall so the dashed rule has breathing room above the centred label.
         const sentinelHeight = cache.finished && cache.totalLines > 0 ? lineHeight * 2 : 0;
         const blankHeight = cache.totalLines > 0 ? BLANK_LINES_AT_END * lineHeight : 0;
-        return Math.max(
+        return (
             linesHeight +
-                overlayHeight +
-                streamingHeight +
-                sentinelHeight +
-                blankHeight +
-                frames.blockHeight,
-            containerHeight,
+            overlayHeight +
+            streamingHeight +
+            sentinelHeight +
+            blankHeight +
+            frames.blockHeight
         );
     });
+    let totalHeight = $derived(Math.max(contentHeight, containerHeight));
 
     // Width of the virtual scroll surface: wide enough for the longest line
     // seen so far, never narrower than the viewport (so short logs show no
@@ -368,7 +371,12 @@
         </div>
     {/if}
 
-    <div bind:this={containerEl} class="flex-1 overflow-auto" onscroll={onScroll}>
+    <div
+        bind:this={containerEl}
+        class="flex-1 overflow-auto"
+        onscroll={onScroll}
+        data-content-height={contentHeight}
+    >
         <div
             class="relative"
             style="height: {totalHeight}px; min-height: 100%; width: {surfaceWidth}px; min-width: 100%;"

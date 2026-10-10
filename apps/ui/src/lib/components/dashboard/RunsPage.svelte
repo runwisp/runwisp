@@ -71,7 +71,6 @@
             showTask
             tasks={taskStore.items}
             showTaskName
-            headerLabel="Runs"
             emptyText="No runs found"
             emptyDescription="Trigger a task manually with Re-run, or wait for a schedule to fire."
             bulkActions
@@ -80,6 +79,8 @@
             onBulkRerun={selection.handleBulkRerun}
             {getInstanceCount}
             motion={live.source.motion}
+            folded={rail.listFolded}
+            onToggleFold={rail.collapsible ? rail.toggleList : undefined}
         />
     {/if}
 
@@ -90,8 +91,6 @@
             showTaskName
             onDelete={selection.deleteSingle}
             onBack={rail.phone ? rail.back : undefined}
-            onToggleList={rail.collapsible ? rail.toggleList : undefined}
-            listVisible={panes.list}
             {getInstanceCount}
             getLiveUsage={(id) => systemStore.runUsage(id)}
             motion={live.source.motion}

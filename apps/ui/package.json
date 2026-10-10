@@ -18,7 +18,7 @@
         "@tailwindcss/forms": "^0.5.11",
         "@tailwindcss/typography": "^0.5.20",
         "@tailwindcss/vite": "^4.3.3",
-        "@types/node": "^26.6.4",
+        "@types/node": "^26.6.5",
         "@vitest/coverage-v8": "^5.0.3",
         "@xterm/xterm": "^6.0.0",
         "cookie": "^0.7.2",
@@ -27,7 +27,7 @@
         "eslint-plugin-sonarjs": "^4.2.2",
         "eslint-plugin-svelte": "^3.23.1",
         "globals": "^17.13.0",
-        "prettier": "^3.9.9",
+        "prettier": "^3.9.10",
         "prettier-plugin-svelte": "^4.1.1",
         "prettier-plugin-tailwindcss": "^0.8.1",
         "svelte": "^5.57.2",
@@ -39,7 +39,7 @@
         "vitest": "^5.0.3"
     },
     "dependencies": {
-        "@lucide/svelte": "^1.54.0",
+        "@lucide/svelte": "^1.55.0",
         "@noble/hashes": "^2.4.0",
         "@runwisp/common": "workspace:*",
         "@runwisp/ui": "workspace:*",

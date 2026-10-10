@@ -379,6 +379,10 @@ func matchesAny(patterns []string, name string) bool {
 // per client IP, so -f over --url tops out around 15 live runs; a server-side
 // multiplexed log stream is the upgrade if that ever matters.
 func followLogs(ctx context.Context, client *apiclient.Client, sink *logSink, runs, skip []*model.Run, events <-chan apiclient.RunStreamEvent, patterns []string, opts logsOptions) error {
+	// The event stream was opened with the caller's ctx. Ctrl+C can close it
+	// before the cancel reaches the ctx derived here, so a closed stream is
+	// judged against the caller's.
+	streamCtx := ctx
 	ctx, cancel := context.WithCancel(ctx)
 	fl := &logFollower{ctx: ctx, cancel: cancel, client: client, sink: sink, patterns: patterns,
 		results: make(chan error), tracked: map[string]bool{}}
@@ -400,7 +404,7 @@ func followLogs(ctx context.Context, client *apiclient.Client, sink *logSink, ru
 			}
 		case ev, ok := <-events:
 			if !ok {
-				if ctx.Err() != nil {
+				if streamCtx.Err() != nil {
 					return fl.stop(nil)
 				}
 				return fl.stop(errors.New("lost the connection to the daemon"))
