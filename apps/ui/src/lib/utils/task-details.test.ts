@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { Task } from "@runwisp/common";
+import { TASK_DEFAULTS } from "./__task_defaults";
 import { taskDetailSections } from "./task-details";
 
 const SECOND_NS = 1e9;
@@ -10,39 +11,12 @@ const MINUTE_NS = 60 * SECOND_NS;
 
 /** A [tasks.*] entry as the API serves it with every key left out: resolved defaults. */
 function makeTask(overrides: Partial<Task> = {}): Task {
-    return {
-        name: "backup",
-        kind: "task",
-        manualTrigger: true,
-        autostart: true,
-        runOnStart: false,
-        catchUp: 1,
-        maxConcurrent: 1,
-        onOverlap: "queue",
-        gracefulStop: 5 * SECOND_NS,
-        stopSignal: "SIGTERM",
-        shell: "/bin/sh",
-        envBase: "inherit",
-        logMaxSize: 100 * 1024 * 1024,
-        logOnFull: "drop_old",
-        ...overrides,
-    };
+    return { ...TASK_DEFAULTS.task, name: "backup", ...overrides };
 }
 
 /** A [services.*] entry as the API serves it with every key left out. */
 function makeService(overrides: Partial<Task> = {}): Task {
-    return makeTask({
-        name: "web",
-        kind: "service",
-        onOverlap: "skip",
-        instances: 1,
-        restart: "always",
-        restartAttempts: 3,
-        restartBackoff: "exponential",
-        restartDelay: SECOND_NS,
-        healthyAfter: MINUTE_NS,
-        ...overrides,
-    });
+    return { ...TASK_DEFAULTS.service, name: "web", ...overrides };
 }
 
 const section = (task: Task, title: string) =>

@@ -3,6 +3,7 @@
 
 import { isService, type Task } from "@runwisp/common";
 import { formatBytes, humanizeCron } from "@runwisp/ui";
+import { TASK_DEFAULTS } from "./__task_defaults";
 import { hasCron } from "./task";
 
 export interface DetailRow {
@@ -45,116 +46,94 @@ function durationText(ns: number): string {
     return out || "0s";
 }
 
-/** Nanoseconds as a TOML duration string. */
-const duration = (ns: number) => q(durationText(ns));
-/** Bytes as a TOML size string: "100MiB". */
-const size = (bytes: number) => q(formatBytes(bytes).replace(" ", ""));
-
-const SECOND_NS = 1e9;
-/** config.DefaultRetryDelay. retry_delay shows in retry_attempts' note. */
-const DEFAULT_RETRY_DELAY_NS = 5 * SECOND_NS;
-
-/**
- * Each key's built-in default, as it renders here. The API serves resolved
- * values, so a key left out of runwisp.toml arrives as its default: a row equal
- * to its default is hidden, any other value (0 included) is shown. Mirrors
- * apps/runwisp/internal/config/defaults.go and the model.Default* constants.
- */
-const DEFAULTS: Partial<Record<string, string>> = {
-    catch_up: "1",
-    max_concurrent: "1",
-    max_queued: "100",
-    on_overlap: q("queue"),
-    retry_attempts: "0",
-    graceful_stop: duration(5 * SECOND_NS),
-    stop_signal: q("SIGTERM"),
-    shell: q("/bin/sh"),
-    env_base: q("inherit"),
-    manual_trigger: "true",
-    autostart: "true",
-    instances: "1",
-    restart: q("always"),
-    restart_attempts: "3",
-    restart_backoff: q("exponential"),
-    restart_delay: duration(SECOND_NS),
-    healthy_after: duration(60 * SECOND_NS),
-    priority: "0",
-    log_max_size: size(100 * 1024 * 1024),
-    log_on_full: q("drop_old"),
-    keep_for: duration(0),
-};
-
-function row(key: string, value: string | undefined, note?: string): DetailRow[] {
-    if (value === undefined || value === DEFAULTS[key]) return [];
-    return [{ key, value, ...(note && { note }) }];
-}
-
 // Absent means not set; 0 is a value.
 const str = (v: string | undefined) => (v ? q(v) : undefined);
 const num = (v: number | undefined) => (v === undefined ? undefined : String(v));
-const dur = (v: number | undefined) => (v === undefined ? undefined : duration(v));
+/** Nanoseconds as a TOML duration string. */
+const dur = (v: number | undefined) => (v === undefined ? undefined : q(durationText(v)));
+/** Bytes as a TOML size string: "100MiB". */
+const size = (v: number | undefined) =>
+    v === undefined ? undefined : q(formatBytes(v).replace(" ", ""));
 
-function scheduleRows(task: Task): DetailRow[] {
+/** Renders one key of a unit as written in TOML; undefined when unset. */
+type Render = (t: Task) => string | undefined;
+type Row = (key: string, render: Render, note?: string) => DetailRow[];
+
+/**
+ * A row builder for task. The API serves resolved values, so a key left out of
+ * runwisp.toml arrives as its built-in default: a row that renders the same for
+ * task and for the default unit of its kind is hidden, any other value (0
+ * included) is shown.
+ */
+function rowsOf(task: Task, defaults: Task): Row {
+    return (key, render, note) => {
+        const value = render(task);
+        if (value === undefined || value === render(defaults)) return [];
+        return [{ key, value, ...(note && { note }) }];
+    };
+}
+
+function scheduleRows(task: Task, row: Row): DetailRow[] {
     if (!hasCron(task)) return [];
     return [
-        ...row("cron", q(task.cron), humanizeCron(task.cron).humanized),
-        ...row("timezone", str(task.timezone)),
-        ...row("catch_up", num(task.catchUp)),
-        ...row("jitter", dur(task.jitter)),
+        ...row("cron", (t) => str(t.cron), humanizeCron(task.cron).humanized),
+        ...row("timezone", (t) => str(t.timezone)),
+        ...row("catch_up", (t) => num(t.catchUp)),
+        ...row("jitter", (t) => dur(t.jitter)),
     ];
 }
 
 /** The retry curve and its first delay, in plain words. */
 function retryNote(task: Task): string {
-    const delay = task.retryDelay ?? DEFAULT_RETRY_DELAY_NS;
+    const delay = task.retryDelay ?? TASK_DEFAULTS.task.retryDelay ?? 0;
     return `${task.retryBackoff ?? "constant"}, from ${durationText(delay)}`;
 }
 
 /** Keys only [tasks.*] accepts: a [services.*] entry rejects them. */
-function taskOnlyRows(task: Task): DetailRow[] {
+function taskOnlyRows(task: Task, row: Row): DetailRow[] {
     if (isService(task.kind)) return [];
     return [
-        ...row("retry_attempts", num(task.retryAttempts), retryNote(task)),
-        ...row("on_overlap", str(task.onOverlap)),
-        ...row("max_concurrent", num(task.maxConcurrent)),
-        ...row("max_queued", num(task.maxQueued)),
-        ...row("run_on_start", task.runOnStart ? q(task.runOnStartMode ?? "daemon") : undefined),
-        ...row("autostart", String(task.autostart), "the schedule starts paused"),
+        ...row("retry_attempts", (t) => num(t.retryAttempts), retryNote(task)),
+        ...row("on_overlap", (t) => str(t.onOverlap)),
+        ...row("max_concurrent", (t) => num(t.maxConcurrent)),
+        ...row("max_queued", (t) => num(t.maxQueued)),
+        ...row("run_on_start", (t) => (t.runOnStart ? q(t.runOnStartMode ?? "daemon") : undefined)),
+        ...row("autostart", (t) => String(t.autostart), "the schedule starts paused"),
     ];
 }
 
-function executionRows(task: Task): DetailRow[] {
+function executionRows(task: Task, row: Row): DetailRow[] {
     return [
-        ...row("timeout", dur(task.timeout)),
-        ...taskOnlyRows(task),
-        ...row("user", str(task.user)),
-        ...row("working_dir", str(task.workingDir)),
-        ...row("umask", str(task.umask)),
-        ...row("graceful_stop", dur(task.gracefulStop)),
-        ...row("stop_signal", str(task.stopSignal)),
+        ...row("timeout", (t) => dur(t.timeout)),
+        ...taskOnlyRows(task, row),
+        ...row("user", (t) => str(t.user)),
+        ...row("working_dir", (t) => str(t.workingDir)),
+        ...row("umask", (t) => str(t.umask)),
+        ...row("graceful_stop", (t) => dur(t.gracefulStop)),
+        ...row("stop_signal", (t) => str(t.stopSignal)),
         ...row(
             "manual_trigger",
-            String(task.manualTrigger),
+            (t) => String(t.manualTrigger),
             "the UI and API can't run or control it",
         ),
     ];
 }
 
-function serviceRows(task: Task): DetailRow[] {
+function serviceRows(task: Task, row: Row): DetailRow[] {
     if (!isService(task.kind)) return [];
     return [
-        ...row("instances", num(task.instances)),
-        ...row("restart", str(task.restart)),
+        ...row("instances", (t) => num(t.instances)),
+        ...row("restart", (t) => str(t.restart)),
         ...row(
             "restart_attempts",
-            num(task.restartAttempts),
+            (t) => num(t.restartAttempts),
             "fast failures in a row, then it gives up",
         ),
-        ...row("restart_backoff", str(task.restartBackoff)),
-        ...row("restart_delay", dur(task.restartDelay)),
-        ...row("healthy_after", dur(task.healthyAfter)),
-        ...row("autostart", String(task.autostart), "it stays down until you start it"),
-        ...row("priority", num(task.priority)),
+        ...row("restart_backoff", (t) => str(t.restartBackoff)),
+        ...row("restart_delay", (t) => dur(t.restartDelay)),
+        ...row("healthy_after", (t) => dur(t.healthyAfter)),
+        ...row("autostart", (t) => String(t.autostart), "it stays down until you start it"),
+        ...row("priority", (t) => num(t.priority)),
     ];
 }
 
@@ -173,37 +152,38 @@ function parameterRows(task: Task): DetailRow[] {
     });
 }
 
-function environmentRows(task: Task): DetailRow[] {
+function environmentRows(task: Task, row: Row): DetailRow[] {
     const env = Object.entries(task.env ?? {}).sort(([a], [b]) => a.localeCompare(b));
     return [
-        ...row("env_base", str(task.envBase)),
+        ...row("env_base", (t) => str(t.envBase)),
         ...env.map(([k, v]) => ({ key: `env.${k}`, value: q(v) })),
-        ...row("env_file", str(task.envFile)),
-        ...row("secrets_file", str(task.secretsFile), "values not shown"),
+        ...row("env_file", (t) => str(t.envFile)),
+        ...row("secrets_file", (t) => str(t.secretsFile), "values not shown"),
     ];
 }
 
-function outputRows(task: Task): DetailRow[] {
+function outputRows(row: Row): DetailRow[] {
     return [
-        ...row("log_max_size", task.logMaxSize === undefined ? undefined : size(task.logMaxSize)),
-        ...row("log_on_full", str(task.logOnFull)),
-        ...row("keep_runs", num(task.keepRuns)),
-        ...row("keep_for", dur(task.keepFor)),
+        ...row("log_max_size", (t) => size(t.logMaxSize)),
+        ...row("log_on_full", (t) => str(t.logOnFull)),
+        ...row("keep_runs", (t) => num(t.keepRuns)),
+        ...row("keep_for", (t) => dur(t.keepFor)),
     ];
 }
 
 /** The task's configuration in runwisp.toml terms, the sections that apply. */
 export function taskDetailSections(task: Task): DetailSection[] {
+    const row = rowsOf(task, TASK_DEFAULTS[isService(task.kind) ? "service" : "task"]);
     const command: DetailSection[] = task.run
-        ? [{ title: "Command", command: task.run, rows: row("shell", str(task.shell)) }]
+        ? [{ title: "Command", command: task.run, rows: row("shell", (t) => str(t.shell)) }]
         : [];
     const sections: DetailSection[] = [
-        { title: "Schedule", rows: scheduleRows(task) },
-        { title: "Service", rows: serviceRows(task) },
+        { title: "Schedule", rows: scheduleRows(task, row) },
+        { title: "Service", rows: serviceRows(task, row) },
         { title: "Parameters", rows: parameterRows(task) },
-        { title: "Execution", rows: executionRows(task) },
-        { title: "Environment", rows: environmentRows(task) },
-        { title: "Output and retention", rows: outputRows(task) },
+        { title: "Execution", rows: executionRows(task, row) },
+        { title: "Environment", rows: environmentRows(task, row) },
+        { title: "Output and retention", rows: outputRows(row) },
     ];
     const source: DetailSection[] = task.sourceFile
         ? [{ title: "Defined in", path: task.sourceFile, rows: [] }]
