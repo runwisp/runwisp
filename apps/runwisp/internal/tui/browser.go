@@ -44,9 +44,9 @@ func openBrowserDefault(url string) error {
 	var err error
 	switch runtime.GOOS {
 	case "linux":
-		_, err = startReaped(exec.Command("xdg-open", url))
+		_, err = startReaped(exec.Command("xdg-open", url)) //NOSONAR: go:S4036 — the desktop opener is looked up on the operator's own PATH, like any shell would
 	case "darwin":
-		_, err = startReaped(exec.Command("open", url))
+		_, err = startReaped(exec.Command("open", url)) //NOSONAR: go:S4036 — the desktop opener is looked up on the operator's own PATH, like any shell would
 	default:
 		err = fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
