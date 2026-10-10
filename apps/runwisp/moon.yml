@@ -218,7 +218,7 @@ tasks:
     script: |
       set -e
       CAST="$(pwd)/.tui-cast.json"
-      RUNWISP_TUI_CAST_FILE="$CAST" go test ./tests/e2e -run '^TestCaptureTUIDemo$' -count=1
+      RUNWISP_TUI_CAST_FILE="$CAST" RUNWISP_TUI_SHOOT_BINARY="$(pwd)/runwisp" go test ./tests/e2e -run '^TestCaptureTUIDemo$' -count=1
       cd ../ui && RUNWISP_TUI_CAST_FILE="$CAST" playwright test --config playwright.tui-demo.config.ts
       DEMO_REC_SUBDIR=tui-demo DEMO_OUT_BASENAME=tui-demo DEMO_SKIP_MP4=1 bash scripts/encode-demo-video.sh
     deps:
