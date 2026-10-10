@@ -34,6 +34,14 @@ type slotState struct {
 	healthy    bool
 	startFails int
 	fatal      bool
+	// exited marks a slot whose run ended with no restart coming: the
+	// restart policy (never, or on_failure after a clean exit) leaves it
+	// down until an operator starts it. Cleared when the slot is reserved.
+	exited bool
+	// exitFailed records that the run behind exited was classified a failure
+	// (restart = never after a crash), so the service reads as failed rather
+	// than merely stopped.
+	exitFailed bool
 	// lastExit is the exit code of the slot's most recent run, nil until one
 	// has exited. Reported so the UI can say why an instance is down.
 	lastExit *int
@@ -140,16 +148,64 @@ func (s *Supervisor) Reserve(requested *int) (int, error) {
 		if s.slot(idx).live {
 			return 0, fmt.Errorf("instance %d already live for service %s", idx, s.taskName)
 		}
-		s.mutateSlot(idx).live = true
+		s.occupy(idx)
 		return idx, nil
 	}
 	for i := 0; i < s.instances; i++ {
 		if !s.slot(i).live {
-			s.mutateSlot(i).live = true
+			s.occupy(i)
 			return i, nil
 		}
 	}
 	return 0, fmt.Errorf("no free instance slots for service %s (instances=%d)", s.taskName, s.instances)
+}
+
+func (s *Supervisor) occupy(idx int) {
+	st := s.mutateSlot(idx)
+	st.live = true
+	st.exited = false
+	st.exitFailed = false
+}
+
+// MarkExited records that the slot's run ended and its restart policy won't
+// bring it back, so it reads as down rather than restarting. failed is the
+// run's failure classification.
+func (s *Supervisor) MarkExited(idx int, failed bool) {
+	st := s.mutateSlot(idx)
+	st.exited = true
+	st.exitFailed = failed
+}
+
+// IsExited reports whether the slot ended with no restart coming (MarkExited).
+func (s *Supervisor) IsExited(idx int) bool { return s.slot(idx).exited }
+
+// IsExitFailed reports whether the slot exited (IsExited) on a failed run.
+func (s *Supervisor) IsExitFailed(idx int) bool { return s.slot(idx).exitFailed }
+
+// IsAnyExited reports whether any instance slot is down for good (IsExited).
+func (s *Supervisor) IsAnyExited() bool {
+	for i := 0; i < s.instances; i++ {
+		if s.IsExited(i) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsDown reports whether no instance can become healthy without an operator
+// starting the service: nothing is live and every slot has either gone FATAL
+// or exited with no restart coming. A slot that was never started, or is
+// waiting out a restart delay, can still come up, so it keeps this false.
+func (s *Supervisor) IsDown() bool {
+	if s.LiveCount() > 0 {
+		return false
+	}
+	for i := 0; i < s.instances; i++ {
+		if st := s.slot(i); !st.fatal && !st.exited {
+			return false
+		}
+	}
+	return true
 }
 
 // RecordExit releases an instance slot, advances its restart-backoff counter,

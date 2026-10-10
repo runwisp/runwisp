@@ -12,3 +12,6 @@ bun.lockb
 
 # Generated rhythm test vectors (Go-side fixture for parity test)
 src/lib/utils/__rhythm_vectors.json
+
+# Go-generated built-in task defaults (TestUITaskDefaults)
+src/lib/utils/__task_defaults.ts

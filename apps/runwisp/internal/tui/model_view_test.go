@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/keys"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/execlist"
 )
 
@@ -254,6 +255,17 @@ func TestBuildHelpText_SidebarFocusedRoutes(t *testing.T) {
 	got := m.buildHelpText().String()
 	if !strings.Contains(got, "sidebar") && !strings.Contains(got, "navigate") {
 		t.Fatalf("expected sidebar help text, got: %q", got)
+	}
+}
+
+// TestBuildHelpText_FilterHidesHelpHint: while the sidebar filter is open, `?`
+// types into the query, so the bar must not advertise it as help.
+func TestBuildHelpText_FilterHidesHelpHint(t *testing.T) {
+	m := newTestModel([]model.Task{{Name: "a"}})
+	m.sidebar.StartFilter()
+	got := m.buildHelpText().String()
+	if strings.Contains(got, keys.Help.Bar) || !strings.Contains(got, "type to filter") {
+		t.Fatalf("filter help bar: got %q", got)
 	}
 }
 

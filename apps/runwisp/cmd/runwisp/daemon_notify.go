@@ -40,25 +40,30 @@ type liveNotify struct {
 	templates map[string]string
 
 	// retiring tracks services a swap replaced that are still draining, so Stop
-	// can wait for them. cancelRetire cuts their drain short when the shutdown
-	// deadline passes.
-	retiring     sync.WaitGroup
-	retireCtx    context.Context
-	cancelRetire context.CancelFunc
+	// can wait for them. shutdownCtx ends when Stop begins, cutting their
+	// retries; cancelRetire cuts their drain short when the shutdown deadline
+	// passes.
+	retiring      sync.WaitGroup
+	shutdownCtx   context.Context
+	beginShutdown context.CancelFunc
+	retireCtx     context.Context
+	cancelRetire  context.CancelFunc
 }
 
 func newLiveNotify() *liveNotify {
-	ctx, cancel := context.WithCancel(context.Background())
-	return &liveNotify{Hub: inapp.NewHub(32), retireCtx: ctx, cancelRetire: cancel}
+	l := &liveNotify{Hub: inapp.NewHub(32)}
+	l.shutdownCtx, l.beginShutdown = context.WithCancel(context.Background())
+	l.retireCtx, l.cancelRetire = context.WithCancel(context.Background())
+	return l
 }
 
 // swap starts next (nil means no notifications) and retires the service it
 // replaces. next subscribes before the old one detaches, both here, so only an
 // event published between those two calls can be delivered twice, and none is
 // dropped. The old service drains what it already accepted in the background
-// under its own retry budget, sending any coalescing window it still holds as
-// an early summary, and Stop waits for that. After Stop, swap is a
-// no-op.
+// under its own retry budget (until a daemon shutdown cuts it), sending any
+// coalescing window it still holds as an early summary, and Stop waits for
+// that. After Stop, swap is a no-op.
 func (l *liveNotify) swap(next *notify.Service) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -76,13 +81,15 @@ func (l *liveNotify) swap(next *notify.Service) {
 		go func() {
 			defer l.retiring.Done()
 			defer crashguard.Guard()
+			defer context.AfterFunc(l.shutdownCtx, old.CutRetries)()
 			old.Stop(l.retireCtx)
 		}()
 	}
 }
 
 // Stop shuts the current service down for daemon exit and waits for any
-// service a reload replaced to finish draining. Both are bounded by ctx: at its
+// service a reload replaced to finish draining. Deliveries get their current
+// attempt but no further retries, and both are bounded by ctx: at its
 // deadline, pending deliveries are cancelled. Nil-safe so callers that never
 // wired notify can call it unconditionally.
 func (l *liveNotify) Stop(ctx context.Context) {
@@ -94,8 +101,10 @@ func (l *liveNotify) Stop(ctx context.Context) {
 	svc := l.service
 	l.mu.Unlock()
 
+	l.beginShutdown()
 	defer context.AfterFunc(ctx, l.cancelRetire)()
 	if svc != nil {
+		svc.CutRetries()
 		svc.Stop(ctx)
 	}
 	l.retiring.Wait()

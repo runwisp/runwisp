@@ -74,6 +74,21 @@ description = "Prints enough lines to scroll the console"
 run = 'for i in $(seq 1 400); do echo "long-line-$i"; done'
 env = { BUCKET = "acme" }
 
+# Never run by any spec, so its task page has no runs; keep_runs = 0 is an
+# explicit zero for the Details sheet to show. Both for task-strip.spec.
+[tasks.bare-task]
+description = "Never runs: its page is the no-runs state"
+run = "true"
+keep_runs = 0
+
+# A service that exits and is not respawned (restart = never), started by
+# task-strip.spec. Not autostarted, so it runs nothing until then.
+[services.oneshot-service]
+description = "Exits 0 and stays down"
+run = "echo oneshot-done"
+restart = "never"
+autostart = false
+
 # Two names that differ only in punctuation; the UI must keep them apart.
 [tasks.twin-task]
 run = "true"

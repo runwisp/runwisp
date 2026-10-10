@@ -24,18 +24,18 @@ const (
 var ExecutionStatusValues = []ExecutionStatus{ExecutionStatusRunning, ExecutionStatusSucceeded, ExecutionStatusFailed, ExecutionStatusStopped, ExecutionStatusTimeout, ExecutionStatusSkipped}
 
 type AuthResultMessage struct {
-	Type            string    `json:"type"`
-	ProtocolVersion int       `json:"protocolVersion,omitzero"`
-	SentAt          time.Time `json:"sentAt,omitzero"`
-	Success         bool      `json:"success"`
-	ConnectionID    string    `json:"connectionId,omitzero"`
-	Error           string    `json:"error,omitzero"`
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
+	Success         bool   `json:"success"`
+	ConnectionID    string `json:"connectionId,omitzero"`
+	Error           string `json:"error,omitzero"`
 }
 
 type PongMessage struct {
-	Type            string    `json:"type"`
-	ProtocolVersion int       `json:"protocolVersion,omitzero"`
-	SentAt          time.Time `json:"sentAt,omitzero"`
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
 }
 
 // Dispatches an execution to a daemon.
@@ -44,7 +44,7 @@ type PongMessage struct {
 type ExecutionDispatchMessage struct {
 	Type            string            `json:"type"`
 	ProtocolVersion int               `json:"protocolVersion,omitzero"`
-	SentAt          time.Time         `json:"sentAt,omitzero"`
+	SentAt          string            `json:"sentAt,omitzero"`
 	Execution       *ExecutionPayload `json:"execution"`
 }
 
@@ -102,16 +102,17 @@ type ExecutionTaskConfig struct {
 }
 
 type ExecutionStopMessage struct {
-	Type            string    `json:"type"`
-	ProtocolVersion int       `json:"protocolVersion,omitzero"`
-	SentAt          time.Time `json:"sentAt,omitzero"`
-	ExecutionID     string    `json:"executionId"`
-	Reason          string    `json:"reason"`
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
+	ExecutionID     string `json:"executionId"`
+	Reason          string `json:"reason"`
 }
 
 // State of a single service instance slot as reported by the daemon
 // supervisor. `running` = live; `restarting` = exited and awaiting the
-// next backoff respawn; `stopped` = operator-stopped, not being refilled;
+// next backoff respawn; `stopped` = not being refilled, because it was
+// operator-stopped or its restart policy won't respawn it;
 // `fatal` = the supervisor gave up on the slot. Consumers must tolerate
 // unknown values (forward-compat).
 type ServiceInstanceState string
@@ -126,9 +127,11 @@ const (
 var ServiceInstanceStateValues = []ServiceInstanceState{ServiceInstanceStateRunning, ServiceInstanceStateRestarting, ServiceInstanceStateStopped, ServiceInstanceStateFatal}
 
 // Roll-up state of a whole service. `running` = all desired instances
-// live; `degraded` = some but not all live; `stopped` = operator-stopped;
-// `fatal` = at least one slot is fatal. Consumers must tolerate unknown
-// values (forward-compat).
+// live; `degraded` = some but not all live; `stopped` = operator-stopped,
+// or every instance exited cleanly and its restart policy won't respawn
+// it; `fatal` = no instance is live or respawning, and at least one gave
+// up or exited on a failure. Consumers must tolerate unknown values
+// (forward-compat).
 type ServiceState string
 
 const (
@@ -150,7 +153,7 @@ var ServiceStateValues = []ServiceState{ServiceStateRunning, ServiceStateDegrade
 type ServiceApplyMessage struct {
 	Type            string               `json:"type"`
 	ProtocolVersion int                  `json:"protocolVersion,omitzero"`
-	SentAt          time.Time            `json:"sentAt,omitzero"`
+	SentAt          string               `json:"sentAt,omitzero"`
 	Service         *ServiceApplyPayload `json:"service"`
 }
 
@@ -200,11 +203,11 @@ var ActionValues = []Action{ActionStart, ActionStop, ActionRestart}
 // the daemon's StartServiceInstances / StopService /
 // RestartServiceInstances. Gated by the `service:control` feature token.
 type ServiceControlMessage struct {
-	Type            string    `json:"type"`
-	ProtocolVersion int       `json:"protocolVersion,omitzero"`
-	SentAt          time.Time `json:"sentAt,omitzero"`
-	TaskID          string    `json:"taskId"`
-	Action          Action    `json:"action"`
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
+	TaskID          string `json:"taskId"`
+	Action          Action `json:"action"`
 }
 
 // Station → daemon. Tears down a previously declared service on the runner:
@@ -214,10 +217,10 @@ type ServiceControlMessage struct {
 // only ever removes TOML-registry tasks. Gated by the `service:remove`
 // protocol-feature token — old daemons never receive it.
 type ServiceRemoveMessage struct {
-	Type            string    `json:"type"`
-	ProtocolVersion int       `json:"protocolVersion,omitzero"`
-	SentAt          time.Time `json:"sentAt,omitzero"`
-	TaskID          string    `json:"taskId"`
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
+	TaskID          string `json:"taskId"`
 }
 
 // State of one instance slot, reported in ServiceStatusMessage.
@@ -242,7 +245,7 @@ type ServiceInstanceSnapshot struct {
 type ServiceStatusMessage struct {
 	Type             string                    `json:"type"`
 	ProtocolVersion  int                       `json:"protocolVersion,omitzero"`
-	SentAt           time.Time                 `json:"sentAt,omitzero"`
+	SentAt           string                    `json:"sentAt,omitzero"`
 	TaskID           string                    `json:"taskId"`
 	State            ServiceState              `json:"state"`
 	DesiredInstances int                       `json:"desiredInstances"`
@@ -254,13 +257,13 @@ type ServiceStatusMessage struct {
 // execution. The daemon replies with one or more log:replayChunk messages
 // whose final flag marks the end of the page.
 type LogReplayRequestMessage struct {
-	Type            string    `json:"type"`
-	ProtocolVersion int       `json:"protocolVersion,omitzero"`
-	SentAt          time.Time `json:"sentAt,omitzero"`
-	RequestID       string    `json:"requestId"`
-	ExecutionID     string    `json:"executionId"`
-	FromLine        int64     `json:"fromLine"`
-	Limit           int64     `json:"limit"`
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
+	RequestID       string `json:"requestId"`
+	ExecutionID     string `json:"executionId"`
+	FromLine        int64  `json:"fromLine"`
+	Limit           int64  `json:"limit"`
 }
 
 // Station → daemon. Greps one execution's on-disk log for lines matching a
@@ -270,11 +273,11 @@ type LogReplayRequestMessage struct {
 // and the search would time out. Scope is one execution's live/recent log
 // on disk — archived (rotated/uploaded) lines are not searchable here.
 type LogSearchRequestMessage struct {
-	Type            string    `json:"type"`
-	ProtocolVersion int       `json:"protocolVersion,omitzero"`
-	SentAt          time.Time `json:"sentAt,omitzero"`
-	RequestID       string    `json:"requestId"`
-	ExecutionID     string    `json:"executionId"`
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
+	RequestID       string `json:"requestId"`
+	ExecutionID     string `json:"executionId"`
 	// Substring (or RE2 regex when regex=true) to match.
 	Query string `json:"query"`
 	// Treat query as an RE2 regular expression.
@@ -290,33 +293,33 @@ type LogSearchRequestMessage struct {
 }
 
 type LogListenMessage struct {
-	Type            string    `json:"type"`
-	ProtocolVersion int       `json:"protocolVersion,omitzero"`
-	SentAt          time.Time `json:"sentAt,omitzero"`
-	ExecutionID     string    `json:"executionId"`
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
+	ExecutionID     string `json:"executionId"`
 }
 
 type LogStopMessage struct {
-	Type            string    `json:"type"`
-	ProtocolVersion int       `json:"protocolVersion,omitzero"`
-	SentAt          time.Time `json:"sentAt,omitzero"`
-	ExecutionID     string    `json:"executionId"`
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
+	ExecutionID     string `json:"executionId"`
 }
 
 // Station → daemon. Asks the daemon to gracefully restart its own process (re-exec the agent binary), e.g. after a config change or to recover a wedged agent. Carries no execution scope; it acts on the agent itself.
 type AgentRestartMessage struct {
-	Type            string    `json:"type"`
-	ProtocolVersion int       `json:"protocolVersion,omitzero"`
-	SentAt          time.Time `json:"sentAt,omitzero"`
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
 }
 
 // The `error` frame, sent in both directions with an identical shape:
 // station→daemon and daemon→station. Receivers treat unrecognized codes as
 // connection-scoped diagnostics (log + metric, never a state flip).
 type ProtocolErrorMessage struct {
-	Type            string    `json:"type"`
-	ProtocolVersion int       `json:"protocolVersion,omitzero"`
-	SentAt          time.Time `json:"sentAt,omitzero"`
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
 	// Canonical values: AUTH_ERROR, VALIDATION_ERROR, CONFLICT_ERROR,
 	// TRANSIENT_ERROR, UNKNOWN_EXECUTION. Kept as a free-form string on
 	// the wire so old peers emitting other codes still decode; receivers
@@ -331,10 +334,10 @@ type ProtocolErrorMessage struct {
 }
 
 type PingMessage struct {
-	Type            string    `json:"type"`
-	ProtocolVersion int       `json:"protocolVersion,omitzero"`
-	SentAt          time.Time `json:"sentAt,omitzero"`
-	ID              string    `json:"id,omitzero"`
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
+	ID              string `json:"id,omitzero"`
 	// Optional live system snapshot piggybacked on the heartbeat so the
 	// control plane can show a runner's CPU/memory/identity without a
 	// dedicated message or any DB write (station stores only the latest
@@ -380,16 +383,16 @@ type SystemStatsInfo struct {
 // without starting a second run. Old daemons never send this; the
 // station treats execution:update(running) as an implicit ack.
 type ExecutionAckMessage struct {
-	Type            string    `json:"type"`
-	ProtocolVersion int       `json:"protocolVersion,omitzero"`
-	SentAt          time.Time `json:"sentAt,omitzero"`
-	ExecutionID     string    `json:"executionId"`
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
+	ExecutionID     string `json:"executionId"`
 }
 
 type ExecutionUpdateMessage struct {
 	Type            string          `json:"type"`
 	ProtocolVersion int             `json:"protocolVersion,omitzero"`
-	SentAt          time.Time       `json:"sentAt,omitzero"`
+	SentAt          string          `json:"sentAt,omitzero"`
 	ExecutionID     string          `json:"executionId"`
 	Status          ExecutionStatus `json:"status"`
 	ExitCode        *int            `json:"exitCode,omitzero"`
@@ -430,10 +433,10 @@ type LogLineEntry struct {
 // subscription. Each message carries exactly one absolute-numbered line.
 type LogLineMessage struct {
 	LogLineEntry
-	Type            string    `json:"type"`
-	ProtocolVersion int       `json:"protocolVersion,omitzero"`
-	SentAt          time.Time `json:"sentAt,omitzero"`
-	ExecutionID     string    `json:"executionId"`
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
+	ExecutionID     string `json:"executionId"`
 }
 
 // Daemon → station. A coalesced batch of live log lines for one execution
@@ -446,7 +449,7 @@ type LogLineMessage struct {
 type LogLinesMessage struct {
 	Type            string         `json:"type"`
 	ProtocolVersion int            `json:"protocolVersion,omitzero"`
-	SentAt          time.Time      `json:"sentAt,omitzero"`
+	SentAt          string         `json:"sentAt,omitzero"`
 	ExecutionID     string         `json:"executionId"`
 	Lines           []LogLineEntry `json:"lines"`
 }
@@ -457,7 +460,7 @@ type LogLinesMessage struct {
 type LogReplayChunkMessage struct {
 	Type            string         `json:"type"`
 	ProtocolVersion int            `json:"protocolVersion,omitzero"`
-	SentAt          time.Time      `json:"sentAt,omitzero"`
+	SentAt          string         `json:"sentAt,omitzero"`
 	RequestID       string         `json:"requestId"`
 	ExecutionID     string         `json:"executionId"`
 	Lines           []LogLineEntry `json:"lines"`
@@ -471,7 +474,7 @@ type LogReplayChunkMessage struct {
 type LogSearchChunkMessage struct {
 	Type            string         `json:"type"`
 	ProtocolVersion int            `json:"protocolVersion,omitzero"`
-	SentAt          time.Time      `json:"sentAt,omitzero"`
+	SentAt          string         `json:"sentAt,omitzero"`
 	RequestID       string         `json:"requestId"`
 	ExecutionID     string         `json:"executionId"`
 	Hits            []LogLineEntry `json:"hits"`

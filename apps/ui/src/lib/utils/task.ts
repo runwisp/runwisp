@@ -4,6 +4,7 @@
 import type { Component } from "svelte";
 import { AppWindow, CalendarClock, CalendarOff, CircleDot, PowerOff } from "@lucide/svelte";
 import { isService, type Task } from "@runwisp/common";
+import { formatRelativeTimeWithAbsolute } from "@runwisp/ui";
 
 /** Why a held task produces no runs, and how to hand it over. */
 export const HELD_BY_CRON_HELP =
@@ -79,4 +80,39 @@ export function taskTriggerTooltip(task: Task): string {
         return task.pausedAt ? `Cron · ${task.cron} · paused` : `Cron · ${task.cron}`;
     }
     return "Manual trigger";
+}
+
+/**
+ * The task page's empty state: why a task has no runs yet. No Run button
+ * beside it, the task strip's is right above. `now` ticks, so "the first run
+ * is in 5 minutes" counts down.
+ */
+export function noRunsMessage(
+    task: Task,
+    schedulingActive: boolean,
+    now: Date,
+): { title: string; description: string } {
+    if (task.heldBy) {
+        return {
+            title: "No runs recorded",
+            description:
+                "While cron holds this job, it runs outside RunWisp. Hand it over to see its runs here.",
+        };
+    }
+    if (hasCron(task) && task.nextRunAt && schedulingActive) {
+        return {
+            title: "No runs yet",
+            description: `The first run is ${formatRelativeTimeWithAbsolute(task.nextRunAt, now)}.`,
+        };
+    }
+    if (isService(task.kind)) {
+        return {
+            title: "No runs yet",
+            description: "Each instance's output shows here once it starts.",
+        };
+    }
+    return {
+        title: "No runs yet",
+        description: `Use Run above, runwisp run ${task.name}, or the REST API.`,
+    };
 }

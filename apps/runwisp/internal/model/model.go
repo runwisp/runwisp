@@ -641,7 +641,7 @@ type DaemonInfo struct {
 	Name              string    `json:"name"`
 	Fingerprint       string    `json:"fingerprint"`
 	Port              int       `json:"port"`
-	ExternalURL       string    `json:"externalUrl" doc:"Web UI base used for notification links: [daemon] external_url, else the address of the latest signed-in Web UI visit. Empty when neither is known."`
+	ExternalURL       string    `json:"externalUrl" doc:"Web UI base used for notification links: [daemon] external_url, else the address of the latest Web UI password sign-in. Empty when neither is known."`
 	ExternalURLSource string    `json:"externalUrlSource,omitempty" enum:"config,detected" doc:"Where externalUrl came from. Omitted when externalUrl is empty."`
 	StationEnabled    bool      `json:"stationEnabled"`
 	SchedulingActive  bool      `json:"schedulingActive"`

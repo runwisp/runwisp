@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { untrack } from "svelte";
 import { systemApi, systemEventSchema, configStaleEventSchema, type MetricsSample } from "$lib/api";
 import { connectionStore } from "$lib/stores/connection.svelte";
 import { appEventStream } from "$lib/stores/app-stream";
@@ -81,12 +80,12 @@ class SystemStore {
     // station/scheduling mode) that never changes for the daemon's lifetime,
     // plus the initial cpu/mem/uptime so gauges aren't blank before the first
     // pushed sample lands.
+    //
+    // Not gated on connectionStore.status: that is the event stream's state, and
+    // a seed skipped during a brief blip would leave the metrics chart without
+    // its history for good. A reconnect seeds again (see #subscribe), which also
+    // backfills the samples missed while the stream was down.
     async #seed(): Promise<void> {
-        // init() is invoked from a reactive $effect (the layout's auth effect).
-        // Read status untracked so seeding doesn't make that effect depend on
-        // connectionStore.status, which oscillates (connecting↔connected↔
-        // disconnected) and would otherwise re-run init() in a runaway loop.
-        if (untrack(() => connectionStore.status) === "disconnected") return;
         try {
             const [sys, info, history] = await Promise.all([
                 systemApi.getStats(),
@@ -120,6 +119,7 @@ class SystemStore {
         if (this.#subscribed) return;
         this.#subscribed = true;
         this.#unsubscribes.push(
+            connectionStore.onReconnect(() => void this.#seed()),
             appEventStream.subscribe("system", (data) => {
                 const parsed = safeParseJSON(data, systemEventSchema);
                 if (!parsed.success) {

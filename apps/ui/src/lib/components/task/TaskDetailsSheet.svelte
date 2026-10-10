@@ -32,6 +32,9 @@
                         class="overflow-x-auto rounded-[3px] bg-surface-sunken px-3 py-2 font-mono text-xs whitespace-pre text-on-surface"
                         data-testid="task-command">{section.command}</pre>
                 {/if}
+                {#if section.path}
+                    <p class="font-mono text-xs break-all text-on-surface">{section.path}</p>
+                {/if}
                 {#if section.rows.length > 0}
                     <dl
                         class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 font-mono text-xs {section.command

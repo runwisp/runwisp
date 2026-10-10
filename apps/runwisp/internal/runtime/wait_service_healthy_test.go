@@ -10,8 +10,12 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil/fakeclock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -71,4 +75,51 @@ func TestWaitServiceHealthyGivesUpWhenStopped(t *testing.T) {
 	err := jm.WaitServiceHealthy(ctx, "svc")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "stopped")
+}
+
+// TestWaitServiceHealthyGivesUpWhenDown: once every instance has exited with no
+// restart coming (restart = "never", on_failure after a clean exit, or
+// restart_attempts exhausted into FATAL), the waiter returns at once instead of
+// sitting out its window. The clock is frozen, so every run lasts zero time and
+// never crosses healthy_after.
+func TestWaitServiceHealthyGivesUpWhenDown(t *testing.T) {
+	cases := []struct {
+		name     string
+		restart  model.RestartPolicy
+		exitCode int
+	}{
+		{"never", model.RestartNever, 0},
+		{"on_failure after a clean exit", model.RestartOnFailure, 0},
+		{"restart attempts exhausted", model.RestartAlways, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			exec := new(testutil.MockExecutor)
+			eb := events.NewEventBus()
+			jm := NewTaskManager(exec, eb, fakeclock.New(time.Unix(0, 0)).Now)
+			t.Cleanup(jm.Shutdown)
+
+			task := serviceTask("svc", 2)
+			task.Restart = tc.restart
+			task.RestartAttempts = intPtr(0)
+			jm.UpsertTask(task)
+			exec.On("Execute", mock.Anything, task, mock.Anything).
+				Return(&executor.ExecuteResult{ExitCode: tc.exitCode}, time.Millisecond)
+
+			ended := watchCompletions(eb)
+			require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+			ended.waitFor(t, 2)
+
+			// No deadline: without the early give-up this would block forever.
+			done := make(chan error, 1)
+			go func() { done <- jm.WaitServiceHealthy(context.Background(), "svc") }()
+			select {
+			case err := <-done:
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "down")
+			case <-time.After(5 * time.Second):
+				t.Fatal("WaitServiceHealthy kept waiting on a service that will never come up")
+			}
+		})
+	}
 }

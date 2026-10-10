@@ -516,3 +516,55 @@ func TestSlack_EscapesTailAndCannotBreakCodeBlock(t *testing.T) {
 func TestSlackEscape(t *testing.T) {
 	assert.Equal(t, "&lt;!here&gt; &amp;", slackEscape("<!here> &"))
 }
+
+// TestHTMLTemplates_EscapeLinkURL: the link base can come from a request
+// header (the detected Web UI address), so the HTML templates escape it inside
+// the href attribute instead of trusting it.
+func TestHTMLTemplates_EscapeLinkURL(t *testing.T) {
+	ev := &notify.Event{
+		Kind:     notify.KindRunSucceeded,
+		Severity: notify.SevInfo,
+		TaskName: "t",
+		Run:      &model.Run{ID: "01KRK9SS7MKEWN4F49R30ZM74N", TaskName: "t"},
+	}
+	ctx := TemplateContext{ExternalURL: func() string { return `https://e.example/?a=1&b="><img src=x>` }}
+	for name, want := range map[string]string{
+		"telegram": `href="https://e.example/?a=1&amp;b=&quot;&gt;&lt;img src=x&gt;/tasks/t/`,
+		"smtp":     `href="https://e.example/?a=1&amp;b=&#34;&gt;&lt;img src=x&gt;/tasks/t/`,
+	} {
+		body, err := LoadDefaultTemplate(name)
+		require.NoError(t, err)
+		r, err := NewTemplateRenderer(name+":test", body, DefaultTitle, ctx)
+		require.NoError(t, err)
+		out, err := r.Render(ev)
+		require.NoError(t, err)
+		assert.Contains(t, string(out.Body), want, name)
+		assert.NotContains(t, string(out.Body), "<img", name)
+	}
+}
+
+// TestHTMLTemplates_EscapeLinkURL_RunFailed covers the failure notification an
+// operator actually receives: same escaping of a hostile link base, with an
+// exit code present.
+func TestHTMLTemplates_EscapeLinkURL_RunFailed(t *testing.T) {
+	start := time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC)
+	ev := &notify.Event{
+		Kind:      notify.KindRunFailed,
+		Severity:  notify.SevError,
+		Timestamp: start,
+		TaskName:  "t",
+		Run:       &model.Run{ID: "01KRK9SS7MKEWN4F49R30ZM74N", TaskName: "t", ExitCode: 1, StartedAt: &start},
+	}
+	ctx := TemplateContext{ExternalURL: func() string { return `https://e.example/?a=1&b="><img src=x>` }}
+	for _, name := range []string{"telegram", "smtp"} {
+		body, err := LoadDefaultTemplate(name)
+		require.NoError(t, err)
+		r, err := NewTemplateRenderer(name+":failed", body, DefaultTitle, ctx)
+		require.NoError(t, err)
+		out, err := r.Render(ev)
+		require.NoError(t, err)
+		assert.Contains(t, string(out.Body), `href="https://e.example/?a=1&amp;b=&`, name)
+		assert.NotContains(t, string(out.Body), "<img", name)
+		assert.NotContains(t, string(out.Body), `b="`, name)
+	}
+}

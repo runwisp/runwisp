@@ -305,6 +305,32 @@ function gaveUpStrip(c: ServiceCtx, fatal: Instance, count: number): TaskStripMo
     };
 }
 
+/**
+ * Instances whose run ended and whose restart policy (never, or on_failure
+ * after a clean exit) won't bring them back: down until started. When every
+ * instance exited cleanly the daemon reports the service stopped instead.
+ */
+function exitedStrip(c: ServiceCtx, exited: Instance, count: number): TaskStripModel {
+    const slot = `#${String(exited.index + 1)}`;
+    const all = count === c.desired;
+    const who =
+        all && c.desired > 1 ? `All ${String(c.desired)} instances` : instanceName(c, exited.index);
+    return {
+        badge: degradedBadge(c, "RunWisp won't restart it on its own"),
+        sentence: [
+            t(`${who} exited`),
+            m(` · restart is ${c.task.restart ?? "always"}${lastExit(exited.lastExitCode)}`),
+        ],
+        short: [t(all ? "exited" : `${slot} exited`)],
+        ...runLink(c, "Open its last run"),
+        actions: c.allow(
+            all
+                ? [c.start()]
+                : [c.start(count === 1 ? `Start ${slot}` : "Start"), c.restart, c.stop],
+        ),
+    };
+}
+
 function restartingStrip(c: ServiceCtx, retrying: Instance): TaskStripModel {
     // RunWisp is still on it: nothing is filled, reading the log is the next step.
     const limit = c.task.restartAttempts ?? 0;
@@ -359,6 +385,10 @@ function serviceStrip({ task, now }: TaskStripInput): TaskStripModel {
     const [fatal] = gaveUp;
     if (fatal && gaveUp.length === c.desired) return allGaveUpStrip(c, fatal);
     if (fatal) return gaveUpStrip(c, fatal, gaveUp.length);
+    // The service isn't stopped, so a stopped instance is one its restart policy won't respawn.
+    const exited = instances.filter((i) => i.state === "stopped");
+    const [first] = exited;
+    if (first) return exitedStrip(c, first, exited.length);
     const retrying = instances.find((i) => i.state === "restarting");
     if (retrying) return restartingStrip(c, retrying);
     return upStrip(c, instances, now);

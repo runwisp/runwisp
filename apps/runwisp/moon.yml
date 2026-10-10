@@ -144,6 +144,8 @@ tasks:
       - 'scripts/merge-coverage.sh'
       # The Docker image's copy of the starter, pinned by a config test.
       - '/docker/runwisp.toml'
+      # The Web UI's built-in defaults, pinned by a config test.
+      - '/apps/ui/src/lib/utils/__task_defaults.ts'
       - 'scripts/ensure-ui-dist.sh'
     outputs:
       - 'coverage.out'

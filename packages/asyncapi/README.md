@@ -15,7 +15,7 @@ The [asyncapi.yaml](asyncapi.yaml) file is the **single source of truth** for al
 bunx moon run asyncapi:generate
 ```
 
-This runs `scripts/generate.js`, which parses `asyncapi.yaml`, writes the Zod schemas, and writes the Go types with `scripts/go.js`. Go type mapping comes from the schema itself: `format: int64` → `int64`, `format: date-time` → `time.Time`, `nullable` → pointer, optional → `omitzero`, enums → `type X string` constants. Inline enums are named after their property, so two inline enums on the same property name must move to `components.schemas`.
+This runs `scripts/generate.js`, which parses `asyncapi.yaml`, writes the Zod schemas, and writes the Go types with `scripts/go.js`. Go type mapping comes from the schema itself: `format: int64` → `int64`, `format: date-time` → `time.Time` (except `sentAt`, kept a string as on the Zod side), `nullable` → pointer, optional → `omitzero`, enums → `type X string` constants. Inline enums are named after their property, so two inline enums on the same property name must move to `components.schemas`.
 
 ## Editing the Protocol
 

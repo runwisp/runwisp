@@ -12,6 +12,21 @@ export const LINE_HEIGHT = 20;
 // columns a wrapped line can use.
 const TEXT_PADDING = 16;
 
+/**
+ * How many columns a wrapped line can use: 1 with wrapping off or before the
+ * font is measured. Many widths map to the same count, so a resize only costs
+ * a remeasure when this number changes.
+ */
+export function wrapColumns(
+    wrap: boolean,
+    width: number,
+    gutter: number,
+    charWidth: number,
+): number {
+    if (!wrap || charWidth <= 0) return 1;
+    return Math.max(1, Math.floor((width - gutter - TEXT_PADDING) / charWidth));
+}
+
 interface WrapLayoutInputs {
     wrap: () => boolean;
     /** Width of the scroll container in px. */
@@ -41,12 +56,13 @@ export class WrapLayout {
     readonly #cache: LogCache;
     readonly #inputs: WrapLayoutInputs;
 
-    // How many columns a wrapped line can use at the current width.
-    get #availableColumns(): number {
+    // How many columns a wrapped line can use at the current width. Derived,
+    // so the full remeasure below depends on the column count alone: a resize
+    // that keeps the count (most pixels of a drag) doesn't re-walk every line.
+    readonly #availableColumns = $derived.by(() => {
         const { wrap, width, gutterWidth, charWidth } = this.#inputs;
-        if (!wrap() || charWidth() <= 0) return 1;
-        return Math.max(1, Math.floor((width() - gutterWidth() - TEXT_PADDING) / charWidth()));
-    }
+        return wrapColumns(wrap(), width(), gutterWidth(), charWidth());
+    });
 
     // prefixSums[i] is the total rows consumed by lines
     // [firstAvailableLine, firstAvailableLine + i). Empty when wrapping is off

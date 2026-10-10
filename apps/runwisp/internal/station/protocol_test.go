@@ -91,6 +91,17 @@ func TestDecodeInboundMessage_KnownTypeRoundtrips(t *testing.T) {
 	assert.Equal(t, "pong", pong.Type)
 }
 
+// sentAt is the peer's clock and informational only: a value that isn't
+// RFC 3339 must not reject the whole frame (an auth:result failing to decode
+// would drop the session into a reconnect loop).
+func TestDecodeInboundMessage_TolerantSentAt(t *testing.T) {
+	msg, err := DecodeInboundMessage([]byte(`{"type":"auth:result","success":true,"sentAt":"2026-10-10 12:00:00"}`))
+	require.NoError(t, err)
+	res, ok := msg.(protocol.AuthResultMessage)
+	require.True(t, ok)
+	assert.True(t, res.Success)
+}
+
 func TestPingMessage_OmitsEmptySystemStats(t *testing.T) {
 	out, err := json.Marshal(NewPingMessage(nil))
 	require.NoError(t, err)

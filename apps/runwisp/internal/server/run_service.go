@@ -92,14 +92,14 @@ func (s *runService) GetTask(ctx context.Context, name string) (*model.TaskRespo
 
 func noUsage() map[string]model.ResourceUsage { return nil }
 
-// lastRuns looks up each task's newest started run. A storage error only costs
+// lastRuns looks up each task's last outcome (see RunRepository.LastRuns). A storage error only costs
 // the lastRun field: the task list itself must still load.
 func (s *runService) lastRuns(ctx context.Context, tasks []*model.Task) map[string]model.Run {
 	names := make([]string, len(tasks))
 	for i, task := range tasks {
 		names[i] = task.Name
 	}
-	runs, err := s.db.LatestStartedRuns(ctx, names)
+	runs, err := s.db.LastRuns(ctx, names)
 	if err != nil {
 		slog.Warn("Failed to load last runs for the task list", "error", err)
 		return nil

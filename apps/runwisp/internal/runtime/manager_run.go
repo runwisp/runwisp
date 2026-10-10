@@ -16,6 +16,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime/retry"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime/services"
 )
 
 // startRun registers the run and spawns the execution goroutine. Assumes m.mu
@@ -107,13 +108,14 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 	// Supervisor bookkeeping happens before run.End so a FATAL transition can
 	// rewrite the end reason: RecordExit needs runDuration, and whether the
 	// instance has exhausted its start-retry budget decides the audit row.
+	// OutputMatched goes first: retireRun classifies the exit with it.
+	run.OutputMatched = result.OutputMatched
 	nextRestartAttempt, serviceFatal, fatalAttempts := m.retireRun(task, run, runDuration, outcome.endReason, result.ExitCode)
 
 	if serviceFatal {
 		outcome.endReason = model.ReasonStartFailed
 		outcome.eventType = events.EventRunFailed
 	}
-	run.OutputMatched = result.OutputMatched
 	run.PeakMemoryBytes, run.CPUTimeMs = result.PeakMemoryBytes, result.CPUTimeMs
 	run.End(task, outcome.endReason, result.ExitCode, endTime)
 
@@ -157,6 +159,8 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 		ts.supervisor.SetLastExitCode(run.InstanceIndex, exitCode)
 		if serviceFatal {
 			fatalAttempts = ts.supervisor.StartFails(run.InstanceIndex)
+		} else {
+			markExitedIfDone(ts.supervisor, task, run, endReason, exitCode)
 		}
 	}
 	if ts.cond != nil {
@@ -164,6 +168,19 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 	}
 	m.reapRetiredTaskState(task, ts)
 	return nextRestartAttempt, serviceFatal, fatalAttempts
+}
+
+// markExitedIfDone flags the run's slot as down for good when the restart
+// policy won't respawn it, judged on the run as it is about to end. Called
+// under m.mu in the same critical section that frees the slot, so a Start
+// reserving it right after never has its new run flagged exited, and before
+// the terminal event, so a client refreshing on it never sees "restarting".
+func markExitedIfDone(sup *services.Supervisor, task *model.Task, run *model.Run, endReason model.EndReason, exitCode int) {
+	ended := *run
+	ended.End(task, endReason, exitCode, time.Time{})
+	if !retry.ShouldRestart(task, &ended) {
+		sup.MarkExited(run.InstanceIndex, ended.IsFailure)
+	}
 }
 
 // reapRetiredTaskState drops a taskState once its last run has retired, for

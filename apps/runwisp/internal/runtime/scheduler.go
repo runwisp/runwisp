@@ -137,7 +137,7 @@ func NewScheduler(taskManager RunTrigger, tasks map[string]*model.Task, location
 		clock = time.Now
 	}
 	scheduler := &Scheduler{
-		cron:        cron.New(cron.WithLocation(location), cron.WithParser(cronspec.NewParser())),
+		cron:        newCronEngine(),
 		location:    location,
 		taskManager: taskManager,
 		tasks:       tasks,
@@ -148,6 +148,18 @@ func NewScheduler(taskManager RunTrigger, tasks map[string]*model.Task, location
 		now:         clock,
 	}
 	return scheduler
+}
+
+// newCronEngine builds the go-cron engine the scheduler drives. Its location is
+// UTC on purpose: every entry is a zonedSchedule that evaluates in its own
+// zone, and go-cron runs its own DST fall-back dedup in the engine's location
+// before the job is called. In a zone with DST that dedup drops ticks RunWisp
+// must keep (a UTC-pinned task's hourly tick, every @every tick in the rewound
+// hour) and swallows the repeat fireOnce records as dst_skipped. UTC never
+// falls back, so the engine never dedups and fireOnce stays the only judge.
+// opts lets tests add a fake clock.
+func newCronEngine(opts ...cron.Option) *cron.Cron {
+	return cron.New(append([]cron.Option{cron.WithLocation(time.UTC), cron.WithParser(cronspec.NewParser())}, opts...)...)
 }
 
 func (scheduler *Scheduler) Start() (ScheduleResult, error) {
@@ -499,6 +511,10 @@ func (scheduler *Scheduler) GetNextRun(taskName string) *time.Time {
 		return nil
 	}
 	entry := scheduler.cron.Entry(entryID)
+	if entry.Next.IsZero() {
+		// Not yet placed by the run loop, or a schedule with no next tick.
+		return nil
+	}
 	// Surface the bare cron tick, even for jittered tasks: with no contention
 	// the gate starts them at the tick, and the slot is only the latest they
 	// could slip.

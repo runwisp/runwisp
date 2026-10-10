@@ -30,10 +30,12 @@ func tokenCachePath() (string, error) {
 	return runwispCacheFile("tokens.json")
 }
 
-// loadCachedToken returns a non-expired cached session token for baseURL, or
-// "" when none is usable. Any error (missing file, corrupt JSON, no cache dir,
-// a token whose expiry can't be read) yields "" so the caller falls through
-// to a fresh handshake.
+// loadCachedToken returns the cached session token for baseURL unless it is
+// known to be expired, or "" when none is usable. Any error (missing file,
+// corrupt JSON, no cache dir) yields "" so the caller falls through to a fresh
+// handshake. A token whose expiry can't be read (an older daemon's JWT) is
+// returned as-is: the caller re-authenticates if the daemon answers 401, and
+// treating it as a miss would redo CHAP on every call against that daemon.
 func loadCachedToken(baseURL string) string {
 	path, err := tokenCachePath()
 	if err != nil {
@@ -41,8 +43,7 @@ func loadCachedToken(baseURL string) string {
 	}
 	// The token carries its own expiry, so the cache maps URL to token alone.
 	token := loadJSONCacheMap[string](path)[apiclient.NormalizeBaseURL(baseURL)]
-	expiry, ok := auth.TokenExpiry(token)
-	if !ok || !time.Now().Add(cacheSkew).Before(expiry) {
+	if expiry, ok := auth.TokenExpiry(token); ok && !time.Now().Add(cacheSkew).Before(expiry) {
 		return ""
 	}
 	return token

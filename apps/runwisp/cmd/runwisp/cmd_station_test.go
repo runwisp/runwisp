@@ -59,15 +59,49 @@ func TestLoadStationEnvFile_ExplicitPresentValid(t *testing.T) {
 	assert.Equal(t, "ok", os.Getenv("RUNWISP_EXPLICIT_TEST"))
 }
 
-func TestLoadStationEnvFile_ValuesAreLiteral(t *testing.T) {
+// TestLoadStationEnvFile_ToleratesProjectDotenv: the default .env usually
+// belongs to the surrounding project. Lines the station doesn't need, in any
+// syntax, must not stop it from starting.
+func TestLoadStationEnvFile_ToleratesProjectDotenv(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "env")
-	require.NoError(t, os.WriteFile(path, []byte("RUNWISP_LITERAL_TEST=p@ss$1 #word\n"), 0o600))
-	t.Setenv("RUNWISP_LITERAL_TEST", "")
-	require.NoError(t, os.Unsetenv("RUNWISP_LITERAL_TEST"))
+	path := filepath.Join(dir, ".env")
+	content := "# project settings\n" +
+		"APP_ENV: production\n" +
+		"TLS_KEY=\"-----BEGIN KEY-----\n" +
+		"MIIB...\n" +
+		"-----END KEY-----\"\n" +
+		"database.url=postgres://x\n" +
+		"export RUNWISP_DOTENV_TEST=tok\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	t.Setenv("RUNWISP_DOTENV_TEST", "")
+	require.NoError(t, os.Unsetenv("RUNWISP_DOTENV_TEST"))
 
-	require.NoError(t, loadEnvFileInto(path, true))
-	assert.Equal(t, "p@ss$1 #word", os.Getenv("RUNWISP_LITERAL_TEST"))
+	require.NoError(t, loadEnvFileInto(path, false))
+	assert.Equal(t, "tok", os.Getenv("RUNWISP_DOTENV_TEST"))
+	_, set := os.LookupEnv("APP_ENV")
+	assert.False(t, set, "only RUNWISP_* keys are loaded")
+}
+
+func TestParseRunwispDotenv_CommonForms(t *testing.T) {
+	got := parseRunwispDotenv(`RUNWISP_A="tok" # prod
+RUNWISP_B=https://station.example/x # comment
+RUNWISP_C='single # not a comment'
+export RUNWISP_D = spaced
+RUNWISP_E="line\nbreak \"quoted\""
+RUNWISP_F=url#fragment
+RUNWISP_G=
+# RUNWISP_H=commented
+OTHER=ignored
+`)
+	assert.Equal(t, map[string]string{
+		"RUNWISP_A": "tok",
+		"RUNWISP_B": "https://station.example/x",
+		"RUNWISP_C": "single # not a comment",
+		"RUNWISP_D": "spaced",
+		"RUNWISP_E": "line\nbreak \"quoted\"",
+		"RUNWISP_F": "url#fragment",
+		"RUNWISP_G": "",
+	}, got)
 }
 
 func TestLoadStationEnvFile_DoesNotOverrideSetVars(t *testing.T) {

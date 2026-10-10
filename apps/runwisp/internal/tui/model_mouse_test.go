@@ -15,6 +15,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/home"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestMouseHandlers_Guards covers no-op branches of mouse handlers: non-home
@@ -188,6 +189,28 @@ func TestHandleHomePageClick_TaskHeaderButtons(t *testing.T) {
 	m.info.StoppedServices = map[string]bool{"web": true}
 	got, _ = clickTaskButton(t, m, "Start")
 	assert.Equal(t, "Start Service", got.dialogs.confirm().title)
+}
+
+// TestHandleHomePageClick_HeaderButtonsActOnHeaderTask: with the sidebar
+// focused and its cursor moved off the open task, a header button still acts on
+// the task the header shows, not the one under the cursor.
+func TestHandleHomePageClick_HeaderButtonsActOnHeaderTask(t *testing.T) {
+	tasks := []model.Task{
+		{Name: "backup", Cron: "0 3 * * *", ManualTrigger: true},
+		{Name: "web", Kind: model.KindService, ManualTrigger: true},
+	}
+	for _, label := range []string{"Stop", "Restart"} {
+		m := newTestModel(tasks)
+		selectSidebarItem(&m, 2)
+		m.sidebar.MoveCursor(-1)
+		require.Equal(t, "backup", m.sidebar.CursorTaskName())
+		require.Equal(t, uikit.PanelSidebar, m.panelFocus)
+
+		got, _ := clickTaskButton(t, m, label)
+		msg := got.dialogs.confirm().message
+		assert.Contains(t, msg, "'web'", label)
+		assert.NotContains(t, msg, "backup", label)
+	}
 }
 
 func TestHandleHomePageClick_ClickOnHomeFieldFocusesField(t *testing.T) {

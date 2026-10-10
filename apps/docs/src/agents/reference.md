@@ -34,7 +34,7 @@ name:                 string      — display label shown instead of the fingerp
 allow_station_dispatch: bool =false — accept peer-dispatched ad-hoc shell/container/compose runs (opt-in; one-shot, never edits TOML; HTTP & existing-task triggers always allowed)
 shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flight runs on shutdown
 timezone:             IANA string =host system zone — TZ for cron eval when a task pins none
-external_url:         string =last signed-in Web UI address — public Web UI base for notification deep-links; absolute http(s) w/ host; unset = detected from the latest signed-in visit (persisted; never with RUNWISP_AUTH=off)
+external_url:         string =last signed-in Web UI address — public Web UI base for notification deep-links; absolute http(s) w/ host; unset = detected from the latest browser password sign-in to the Web UI (persisted; `--url` clients and TUI-opened tabs don't count; never with RUNWISP_AUTH=off)
 check_updates:        bool =true  — poll concierge.runwisp.com for a newer release; shows an indicator, never auto-updates; also gates the Web UI feedback prompt; false = fully offline
 metrics_enabled:      bool =false — master switch for /metrics
 metrics_listen:       host:port   — dedicated metrics listener; setting it enables metrics on its own

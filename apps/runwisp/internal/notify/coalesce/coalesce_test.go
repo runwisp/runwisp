@@ -9,9 +9,12 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/testutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil/fakeclock"
@@ -325,7 +328,7 @@ func TestTimerFlush_ConcurrentWithCloseNoPanic(t *testing.T) {
 					panics <- r
 				}
 			}()
-			c.timerFlush(fp)
+			c.timerFlush(context.Background(), fp)
 		}()
 		go func() {
 			defer wg.Done()
@@ -461,6 +464,146 @@ func TestTimerFlush_EmptyState(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1}, time.Now, slog.Default(), nil)
 	defer c.Close(context.Background())
-	c.timerFlush("nonexistent-key")
+	c.timerFlush(context.Background(), "nonexistent-key")
 	assert.Empty(t, inner.Received())
+}
+
+// deadAfterFirst is an outbound channel whose first delivery succeeds and
+// every later one fails with a minute-long retry backoff, like Slack going
+// down after the first alert of a burst. attempts signals each failing attempt.
+type deadAfterFirst struct {
+	hits     atomic.Int64
+	attempts chan struct{}
+}
+
+func (d *deadAfterFirst) ID() string { return "slack" }
+func (d *deadAfterFirst) Execute(ctx context.Context, _ *notify.Event) error {
+	if d.hits.Add(1) == 1 {
+		return nil
+	}
+	return notify.RetryWithBackoff(ctx, notify.BackoffConfig{InitialInterval: time.Minute}, func(context.Context) error {
+		d.attempts <- struct{}{}
+		return errors.New("unreachable")
+	})
+}
+func (d *deadAfterFirst) Close(context.Context) error { return nil }
+
+// startCoalescedService runs a notify.Service whose only channel is inner
+// wrapped in a coalesce.Channel, and feeds it two failures of one task so the
+// second sits in an open window.
+func startCoalescedService(t *testing.T, inner notify.Channel, sink notify.SyntheticIngester) (*notify.Service, *fakeclock.Timers) {
+	t.Helper()
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, time.Now, slog.Default(), sink)
+	mt := withManualTimers(c)
+	bus := events.NewEventBus()
+	svc := notify.New(notify.Config{
+		Bus:      bus,
+		Channels: []notify.Channel{c},
+		Rules:    []notify.Rule{{Match: notify.MatchAll(), ActionIDs: []string{inner.ID()}}},
+	})
+	svc.Start(context.Background())
+	reason := model.ReasonFailed
+	for _, id := range []string{"01HFAIL1", "01HFAIL2"} {
+		bus.Publish(events.EventRunFailed, events.RunEvent{Run: &model.Run{
+			ID: id, TaskName: "etl", Status: model.PhaseEnded, EndReason: &reason, ExitCode: 1,
+		}})
+	}
+	require.Eventually(t, func() bool { return mt.Pending() == 1 }, 2*time.Second, time.Millisecond,
+		"the second failure must be held in an open window")
+	return svc, mt
+}
+
+// stopWithin cuts retries and stops svc, as daemon shutdown does, failing if
+// that waits out a retry backoff.
+func stopWithin(t *testing.T, svc *notify.Service) {
+	t.Helper()
+	stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	start := time.Now()
+	go func() {
+		svc.CutRetries()
+		svc.Stop(stopCtx)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("shutdown waited out the summary's retry backoff")
+	}
+	assert.Less(t, time.Since(start), time.Second, "shutdown must not wait out the summary's retry backoff")
+}
+
+// TestCoalesce_ShutdownCutsCloseFlushRetries: on shutdown Close sends the open
+// window's summary early. It gets one attempt, and a failure is reported in
+// the bell instead of retried until the drain deadline.
+func TestCoalesce_ShutdownCutsCloseFlushRetries(t *testing.T) {
+	inner := &deadAfterFirst{attempts: make(chan struct{}, 4)}
+	sink := &recordingFailureSink{}
+	svc, _ := startCoalescedService(t, inner, sink)
+
+	stopWithin(t, svc)
+
+	assert.Equal(t, int64(2), inner.hits.Load(), "the summary gets its attempt")
+	require.Len(t, sink.captured, 1, "the failed summary must surface in-app")
+	assert.Equal(t, notify.KindNotifyDeliveryFailed, sink.captured[0].Kind)
+}
+
+// TestCoalesce_ShutdownCutsWindowCloseRetries: a window-close summary already
+// retrying when shutdown starts stops after its current attempt too.
+func TestCoalesce_ShutdownCutsWindowCloseRetries(t *testing.T) {
+	inner := &deadAfterFirst{attempts: make(chan struct{}, 4)}
+	sink := &recordingFailureSink{}
+	svc, mt := startCoalescedService(t, inner, sink)
+
+	mt.FireAll()
+	select {
+	case <-inner.attempts:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the window-close summary was never attempted")
+	}
+
+	stopWithin(t, svc)
+
+	assert.Equal(t, int64(2), inner.hits.Load())
+	require.Len(t, sink.captured, 1, "the failed summary must surface in-app")
+}
+
+type lockedFailureSink struct {
+	mu       sync.Mutex
+	captured []*notify.Event
+}
+
+func (s *lockedFailureSink) IngestSynthetic(ev *notify.Event) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.captured = append(s.captured, ev)
+}
+
+func (s *lockedFailureSink) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.captured)
+}
+
+// TestCoalesce_StopDeadlineIsNotADeliveryFailure: a window-close summary still
+// retrying when Stop's deadline cancels the worker ctx was cut by shutdown, so
+// it must not land in the bell as a failed delivery.
+func TestCoalesce_StopDeadlineIsNotADeliveryFailure(t *testing.T) {
+	inner := &deadAfterFirst{attempts: make(chan struct{}, 4)}
+	sink := &lockedFailureSink{}
+	svc, mt := startCoalescedService(t, inner, sink)
+
+	mt.FireAll()
+	select {
+	case <-inner.attempts:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the window-close summary was never attempted")
+	}
+
+	stopCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	svc.Stop(stopCtx)
+
+	assert.Never(t, func() bool { return sink.count() > 0 }, 300*time.Millisecond, 10*time.Millisecond)
 }

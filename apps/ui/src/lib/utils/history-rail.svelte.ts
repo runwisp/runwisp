@@ -85,13 +85,15 @@ export class HistoryRail {
     /**
      * Which panes to render. `hasRun`: the detail panel has a run (and so the
      * back button). `empty`: the list loaded with no runs, so the detail's
-     * empty state (with its Run button) is the useful pane on a phone.
+     * empty state is the useful pane on a phone. `strip`: the task strip, which
+     * holds the task's actions (Run, Start, Details); a phone drops it only
+     * while a run's detail fills the screen.
      */
-    panes(hasRun: boolean, empty: boolean): { list: boolean; detail: boolean } {
+    panes(hasRun: boolean, empty: boolean): { list: boolean; detail: boolean; strip: boolean } {
         if (this.#phone.current) {
             const detail = empty || (hasRun && this.#showingRun);
-            return { list: !detail, detail };
+            return { list: !detail, detail, strip: !(detail && hasRun) };
         }
-        return { list: true, detail: true };
+        return { list: true, detail: true, strip: true };
     }
 }

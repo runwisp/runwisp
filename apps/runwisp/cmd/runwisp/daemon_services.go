@@ -45,7 +45,7 @@ type daemonServices struct {
 	MemoryReclaimer  *runtime.MemoryReclaimer
 	DebugServer      *debugServer
 	Notify           *liveNotify
-	// DetectedURL is the Web UI address of the latest signed-in visit, the
+	// DetectedURL is the Web UI address of the latest Web UI sign-in, the
 	// notification link base when [daemon] external_url is unset.
 	DetectedURL      *detectedURL
 	ScheduleResult   runtime.ScheduleResult
@@ -371,7 +371,7 @@ func launchServiceWhenReady(ctx context.Context, taskManager runtime.TaskManager
 			return
 		}
 		if err != nil {
-			slog.Warn("dependency not healthy within window; starting dependent anyway",
+			slog.Warn("dependency not healthy; starting dependent anyway",
 				"service", task.Name, "dependency", dep, "err", err)
 		}
 	}

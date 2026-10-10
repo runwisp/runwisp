@@ -98,11 +98,13 @@ the form `<external_url>/tasks/<task>/<id>`.
 
 - Must be `http` or `https` with a host. A trailing slash is removed.
 - The daemon never connects to this URL.
-- Since 1.6, when unset, the daemon uses the address of the most recent signed-in
-  Web UI visit, and remembers it across restarts. A visit from another address
-  replaces it. Behind a reverse proxy, the forwarded host and scheme count only
-  from a [trusted proxy](#trusted_proxies). Set `external_url` to pin one
-  address. `runwisp status` shows which address is in use.
+- Since 1.6, when unset, the daemon uses the address of the most recent Web UI
+  sign-in, and remembers it across restarts. A sign-in from another address
+  replaces it. Only password sign-ins in a browser count: `runwisp --url`
+  clients and Web UI tabs opened from the TUI don't. Behind a reverse
+  proxy, the forwarded host and scheme count only from a
+  [trusted proxy](#trusted_proxies). Set `external_url` to pin one address.
+  `runwisp status` shows which address is in use.
 - With `RUNWISP_AUTH=off` nobody signs in, so nothing is detected: set
   `external_url` or notifications leave out the link.
 

@@ -378,7 +378,8 @@ components:
       description: |
         State of a single service instance slot as reported by the daemon
         supervisor. `running` = live; `restarting` = exited and awaiting the
-        next backoff respawn; `stopped` = operator-stopped, not being refilled;
+        next backoff respawn; `stopped` = not being refilled, because it was
+        operator-stopped or its restart policy won't respawn it;
         `fatal` = the supervisor gave up on the slot. Consumers must tolerate
         unknown values (forward-compat).
       enum:
@@ -392,9 +393,11 @@ components:
       type: string
       description: |
         Roll-up state of a whole service. `running` = all desired instances
-        live; `degraded` = some but not all live; `stopped` = operator-stopped;
-        `fatal` = at least one slot is fatal. Consumers must tolerate unknown
-        values (forward-compat).
+        live; `degraded` = some but not all live; `stopped` = operator-stopped,
+        or every instance exited cleanly and its restart policy won't respawn
+        it; `fatal` = no instance is live or respawning, and at least one gave
+        up or exited on a failure. Consumers must tolerate unknown values
+        (forward-compat).
       enum:
         - running
         - degraded

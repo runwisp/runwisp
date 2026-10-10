@@ -3,6 +3,7 @@
 
 import { isService, type Task } from "@runwisp/common";
 import { formatBytes, humanizeCron } from "@runwisp/ui";
+import { TASK_DEFAULTS } from "./__task_defaults";
 import { hasCron } from "./task";
 
 export interface DetailRow {
@@ -18,13 +19,15 @@ export interface DetailSection {
     title: string;
     /** The `run` command, shown as a block instead of rows. */
     command?: string;
+    /** A file path, shown as plain text: it isn't a runwisp.toml key. */
+    path?: string;
     rows: DetailRow[];
 }
 
 const q = (s: string) => JSON.stringify(s);
 
-/** Nanoseconds as a TOML duration string: "1h30m", "250ms". */
-function duration(ns: number): string {
+/** Nanoseconds as a duration: "1h30m", "250ms". */
+function durationText(ns: number): string {
     const units: [string, number][] = [
         ["h", 3_600_000],
         ["m", 60_000],
@@ -40,73 +43,98 @@ function duration(ns: number): string {
             rest -= n * size;
         }
     }
-    return q(out || "0s");
+    return out || "0s";
 }
 
-function row(key: string, value: string | undefined, note?: string): DetailRow[] {
-    if (value === undefined) return [];
-    return [{ key, value, ...(note && { note }) }];
-}
-
-// The API serves resolved values, so a key left at its default looks the same
-// as one set to it. Zero and empty mean "not set" here, and are hidden.
-const isSet = (v: number | undefined): v is number => v !== undefined && v !== 0;
+// Absent means not set; 0 is a value.
 const str = (v: string | undefined) => (v ? q(v) : undefined);
-const num = (v: number | undefined) => (isSet(v) ? String(v) : undefined);
-const dur = (v: number | undefined) => (isSet(v) ? duration(v) : undefined);
+const num = (v: number | undefined) => (v === undefined ? undefined : String(v));
+/** Nanoseconds as a TOML duration string. */
+const dur = (v: number | undefined) => (v === undefined ? undefined : q(durationText(v)));
+/** Bytes as a TOML size string: "100MiB". */
+const size = (v: number | undefined) =>
+    v === undefined ? undefined : q(formatBytes(v).replace(" ", ""));
 
-function scheduleRows(task: Task): DetailRow[] {
+/** Renders one key of a unit as written in TOML; undefined when unset. */
+type Render = (t: Task) => string | undefined;
+type Row = (key: string, render: Render, note?: string) => DetailRow[];
+
+/**
+ * A row builder for task. The API serves resolved values, so a key left out of
+ * runwisp.toml arrives as its built-in default: a row that renders the same for
+ * task and for the default unit of its kind is hidden, any other value (0
+ * included) is shown. retry_attempts, priority and keep_for are omitted from
+ * the API at 0, which is also their default, so a written 0 hides with them.
+ */
+function rowsOf(task: Task, defaults: Task): Row {
+    return (key, render, note) => {
+        const value = render(task);
+        if (value === undefined || value === render(defaults)) return [];
+        return [{ key, value, ...(note && { note }) }];
+    };
+}
+
+function scheduleRows(task: Task, row: Row): DetailRow[] {
     if (!hasCron(task)) return [];
     return [
-        ...row("cron", q(task.cron), humanizeCron(task.cron).humanized),
-        ...row("timezone", str(task.timezone)),
-        ...row("catch_up", num(task.catchUp)),
-        ...row("jitter", dur(task.jitter)),
+        ...row("cron", (t) => str(t.cron), humanizeCron(task.cron).humanized),
+        ...row("timezone", (t) => str(t.timezone)),
+        ...row("catch_up", (t) => num(t.catchUp)),
+        ...row("jitter", (t) => dur(t.jitter)),
     ];
 }
 
-function retryNote(task: Task): string | undefined {
-    if (!task.retryBackoff) return undefined;
-    const from = isSet(task.retryDelay) ? `, from ${duration(task.retryDelay).slice(1, -1)}` : "";
-    return task.retryBackoff + from;
+/** The retry curve and its first delay, in plain words. */
+function retryNote(task: Task): string {
+    const delay = task.retryDelay ?? TASK_DEFAULTS.task.retryDelay ?? 0;
+    return `${task.retryBackoff ?? "constant"}, from ${durationText(delay)}`;
 }
 
-function executionRows(task: Task): DetailRow[] {
+/** Keys only [tasks.*] accepts: a [services.*] entry rejects them. */
+function taskOnlyRows(task: Task, row: Row): DetailRow[] {
+    if (isService(task.kind)) return [];
     return [
-        ...row("timeout", dur(task.timeout)),
-        ...row("retry_attempts", num(task.retryAttempts), retryNote(task)),
-        ...row("on_overlap", isService(task.kind) ? undefined : str(task.onOverlap)),
-        ...row("max_concurrent", num(task.maxConcurrent)),
-        ...row("max_queued", num(task.maxQueued)),
-        ...row("run_on_start", task.runOnStart ? q(task.runOnStartMode ?? "daemon") : undefined),
-        ...row("user", str(task.user)),
-        ...row("working_dir", str(task.workingDir)),
-        ...row("umask", str(task.umask)),
-        ...row("graceful_stop", dur(task.gracefulStop)),
+        ...row("retry_attempts", (t) => num(t.retryAttempts), retryNote(task)),
+        ...row("on_overlap", (t) => str(t.onOverlap)),
+        ...row("max_concurrent", (t) => num(t.maxConcurrent)),
+        ...row("max_queued", (t) => num(t.maxQueued)),
+        ...row("run_on_start", (t) => (t.runOnStart ? q(t.runOnStartMode ?? "daemon") : undefined)),
+        ...row("autostart", (t) => String(t.autostart), "the schedule starts paused"),
+    ];
+}
+
+function executionRows(task: Task, row: Row): DetailRow[] {
+    return [
+        ...row("timeout", (t) => dur(t.timeout)),
+        ...taskOnlyRows(task, row),
+        ...row("user", (t) => str(t.user)),
+        ...row("working_dir", (t) => str(t.workingDir)),
+        ...row("umask", (t) => str(t.umask)),
+        ...row("graceful_stop", (t) => dur(t.gracefulStop)),
+        ...row("stop_signal", (t) => str(t.stopSignal)),
         ...row(
             "manual_trigger",
-            task.manualTrigger ? undefined : "false",
+            (t) => String(t.manualTrigger),
             "the UI and API can't run or control it",
         ),
     ];
 }
 
-function serviceRows(task: Task): DetailRow[] {
+function serviceRows(task: Task, row: Row): DetailRow[] {
     if (!isService(task.kind)) return [];
     return [
-        ...row("instances", num(task.instances)),
-        ...row("restart", str(task.restart)),
+        ...row("instances", (t) => num(t.instances)),
+        ...row("restart", (t) => str(t.restart)),
         ...row(
             "restart_attempts",
-            num(task.restartAttempts),
+            (t) => num(t.restartAttempts),
             "fast failures in a row, then it gives up",
         ),
-        ...row("restart_backoff", str(task.restartBackoff)),
-        ...row("restart_delay", dur(task.restartDelay)),
-        ...row("healthy_after", dur(task.healthyAfter)),
-        ...row("autostart", String(task.autostart)),
-        ...row("stop_signal", str(task.stopSignal)),
-        ...row("priority", num(task.priority)),
+        ...row("restart_backoff", (t) => str(t.restartBackoff)),
+        ...row("restart_delay", (t) => dur(t.restartDelay)),
+        ...row("healthy_after", (t) => dur(t.healthyAfter)),
+        ...row("autostart", (t) => String(t.autostart), "it stays down until you start it"),
+        ...row("priority", (t) => num(t.priority)),
     ];
 }
 
@@ -125,40 +153,41 @@ function parameterRows(task: Task): DetailRow[] {
     });
 }
 
-function environmentRows(task: Task): DetailRow[] {
+function environmentRows(task: Task, row: Row): DetailRow[] {
     const env = Object.entries(task.env ?? {}).sort(([a], [b]) => a.localeCompare(b));
     return [
-        ...row("env_base", str(task.envBase)),
+        ...row("env_base", (t) => str(t.envBase)),
         ...env.map(([k, v]) => ({ key: `env.${k}`, value: q(v) })),
-        ...row("env_file", str(task.envFile)),
-        ...row("secrets_file", str(task.secretsFile), "values not shown"),
+        ...row("env_file", (t) => str(t.envFile)),
+        ...row("secrets_file", (t) => str(t.secretsFile), "values not shown"),
     ];
 }
 
-function outputRows(task: Task): DetailRow[] {
-    const size = isSet(task.logMaxSize)
-        ? q(formatBytes(task.logMaxSize).replace(" ", ""))
-        : undefined;
+function outputRows(row: Row): DetailRow[] {
     return [
-        ...row("log_max_size", size, task.logOnFull ? `${task.logOnFull} when full` : undefined),
-        ...row("keep_runs", num(task.keepRuns)),
-        ...row("keep_for", dur(task.keepFor)),
+        ...row("log_max_size", (t) => size(t.logMaxSize)),
+        ...row("log_on_full", (t) => str(t.logOnFull)),
+        ...row("keep_runs", (t) => num(t.keepRuns)),
+        ...row("keep_for", (t) => dur(t.keepFor)),
     ];
 }
 
 /** The task's configuration in runwisp.toml terms, the sections that apply. */
 export function taskDetailSections(task: Task): DetailSection[] {
+    const row = rowsOf(task, TASK_DEFAULTS[isService(task.kind) ? "service" : "task"]);
     const command: DetailSection[] = task.run
-        ? [{ title: "Command", command: task.run, rows: row("shell", str(task.shell)) }]
+        ? [{ title: "Command", command: task.run, rows: row("shell", (t) => str(t.shell)) }]
         : [];
     const sections: DetailSection[] = [
-        { title: "Schedule", rows: scheduleRows(task) },
-        { title: "Service", rows: serviceRows(task) },
+        { title: "Schedule", rows: scheduleRows(task, row) },
+        { title: "Service", rows: serviceRows(task, row) },
         { title: "Parameters", rows: parameterRows(task) },
-        { title: "Execution", rows: executionRows(task) },
-        { title: "Environment", rows: environmentRows(task) },
-        { title: "Output and retention", rows: outputRows(task) },
-        { title: "Defined in", rows: row("file", task.sourceFile) },
+        { title: "Execution", rows: executionRows(task, row) },
+        { title: "Environment", rows: environmentRows(task, row) },
+        { title: "Output and retention", rows: outputRows(row) },
     ];
-    return [...command, ...sections.filter((s) => s.rows.length > 0)];
+    const source: DetailSection[] = task.sourceFile
+        ? [{ title: "Defined in", path: task.sourceFile, rows: [] }]
+        : [];
+    return [...command, ...sections.filter((s) => s.rows.length > 0), ...source];
 }

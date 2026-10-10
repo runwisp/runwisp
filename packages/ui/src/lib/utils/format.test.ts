@@ -171,11 +171,25 @@ describe("parseDuration", () => {
         expect(parseDuration("2d")).toBe(172_800_000);
     });
 
+    it("reads what the ms package did", () => {
+        expect(parseDuration("500")).toBe(500);
+        expect(parseDuration("1w")).toBe(604_800_000);
+        expect(parseDuration("1y")).toBe(31_557_600_000);
+        expect(parseDuration("2 hours")).toBe(7_200_000);
+        expect(parseDuration("30 sec")).toBe(30_000);
+        expect(parseDuration("5 minutes")).toBe(300_000);
+        expect(parseDuration("5M")).toBe(300_000);
+        expect(parseDuration(".5h")).toBe(1_800_000);
+        expect(parseDuration(" 1 Hour 30 mins ")).toBe(5_400_000);
+    });
+
     it("rejects text that isn't number+unit throughout", () => {
         expect(parseDuration("")).toBeNull();
-        expect(parseDuration("5")).toBeNull();
         expect(parseDuration("5x")).toBeNull();
         expect(parseDuration("5m abc")).toBeNull();
+        expect(parseDuration("5 30s")).toBeNull();
+        expect(parseDuration("1.5.5")).toBeNull();
+        expect(parseDuration("9".repeat(101))).toBeNull();
     });
 });
 

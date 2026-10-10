@@ -279,6 +279,107 @@ func TestRestartAttemptsIncrementOnQuickExit(t *testing.T) {
 		"counter should accumulate across multiple quick exits, got %d", attempts)
 }
 
+func TestServiceRollupState(t *testing.T) {
+	cases := []struct {
+		name    string
+		stopped bool
+		counts  slotCounts
+		want    string
+	}{
+		{"operator stop wins", true, slotCounts{exited: 2, failedExits: 1}, model.ServiceStopped},
+		{"all up", false, slotCounts{running: 2}, model.ServiceRunning},
+		{"one exited, one up", false, slotCounts{running: 1, exited: 1}, model.ServiceDegraded},
+		{"one exited, one restarting", false, slotCounts{exited: 1}, model.ServiceDegraded},
+		{"all exited cleanly", false, slotCounts{exited: 2}, model.ServiceStopped},
+		{"all exited, one failed", false, slotCounts{exited: 2, failedExits: 1}, model.ServiceFatal},
+		{"all gave up", false, slotCounts{fatal: 2}, model.ServiceFatal},
+		{"gave up and exited cleanly", false, slotCounts{fatal: 1, exited: 1}, model.ServiceFatal},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, serviceRollupState(tc.stopped, tc.counts, 2))
+		})
+	}
+}
+
+// TestServiceSnapshotNoRestartPending: an instance its restart policy won't
+// respawn (never, or on_failure after a clean exit) must report as down until
+// started, not as "restarting" forever. The service as a whole reads stopped
+// after a clean exit and fatal after a failed one, never degraded (which means
+// a respawn is coming). Start brings it back.
+func TestServiceSnapshotNoRestartPending(t *testing.T) {
+	cases := []struct {
+		name     string
+		restart  model.RestartPolicy
+		exitCode int
+		state    string
+	}{
+		{"never", model.RestartNever, 0, model.ServiceStopped},
+		{"never after a failure", model.RestartNever, 1, model.ServiceFatal},
+		{"on_failure after a clean exit", model.RestartOnFailure, 0, model.ServiceStopped},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			exec := new(testutil.MockExecutor)
+			eb := events.NewEventBus()
+			jm := NewTaskManager(exec, eb, time.Now)
+			defer jm.Shutdown()
+
+			task := serviceTask("oneshot", 1)
+			task.Restart = tc.restart
+			jm.UpsertTask(task)
+			var execCalls atomic.Int64
+			exec.On("Execute", mock.Anything, task, mock.Anything).
+				Run(func(mock.Arguments) { execCalls.Add(1) }).
+				Return(&executor.ExecuteResult{ExitCode: tc.exitCode}, time.Millisecond)
+
+			ended := watchCompletions(eb)
+			require.NoError(t, jm.StartServiceInstances("oneshot", model.TriggeredByService))
+			ended.waitFor(t, 1)
+
+			snap, ok := jm.ServiceSnapshot("oneshot")
+			require.True(t, ok)
+			require.Len(t, snap.Instances, 1)
+			assert.Equal(t, model.ServiceInstanceStopped, snap.Instances[0].State)
+			assert.Equal(t, tc.state, snap.State)
+			assert.Equal(t, int64(1), execCalls.Load(), "nothing respawns it")
+
+			require.NoError(t, jm.StartService("oneshot"))
+			ended.waitFor(t, 2)
+			assert.Equal(t, int64(2), execCalls.Load(), "Start brings it back")
+
+			require.NoError(t, jm.RestartServiceInstances("oneshot"))
+			ended.waitFor(t, 3)
+			assert.Equal(t, int64(3), execCalls.Load(), "Restart brings it back too")
+		})
+	}
+}
+
+// TestRetireRunMarksExitedInTheSameLock: the slot's exited flag must be set by
+// the call that frees the slot. Setting it in a second critical section let a
+// Start that reserved the slot in between have its new live run flagged exited.
+func TestRetireRunMarksExitedInTheSameLock(t *testing.T) {
+	jm, _, _ := newTestManager(t)
+	task := serviceTask("oneshot", 1)
+	task.Restart = model.RestartNever
+	jm.UpsertTask(task)
+
+	jm.mu.Lock()
+	ts := jm.tasks["oneshot"]
+	idx, err := ts.supervisor.Reserve(nil)
+	require.NoError(t, err)
+	run := &model.Run{ID: "01RUN", TaskName: "oneshot", InstanceIndex: idx}
+	ts.active = append(ts.active, &ActiveRun{Run: run})
+	jm.mu.Unlock()
+
+	jm.retireRun(task, run, time.Second, model.ReasonSuccess, 0)
+
+	jm.mu.Lock()
+	defer jm.mu.Unlock()
+	assert.True(t, ts.supervisor.IsExited(idx))
+	assert.False(t, ts.supervisor.IsExitFailed(idx))
+}
+
 // TestServiceFatalAfterStartRetries is the bug-first guard for B3: a service
 // that can never stay up must reach a loud terminal FATAL state instead of
 // flapping forever (which is what happens without restart_attempts). It asserts

@@ -40,10 +40,10 @@ func (m *MockRunRepository) GetRun(ctx context.Context, id string) (*model.Run, 
 	return args.Get(0).(*model.Run), args.Error(1)
 }
 
-// LatestStartedRuns reports no runs unless the test expects the call: only the
+// LastRuns reports no runs unless the test expects the call: only the
 // task list's lastRun field uses it, and most tests listing tasks don't care.
-func (m *MockRunRepository) LatestStartedRuns(ctx context.Context, taskNames []string) (map[string]model.Run, error) {
-	if !slices.ContainsFunc(m.ExpectedCalls, func(c *mock.Call) bool { return c.Method == "LatestStartedRuns" }) {
+func (m *MockRunRepository) LastRuns(ctx context.Context, taskNames []string) (map[string]model.Run, error) {
+	if !slices.ContainsFunc(m.ExpectedCalls, func(c *mock.Call) bool { return c.Method == "LastRuns" }) {
 		return map[string]model.Run{}, nil
 	}
 	args := m.Called(ctx, taskNames)

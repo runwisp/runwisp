@@ -38,7 +38,8 @@ type Service struct {
 	unsubscribe     func()
 	detachOnce      sync.Once
 	cancel          context.CancelFunc // cancels workCtx — workers + runDispatch
-	stopRetries     chan struct{}      // closed by Stop so draining deliveries skip their retry backoff
+	stopRetries     chan struct{}      // closed by CutRetries so deliveries skip their retry backoff
+	cutRetriesOnce  sync.Once
 	retentionCancel context.CancelFunc // cancels the retention loop; fired upfront in Stop so it never gates wg.Wait
 	wg              sync.WaitGroup
 
@@ -96,6 +97,7 @@ func New(cfg Config) *Service {
 		logger:         logger,
 		retentionEvery: retentionEvery,
 		retentionFn:    cfg.RetentionFn,
+		stopRetries:    make(chan struct{}),
 	}
 }
 
@@ -109,7 +111,6 @@ func (s *Service) Start(ctx context.Context) {
 
 	workCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
-	s.stopRetries = make(chan struct{})
 	workCtx = withStopRetries(workCtx, s.stopRetries)
 	s.disp.startWorkers(workCtx)
 
@@ -133,10 +134,21 @@ func (s *Service) Start(ctx context.Context) {
 		"ingress_size", DefaultActionQueueSize)
 }
 
+// CutRetries stops deliveries from waiting out retry backoffs, for daemon
+// shutdown: each attempt in flight (including a coalescing window's summary)
+// finishes, and a failure is reported instead of retried, so a dead endpoint
+// can't hold shutdown until Stop's deadline. A reload retires the old service
+// with Stop alone, keeping its queued deliveries' retry budget. Idempotent and
+// safe to call concurrently with Stop.
+func (s *Service) CutRetries() {
+	s.cutRetriesOnce.Do(func() { close(s.stopRetries) })
+}
+
 // Stop tears the service down in this order: detach from bus, drain ingress,
 // close per-action queues, wait for workers, close all channels. Honors the
 // supplied context as a deadline; goroutines are also cancelled directly so
-// stuck workers exit even if ctx is the background.
+// stuck workers exit even if ctx is the background. Queued deliveries keep
+// their retry budget unless CutRetries is called.
 func (s *Service) Stop(ctx context.Context) {
 	if !s.started.Load() {
 		return
@@ -162,10 +174,6 @@ func (s *Service) Stop(ctx context.Context) {
 	close(s.ingressCh)
 	s.ingressMu.Unlock()
 
-	// Queued deliveries still get their attempt, but none waits out a retry
-	// backoff: a dead endpoint would otherwise hold shutdown until ctx ends.
-	close(s.stopRetries)
-
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()
@@ -184,8 +192,16 @@ func (s *Service) Stop(ctx context.Context) {
 		<-done
 	}
 
+	// Channels may still deliver on Close (a coalescing window flushes its
+	// summary), so they get the same retry cut-off as the workers.
+	closeCtx := withStopRetries(ctx, s.stopRetries)
+	// Close waits for window-close summaries, which run under the workers'
+	// ctx, so the stop deadline must reach that ctx too or Close outlives it.
+	if s.cancel != nil {
+		defer context.AfterFunc(ctx, s.cancel)()
+	}
 	for _, c := range s.channels {
-		if err := c.Close(ctx); err != nil {
+		if err := c.Close(closeCtx); err != nil {
 			s.logger.Warn("notify: channel close error", "channel", c.ID(), "error", err)
 		}
 	}

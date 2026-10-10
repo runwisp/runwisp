@@ -419,3 +419,140 @@ func TestLiveNotify_StopWaitsForRetiredService(t *testing.T) {
 		})
 	}
 }
+
+// retryingChannel fails its first failAttempts delivery attempts, retrying
+// with a backoff of interval, and signals each attempt on attempts.
+type retryingChannel struct {
+	interval     time.Duration
+	failAttempts int64
+	tries        atomic.Int64
+	delivered    atomic.Int64
+	attempts     chan struct{}
+}
+
+func (c *retryingChannel) ID() string { return "retrying" }
+func (c *retryingChannel) Execute(ctx context.Context, _ *notify.Event) error {
+	return notify.RetryWithBackoff(ctx, notify.BackoffConfig{InitialInterval: c.interval}, func(context.Context) error {
+		c.attempts <- struct{}{}
+		if c.tries.Add(1) <= c.failAttempts {
+			return errors.New("503")
+		}
+		c.delivered.Add(1)
+		return nil
+	})
+}
+func (c *retryingChannel) Close(context.Context) error { return nil }
+
+func retryingService(bus *events.Bus, ch *retryingChannel) *notify.Service {
+	return notify.New(notify.Config{
+		Bus:      bus,
+		Channels: []notify.Channel{ch},
+		Rules:    []notify.Rule{{Match: notify.MatchFailure(), ActionIDs: []string{ch.ID()}}},
+	})
+}
+
+// TestLiveNotify_ReloadKeepsRetries: a reload retires the old service while a
+// delivery is failing (a brief Slack 503); the retired service still retries
+// it instead of dropping the alert.
+func TestLiveNotify_ReloadKeepsRetries(t *testing.T) {
+	bus := events.NewEventBus()
+	flaky := &retryingChannel{interval: 20 * time.Millisecond, failAttempts: 1, attempts: make(chan struct{}, 8)}
+	live := newLiveNotify()
+	t.Cleanup(func() { live.Stop(context.Background()) })
+	live.swap(retryingService(bus, flaky))
+	publishRun(bus, "a", true)
+	<-flaky.attempts // the first attempt failed or is failing
+
+	live.swap(nil) // a reload that drops notifications
+
+	require.Eventually(t, func() bool { return flaky.delivered.Load() == 1 }, 2*time.Second, time.Millisecond,
+		"the retired service must retry the failed delivery")
+}
+
+// TestLiveNotify_ShutdownCutsRetiredRetries: shutdown cuts the retries of a
+// service a reload retired, as it does for the current one, so a dead
+// endpoint can't hold the daemon until the drain deadline.
+func TestLiveNotify_ShutdownCutsRetiredRetries(t *testing.T) {
+	bus := events.NewEventBus()
+	dead := &retryingChannel{interval: time.Minute, failAttempts: 1 << 30, attempts: make(chan struct{}, 8)}
+	live := newLiveNotify()
+	live.swap(retryingService(bus, dead))
+	publishRun(bus, "a", true)
+	<-dead.attempts
+
+	live.swap(nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	start := time.Now()
+	live.Stop(ctx)
+	assert.Less(t, time.Since(start), time.Second, "shutdown must not wait out the retired service's backoff")
+	assert.Equal(t, int64(1), dead.tries.Load())
+}
+
+// TestLiveNotify_ShutdownCutsCurrentRetries is the current-service twin of the
+// retired case: Stop itself must cut the retries, not rely on the service.
+func TestLiveNotify_ShutdownCutsCurrentRetries(t *testing.T) {
+	bus := events.NewEventBus()
+	dead := &retryingChannel{interval: time.Minute, failAttempts: 1 << 30, attempts: make(chan struct{}, 8)}
+	live := newLiveNotify()
+	live.swap(retryingService(bus, dead))
+	publishRun(bus, "a", true)
+	<-dead.attempts
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	start := time.Now()
+	live.Stop(ctx)
+	assert.Less(t, time.Since(start), time.Second, "shutdown must not wait out the current service's backoff")
+	assert.Equal(t, int64(1), dead.tries.Load())
+}
+
+// deadAfterFirstChannel delivers the first event and fails every later one
+// with a minute-long retry backoff, like Slack going down mid-burst.
+type deadAfterFirstChannel struct {
+	hits atomic.Int64
+}
+
+func (c *deadAfterFirstChannel) ID() string { return "slack" }
+func (c *deadAfterFirstChannel) Execute(ctx context.Context, _ *notify.Event) error {
+	if c.hits.Add(1) == 1 {
+		return nil
+	}
+	return notify.RetryWithBackoff(ctx, notify.BackoffConfig{InitialInterval: time.Minute}, func(context.Context) error {
+		return errors.New("unreachable")
+	})
+}
+func (c *deadAfterFirstChannel) Close(context.Context) error { return nil }
+
+// TestLiveNotify_ShutdownReturnsPromptlyWithCoalescing: a coalescing window
+// still open at shutdown sends its summary early, against an endpoint that has
+// since gone dead. The summary gets its one attempt and shutdown returns
+// instead of waiting out the retry backoff until the drain deadline.
+func TestLiveNotify_ShutdownReturnsPromptlyWithCoalescing(t *testing.T) {
+	bus := events.NewEventBus()
+	inner := &deadAfterFirstChannel{}
+	wrapped := coalesce.New(inner, coalesce.Config{Window: time.Hour, CoalesceLimit: 1000}, time.Now, slog.Default(), nil)
+	live := newLiveNotify()
+	live.swap(notify.New(notify.Config{
+		Bus:      bus,
+		Channels: []notify.Channel{wrapped},
+		Rules:    []notify.Rule{{Match: notify.MatchAll(), ActionIDs: []string{inner.ID()}}},
+	}))
+	publishFailure := func(id string) {
+		reason := model.ReasonFailed
+		bus.Publish(events.EventRunFailed, events.RunEvent{Run: &model.Run{
+			ID: id, TaskName: "etl", Status: model.PhaseEnded, EndReason: &reason, ExitCode: 1, IsFailure: true,
+		}})
+	}
+	publishFailure("01HFAIL1")
+	require.Eventually(t, func() bool { return inner.hits.Load() == 1 }, 2*time.Second, time.Millisecond)
+	publishFailure("01HFAIL2") // held in the open window
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	start := time.Now()
+	live.Stop(ctx)
+	assert.Less(t, time.Since(start), time.Second, "shutdown must not wait out the summary's backoff")
+	assert.Equal(t, int64(2), inner.hits.Load(), "the open window's summary gets its attempt")
+}

@@ -888,7 +888,7 @@ export interface components {
             configStale: boolean;
             /** @description Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads. */
             configWarnings?: string[] | null;
-            /** @description Web UI base used for notification links: [daemon] external_url, else the address of the latest signed-in Web UI visit. Empty when neither is known. */
+            /** @description Web UI base used for notification links: [daemon] external_url, else the address of the latest Web UI password sign-in. Empty when neither is known. */
             externalUrl: string;
             /**
              * @description Where externalUrl came from. Omitted when externalUrl is empty.
@@ -1514,7 +1514,7 @@ export interface components {
              */
             startedAt?: string;
             /**
-             * @description restarting: between an exit and the next respawn; fatal: gave up after too many failed starts and won't respawn until started
+             * @description restarting: between an exit and the next respawn; stopped: down until started, because the service was stopped or its restart policy (never, or on_failure after a clean exit) won't respawn it; fatal: gave up after too many failed starts and won't respawn until started
              * @enum {string}
              */
             state: "running" | "restarting" | "stopped" | "fatal";
@@ -1526,7 +1526,7 @@ export interface components {
             /** Format: int64 */
             runningInstances: number;
             /**
-             * @description stopped: an operator stopped it, or autostart = false and it was never started; fatal: every instance gave up; degraded: some instances are down
+             * @description stopped: an operator stopped it, autostart = false and it was never started, or every instance exited cleanly and its restart policy won't respawn it; fatal: no instance is running or respawning, and at least one gave up or exited on a failure; degraded: some instances are down
              * @enum {string}
              */
             state: "running" | "degraded" | "stopped" | "fatal";
@@ -1944,7 +1944,7 @@ export interface components {
             secretsFile?: string;
             /** @description For services: the supervisor's view of each instance. Absent for tasks. */
             service?: components["schemas"]["ServiceStatus"];
-            /** @description For services: true while the service is stopped (by an operator, or never started because autostart = false) and the daemon will not respawn it until it is started. Absent for running or restarting services and for tasks. */
+            /** @description For services: true while the service is stopped (by an operator, never started because autostart = false, or every instance exited cleanly under a restart policy that won't respawn it) and the daemon will not respawn it until it is started. Absent for running or restarting services and for tasks. */
             serviceStopped?: boolean;
             /** @description Absolute path to the shell interpreter for run scripts; defaults to /bin/sh */
             shell?: string;

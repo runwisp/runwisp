@@ -35,8 +35,7 @@ type StartupInfo struct {
 	LogDir     string
 	Port       int
 	// ListenURL is the accurate, operator-reachable base URL of the Web UI
-	// (the daemon's external URL, configured or detected from the last
-	// sign-in, else http://<bind-host>:<port> with
+	// ([daemon] external_url when set, else http://<bind-host>:<port> with
 	// wildcard binds mapped to localhost). Empty when the Web UI is disabled.
 	ListenURL string
 
@@ -81,7 +80,8 @@ type StartupInfo struct {
 	// CPU and memory use. Kept current by the same /api/tasks poll.
 	TaskUsage map[string]model.ResourceUsage
 	// StoppedServices holds each service the daemon reports stopped (by an
-	// operator, or not autostarted), so its runs offer Start rather than Stop.
+	// operator, not autostarted, or every instance exited cleanly with no
+	// restart coming), so its runs offer Start rather than Stop.
 	// Kept current by the same /api/tasks poll.
 	StoppedServices map[string]bool
 	// RunUsage maps each measured running run (by ID) to its live CPU and
@@ -129,8 +129,8 @@ func (s *StartupInfo) ApplyDaemonInfo(info model.DaemonInfo) {
 }
 
 // WebURL returns the operator-reachable base URL of the Web UI for copy and
-// browser-launch actions. It prefers the resolved ListenURL (the daemon's
-// external URL, or its reachable host:port for a remote connection),
+// browser-launch actions. It prefers the resolved ListenURL ([daemon]
+// external_url, or the daemon's reachable host:port for a remote connection),
 // falling back to http://localhost:<port> for a local daemon. Returns "" when
 // neither is known (no Web UI / not yet populated).
 func (s StartupInfo) WebURL() string {

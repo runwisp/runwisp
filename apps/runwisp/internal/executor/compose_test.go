@@ -786,10 +786,19 @@ func installDockerShim(t *testing.T, shimDir, argsFile string, exitCode int) {
 // and working-dir tests can supply their own trap/sleep behavior. The body must
 // still answer `docker compose version` for the availability probe. PATH is prepended with shimDir for the test's
 // lifetime.
+//
+// The shim is executed once before returning: macOS scans a freshly written
+// executable on its first exec, which under parallel test load can take longer
+// than the availability probe allows and fail it. The warm-up call hits a guard line
+// prepended after the shebang, so it never runs the test's body.
 func installDockerShimScript(t *testing.T, shimDir, body string) {
 	t.Helper()
+	rest, ok := strings.CutPrefix(body, "#!/bin/sh\n")
+	require.True(t, ok, "docker shim body must start with #!/bin/sh")
+	body = "#!/bin/sh\n[ \"$1\" = __warm ] && exit 0\n" + rest
 	shim := filepath.Join(shimDir, "docker")
 	require.NoError(t, os.WriteFile(shim, []byte(body), 0755))
+	require.NoError(t, exec.Command(shim, "__warm").Run(), "warm up the docker shim")
 	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	// Sanity-check the shim is actually resolvable on PATH.
