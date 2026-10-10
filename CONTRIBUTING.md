@@ -45,9 +45,12 @@ Anything after `bun run dev` goes to the `runwisp` binary, so every CLI flag wor
 ### 4. Test
 
 ```bash
-bun run test               # unit tests (Go and TypeScript)
+bun run test               # Go unit + e2e tests, web UI unit tests
+bun run test:e2e           # Playwright tests against the built binary
 bun run ci                 # everything CI runs; must pass before a PR
 ```
+
+On Linux the Go tests run with `-race`, which needs a C compiler (`gcc` or `clang`). Before the first Playwright run, install its browser with `bunx playwright install chromium`.
 
 ### Where things live
 
@@ -63,16 +66,16 @@ bun run ci                 # everything CI runs; must pass before a PR
 Branch off `main`, one PR per logical change. Before pushing, run the full pipeline from the repo root:
 
 ```bash
-bun run ci                 # generate + format + check + test + test-e2e
+bun run ci                 # generate + format + check + check-latest + test + test-e2e
 ```
 
-`ci` is the single command that has to pass. It runs codegen (sqlc, AsyncAPI Go types, `openapi.json`, common API types), then formatting, then check + test + e2e. To iterate on one stage, run its target directly with `bunx moon run <project>:<task>` (`bunx moon query tasks` lists them); moon caches by input hash, so re-runs are cheap. `bun run clean` resets the cache.
+`ci` is the single command that has to pass. It runs codegen (sqlc, AsyncAPI Go types, `openapi.json`, common API types), then formatting, then check, the latest-deps check (needs network), test, and e2e. To iterate on one stage, run its target directly with `bunx moon run <project>:<task>` (`bunx moon query tasks` lists them); moon caches by input hash, so re-runs are cheap. `bun run clean` removes the moon cache, build outputs, and generated code.
 
 Iterating on the UI:
 
 - `bun run dev`: dev build plus the daemon
-- `bun run web-ui`: Svelte dev server against an already-running daemon
-- `bun run theme`: the shared component library playground
+- `bun run web-ui`: Vite dev server for the web UI on port 3000 (it has no API proxy, so it doesn't reach a daemon on its own)
+- `bun run theme`: Storybook for the shared component library on port 6006
 - `bun run screenshots`: regenerates the docs Web UI and TUI screenshots from a demo-seeded daemon (on-demand, not part of `ci`)
 
 ## Making changes
@@ -81,11 +84,11 @@ Iterating on the UI:
 
 User-visible, so it needs all of:
 
-1. Schema + validator update under `apps/runwisp/internal/config/`.
-2. `bun run ci` (refreshes `apps/runwisp/openapi.json` as part of codegen).
-3. Docs update in `apps/docs/src/content/docs/configuration/`.
+1. Wire types + validator update under `apps/runwisp/internal/config/`.
+2. JSON Schema update in `apps/runwisp/internal/config/config.schema.json` (`TestSchemaCoversWireTags` fails until every new `toml` tag is covered).
+3. Docs update in `apps/docs/src/content/docs/configuration/`, with a `**since**` marker on the new key (see [apps/docs/STYLE.md](apps/docs/STYLE.md)), and in the agent reference `apps/docs/src/agents/reference.md`.
 4. A [CHANGELOG.md](CHANGELOG.md) entry under the unreleased section.
-5. README config reference update if user-visible.
+5. `bun run ci` (refreshes `apps/runwisp/openapi.json` as part of codegen).
 
 ### Control-plane protocol (`packages/asyncapi/asyncapi.yaml`)
 
@@ -105,7 +108,7 @@ Routes are registered with [huma](https://huma.rocks/); `bun run generate` refre
 
 ### Go
 
-- `gofmt` and `go vet` clean; `bun run check` enforces both.
+- `gofmt`, `go vet`, `golangci-lint`, and `govulncheck` clean; `bun run check` enforces all four (the linters install themselves into `.bin/`).
 - Inject clocks, randomness, and FS dependencies into the scheduler. Never call `time.Now()` inline in scheduling logic.
 - Group mutable state with its lifecycle (a struct with start/stop). Avoid package-level mutable state.
 - IDs on user-visible entities are monotonic ULIDs: no auto-increment integers, no UUIDv4.
