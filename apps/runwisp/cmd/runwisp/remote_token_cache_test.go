@@ -52,14 +52,15 @@ func TestTokenCache_DropsExpired(t *testing.T) {
 	assert.Empty(t, loadCachedToken(url), "an expired token must not be returned")
 }
 
-func TestTokenCache_UnreadableExpiryIsMiss(t *testing.T) {
+func TestTokenCache_UnreadableExpiryIsTried(t *testing.T) {
 	useTempCacheDir(t)
 	const url = "https://runwisp.example.com"
 
-	// A token whose expiry can't be read (e.g. a JWT cached by an older
-	// release) is a miss, so the caller handshakes instead of sending it.
+	// A token whose expiry can't be read (an older daemon's JWT) has an
+	// unknown expiry, so it is tried; a 401 falls back to a login. A miss
+	// would redo CHAP on every call and hit the daemon's auth rate limit.
 	storeCachedToken(url, "header.payload.signature")
-	assert.Empty(t, loadCachedToken(url))
+	assert.Equal(t, "header.payload.signature", loadCachedToken(url))
 }
 
 func TestTokenCache_CorruptFile(t *testing.T) {
