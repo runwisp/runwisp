@@ -73,6 +73,9 @@ type Model struct {
 	pendingHighlight    int64
 	pendingHighlightRun string
 
+	// lastRuns is each task's newest known run, for the sidebar status marks.
+	lastRuns lastRuns
+
 	panelFocus uikit.PanelFocus
 	info       uikit.StartupInfo
 	// loc is the daemon's timezone; every timestamp the TUI shows is in it, so a
@@ -154,6 +157,7 @@ func NewModel(cfg TUIConfig) Model {
 
 	m := Model{
 		sidebar:          sidebar,
+		lastRuns:         lastRuns{},
 		execList:         execList,
 		execWindow:       execWindow,
 		infoView:         &infoView,
@@ -340,7 +344,7 @@ func (m *Model) contentWidth() int {
 
 // recalcExecListHeight adjusts the exec list height based on the active view header.
 func (m *Model) recalcExecListHeight() {
-	mainW, mainH := m.mainSize()
+	_, mainH := m.mainSize()
 	listH := mainH
 	if m.sidebar.ActivePage() == uikit.PageHome || m.sidebar.ActiveTask() != "" {
 		if m.sidebar.ActiveTask() != "" {
@@ -349,7 +353,7 @@ func (m *Model) recalcExecListHeight() {
 			m.layout.taskH = strings.Count(header, "\n")
 			listH -= m.layout.taskH
 		} else {
-			header, fieldsStartY := home.RenderHeader(m.info, m.hasLaunchTicket(), mainW, -1, -1, false)
+			header, fieldsStartY := home.RenderHeader(m.info, m.hasLaunchTicket(), m.contentWidth(), -1, -1, false)
 			m.layout.homeH = strings.Count(header, "\n")
 			m.layout.homeFieldsY = fieldsStartY
 			listH -= m.layout.homeH
@@ -496,6 +500,7 @@ func (m *Model) requestQuit() tea.Cmd {
 		"Keep the daemon running in the background?",
 		"Keep Running",
 		"Shut Down",
+		true,
 		func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitKeepDaemon} },
 		func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitShutdownDaemon} },
 	)
@@ -625,7 +630,7 @@ func (m *Model) openLaunchURL(target string) tea.Cmd {
 	}
 	base := m.info.WebURL()
 	if isInsecureRemoteURL(base) {
-		return m.showConfirmDialog(
+		return m.showDangerConfirm(
 			"Insecure connection",
 			fmt.Sprintf("The Web UI at\n%s\nuses unencrypted HTTP. Opening it sends a single-use\nsession ticket in clear text over the network.\n\nContinue anyway?", base),
 			m.launchBrowserCmd(base, target),

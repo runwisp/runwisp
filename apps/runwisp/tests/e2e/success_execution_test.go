@@ -31,7 +31,7 @@ func TestTUIStreamsLiveLogsAndSettlesSuccessfulHeaderState(t *testing.T) {
 	require.NotContains(t, runningScreen, "alpha-line-3")
 
 	completedScreen := suite.tui.waitForAll(t, 8*time.Second,
-		"succeeded",
+		"success",
 		"alpha-line-3",
 	)
 	require.NotContains(t, completedScreen, "■ Stop (s)")

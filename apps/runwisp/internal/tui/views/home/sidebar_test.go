@@ -426,6 +426,14 @@ func TestSidebar_ViewRendersFilterLine(t *testing.T) {
 	assert.Contains(t, out, "alp", "the filter header echoes the active query")
 }
 
+func TestSidebar_FilterWithNoMatchesSaysSo(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("alpha", "beta"))
+	s.SetSize(24, 20)
+	s.StartFilter()
+	s.FilterAppend("zzz")
+	assert.Contains(t, s.View(), "no matching tasks", "an empty result must not leave the list blank")
+}
+
 func TestSidebar_FilterBackspaceEmptyIsNoOp(t *testing.T) {
 	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("alpha"))
 	s.SetSize(20, 20)

@@ -6,8 +6,10 @@ package execlist
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
@@ -167,13 +169,13 @@ func TestTotalCount_EmptyList(t *testing.T) {
 func TestTaskColWidthFor_WideAbsorbsSurplus(t *testing.T) {
 	// At width 100 the fixed columns sit at their caps and TASK takes the
 	// rest, so it should be far wider than any single fixed column.
-	got := computeColWidths(100).task
-	if got <= statusColCap {
+	got := computeColWidths(100, 0).first
+	if got <= statusColW {
 		t.Fatalf("expected TASK to absorb the surplus at width 100, got %d", got)
 	}
 	// The row must fill the content width exactly — never overflow.
-	cw := computeColWidths(100)
-	if total := cw.task + cw.fixedSum() + colGutter; total != 100 {
+	cw := computeColWidths(100, 0)
+	if total := cw.rowWidth(); total != 100 {
 		t.Fatalf("expected columns to sum to 100, got %d", total)
 	}
 }
@@ -181,13 +183,13 @@ func TestTaskColWidthFor_WideAbsorbsSurplus(t *testing.T) {
 func TestComputeColWidths_FixedColumnsCapped(t *testing.T) {
 	// On a very wide pane the fixed columns must plateau at their caps
 	// (longest value + 2) while TASK absorbs all remaining surplus.
-	cw := computeColWidths(200)
-	if cw.status != statusColCap || cw.started != startedColCap ||
+	cw := computeColWidths(200, 0)
+	if cw.status != statusColW || cw.started != startedColCap ||
 		cw.duration != durationColCap || cw.trigger != triggerColCap {
 		t.Fatalf("expected fixed columns at their caps, got %+v", cw)
 	}
-	if cw.task <= taskColIdeal {
-		t.Fatalf("expected TASK to absorb the surplus past its ideal, got %d", cw.task)
+	if cw.first <= taskColIdeal {
+		t.Fatalf("expected TASK to absorb the surplus past its ideal, got %d", cw.first)
 	}
 }
 
@@ -195,27 +197,39 @@ func TestComputeColWidths_NeverOverflows(t *testing.T) {
 	// Across a wide range of pane widths the columns must fit exactly (or, when
 	// impossibly narrow, never exceed the available width).
 	for w := 20; w <= 200; w++ {
-		cw := computeColWidths(w)
-		total := cw.task + cw.fixedSum() + colGutter
+		cw := computeColWidths(w, 0)
+		total := cw.rowWidth()
 		if total > w {
 			t.Fatalf("width %d: columns sum to %d, overflow", w, total)
 		}
-		if cw.task < 1 || cw.status < 1 || cw.started < 1 || cw.duration < 1 || cw.trigger < 1 {
+		if cw.first < 1 || cw.status < 1 || cw.started < 1 {
 			t.Fatalf("width %d: a column collapsed to <1: %+v", w, cw)
 		}
 	}
 }
 
-func TestComputeColWidths_NarrowKeepsAllColumnsReadable(t *testing.T) {
-	// On an 80-column terminal (≈52 content cells after the sidebar) every
-	// fixed column should still meet its floor and TASK should stay usable.
-	cw := computeColWidths(52)
-	if cw.status < statusColMin || cw.started < startedColMin ||
-		cw.duration < durationColMin || cw.trigger < triggerColMin {
-		t.Fatalf("a fixed column dropped below its floor: %+v", cw)
+func TestComputeColWidths_NarrowDropsTrailingColumns(t *testing.T) {
+	// On an 80-column terminal (≈51 content cells after the sidebar and the
+	// scrollbar) TRIGGER drops rather than every header truncating, and the
+	// remaining columns all meet their floors.
+	cw := computeColWidths(51, 0)
+	if cw.trigger != 0 {
+		t.Fatalf("expected TRIGGER hidden at 51 cells, got %+v", cw)
 	}
-	if cw.task < taskColMin {
-		t.Fatalf("expected TASK >= %d, got %d", taskColMin, cw.task)
+	if cw.first < taskColMin || cw.status < statusColW || cw.started < startedColMin || cw.duration < durationColMin {
+		t.Fatalf("a visible column dropped below its floor: %+v", cw)
+	}
+	if got := cw.rowWidth(); got != 51 {
+		t.Fatalf("expected the row to fill 51 cells, got %d", got)
+	}
+
+	// Narrower still, DURATION goes too.
+	if cw := computeColWidths(40, 0); cw.duration != 0 || cw.trigger != 0 {
+		t.Fatalf("expected DURATION and TRIGGER hidden at 40 cells, got %+v", cw)
+	}
+	// And a roomy pane keeps every column.
+	if cw := computeColWidths(91, 0); cw.duration == 0 || cw.trigger == 0 {
+		t.Fatalf("expected all columns at 91 cells, got %+v", cw)
 	}
 }
 
@@ -582,7 +596,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 	t.Run("nil-item-renders-loading-placeholder", func(t *testing.T) {
 		l := buildList(5)
 		l.SetSize(80, 24)
-		text := l.buildRowText(nil, 0, computeColWidths(60))
+		text := l.buildRowText(nil, 0, computeColWidths(60, 0))
 		if !strings.Contains(text, "loading") {
 			t.Fatalf("expected loading placeholder, got %q", text)
 		}
@@ -595,7 +609,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		if item == nil {
 			t.Fatal("pre-condition: expected item at index 0")
 		}
-		text := l.buildRowText(item, 0, computeColWidths(60))
+		text := l.buildRowText(item, 0, computeColWidths(60, 0))
 		if !strings.Contains(text, "task") {
 			t.Fatalf("expected task name in row, got %q", text)
 		}
@@ -610,7 +624,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l.SetSize(80, 24)
 		l.SetFocused(true)
 		l.cursor = 2
-		text := l.buildRowText(l.window.Item(2), 2, computeColWidths(60))
+		text := l.buildRowText(l.window.Item(2), 2, computeColWidths(60, 0))
 		if !strings.Contains(text, "task") {
 			t.Fatalf("expected task name in cursor row, got %q", text)
 		}
@@ -620,7 +634,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := buildList(5)
 		l.SetSize(80, 24)
 		l.SetHovered(1)
-		text := l.buildRowText(l.window.Item(1), 1, computeColWidths(60))
+		text := l.buildRowText(l.window.Item(1), 1, computeColWidths(60, 0))
 		if !strings.Contains(text, "task") {
 			t.Fatalf("expected task name in hovered row, got %q", text)
 		}
@@ -634,7 +648,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := NewExecList(w)
 		l.SetInstanceCountLookup(func(string) int { return 3 })
 		l.SetSize(80, 24)
-		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60))
+		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0))
 		// 0-based slot 2 → 1-based display #3.
 		if !strings.Contains(text, "task#3") {
 			t.Fatalf("expected task#3 in multi-instance row, got %q", text)
@@ -649,7 +663,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := NewExecList(w)
 		l.SetInstanceCountLookup(func(string) int { return 3 })
 		l.SetSize(80, 24)
-		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60))
+		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0))
 		// Slot 0 of a multi-instance service must still be suffixed (#1).
 		if !strings.Contains(text, "task#1") {
 			t.Fatalf("expected task#1 for slot 0 of multi-instance service, got %q", text)
@@ -664,7 +678,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := NewExecList(w)
 		l.SetInstanceCountLookup(func(string) int { return 1 })
 		l.SetSize(80, 24)
-		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60))
+		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0))
 		if strings.Contains(text, "task#") {
 			t.Fatalf("expected no instance suffix for single-instance task, got %q", text)
 		}
@@ -672,6 +686,30 @@ func TestBuildRowText_Branches(t *testing.T) {
 }
 
 // A status cut short by a narrow column keeps its own badge colour.
+func TestBuildRowText_BadgesShareOneWidth(t *testing.T) {
+	ok, failed := model.ReasonSuccess, model.ReasonFailed
+	w := NewExecWindow(nil)
+	w.ApplyFetch([]uikit.ExecListItem{
+		{Run: model.Run{ID: "r1", TaskName: "task", Status: model.PhaseEnded, EndReason: &ok}},
+		{Run: model.Run{ID: "r2", TaskName: "task", Status: model.PhaseEnded, EndReason: &failed}},
+	}, 0, 2)
+	l := NewExecList(w)
+	l.SetSize(80, 24)
+	cw := computeColWidths(80, 0)
+	for i := range 2 {
+		text := l.buildRowText(l.window.Item(i), i, cw)
+		if got := uikit.VisibleWidth(text); got != cw.rowWidth() {
+			t.Fatalf("row %d: width %d, want %d", i, got, cw.rowWidth())
+		}
+		// The badge is sized to its label, not stretched across the column.
+		status := l.window.Item(i).Run.DisplayStatus()
+		want := uikit.StatusStyle(status).Render(uikit.StatusLabel(status))
+		if !strings.Contains(text, want) {
+			t.Fatalf("row %d: expected a label-sized %s badge in %q", i, status, text)
+		}
+	}
+}
+
 func TestBuildRowText_TruncatedStatusKeepsColour(t *testing.T) {
 	reason := model.ReasonSuccess
 	w := NewExecWindow(nil)
@@ -680,10 +718,11 @@ func TestBuildRowText_TruncatedStatusKeepsColour(t *testing.T) {
 	}, 0, 1)
 	l := NewExecList(w)
 	l.SetSize(80, 24)
-	cw := computeColWidths(60)
+	cw := computeColWidths(60, 0)
 	cw.status = 5
 	text := l.buildRowText(l.window.Item(0), 0, cw)
-	want := uikit.StatusStyle("succeeded").Render(uikit.TruncateToWidth("succeeded", 5))
+	// The label truncates to the 5-cell column minus the badge's padding.
+	want := uikit.StatusStyle("succeeded").Render(uikit.TruncateToWidth("success", 3))
 	if !strings.Contains(text, want) {
 		t.Fatalf("expected the success badge %q in %q", want, text)
 	}
@@ -867,5 +906,49 @@ func TestRenderEmptySection_FilterMessage(t *testing.T) {
 	l.renderEmptySection(&b, l.ViewportHeight(), 80)
 	if !strings.Contains(b.String(), "No runs match this filter") {
 		t.Fatalf("expected filter-specific empty message, got:\n%s", b.String())
+	}
+}
+
+func TestView_ScopedListLeadsWithStartTime(t *testing.T) {
+	ok := model.ReasonSuccess
+	started := time.Now().Add(-73 * time.Hour).UTC()
+	w := NewExecWindow(nil)
+	w.SetLocation(time.UTC)
+	w.SetFilter("backup")
+	w.ApplyFetch([]uikit.ExecListItem{{
+		Run:     model.Run{ID: "01JRUNIDXXXXXXXXXXSHORTID", TaskName: "backup", Status: model.PhaseEnded, EndReason: &ok, CreatedAt: started},
+		TimeAgo: "14m ago",
+	}}, 0, 1)
+	l := NewExecList(w)
+	l.SetSize(90, 10)
+	out := ansi.Strip(l.View())
+
+	header := strings.Split(out, "\n")[0]
+	if !strings.HasPrefix(strings.TrimSpace(header), "TIME") || !strings.Contains(header, "STARTED") {
+		t.Errorf("expected the start time first and the relative STARTED column kept, got header %q", header)
+	}
+	// A space-padded day without seconds, and a relative time even past one day.
+	for _, want := range []string{started.Format("Jan _2 15:04") + " ", " success ", " 3d ago "} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in %q", want, out)
+		}
+	}
+	// Neither the run ID nor the (repeating) task name belongs in the table.
+	for _, absent := range []string{"SHORTID", "backup"} {
+		if strings.Contains(out, absent) {
+			t.Errorf("unexpected %q in %q", absent, out)
+		}
+	}
+}
+
+func TestStatusLabel_FitsTheBadge(t *testing.T) {
+	for _, r := range []model.EndReason{
+		model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped, model.ReasonTimeout, model.ReasonCrashed,
+		model.ReasonSkipped, model.ReasonLogOverflow, model.ReasonQueueFull, model.ReasonDSTSkipped,
+		model.ReasonDaemonStopped, model.ReasonMissed, model.ReasonStartFailed, model.ReasonUnhealthy,
+	} {
+		if got := uikit.VisibleWidth(uikit.StatusLabel(string(r))); got > statusColW-2 {
+			t.Errorf("%s label is %d cells, the badge fits %d", r, got, statusColW-2)
+		}
 	}
 }

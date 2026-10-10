@@ -102,6 +102,7 @@ func (m Model) renderBody() string {
 	if m.isExecFullscreen() {
 		return strings.TrimRight(m.execView.View(), "\n")
 	}
+	m.sidebar.SetTaskMarks(m.taskMarks())
 	return lipgloss.JoinHorizontal(lipgloss.Top,
 		strings.TrimRight(m.sidebar.View(), "\n"),
 		strings.TrimRight(m.renderMainContent(), "\n"),
@@ -192,13 +193,18 @@ func (m Model) buildExecViewHelpText() helpBar {
 		}
 		return bar.add(prioNav, keys.LogJump.Bar, "select text with mouse").add(prioQuit, keys.Quit.Bar)
 	}
+	// Header focus walks a grid (see ExecView.handleKeyUp), so one "move" hint
+	// is accurate everywhere; per-direction hints drifted from the real moves.
+	const headerMove = "←↑↓→ move"
 	switch m.execView.HeaderFocus {
-	case execlist.HeaderFocusBack, execlist.HeaderFocusAction, execlist.HeaderFocusDelete:
-		bar = bar.add(prioAction, "enter activate").add(prioNav, "←→ switch", "↓ details")
-	case execlist.HeaderFocusID:
-		bar = bar.add(prioAction, "enter copy").add(prioNav, "←→ switch", "↓ details")
-	case execlist.HeaderFocusStarted, execlist.HeaderFocusDuration:
-		bar = bar.add(prioAction, "enter copy").add(prioNav, "←→ switch", "↑ buttons", "↓ log")
+	case execlist.HeaderFocusBack:
+		bar = bar.add(prioAction, "enter back").add(prioNav, headerMove)
+	case execlist.HeaderFocusAction, execlist.HeaderFocusDelete:
+		bar = bar.add(prioAction, "enter activate").add(prioNav, headerMove)
+	case execlist.HeaderFocusID, execlist.HeaderFocusStarted, execlist.HeaderFocusDuration:
+		bar = bar.add(prioAction, "enter copy").add(prioNav, headerMove)
+	case execlist.HeaderFocusParams:
+		bar = bar.add(prioAction, "enter show params").add(prioNav, headerMove)
 	default:
 		bar = bar.add(prioNav, keys.BackToList.Bar, keys.Scroll.Bar)
 		if m.execView.MaxHScroll() > 0 {

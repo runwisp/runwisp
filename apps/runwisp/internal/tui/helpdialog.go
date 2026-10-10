@@ -4,7 +4,11 @@
 package tui
 
 import (
+	"slices"
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/keys"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
@@ -81,8 +85,8 @@ func (d *HelpDialog) maxScroll() int {
 }
 
 func (d *HelpDialog) View(screenWidth, screenHeight int) string {
-	const keyColWidth = 13
-	dialogWidth, innerWidth := modalDimensions(screenWidth, 52, 44)
+	keyColWidth := helpKeyColWidth()
+	dialogWidth, innerWidth := modalDimensions(screenWidth, 64, 44)
 
 	content := helpContentLines(innerWidth, keyColWidth)
 
@@ -111,20 +115,44 @@ func (d *HelpDialog) View(screenWidth, screenHeight int) string {
 // spacer and bold header per section, followed by its key→description rows.
 func helpContentLines(innerWidth, keyColWidth int) []string {
 	var lines []string
-	for _, section := range keys.OverlaySections {
+	for _, section := range helpSections() {
 		lines = append(lines,
 			modalEmptyLine(innerWidth),
 			modalSectionLine(section.Title, innerWidth),
 		)
 		for _, b := range section.Bindings {
-			lines = append(lines, helpEntryLine(b, keyColWidth, innerWidth))
+			lines = append(lines, helpEntryLines(b, keyColWidth, innerWidth)...)
 		}
 	}
 	return lines
 }
 
-// helpEntryLine renders one "keys → description" row with a fixed key column.
-func helpEntryLine(b keys.Binding, keyColWidth, innerWidth int) string {
+// helpSections is the key reference plus a legend for the sidebar's task
+// status marks, built from the marks themselves so the two can't drift.
+func helpSections() []keys.Section {
+	legend := keys.Section{Title: "Sidebar marks"}
+	for _, mark := range uikit.TaskMarks {
+		legend.Bindings = append(legend.Bindings, keys.Binding{Keys: mark.Glyph, Desc: mark.Meaning})
+	}
+	return append(slices.Clone(keys.OverlaySections), legend)
+}
+
+// helpKeyColWidth fits the widest key combo plus its 2-cell indent and a
+// 2-cell gap, so no combo ever wraps.
+func helpKeyColWidth() int {
+	w := 0
+	for _, section := range helpSections() {
+		for _, b := range section.Bindings {
+			w = max(w, uikit.VisibleWidth(b.Keys))
+		}
+	}
+	return w + 4
+}
+
+// helpEntryLines renders one "keys → description" entry with a fixed key
+// column. A description too long for one row wraps under itself (hanging
+// indent), and each wrapped row is its own line so the scroll math counts it.
+func helpEntryLines(b keys.Binding, keyColWidth, innerWidth int) []string {
 	keyCol := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextBright).
 		Width(keyColWidth).
 		Render("  " + b.Keys)
@@ -132,5 +160,6 @@ func helpEntryLine(b keys.Binding, keyColWidth, innerWidth int) string {
 	desc := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
 		Width(descWidth).
 		Render(b.Desc)
-	return keyCol + desc
+	keyCol = lipgloss.NewStyle().Height(lipgloss.Height(desc)).Background(uikit.ColorBgLight).Render(keyCol)
+	return strings.Split(lipgloss.JoinHorizontal(lipgloss.Top, keyCol, desc), "\n")
 }

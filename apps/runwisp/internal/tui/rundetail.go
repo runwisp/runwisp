@@ -96,7 +96,7 @@ func (d *RunDetailDialog) facts(row func(label, value string, color color.Color)
 	run := d.run
 	status := run.DisplayStatus()
 	out := []string{
-		row("Status", status, uikit.StatusColor(status)),
+		row("Status", uikit.StatusLabel(status), uikit.StatusColor(status)),
 		row("Run ID", run.ID, uikit.ColorText),
 	}
 	if run.Status == model.PhaseEnded {

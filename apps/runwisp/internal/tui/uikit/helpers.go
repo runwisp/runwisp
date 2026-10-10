@@ -48,7 +48,23 @@ func FormatDuration(run model.Run) string {
 		}
 		d = time.Since(*run.StartedAt)
 	}
+	return FormatElapsed(d)
+}
+
+// FormatElapsed is textutil.FormatDuration with whole milliseconds below one
+// second ("22ms" rather than "0.0s"), matching the web UI's run tables. Most
+// cron runs finish in well under a second, so the tenths would all read 0.0s.
+func FormatElapsed(d time.Duration) string {
+	if d > 0 && d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
 	return textutil.FormatDuration(d)
+}
+
+// ShortRunID is the "#XXXXXXXX" tag a run goes by in headers and lists: the
+// last 8 characters of its ULID, the random part, so siblings differ.
+func ShortRunID(id string) string {
+	return "#" + id[max(len(id)-8, 0):]
 }
 
 // FormatUsage renders live usage as "CPU 12% · 48 MB" (100% is one core).
@@ -69,16 +85,26 @@ func ResolveLocation(name string) *time.Location {
 	return loc
 }
 
-// ScheduleLabel is how a task's trigger reads in lists and headers: "service
-// x2", its cron expression, or "manual".
+// ScheduleLabel is how a task's trigger reads in lists and headers: "service ·
+// 2 instances", its cron expression, or "manual".
 func ScheduleLabel(t *model.Task) string {
 	switch {
 	case t.Kind.IsService():
-		return fmt.Sprintf("service x%d", t.Instances)
+		return "service · " + InstancesLabel(t.Instances)
 	case t.Cron != "":
 		return t.Cron
 	}
 	return "manual"
+}
+
+// InstancesLabel reads "1 instance" or "3 instances"; a service always runs
+// at least one.
+func InstancesLabel(n int) string {
+	n = max(n, 1)
+	if n == 1 {
+		return "1 instance"
+	}
+	return fmt.Sprintf("%d instances", n)
 }
 
 // FormatTimestamp renders a timestamp as "2006-01-02 15:04:05" in loc. A nil loc
@@ -133,5 +159,5 @@ func FormatTimeAgo(t time.Time, loc *time.Location) string {
 	if loc == nil {
 		loc = time.Local
 	}
-	return t.In(loc).Format("Jan 02 15:04")
+	return t.In(loc).Format("Jan _2 15:04")
 }

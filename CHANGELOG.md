@@ -17,10 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Details** on the Web UI task page shows the task's configuration in `runwisp.toml` key names, including its `run` command.
 - Scrolling a run's output on the Web UI task page folds the task strip into the top bar to give the log more room. Scrolling back up brings it back.
 - The run list on the Web UI task page shows two small CPU and RAM bars per run, colored by how the run compares with the task's usual run.
+- The TUI sidebar marks each task that is running, whose last run failed, or that is paused or stopped.
+- The TUI run header shows the exit code of a failed run next to its status.
 
 ### Changed
 
-- The TUI shows run durations the same way notifications do (`3m 4s`, `12s`), and runs started in the last 30 seconds read `just now`.
+- The TUI shows run durations the same way notifications do (`3m 4s`, `12s`, `450ms`), and runs started in the last 30 seconds read `just now`.
 - A daemon bound to any loopback address, such as `127.0.0.2` or `::1`, is treated as local: it serves plain HTTP by default and skips the exposed-address warning.
 - Web UI and remote CLI sessions use a simpler signed token instead of a JWT. Browsers and `runwisp --url` clients sign in once more after upgrading.
 - Stop, Start and Pause are on the task header in the TUI and on the task strip in the Web UI, without opening a run first.
@@ -28,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Run usage reads `CPU 1m 52s · RAM 48 MB`: CPU time the run used, and its most memory.
 - A task's environment moved from the Web UI task page into **Details**.
 - The Web UI dashboard shows a stopped service as **Stopped** instead of idle.
+- In the TUI, a task's run list leads with each run's start time instead of repeating the task name, and the quit dialog colors **Shut Down** as the destructive choice.
+- The TUI shows a successful run as `success`, and long statuses use shorter words (`log full`, `start fail`, `shutdown`) so the status column stays narrow.
 
 ### Fixed
 
@@ -35,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Services with `instances` get `RUNWISP_INSTANCE_INDEX` with every backend, not only with compose.
 - `runwisp demo` without a terminal stops right away and points at `--no-tui`, instead of leaving a demo daemon running in the background.
 - The TUI help bar fits narrow terminals: it drops the least useful hints first and always keeps `? help` visible.
+- The TUI run list drops the Trigger and Duration columns on narrow terminals instead of cutting off their headers, and status badges line up.
+- TUI help and parameter dialogs wrap long descriptions under their text instead of at the left edge.
+- The TUI notifications panel and the sidebar filter say so when they have nothing to show.
 - The daemon stops promptly when a notifier is unreachable. A failing delivery gets its current attempt and is reported in the bell, instead of retrying until `shutdown_timeout` runs out.
 - Pressing Ctrl+C on `runwisp logs -f` or `--attach` stops cleanly instead of sometimes reporting `lost the connection to the daemon`.
 

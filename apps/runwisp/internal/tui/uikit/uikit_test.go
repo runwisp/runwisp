@@ -29,7 +29,10 @@ func TestFormatDuration(t *testing.T) {
 	start := now.Add(-500 * time.Millisecond)
 	r := model.Run{StartedAt: &start}
 	d := FormatDuration(r)
-	assert.True(t, strings.HasPrefix(d, "0."), d)
+	assert.True(t, strings.HasSuffix(d, "ms") && !strings.HasPrefix(d, "0"), d)
+	assert.Equal(t, "22ms", FormatElapsed(22*time.Millisecond))
+	assert.Equal(t, "1s", FormatElapsed(time.Second))
+	assert.Equal(t, "0s", FormatElapsed(0))
 
 	// < 1m
 	start2 := now.Add(-30 * time.Second)
@@ -84,7 +87,7 @@ func TestFormatTimestamp_UsesGivenZone(t *testing.T) {
 func TestFormatTimeAgo_AbsoluteInGivenZone(t *testing.T) {
 	cest := time.FixedZone("CEST", 2*3600)
 	at := time.Now().Add(-48 * time.Hour)
-	assert.Equal(t, at.In(cest).Format("Jan 02 15:04"), FormatTimeAgo(at, cest))
+	assert.Equal(t, at.In(cest).Format("Jan _2 15:04"), FormatTimeAgo(at, cest))
 }
 
 func TestResolveLocation(t *testing.T) {

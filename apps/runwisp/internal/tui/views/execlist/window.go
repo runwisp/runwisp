@@ -108,6 +108,13 @@ func (w *ExecWindow) SetLocation(loc *time.Location) {
 	w.loc = loc
 }
 
+// Location returns the zone run times are shown in; nil means the process zone.
+func (w *ExecWindow) Location() *time.Location {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.loc
+}
+
 func (w *ExecWindow) TotalCount() int {
 	w.mu.Lock()
 	defer w.mu.Unlock()

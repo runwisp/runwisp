@@ -37,6 +37,11 @@ var (
 	ColorWhite         = lipgloss.Color("#ffffff")
 	ColorTextDim       = lipgloss.Color("#a8b2d8")
 
+	// ColorButtonRaised is a secondary button's resting fill (Back, an
+	// unselected dialog choice); ColorButtonRaisedHover is its hover fill.
+	ColorButtonRaised      = lipgloss.Color("#2a2d48")
+	ColorButtonRaisedHover = lipgloss.Color("#3a3d5c")
+
 	ColorPrimaryHover = lipgloss.Color("#6b85f0")
 	ColorErrorHover   = lipgloss.Color("#f99aae")
 	ColorWarningHover = lipgloss.Color("#ebc580")
@@ -64,20 +69,24 @@ var (
 	// Sidebar item styles — one per visual state.
 	// States: none, focused, selected, focused+selected, focused+cursor, focused+cursor+selected.
 
-	// none: sidebar unfocused, not selected, not under cursor.
+	// none: sidebar unfocused, not selected, not under cursor. Dimmer than
+	// focused, but still brighter than the group headers so the hierarchy
+	// doesn't flip when focus moves to the main panel.
 	SidebarItemNoneStyle = lipgloss.NewStyle().
 				Background(ColorSidebarBg).
-				Foreground(ColorTextMuted)
+				Foreground(ColorTextDim)
 
 	// focused: sidebar focused, not selected, not under cursor.
 	SidebarItemFocusedStyle = lipgloss.NewStyle().
 				Background(ColorSidebarBg).
 				Foreground(ColorText)
 
-	// selected: sidebar unfocused, item is the active selection.
+	// selected: sidebar unfocused, item is the active selection. Bright text
+	// keeps it readable on the active band; the dim green it used to wear
+	// nearly vanished against it.
 	SidebarItemSelectedStyle = lipgloss.NewStyle().
 					Background(ColorSidebarActive).
-					Foreground(ColorSecondaryDim).
+					Foreground(ColorTextBright).
 					Bold(true)
 
 	// focused+selected: sidebar focused, item selected, cursor elsewhere.
@@ -143,6 +152,47 @@ func StatusColor(status string) color.Color {
 	}
 }
 
+// StatusLabel is the word the TUI shows for a run's display status. The long
+// end reasons get shorter words so the run table's status badge stays narrow;
+// colours still key off the raw status (StatusColor).
+func StatusLabel(status string) string {
+	switch status {
+	case string(model.ReasonSuccess):
+		return "success"
+	case string(model.ReasonLogOverflow):
+		return "log full"
+	case string(model.ReasonStartFailed):
+		return "start fail"
+	case string(model.ReasonQueueFull):
+		return "queue full"
+	case string(model.ReasonDSTSkipped):
+		return "dst skip"
+	case string(model.ReasonDaemonStopped):
+		return "shutdown"
+	default:
+		return status
+	}
+}
+
+// TaskMark is the one-cell status mark at the right edge of a sidebar task
+// row. The zero value means no mark.
+type TaskMark struct {
+	Glyph   string
+	Color   color.Color
+	Meaning string
+}
+
+// Sidebar task marks, in precedence order (a running task that last failed
+// shows as running), matching the web UI overview's task states.
+var (
+	MarkRunning = TaskMark{Glyph: "●", Color: ColorRunning, Meaning: "task is running"}
+	MarkFailed  = TaskMark{Glyph: "✗", Color: ColorError, Meaning: "last run failed"}
+	MarkStopped = TaskMark{Glyph: "■", Color: ColorTextMuted, Meaning: "service is stopped"}
+	MarkPaused  = TaskMark{Glyph: "‖", Color: ColorWarning, Meaning: "schedule is paused"}
+
+	TaskMarks = []TaskMark{MarkRunning, MarkFailed, MarkStopped, MarkPaused}
+)
+
 // StatusStyle returns the badge style for a run's display status.
 func StatusStyle(status string) lipgloss.Style {
 	return lipgloss.NewStyle().
@@ -198,13 +248,13 @@ var (
 				Padding(0, 1)
 
 	BtnBackStyle = lipgloss.NewStyle().
-			Background(lipgloss.Color("#2a2d48")).
+			Background(ColorButtonRaised).
 			Foreground(ColorTextMuted).
 			Bold(true).
 			Padding(0, 1)
 
 	BtnBackHoverStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("#3a3d5c")).
+				Background(ColorButtonRaisedHover).
 				Foreground(ColorTextBright).
 				Bold(true).
 				Padding(0, 1)
@@ -246,5 +296,5 @@ var (
 
 	InfoDividerStyle = lipgloss.NewStyle().
 				Background(ColorBg).
-				Foreground(lipgloss.Color("#2a2d48"))
+				Foreground(ColorButtonRaised)
 )

@@ -292,6 +292,9 @@ func (m *Model) handleExecWindowFetched(msg uikit.ExecWindowFetchedMsg) {
 		return
 	}
 	m.execWindow.ApplyFetch(msg.Items, msg.Offset, msg.Total)
+	for _, item := range msg.Items {
+		m.lastRuns.observe(item.Run)
+	}
 }
 
 func (m Model) handleSSEConnected(msg uikit.SSEConnectedMsg) (tea.Model, tea.Cmd) {
@@ -807,6 +810,7 @@ func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 
 	if runEvt.Run != nil {
 		m.execWindow.UpsertRun(*runEvt.Run)
+		m.lastRuns.observe(*runEvt.Run)
 
 		// Update exec view if watching this run.
 		if m.execView != nil && m.execView.RunID() == runEvt.Run.ID {

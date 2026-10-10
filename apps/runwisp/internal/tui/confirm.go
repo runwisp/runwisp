@@ -13,6 +13,31 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
+// buttonKind is how loud a dialog button is when selected: neutral for
+// cancel, primary for a safe action, danger for one that stops or destroys.
+type buttonKind int
+
+const (
+	btnNeutral buttonKind = iota
+	btnPrimary
+	btnDanger
+)
+
+// fill is the button's background when selected (or hovered, when lighter).
+func (k buttonKind) fill(hover bool) color.Color {
+	switch {
+	case k == btnPrimary && hover:
+		return uikit.ColorPrimaryHover
+	case k == btnPrimary:
+		return uikit.ColorPrimary
+	case k == btnDanger && hover:
+		return uikit.ColorErrorHover
+	case k == btnDanger:
+		return uikit.ColorError
+	}
+	return uikit.ColorTextMuted
+}
+
 // ConfirmDialog renders a centered modal asking the user to confirm an action.
 type ConfirmDialog struct {
 	title     string
@@ -20,6 +45,8 @@ type ConfirmDialog struct {
 	noteLines []string // optional muted lines below the message
 	yesLabel  string
 	noLabel   string
+	yesKind   buttonKind
+	noKind    buttonKind
 	onConfirm tea.Cmd
 	onDeny    tea.Cmd // if non-nil, called when user selects No (instead of just closing)
 	selected  int     // 0 = Yes, 1 = No
@@ -48,19 +75,35 @@ func NewConfirmDialog(title, message string, onConfirm tea.Cmd) *ConfirmDialog {
 		message:   message,
 		yesLabel:  "Yes",
 		noLabel:   "No",
+		yesKind:   btnPrimary,
+		noKind:    btnNeutral,
 		onConfirm: onConfirm,
 		selected:  1,
 		hovered:   -1,
 	}
 }
 
-// Both choices trigger a callback; only Esc cancels without action.
-func NewChoiceDialog(title, message, yesLabel, noLabel string, onConfirm, onDeny tea.Cmd) *ConfirmDialog {
+// Danger marks the confirm action as one that stops or destroys something: its
+// button and the dialog's accent bar turn red. Returns the dialog for chaining.
+func (d *ConfirmDialog) Danger() *ConfirmDialog {
+	d.yesKind = btnDanger
+	return d
+}
+
+// NewChoiceDialog offers two actions; both trigger a callback and only Esc
+// cancels without action. noDanger marks the second as the destructive one.
+func NewChoiceDialog(title, message, yesLabel, noLabel string, noDanger bool, onConfirm, onDeny tea.Cmd) *ConfirmDialog {
+	noKind := btnPrimary
+	if noDanger {
+		noKind = btnDanger
+	}
 	return &ConfirmDialog{
 		title:     title,
 		message:   message,
 		yesLabel:  yesLabel,
 		noLabel:   noLabel,
+		yesKind:   btnPrimary,
+		noKind:    noKind,
 		onConfirm: onConfirm,
 		onDeny:    onDeny,
 		selected:  0,
@@ -188,7 +231,11 @@ func (d *ConfirmDialog) View(screenWidth, screenHeight int) string {
 		lines, yesBtnW, noBtnW = d.renderButtonLines(innerWidth, titleStr, msgStr)
 	}
 
-	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorPrimary, lines)
+	accent := uikit.ColorPrimary
+	if d.yesKind == btnDanger {
+		accent = uikit.ColorError
+	}
+	box := renderModalBox(screenWidth, screenHeight, dialogWidth, accent, lines)
 
 	if !d.shuttingDown {
 		msgH := lipgloss.Height(msgStr)
@@ -226,30 +273,8 @@ func (d *ConfirmDialog) renderShuttingDownLines(innerWidth int, titleStr string)
 }
 
 func (d *ConfirmDialog) renderButtonLines(innerWidth int, titleStr, msgStr string) (lines []string, yesBtnW, noBtnW int) {
-	yesStyle := lipgloss.NewStyle().Padding(0, 3).Bold(true)
-	noStyle := lipgloss.NewStyle().Padding(0, 3).Bold(true)
-	yesHover := d.hovered == 0
-	noHover := d.hovered == 1
-
-	if d.selected == 0 || yesHover {
-		bg := uikit.ColorError
-		if yesHover {
-			bg = uikit.ColorErrorHover
-		}
-		yesStyle = yesStyle.Background(bg).Foreground(uikit.ColorWhite)
-	} else {
-		yesStyle = yesStyle.Background(uikit.ColorSidebarBg).Foreground(uikit.ColorTextMuted)
-	}
-
-	if d.selected == 1 || noHover {
-		bg := uikit.ColorPrimary
-		if noHover {
-			bg = uikit.ColorPrimaryHover
-		}
-		noStyle = noStyle.Background(bg).Foreground(uikit.ColorWhite)
-	} else {
-		noStyle = noStyle.Background(uikit.ColorSidebarBg).Foreground(uikit.ColorTextMuted)
-	}
+	yesStyle := d.buttonStyle(0, d.yesKind)
+	noStyle := d.buttonStyle(1, d.noKind)
 
 	yesBtn := yesStyle.Render(d.yesLabel)
 	noBtn := noStyle.Render(d.noLabel)
@@ -277,6 +302,18 @@ func (d *ConfirmDialog) renderButtonLines(innerWidth int, titleStr, msgStr strin
 	lines = append(lines, modalEmptyLine(innerWidth), buttonsLine)
 	lines = append(lines, modalFooter(hintText, innerWidth)...)
 	return lines, lipgloss.Width(yesBtn), lipgloss.Width(noBtn)
+}
+
+// buttonStyle renders button i (0 = yes, 1 = no). Selected or hovered, it
+// fills with its kind's colour; otherwise it sits on a raised surface in
+// normal text, so the unselected choice reads as available, not disabled.
+func (d *ConfirmDialog) buttonStyle(i int, kind buttonKind) lipgloss.Style {
+	style := lipgloss.NewStyle().Padding(0, 3).Bold(true)
+	hover := d.hovered == i
+	if d.selected == i || hover {
+		return style.Background(kind.fill(hover)).Foreground(uikit.ColorWhite)
+	}
+	return style.Background(uikit.ColorButtonRaised).Foreground(uikit.ColorText)
 }
 
 type modalBox struct {
@@ -335,9 +372,29 @@ func modalSurfaceLine(text string, innerWidth int, fg color.Color, bold bool) st
 func modalFooter(hint string, innerWidth int) []string {
 	return []string{
 		modalEmptyLine(innerWidth),
-		modalSurfaceLine(hint, innerWidth, uikit.ColorTextMuted, false),
+		modalSurfaceLine(wrapHints(hint, innerWidth), innerWidth, uikit.ColorTextMuted, false),
 		modalEmptyLine(innerWidth),
 	}
+}
+
+// wrapHints breaks a " · "-separated key legend between hints, never inside
+// one, so "enter run" can't split into "enter" / "run" across rows.
+func wrapHints(hint string, width int) string {
+	const sep = " · "
+	var rows []string
+	row := ""
+	for _, h := range strings.Split(hint, sep) {
+		switch {
+		case row == "":
+			row = h
+		case lipgloss.Width(row+sep+h) <= width:
+			row += sep + h
+		default:
+			rows = append(rows, row)
+			row = h
+		}
+	}
+	return strings.Join(append(rows, row), "\n")
 }
 
 func modalEmptyLine(innerWidth int) string {

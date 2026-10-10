@@ -94,6 +94,20 @@ func TestNotificationsPanel_OrderedDescending(t *testing.T) {
 	}
 }
 
+func TestNotificationsPanel_ExpandedEmptySaysSo(t *testing.T) {
+	// Pressing n with no notifications used to toggle an invisible panel: the
+	// help bar switched to panel keys but nothing appeared.
+	p := NewPanel()
+	p.SetWidth(80)
+	p.Toggle()
+	if got := p.PanelHeight(); got != ExpandedH {
+		t.Fatalf("expanded empty panel: want height %d, got %d", ExpandedH, got)
+	}
+	if got := p.View(); !strings.Contains(got, "No notifications yet.") {
+		t.Fatalf("expected the empty-state line, got %q", got)
+	}
+}
+
 func TestNotificationsPanel_PanelHeightEmpty(t *testing.T) {
 	p := NewPanel()
 	if got := p.PanelHeight(); got != 0 {

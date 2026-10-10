@@ -371,10 +371,10 @@ func (h TaskHeader) Render(w int) (out string, btnY int) {
 	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
+	btns, _ := h.renderButtons(w)
 	name := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextBright).
 		Bold(true).
-		Render("  " + h.Name)
-	btns, _ := h.renderButtons(w)
+		Render(uikit.TruncateToWidth("  "+h.Name, max(w-lipgloss.Width(btns)-3, 4)))
 	gap := max(w-lipgloss.Width(name)-lipgloss.Width(btns)-1, 2)
 	titleLine := name + uikit.FillBg(gap, uikit.ColorBgLight) + btns
 	b.WriteString(uikit.PadLine(titleLine, w, uikit.ColorBgLight))
@@ -386,16 +386,19 @@ func (h TaskHeader) Render(w int) (out string, btnY int) {
 	}
 	held := task != nil && task.HeldBy != model.HeldByNothing
 	schedInfo := "  Schedule: " + schedule
+	if task != nil && task.Kind.IsService() {
+		schedInfo = "  Service · " + uikit.InstancesLabel(task.Instances)
+	}
 	if !held && !h.Paused && task != nil && !task.Kind.IsService() {
 		if nextRun := NextCronRun(schedule, h.Loc); nextRun != "" {
-			schedInfo += "  •  Next: " + nextRun
+			schedInfo += "  ·  Next: " + nextRun
 		}
 	}
 	if h.Stopped {
-		schedInfo += "  •  stopped"
+		schedInfo += "  ·  stopped"
 	}
 	if h.Usage != nil {
-		schedInfo += "  •  " + uikit.FormatUsage(*h.Usage)
+		schedInfo += "  ·  " + uikit.FormatUsage(*h.Usage)
 	}
 	schedText := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
 		Render(schedInfo)
@@ -404,13 +407,13 @@ func (h TaskHeader) Render(w int) (out string, btnY int) {
 		// that tick comes and goes without RunWisp firing anything. This is the only
 		// per-task metadata slot in the TUI, so it is where the fact belongs.
 		schedText += uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
-			Render("  •  ⏸ held — cron still owns this job")
+			Render("  ·  ⏸ held — cron still owns this job")
 	} else if h.Paused {
 		// Same slot and tone as held: the schedule is listed but nothing fires.
 		schedText += uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
-			Render("  •  ⏸ paused")
+			Render("  ·  ⏸ paused")
 	}
-	b.WriteString(uikit.PadLine(schedText, w, uikit.ColorBgLight))
+	b.WriteString(uikit.PadLine(uikit.TruncateToWidth(schedText, w), w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
 	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))

@@ -332,14 +332,16 @@ func (p *Panel) SetWidth(w int) {
 	p.rebuildContent()
 }
 
-// PanelHeight returns the total height the panel needs (0 when there are
-// no items and no unread state to report; >=1 otherwise).
+// PanelHeight returns the total height the panel needs: 0 when collapsed with
+// no items and no unread state to report, >=1 otherwise. An expanded panel
+// always shows, so pressing n with nothing to show still answers with its
+// "No notifications yet." line instead of silently doing nothing.
 func (p *Panel) PanelHeight() int {
-	if len(p.items) == 0 && p.unread == 0 {
-		return 0
-	}
 	if p.expanded {
 		return ExpandedH
+	}
+	if len(p.items) == 0 && p.unread == 0 {
+		return 0
 	}
 	return CollapsedH
 }
@@ -423,13 +425,12 @@ func (p *Panel) rebuildContent() {
 		return
 	}
 	rest := max(p.viewport.Width()-1, 0)
+	lines := make([]string, 0, max(len(p.ordered), viewportLines))
 	if len(p.ordered) == 0 {
 		hint := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted).
 			Render("  No notifications yet.")
-		p.viewport.SetContent(stripeFocusLine(hint, rest, uikit.ColorBg))
-		return
+		lines = append(lines, stripeFocusLine(hint, rest, uikit.ColorBg))
 	}
-	lines := make([]string, 0, len(p.ordered))
 	for i, id := range p.ordered {
 		n := p.items[id]
 		lines = append(lines, p.renderRow(n, i == p.cursor))

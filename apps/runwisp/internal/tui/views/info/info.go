@@ -6,7 +6,6 @@ package info
 import (
 	"fmt"
 	"image/color"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -20,8 +19,11 @@ import (
 )
 
 const (
-	sparklineWidth    = 24
 	maxHistorySamples = 30
+	sparklineWidth    = maxHistorySamples
+	// sparklineCol is where the sparkline starts, so it sits beside its
+	// figures instead of drifting to the far edge of a wide pane.
+	sparklineCol = 36
 )
 
 // sparklineBlocks are the block-height levels used to render a sparkline from
@@ -174,12 +176,16 @@ func (v *InfoView) renderHealthSection(w int) []string {
 	}
 	lines = append(lines, uikit.PadLine(title+sub, w, uikit.ColorBgLight))
 
-	hostLine := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
-		Render("  " + runtime.GOOS + "/" + runtime.GOARCH)
-	if v.stats != nil && v.stats.Host != "" {
-		hostLine += uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
-			Render("  ·  " + v.stats.Host)
+	// The daemon's platform and host, from its stats: the TUI may be attached
+	// from another machine, so its own runtime.GOOS would be the wrong answer.
+	host := "  "
+	if v.stats != nil {
+		host += v.stats.OS + "/" + v.stats.Arch
+		if v.stats.Host != "" {
+			host += "  ·  " + v.stats.Host
+		}
 	}
+	hostLine := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).Render(host)
 	lines = append(lines, uikit.PadLine(hostLine, w, uikit.ColorBgLight))
 	lines = append(lines, uikit.PadLine("", w, uikit.ColorBgLight))
 
@@ -223,7 +229,7 @@ func (v *InfoView) renderSparklineRow(w int, label, pct, detail string, history 
 	headerWidth := lipgloss.Width(headerLeft)
 
 	if headerWidth+sparklineWidth+4 <= w {
-		gap := max(w-headerWidth-sparklineWidth-2, 2)
+		gap := max(sparklineCol-headerWidth, 2)
 		gapStr := bgStyle.Render(strings.Repeat(" ", gap))
 		lines = append(lines, uikit.PadLine(headerLeft+gapStr+spark, w, uikit.ColorBg))
 	} else {
@@ -292,7 +298,8 @@ func (v *InfoView) renderActivitySection(w int) []string {
 
 	if s.LastFailure != nil {
 		failLine := bgIndent() + uikit.InfoStatLabelStyle.Render("Last failure  ") +
-			uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted).Render(s.LastFailure.In(v.loc).Format(time.RFC3339))
+			uikit.OnBg(uikit.ColorBg, uikit.ColorError).Render(uikit.RelativeTime(*s.LastFailure, time.Now())) +
+			uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted).Render("  ·  "+uikit.FormatTimestamp(*s.LastFailure, v.loc))
 		lines = append(lines, uikit.PadLine(failLine, w, uikit.ColorBg))
 	}
 
@@ -302,16 +309,13 @@ func (v *InfoView) renderActivitySection(w int) []string {
 func (v *InfoView) renderQuickInfoSection(w int) []string {
 	var lines []string
 	lines = append(lines, v.sectionDivider(w)...)
-	lines = append(lines, uikit.PadLine(uikit.InfoSectionStyle.Render("Info"), w, uikit.ColorBg))
+	lines = append(lines, uikit.PadLine(uikit.InfoSectionStyle.Render("Daemon"), w, uikit.ColorBg))
 	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 
 	type kv struct{ label, value string }
 	fields := []kv{
 		{"Version", v.info.Version},
-		{"Platform", runtime.GOOS + "/" + runtime.GOARCH},
-	}
-	if v.info.Port > 0 {
-		fields = append(fields, kv{"Web UI", fmt.Sprintf("http://localhost:%d", v.info.Port)})
+		{"Web UI", v.info.WebURL()},
 	}
 	if v.info.StationEnabled {
 		fields = append(fields, kv{"Station", "Connected"})
@@ -326,16 +330,20 @@ func (v *InfoView) renderQuickInfoSection(w int) []string {
 		lines = append(lines, uikit.PadLine(bgIndent()+label+value, w, uikit.ColorBg))
 	}
 
-	if len(v.info.Capabilities) > 0 {
+	// Capabilities describe what a Station peer may dispatch, not what local
+	// TOML tasks can use, so they mean nothing without Station.
+	if v.info.StationEnabled && len(v.info.Capabilities) > 0 {
 		lines = append(lines, v.renderCapabilitiesLines(v.info.Capabilities, w)...)
 	}
 
 	return lines
 }
 
+// renderCapabilitiesLines lists which task types (shell, container, compose,
+// http, ...) a Station peer may dispatch, labelled like the rows above it.
 func (v *InfoView) renderCapabilitiesLines(caps []model.CapInfo, w int) []string {
 	var lines []string
-	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
+	label := uikit.InfoLabelStyle.Render("Dispatch")
 	var capStrs []string
 	for _, capInfo := range caps {
 		if capInfo.Available {
@@ -344,10 +352,15 @@ func (v *InfoView) renderCapabilitiesLines(caps []model.CapInfo, w int) []string
 			capStrs = append(capStrs, uikit.InfoCapsUnavailableStyle.Render("✗ "+capInfo.Name))
 		}
 	}
-	capLine := bgIndent() + strings.Join(capStrs, bgIndent())
+	capLine := bgIndent() + label + strings.Join(capStrs, bgIndent())
 	if lipgloss.Width(capLine) > w-2 {
-		for _, c := range capStrs {
-			lines = append(lines, uikit.PadLine(bgIndent()+c, w, uikit.ColorBg))
+		blank := uikit.InfoLabelStyle.Render("")
+		for i, c := range capStrs {
+			if i == 0 {
+				lines = append(lines, uikit.PadLine(bgIndent()+label+c, w, uikit.ColorBg))
+				continue
+			}
+			lines = append(lines, uikit.PadLine(bgIndent()+blank+c, w, uikit.ColorBg))
 		}
 	} else {
 		lines = append(lines, uikit.PadLine(capLine, w, uikit.ColorBg))
@@ -388,9 +401,13 @@ func (v *InfoView) renderTasksSection(w int) []string {
 	lines = append(lines, uikit.PadLine(uikit.InfoSectionStyle.Render(fmt.Sprintf("Tasks (%d)", len(v.info.Tasks))), w, uikit.ColorBg))
 	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 
+	nameW := 0
+	for _, task := range v.info.Tasks {
+		nameW = max(nameW, lipgloss.Width(task.Name))
+	}
 	for _, task := range v.info.Tasks {
 		sched := uikit.ScheduleLabel(&task)
-		name := uikit.OnBg(uikit.ColorBg, uikit.ColorTextBright).Bold(true).Render(task.Name)
+		name := uikit.OnBg(uikit.ColorBg, uikit.ColorTextBright).Bold(true).Width(nameW).Render(task.Name)
 		schedStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted).Render(sched)
 		line := bgIndent() + name + bgIndent() + schedStyle
 		if u, ok := v.taskUsage[task.Name]; ok {
