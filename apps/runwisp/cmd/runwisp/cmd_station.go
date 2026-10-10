@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -81,19 +81,19 @@ func init() {
 	stationCmd.Flags().BoolVar(&noTUI, "no-tui", false, "run in headless daemon mode (no interactive TUI)")
 }
 
-// loadEnvFileInto loads variables from the .env file into the process
-// environment, without overriding variables that are already set. Values are
-// literal, like task env_file. If the file is missing and was explicitly
-// requested, an error is returned; a missing default ".env" is silently ignored.
+// loadEnvFileInto loads the RUNWISP_* variables from the .env file into the
+// process environment, without overriding variables that are already set. If
+// the file is missing and was explicitly requested, an error is returned; a
+// missing default ".env" is silently ignored.
 func loadEnvFileInto(envFile string, envFileExplicit bool) error {
-	values, err := config.ReadEnvFile(envFile)
+	data, err := os.ReadFile(envFile)
 	if errors.Is(err, fs.ErrNotExist) && !envFileExplicit {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("cannot load env file %q: %w", envFile, err)
 	}
-	for key, value := range values {
+	for key, value := range parseRunwispDotenv(string(data)) {
 		if _, set := os.LookupEnv(key); !set {
 			if err := os.Setenv(key, value); err != nil {
 				return err
@@ -101,4 +101,53 @@ func loadEnvFileInto(envFile string, envFileExplicit bool) error {
 		}
 	}
 	return nil
+}
+
+// parseRunwispDotenv returns the RUNWISP_* assignments in a dotenv file. The
+// default .env usually belongs to the surrounding project, so every other
+// line, whatever its syntax, is skipped rather than rejected. Values follow
+// the common dotenv forms: an optional `export ` prefix, a double-quoted value
+// (with \n, \" and \\ escapes) or single-quoted value, either followed by an
+// optional comment, or an unquoted value ending at a ` #` comment.
+func parseRunwispDotenv(data string) map[string]string {
+	out := make(map[string]string)
+	for line := range strings.Lines(data) {
+		line = strings.TrimSpace(line)
+		line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+		key, value, ok := strings.Cut(line, "=")
+		key = strings.TrimSpace(key)
+		if !ok || !strings.HasPrefix(key, "RUNWISP_") || strings.ContainsAny(key, " \t") {
+			continue
+		}
+		out[key] = dotenvValue(strings.TrimSpace(value))
+	}
+	return out
+}
+
+// dotenvValue unquotes one trimmed dotenv value. An unterminated quote is
+// read as an unquoted value.
+func dotenvValue(v string) string {
+	if v != "" && (v[0] == '"' || v[0] == '\'') {
+		var b strings.Builder
+		for i := 1; i < len(v); i++ {
+			c := v[i]
+			if c == v[0] {
+				return b.String()
+			}
+			if c == '\\' && v[0] == '"' && i+1 < len(v) {
+				i++
+				if c = v[i]; c == 'n' {
+					c = '\n'
+				}
+			}
+			b.WriteByte(c)
+		}
+	}
+	for i := 0; i < len(v); i++ {
+		if v[i] == '#' && (i == 0 || v[i-1] == ' ' || v[i-1] == '\t') {
+			v = v[:i]
+			break
+		}
+	}
+	return strings.TrimSpace(v)
 }
