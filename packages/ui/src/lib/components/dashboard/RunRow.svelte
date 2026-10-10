@@ -11,8 +11,8 @@
         runUsageAmounts,
         runUsageLabel,
         usageLevel,
-        USAGE_FLOOR,
         highlightParts,
+        type RunUsageAmounts,
         type RunUsageScale,
     } from "./run-helpers.js";
     import type { RunOutputMatch } from "./types.js";
@@ -150,8 +150,8 @@
                     )} · RAM {formatBytes(usage.usual.ram)}"
                     data-testid="run-usage-bars"
                 >
-                    {@render bar(amounts.cpu, usage.max.cpu, usage.usual.cpu, USAGE_FLOOR.cpu)}
-                    {@render bar(amounts.ram, usage.max.ram, usage.usual.ram, USAGE_FLOOR.ram)}
+                    {@render bar(amounts.cpu, usage.max.cpu, usage.usual.cpu, "cpu")}
+                    {@render bar(amounts.ram, usage.max.ram, usage.usual.ram, "ram")}
                 </span>
             {:else if usage !== undefined}
                 <span class="w-6 shrink-0" aria-hidden="true"></span>
@@ -183,10 +183,10 @@
     ></div>
 </button>
 
-{#snippet bar(value: number, max: number, usual: number, floor: number)}
+{#snippet bar(value: number, max: number, usual: number, kind: keyof RunUsageAmounts)}
     <span class="block h-[3px] overflow-hidden rounded-[1px] bg-outline-faint">
         <span
-            class="block h-full {LEVEL_COLOR[usageLevel(value, usual, floor)]}"
+            class="block h-full {LEVEL_COLOR[usageLevel(value, usual, kind)]}"
             style="width: {String(max > 0 ? Math.max(4, Math.round((100 * value) / max)) : 4)}%"
         ></span>
     </span>

@@ -15,7 +15,6 @@ import {
     runUsageLabel,
     runUsageScale,
     usageLevel,
-    USAGE_FLOOR,
     instanceSuffix,
     runLogDownloadUrl,
 } from "./run-helpers.js";
@@ -260,23 +259,21 @@ describe("runUsageScale", () => {
 
 describe("usageLevel", () => {
     it("is 0 as usual, 1 from 1.5x, 2 from twice the usual run", () => {
-        expect(usageLevel(1400, 1400)).toBe(0);
-        expect(usageLevel(2099, 1400)).toBe(0);
-        expect(usageLevel(2100, 1400)).toBe(1);
-        expect(usageLevel(2799, 1400)).toBe(1);
-        expect(usageLevel(2800, 1400)).toBe(2);
-        expect(usageLevel(10, 1400)).toBe(0);
+        expect(usageLevel(1400, 1400, "cpu")).toBe(0);
+        expect(usageLevel(2099, 1400, "cpu")).toBe(0);
+        expect(usageLevel(2100, 1400, "cpu")).toBe(1);
+        expect(usageLevel(2799, 1400, "cpu")).toBe(1);
+        expect(usageLevel(2800, 1400, "cpu")).toBe(2);
+        expect(usageLevel(10, 1400, "cpu")).toBe(0);
     });
 
-    it("never flags a task whose usual run used nothing, without a floor", () => {
-        expect(usageLevel(50, 0)).toBe(0);
-    });
-
-    it("judges a zero or tiny usual run against the floor", () => {
+    it("judges a zero or tiny usual run against a floor", () => {
         // A mostly idle task (median CPU 0) that burned 30s of CPU.
-        expect(usageLevel(30_000, 0, USAGE_FLOOR.cpu)).toBe(2);
-        expect(usageLevel(1, 0, USAGE_FLOOR.cpu)).toBe(0);
-        expect(usageLevel(3, 1, USAGE_FLOOR.cpu)).toBe(0);
-        expect(usageLevel(2800, 1400, USAGE_FLOOR.cpu)).toBe(2);
+        expect(usageLevel(30_000, 0, "cpu")).toBe(2);
+        expect(usageLevel(1, 0, "cpu")).toBe(0);
+        expect(usageLevel(3, 1, "cpu")).toBe(0);
+        // 64 MiB against an idle task's 1 MiB stands out; 8 MiB doesn't.
+        expect(usageLevel(64 * 1024 * 1024, 1024 * 1024, "ram")).toBe(2);
+        expect(usageLevel(8 * 1024 * 1024, 1024 * 1024, "ram")).toBe(0);
     });
 });
