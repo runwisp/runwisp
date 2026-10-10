@@ -39,6 +39,11 @@ func TestDemoProgressTasksCommitCleanFinalFrames(t *testing.T) {
 		body := runDemoTask(t, cfg, "backup-postgres")
 		clean := assertNoControlResidue(t, body)
 
+		// The SQL scrolls first: five multi-line queries, each with a top-level SELECT.
+		requireCount(t, clean, "[backup] SELECT", 5)
+		requireContains(t, clean, "[backup]  LIMIT 25;")
+		requireContains(t, body, "\x1b[1;35mSELECT")
+
 		// The dump and upload bars each pass through dozens of percentages but
 		// must persist exactly one final line apiece.
 		requireCount(t, clean, "pg_dump", 1)

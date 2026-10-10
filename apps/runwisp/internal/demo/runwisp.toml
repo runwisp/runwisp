@@ -24,6 +24,7 @@
 # Postgres, no Docker — so screenshots reflect a genuinely running daemon.
 
 [daemon]
+name             = "demo-server"
 shutdown_timeout = "15s"
 external_url     = "https://runwisp.acme-notes.example"
 timezone         = "Europe/Bratislava"
@@ -103,13 +104,106 @@ on_overlap        = "skip"
 keep_runs         = 60
 keep_for          = "60d"
 notify = ["slack-ops:#backups"]
-# A single-line `\r` progress bar: the daemon collapses every percentage frame
-# into one clean final line on disk, while live viewers watch the bar fill.
+shell             = "/bin/bash" # $RANDOM below is a bash-ism
+# Colourful, syntax-highlighted multi-line SQL scrolls past first (a scrolling
+# showcase), then a single-line `\r` progress bar: the daemon collapses every
+# percentage frame into one clean final line on disk, while live viewers watch
+# the bar fill.
 run = '''
 ESC=$(printf '\033')
-BOLD="${ESC}[1m"; GREEN="${ESC}[32m"; RST="${ESC}[0m"
+BOLD="${ESC}[1m"; GREEN="${ESC}[32m"; MAGENTA="${ESC}[1;35m"; YELLOW="${ESC}[33m"
+CYAN="${ESC}[36m"; GRAY="${ESC}[90m"; RST="${ESC}[0m"
 echo "${BOLD}[backup]${RST} starting snapshot at $(date -u +%FT%TZ)"
 echo "[backup] dumping schema (142 tables, 318 indexes)"
+echo "[backup] sampling table statistics"
+# Five queries, blank-line separated, each printed at once with a 200-399ms
+# pause between them. Keywords, functions, numbers and strings get their own
+# colour; string literals must not contain spaces.
+set -f
+while IFS= read -r line; do
+  if [ -z "$line" ]; then sleep "0.$(( 200 + RANDOM % 200 ))"; continue; fi
+  indent=${line%%[! ]*}
+  out=""
+  case $line in
+    *--*) out="${GRAY}${line#"$indent"}${RST} ";;
+    *) for w in $line; do
+      p=${w%%[!(]*}; w=${w#"$p"}; b=${w%%[,;)]*}; t=${w#"$b"}
+      case $b in
+        SELECT|DISTINCT|FROM|WHERE|AND|OR|NOT|IS|NULL|IN|AS|JOIN|LEFT|INNER|ON|GROUP|BY|ORDER|HAVING|LIMIT|ASC|DESC|WITH|OVER|PARTITION|FILTER|CASE|WHEN|THEN|ELSE|END|LIKE|INTERVAL) c=$MAGENTA;;
+        \'*) c=$GREEN;;
+        [0-9]*) c=$YELLOW;;
+        *\(*) c=$CYAN; b=${b%%(*}; t=${w#"$b"};;
+        *) c=;;
+      esac
+      if [ -n "$c" ]; then out="${out}${p}${c}${b}${RST}${t} "; else out="${out}${p}${b}${t} "; fi
+    done;;
+  esac
+  echo "[backup] ${indent}${out% }"
+done <<'SQL'
+-- active workspaces and their storage footprint
+SELECT w.id,
+       w.name,
+       COUNT(DISTINCT n.id) AS notes,
+       SUM(a.size_bytes) AS bytes
+  FROM workspaces w
+  LEFT JOIN notes n ON n.workspace_id = w.id
+  LEFT JOIN attachments a ON a.note_id = n.id
+ WHERE w.plan = 'team'
+   AND n.deleted_at IS NULL
+ GROUP BY w.id, w.name
+ ORDER BY bytes DESC
+ LIMIT 50;
+
+-- three most recently edited notes per owner
+WITH ranked AS (
+    SELECT n.id,
+           n.owner_id,
+           n.updated_at,
+           ROW_NUMBER() OVER (PARTITION BY n.owner_id ORDER BY n.updated_at DESC) AS rn
+      FROM notes n
+     WHERE n.deleted_at IS NULL
+)
+SELECT r.owner_id, r.id, r.updated_at
+  FROM ranked r
+ WHERE r.rn <= 3;
+
+-- daily audit volume with a failed-login count
+SELECT date_trunc('day', a.at) AS day,
+       COUNT(*) AS events,
+       COUNT(*) FILTER (WHERE a.action = 'login_failed') AS failures,
+       CASE
+           WHEN COUNT(*) > 1000 THEN 'busy'
+           ELSE 'quiet'
+       END AS load
+  FROM audit_log a
+ WHERE a.at > now() - INTERVAL '30d'
+ GROUP BY 1
+ ORDER BY 1 DESC;
+
+-- tables that need a vacuum
+SELECT s.relname AS table_name,
+       s.n_live_tup AS live_rows,
+       s.n_dead_tup AS dead_rows,
+       pg_size_pretty(pg_total_relation_size(s.relid)) AS total_size
+  FROM pg_stat_user_tables s
+ WHERE s.n_dead_tup > 10000
+    OR s.last_autovacuum IS NULL
+ ORDER BY s.n_dead_tup DESC;
+
+-- privileged accounts and how many notes they own
+SELECT u.id,
+       u.email,
+       u.created_at,
+       (SELECT COUNT(*) FROM notes n WHERE n.owner_id = u.id) AS note_count
+  FROM users u
+ INNER JOIN memberships m ON m.user_id = u.id
+ WHERE m.role IN ('owner', 'admin')
+   AND u.email NOT LIKE '%@example.test'
+   AND u.created_at > '2026-01-01'
+ ORDER BY note_count DESC
+ LIMIT 25;
+SQL
+set +f
 total=30
 i=0
 while [ "$i" -le "$total" ]; do

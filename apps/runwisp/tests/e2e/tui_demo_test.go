@@ -39,7 +39,12 @@ func TestCaptureTUIDemo(t *testing.T) {
 	}
 
 	projectDir := runwispProjectDir(t)
-	binaryPath := buildRunwispBinary(t, projectDir)
+	// The moon task passes its version-stamped `~:build` binary so the TUI
+	// shows the release version; the e2e fallback build reports 0.0.0-dev.
+	binaryPath := os.Getenv("RUNWISP_TUI_SHOOT_BINARY")
+	if binaryPath == "" {
+		binaryPath = buildRunwispBinary(t, projectDir)
+	}
 	dataDir := testutil.ShortTempDir(t)
 	configPath := filepath.Join(dataDir, "runwisp.toml")
 	seedDemoConfig(t, projectDir, binaryPath, configPath, dataDir)

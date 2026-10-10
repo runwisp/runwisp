@@ -112,7 +112,7 @@ test("overview, runs, task detail", async ({ authenticatedPage: page, daemonStat
 
         // All runs (/runs)
         await page.goto("/runs");
-        await expect(page.getByRole("main").getByText("Runs", { exact: true })).toBeVisible();
+        await expect(page.getByRole("textbox", { name: /Search runs/ })).toBeVisible();
         // Generous timeout: rides out the brief boot-burst window where /api/runs
         // can 500 under seed + scheduler load before AsyncData retries succeed.
         await expect(page.getByRole("main").getByText(RECENT_TASK).first()).toBeVisible({
