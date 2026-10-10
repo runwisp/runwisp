@@ -192,6 +192,22 @@ func (s *Supervisor) IsAnyExited() bool {
 	return false
 }
 
+// IsDown reports whether no instance can become healthy without an operator
+// starting the service: nothing is live and every slot has either gone FATAL
+// or exited with no restart coming. A slot that was never started, or is
+// waiting out a restart delay, can still come up, so it keeps this false.
+func (s *Supervisor) IsDown() bool {
+	if s.LiveCount() > 0 {
+		return false
+	}
+	for i := 0; i < s.instances; i++ {
+		if st := s.slot(i); !st.fatal && !st.exited {
+			return false
+		}
+	}
+	return true
+}
+
 // RecordExit releases an instance slot, advances its restart-backoff counter,
 // and tracks consecutive fast failures toward the FATAL threshold.
 //

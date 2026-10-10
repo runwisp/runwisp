@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The TUI notifications panel and the sidebar filter say so when they have nothing to show.
 - The daemon stops promptly when a notifier is unreachable. A failing delivery gets its current attempt and is reported in the bell, instead of retrying until `shutdown_timeout` runs out.
 - Pressing Ctrl+C on `runwisp logs -f` or `--attach` stops cleanly instead of sometimes reporting `lost the connection to the daemon`.
+- At boot, a service with `depends_on` starts as soon as its dependency has exited with no restart coming, instead of waiting out the full readiness window.
 
 ## [1.5.1] - 2026-10-08
 

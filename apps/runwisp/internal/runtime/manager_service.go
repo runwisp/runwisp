@@ -183,28 +183,25 @@ func (m *defaultTaskManager) ServiceHealthy(taskName string) bool {
 
 // WaitServiceHealthy blocks until the named service is healthy, the context is
 // cancelled, or the service can no longer reach healthy without operator
-// intervention (operator-stopped, or every live slot gone and a FATAL one
-// left). It returns nil only on healthy; every other exit is an error so the
-// caller can decide whether to proceed anyway. It polls rather than waiting on
-// a condition variable: uptime-based readiness (healthy_after) crosses its
-// threshold with no state change to signal on.
+// intervention (operator-stopped, or every instance exited or went FATAL with
+// no restart coming). It returns nil only on healthy; every other exit is an
+// error so the caller can decide whether to proceed anyway. It polls rather
+// than waiting on a condition variable: uptime-based readiness (healthy_after)
+// crosses its threshold with no state change to signal on.
 func (m *defaultTaskManager) WaitServiceHealthy(ctx context.Context, taskName string) error {
-	if m.ServiceHealthy(taskName) {
-		return nil
-	}
 	ticker := time.NewTicker(serviceHealthPollInterval)
 	defer ticker.Stop()
 	for {
+		if m.ServiceHealthy(taskName) {
+			return nil
+		}
+		if giveUp, err := m.serviceUnrecoverable(taskName); giveUp {
+			return err
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if m.ServiceHealthy(taskName) {
-				return nil
-			}
-			if giveUp, err := m.serviceUnrecoverable(taskName); giveUp {
-				return err
-			}
 		}
 	}
 }
@@ -225,8 +222,8 @@ func (m *defaultTaskManager) serviceUnrecoverable(taskName string) (bool, error)
 	if ts.supervisor.IsStopped() {
 		return true, fmt.Errorf("service %s is stopped", taskName)
 	}
-	if ts.supervisor.IsAnyFatal() && ts.supervisor.LiveCount() == 0 {
-		return true, fmt.Errorf("service %s has no live instances and a slot is FATAL", taskName)
+	if ts.supervisor.IsDown() {
+		return true, fmt.Errorf("service %s is down: its instances exited or went FATAL and none will restart", taskName)
 	}
 	return false, nil
 }

@@ -350,3 +350,30 @@ func TestLastExitCode(t *testing.T) {
 	assert.Equal(t, 1, *s.LastExitCode(0), "callers get a copy")
 	assert.Nil(t, s.LastExitCode(1), "slots are independent")
 }
+
+// TestIsDown: the service is down only once nothing is live and every slot has
+// exited for good or gone FATAL. An untouched slot (not started yet) or one
+// waiting out a restart delay can still come up.
+func TestIsDown(t *testing.T) {
+	s := newSupervisorForTest("svc", 2)
+	assert.False(t, s.IsDown(), "never-started slots can still come up")
+
+	for range 2 {
+		_, err := s.Reserve(nil)
+		require.NoError(t, err)
+	}
+	s.RecordExit(0, time.Millisecond, 0, false)
+	s.MarkExited(0, false)
+	assert.False(t, s.IsDown(), "slot 1 is still live")
+
+	s.RecordExit(1, time.Millisecond, 0, false)
+	assert.False(t, s.IsDown(), "slot 1 exited but a restart is pending")
+
+	_, fatal := s.RecordExit(1, time.Millisecond, 0, true)
+	require.True(t, fatal)
+	assert.True(t, s.IsDown(), "one slot exited for good, the other FATAL")
+
+	_, err := s.Reserve(nil)
+	require.NoError(t, err)
+	assert.False(t, s.IsDown(), "a restarted slot clears it")
+}

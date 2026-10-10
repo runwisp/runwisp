@@ -371,7 +371,7 @@ func launchServiceWhenReady(ctx context.Context, taskManager runtime.TaskManager
 			return
 		}
 		if err != nil {
-			slog.Warn("dependency not healthy within window; starting dependent anyway",
+			slog.Warn("dependency not healthy; starting dependent anyway",
 				"service", task.Name, "dependency", dep, "err", err)
 		}
 	}

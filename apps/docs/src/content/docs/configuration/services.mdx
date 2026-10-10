@@ -337,7 +337,8 @@ depends_on = ["db"]  # start after db is healthy
 ```
 
 - If a dependency never becomes healthy, the service waits a limited time, then
-  starts anyway and logs a warning.
+  starts anyway and logs a warning. If the dependency is stopped, or has
+  exited with no restart coming, the service starts right away.
 - It applies only to the automatic start at boot. Manual start and restart
   don't wait.
 - At shutdown, dependent services stop first.
