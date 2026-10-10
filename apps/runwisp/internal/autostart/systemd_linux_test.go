@@ -257,6 +257,20 @@ func TestSystemdRender_Print(t *testing.T) {
 	assert.Contains(t, s, "WantedBy=default.target")
 }
 
+// Station mode swaps the subcommand and nothing else: the unit never carries the
+// token (it rides the 0600 env drop-in), so --print is safe to paste anywhere.
+func TestSystemdRender_Station(t *testing.T) {
+	inst, _, _, _, binary := newFakeInstaller(t, false)
+	opts := defaultInstallOpts(binary)
+	opts.Station = true
+	body, err := inst.Render(opts)
+	require.NoError(t, err)
+	s := string(body)
+	assert.Contains(t, s, " station --no-tui --config ")
+	assert.NotContains(t, s, " daemon --config ")
+	assert.NotContains(t, strings.ToUpper(s), "TOKEN")
+}
+
 func TestSystemdStatus_NotInstalled(t *testing.T) {
 	inst, _, cmd, _, binary := newFakeInstaller(t, false)
 
