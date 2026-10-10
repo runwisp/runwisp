@@ -3,15 +3,7 @@
 
 <script lang="ts">
     import type { Snippet } from "svelte";
-    import {
-        ArrowLeft,
-        Check,
-        Copy,
-        Ellipsis,
-        PanelLeftClose,
-        PanelLeftOpen,
-        SlidersHorizontal,
-    } from "@lucide/svelte";
+    import { ArrowLeft, Check, Copy, Ellipsis, SlidersHorizontal } from "@lucide/svelte";
     import Popover from "../Popover.svelte";
     import { foldToFit } from "../../actions/fold-to-fit.js";
     import { CopyFeedback } from "../../utils/clipboard.svelte.js";
@@ -39,8 +31,6 @@
         suffix,
         live,
         onBack,
-        onToggleList,
-        listVisible,
         actions,
     }: {
         run: Run;
@@ -49,8 +39,6 @@
         suffix: string;
         live: ResourceUsage | undefined;
         onBack: (() => void) | undefined;
-        onToggleList: (() => void) | undefined;
-        listVisible: boolean;
         actions: Snippet;
     } = $props();
 
@@ -169,21 +157,6 @@
             aria-label="Back to runs"
         >
             <ArrowLeft size={18} />
-        </button>
-    {:else if onToggleList}
-        <button
-            type="button"
-            onclick={() => onToggleList()}
-            class="-ml-1.5 shrink-0 rounded-[3px] p-1.5 text-on-surface-muted hover:bg-surface-sunken hover:text-primary"
-            title={listVisible ? "Hide run list" : "Show run list"}
-            aria-label={listVisible ? "Hide run list" : "Show run list"}
-            aria-expanded={listVisible}
-        >
-            {#if listVisible}
-                <PanelLeftClose size={18} />
-            {:else}
-                <PanelLeftOpen size={18} />
-            {/if}
         </button>
     {/if}
 

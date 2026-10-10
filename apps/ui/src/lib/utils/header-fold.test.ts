@@ -111,6 +111,22 @@ describe("HeaderFold", () => {
         expect(fold.folded).toBe(false);
     });
 
+    it("never folds over a log that fits, whatever else scrolls", () => {
+        const { fold, scroll, read } = setup();
+        fold.findLog = () => ({ dataset: { contentHeight: "250" }, clientHeight: 400 });
+        read();
+        scroll(500 + FOLD_DISTANCE);
+        scroll(4600);
+        expect(fold.folded).toBe(false);
+
+        // A log that needs scrolling lets the same scroll fold.
+        fold.findLog = () => ({ dataset: { contentHeight: "900" }, clientHeight: 400 });
+        read();
+        scroll(4000);
+        scroll(4600);
+        expect(fold.folded).toBe(true);
+    });
+
     it("unfolds a short log once the fold has settled", () => {
         const { fold, tick } = setup();
         fold.stripDelta = 100;

@@ -49,25 +49,24 @@ describe("HistoryRail", () => {
         expect(r.panes(false, true)).toEqual({ list: false, detail: true });
     });
 
-    it("lets a mid-sized screen fold the list away while a run is shown", () => {
+    it("lets a mid-sized screen fold the list to its strip", () => {
         const r = rail("mid", true);
         expect(r.collapsible).toBe(true);
+        expect(r.listFolded).toBe(false);
+
+        r.toggleList();
+        expect(r.listFolded).toBe(true);
         expect(r.panes(true, false)).toEqual({ list: true, detail: true });
 
         r.toggleList();
-        expect(r.panes(true, false)).toEqual({ list: false, detail: true });
-        // No run means no detail header to unfold from, so the list stays.
-        expect(r.panes(false, false)).toEqual({ list: true, detail: true });
-
-        r.toggleList();
-        expect(r.panes(true, false)).toEqual({ list: true, detail: true });
+        expect(r.listFolded).toBe(false);
     });
 
     it("never folds the list on a wide screen", () => {
         const r = rail("wide", true);
         expect(r.collapsible).toBe(false);
         r.toggleList();
-        expect(r.panes(true, false)).toEqual({ list: true, detail: true });
+        expect(r.listFolded).toBe(false);
     });
 
     it("brings the list back when a search runs", () => {
@@ -80,6 +79,6 @@ describe("HistoryRail", () => {
         const mid = rail("mid", true);
         mid.toggleList();
         mid.searched("boom");
-        expect(mid.panes(true, false)).toEqual({ list: true, detail: true });
+        expect(mid.listFolded).toBe(false);
     });
 });

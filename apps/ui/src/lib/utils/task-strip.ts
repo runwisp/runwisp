@@ -11,16 +11,19 @@ import {
 } from "@runwisp/ui";
 import { canTogglePause, hasCron, isServiceStopped, taskInstanceCount } from "./task";
 
-/** How loud the state word is: quiet when all is well, bad when something failed. */
-export type StripTone = "quiet" | "live" | "warn" | "bad";
-
-/** Badge classes per tone. Full literals so Tailwind's scanner sees them. */
-export const STRIP_TONES: Record<StripTone, string> = {
-    quiet: "border-outline text-on-surface-muted",
-    live: "border-info-soft-border bg-info-soft text-info-soft-text",
-    warn: "border-warning-soft-border bg-warning-soft text-warning-soft-text",
-    bad: "border-danger-soft-border bg-danger-soft text-danger-soft-text",
-};
+/** Which state the badge names; each gets its own colour and icon (TaskStateBadge). */
+export type StripBadgeKind =
+    | "scheduled"
+    | "manual"
+    | "station"
+    | "running"
+    | "starting"
+    | "up"
+    | "failed"
+    | "down"
+    | "paused"
+    | "held"
+    | "stopped";
 
 /** A piece of the strip's sentence; muted pieces are the asides. */
 export interface StripText {
@@ -42,7 +45,7 @@ export interface StripAction {
 
 export interface TaskStripModel {
     /** The state word. With `runId` it opens that run. */
-    badge: { text: string; tone: StripTone; runId?: string; title?: string };
+    badge: { text: string; kind: StripBadgeKind; runId?: string; title?: string };
     /** What happens next, or why not. */
     sentence: StripText[];
     /** The same, short, for the folded strip. */
@@ -86,7 +89,7 @@ function runningBadge(run: Run, now: Date): TaskStripModel["badge"] {
     const took = runDuration(run, now.getTime());
     return {
         text: took ? `Running · ${took}` : "Running",
-        tone: "live",
+        kind: "running",
         runId: run.id,
         title: "Open the running run",
     };
@@ -95,7 +98,12 @@ function runningBadge(run: Run, now: Date): TaskStripModel["badge"] {
 function failedBadge(task: Task): TaskStripModel["badge"] | undefined {
     const last = task.lastRun;
     if (last?.status !== "ended" || !last.isFailure) return undefined;
-    return { text: "Last run failed", tone: "bad", runId: last.id, title: "Open the failed run" };
+    return {
+        text: "Last run failed",
+        kind: "failed",
+        runId: last.id,
+        title: "Open the failed run",
+    };
 }
 
 function cronStrip({ task, schedulingActive, now }: TaskStripInput): TaskStripModel {
@@ -103,7 +111,7 @@ function cronStrip({ task, schedulingActive, now }: TaskStripInput): TaskStripMo
     const run = task.manualTrigger ? [runAction(task, true)] : [];
     if (task.pausedAt) {
         return {
-            badge: { text: "Paused", tone: "warn" },
+            badge: { text: "Paused", kind: "paused" },
             sentence: [
                 t(`since ${formatDayMonth(task.pausedAt)}`),
                 m(" · "),
@@ -111,22 +119,23 @@ function cronStrip({ task, schedulingActive, now }: TaskStripInput): TaskStripMo
                 m(" is skipped, manual runs still work"),
             ],
             short: [t(`since ${formatDayMonth(task.pausedAt)}`), m(" · schedule skipped")],
+            // Same places as Run now and Pause, so the buttons don't swap.
             actions: canTogglePause(task)
                 ? [
+                      ...run.map((a) => ({ ...a, primary: false })),
                       {
                           kind: "resume",
                           label: "Resume schedule",
                           title: "Resume the cron schedule",
                           primary: true,
                       },
-                      ...run.map((a) => ({ ...a, primary: false })),
                   ]
                 : run,
         };
     }
     if (task.heldBy) {
         return {
-            badge: { text: "Held by cron", tone: "warn" },
+            badge: { text: "Held by cron", kind: "held" },
             sentence: [
                 t("A system cron daemon still runs this job, so RunWisp records nothing for it."),
             ],
@@ -137,7 +146,7 @@ function cronStrip({ task, schedulingActive, now }: TaskStripInput): TaskStripMo
     }
     if (!schedulingActive) {
         return {
-            badge: { text: "Scheduled by Station", tone: "quiet" },
+            badge: { text: "Scheduled by Station", kind: "station" },
             sentence: [t(schedule), m(" · RunWisp Station decides when it runs")],
             short: [t("Station decides when it runs")],
             actions: task.manualTrigger ? [runAction(task, true, true)] : [],
@@ -155,7 +164,7 @@ function cronStrip({ task, schedulingActive, now }: TaskStripInput): TaskStripMo
           ]
         : [];
     return {
-        badge: failedBadge(task) ?? { text: "Scheduled", tone: "quiet" },
+        badge: failedBadge(task) ?? { text: "Scheduled", kind: "scheduled" },
         sentence: next
             ? [t(schedule), m(" · "), t(`next run ${formatRelativeTimeWithAbsolute(next, now)}`)]
             : [t(schedule)],
@@ -166,7 +175,7 @@ function cronStrip({ task, schedulingActive, now }: TaskStripInput): TaskStripMo
 
 function manualStrip({ task }: TaskStripInput): TaskStripModel {
     return {
-        badge: failedBadge(task) ?? { text: "Manual only", tone: "quiet" },
+        badge: failedBadge(task) ?? { text: "Manual only", kind: "manual" },
         sentence: [
             t("Runs only when triggered: here, "),
             { text: "runwisp run", mono: true },
@@ -245,13 +254,13 @@ function runLink(c: ServiceCtx, text: string): Pick<TaskStripModel, "link"> {
 
 function degradedBadge(c: ServiceCtx, title: string): TaskStripModel["badge"] {
     const text = c.desired > 1 ? `${String(c.up)} of ${String(c.desired)} up` : "Down";
-    return withRun(c, { text, tone: "bad", title });
+    return withRun(c, { text, kind: "down", title });
 }
 
 function stoppedStrip(c: ServiceCtx): TaskStripModel {
     const auto = c.task.autostart;
     return {
-        badge: { text: "Stopped", tone: "warn" },
+        badge: { text: "Stopped", kind: "stopped" },
         sentence: [
             t("Stays down until you start it"),
             auto
@@ -268,7 +277,7 @@ function allGaveUpStrip(c: ServiceCtx, first: Instance): TaskStripModel {
     return {
         badge: withRun(c, {
             text: "Down",
-            tone: "bad",
+            kind: "down",
             title: "RunWisp won't restart it on its own",
         }),
         sentence: [
@@ -324,8 +333,8 @@ function upStrip(c: ServiceCtx, instances: Instance[], now: Date): TaskStripMode
     const multi = c.desired > 1;
     const count = multi ? `${String(c.up)} of ${String(c.desired)} instances up` : "Up";
     const live = c.up > 0 || c.task.service === undefined;
-    const model = {
-        badge: { text: live ? "Running" : "Starting", tone: "quiet" as const },
+    const model: TaskStripModel = {
+        badge: { text: live ? "Running" : "Starting", kind: live ? "up" : "starting" },
         sentence: [t(count)],
         short: [t(count)],
         actions: c.allow([c.restart, c.stop]),

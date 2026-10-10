@@ -313,6 +313,8 @@
                 motion={live.source.motion}
                 outputSearch
                 usageBars
+                folded={rail.listFolded}
+                onToggleFold={rail.collapsible ? rail.toggleList : undefined}
                 {outputQuery}
                 {outputMatches}
                 {outputSearchPending}
@@ -331,8 +333,6 @@
                 onRunAgain={runTriggerable && hasParams ? openRunAgain : undefined}
                 onStop={!taskIsService ? () => (stopConfirmOpen = true) : undefined}
                 onBack={rail.phone ? rail.back : undefined}
-                onToggleList={rail.collapsible ? rail.toggleList : undefined}
-                listVisible={panes.list}
                 {highlightLine}
                 getInstanceCount={() => instanceCount}
                 getLiveUsage={(id) => systemStore.runUsage(id)}

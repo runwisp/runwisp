@@ -6,17 +6,21 @@
     // one line that never wraps. What doesn't fit folds into ⋯ in a fixed order,
     // so a button is always in one of two places. Used by the strip and, folded,
     // by the top bar.
-    import { ChevronDown, Ellipsis, Pause, Play, RefreshCcw, Square } from "@lucide/svelte";
+    import {
+        CalendarClock,
+        ChevronDown,
+        Ellipsis,
+        Pause,
+        Play,
+        RefreshCcw,
+        Square,
+    } from "@lucide/svelte";
     import type { Component } from "svelte";
     import type { ResourceUsage } from "@runwisp/common";
     import { Button, Dropdown, Popover, foldToFit, formatBytes } from "@runwisp/ui";
     import { HELD_BY_CRON_HELP } from "$lib/utils/task";
-    import {
-        STRIP_TONES,
-        type StripActionKind,
-        type StripText,
-        type TaskStripModel,
-    } from "$lib/utils/task-strip";
+    import type { StripActionKind, StripText, TaskStripModel } from "$lib/utils/task-strip";
+    import TaskStateBadge from "./TaskStateBadge.svelte";
 
     let {
         model,
@@ -43,7 +47,7 @@
     const ICONS: Record<StripActionKind, Component> = {
         run: Play,
         pause: Pause,
-        resume: Play,
+        resume: CalendarClock,
         start: Play,
         restart: RefreshCcw,
         "stop-service": Square,
@@ -57,14 +61,25 @@
             ? `CPU ${String(Math.round(usage.cpuPercent))}% · RAM ${formatBytes(usage.memoryBytes)}`
             : undefined,
     );
+    // The action that never folds: the filled one, else the first.
+    const kept = $derived(
+        Math.max(
+            0,
+            model.actions.findIndex((a) => a.primary),
+        ),
+    );
     // Fold order: the duplicate link, Details, the long sentence for the short
     // one, the other actions from the right, live usage. The badge and the
-    // first action always stay.
+    // kept action always stay.
     const order = $derived([
         ...(sameLink ? ["link"] : []),
         "details",
         ...(bar ? [] : ["sentence"]),
-        ...model.actions.slice(1).map((_, i) => `a${String(model.actions.length - 1 - i)}`),
+        ...model.actions
+            .map((_, i) => i)
+            .filter((i) => i !== kept)
+            .reverse()
+            .map((i) => `a${String(i)}`),
         ...(usageText ? ["usage"] : []),
     ]);
     let folded = $state<string[]>([]);
@@ -117,30 +132,11 @@
         : 'gap-2.5'}"
     data-testid={bar ? "task-bar" : "task-strip-row"}
 >
-    {#if model.badge.runId}
-        {@const runId = model.badge.runId}
-        <button
-            type="button"
-            class="shrink-0 cursor-pointer rounded-[3px] border font-mono font-semibold underline decoration-dotted underline-offset-3 {STRIP_TONES[
-                model.badge.tone
-            ]} {bar ? 'px-1.5 py-px text-xs' : 'px-2 py-0.5 text-[13px]'}"
-            title={model.badge.title}
-            data-testid="task-state"
-            onclick={() => onOpenRun(runId)}>{model.badge.text}</button
-        >
-    {:else}
-        <span
-            class="shrink-0 rounded-[3px] border font-mono font-semibold {STRIP_TONES[
-                model.badge.tone
-            ]} {bar ? 'px-1.5 py-px text-xs' : 'px-2 py-0.5 text-[13px]'}"
-            title={model.badge.title}
-            data-testid="task-state">{model.badge.text}</span
-        >
-    {/if}
+    <TaskStateBadge badge={model.badge} size={bar ? "sm" : "md"} {onOpenRun} />
 
     <span
         data-fold-shrink
-        class="min-w-0 truncate text-on-surface-muted {bar ? 'text-xs' : 'text-sm'}"
+        class="min-w-0 truncate text-on-surface {bar ? 'text-xs' : 'text-sm'}"
         data-testid="task-sentence"
     >
         {#if bar}
@@ -189,7 +185,7 @@
                 variant={action.primary ? "primary" : "secondary"}
                 size={bar ? "xs" : "sm"}
                 class="shrink-0"
-                data-fold={i > 0 ? `a${String(i)}` : undefined}
+                data-fold={i === kept ? undefined : `a${String(i)}`}
                 title={action.title}
                 loading={busy && action.kind !== "run"}
                 onclick={() => onAction(action.kind)}

@@ -26,9 +26,9 @@ test.describe("runs page", () => {
         await seedEndedRun(page, "fail-task", daemonState.token);
 
         await page.goto("/runs");
-        // The page is now chrome-less (matching a task's detail page): its title
-        // lives in the topbar breadcrumb and the run rail carries a "Runs" label.
-        await expect(page.getByRole("main").getByText("Runs", { exact: true })).toBeVisible();
+        // The page is chrome-less (matching a task's detail page): its title
+        // lives in the topbar breadcrumb and the run rail heads with its count.
+        await expect(page.getByRole("main").getByText(/^\d+ runs?$/)).toBeVisible();
 
         // Scope to <main>: the sidebar <aside> always lists every task by name,
         // so only the run rows in the main content reflect the active filter.

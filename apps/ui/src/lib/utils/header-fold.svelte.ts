@@ -7,7 +7,8 @@
  *   scroll FOLD_DISTANCE down without reversing = fold
  *   scroll FOLD_DISTANCE up without reversing = unfold
  *   reach the bottom = fold right away; reach the top = unfold right away
- *   a log short enough to need no scrollbar (with the header unfolded) = unfold
+ *   a log short enough to need no scrollbar (with the header unfolded) = unfold,
+ *   and no scrolling (the run list's included) folds it
  * Only the native scroll event measures distance, so wheel, touchpad, touch,
  * keys and the scrollbar all work alike. Scrolls the page makes itself
  * (opening a run at its end, following a live log, the list easing to a new
@@ -58,6 +59,7 @@ export function fitsUnfolded(
 }
 
 type Scroller = Pick<Element, "scrollTop" | "scrollHeight" | "clientHeight">;
+type LogBox = Pick<HTMLElement, "dataset" | "clientHeight">;
 interface Sample {
     top: number;
     height: number;
@@ -68,6 +70,8 @@ export class HeaderFold {
     folded = $state(false);
     /** How much taller the unfolded header is than the folded one, px. */
     stripDelta = 0;
+    /** The log console, marked by its data-content-height. Set by attach. */
+    findLog: () => LogBox | null = () => null;
 
     readonly #now: () => number;
     #run = 0;
@@ -113,15 +117,20 @@ export class HeaderFold {
         this.#intentUntil = now + INTENT_MS;
         const step = foldStep(this.#run, { delta, atTop, atBottom });
         this.#run = step.run;
+        if (step.fold === true && this.#logFits(this.findLog())) return;
         if (step.fold !== undefined) this.set(step.fold);
     }
 
     /** Unfolds when the log fits without scrolling. */
-    checkShortLog(el: Pick<HTMLElement, "dataset" | "clientHeight">): void {
+    checkShortLog(el: LogBox): void {
         if (!this.folded || this.#now() < this.#settleUntil) return;
-        const content = Number(el.dataset.contentHeight);
-        if (!Number.isFinite(content)) return;
-        if (fitsUnfolded(content, el.clientHeight, true, this.stripDelta)) this.set(false);
+        if (this.#logFits(el)) this.set(false);
+    }
+
+    #logFits(el: LogBox | null): boolean {
+        const content = Number(el?.dataset.contentHeight);
+        if (!el || !Number.isFinite(content)) return false;
+        return fitsUnfolded(content, el.clientHeight, this.folded, this.stripDelta);
     }
 
     /**
@@ -145,12 +154,13 @@ export class HeaderFold {
                 this.intent();
             }
         };
+        this.findLog = () => root.querySelector<HTMLElement>("[data-content-height]");
         let frame = 0;
         const checkSoon = () => {
             if (frame !== 0) return;
             frame = requestAnimationFrame(() => {
                 frame = 0;
-                const log = root.querySelector<HTMLElement>("[data-content-height]");
+                const log = this.findLog();
                 if (log) this.checkShortLog(log);
             });
         };

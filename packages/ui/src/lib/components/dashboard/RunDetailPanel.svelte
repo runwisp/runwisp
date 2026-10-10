@@ -7,8 +7,6 @@
         Play,
         MousePointerClick,
         ArrowLeft,
-        PanelLeftClose,
-        PanelLeftOpen,
         SearchX,
     } from "@lucide/svelte";
     import EmptyState from "../EmptyState.svelte";
@@ -38,8 +36,6 @@
         onStop,
         onRunTask,
         onBack,
-        onToggleList,
-        listVisible = true,
         highlightLine = null,
         getInstanceCount = () => 1,
         getLiveUsage = () => undefined,
@@ -84,10 +80,6 @@
         // Return to the run list when the panel replaces it (a phone), shown as
         // a back arrow in the header's top-left corner.
         onBack?: (() => void) | undefined;
-        // Fold the run list away (or back) when it sits beside the panel on a
-        // screen too narrow to keep both comfortably, in the same corner.
-        onToggleList?: (() => void) | undefined;
-        listVisible?: boolean;
         highlightLine?: number | null;
         // Resolves a task's currently configured instance count so multi-instance
         // services render a 1-based #N suffix. Defaults to single-instance.
@@ -203,8 +195,6 @@
                 {suffix}
                 live={isRunning ? getLiveUsage(run.id) : undefined}
                 {onBack}
-                {onToggleList}
-                {listVisible}
                 {actions}
             />
         {:else}
@@ -230,21 +220,6 @@
                                 aria-label="Back to runs"
                             >
                                 <ArrowLeft size={20} />
-                            </button>
-                        {:else if onToggleList}
-                            <button
-                                type="button"
-                                onclick={() => onToggleList()}
-                                class="-mt-1 -ml-2 shrink-0 rounded-[3px] p-1.5 text-on-surface-muted hover:bg-surface-sunken hover:text-primary"
-                                title={listVisible ? "Hide run list" : "Show run list"}
-                                aria-label={listVisible ? "Hide run list" : "Show run list"}
-                                aria-expanded={listVisible}
-                            >
-                                {#if listVisible}
-                                    <PanelLeftClose size={20} />
-                                {:else}
-                                    <PanelLeftOpen size={20} />
-                                {/if}
                             </button>
                         {/if}
                         <div class="min-w-60 flex-1">

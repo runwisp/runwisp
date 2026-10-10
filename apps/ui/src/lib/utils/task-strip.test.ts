@@ -75,7 +75,7 @@ const primaries = (m: TaskStripModel) => m.actions.filter((a) => a.primary).map(
 describe("taskStrip: cron tasks", () => {
     it("is scheduled, with the schedule and next run, Run filled and Pause beside it", () => {
         const m = strip(makeTask({ nextRunAt: "2026-10-10T03:15:00Z" }));
-        expect(m.badge).toEqual({ text: "Scheduled", tone: "quiet" });
+        expect(m.badge).toEqual({ text: "Scheduled", kind: "scheduled" });
         expect(text(m.sentence)).toMatch(/^At 03:15 AM · next run in 15 hours/);
         expect(labels(m)).toEqual(["Run now", "Pause"]);
         expect(primaries(m)).toEqual(["Run now"]);
@@ -83,28 +83,28 @@ describe("taskStrip: cron tasks", () => {
 
     it("says the last run failed and opens it", () => {
         const m = strip(makeTask({ lastRun: makeRun({ isFailure: true, endReason: "failed" }) }));
-        expect(m.badge).toMatchObject({ text: "Last run failed", tone: "bad", runId: "run-1" });
+        expect(m.badge).toMatchObject({ text: "Last run failed", kind: "failed", runId: "run-1" });
     });
 
     it("puts a running run above everything, paused included", () => {
         const run = makeRun({ id: "live", status: "running" });
         const m = strip(makeTask({ pausedAt: "2026-10-07T14:02:00Z" }), run);
-        expect(m.badge).toMatchObject({ text: "Running · 1m", tone: "live", runId: "live" });
+        expect(m.badge).toMatchObject({ text: "Running · 1m", kind: "running", runId: "live" });
         expect(primaries(m)).toEqual(["Resume schedule"]);
     });
 
     it("when paused, says since when and fills Resume", () => {
         const m = strip(makeTask({ pausedAt: "2026-10-07T14:02:00Z" }));
-        expect(m.badge).toEqual({ text: "Paused", tone: "warn" });
+        expect(m.badge).toEqual({ text: "Paused", kind: "paused" });
         expect(text(m.sentence)).toContain("is skipped, manual runs still work");
         expect(m.sentence.find((p) => p.struck === true)?.text).toBe("At 03:15 AM");
-        expect(labels(m)).toEqual(["Resume schedule", "Run now"]);
+        expect(labels(m)).toEqual(["Run now", "Resume schedule"]);
         expect(primaries(m)).toEqual(["Resume schedule"]);
     });
 
     it("when held by cron, explains it and can't be paused", () => {
         const m = strip(makeTask({ heldBy: "cron" }));
-        expect(m.badge).toEqual({ text: "Held by cron", tone: "warn" });
+        expect(m.badge).toEqual({ text: "Held by cron", kind: "held" });
         expect(m.link).toEqual({ text: "How to hand it over", held: true });
         expect(labels(m)).toEqual(["Run now"]);
         expect(primaries(m)).toEqual([]);
@@ -130,7 +130,7 @@ describe("taskStrip: cron tasks", () => {
 describe("taskStrip: services", () => {
     it("all up: since when, Restart and Stop, nothing filled", () => {
         const m = strip(service({}, [up(0), up(1)]));
-        expect(m.badge).toEqual({ text: "Running", tone: "quiet" });
+        expect(m.badge).toEqual({ text: "Running", kind: "up" });
         expect(text(m.sentence)).toMatch(/^2 of 2 instances up · since .+, 3 days ago$/);
         expect(labels(m)).toEqual(["Restart", "Stop service"]);
         expect(primaries(m)).toEqual([]);
@@ -145,7 +145,7 @@ describe("taskStrip: services", () => {
             lastExitCode: 137,
         };
         const m = strip(service({}, [up(0), restarting]));
-        expect(m.badge).toMatchObject({ text: "1 of 2 up", tone: "bad", runId: "last" });
+        expect(m.badge).toMatchObject({ text: "1 of 2 up", kind: "down", runId: "last" });
         expect(text(m.sentence)).toBe("Instance #2 is restarting · restart 2 of 5, last exit 137");
         expect(m.link).toEqual({ text: "Open its last run", runId: "last" });
         expect(primaries(m)).toEqual([]);
@@ -174,7 +174,7 @@ describe("taskStrip: services", () => {
             lastExitCode: 1,
         });
         const m = strip(service({}, [fatal(0), fatal(1)]));
-        expect(m.badge).toMatchObject({ text: "Down", tone: "bad", runId: "last" });
+        expect(m.badge).toMatchObject({ text: "Down", kind: "down", runId: "last" });
         expect(text(m.sentence)).toBe(
             "All 2 instances gave up · 5 failed starts each, last exit 1",
         );
@@ -183,7 +183,7 @@ describe("taskStrip: services", () => {
 
     it("stopped: what a daemon restart does depends on autostart", () => {
         const on = strip(service({ serviceStopped: true, autostart: true }));
-        expect(on.badge).toEqual({ text: "Stopped", tone: "warn" });
+        expect(on.badge).toEqual({ text: "Stopped", kind: "stopped" });
         expect(text(on.sentence)).toContain("or the daemon restarts (autostart is on)");
         expect(primaries(on)).toEqual(["Start"]);
         const off = strip(service({ serviceStopped: true, autostart: false }));

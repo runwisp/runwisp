@@ -16,8 +16,8 @@ type Flag = { current: boolean };
  * Which of the run history list and a run's detail are on screen.
  *
  * A very wide screen shows both. A mid-sized one shows both too, but the
- * operator can fold the list away to give the log more room (remembered across
- * reloads). A phone fits one: the list until a run is picked, then that run
+ * operator can fold the list down to a thin strip to give the log more room
+ * (remembered across reloads). A phone fits one: the list until a run is picked, then that run
  * until the detail's back button returns to the list.
  */
 export class HistoryRail {
@@ -46,6 +46,11 @@ export class HistoryRail {
     /** True when both panes fit but the list may be folded away. */
     get collapsible(): boolean {
         return !this.#phone.current && !this.#wide.current;
+    }
+
+    /** The list is folded to its thin strip. Only a mid-sized screen folds it. */
+    get listFolded(): boolean {
+        return this.collapsible && this.#listHidden.current;
     }
 
     /** @param runLinked a run is already picked by the URL, so a phone opens on it. */
@@ -87,8 +92,6 @@ export class HistoryRail {
             const detail = empty || (hasRun && this.#showingRun);
             return { list: !detail, detail };
         }
-        // Without a run the detail has no header to unfold the list from.
-        const list = !this.collapsible || !this.#listHidden.current || !hasRun;
-        return { list, detail: true };
+        return { list: true, detail: true };
     }
 }

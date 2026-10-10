@@ -21,7 +21,8 @@
     import { FOLD_MS, type HeaderFold } from "$lib/utils/header-fold.svelte";
     import { UNDO_MS } from "$lib/utils/run-actions";
     import { taskInstanceCount } from "$lib/utils/task";
-    import { STRIP_TONES, taskStrip, type StripActionKind } from "$lib/utils/task-strip";
+    import { taskStrip, type StripActionKind } from "$lib/utils/task-strip";
+    import TaskStateBadge from "./TaskStateBadge.svelte";
     import TaskStripRow from "./TaskStripRow.svelte";
 
     let {
@@ -202,8 +203,8 @@
             data-folded
             bind:clientHeight={foldedHeight}
         >
-            {@render badge("px-1.5 py-px text-xs")}
-            <span class="min-w-0 flex-1 truncate text-xs text-on-surface-muted">
+            <TaskStateBadge badge={model.badge} size="sm" {onOpenRun} />
+            <span class="min-w-0 flex-1 truncate text-xs text-on-surface">
                 {model.short.map((p) => p.text).join("")}
             </span>
             {#if primary}
@@ -231,8 +232,8 @@
             data-testid="task-strip"
             bind:clientHeight={fullHeight}
         >
-            <p class="text-sm leading-relaxed text-on-surface-muted" data-testid="task-sentence">
-                {@render badge("mr-1.5 px-2 py-0.5 text-[13px]")}
+            <p class="text-sm leading-relaxed text-on-surface" data-testid="task-sentence">
+                <TaskStateBadge badge={model.badge} size="md" class="mr-1.5" {onOpenRun} />
                 {model.sentence.map((p) => p.text).join("")}
                 {#if model.link?.runId}
                     {@const runId = model.link.runId}
@@ -291,32 +292,9 @@
     </section>
 {/if}
 
-{#snippet badge(size: string)}
-    {#if model.badge.runId}
-        {@const runId = model.badge.runId}
-        <button
-            type="button"
-            class="inline-block shrink-0 rounded-[3px] border font-mono font-semibold underline decoration-dotted underline-offset-3 {STRIP_TONES[
-                model.badge.tone
-            ]} {size}"
-            title={model.badge.title}
-            data-testid="task-state"
-            onclick={() => onOpenRun(runId)}>{model.badge.text}</button
-        >
-    {:else}
-        <span
-            class="inline-block shrink-0 rounded-[3px] border font-mono font-semibold {STRIP_TONES[
-                model.badge.tone
-            ]} {size}"
-            title={model.badge.title}
-            data-testid="task-state">{model.badge.text}</span
-        >
-    {/if}
-{/snippet}
-
 {#snippet description(clamp: string)}
     {#if task.description}
-        <div class="mt-1.5 flex items-end gap-2 text-sm text-on-surface-muted">
+        <div class="mt-1 flex items-end gap-2 text-[13px] text-on-surface-muted">
             <p
                 bind:this={descEl}
                 class="min-w-0 flex-1 {descOpen ? '' : clamp}"
@@ -327,7 +305,7 @@
             {#if descClamped || descOpen}
                 <button
                     type="button"
-                    class="shrink-0 text-sm text-on-surface underline underline-offset-2 hover:text-primary"
+                    class="shrink-0 text-on-surface underline underline-offset-2 hover:text-primary"
                     onclick={() => (descOpen = !descOpen)}>{descOpen ? "less" : "more"}</button
                 >
             {/if}
