@@ -159,6 +159,10 @@ func padPanelRight(block string, width int) string {
 }
 
 func (m Model) buildHelpText() helpBar {
+	if m.sidebar.Filtering() {
+		// `?` types into the filter there, so it can't open help.
+		return m.buildContextHelpText()
+	}
 	return m.buildContextHelpText().add(prioHelp, keys.Help.Bar)
 }
 

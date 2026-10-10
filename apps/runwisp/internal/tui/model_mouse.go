@@ -149,11 +149,13 @@ func (m Model) handleMainPanelClick(x, y int) (tea.Model, tea.Cmd) {
 func (m Model) handleHomePageClick(x, y int) (tea.Model, tea.Cmd) {
 	if name := m.sidebar.ActiveTask(); name != "" {
 		if y == m.layout.taskBtnY {
+			// The buttons belong to the header's task, not to wherever the
+			// sidebar cursor happens to sit (resolveTaskName's pick).
 			switch m.taskHeader(name).ButtonAt(x-uikit.SidebarWidth, m.contentWidth()) {
 			case home.TaskButtonRun:
-				return m, m.confirmAction(confirmActionTrigger)
+				return m, m.triggerRun(name)
 			case home.TaskButtonStop:
-				return m, m.confirmAction(confirmActionStopService)
+				return m, m.confirmStopService(name)
 			case home.TaskButtonPause:
 				return m, m.streams.SetSchedulePaused(name, !m.isPaused(name))
 			}

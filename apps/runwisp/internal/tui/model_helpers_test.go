@@ -307,7 +307,7 @@ func TestConfirmHelpers_Guards(t *testing.T) {
 
 	t.Run("confirmRestartService with empty task returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
-		if m.confirmRestartService() != nil {
+		if m.confirmRestartService(m.resolveTaskName()) != nil {
 			t.Fatal("expected nil cmd when task name is empty")
 		}
 	})
@@ -315,7 +315,7 @@ func TestConfirmHelpers_Guards(t *testing.T) {
 	t.Run("confirmRestartService with task opens dialog", func(t *testing.T) {
 		m := newTestModel(svc)
 		selectSidebarItem(&m, 1)
-		if cmd := m.confirmRestartService(); cmd != nil {
+		if cmd := m.confirmRestartService(m.resolveTaskName()); cmd != nil {
 			t.Fatalf("showConfirmDialog returns nil itself, got %v", cmd)
 		}
 		if !m.dialogs.Has(dlgConfirm) {
@@ -325,7 +325,7 @@ func TestConfirmHelpers_Guards(t *testing.T) {
 
 	t.Run("confirmStopService with empty task returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
-		if m.confirmStopService() != nil {
+		if m.confirmStopService(m.resolveTaskName()) != nil {
 			t.Fatal("expected nil cmd when task name is empty")
 		}
 	})
@@ -333,7 +333,7 @@ func TestConfirmHelpers_Guards(t *testing.T) {
 	t.Run("confirmStopService with task opens dialog", func(t *testing.T) {
 		m := newTestModel(svc)
 		selectSidebarItem(&m, 1)
-		m.confirmStopService()
+		m.confirmStopService(m.resolveTaskName())
 		if !m.dialogs.Has(dlgConfirm) {
 			t.Fatal("expected a confirm dialog to be queued")
 		}
@@ -371,7 +371,7 @@ func TestTriggerRun_ShowsConfirmDialog(t *testing.T) {
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
 
-	m.triggerRun()
+	m.triggerRun(m.resolveTaskName())
 	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected trigger to queue a confirm dialog for a cron task")
 	}
@@ -384,7 +384,7 @@ func TestTriggerRun_ServiceDelegatesToRestart(t *testing.T) {
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
 
-	m.triggerRun()
+	m.triggerRun(m.resolveTaskName())
 	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected a restart-service dialog to be queued")
 	}
@@ -599,7 +599,7 @@ func TestConfirmRestartService_MultipleInstancesUsesPluralPrompt(t *testing.T) {
 	tasks := []model.Task{{Name: "svc", Kind: model.KindService, Instances: 3}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
-	m.confirmRestartService()
+	m.confirmRestartService(m.resolveTaskName())
 	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected restart-service dialog")
 	}
@@ -738,7 +738,7 @@ func TestConfirmStopService_HappyPath(t *testing.T) {
 	tasks := []model.Task{{Name: "svc", Kind: model.KindService}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
-	m.confirmStopService()
+	m.confirmStopService(m.resolveTaskName())
 	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected stop-service dialog to be queued")
 	}
@@ -751,7 +751,7 @@ func TestConfirmStopService_FromHome(t *testing.T) {
 	m := newTestModel([]model.Task{{Name: "svc", Kind: model.KindService}})
 	m.openExecView(&model.Run{ID: "r-svc", TaskName: "svc", Status: model.PhaseRunning})
 	m.panelFocus = uikit.PanelMain
-	m.confirmStopService()
+	m.confirmStopService(m.resolveTaskName())
 	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected stop-service dialog for the open run's task")
 	}
@@ -761,7 +761,7 @@ func TestConfirmStopService_FromHome(t *testing.T) {
 func TestTriggerRun_EmptyTaskNameReturnsNil(t *testing.T) {
 	m := newTestModel(nil)
 	// No active task in sidebar → resolveTaskName returns ""
-	if cmd := m.triggerRun(); cmd != nil {
+	if cmd := m.triggerRun(m.resolveTaskName()); cmd != nil {
 		t.Fatalf("expected nil when no task is active, got %v", cmd)
 	}
 }

@@ -4,8 +4,10 @@
 package tui
 
 import (
+	"os/exec"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,6 +43,22 @@ func TestOpenBrowser_UnsupportedPlatformErrors(t *testing.T) {
 		err := openBrowserDefault("about:blank")
 		assert.ErrorContains(t, err, "unsupported platform")
 	}
+}
+
+// TestStartReaped_WaitsForTheOpener: the opener exits at once, and unless
+// something waits on it it stays a zombie until the TUI quits, one per click.
+func TestStartReaped_WaitsForTheOpener(t *testing.T) {
+	done, err := startReaped(exec.Command("true"))
+	require.NoError(t, err)
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the started process was never waited on")
+	}
+
+	_, err = startReaped(exec.Command("/nonexistent/opener"))
+	assert.Error(t, err)
 }
 
 // TestBrowserSeamIsNeutralizedInTests is the guard for the whole package: if

@@ -147,11 +147,11 @@ func (m *Model) showDangerConfirm(title, message string, onConfirm tea.Cmd) tea.
 func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 	switch action {
 	case confirmActionTrigger:
-		return m.triggerRun()
+		return m.triggerRun(m.resolveTaskName())
 	case confirmActionRestartService:
-		return m.confirmRestartService()
+		return m.confirmRestartService(m.resolveTaskName())
 	case confirmActionStopService:
-		return m.confirmStopService()
+		return m.confirmStopService(m.resolveTaskName())
 	case confirmActionStop:
 		return m.confirmStop()
 	case confirmActionRetry:
@@ -166,13 +166,12 @@ func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 // the restart path (a restart kills running instances), and parameterized tasks
 // open the param form — it gathers input and runs on submit, which is itself an
 // explicit confirmation.
-func (m *Model) triggerRun() tea.Cmd {
-	taskName := m.resolveTaskName()
+func (m *Model) triggerRun(taskName string) tea.Cmd {
 	if taskName == "" {
 		return nil
 	}
 	if m.isService(taskName) {
-		return m.confirmAction(confirmActionRestartService)
+		return m.confirmRestartService(taskName)
 	}
 	if task := m.taskDisplayByName(taskName); task != nil && len(task.Parameters) > 0 {
 		streams := m.streams
@@ -188,8 +187,7 @@ func (m *Model) triggerRun() tea.Cmd {
 	)
 }
 
-func (m *Model) confirmRestartService() tea.Cmd {
-	taskName := m.resolveTaskName()
+func (m *Model) confirmRestartService(taskName string) tea.Cmd {
 	if taskName == "" {
 		return nil
 	}
@@ -214,8 +212,7 @@ func (m *Model) confirmRestartService() tea.Cmd {
 	)
 }
 
-func (m *Model) confirmStopService() tea.Cmd {
-	taskName := m.resolveTaskName()
+func (m *Model) confirmStopService(taskName string) tea.Cmd {
 	if taskName == "" {
 		return nil
 	}

@@ -8,18 +8,23 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
-// lastRuns remembers the newest run seen per task, fed by run-list fetches and
-// run events, so the sidebar can mark a task whose last run failed.
+// lastRuns is each task's newest started run, so the sidebar can mark a task
+// whose last run failed or is running. The task-state poll replaces it with the
+// server's lastRun (pending, skipped and missed rows don't count; a deleted run
+// drops out); live run events refresh it in between.
 //
-// ponytail: only tasks with a run in a loaded page or a live event are known,
-// the same bound the web UI overview has; a server-side lastRun on the task
-// list would make it exact.
+// ponytail: a poll answer can land just after a newer live event and briefly
+// roll that task back; the next poll (infoPollInterval) settles it.
 type lastRuns map[string]model.Run
 
-// observe records run when it's at least as new as the task's known last run.
-// Run IDs are monotonic ULIDs, so ID order is creation order, and an update to
-// the same run (running → ended) replaces it.
+// observe applies a live run event the way the server picks lastRun: only a
+// run that started counts, and only when it is at least as new as the known
+// one. Run IDs are monotonic ULIDs, so ID order is creation order, and an
+// update to the same run (running → ended) replaces it.
 func (l lastRuns) observe(run model.Run) {
+	if run.StartedAt == nil {
+		return
+	}
 	if prev, ok := l[run.TaskName]; ok && prev.ID > run.ID {
 		return
 	}

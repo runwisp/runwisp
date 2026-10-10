@@ -118,8 +118,11 @@ func FormatTimestamp(t time.Time, loc *time.Location) string {
 
 // RelativeTime returns a short human string ("just now", "5m ago",
 // "yesterday", "3d ago"). Keep parity with
-// apps/ui/src/lib/utils/notification-rhythm.ts.
+// apps/ui/src/lib/utils/notification-rhythm.ts. An unknown (zero) time is "".
 func RelativeTime(t, now time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
 	d := now.Sub(t)
 	switch {
 	case d < 30*time.Second:

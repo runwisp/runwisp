@@ -148,4 +148,5 @@ func TestRelativeTime(t *testing.T) {
 		got := RelativeTime(now.Add(-tt.d), now)
 		assert.Equal(t, tt.want, got, "RelativeTime with d=%v", tt.d)
 	}
+	assert.Empty(t, RelativeTime(time.Time{}, now), "an unknown time renders as nothing, not \"2025y ago\"")
 }

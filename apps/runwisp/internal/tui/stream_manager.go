@@ -286,7 +286,11 @@ func (sm *StreamManager) FetchTaskState() tea.Cmd {
 		paused := make(map[string]time.Time)
 		usage := make(map[string]model.ResourceUsage)
 		stopped := make(map[string]bool)
+		lastRuns := make(map[string]model.Run)
 		for _, t := range tasks {
+			if t.LastRun != nil {
+				lastRuns[t.Name] = *t.LastRun
+			}
 			if t.ServiceStopped {
 				stopped[t.Name] = true
 			}
@@ -297,7 +301,7 @@ func (sm *StreamManager) FetchTaskState() tea.Cmd {
 				usage[t.Name] = *t.Usage
 			}
 		}
-		return uikit.TaskStateMsg{Paused: paused, Usage: usage, Stopped: stopped}
+		return uikit.TaskStateMsg{Paused: paused, Usage: usage, Stopped: stopped, LastRuns: lastRuns}
 	}
 }
 

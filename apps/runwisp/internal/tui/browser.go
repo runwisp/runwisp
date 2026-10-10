@@ -41,14 +41,28 @@ var openBrowser = openBrowserDefault
 // openBrowserDefault uses platform-specific commands: xdg-open (Linux),
 // open (macOS).
 func openBrowserDefault(url string) error {
+	var err error
 	switch runtime.GOOS {
 	case "linux":
-		return exec.Command("xdg-open", url).Start()
+		_, err = startReaped(exec.Command("xdg-open", url))
 	case "darwin":
-		return exec.Command("open", url).Start()
+		_, err = startReaped(exec.Command("open", url))
 	default:
-		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+		err = fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
+	return err
+}
+
+// startReaped starts cmd without blocking on it and waits for it in the
+// background, so the exited opener is reaped instead of lingering as a zombie
+// for the TUI's lifetime. The channel delivers Wait's result.
+func startReaped(cmd *exec.Cmd) (<-chan error, error) {
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	return done, nil
 }
 
 // browseMsg opens url in a browser when the session has one and reports the

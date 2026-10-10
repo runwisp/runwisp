@@ -107,6 +107,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.info.TaskUsage = msg.Usage
 			m.infoView.SetTaskUsage(msg.Usage)
 			m.info.StoppedServices = msg.Stopped
+			m.lastRuns = lastRuns{}
+			maps.Copy(m.lastRuns, msg.LastRuns)
 			if m.currentRun() != nil {
 				m.execView.SetServiceStopped(msg.Stopped[m.execView.Run.TaskName])
 			}
@@ -292,9 +294,6 @@ func (m *Model) handleExecWindowFetched(msg uikit.ExecWindowFetchedMsg) {
 		return
 	}
 	m.execWindow.ApplyFetch(msg.Items, msg.Offset, msg.Total)
-	for _, item := range msg.Items {
-		m.lastRuns.observe(item.Run)
-	}
 }
 
 func (m Model) handleSSEConnected(msg uikit.SSEConnectedMsg) (tea.Model, tea.Cmd) {
