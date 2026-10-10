@@ -71,7 +71,8 @@ func (d *TaskDetailDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (d *TaskDetailDialog) View(screenWidth, screenHeight int) string {
-	const labelCol = 14
+	// Fits the longest label ("Manual trigger", "Manual control") plus a gap.
+	const labelCol = 16
 	dialogWidth, innerWidth := modalDimensions(screenWidth, 58, 44)
 
 	row := func(label, value string, color color.Color) string {

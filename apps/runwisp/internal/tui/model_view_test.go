@@ -283,43 +283,37 @@ func TestBuildExecViewHelpText_FullscreenIncludesScroll(t *testing.T) {
 	}
 }
 
-// TestBuildExecViewHelpText_HeaderFocusBack covers the HeaderFocusBack case.
-func TestBuildExecViewHelpText_HeaderFocusBack(t *testing.T) {
-	m := newTestModel(nil)
-	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
-	ev := execlist.NewExecView(run)
-	ev.HeaderFocus = execlist.HeaderFocusBack
-	m.execView = &ev
-	got := m.buildExecViewHelpText().String()
-	if !strings.Contains(got, "activate") {
-		t.Fatalf("expected activate hint for HeaderFocusBack, got: %q", got)
+// TestBuildExecViewHelpText_HeaderFocus pins each header stop's enter hint and
+// that no hint repeats: "↓ details" next to "i details" used to read as two
+// keys for one thing, and per-direction arrow hints pointed the wrong way.
+func TestBuildExecViewHelpText_HeaderFocus(t *testing.T) {
+	cases := map[execlist.HeaderFocusItem]string{
+		execlist.HeaderFocusBack:     "enter back",
+		execlist.HeaderFocusID:       "enter copy",
+		execlist.HeaderFocusStarted:  "enter copy",
+		execlist.HeaderFocusDuration: "enter copy",
+		execlist.HeaderFocusParams:   "enter show params",
+		execlist.HeaderFocusAction:   "enter activate",
+		execlist.HeaderFocusDelete:   "enter activate",
 	}
-}
-
-// TestBuildExecViewHelpText_HeaderFocusID covers the HeaderFocusID case.
-func TestBuildExecViewHelpText_HeaderFocusID(t *testing.T) {
-	m := newTestModel(nil)
-	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
-	ev := execlist.NewExecView(run)
-	ev.HeaderFocus = execlist.HeaderFocusID
-	m.execView = &ev
-	got := m.buildExecViewHelpText().String()
-	if !strings.Contains(got, "copy") {
-		t.Fatalf("expected copy hint for HeaderFocusID, got: %q", got)
-	}
-}
-
-// TestBuildExecViewHelpText_HeaderFocusStarted covers the HeaderFocusStarted
-// case (also covers HeaderFocusDuration via the shared branch).
-func TestBuildExecViewHelpText_HeaderFocusStarted(t *testing.T) {
-	m := newTestModel(nil)
-	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
-	ev := execlist.NewExecView(run)
-	ev.HeaderFocus = execlist.HeaderFocusStarted
-	m.execView = &ev
-	got := m.buildExecViewHelpText().String()
-	if !strings.Contains(got, "buttons") {
-		t.Fatalf("expected buttons hint for HeaderFocusStarted, got: %q", got)
+	for focus, want := range cases {
+		m := newTestModel(nil)
+		run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
+		ev := execlist.NewExecView(run)
+		ev.HeaderFocus = focus
+		m.execView = &ev
+		bar := m.buildExecViewHelpText()
+		if got := bar.String(); !strings.Contains(got, want) || !strings.Contains(got, "←↑↓→ move") {
+			t.Fatalf("focus %v: want %q and the move hint, got %q", focus, want, got)
+		}
+		seen := map[string]bool{}
+		for _, seg := range bar {
+			word := seg.text[strings.IndexByte(seg.text, ' ')+1:]
+			if seen[word] {
+				t.Fatalf("focus %v: %q appears twice in %q", focus, word, bar.String())
+			}
+			seen[word] = true
+		}
 	}
 }
 

@@ -63,7 +63,7 @@ func TestConfirmDialog_HandleKeyMsg_Enter_Yes(t *testing.T) {
 func TestConfirmDialog_HandleKeyMsg_Enter_No_WithDeny(t *testing.T) {
 	var denied bool
 	deny := func() tea.Msg { denied = true; return nil }
-	d := NewChoiceDialog("title", "msg", "Yes", "No", onConfirmCmd, deny)
+	d := NewChoiceDialog("title", "msg", "Yes", "No", false, onConfirmCmd, deny)
 	d.selected = 1
 
 	cmd, closed := d.handleKeyMsg("enter")
@@ -101,7 +101,7 @@ func TestConfirmDialog_HandleKeyMsg_Y(t *testing.T) {
 
 // TestConfirmDialog_HandleKeyMsg_N_WithDeny fires deny.
 func TestConfirmDialog_HandleKeyMsg_N_WithDeny(t *testing.T) {
-	d := NewChoiceDialog("t", "m", "Yes", "No", onConfirmCmd, onDenyCmd)
+	d := NewChoiceDialog("t", "m", "Yes", "No", false, onConfirmCmd, onDenyCmd)
 	cmd, closed := d.handleKeyMsg("n")
 	assert.True(t, closed)
 	assert.NotNil(t, cmd)
@@ -133,7 +133,7 @@ func TestConfirmDialog_HandleClick_Yes(t *testing.T) {
 
 // TestConfirmDialog_HandleClick_No_WithDeny fires deny.
 func TestConfirmDialog_HandleClick_No_WithDeny(t *testing.T) {
-	d := placeButtons(NewChoiceDialog("t", "m", "Yes", "No", onConfirmCmd, onDenyCmd))
+	d := placeButtons(NewChoiceDialog("t", "m", "Yes", "No", false, onConfirmCmd, onDenyCmd))
 
 	cmd, closed := d.handleClick(25, 5)
 	assert.True(t, closed)
@@ -307,4 +307,23 @@ func TestModalDimensions_TightScreenClamps(t *testing.T) {
 	dw, iw := modalDimensions(5, 46, 46)
 	assert.Equal(t, 4, dw)
 	assert.GreaterOrEqual(t, iw, 1)
+}
+
+// TestChoiceDialog_ButtonKinds pins the quit dialog's colours: the safe
+// default (Keep Running) fills blue, never red, and the unselected destructive
+// choice sits on the raised surface in normal text rather than looking
+// disabled. Selected, Shut Down fills red.
+func TestChoiceDialog_ButtonKinds(t *testing.T) {
+	d := NewChoiceDialog("Quit", "Keep it?", "Keep Running", "Shut Down", true, nil, nil)
+	assert.Equal(t, uikit.ColorPrimary, d.buttonStyle(0, d.yesKind).GetBackground())
+	assert.Equal(t, uikit.ColorButtonRaised, d.buttonStyle(1, d.noKind).GetBackground())
+	assert.Equal(t, uikit.ColorText, d.buttonStyle(1, d.noKind).GetForeground())
+
+	d.handleKeyMsg("right")
+	assert.Equal(t, uikit.ColorError, d.buttonStyle(1, d.noKind).GetBackground())
+
+	// A plain confirm is primary; Danger() turns it red.
+	c := NewConfirmDialog("Run", "Run it?", nil)
+	assert.Equal(t, btnPrimary, c.yesKind)
+	assert.Equal(t, btnDanger, c.Danger().yesKind)
 }

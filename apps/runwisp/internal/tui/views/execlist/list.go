@@ -4,10 +4,12 @@
 package execlist
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -307,26 +309,74 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	}
 	rowStyle := uikit.OnBg(bg, fg).Bold(bold)
 	if item == nil {
-		// task + four single-space separators + the four fixed columns.
-		return rowStyle.Render("  " + padCell("loading…", cw.task+4+cw.fixedSum()))
+		return rowStyle.Render("  " + padCell("loading…", cw.rowWidth()-2))
 	}
-	// Truncate without padding: the badge's trailing fill must take the row
-	// background, not the badge color.
-	status := item.Run.DisplayStatus()
-	statusBadge := uikit.StatusStyle(status).Render(uikit.TruncateToWidth(status, cw.status))
-	statPad := max(cw.status-uikit.VisibleWidth(statusBadge), 0)
-	statusCell := statusBadge + rowStyle.Render(strings.Repeat(" ", statPad))
+	return rowStyle.Render(e.rowPrefix(item.Run.ID)+padCell(e.firstCell(item.Run, cw), cw.first)+" ") +
+		statusCell(item.Run.DisplayStatus(), cw.status, rowStyle) +
+		rowStyle.Render(trailingCells(cw, e.startedCell(item, cw), item.Duration, string(item.Run.TriggeredBy)))
+}
+
+// statusCell is a label-sized badge padded out to the column width in the
+// row's background.
+func statusCell(status string, width int, rowStyle lipgloss.Style) string {
+	badge := uikit.StatusStyle(status).Render(uikit.TruncateToWidth(uikit.StatusLabel(status), max(width-2, 1)))
+	return badge + rowStyle.Render(strings.Repeat(" ", max(width-uikit.VisibleWidth(badge), 0)))
+}
+
+// startedCell is the STARTED column value. A scoped list already shows the
+// absolute time up front, so it stays relative here past the first day too.
+func (e *ExecList) startedCell(item *uikit.ExecListItem, cw colWidths) string {
+	if cw.scoped {
+		return uikit.RelativeTime(item.Run.CreatedAt, time.Now())
+	}
+	return item.TimeAgo
+}
+
+// firstCell is the TASK column value, or the run's start time when the list
+// is scoped to one task (the name would only repeat).
+func (e *ExecList) firstCell(run model.Run, cw colWidths) string {
 	count := 1
 	if e.instanceCount != nil {
-		count = e.instanceCount(item.Run.TaskName)
+		count = e.instanceCount(run.TaskName)
 	}
-	taskLabel := model.InstanceLabel(item.Run.TaskName, item.Run.InstanceIndex, count)
-	return rowStyle.Render(e.rowPrefix(item.Run.ID)+padCell(taskLabel, cw.task)+" ") +
-		statusCell +
-		rowStyle.Render(" "+
-			padCell(item.TimeAgo, cw.started)+" "+
-			padCell(item.Duration, cw.duration)+" "+
-			padCell(string(item.Run.TriggeredBy), cw.trigger))
+	if !cw.scoped {
+		return model.InstanceLabel(run.TaskName, run.InstanceIndex, count)
+	}
+	loc := cmp.Or(e.window.Location(), time.Local)
+	started := run.CreatedAt.In(loc).Format("Jan _2 15:04")
+	if count > 1 {
+		started += fmt.Sprintf(" #%d", run.InstanceIndex+1)
+	}
+	return started
+}
+
+// timeColWidth is the start-time column's width in a list scoped to one task,
+// room for the instance number included when the task has several, or 0 on
+// Home where the first column is TASK.
+func (e *ExecList) timeColWidth() int {
+	task := e.window.CurrentFilter().TaskName
+	if task == "" {
+		return 0
+	}
+	if e.instanceCount != nil && e.instanceCount(task) > 1 {
+		return timeColW + instanceSuffixW
+	}
+	return timeColW
+}
+
+// trailingCells renders the STARTED, DURATION and TRIGGER cells, each led by
+// its separating space; hidden (zero-width) columns are skipped.
+func trailingCells(cw colWidths, started, duration, trigger string) string {
+	var s string
+	for _, c := range []struct {
+		text  string
+		width int
+	}{{started, cw.started}, {duration, cw.duration}, {trigger, cw.trigger}} {
+		if c.width > 0 {
+			s += " " + padCell(c.text, c.width)
+		}
+	}
+	return s
 }
 
 func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, contentW int, cw colWidths, sb scrollbarRender) {
@@ -370,9 +420,9 @@ func (e *ExecList) renderFilterBanner(w int) string {
 	accent := uikit.StatusStyle(status).GetBackground()
 	label := uikit.OnBg(uikit.ColorBgLight, accent).
 		Bold(true).
-		Render("▌ FILTER: " + strings.ToUpper(status))
+		Render("▌ FILTER: " + strings.ToUpper(uikit.StatusLabel(status)))
 	hint := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
-		Render("  —  press f to change")
+		Render("  ·  press f to change")
 	return uikit.PadLine(label+hint, w, uikit.ColorBgLight)
 }
 
@@ -406,20 +456,25 @@ func (e *ExecList) View() string {
 	if sbState.show {
 		contentW = w - 1
 	}
-	cw := computeColWidths(contentW)
+	// Size columns as if the scrollbar always shows, so the header doesn't
+	// shift by a cell between short and long lists (or an empty filter).
+	cw := computeColWidths(w-1, e.timeColWidth())
 
 	sb := scrollbarRender{
 		state: sbState,
-		track: lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(lipgloss.Color("#3b3d57")).Render("│"),
+		track: lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorButtonRaisedHover).Render("│"),
 		thumb: uikit.OnBg(uikit.ColorBg, uikit.ColorText).Render("┃"),
 	}
 
+	first := "TASK"
+	if cw.scoped {
+		first = "TIME"
+	}
+	// STATUS sits over the badge text, past the badge's padding.
 	headerText := "  " +
-		padCell("TASK", cw.task) + " " +
-		padCell("STATUS", cw.status) + " " +
-		padCell("STARTED", cw.started) + " " +
-		padCell("DURATION", cw.duration) + " " +
-		padCell("TRIGGER", cw.trigger)
+		padCell(first, cw.first) + " " +
+		padCell(" STATUS", cw.status) +
+		trailingCells(cw, "STARTED", "DURATION", "TRIGGER")
 	b.WriteString(uikit.PadLine(uikit.TableHeaderStyle.Render(headerText), w, uikit.ColorBgLight))
 	b.WriteString("\n")
 

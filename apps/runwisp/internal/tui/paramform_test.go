@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -421,4 +422,35 @@ func TestParamForm_EscCancels(t *testing.T) {
 	assert.True(t, closed)
 	assert.Nil(t, cmd)
 	assert.False(t, called)
+}
+
+// TestParamForm_WrappedLinesKeepIndent pins the hanging indent: a long
+// description wraps under its own first column, the "(omitted)" marker sits
+// on the label row, and the footer never splits a single hint across rows.
+func TestParamForm_WrappedLinesKeepIndent(t *testing.T) {
+	params := []model.TaskParam{{
+		Kind: model.ParamArg, Key: "ORG_ID",
+		Description: "Tenant whose data to export, matched against the organisations table by slug or numeric id.",
+	}}
+	d := NewParamFormDialog("export", params, func(map[string]*string) tea.Cmd { return nil })
+	d.fields[0].toggleInclude() // drop the value so the marker shows
+	plain := ansi.Strip(d.View(70, 40))
+
+	var desc []string
+	for _, line := range strings.Split(plain, "\n") {
+		if strings.Contains(line, "(omitted)") {
+			assert.Contains(t, line, "ORG_ID", "the marker must share the field's label row")
+		}
+		if strings.Contains(line, "Tenant") || strings.Contains(line, "organisations") || strings.Contains(line, "numeric id") {
+			desc = append(desc, line)
+		}
+	}
+	require.GreaterOrEqual(t, len(desc), 2, "expected the description to wrap:\n%s", plain)
+	lead := func(s string) int { return len(s) - len(strings.TrimLeft(s, " ")) }
+	for _, line := range desc[1:] {
+		assert.Equal(t, lead(desc[0]), lead(line), "continuation row lost its indent:\n%s", plain)
+	}
+
+	assert.Equal(t, "a · b\nc", wrapHints("a · b · c", 5))
+	assert.Equal(t, "enter run\nesc cancel", wrapHints("enter run · esc cancel", 12))
 }

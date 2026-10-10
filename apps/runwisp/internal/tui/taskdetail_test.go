@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
@@ -274,5 +275,15 @@ func TestHandleKeyI_FallsThroughWithoutTask(t *testing.T) {
 	}
 	if got.dialogs.Has(dlgTaskDetail) {
 		t.Fatal("pressing i with no task in focus must not open the inspector")
+	}
+}
+
+func TestTaskDetailDialog_View_LongLabelsKeepAGap(t *testing.T) {
+	// "Manual trigger" is the longest label; it used to run straight into its
+	// value ("Manual triggerenabled").
+	d := NewTaskDetailDialog("alpha", &model.Task{Name: "alpha", Cron: "* * * * *", ManualTrigger: true})
+	out := ansi.Strip(d.View(80, 40))
+	if !strings.Contains(out, "Manual trigger  enabled") {
+		t.Fatalf("expected a gap between label and value:\n%s", out)
 	}
 }

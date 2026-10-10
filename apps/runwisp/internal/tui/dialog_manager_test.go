@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
@@ -373,6 +374,26 @@ func TestHelpDialog_ViewListsSections(t *testing.T) {
 	for _, want := range []string{"Keyboard Shortcuts", "Global", "Navigate", "Exec view", "Notifications"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected help view to contain %q", want)
+		}
+	}
+}
+
+func TestHelpDialog_WrappedDescriptionsKeepHangingIndent(t *testing.T) {
+	// A narrow screen forces long descriptions to wrap. Each continuation row
+	// must stay under the description column, never fall back under the keys,
+	// and every row of the dialog must stay the same width.
+	keyColWidth := helpKeyColWidth()
+	for _, section := range helpSections() {
+		for _, b := range section.Bindings {
+			lines := helpEntryLines(b, keyColWidth, 40)
+			for i, line := range lines {
+				if got := uikit.VisibleWidth(line); got != 40 {
+					t.Fatalf("%q row %d: width %d, want 40", b.Keys, i, got)
+				}
+				if i > 0 && strings.TrimSpace(ansi.Strip(line)[:keyColWidth]) != "" {
+					t.Fatalf("%q row %d wraps under the key column: %q", b.Keys, i, ansi.Strip(line))
+				}
+			}
 		}
 	}
 }

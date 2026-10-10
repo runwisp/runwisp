@@ -105,7 +105,7 @@ func TestPrintStartupTo_TaskKindService(t *testing.T) {
 		},
 	})
 	out := buf.String()
-	assert.Contains(t, out, "service x3")
+	assert.Contains(t, out, "service · 3 instances")
 }
 
 func TestPrintStartupTo_TaskManualTrigger(t *testing.T) {

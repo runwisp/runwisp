@@ -68,10 +68,12 @@ func (v *ExecView) renderDeleteButton() string {
 	if !v.CanDelete() {
 		return ""
 	}
+	// Quiet at rest so the destructive button isn't the loudest thing in the
+	// header; it turns red once focused or hovered.
 	if v.HoveredHeader == HeaderFocusDelete || v.HeaderFocus == HeaderFocusDelete {
-		return uikit.BtnStopHoverStyle.Render("Delete (D)")
+		return uikit.BtnStopStyle.Render("Delete (D)")
 	}
-	return uikit.BtnStopStyle.Render("Delete (D)")
+	return uikit.BtnBackStyle.Render("Delete (D)")
 }
 
 func (v *ExecView) View() string {
@@ -99,7 +101,7 @@ func (v *ExecView) View() string {
 // renderTitleRow draws header row 1: Back, task label, run ID and status.
 func (v *ExecView) renderTitleRow(w int) string {
 	statusStr := v.Run.DisplayStatus()
-	statusBadge := uikit.StatusStyle(statusStr).Render(statusStr)
+	statusBadge := uikit.StatusStyle(statusStr).Render(uikit.StatusLabel(statusStr))
 	bgLight := lipgloss.NewStyle().Background(uikit.ColorBgLight)
 	backBtn := v.renderBackButton()
 
@@ -113,7 +115,7 @@ func (v *ExecView) renderTitleRow(w int) string {
 	if idFocused {
 		idStyle = idStyle.Bold(true)
 	}
-	idTag := idStyle.Render("#" + v.Run.ID[len(v.Run.ID)-8:])
+	idTag := idStyle.Render(uikit.ShortRunID(v.Run.ID))
 
 	taskLabel := model.InstanceLabel(v.Run.TaskName, v.Run.InstanceIndex, v.InstanceCount)
 	headerLeft := bgLight.Render("  ") +
@@ -126,6 +128,10 @@ func (v *ExecView) renderTitleRow(w int) string {
 	idX1 := uikit.SidebarWidth + lipgloss.Width(headerLeft)
 	v.headerLayout.add(HeaderFocusID, idX0, idX1, 1)
 	headerRight := statusBadge + bgLight.Render("  ")
+	// A non-zero exit code is the first thing to read on a failed run.
+	if v.Run.Status == model.PhaseEnded && v.Run.ExitCode > 0 {
+		headerRight = bgLight.Foreground(uikit.ColorError).Render("exit "+strconv.Itoa(v.Run.ExitCode)+"  ") + headerRight
+	}
 	// Resource use sits beside the status, dropped when the row is too narrow.
 	if usage := v.usageText(); usage != "" {
 		withUsage := bgLight.Foreground(uikit.ColorTextMuted).Render(usage+"  ") + headerRight

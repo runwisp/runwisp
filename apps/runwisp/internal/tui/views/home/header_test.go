@@ -181,7 +181,7 @@ func TestRenderTaskHeader_ServiceTask(t *testing.T) {
 	}
 	out, _ := TaskHeader{Name: "my-service", Task: task}.Render(80)
 	assert.Contains(t, out, "my-service")
-	assert.Contains(t, out, "service x3")
+	assert.Contains(t, out, "Service · 3 instances")
 }
 
 func TestRenderTaskHeader_CronTask(t *testing.T) {
@@ -412,5 +412,17 @@ func TestRenderHeader_StarButton(t *testing.T) {
 		assert.Equal(t, ok, strings.Contains(lines[StarButtonY], starButtonLabel), "width %d", w)
 		assert.Equal(t, ok, StarButtonAt(from, w), "width %d", w)
 		assert.False(t, StarButtonAt(to, w), "width %d", w)
+	}
+}
+
+func TestRenderTaskHeader_NarrowNeverOverflows(t *testing.T) {
+	// At 80 columns the main pane is 52 wide; a long name and schedule line
+	// must truncate rather than push the row past the pane.
+	task := &model.Task{Name: "a-really-long-task-name-for-a-narrow-pane", Cron: "*/5 * * * *", ManualTrigger: true}
+	out, _ := TaskHeader{Name: task.Name, Task: task, Usage: &model.ResourceUsage{CPUPercent: 12, MemoryBytes: 48 << 20}}.Render(40)
+	for i, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if w := uikit.VisibleWidth(line); w > 40 {
+			t.Fatalf("line %d is %d cells wide, want <= 40: %q", i, w, line)
+		}
 	}
 }

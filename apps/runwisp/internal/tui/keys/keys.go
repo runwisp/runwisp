@@ -59,7 +59,7 @@ var (
 	Start    = Binding{Bar: "r start"}
 	Stop     = Binding{Keys: "s", Desc: "stop service · stop run (log view)", Bar: "s stop"}
 	OpenRun  = Binding{Keys: "enter", Desc: "open the selected run"}
-	TaskInfo = Binding{Keys: "i", Desc: "inspect — task health, or run details in a log view", Bar: "i details"}
+	TaskInfo = Binding{Keys: "i", Desc: "task health, or run details in a log view", Bar: "i details"}
 	Undo     = Binding{Keys: "u", Desc: "undo the last action (while the toast shows)", Bar: "u undo"}
 	// Pause and Resume are the two bar forms of `p`, like RunNow and Restart.
 	Pause  = Binding{Keys: "p", Desc: "pause / resume the cron schedule", Bar: "p pause"}

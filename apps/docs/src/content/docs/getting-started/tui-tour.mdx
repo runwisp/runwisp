@@ -31,6 +31,9 @@ services (grouped by [`group`](/configuration/tasks/#group)), then **Info**
 and **Debug** at the bottom. `▸` marks what the right pane shows. Moving the
 cursor does nothing until you press <kbd>Enter</kbd>.
 
+A mark after a task's name shows its state: `●` running, `✗` last run failed,
+`■` stopped service, `‖` paused schedule. Press <kbd>?</kbd> to see the list.
+
 ## Home
 
 ![TUI Home page: sidebar listing task groups, right pane showing Open Web UI row, Web UI URL, masked password, and a recent-activity table with status, duration, and trigger columns.](../../../assets/screenshots/tui-home.png)
@@ -94,20 +97,20 @@ numbers, under a header with the run ID, start time, duration, and status.
 The run header tells you what went wrong before you read the log:
 
 - **Status**: why the run ended: `failed`, `timeout`, `crashed`, `stopped`,
-  `skipped`, `log_overflow`, and others.
+  `skipped`, `log full`, and others.
 - **Exit code**: what the command returned. `-1` means the run was skipped and
   never started ([`on_overlap = "skip"`](/configuration/tasks/#on_overlap)).
   `-2` means the daemon died during the run (`crashed`). A timeout usually shows
   `143` (SIGTERM) or `137` (SIGKILL).
 
-In the sidebar, a task whose last run failed has a coloured marker. With
+In the sidebar, a task whose last run failed has a red `✗`. With
 [retries](/concepts/retries/), every attempt is its own run with its own log.
 
 ## Info and Debug
 
 **Info** shows CPU and memory graphs, run counts, version, and uptime.
 
-![TUI Info page: CPU and memory sparklines, activity summary, version and platform details, configuration checkmarks, and task list.](../../../assets/screenshots/tui-info.png)
+![TUI Info page: CPU and memory sparklines, activity summary, daemon version and Web UI address, configuration, and task list.](../../../assets/screenshots/tui-info.png)
 
 **Debug** shows the daemon's own log. Reconnect messages appear here when the
 connection drops. The TUI reconnects by itself.

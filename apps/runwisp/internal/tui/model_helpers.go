@@ -137,6 +137,13 @@ func (m *Model) showConfirmDialog(title, message string, onConfirm tea.Cmd) tea.
 	return nil
 }
 
+// showDangerConfirm is showConfirmDialog for an action that stops, kills or
+// exposes something: the confirm button and accent bar turn red.
+func (m *Model) showDangerConfirm(title, message string, onConfirm tea.Cmd) tea.Cmd {
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog(title, message, onConfirm).Danger())
+	return nil
+}
+
 func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 	switch action {
 	case confirmActionTrigger:
@@ -200,7 +207,7 @@ func (m *Model) confirmRestartService() tea.Cmd {
 	} else {
 		prompt = fmt.Sprintf("Cancel and restart\n'%s'?", taskName)
 	}
-	return m.showConfirmDialog(
+	return m.showDangerConfirm(
 		"Restart Service",
 		prompt,
 		m.streams.RestartService(taskName),
@@ -212,7 +219,7 @@ func (m *Model) confirmStopService() tea.Cmd {
 	if taskName == "" {
 		return nil
 	}
-	return m.showConfirmDialog(
+	return m.showDangerConfirm(
 		"Stop Service",
 		fmt.Sprintf("Stop service\n'%s'?\nIt stays stopped until you start it\nagain or the daemon restarts.", taskName),
 		m.streams.StopService(taskName),
@@ -224,7 +231,7 @@ func (m *Model) confirmStop() tea.Cmd {
 	if run == nil || run.Status != model.PhaseRunning {
 		return nil
 	}
-	return m.showConfirmDialog(
+	return m.showDangerConfirm(
 		"Stop Run",
 		fmt.Sprintf("Stop the running execution of\n'%s'?", run.TaskName),
 		m.streams.StopRun(run.ID, run.TaskName),

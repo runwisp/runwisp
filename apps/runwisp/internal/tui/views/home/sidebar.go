@@ -59,6 +59,10 @@ type Sidebar struct {
 	updateAvailable bool
 	latestVersion   string
 	versionFocused  bool
+
+	// marks is each task's status mark (running, failed, ...), keyed by task
+	// name; a task with no entry gets none. Set by the model before View.
+	marks map[string]uikit.TaskMark
 }
 
 // versionRow is the fixed screen row of the version line inside the brand block
@@ -474,6 +478,11 @@ func (s *Sidebar) renderVersionLine() string {
 	return base + marker
 }
 
+// SetTaskMarks replaces the per-task status marks drawn at the row ends.
+func (s *Sidebar) SetTaskMarks(marks map[string]uikit.TaskMark) {
+	s.marks = marks
+}
+
 func (s *Sidebar) brandHeight() int {
 	if s.fingerprint != "" {
 		return 5
@@ -504,6 +513,11 @@ func (s *Sidebar) View() string {
 
 	if s.filtering {
 		writeSidebarLine(&b, s.renderFilterLine(w), w)
+		rendered++
+	}
+
+	if s.filtering && len(s.items) == 0 {
+		writeSidebarLine(&b, uikit.OnBg(uikit.ColorSidebarBg, uikit.ColorTextMuted).Render("   no matching tasks"), w)
 		rendered++
 	}
 
@@ -544,9 +558,16 @@ func (s *Sidebar) renderItem(index int) string {
 		indicator = "▸ "
 	}
 
-	text := " " + indicator + truncateToWidth(label, max(1, s.width-4))
-	if width := lipgloss.Width(text); width < s.width {
-		text += strings.Repeat(" ", s.width-width)
+	// A marked task row ends in its 2-cell status mark (glyph + space). Only
+	// marked rows give those cells up, so a long name without a mark isn't
+	// truncated for a mark it doesn't have.
+	mark, markW := s.marks[item.taskName], 0
+	if item.kind == entryTask && mark.Glyph != "" {
+		markW = 2
+	}
+	text := " " + indicator + truncateToWidth(label, max(1, s.width-4-markW))
+	if width := lipgloss.Width(text); width < s.width-markW {
+		text += strings.Repeat(" ", s.width-markW-width)
 	}
 
 	cursorHere := index == s.cursor && !s.versionFocused
@@ -567,7 +588,10 @@ func (s *Sidebar) renderItem(index int) string {
 		style = uikit.SidebarItemFocusedStyle
 	}
 
-	return style.Render(text)
+	if markW == 0 {
+		return style.Render(text)
+	}
+	return style.Render(text) + style.Foreground(mark.Color).Bold(true).Render(mark.Glyph+" ")
 }
 
 // isSelected reports whether the displayed item at displayedIdx is the active

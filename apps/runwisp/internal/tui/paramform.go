@@ -535,7 +535,7 @@ func (d *ParamFormDialog) syncFocus() {
 }
 
 func (d *ParamFormDialog) View(screenWidth, screenHeight int) string {
-	dialogWidth, innerWidth := modalDimensions(screenWidth, 56, 48)
+	dialogWidth, innerWidth := modalDimensions(screenWidth, 64, 48)
 
 	lines := []string{
 		modalEmptyLine(innerWidth),
@@ -549,6 +549,9 @@ func (d *ParamFormDialog) View(screenWidth, screenHeight int) string {
 	// every field below the first wrap.
 	visual := visualRows(lines)
 	for i := range d.fields {
+		// Fit the input to the card: the custom row's 6-cell indent, the "> "
+		// prompt and the cursor cell.
+		d.fields[i].input.SetWidth(max(innerWidth-6-2-1, 8))
 		fieldLines := d.renderField(i, innerWidth)
 		top := visual
 		valueY := top + lipgloss.Height(fieldLines[0]) // value sits below the label
@@ -623,7 +626,12 @@ func (d *ParamFormDialog) renderField(i, innerWidth int) []string {
 		prefix = "▶ "
 	}
 
-	out := []string{modalLeftLine(prefix+label, innerWidth, labelFg)}
+	// The include marker ("(omitted)" / "(empty)") rides the label row: on the
+	// value row it would sit past the input's padded width, far from the field.
+	out := []string{modalLeftLineRich(innerWidth,
+		modalSeg(prefix+label, labelFg),
+		modalSeg(f.includeMarker(), uikit.ColorTextMuted),
+	)}
 
 	var value string
 	switch {
@@ -646,7 +654,7 @@ func (d *ParamFormDialog) renderField(i, innerWidth int) []string {
 	case f.combo:
 		value = "‹ " + f.comboLabel() + " ›"
 	default:
-		value = f.input.View() + f.includeMarker()
+		value = f.input.View()
 	}
 	if focused && f.param.Kind == model.ParamFlag {
 		// A focused flag carries its toggle keys inline, right at the control, so
@@ -657,7 +665,7 @@ func (d *ParamFormDialog) renderField(i, innerWidth int) []string {
 			modalSeg("      space / ←→ toggle", uikit.ColorTextMuted),
 		))
 	} else {
-		out = append(out, modalLeftLine("    "+value, innerWidth, uikit.ColorText))
+		out = append(out, modalIndentedLine(4, value, innerWidth, uikit.ColorText))
 	}
 
 	if f.onCustom() {
@@ -668,10 +676,10 @@ func (d *ParamFormDialog) renderField(i, innerWidth int) []string {
 		if focused && d.part == focusCustom {
 			rowPrefix = "    ▸ "
 		}
-		out = append(out, modalLeftLine(rowPrefix+f.input.View()+f.includeMarker(), innerWidth, uikit.ColorText))
+		out = append(out, modalLeftLine(rowPrefix+f.input.View(), innerWidth, uikit.ColorText))
 	}
 	if f.param.Description != "" {
-		out = append(out, modalLeftLine("    "+f.param.Description, innerWidth, uikit.ColorTextMuted))
+		out = append(out, modalIndentedLine(4, f.param.Description, innerWidth, uikit.ColorTextMuted))
 	}
 	return out
 }
@@ -693,6 +701,15 @@ func modalLeftLine(text string, innerWidth int, fg color.Color) string {
 	return uikit.OnBg(uikit.ColorBgLight, fg).
 		Width(innerWidth).
 		Align(lipgloss.Left).
+		Render(text)
+}
+
+// modalIndentedLine is modalLeftLine with a hanging indent: text that wraps
+// continues under its own first column instead of the card's left edge.
+func modalIndentedLine(indent int, text string, innerWidth int, fg color.Color) string {
+	return uikit.OnBg(uikit.ColorBgLight, fg).
+		Width(innerWidth).
+		PaddingLeft(indent).
 		Render(text)
 }
 

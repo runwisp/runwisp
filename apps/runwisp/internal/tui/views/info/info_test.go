@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/stretchr/testify/assert"
@@ -363,7 +364,7 @@ func TestInfoView_View_RenderBranches(t *testing.T) {
 		{
 			name: "with-capabilities",
 			setup: func() *InfoView {
-				v := NewInfoView(uikit.StartupInfo{Capabilities: []model.CapInfo{
+				v := NewInfoView(uikit.StartupInfo{StationEnabled: true, Capabilities: []model.CapInfo{
 					{Name: "slack", Available: true},
 					{Name: "telegram", Available: false},
 				}})
@@ -375,7 +376,7 @@ func TestInfoView_View_RenderBranches(t *testing.T) {
 		{
 			name: "capabilities-narrow",
 			setup: func() *InfoView {
-				v := NewInfoView(uikit.StartupInfo{Capabilities: []model.CapInfo{
+				v := NewInfoView(uikit.StartupInfo{StationEnabled: true, Capabilities: []model.CapInfo{
 					{Name: "slack", Available: true},
 					{Name: "telegram", Available: true},
 					{Name: "email", Available: false},
@@ -527,4 +528,40 @@ func TestInfoView_View_ScrollProducesDifferentContent(t *testing.T) {
 	require.NotEmpty(t, scrolled)
 
 	assert.NotEqual(t, first, scrolled, "scrolling should change rendered output")
+}
+
+func TestInfoView_ReadableSummaryRows(t *testing.T) {
+	v := NewInfoView(uikit.StartupInfo{
+		Timezone:     "UTC",
+		Capabilities: []model.CapInfo{{Name: "shell", Available: true}, {Name: "container"}},
+		Tasks:        []model.Task{{Name: "a", Cron: "* * * * *"}, {Name: "longer-name", Cron: "0 3 * * *"}},
+	})
+	failed := time.Now().Add(-5 * time.Minute)
+	v.UpdateRunSummary(&model.RunSummary{Total: 2, Failed: 1, LastFailure: &failed})
+	v.UpdateStats(&model.SystemStats{OS: "freebsd", Arch: "arm64", Host: "pi"})
+
+	activity := ansi.Strip(strings.Join(v.renderActivitySection(100), "\n"))
+	assert.Contains(t, activity, "Last failure  5m ago", "relative time, not RFC3339")
+	assert.NotContains(t, activity, "T"+failed.UTC().Format("15:04"), "no raw RFC3339 stamp")
+
+	daemon := ansi.Strip(strings.Join(v.renderQuickInfoSection(100), "\n"))
+	assert.NotContains(t, daemon, "Dispatch", "dispatch capabilities only mean something with Station")
+	v.info.StationEnabled = true
+	assert.Contains(t, ansi.Strip(strings.Join(v.renderQuickInfoSection(100), "\n")), "Dispatch")
+	assert.NotContains(t, daemon, "Platform", "the platform shows once, in the header, from the daemon")
+	health := ansi.Strip(strings.Join(v.renderHealthSection(100), "\n"))
+	assert.Contains(t, health, "freebsd/arm64  ·  pi", "the daemon's platform, not the TUI's")
+
+	// Task schedules line up in one column.
+	tasks := ansi.Strip(strings.Join(v.renderTasksSection(100), "\n"))
+	assert.Equal(t, strings.Index(lineWith(tasks, "longer-name"), "0 3"), strings.Index(lineWith(tasks, "  a "), "* *"))
+}
+
+func lineWith(block, sub string) string {
+	for _, l := range strings.Split(block, "\n") {
+		if strings.Contains(l, sub) {
+			return l
+		}
+	}
+	return ""
 }

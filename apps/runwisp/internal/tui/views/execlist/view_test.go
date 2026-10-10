@@ -912,6 +912,36 @@ func TestExecView_View_Normal(t *testing.T) {
 	}
 }
 
+func TestExecView_View_ExitCodeOnFailure(t *testing.T) {
+	ev := newSizedExecView(100, 24)
+	ev.Run.Status = model.PhaseEnded
+	ev.Run.EndReason = model.EndReasonPtr(model.ReasonFailed)
+	ev.Run.ExitCode = 3
+	if out := ansi.Strip(ev.View()); !strings.Contains(out, "exit 3") {
+		t.Fatalf("expected the exit code beside the status:\n%s", out)
+	}
+	ev.Run.ExitCode = 0
+	if out := ansi.Strip(ev.View()); strings.Contains(out, "exit 0") {
+		t.Fatal("a zero exit code needs no callout")
+	}
+}
+
+func TestExecView_DeleteButtonQuietUntilFocused(t *testing.T) {
+	ev := newSizedExecView(100, 24)
+	ev.Run.Status = model.PhaseEnded
+	ev.Run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
+	if !ev.CanDelete() {
+		t.Skip("run not deletable in this fixture")
+	}
+	if got := ev.renderDeleteButton(); got != uikit.BtnBackStyle.Render("Delete (D)") {
+		t.Fatalf("resting Delete should use the quiet raised style, got %q", got)
+	}
+	ev.HeaderFocus = HeaderFocusDelete
+	if got := ev.renderDeleteButton(); got != uikit.BtnStopStyle.Render("Delete (D)") {
+		t.Fatalf("focused Delete should turn red, got %q", got)
+	}
+}
+
 func TestExecView_View_NormalWithAction(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 	ev.Run.Status = model.PhaseRunning
