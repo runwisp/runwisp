@@ -111,7 +111,8 @@ type ExecutionStopMessage struct {
 
 // State of a single service instance slot as reported by the daemon
 // supervisor. `running` = live; `restarting` = exited and awaiting the
-// next backoff respawn; `stopped` = operator-stopped, not being refilled;
+// next backoff respawn; `stopped` = not being refilled, because it was
+// operator-stopped or its restart policy won't respawn it;
 // `fatal` = the supervisor gave up on the slot. Consumers must tolerate
 // unknown values (forward-compat).
 type ServiceInstanceState string

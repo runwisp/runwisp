@@ -1514,7 +1514,7 @@ export interface components {
              */
             startedAt?: string;
             /**
-             * @description restarting: between an exit and the next respawn; fatal: gave up after too many failed starts and won't respawn until started
+             * @description restarting: between an exit and the next respawn; stopped: down until started, because the service was stopped or its restart policy (never, or on_failure after a clean exit) won't respawn it; fatal: gave up after too many failed starts and won't respawn until started
              * @enum {string}
              */
             state: "running" | "restarting" | "stopped" | "fatal";

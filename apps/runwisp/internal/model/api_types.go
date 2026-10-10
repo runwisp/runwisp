@@ -33,7 +33,7 @@ type ServiceStatus struct {
 // exited run for the slot, zero/nil otherwise.
 type ServiceInstanceStatus struct {
 	Index        int        `json:"index" doc:"0-based slot, as RUNWISP_INSTANCE_INDEX"`
-	State        string     `json:"state" enum:"running,restarting,stopped,fatal" doc:"restarting: between an exit and the next respawn; fatal: gave up after too many failed starts and won't respawn until started"`
+	State        string     `json:"state" enum:"running,restarting,stopped,fatal" doc:"restarting: between an exit and the next respawn; stopped: down until started, because the service was stopped or its restart policy (never, or on_failure after a clean exit) won't respawn it; fatal: gave up after too many failed starts and won't respawn until started"`
 	Pid          int        `json:"-"`
 	StartedAt    *time.Time `json:"startedAt,omitempty" doc:"When the instance's current run started; absent unless running"`
 	RestartCount int        `json:"restartCount" doc:"Exits since the instance last ran healthy"`

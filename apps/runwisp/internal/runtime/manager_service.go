@@ -270,7 +270,9 @@ func (m *defaultTaskManager) ServiceSnapshot(taskName string) (model.ServiceSnap
 				started := ar.StartedAt
 				st.StartedAt = &started
 			}
-		case stopped:
+		case stopped, ts.supervisor.IsExited(i):
+			// Operator-stopped, or its run ended and the restart policy
+			// won't bring it back: down until started either way.
 			st.State = model.ServiceInstanceStopped
 		case ts.supervisor.IsFatal(i):
 			// Slot exhausted its start-retry budget; the supervisor has given

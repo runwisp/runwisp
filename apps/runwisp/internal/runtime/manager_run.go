@@ -116,6 +116,9 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 	run.OutputMatched = result.OutputMatched
 	run.PeakMemoryBytes, run.CPUTimeMs = result.PeakMemoryBytes, result.CPUTimeMs
 	run.End(task, outcome.endReason, result.ExitCode, endTime)
+	if task.Kind.IsService() && !serviceFatal && !retry.ShouldRestart(task, run) {
+		m.markServiceExited(task.Name, run.InstanceIndex)
+	}
 
 	m.persistence.PersistExisting(run)
 	m.publishTerminal(outcome.eventType, run, "")
@@ -128,6 +131,17 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 	}
 
 	return nextRestartAttempt, serviceFatal
+}
+
+// markServiceExited flags an instance slot as down for good: its run ended and
+// the restart policy won't respawn it. Set before the terminal event goes out,
+// so a client refreshing on that event never sees the slot as restarting.
+func (m *defaultTaskManager) markServiceExited(taskName string, idx int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if ts := m.taskStateFor(taskName); ts != nil && ts.supervisor != nil {
+		ts.supervisor.MarkExited(idx)
+	}
 }
 
 // retireRun removes the run from its task's active set and updates supervisor

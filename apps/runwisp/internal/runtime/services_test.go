@@ -279,6 +279,51 @@ func TestRestartAttemptsIncrementOnQuickExit(t *testing.T) {
 		"counter should accumulate across multiple quick exits, got %d", attempts)
 }
 
+// TestServiceSnapshotNoRestartPending: an instance its restart policy won't
+// respawn (never, or on_failure after a clean exit) must report as down until
+// started, not as "restarting" forever. Start brings it back.
+func TestServiceSnapshotNoRestartPending(t *testing.T) {
+	cases := []struct {
+		name     string
+		restart  model.RestartPolicy
+		exitCode int
+	}{
+		{"never", model.RestartNever, 0},
+		{"never after a failure", model.RestartNever, 1},
+		{"on_failure after a clean exit", model.RestartOnFailure, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			exec := new(testutil.MockExecutor)
+			eb := events.NewEventBus()
+			jm := NewTaskManager(exec, eb, time.Now)
+			defer jm.Shutdown()
+
+			task := serviceTask("oneshot", 1)
+			task.Restart = tc.restart
+			jm.UpsertTask(task)
+			var execCalls atomic.Int64
+			exec.On("Execute", mock.Anything, task, mock.Anything).
+				Run(func(mock.Arguments) { execCalls.Add(1) }).
+				Return(&executor.ExecuteResult{ExitCode: tc.exitCode}, time.Millisecond)
+
+			ended := watchCompletions(eb)
+			require.NoError(t, jm.StartServiceInstances("oneshot", model.TriggeredByService))
+			ended.waitFor(t, 1)
+
+			snap, ok := jm.ServiceSnapshot("oneshot")
+			require.True(t, ok)
+			require.Len(t, snap.Instances, 1)
+			assert.Equal(t, model.ServiceInstanceStopped, snap.Instances[0].State)
+			assert.Equal(t, int64(1), execCalls.Load(), "nothing respawns it")
+
+			require.NoError(t, jm.StartService("oneshot"))
+			ended.waitFor(t, 2)
+			assert.Equal(t, int64(2), execCalls.Load(), "Start brings it back")
+		})
+	}
+}
+
 // TestServiceFatalAfterStartRetries is the bug-first guard for B3: a service
 // that can never stay up must reach a loud terminal FATAL state instead of
 // flapping forever (which is what happens without restart_attempts). It asserts
