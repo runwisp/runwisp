@@ -442,7 +442,7 @@ func TestOversizedStepsSelectRangeStart(t *testing.T) {
 }
 
 // TestExplain pins the expanded fields and the per-field errors behind
-// `runwisp cron --json` (and the SDK's validateDetailed and parse).
+// `runwisp sdk-cron --json` (and the SDK's validateDetailed and parse).
 func TestExplain(t *testing.T) {
 	fields, errs := Explain("*/20 9-10 * jan sun,7")
 	require.Empty(t, errs)

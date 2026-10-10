@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The cron questions node-cron answers with its own parser, answered by
-// `runwisp cron` instead, so the grammar and the fire times are exactly the
+// `runwisp sdk-cron` instead, so the grammar and the fire times are exactly the
 // daemon's. Answers are cached: these are called from hot paths.
 
 import { askCron } from "./daemon.ts";

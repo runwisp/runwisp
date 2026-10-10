@@ -12,7 +12,7 @@ import { CronAnswers } from "./cron.ts";
 const FIRST = Date.parse("2026-01-02T03:01:00Z");
 const MINUTE = 60_000;
 
-/** A runwisp binary that answers every `cron` question with 60 minutely firings from 03:01Z, logging each call. */
+/** A runwisp binary that answers every `sdk-cron` question with 60 minutely firings from 03:01Z, logging each call. */
 function fakeCron() {
     const dir = mkdtempSync(join(tmpdir(), "rwn-cron-"));
     const next = Array.from({ length: 60 }, (_, i) => new Date(FIRST + i * MINUTE).toISOString());
@@ -61,7 +61,7 @@ describe("CronAnswers", () => {
         const first = answers.explain("1-2 3 * * *");
         first.fields?.minute.push(99);
         expect(answers.explain("1-2 3 * * *").fields?.minute).toEqual([1, 2]);
-        expect(calls()).toEqual(["cron --json --count 0 -- 1-2 3 * * *"]);
+        expect(calls()).toEqual(["sdk-cron --json --count 0 -- 1-2 3 * * *"]);
     });
 
     it("answers next firings from one batch until it runs short", () => {
@@ -69,7 +69,7 @@ describe("CronAnswers", () => {
         const now = new Date(FIRST - 30_000);
         expect(answers.next("* * * * *", "Europe/Bratislava", 1, now)).toEqual([new Date(FIRST)]);
         expect(calls()).toEqual([
-            "cron --json --count 60 --after 2026-01-02T03:00:30.000Z --timezone Europe/Bratislava -- * * * * *",
+            "sdk-cron --json --count 60 --after 2026-01-02T03:00:30.000Z --timezone Europe/Bratislava -- * * * * *",
         ]);
         const later = new Date(FIRST + 10 * MINUTE + 1);
         expect(answers.next("* * * * *", "Europe/Bratislava", 2, later)).toEqual([
@@ -82,7 +82,7 @@ describe("CronAnswers", () => {
         answers.next("* * * * *", "Europe/Bratislava", 2, new Date(FIRST + 58 * MINUTE + 1));
         expect(calls()).toHaveLength(3);
         expect(calls()[1]).toBe(
-            "cron --json --count 60 --after 2026-01-02T03:00:30.000Z -- * * * * *",
+            "sdk-cron --json --count 60 --after 2026-01-02T03:00:30.000Z -- * * * * *",
         );
     });
 
@@ -106,7 +106,7 @@ describe("CronAnswers", () => {
         // FIRST - 1000 itself is not in the batch: it holds firings after it.
         expect(answers.match("* * * * *", undefined, new Date(FIRST - 1000))).toBe(false);
         expect(calls()[1]).toBe(
-            "cron --json --count 1 --after 2026-01-02T03:00:58.000Z -- * * * * *",
+            "sdk-cron --json --count 1 --after 2026-01-02T03:00:58.000Z -- * * * * *",
         );
     });
 });

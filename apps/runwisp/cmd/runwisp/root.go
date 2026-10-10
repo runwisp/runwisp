@@ -63,7 +63,6 @@ Tasks are defined in runwisp.toml (the sole source of truth). Machine-readable
 surfaces for scripts and AI agents:
   runwisp schema           JSON Schema for runwisp.toml (also at ` + config.SchemaURL + `)
   runwisp validate --json  validate a config; errors carry key/line/column
-  runwisp cron <expr> --json  next runs and parsed fields of a cron expression
   runwisp run <t> --json  run a task and print its outcome as JSON
   runwisp status --json    daemon + task snapshot as JSON
   runwisp openapi          the REST API's OpenAPI 3.1 spec
@@ -109,7 +108,7 @@ func init() {
 	rootCmd.AddCommand(stationCmd)
 	rootCmd.AddCommand(tuiCmd)
 	rootCmd.AddCommand(validateCmd)
-	rootCmd.AddCommand(cronCmd)
+	rootCmd.AddCommand(sdkCronCmd)
 	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(promoteCmd)
 	rootCmd.AddCommand(listCmd)

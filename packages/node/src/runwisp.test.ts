@@ -273,8 +273,8 @@ describe("RunWisp instances", () => {
 
 /**
  * A runwisp binary that validates every config, reports its version, and
- * answers `cron` with one firing at NEXT (an expression starting "bad" is
- * invalid, "@every" has no fields), logging each cron call to dir/cron.log:
+ * answers `sdk-cron` with one firing at NEXT (an expression starting "bad" is
+ * invalid, "@every" has no fields), logging each sdk-cron call to dir/cron.log:
  * so tests can register tasks without the real one.
  */
 function fakeBinary(dir: string): string {
@@ -285,7 +285,7 @@ function fakeBinary(dir: string): string {
 case "$1" in
 --version) echo "runwisp version 1.0.0" ;;
 validate) cat >/dev/null; echo '{"errors":[]}' ;;
-cron)
+sdk-cron)
     echo "$@" >> "${dir}/cron.log"
     for expr; do :; done
     case "$expr" in

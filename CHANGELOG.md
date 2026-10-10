@@ -16,7 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `@runwisp/node` integrates with NestJS (replacing `@nestjs/schedule`), Nuxt and Next.js (running Nitro's `scheduledTasks` and Vercel Cron jobs), and Astro.
 - Tasks and services take `sdk = true`, which runs them in an app that defines them through an SDK instead of a shell command, and `runwisp daemon --app` reads its config from such an app.
 - `runwisp import cron` names the jobs that Bun's `Bun.cron()` wrote into a crontab after their title.
-- `runwisp cron <expression>` checks a cron expression and lists when it fires next, in any timezone (`--json` for scripts).
 
 ### Changed
 

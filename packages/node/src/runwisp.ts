@@ -316,7 +316,7 @@ export class RunWisp {
         this.changed();
     }
 
-    /** node-cron's `validate`, answered by `runwisp cron` so the grammar is exactly RunWisp's. */
+    /** node-cron's `validate`, answered by `runwisp sdk-cron` so the grammar is exactly RunWisp's. */
     validate(expression: string): boolean {
         return this.cron.explain(expression).valid;
     }

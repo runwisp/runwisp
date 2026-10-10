@@ -138,57 +138,6 @@ Parse errors in JSON carry the exact location:
 }
 ```
 
-### `runwisp cron`
-
-```bash
-runwisp cron '30 9 * * mon-fri'
-runwisp cron '30 9 * * mon-fri' --timezone Europe/Bratislava --count 10
-runwisp cron '0 3 * * *' --json
-```
-
-Checks a cron expression and prints when it fires next, exactly as the daemon
-would: the same grammar, timezone, and daylight saving handling. Needs no
-config and no daemon. Exits non-zero on an invalid expression, naming the field
-at fault.
-
-```
-✓ 30 9 * * mon-fri is valid.
-  next runs (Europe/Bratislava):
-    Fri 2026-03-27 09:30:00 CET
-    Mon 2026-03-30 09:30:00 CEST
-    Tue 2026-03-31 09:30:00 CEST
-```
-
-| Flag         | Description                                                                        |
-| ------------ | ---------------------------------------------------------------------------------- |
-| `--count`    | How many next runs to list. Default `5`.                                           |
-| `--after`    | List runs after this RFC 3339 time instead of now.                                 |
-| `--timezone` | IANA zone to evaluate the expression in. Default: the host's, as for the daemon.   |
-| `--json`     | Print one JSON document: the values each field matches, the next runs, and errors. |
-
-```json
-{
-    "schemaVersion": 1,
-    "valid": true,
-    "expression": "30 9 * * mon-fri",
-    "timezone": "Europe/Bratislava",
-    "fields": {
-        "second": [0],
-        "minute": [30],
-        "hour": [9],
-        "dayOfMonth": [1, 2, 3, "...", 31],
-        "month": [1, 2, 3, "...", 12],
-        "dayOfWeek": [1, 2, 3, 4, 5]
-    },
-    "next": ["2026-03-27T09:30:00+01:00", "..."],
-    "errors": []
-}
-```
-
-`fields` is absent for `@every`, which has none. An invalid expression has
-`"valid": false` and one error per bad field, each with `field`, `value`, and
-`message`.
-
 ### `runwisp list`
 
 ```bash

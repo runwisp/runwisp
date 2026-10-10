@@ -590,7 +590,7 @@ export function validateConfig(
     return messages.length > 0 ? messages.join("; ") : undefined;
 }
 
-/** What `runwisp cron --json` says about an expression. */
+/** What `runwisp sdk-cron --json` says about an expression. */
 export interface CronAnswer {
     valid: boolean;
     /** Absent for an invalid expression, and for @every, which has no fields. */
@@ -614,7 +614,7 @@ function numbers(value: unknown): number[] {
 }
 
 /**
- * Asks `runwisp cron` about expression: whether it is valid, its fields, and
+ * Asks `runwisp sdk-cron` about expression: whether it is valid, its fields, and
  * its next count firings after `after` in timezone (undefined: the host's,
  * which is the daemon's default), exactly as the daemon fires them.
  */
@@ -623,7 +623,7 @@ export function askCron(
     expression: string,
     question: { timezone?: string | undefined; after?: Date; count: number },
 ): CronAnswer {
-    const args = ["cron", "--json", "--count", String(question.count)];
+    const args = ["sdk-cron", "--json", "--count", String(question.count)];
     if (question.after) args.push("--after", question.after.toISOString());
     if (question.timezone !== undefined) args.push("--timezone", question.timezone);
     const doc = runJson(binary, [...args, "--", expression]);
