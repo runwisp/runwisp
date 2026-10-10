@@ -211,16 +211,16 @@ tasks:
     #   2. Playwright, replays the cast into xterm.js (tui.demo.ts) at its
     #      original pacing, capturing lossless PNG frames via a DevTools
     #      screencast, then encodes an animated WebP via the same script
-    #      demo-video uses (webp only, no MP4, README doesn't need one).
+    #      demo-video uses (WebP + MP4).
     # On-demand only, never wired into check/test/ci. Encoding needs ffmpeg on
     # PATH (or the host's, via flatpak-spawn on Silverblue).
-    description: 'Generate the TUI showcase clip (WebP) from a demo-seeded daemon.'
+    description: 'Generate the TUI showcase clip (WebP + MP4) from a demo-seeded daemon.'
     script: |
       set -e
       CAST="$(pwd)/.tui-cast.json"
       RUNWISP_TUI_CAST_FILE="$CAST" RUNWISP_TUI_SHOOT_BINARY="$(pwd)/runwisp" go test ./tests/e2e -run '^TestCaptureTUIDemo$' -count=1
       cd ../ui && RUNWISP_TUI_CAST_FILE="$CAST" playwright test --config playwright.tui-demo.config.ts
-      DEMO_REC_SUBDIR=tui-demo DEMO_OUT_BASENAME=tui-demo DEMO_SKIP_MP4=1 bash scripts/encode-demo-video.sh
+      DEMO_REC_SUBDIR=tui-demo DEMO_OUT_BASENAME=tui-demo bash scripts/encode-demo-video.sh
     deps:
       - '~:build'
     options:

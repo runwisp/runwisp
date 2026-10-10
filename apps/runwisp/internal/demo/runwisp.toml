@@ -24,6 +24,7 @@
 # Postgres, no Docker — so screenshots reflect a genuinely running daemon.
 
 [daemon]
+name             = "demo-server"
 shutdown_timeout = "15s"
 external_url     = "https://runwisp.acme-notes.example"
 timezone         = "Europe/Bratislava"

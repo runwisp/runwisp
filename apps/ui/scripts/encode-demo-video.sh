@@ -7,7 +7,7 @@
 #   - <basename>.webp : animated WebP (full color, autoplays + loops inline in
 #                       an <img> on GitHub), the README hero.
 #   - <basename>.mp4  : H.264 (faststart), docs site <video> + social. Skipped
-#                       when DEMO_SKIP_MP4 is set (e.g. the TUI clip, webp-only).
+#                       when DEMO_SKIP_MP4 is set.
 #
 # The frames are lossless and captured at 2× device pixels, so this is a single
 # lossy generation (PNG -> WebP/MP4) with a sharp downscale — no VP8 mush.
