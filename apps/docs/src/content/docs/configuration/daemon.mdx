@@ -100,7 +100,8 @@ the form `<external_url>/tasks/<task>/<id>`.
 - The daemon never connects to this URL.
 - Since 1.6, when unset, the daemon uses the address of the most recent Web UI
   sign-in, and remembers it across restarts. A sign-in from another address
-  replaces it. `runwisp --url` clients signing in don't count. Behind a reverse
+  replaces it. Only password sign-ins in a browser count: `runwisp --url`
+  clients and Web UI tabs opened from the TUI don't. Behind a reverse
   proxy, the forwarded host and scheme count only from a
   [trusted proxy](#trusted_proxies). Set `external_url` to pin one address.
   `runwisp status` shows which address is in use.

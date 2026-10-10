@@ -124,7 +124,7 @@ type Options struct {
 	SessionKey          []byte                                // session-token HMAC key (auth.DeriveSessionKey, in-memory)
 	NoAuth              bool                                  // RUNWISP_AUTH=off: serve all /api/* routes over TCP without CHAP or a session token
 	TrustedProxies      []string                              // [daemon] trusted_proxies as config resolved it (RUNWISP_TRUSTED_PROXIES applied)
-	OnSignedInVisit     func(baseURL string)                  // Called with the validated base URL of each Web UI sign-in: browser password login or launch-ticket redeem (optional; never with NoAuth)
+	OnSignedInVisit     func(baseURL string)                  // Called with the validated base URL of each browser password sign-in (optional; never with NoAuth)
 	DetectedExternalURL func() string                         // Per-request Web UI address learned from sign-ins, reported by /api/daemon when external_url is unset (optional)
 	DaemonInfo          *model.DaemonInfo                     // Static identity/config info for /api/daemon
 	ConfigStale         func() bool                           // Per-request staleness probe for /api/daemon (optional; nil reports never-stale)

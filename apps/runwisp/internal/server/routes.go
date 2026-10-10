@@ -85,45 +85,34 @@ func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
 	}
 }
 
-// signInSourceKey carries a signInSource from stashSignInSource to the login
-// and launch-ticket handlers, which only see the request context.
-const signInSourceKey contextKey = "signInSource"
+// signInBaseKey carries a browser auth request's Web UI base URL from
+// stashSignInBase to the login handler, which only sees the request context.
+const signInBaseKey contextKey = "signInBase"
 
-// signInSource is where an auth request came from: the Web UI base URL it
-// dialled, and whether it carried a browser Origin header.
-type signInSource struct {
-	baseURL string
-	browser bool
-}
-
-// stashSignInSource records the request's signInSource in its context when
-// its base URL is well-formed. Mounted on the rate-limited auth group only, so
-// ordinary API traffic never pays for it.
-func (srv *Server) stashSignInSource(next http.Handler) http.Handler {
+// stashSignInBase puts the base URL a browser dialled into the request context
+// when it is well-formed. Only requests with an Origin header qualify: the
+// password login is shared with `--url` CLI calls and the remote TUI, whose Go
+// client never sends one, while a browser always does on a fetch POST. Those
+// clients must not move the link base to whatever address they dialled (often
+// localhost). Mounted on the rate-limited auth group only, so ordinary API
+// traffic never pays for it.
+func (srv *Server) stashSignInBase(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if base := srv.visitBaseURL(r); base != "" {
-			src := signInSource{baseURL: base, browser: r.Header.Get("Origin") != ""}
-			r = r.WithContext(context.WithValue(r.Context(), signInSourceKey, src))
+		if r.Header.Get("Origin") != "" {
+			if base := srv.visitBaseURL(r); base != "" {
+				r = r.WithContext(context.WithValue(r.Context(), signInBaseKey, base))
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
 // recordSignIn reports a successful Web UI sign-in's base URL so notification
-// links can point there when external_url is unset. Requests without an Origin
-// header are skipped: the password login is shared with `--url` CLI calls and
-// the remote TUI, whose Go client never sends one, while a browser always does
-// on a fetch POST. Those clients must not move the link base to whatever
-// address they dialled (often localhost).
+// links can point there when external_url is unset.
 func (srv *Server) recordSignIn(ctx context.Context) {
-	if srv.onSignedInVisit == nil {
-		return
+	if base, ok := ctx.Value(signInBaseKey).(string); ok && srv.onSignedInVisit != nil {
+		srv.onSignedInVisit(base)
 	}
-	src, ok := ctx.Value(signInSourceKey).(signInSource)
-	if !ok || !src.browser {
-		return
-	}
-	srv.onSignedInVisit(src.baseURL)
 }
 
 // visitBaseURL returns the scheme://host[:port] a client used to reach the
@@ -403,7 +392,7 @@ func (srv *Server) setupRoutes() error {
 	// share one limit to prevent nonce-store flooding (DoS on the auth flow).
 	srv.router.Group(func(r chi.Router) {
 		r.Use(httprate.LimitByIP(auth.MaxAuthAttempts, auth.AuthRateWindow))
-		r.Use(srv.stashSignInSource)
+		r.Use(srv.stashSignInBase)
 		srv.registerRateLimitedAuthRoutes(r)
 	})
 
