@@ -159,8 +159,10 @@ runwisp status --json
 ```
 
 Checks that the daemon is up, prints a short summary, and warns when
-`runwisp.toml` changed since the daemon loaded it. Exits non-zero if the daemon
-isn't running.
+`runwisp.toml` changed since the daemon loaded it. The summary names the
+[Web UI address](/configuration/daemon/#external_url) notifications link to,
+and whether it is configured or detected. Exits non-zero if the daemon isn't
+running.
 
 | Flag     | Description                                                                                   |
 | -------- | --------------------------------------------------------------------------------------------- |

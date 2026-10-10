@@ -638,21 +638,22 @@ type DaemonInfo struct {
 	Version string `json:"version"`
 	// Name mirrors [daemon] name: the display label shown in place of the
 	// fingerprint. Empty when unset.
-	Name             string    `json:"name"`
-	Fingerprint      string    `json:"fingerprint"`
-	Port             int       `json:"port"`
-	ExternalURL      string    `json:"externalUrl"`
-	StationEnabled   bool      `json:"stationEnabled"`
-	SchedulingActive bool      `json:"schedulingActive"`
-	ServiceManaged   bool      `json:"serviceManaged"`
-	AuthDisabled     bool      `json:"authDisabled"`
-	ConfigLoadedAt   time.Time `json:"configLoadedAt"`
-	ConfigStale      bool      `json:"configStale"`
-	ConfigWarnings   []string  `json:"configWarnings,omitempty" doc:"Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads."`
-	ResolvedTimezone string    `json:"resolvedTimezone"`
-	TimezoneSource   string    `json:"timezoneSource" enum:"config,system"`
-	Tasks            []Task    `json:"tasks"`
-	Capabilities     []CapInfo `json:"capabilities"`
+	Name              string    `json:"name"`
+	Fingerprint       string    `json:"fingerprint"`
+	Port              int       `json:"port"`
+	ExternalURL       string    `json:"externalUrl" doc:"Web UI base used for notification links: [daemon] external_url, else the address of the latest signed-in Web UI visit. Empty when neither is known."`
+	ExternalURLSource string    `json:"externalUrlSource,omitempty" enum:"config,detected" doc:"Where externalUrl came from. Omitted when externalUrl is empty."`
+	StationEnabled    bool      `json:"stationEnabled"`
+	SchedulingActive  bool      `json:"schedulingActive"`
+	ServiceManaged    bool      `json:"serviceManaged"`
+	AuthDisabled      bool      `json:"authDisabled"`
+	ConfigLoadedAt    time.Time `json:"configLoadedAt"`
+	ConfigStale       bool      `json:"configStale"`
+	ConfigWarnings    []string  `json:"configWarnings,omitempty" doc:"Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads."`
+	ResolvedTimezone  string    `json:"resolvedTimezone"`
+	TimezoneSource    string    `json:"timezoneSource" enum:"config,system"`
+	Tasks             []Task    `json:"tasks"`
+	Capabilities      []CapInfo `json:"capabilities"`
 	// UpdateAvailable is true when the background update check found a newer
 	// published release than this build. Re-derived per request from the live
 	// checker; false when the check is disabled, offline, or up to date.

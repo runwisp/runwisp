@@ -22,11 +22,11 @@ func TestResolve_NotifiersCarryConfigAndRenderContext(t *testing.T) {
 			{ID: "hook", Type: "webhook", URL: "https://example.com/hook", Headers: map[string]string{"X": "y"}},
 		},
 	}
-	got := Resolve(cfg, render.TemplateContext{ExternalURL: "https://rw.test"})
+	got := Resolve(cfg, render.TemplateContext{ExternalURL: func() string { return "https://rw.test" }})
 	require.Len(t, got.Notifiers, 2)
 	assert.Equal(t, cfg.Notifiers[0], got.Notifiers[0].NotifierSpec)
 	assert.Equal(t, cfg.Notifiers[1], got.Notifiers[1].NotifierSpec)
-	assert.Equal(t, "https://rw.test", got.Notifiers[0].RenderContext.ExternalURL)
+	assert.Equal(t, "https://rw.test", got.Notifiers[0].RenderContext.ExternalURL())
 }
 
 func TestResolve_CompiledRulePredicates(t *testing.T) {

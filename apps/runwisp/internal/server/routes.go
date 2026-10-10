@@ -71,16 +71,44 @@ func maxBodySize(limit int64) func(http.Handler) http.Handler {
 // already gated socket access; running CHAP on top would add no security and
 // would force the local CLI/TUI to keep a password around just to talk to the
 // daemon that owns its data dir.
-func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
+//
+// signedIn (optional) runs for each TCP request that passed the token check,
+// never for socket requests.
+func authOrLocalTrusted(authSvc *auth.Service, signedIn func(*http.Request)) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !IsLocalTrusted(r) && !authSvc.ValidToken(auth.TokenFromRequest(r)) {
-				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
-				return
+			if !IsLocalTrusted(r) {
+				if !authSvc.ValidToken(auth.TokenFromRequest(r)) {
+					http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+					return
+				}
+				if signedIn != nil {
+					signedIn(r)
+				}
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// observeVisit reports the base URL a signed-in browser used to reach the
+// daemon, so notification links can point there when external_url is unset.
+// The scheme and X-Forwarded-Host are only taken from a trusted proxy; anyone
+// else gets the raw Host header, which is what their browser dialled.
+func (srv *Server) observeVisit(r *http.Request) {
+	host := r.Host
+	if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" && isFromTrustedProxy(r, srv.proxies()) {
+		host, _, _ = strings.Cut(fwd, ",")
+		host = strings.TrimSpace(host)
+	}
+	if host == "" {
+		return
+	}
+	scheme := "http"
+	if isSecureCtx(r.Context()) {
+		scheme = "https"
+	}
+	srv.onSignedInVisit(scheme + "://" + host)
 }
 
 // savePeerAddr captures the original TCP peer address into context, along with
@@ -326,7 +354,11 @@ func (srv *Server) setupRoutes() error {
 		r.Use(maxBodySize(maxProtectedBodySize))
 		r.Use(csrfGuard(!srv.noAuth))
 		if !srv.noAuth {
-			r.Use(authOrLocalTrusted(srv.auth))
+			var signedIn func(*http.Request)
+			if srv.onSignedInVisit != nil {
+				signedIn = srv.observeVisit
+			}
+			r.Use(authOrLocalTrusted(srv.auth, signedIn))
 		}
 
 		// Huma operations (registered on the chi sub-router group)

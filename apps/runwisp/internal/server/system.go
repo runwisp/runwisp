@@ -86,6 +86,15 @@ func (srv *Server) humaGetInfo(ctx context.Context, input *struct{}) (*DaemonInf
 	// Staleness is probed per request — the browser can't read the daemon's
 	// disk, and a cached answer would defeat the point of the indicator.
 	info.ConfigStale = srv.configStale()
+	// The detected address moves with every signed-in visit from a new URL.
+	switch {
+	case info.ExternalURL != "":
+		info.ExternalURLSource = "config"
+	case srv.detectedURL != nil:
+		if info.ExternalURL = srv.detectedURL(); info.ExternalURL != "" {
+			info.ExternalURLSource = "detected"
+		}
+	}
 	// Same reasoning as staleness: a reload can add or clear a warning, and the
 	// DaemonInfo the provider holds was built at boot.
 	if srv.configWarnings != nil {

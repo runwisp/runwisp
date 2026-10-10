@@ -888,7 +888,13 @@ export interface components {
             configStale: boolean;
             /** @description Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads. */
             configWarnings?: string[] | null;
+            /** @description Web UI base used for notification links: [daemon] external_url, else the address of the latest signed-in Web UI visit. Empty when neither is known. */
             externalUrl: string;
+            /**
+             * @description Where externalUrl came from. Omitted when externalUrl is empty.
+             * @enum {string}
+             */
+            externalUrlSource?: "config" | "detected";
             fingerprint: string;
             latestVersion: string;
             name: string;

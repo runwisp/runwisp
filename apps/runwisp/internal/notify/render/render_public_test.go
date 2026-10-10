@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
 	"github.com/stretchr/testify/assert"
@@ -54,6 +55,25 @@ func TestTemplateRenderer_Render_BasicSubstitution(t *testing.T) {
 	msg, err := r.Render(ev)
 	require.NoError(t, err)
 	assert.Equal(t, "task=backup", string(msg.Body))
+}
+
+// TestTemplateRenderer_ExternalURLReadPerRender: the link base is read on
+// every render, so an address detected after the renderer was built applies
+// to the next notification without a rebuild.
+func TestTemplateRenderer_ExternalURLReadPerRender(t *testing.T) {
+	base := ""
+	r, err := render.NewTemplateRenderer("t", "{{ runURL .Run }}", nil, render.TemplateContext{ExternalURL: func() string { return base }})
+	require.NoError(t, err)
+	ev := &notify.Event{Run: &model.Run{ID: "01K", TaskName: "backup"}}
+
+	msg, err := r.Render(ev)
+	require.NoError(t, err)
+	assert.Empty(t, string(msg.Body), "no base yet, no link")
+
+	base = "http://rw.lan:9477"
+	msg, err = r.Render(ev)
+	require.NoError(t, err)
+	assert.Equal(t, "http://rw.lan:9477/tasks/backup/01K", string(msg.Body))
 }
 
 func TestTemplateRenderer_Render_TitleFn(t *testing.T) {

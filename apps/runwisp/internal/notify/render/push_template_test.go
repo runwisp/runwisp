@@ -56,7 +56,7 @@ func TestPushTemplates_RunFailed_WithURLAndTail(t *testing.T) {
 	end := start.Add(300 * time.Millisecond)
 	run := &model.Run{ID: "01KRK9", TaskName: "dc-fail", ExitCode: 1, StartedAt: &start, EndedAt: &end, TriggeredBy: model.TriggeredByAPI}
 	ev := &notify.Event{Kind: notify.KindRunFailed, Severity: notify.SevError, Timestamp: start, TaskName: "dc-fail", Run: run, LogPath: makeLogTail(t)}
-	ctx := TemplateContext{ExternalURL: "https://r.example.com", Fingerprint: "bright-falcon", OutputTail: NewOutputTail()}
+	ctx := TemplateContext{ExternalURL: func() string { return "https://r.example.com" }, Fingerprint: "bright-falcon", OutputTail: NewOutputTail()}
 
 	for kind, prio := range pushPriorities {
 		t.Run(kind, func(t *testing.T) {

@@ -103,13 +103,15 @@ func (l *liveNotify) Stop(ctx context.Context) {
 
 // initNotify builds (but does not start) the notification service for cfg,
 // delivering in-app notifications to hub. templates holds each notifier's
-// template_path body, as read by readNotifyTemplates. Returns nil when there
+// template_path body, as read by readNotifyTemplates. detected supplies the
+// link base when external_url is unset (nil disables that fallback). Returns nil when there
 // are no notifiers and no routes; the daemon then runs without notifications
 // wired.
 func initNotify(
 	cfg *config.Config,
 	templates map[string]string,
 	fingerprint string,
+	detected *detectedURL,
 	hub *inapp.Hub,
 	db *storage.SQLiteDatabase,
 	bus *events.Bus,
@@ -122,7 +124,7 @@ func initNotify(
 	}
 
 	renderCtx := render.TemplateContext{
-		ExternalURL: cfg.Daemon.ExternalURL,
+		ExternalURL: externalURLFor(cfg, detected),
 		Name:        cfg.Daemon.Name,
 		Fingerprint: fingerprint,
 		OutputTail:  render.NewOutputTail(),

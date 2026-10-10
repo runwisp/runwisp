@@ -49,19 +49,20 @@ func taskKindString(k model.TaskKind) string {
 // live snapshot: daemon reachability, a system summary, and every task with
 // its last run. See statusTaskJSON / lastRunJSON.
 type statusJSONDoc struct {
-	SchemaVersion    int              `json:"schemaVersion"`
-	Healthy          bool             `json:"healthy"`
-	Error            string           `json:"error,omitempty"`
-	Version          string           `json:"version,omitempty"`
-	Port             int              `json:"port,omitempty"`
-	ExternalURL      string           `json:"externalUrl,omitempty"`
-	SchedulingActive bool             `json:"schedulingActive"`
-	ConfigStale      bool             `json:"configStale"`
-	ConfigWarnings   []string         `json:"configWarnings,omitempty"`
-	ResolvedTimezone string           `json:"resolvedTimezone,omitempty"`
-	TimezoneSource   string           `json:"timezoneSource,omitempty"`
-	System           *statusSystem    `json:"system,omitempty"`
-	Tasks            []statusTaskJSON `json:"tasks"`
+	SchemaVersion     int              `json:"schemaVersion"`
+	Healthy           bool             `json:"healthy"`
+	Error             string           `json:"error,omitempty"`
+	Version           string           `json:"version,omitempty"`
+	Port              int              `json:"port,omitempty"`
+	ExternalURL       string           `json:"externalUrl,omitempty"`
+	ExternalURLSource string           `json:"externalUrlSource,omitempty"`
+	SchedulingActive  bool             `json:"schedulingActive"`
+	ConfigStale       bool             `json:"configStale"`
+	ConfigWarnings    []string         `json:"configWarnings,omitempty"`
+	ResolvedTimezone  string           `json:"resolvedTimezone,omitempty"`
+	TimezoneSource    string           `json:"timezoneSource,omitempty"`
+	System            *statusSystem    `json:"system,omitempty"`
+	Tasks             []statusTaskJSON `json:"tasks"`
 }
 
 // statusSystem is a curated subset of model.SystemStats — the identity and

@@ -234,6 +234,15 @@
             ]
           },
           "externalUrl": {
+            "description": "Web UI base used for notification links: [daemon] external_url, else the address of the latest signed-in Web UI visit. Empty when neither is known.",
+            "type": "string"
+          },
+          "externalUrlSource": {
+            "description": "Where externalUrl came from. Omitted when externalUrl is empty.",
+            "enum": [
+              "config",
+              "detected"
+            ],
             "type": "string"
           },
           "fingerprint": {
