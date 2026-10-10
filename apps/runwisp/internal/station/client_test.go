@@ -6,10 +6,12 @@ package station
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1249,4 +1251,51 @@ func snapshotNames(m map[string]*model.Task) []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// TestResync_OnTasksChangedPostsOnlyWhenPayloadChanged is the reload path: a
+// tasks.changed event re-syncs the live task set, but tasks.changed also fires
+// for service start/stop, which the payload doesn't carry, so an unchanged
+// payload must not hit the Station again.
+func TestResync_OnTasksChangedPostsOnlyWhenPayloadChanged(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []string
+	syncSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(b))
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"success":true,"summary":{}}`))
+	}))
+	defer syncSrv.Close()
+	baseURL, _ := url.Parse(syncSrv.URL)
+
+	bus := events.NewEventBus()
+	jm := runtime.NewTaskManager(&testutil.MockExecutor{}, bus, time.Now)
+	defer jm.Shutdown()
+	registry := runtime.NewTaskRegistry(map[string]*model.Task{"backup": {Name: "backup", Run: "v1"}})
+	client, err := NewClient(Config{Enabled: true, BaseURL: baseURL, StationToken: "t"}, Dependencies{
+		TaskManager: jm, RunRepo: &testutil.MockRunRepository{}, EventBus: bus,
+		LocalTasks: registry, LogDir: t.TempDir(), Now: time.Now,
+	})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	defer client.startResync(ctx)()
+
+	count := func() int { mu.Lock(); defer mu.Unlock(); return len(bodies) }
+	fire := func() { bus.Publish(events.EventTasksChanged, events.TasksChangedEvent{}) }
+
+	fire() // nothing synced yet: the payload differs from the empty last-sync id
+	require.Eventually(t, func() bool { return count() == 1 }, 5*time.Second, 10*time.Millisecond)
+
+	fire() // unchanged payload (e.g. a service start/stop): no POST
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, 1, count())
+
+	registry.Set(&model.Task{Name: "backup", Run: "v2"})
+	fire()
+	require.Eventually(t, func() bool { return count() == 2 }, 5*time.Second, 10*time.Millisecond)
+	assert.Contains(t, bodies[1], "v2")
 }

@@ -149,8 +149,9 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		updates:     updateChecker,
 		output:      output,
 	}
-	reconciler, reloadFn := newReconciler(mode, cfg, svc, f, configSnap, settings.prepare)
-	if reconciler != nil {
+	reconciler, reloadFn := newReconciler(cfg, svc, f, configSnap, settings.prepare)
+	if mode == modeStandalone {
+		// Cron holds only matter to a local scheduler.
 		defer reconciler.WatchCronHolds(cronprobe.Probe)()
 	}
 
@@ -177,7 +178,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		DetectedExternalURL: svc.DetectedURL.Load,
 		DaemonInfo:          daemonInfo,
 		ConfigStale:         configSnap.Stale,
-		ConfigWarnings:      configWarningsFn(reconciler, cfg.Config),
+		ConfigWarnings:      reconciler.Warnings,
 		UpdateStatus:        updateChecker.Status,
 		TaskUsage:           svc.Usage.TaskUsage,
 		RunUsage:            svc.Usage.RunUsage,
@@ -284,13 +285,10 @@ func rerouteLogsToStderrOnError(err *error) {
 }
 
 // newReconciler wires the reload reconciler that powers `runwisp reload` /
-// SIGHUP. Standalone only: station mode has no local scheduler to reconcile, so
-// it returns (nil, nil), leaving POST /api/daemon/reload reporting "not available in
-// this mode".
-func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Flags, snap *config.Snapshot, settings runtime.SettingsHook) (*runtime.Reconciler, func() (model.ReloadResult, error)) {
-	if mode != modeStandalone {
-		return nil, nil
-	}
+// SIGHUP. In station mode svc.Scheduler is nil (the Station schedules), so the
+// reconciler swaps tasks, services and settings but touches no cron entries; the
+// station client re-syncs the task list on the tasks.changed event published below.
+func newReconciler(cfg *daemonConfig, svc *daemonServices, f Flags, snap *config.Snapshot, settings runtime.SettingsHook) (*runtime.Reconciler, func() (model.ReloadResult, error)) {
 	r := runtime.NewReconciler(runtime.ReconcilerDeps{
 		ConfigPath: f.CfgFile,
 		Baseline:   cfg.Config,
@@ -314,17 +312,6 @@ func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Fl
 		}
 		return result, err
 	}
-}
-
-// configWarningsFn returns the hook /api/daemon calls for the live config's
-// non-fatal findings. It prefers the reconciler's baseline so a reload's warnings
-// replace boot's; in a mode with no reconciler (station) the boot config is the live
-// one and can't change.
-func configWarningsFn(r *runtime.Reconciler, boot *config.Config) func() []string {
-	if r != nil {
-		return r.Warnings
-	}
-	return func() []string { return config.Warnings(boot) }
 }
 
 // isInteractiveTerminal reports whether both stdin (TUI key input) and stdout

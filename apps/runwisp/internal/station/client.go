@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
@@ -88,6 +91,14 @@ type Client struct {
 	sessions     *sessionRunner
 
 	conn *connectionManager
+
+	eventBus EventSubscriber
+	// syncMu serialises task syncs (connect-time and reload-triggered) so a
+	// stale snapshot can never land after a newer one. lastSyncID is the
+	// payload hash of the last successful sync, guarded by syncMu.
+	syncMu     sync.Mutex
+	lastSyncID string
+	resyncCh   chan struct{}
 }
 
 type wsSession struct {
@@ -135,6 +146,8 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		tracker:      tracker,
 		uploader:     uploader,
 		conn:         connMgr,
+		eventBus:     deps.EventBus,
+		resyncCh:     make(chan struct{}, 1),
 	}
 
 	client.handler = NewInboundHandler(InboundHandlerDeps{
@@ -192,6 +205,7 @@ func (client *Client) RecoverArchiveBacklog(ctx context.Context) {
 func (client *Client) Run(ctx context.Context) error {
 	client.bridge.Start(ctx)
 	defer client.bridge.Shutdown()
+	defer client.startResync(ctx)()
 
 	backoff := newReconnectBackoff()
 
@@ -297,13 +311,66 @@ func (client *Client) authenticate(ctx context.Context, connection *websocket.Co
 	return nil
 }
 
+// startResync re-syncs the task list when the live task set changes (a
+// `runwisp reload` publishes tasks.changed), so the Station sees edits without
+// a reconnect. It runs whether or not a session is attached: the sync is a
+// separate token-authenticated HTTP call, and a failure here is only logged
+// because the next connect syncs the then-current set anyway. Returns the stop
+// func.
+func (client *Client) startResync(ctx context.Context) (stop func()) {
+	unsubscribe := client.eventBus.Subscribe(events.EventTasksChanged, func(events.Event) {
+		select {
+		case client.resyncCh <- struct{}{}:
+		default: // a resync is already pending; it will read the latest set
+		}
+	})
+	loopCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		defer crashguard.Guard()
+		for {
+			select {
+			case <-loopCtx.Done():
+				return
+			case <-client.resyncCh:
+				if err := client.resyncIfChanged(loopCtx); err != nil && loopCtx.Err() == nil {
+					slog.Warn("task resync failed; the next reconnect will retry", "error", err.Error())
+				}
+			}
+		}
+	}()
+	return func() {
+		unsubscribe()
+		cancel()
+	}
+}
+
+// resyncIfChanged syncs only when the task payload differs from the last one
+// the Station accepted: tasks.changed also fires on service start/stop, which
+// the payload doesn't carry.
+func (client *Client) resyncIfChanged(ctx context.Context) error {
+	client.syncMu.Lock()
+	defer client.syncMu.Unlock()
+	if id := buildTaskSyncID(buildSyncTasks(client.snapshotForSync())); id == client.lastSyncID {
+		return nil
+	}
+	return client.syncTasksLocked(ctx)
+}
+
 func (client *Client) syncTasks(ctx context.Context) error {
+	client.syncMu.Lock()
+	defer client.syncMu.Unlock()
+	return client.syncTasksLocked(ctx)
+}
+
+func (client *Client) syncTasksLocked(ctx context.Context) error {
+	snapshot := client.snapshotForSync()
 	syncCtx, cancelSync := context.WithTimeout(ctx, requestTimeout)
-	syncResult, syncErr := client.syncClient.SyncTasks(syncCtx, client.config.StationToken, client.snapshotForSync())
+	syncResult, syncErr := client.syncClient.SyncTasks(syncCtx, client.config.StationToken, snapshot)
 	cancelSync()
 	if syncErr != nil {
 		return syncErr
 	}
+	client.lastSyncID = buildTaskSyncID(buildSyncTasks(snapshot))
 
 	slog.Info(
 		"task snapshot synced",

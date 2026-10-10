@@ -31,6 +31,10 @@ of asking runs the same reload:
 
 `runwisp status` and the TUI header show the same "config changed" notice.
 
+A daemon started with `runwisp station` reloads the same way. The Station
+schedules the tasks there, so no local cron entries change; after the reload the
+daemon sends the new task list to the Station.
+
 ## A bad config changes nothing
 
 The daemon loads and validates the whole new config before it touches anything.
