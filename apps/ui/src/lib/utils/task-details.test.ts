@@ -5,16 +5,44 @@ import { describe, expect, it } from "vitest";
 import type { Task } from "@runwisp/common";
 import { taskDetailSections } from "./task-details";
 
-const MINUTE_NS = 60e9;
+const SECOND_NS = 1e9;
+const MINUTE_NS = 60 * SECOND_NS;
 
+/** A [tasks.*] entry as the API serves it with every key left out: resolved defaults. */
 function makeTask(overrides: Partial<Task> = {}): Task {
     return {
         name: "backup",
+        kind: "task",
         manualTrigger: true,
         autostart: true,
         runOnStart: false,
+        catchUp: 1,
+        maxConcurrent: 1,
+        onOverlap: "queue",
+        gracefulStop: 5 * SECOND_NS,
+        stopSignal: "SIGTERM",
+        shell: "/bin/sh",
+        envBase: "inherit",
+        logMaxSize: 100 * 1024 * 1024,
+        logOnFull: "drop_old",
         ...overrides,
     };
+}
+
+/** A [services.*] entry as the API serves it with every key left out. */
+function makeService(overrides: Partial<Task> = {}): Task {
+    return makeTask({
+        name: "web",
+        kind: "service",
+        onOverlap: "skip",
+        instances: 1,
+        restart: "always",
+        restartAttempts: 3,
+        restartBackoff: "exponential",
+        restartDelay: SECOND_NS,
+        healthyAfter: MINUTE_NS,
+        ...overrides,
+    });
 }
 
 const section = (task: Task, title: string) =>
@@ -45,6 +73,48 @@ describe("taskDetailSections", () => {
         ]);
     });
 
+    it("hides keys left at their defaults", () => {
+        const cron = taskDetailSections(makeTask({ cron: "15 3 * * *" }));
+        expect(cron.map((s) => s.title)).toEqual(["Schedule"]);
+        expect(cron[0]?.rows.map((r) => r.key)).toEqual(["cron"]);
+        expect(taskDetailSections(makeService())).toEqual([]);
+    });
+
+    it("shows a key set to 0", () => {
+        const task = makeTask({
+            cron: "15 3 * * *",
+            catchUp: 0,
+            timeout: 0,
+            maxQueued: 0,
+            gracefulStop: 0,
+            keepRuns: 0,
+        });
+        expect(section(task, "Schedule")?.rows).toContainEqual({ key: "catch_up", value: "0" });
+        expect(section(task, "Execution")?.rows).toEqual([
+            { key: "timeout", value: '"0s"' },
+            { key: "max_queued", value: "0" },
+            { key: "graceful_stop", value: '"0s"' },
+        ]);
+        expect(section(task, "Output and retention")?.rows).toEqual([
+            { key: "keep_runs", value: "0" },
+        ]);
+        const svc = makeService({ restartAttempts: 0, restartDelay: 0 });
+        expect(section(svc, "Service")?.rows).toEqual([
+            {
+                key: "restart_attempts",
+                value: "0",
+                note: "fast failures in a row, then it gives up",
+            },
+            { key: "restart_delay", value: '"0s"' },
+        ]);
+    });
+
+    it("never shows a key the task's kind doesn't accept", () => {
+        const svc = makeService({ maxConcurrent: 2, instances: 2, maxQueued: 5 });
+        const keys = taskDetailSections(svc).flatMap((s) => s.rows.map((r) => r.key));
+        expect(keys).toEqual(["instances"]);
+    });
+
     it("lists env values but never secrets", () => {
         const task = makeTask({ env: { B: "2", A: "1" }, secretsFile: "/etc/rw.env" });
         expect(section(task, "Environment")?.rows).toEqual([
@@ -54,12 +124,18 @@ describe("taskDetailSections", () => {
         ]);
     });
 
+    it("shows the source file as a path, not a key", () => {
+        const task = makeTask({ sourceFile: "/etc/cron.d/backup" });
+        expect(section(task, "Defined in")).toEqual({
+            title: "Defined in",
+            path: "/etc/cron.d/backup",
+            rows: [],
+        });
+    });
+
     it("leaves out sections that don't apply", () => {
-        const titles = taskDetailSections(makeTask()).map((s) => s.title);
-        expect(titles).toEqual([]);
-        const svc = taskDetailSections(makeTask({ kind: "service", instances: 2 })).map(
-            (s) => s.title,
-        );
+        expect(taskDetailSections(makeTask())).toEqual([]);
+        const svc = taskDetailSections(makeService({ instances: 2 })).map((s) => s.title);
         expect(svc).toEqual(["Service"]);
     });
 });
