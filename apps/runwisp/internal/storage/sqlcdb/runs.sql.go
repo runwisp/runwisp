@@ -144,17 +144,19 @@ func (q *Queries) DeleteRunsByIDs(ctx context.Context, ids []string) error {
 	return err
 }
 
-const getLatestStartedRun = `-- name: GetLatestStartedRun :one
+const getLastRun = `-- name: GetLastRun :one
 SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms FROM runs
-WHERE task_name = ? AND deleted_at IS NULL AND started_at IS NOT NULL
-ORDER BY started_at DESC, id DESC
+WHERE task_name = ? AND deleted_at IS NULL
+  AND (started_at IS NOT NULL OR is_failure = 1)
+ORDER BY COALESCE(started_at, created_at) DESC, id DESC
 LIMIT 1
 `
 
-// The newest run of a task that actually started: pending, skipped and missed
-// rows never mask the state of the run before them.
-func (q *Queries) GetLatestStartedRun(ctx context.Context, taskName string) (Run, error) {
-	row := q.db.QueryRowContext(ctx, getLatestStartedRun, taskName)
+// The newest run of a task that started or failed: a missed run counts when
+// it is classed as a failure, but pending and skipped rows never mask the
+// state of the run before them.
+func (q *Queries) GetLastRun(ctx context.Context, taskName string) (Run, error) {
+	row := q.db.QueryRowContext(ctx, getLastRun, taskName)
 	var i Run
 	err := row.Scan(
 		&i.ID,

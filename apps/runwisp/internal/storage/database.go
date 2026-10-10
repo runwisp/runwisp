@@ -47,9 +47,9 @@ type RunRepository interface {
 	UpdateRun(ctx context.Context, run *model.Run) error
 	GetRun(ctx context.Context, id string) (*model.Run, error)
 	GetRunByExecutionID(ctx context.Context, executionID string) (*model.Run, error)
-	// LatestStartedRuns returns, per task name, the newest run that started.
-	// Tasks without one are absent from the map.
-	LatestStartedRuns(ctx context.Context, taskNames []string) (map[string]model.Run, error)
+	// LastRuns returns, per task name, the newest run that started or failed
+	// (a missed run classed as a failure). Tasks without one are absent.
+	LastRuns(ctx context.Context, taskNames []string) (map[string]model.Run, error)
 	CountRunsFiltered(ctx context.Context, filter model.RunFilter) (int64, error)
 	QueryRuns(ctx context.Context, q RunQuery) ([]model.Run, error)
 	DeleteRun(ctx context.Context, id string) error
@@ -187,10 +187,10 @@ func (db *SQLiteDatabase) GetRun(ctx context.Context, id string) (*model.Run, er
 
 // ponytail: one indexed query per task; add a (task_name, started_at) index if
 // a task's retained history gets large enough for the sort to show.
-func (db *SQLiteDatabase) LatestStartedRuns(ctx context.Context, taskNames []string) (map[string]model.Run, error) {
+func (db *SQLiteDatabase) LastRuns(ctx context.Context, taskNames []string) (map[string]model.Run, error) {
 	out := make(map[string]model.Run, len(taskNames))
 	for _, name := range taskNames {
-		row, err := db.q.GetLatestStartedRun(ctx, name)
+		row, err := db.q.GetLastRun(ctx, name)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}

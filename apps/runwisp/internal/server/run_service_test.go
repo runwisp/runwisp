@@ -1243,7 +1243,7 @@ func TestListTasks_LastRunRunCommandAndService(t *testing.T) {
 	svc := newRunService(repo, runner, runtime.NewTaskRegistry(tasks), nil, events.NewEventBus())
 
 	last := model.Run{ID: "01J", TaskName: "job", IsFailure: true}
-	repo.On("LatestStartedRuns", mock.Anything, mock.Anything).Return(map[string]model.Run{"job": last}, nil)
+	repo.On("LastRuns", mock.Anything, mock.Anything).Return(map[string]model.Run{"job": last}, nil)
 	exit := 137
 	runner.On("ServiceSnapshot", "svc").Return(model.ServiceSnapshot{
 		State: model.ServiceDegraded, DesiredInstances: 2, RunningInstances: 1,
@@ -1274,7 +1274,7 @@ func TestListTasks_LastRunErrorKeepsList(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	tasks := map[string]*model.Task{"job": {Name: "job"}}
 	svc := newRunService(repo, nil, runtime.NewTaskRegistry(tasks), nil, events.NewEventBus())
-	repo.On("LatestStartedRuns", mock.Anything, mock.Anything).Return(nil, errors.New("disk on fire"))
+	repo.On("LastRuns", mock.Anything, mock.Anything).Return(nil, errors.New("disk on fire"))
 
 	got := svc.ListTasks(context.Background())
 	require.Len(t, got, 1)

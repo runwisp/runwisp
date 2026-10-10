@@ -30,6 +30,10 @@ func TestLastRuns_KeepsNewestAndTakesUpdates(t *testing.T) {
 	if l["a"].IsFailure {
 		t.Fatal("an update to the newest run must replace it")
 	}
+	l.observe(model.Run{ID: "04", TaskName: "a", Status: model.PhaseEnded, IsFailure: true}) // missed, a failure
+	if !l["a"].IsFailure {
+		t.Fatal("a missed run classed as a failure is the last outcome")
+	}
 }
 
 // TestTaskMarks_FollowTaskStatePoll: the /api/tasks lastRun is the source of

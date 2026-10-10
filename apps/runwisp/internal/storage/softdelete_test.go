@@ -408,7 +408,7 @@ func TestSelectorMatchAllNewGateWithExceptIDs(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestLatestStartedRuns(t *testing.T) {
+func TestLastRuns(t *testing.T) {
 	ctx := t.Context()
 	db := setupTestDB(t)
 	defer db.Close()
@@ -432,8 +432,33 @@ func TestLatestStartedRuns(t *testing.T) {
 	_, err := db.SoftDeleteRuns(ctx, model.RunSelector{IDs: []string{deleted.ID}}, time.Now())
 	require.NoError(t, err)
 
-	got, err := db.LatestStartedRuns(ctx, []string{"job", "never-ran"})
+	got, err := db.LastRuns(ctx, []string{"job", "never-ran"})
 	require.NoError(t, err)
 	require.Len(t, got, 1, "tasks without a started run are absent")
 	assert.Equal(t, newest.ID, got["job"].ID)
+}
+
+// TestLastRuns_FailedMissedRunCounts: a missed run never starts, but when it is
+// classed as a failure it is the task's last outcome and must not stay hidden
+// behind the run before it. A skipped run that isn't a failure still doesn't
+// mask anything.
+func TestLastRuns_FailedMissedRunCounts(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	at := func(min int) time.Time { return time.Date(2026, 10, 9, 3, min, 0, 0, time.UTC) }
+	ok := newTerminalRun("job")
+	ok.CreatedAt, ok.StartedAt = at(0), new(at(0))
+	missed := newTerminalRun("job")
+	missed.CreatedAt, missed.EndReason, missed.IsFailure = at(5), model.EndReasonPtr(model.ReasonMissed), true
+	skipped := newTerminalRun("job")
+	skipped.CreatedAt, skipped.EndReason = at(9), model.EndReasonPtr(model.ReasonSkipped)
+	for _, r := range []*model.Run{ok, missed, skipped} {
+		require.NoError(t, db.CreateRun(ctx, r))
+	}
+
+	got, err := db.LastRuns(ctx, []string{"job"})
+	require.NoError(t, err)
+	assert.Equal(t, missed.ID, got["job"].ID)
 }
