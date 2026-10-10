@@ -112,9 +112,12 @@ func New(inner notify.Channel, cfg Config, clock func() time.Time, logger *slog.
 func (c *Channel) ID() string { return c.inner.ID() }
 
 // Execute decides whether to forward, forward-as-summary, or suppress the
-// event. Suppressed events are released later by the window-close timer.
+// event. Suppressed events are released later by the window-close timer,
+// which delivers under the ctx of the Execute call that armed it: the
+// dispatcher's worker context, so the summary is cancelled with the service
+// and honours its shutdown retry cut-off.
 func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
-	d := c.decide(ev)
+	d := c.decide(ctx, ev)
 	switch d.action {
 	case actionForward:
 		return c.inner.Execute(ctx, ev)
@@ -148,7 +151,7 @@ func (c *Channel) Close(ctx context.Context) error {
 	c.mu.Unlock()
 
 	// Wait unconditionally: a window-close summary goroutine calls
-	// c.inner.Execute independently of ctx (see timerFlush), so returning on
+	// c.inner.Execute under its own ctx (see timerFlush), so returning on
 	// ctx.Done() could let that Execute run concurrently with the Close below.
 	c.wg.Wait()
 	for _, h := range flush {
@@ -170,7 +173,7 @@ type decision struct {
 	count  int
 }
 
-func (c *Channel) decide(ev *notify.Event) decision {
+func (c *Channel) decide(ctx context.Context, ev *notify.Event) decision {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -216,13 +219,13 @@ func (c *Channel) decide(ev *notify.Event) decision {
 	if st.timer == nil {
 		deadline := max(0, st.lastSent.Add(c.cfg.Window).Sub(now))
 		st.timer = c.after(deadline, func() {
-			c.timerFlush(fp)
+			c.timerFlush(ctx, fp)
 		})
 	}
 	return decision{action: actionSuppress}
 }
 
-func (c *Channel) timerFlush(fp string) {
+func (c *Channel) timerFlush(ctx context.Context, fp string) {
 	c.mu.Lock()
 	st, ok := c.state[fp]
 	if !ok || st.pending == 0 || st.lastEvent == nil {
@@ -267,7 +270,7 @@ func (c *Channel) timerFlush(fp string) {
 				c.logger.Error("notify channel panicked", "channel", c.inner.ID(), "panic", r)
 			}
 		}()
-		c.sendSummary(context.Background(), fp, ev, count)
+		c.sendSummary(ctx, fp, ev, count)
 	}()
 }
 

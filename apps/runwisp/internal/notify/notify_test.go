@@ -126,11 +126,40 @@ func TestServiceStop_FastWhenIdle(t *testing.T) {
 		elapsed, deadline)
 }
 
-// TestServiceStop_SkipsRetryBackoff pins that shutdown doesn't wait out a
+// TestServiceStop_KeepsRetriesWithoutCut pins that Stop alone (how a reload
+// retires the old service) still retries a delivery that failed once, so a
+// reload during a brief outage doesn't lose the alert.
+func TestServiceStop_KeepsRetriesWithoutCut(t *testing.T) {
+	var failures atomic.Int64
+	flaky := &executeChannel{id: "flaky"}
+	flaky.execFn = func(ctx context.Context, _ *Event) error {
+		return RetryWithBackoff(ctx, BackoffConfig{InitialInterval: 20 * time.Millisecond}, func(context.Context) error {
+			if failures.Add(1) == 1 {
+				return errors.New("503")
+			}
+			return nil
+		})
+	}
+	svc := New(Config{
+		Bus:      events.NewEventBus(),
+		Channels: []Channel{flaky},
+		Rules:    []Rule{{Match: MatchAll(), ActionIDs: []string{"flaky"}}},
+	})
+	svc.Start(context.Background())
+	svc.onBusEvent(failedRunEvent())
+
+	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	svc.Stop(stopCtx)
+
+	assert.Equal(t, int64(2), failures.Load(), "the failed attempt must be retried")
+}
+
+// TestServiceCutRetries_SkipsRetryBackoff pins that shutdown doesn't wait out a
 // failing delivery's backoff: the attempt in flight finishes, but no retry is
 // scheduled. A notifier pointed at an unreachable endpoint (the demo's
 // .invalid Slack webhook) used to hold the daemon for the whole drain deadline.
-func TestServiceStop_SkipsRetryBackoff(t *testing.T) {
+func TestServiceCutRetries_SkipsRetryBackoff(t *testing.T) {
 	attempted := make(chan struct{}, 1)
 	dead := &executeChannel{id: "dead"}
 	dead.execFn = func(ctx context.Context, _ *Event) error {
@@ -160,6 +189,7 @@ func TestServiceStop_SkipsRetryBackoff(t *testing.T) {
 	stopCtx, cancel := context.WithTimeout(context.Background(), deadline)
 	defer cancel()
 	start := time.Now()
+	svc.CutRetries()
 	svc.Stop(stopCtx)
 
 	assert.Less(t, time.Since(start), time.Second, "Stop must not sit in the retry backoff until its deadline")
