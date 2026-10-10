@@ -73,17 +73,6 @@ func TestSignedInVisit_ReportsBaseURL(t *testing.T) {
 		require.Equal(t, http.StatusOK, signIn(t, s, "secret", forwarded))
 		assert.Equal(t, []string{"http://rw.lan:9477"}, *seen)
 	})
-	t.Run("launch ticket", func(t *testing.T) {
-		s, seen := visitServer(t, nil)
-		ticket, err := s.auth.CreateLaunchTicket()
-		require.NoError(t, err)
-		req := httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket="+ticket, nil)
-		req.Host = "rw.lan:9477"
-		w := httptest.NewRecorder()
-		s.router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusSeeOther, w.Code)
-		assert.Equal(t, []string{"http://rw.lan:9477"}, *seen)
-	})
 }
 
 // TestSignedInVisit_RejectsMalformedHost: the detected address lands in
@@ -120,6 +109,17 @@ func TestSignedInVisit_OnlyWebUISignIn(t *testing.T) {
 		w := httptest.NewRecorder()
 		s.router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusOK, w.Code)
+		assert.Empty(t, *seen)
+	})
+	t.Run("launch ticket redeem", func(t *testing.T) {
+		s, seen := visitServer(t, nil)
+		ticket, err := s.auth.CreateLaunchTicket()
+		require.NoError(t, err)
+		req := httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket="+ticket, nil)
+		req.Host = "rw.lan:9477"
+		w := httptest.NewRecorder()
+		s.router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusSeeOther, w.Code)
 		assert.Empty(t, *seen)
 	})
 }

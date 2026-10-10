@@ -110,17 +110,17 @@ func (srv *Server) stashSignInSource(next http.Handler) http.Handler {
 }
 
 // recordSignIn reports a successful Web UI sign-in's base URL so notification
-// links can point there when external_url is unset. browserOnly skips requests
-// without an Origin header: the password login is shared with `--url` CLI
-// calls and the remote TUI, whose Go client never sends one, while a browser
-// always does on a fetch POST. Those clients must not move the link base to
-// whatever address they dialled (often localhost).
-func (srv *Server) recordSignIn(ctx context.Context, browserOnly bool) {
+// links can point there when external_url is unset. Requests without an Origin
+// header are skipped: the password login is shared with `--url` CLI calls and
+// the remote TUI, whose Go client never sends one, while a browser always does
+// on a fetch POST. Those clients must not move the link base to whatever
+// address they dialled (often localhost).
+func (srv *Server) recordSignIn(ctx context.Context) {
 	if srv.onSignedInVisit == nil {
 		return
 	}
 	src, ok := ctx.Value(signInSourceKey).(signInSource)
-	if !ok || (browserOnly && !src.browser) {
+	if !ok || !src.browser {
 		return
 	}
 	srv.onSignedInVisit(src.baseURL)
