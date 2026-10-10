@@ -32,6 +32,14 @@
         { id: "settings", label: "Settings", icon: Settings },
     ];
 
+    const deployTabs = [
+        { id: "binary", label: "Linux binary" },
+        { id: "docker", label: "Docker run" },
+        { id: "compose", label: "Docker Compose" },
+        { id: "kubernetes", label: "Kubernetes manifest" },
+        { id: "systemd", label: "systemd unit" },
+    ];
+
     const disabledTabs = [
         { id: "active", label: "Active" },
         { id: "completed", label: "Completed" },
@@ -104,4 +112,13 @@
             </div>
         {/snippet}
     </Tabs>
+</Story>
+
+<!-- `scrollable` keeps every label on one line and scrolls the bar sideways. -->
+<Story name="Scrollable" asChild>
+    <div class="flex max-w-xs flex-col gap-4">
+        <Tabs tabs={deployTabs} variant="enclosed" scrollable />
+        <Tabs tabs={deployTabs} variant="pills" scrollable />
+        <Tabs tabs={deployTabs} variant="underline" scrollable />
+    </div>
 </Story>

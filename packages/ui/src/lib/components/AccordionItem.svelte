@@ -11,22 +11,32 @@
 
     interface Props {
         title?: Snippet | string;
+        /** A control before the title that must not toggle the panel (an enable switch). */
+        leading?: Snippet;
         /** Controls beside the header that must not toggle it (a switch, a delete button). */
         actions?: Snippet;
         children?: Snippet;
         open?: boolean;
         disabled?: boolean;
         variant?: AccordionItemVariant;
+        /**
+         * `framed` only: border and background colours in place of the default
+         * `border-outline bg-surface-raised`, to tint the panel by state (e.g.
+         * `border-warning-soft-border bg-warning-soft/30` for a stale one).
+         */
+        frameClass?: string;
         class?: string;
     }
 
     let {
         title,
+        leading,
         actions,
         children,
         open = $bindable(false),
         disabled = false,
         variant = "plain",
+        frameClass = "border-outline bg-surface-raised",
         class: className = "",
     }: Props = $props();
 
@@ -61,12 +71,13 @@
     const framed = $derived(variant === "framed");
 </script>
 
-<div
-    class="group {framed
-        ? 'rounded-[4px] border border-outline bg-surface-raised'
-        : ''} {className}"
->
+<div class="group {framed ? `rounded-[4px] border ${frameClass}` : ''} {className}">
     <div class="flex items-center gap-3 {framed ? 'px-4' : ''}">
+        {#if leading}
+            <div class="flex shrink-0 items-center">
+                {@render leading()}
+            </div>
+        {/if}
         <button
             type="button"
             onclick={toggle}

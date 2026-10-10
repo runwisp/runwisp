@@ -92,18 +92,19 @@
             {/if}
         </div>
     {/if}
-    <div class="relative">
-        <pre
-            class="overflow-x-auto font-mono {sizeClasses[size]} {copyable && !hasHeader
-                ? 'pr-24'
-                : ''}">{#if prompt}<span
+    <!-- The copy button gets its own column so a long line scrolls under the
+         edge of the code, never under the button. -->
+    <div class="flex">
+        <pre class="min-w-0 flex-1 overflow-x-auto font-mono {sizeClasses[size]}">{#if prompt}<span
                     class="mr-[1ch] select-none {tone.prompt}"
                     aria-hidden="true">{prompt}</span
                 >{/if}<code bind:this={codeEl}
                 >{#if children}{@render children()}{:else}{code}{/if}</code
             ></pre>
         {#if copyable && !hasHeader}
-            {@render copyButton("absolute top-2 right-2")}
+            <div class="flex shrink-0 items-start pt-2 pr-2 pl-2">
+                {@render copyButton("")}
+            </div>
         {/if}
     </div>
 </div>

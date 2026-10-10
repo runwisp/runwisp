@@ -5,12 +5,14 @@
     import type { Snippet } from "svelte";
     import type { HTMLAnchorAttributes } from "svelte/elements";
 
-    type LinkVariant = "default" | "muted" | "primary" | "danger";
+    type LinkVariant = "default" | "muted" | "primary" | "danger" | "unstyled";
     type LinkUnderline = "always" | "hover" | "none";
 
     // Use Link for off-site URLs (`external` opens a new tab with rel=noopener
-    // noreferrer). An in-app href must still come from SvelteKit's resolve():
-    // being a component, Link sits outside svelte/no-navigation-without-resolve.
+    // noreferrer). `unstyled` adds no classes beyond `class` (no `underline`
+    // either), for nav rows and menu items that bring their own layout. An
+    // in-app href must still come from SvelteKit's resolve(): being a
+    // component, Link sits outside svelte/no-navigation-without-resolve.
     interface Props extends Omit<HTMLAnchorAttributes, "href" | "children" | "class"> {
         href: string;
         variant?: LinkVariant;
@@ -41,6 +43,7 @@
         muted: "text-on-surface-muted hover:text-on-surface",
         primary: "text-primary hover:text-primary-hover",
         danger: "text-danger-surface hover:text-danger-hover",
+        unstyled: "",
     };
 
     const underlineClasses: Record<LinkUnderline, string> = {
@@ -52,7 +55,9 @@
 
 <a
     {href}
-    class="{baseClasses} {variantClasses[variant]} {underlineClasses[underline]} {className}"
+    class={variant === "unstyled"
+        ? className
+        : `${baseClasses} ${variantClasses[variant]} ${underlineClasses[underline]} ${className}`}
     target={external ? "_blank" : undefined}
     rel={external ? "noopener noreferrer" : undefined}
     {...restProps}

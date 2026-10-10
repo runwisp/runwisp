@@ -20,6 +20,8 @@
         onChange?: (tabId: string) => void;
         variant?: "underline" | "pills" | "enclosed";
         fullWidth?: boolean;
+        /** Scroll the tab bar sideways instead of wrapping when the labels outgrow it. */
+        scrollable?: boolean;
         children?: Snippet<[string]>;
         class?: string;
     }
@@ -30,6 +32,7 @@
         onChange,
         variant = "underline",
         fullWidth = false,
+        scrollable = false,
         children,
         class: className = "",
     }: Props = $props();
@@ -79,12 +82,13 @@
     }
 </script>
 
-<div class={className}>
+{#snippet tablist()}
     <div
         class="
 			{variant === 'underline' ? 'border-b border-outline' : ''}
 			{variant === 'pills' ? 'rounded-[4px] bg-surface-sunken p-1' : ''}
 			{variant === 'enclosed' ? 'rounded-[4px] border border-outline bg-surface-sunken p-1' : ''}
+			{scrollable ? 'w-max min-w-full whitespace-nowrap' : ''}
 		"
         role="tablist"
     >
@@ -131,6 +135,16 @@
             {/each}
         </nav>
     </div>
+{/snippet}
+
+<div class={className}>
+    {#if scrollable}
+        <div class="overflow-x-auto">
+            {@render tablist()}
+        </div>
+    {:else}
+        {@render tablist()}
+    {/if}
 
     {#if children && renderedActiveTab}
         <div

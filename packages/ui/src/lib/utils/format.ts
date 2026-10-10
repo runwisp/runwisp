@@ -13,18 +13,48 @@ const RELATIVE_DIVISIONS: [amount: number, unit: Intl.RelativeTimeFormatUnit][] 
     [Number.POSITIVE_INFINITY, "years"],
 ];
 
-const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: "always" });
+const relativeTime = {
+    always: new Intl.RelativeTimeFormat(undefined, { numeric: "always" }),
+    auto: new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }),
+};
+
+export interface RelativeTimeOptions {
+    /** `"auto"` words the near units: "now", "yesterday", "tomorrow", "last week". Default `"always"`. */
+    numeric?: Intl.RelativeTimeFormatNumeric;
+}
 
 /** "N units ago" / "in N units" for `date` relative to `now`. */
-export function formatRelativeTime(date: string | Date, now: Date = new Date()): string {
+export function formatRelativeTime(
+    date: string | number | Date,
+    now: Date = new Date(),
+    { numeric = "always" }: RelativeTimeOptions = {},
+): string {
+    const format = relativeTime[numeric];
     let delta = (new Date(date).getTime() - now.getTime()) / 1000;
     for (const [amount, unit] of RELATIVE_DIVISIONS) {
         if (Math.abs(delta) < amount) {
-            return relativeTime.format(Math.round(delta), unit);
+            return format.format(Math.round(delta), unit);
         }
         delta /= amount;
     }
-    return relativeTime.format(Math.round(delta), "years");
+    return format.format(Math.round(delta), "years");
+}
+
+/**
+ * Compact age of a past `date` for dense rows and live labels: "45s", "5m",
+ * "3h", "2d". Each unit floors; a future date reads "0s".
+ */
+export function formatRelativeCompact(
+    date: string | number | Date,
+    now: Date = new Date(),
+): string {
+    const seconds = Math.max(0, Math.floor((now.getTime() - new Date(date).getTime()) / 1000));
+    if (seconds < 60) return `${String(seconds)}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${String(minutes)}m`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${String(hours)}h`;
+    return `${String(Math.floor(hours / 24))}d`;
 }
 
 /** A locale date/time formatter for one fixed option set, built once. */
