@@ -79,4 +79,63 @@ test.describe("task strip", () => {
             expect(fits).toBe(true);
         });
     }
+
+    test("on a phone, a task with no runs still has its strip and Run action", async ({
+        authenticatedPage: page,
+    }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto("/tasks/bare-task");
+
+        const strip = page.getByTestId("task-strip");
+        await expect(strip).toBeVisible();
+        await expect(strip.getByRole("button", { name: "Run now" })).toBeVisible();
+        await expect(strip.getByRole("button", { name: "Details" })).toBeVisible();
+    });
+
+    test("Details hides keys left at their defaults and shows an explicit zero", async ({
+        authenticatedPage: page,
+    }) => {
+        await page.goto("/tasks/bare-task");
+        await page.getByTestId("task-strip").getByRole("button", { name: "Details" }).click();
+        const details = page.getByTestId("task-details");
+        await expect(details.getByTestId("task-command")).toContainText("true");
+
+        // keep_runs = 0 is set in the TOML, so it shows with its zero.
+        await expect(details.getByText("keep_runs", { exact: true })).toBeVisible();
+        await expect(details.getByText("0", { exact: true })).toBeVisible();
+
+        // The API serves resolved defaults; none of them is listed.
+        for (const key of [
+            "graceful_stop",
+            "stop_signal",
+            "shell",
+            "max_concurrent",
+            "max_queued",
+        ]) {
+            await expect(details.getByText(key, { exact: true })).toHaveCount(0);
+        }
+        await expect(details.getByText("Execution", { exact: true })).toHaveCount(0);
+    });
+
+    test("a service that exited under restart = never offers Start, not restarting", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        const service = "oneshot-service";
+        await page.goto(`/tasks/${service}`);
+        const strip = page.getByTestId("task-strip");
+        await strip.getByRole("button", { name: "Start", exact: true }).click();
+        await page.getByRole("dialog").getByRole("button", { name: "Start Now" }).click();
+
+        await expect(strip).toContainText("exited", { timeout: 15_000 });
+        await expect(strip).toContainText("restart is never");
+        await expect(strip).not.toContainText(/restarting/i);
+        await expect(strip.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+
+        // The API agrees: the instance is stopped, not restarting.
+        const res = await page.request.get(`/api/tasks/${service}`, {
+            headers: { Authorization: `Bearer ${daemonState.token}` },
+        });
+        expect(JSON.stringify(await res.json())).not.toContain("restarting");
+    });
 });
