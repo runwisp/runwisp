@@ -80,8 +80,9 @@ func (m *defaultTaskManager) StartService(taskName string) error {
 // RestartServiceInstances brings a service back to its desired instance count.
 // If the service was operator-stopped or had FATAL instances, the stop/FATAL
 // flags are cleared and the empty slots are spawned with a fresh start-retry
-// budget. If the service is already running, every active instance is cancelled
-// and the exit handler refills the freed slots via the supervisor.
+// budget; so are slots whose restart policy left them exited. Every active
+// instance is cancelled and the exit handler refills the freed slots via the
+// supervisor.
 func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
 	m.mu.Lock()
 	ts, err := m.serviceLocked(taskName)
@@ -89,10 +90,10 @@ func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
 		m.mu.Unlock()
 		return err
 	}
-	// Capture FATAL state before MarkRunning clears it: a FATAL service has no
-	// active runs in its dead slots, so they only come back if we spawn them.
+	// Capture FATAL state before MarkRunning clears it: a FATAL or exited slot
+	// has no active run, so it only comes back if we spawn it.
 	wasStopped := ts.supervisor.IsStopped()
-	wasFatal := ts.supervisor.IsAnyFatal()
+	hasDeadSlots := ts.supervisor.IsAnyFatal() || ts.supervisor.IsAnyExited()
 	ts.supervisor.MarkRunning()
 	ts.bookkeepingStop = false
 	for _, ar := range ts.active {
@@ -103,7 +104,7 @@ func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
 	if wasStopped {
 		m.publishTasksChanged()
 	}
-	if wasStopped || wasFatal {
+	if wasStopped || hasDeadSlots {
 		return m.StartServiceInstances(taskName, model.TriggeredByAPI)
 	}
 	return nil
@@ -253,8 +254,7 @@ func (m *defaultTaskManager) ServiceSnapshot(taskName string) (model.ServiceSnap
 	stopped := ts.supervisor.IsStopped()
 	desired := ts.supervisor.Instances()
 	instances := make([]model.ServiceInstanceStatus, 0, desired)
-	running := 0
-	fatal := 0
+	var counts slotCounts
 	for i := 0; i < desired; i++ {
 		st := model.ServiceInstanceStatus{
 			Index:        i,
@@ -265,7 +265,7 @@ func (m *defaultTaskManager) ServiceSnapshot(taskName string) (model.ServiceSnap
 		switch {
 		case ts.supervisor.IsLive(i):
 			st.State = model.ServiceInstanceRunning
-			running++
+			counts.running++
 			if ar := liveByIdx[i]; ar != nil {
 				started := ar.StartedAt
 				st.StartedAt = &started
@@ -274,11 +274,15 @@ func (m *defaultTaskManager) ServiceSnapshot(taskName string) (model.ServiceSnap
 			// Operator-stopped, or its run ended and the restart policy
 			// won't bring it back: down until started either way.
 			st.State = model.ServiceInstanceStopped
+			counts.exited++
+			if ts.supervisor.IsExitFailed(i) {
+				counts.failedExits++
+			}
 		case ts.supervisor.IsFatal(i):
 			// Slot exhausted its start-retry budget; the supervisor has given
 			// up on it and won't respawn without operator intervention.
 			st.State = model.ServiceInstanceFatal
-			fatal++
+			counts.fatal++
 		default:
 			// Not live, not operator-stopped, not fatal: between exit and the
 			// next backoff-delayed respawn.
@@ -289,23 +293,35 @@ func (m *defaultTaskManager) ServiceSnapshot(taskName string) (model.ServiceSnap
 
 	return model.ServiceSnapshot{
 		TaskName:         taskName,
-		State:            serviceRollupState(stopped, running, fatal, desired),
+		State:            serviceRollupState(stopped, counts, desired),
 		DesiredInstances: desired,
-		RunningInstances: running,
+		RunningInstances: counts.running,
 		Instances:        instances,
 	}, true
 }
 
-func serviceRollupState(stopped bool, running, fatal, desired int) string {
+// slotCounts tallies a service's instance slots for its roll-up state. exited
+// counts slots the restart policy won't respawn (operator stop aside);
+// failedExits is the subset whose run failed.
+type slotCounts struct {
+	running, fatal, exited, failedExits int
+}
+
+func serviceRollupState(stopped bool, c slotCounts, desired int) string {
 	switch {
 	case stopped:
 		return model.ServiceStopped
-	case running >= desired:
+	case c.running >= desired:
 		return model.ServiceRunning
-	case fatal >= desired:
-		// Every slot has given up — the service is down and won't recover on
-		// its own. Distinct from degraded, which is still trying to respawn.
+	case c.fatal+c.exited >= desired && c.fatal+c.failedExits > 0:
+		// Every slot is down with no respawn coming, at least one after a
+		// failure: the service won't recover on its own. Distinct from
+		// degraded, which is still trying to respawn.
 		return model.ServiceFatal
+	case c.exited >= desired:
+		// Every instance exited cleanly and the restart policy (never, or
+		// on_failure) won't bring it back: down until started, like a stop.
+		return model.ServiceStopped
 	default:
 		return model.ServiceDegraded
 	}

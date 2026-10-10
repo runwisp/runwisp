@@ -254,7 +254,7 @@ type TaskHeader struct {
 	Name    string
 	Task    *model.Task
 	Paused  bool                 // an operator paused the cron schedule
-	Stopped bool                 // an operator stopped the service
+	Stopped bool                 // the service is down until started (TaskResponse.ServiceStopped)
 	Usage   *model.ResourceUsage // live CPU and memory of running processes
 	Loc     *time.Location
 	Hovered TaskButton

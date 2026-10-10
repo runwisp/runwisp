@@ -307,7 +307,8 @@ function gaveUpStrip(c: ServiceCtx, fatal: Instance, count: number): TaskStripMo
 
 /**
  * Instances whose run ended and whose restart policy (never, or on_failure
- * after a clean exit) won't bring them back: down until started.
+ * after a clean exit) won't bring them back: down until started. When every
+ * instance exited cleanly the daemon reports the service stopped instead.
  */
 function exitedStrip(c: ServiceCtx, exited: Instance, count: number): TaskStripModel {
     const slot = `#${String(exited.index + 1)}`;
@@ -318,7 +319,7 @@ function exitedStrip(c: ServiceCtx, exited: Instance, count: number): TaskStripM
         badge: degradedBadge(c, "RunWisp won't restart it on its own"),
         sentence: [
             t(`${who} exited`),
-            m(` · restart is ${c.task.restart ?? "never"}${lastExit(exited.lastExitCode)}`),
+            m(` · restart is ${c.task.restart ?? "always"}${lastExit(exited.lastExitCode)}`),
         ],
         short: [t(all ? "exited" : `${slot} exited`)],
         ...runLink(c, "Open its last run"),

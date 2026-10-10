@@ -127,9 +127,11 @@ const (
 var ServiceInstanceStateValues = []ServiceInstanceState{ServiceInstanceStateRunning, ServiceInstanceStateRestarting, ServiceInstanceStateStopped, ServiceInstanceStateFatal}
 
 // Roll-up state of a whole service. `running` = all desired instances
-// live; `degraded` = some but not all live; `stopped` = operator-stopped;
-// `fatal` = at least one slot is fatal. Consumers must tolerate unknown
-// values (forward-compat).
+// live; `degraded` = some but not all live; `stopped` = operator-stopped,
+// or every instance exited cleanly and its restart policy won't respawn
+// it; `fatal` = no instance is live or respawning, and at least one gave
+// up or exited on a failure. Consumers must tolerate unknown values
+// (forward-compat).
 type ServiceState string
 
 const (

@@ -13,7 +13,7 @@ type TaskResponse struct {
 	Task
 	NextRunAt      *time.Time     `json:"nextRunAt,omitempty"`
 	PausedAt       *time.Time     `json:"pausedAt,omitempty" doc:"When an operator paused this task's cron schedule (POST /api/tasks/{taskName}/pause); absent when not paused. A paused task has no nextRunAt."`
-	ServiceStopped bool           `json:"serviceStopped,omitempty" doc:"For services: true while the service is stopped (by an operator, or never started because autostart = false) and the daemon will not respawn it until it is started. Absent for running or restarting services and for tasks."`
+	ServiceStopped bool           `json:"serviceStopped,omitempty" doc:"For services: true while the service is stopped (by an operator, never started because autostart = false, or every instance exited cleanly under a restart policy that won't respawn it) and the daemon will not respawn it until it is started. Absent for running or restarting services and for tasks."`
 	Usage          *ResourceUsage `json:"usage,omitempty" doc:"Live CPU and memory use of the task's running shell runs; absent when none is running or measured."`
 	LastRun        *Run           `json:"lastRun,omitempty" doc:"The newest run of this task that started (pending, skipped and missed runs don't count); absent when none has."`
 	Service        *ServiceStatus `json:"service,omitempty" doc:"For services: the supervisor's view of each instance. Absent for tasks."`
@@ -22,7 +22,7 @@ type TaskResponse struct {
 
 // ServiceStatus is the REST shape of a service's supervisor snapshot.
 type ServiceStatus struct {
-	State            string                  `json:"state" enum:"running,degraded,stopped,fatal" doc:"stopped: an operator stopped it, or autostart = false and it was never started; fatal: every instance gave up; degraded: some instances are down"`
+	State            string                  `json:"state" enum:"running,degraded,stopped,fatal" doc:"stopped: an operator stopped it, autostart = false and it was never started, or every instance exited cleanly and its restart policy won't respawn it; fatal: no instance is running or respawning, and at least one gave up or exited on a failure; degraded: some instances are down"`
 	DesiredInstances int                     `json:"desiredInstances"`
 	RunningInstances int                     `json:"runningInstances"`
 	Instances        []ServiceInstanceStatus `json:"instances"`

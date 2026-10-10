@@ -80,7 +80,8 @@ type StartupInfo struct {
 	// CPU and memory use. Kept current by the same /api/tasks poll.
 	TaskUsage map[string]model.ResourceUsage
 	// StoppedServices holds each service the daemon reports stopped (by an
-	// operator, or not autostarted), so its runs offer Start rather than Stop.
+	// operator, not autostarted, or every instance exited cleanly with no
+	// restart coming), so its runs offer Start rather than Stop.
 	// Kept current by the same /api/tasks poll.
 	StoppedServices map[string]bool
 	// RunUsage maps each measured running run (by ID) to its live CPU and

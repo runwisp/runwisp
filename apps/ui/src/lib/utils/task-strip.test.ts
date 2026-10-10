@@ -189,11 +189,25 @@ describe("taskStrip: services", () => {
             startFails: 0,
             lastExitCode: 0,
         };
-        const m = strip(service({ instances: 1, restart: "never" }, [exited]));
+        // A failed exit: the daemon rolls the service up as fatal.
+        const m = strip(
+            service({ instances: 1, restart: "never" }, [{ ...exited, lastExitCode: 1 }]),
+        );
         expect(m.badge).toMatchObject({ text: "Down", kind: "down" });
-        expect(text(m.sentence)).toBe("It exited · restart is never, last exit 0");
+        expect(text(m.sentence)).toBe("It exited · restart is never, last exit 1");
         expect(labels(m)).toEqual(["Start"]);
         expect(primaries(m)).toEqual(["Start"]);
+
+        // A clean exit of every instance: the daemon reports the service stopped.
+        const clean = strip(
+            service({ instances: 1, restart: "never", serviceStopped: true }, [exited]),
+        );
+        expect(clean.badge).toEqual({ text: "Stopped", kind: "stopped" });
+        expect(primaries(clean)).toEqual(["Start"]);
+
+        // The API always serves restart for a service; absent, it's the default.
+        const unset = strip(service({}, [up(0), { ...exited, index: 1 }]));
+        expect(text(unset.sentence)).toBe("Instance #2 exited · restart is always, last exit 0");
 
         const one = strip(service({ restart: "on_failure" }, [up(0), { ...exited, index: 1 }]));
         expect(text(one.sentence)).toBe("Instance #2 exited · restart is on_failure, last exit 0");
