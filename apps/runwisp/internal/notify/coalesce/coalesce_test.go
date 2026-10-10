@@ -568,3 +568,42 @@ func TestCoalesce_ShutdownCutsWindowCloseRetries(t *testing.T) {
 	assert.Equal(t, int64(2), inner.hits.Load())
 	require.Len(t, sink.captured, 1, "the failed summary must surface in-app")
 }
+
+type lockedFailureSink struct {
+	mu       sync.Mutex
+	captured []*notify.Event
+}
+
+func (s *lockedFailureSink) IngestSynthetic(ev *notify.Event) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.captured = append(s.captured, ev)
+}
+
+func (s *lockedFailureSink) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.captured)
+}
+
+// TestCoalesce_StopDeadlineIsNotADeliveryFailure: a window-close summary still
+// retrying when Stop's deadline cancels the worker ctx was cut by shutdown, so
+// it must not land in the bell as a failed delivery.
+func TestCoalesce_StopDeadlineIsNotADeliveryFailure(t *testing.T) {
+	inner := &deadAfterFirst{attempts: make(chan struct{}, 4)}
+	sink := &lockedFailureSink{}
+	svc, mt := startCoalescedService(t, inner, sink)
+
+	mt.FireAll()
+	select {
+	case <-inner.attempts:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the window-close summary was never attempted")
+	}
+
+	stopCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	svc.Stop(stopCtx)
+
+	assert.Never(t, func() bool { return sink.count() > 0 }, 300*time.Millisecond, 10*time.Millisecond)
+}

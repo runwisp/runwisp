@@ -22,6 +22,7 @@ package coalesce
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"maps"
 	"sync"
@@ -277,6 +278,11 @@ func (c *Channel) timerFlush(ctx context.Context, fp string) {
 // sendSummary delivers a window-close summary of count suppressed events.
 func (c *Channel) sendSummary(ctx context.Context, fp string, ev *notify.Event, count int) {
 	if err := c.inner.Execute(ctx, summarize(ev, count, true)); err != nil {
+		if cErr := ctx.Err(); cErr != nil && errors.Is(err, cErr) {
+			// Stop's deadline cut the worker ctx: shutdown, not a delivery
+			// failure, as in the dispatcher's executeOne.
+			return
+		}
 		c.logger.Error("notify outbound coalesce: window-close summary delivery failed",
 			"channel", c.inner.ID(), "fingerprint", fp, "err", err)
 		// Async path the dispatcher never observes: surface the permanent

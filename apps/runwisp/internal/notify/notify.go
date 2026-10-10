@@ -195,6 +195,11 @@ func (s *Service) Stop(ctx context.Context) {
 	// Channels may still deliver on Close (a coalescing window flushes its
 	// summary), so they get the same retry cut-off as the workers.
 	closeCtx := withStopRetries(ctx, s.stopRetries)
+	// Close waits for window-close summaries, which run under the workers'
+	// ctx, so the stop deadline must reach that ctx too or Close outlives it.
+	if s.cancel != nil {
+		defer context.AfterFunc(ctx, s.cancel)()
+	}
 	for _, c := range s.channels {
 		if err := c.Close(closeCtx); err != nil {
 			s.logger.Warn("notify: channel close error", "channel", c.ID(), "error", err)
