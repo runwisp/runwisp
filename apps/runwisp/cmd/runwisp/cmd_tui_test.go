@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/chap"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
@@ -29,6 +28,16 @@ type fakeDaemon struct {
 	statusCode   int  // when non-zero, /api/auth/status returns this status
 	challengeErr int  // when non-zero, /api/auth/challenge returns this status
 	tls          bool // serve HTTPS with httptest's self-signed cert
+}
+
+// daemonInfoAuth answers /api/daemon like the real route: 200 for freshToken,
+// 401 for anything else.
+func daemonInfoAuth(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") != "Bearer "+freshToken {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{})
 }
 
 func (d fakeDaemon) start(t *testing.T) *httptest.Server {
@@ -60,6 +69,8 @@ func (d fakeDaemon) start(t *testing.T) *httptest.Server {
 				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]string{"token": freshToken})
+		case "/api/daemon":
+			daemonInfoAuth(w, r)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -165,15 +176,28 @@ func TestRunTUIViaRemote_EnvPasswordAuthenticates(t *testing.T) {
 
 func TestAuthenticateRemoteTUI_UsesCachedToken(t *testing.T) {
 	isolatedTokenCache(t)
-	baseURL := "http://daemon.example:9477"
-	// Seed the cache so authentication short-circuits without any network call.
-	cached := testSessions.IssueToken(time.Hour)
-	storeCachedToken(baseURL, cached)
+	// No password: a handshake would fail, so success proves the cache was used.
+	srv := fakeDaemon{authRequired: true}.start(t)
+	storeCachedToken(srv.URL, freshToken)
 
-	client, err := authenticateRemoteTUI(t.Context(), baseURL, "")
+	client, err := authenticateRemoteTUI(t.Context(), srv.URL, "")
 	require.NoError(t, err)
 	require.NotNil(t, client)
-	assert.Equal(t, cached, client.Token())
+	assert.Equal(t, freshToken, client.Token())
+}
+
+// TestAuthenticateRemoteTUI_RejectedCachedTokenReauthenticates: a cached token
+// the daemon answers 401 to (an older daemon's JWT after upgrading) must not
+// open a TUI with a dead session; it falls through to a fresh handshake.
+func TestAuthenticateRemoteTUI_RejectedCachedTokenReauthenticates(t *testing.T) {
+	isolatedTokenCache(t)
+	srv := fakeDaemon{authRequired: true, password: "s3cret"}.start(t)
+	storeCachedToken(srv.URL, "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjF9.c2ln")
+
+	client, err := authenticateRemoteTUI(t.Context(), srv.URL, "s3cret")
+	require.NoError(t, err)
+	assert.Equal(t, freshToken, client.Token())
+	assert.Equal(t, freshToken, loadCachedToken(srv.URL))
 }
 
 func TestAuthenticateRemoteTUI_EnvPasswordStoresToken(t *testing.T) {

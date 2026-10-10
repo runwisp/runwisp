@@ -98,7 +98,12 @@ func authenticateRemoteTUI(ctx context.Context, baseURL, envPassword string) (*a
 	if cached := loadCachedToken(baseURL); cached != "" {
 		client := apiclient.NewPinned(baseURL, "", certPinStore{})
 		client.SetToken(cached)
-		return client, nil
+		// The TUI has no 401 retry of its own, so a token the daemon no longer
+		// accepts (an older daemon's JWT, a changed password) must fall through
+		// to the handshake here rather than open a TUI that can't load anything.
+		if _, err := client.GetDaemonInfo(ctx); !errors.Is(err, apiclient.ErrUnauthorized) {
+			return client, nil
+		}
 	}
 
 	interactive := isInteractiveTerminal()
