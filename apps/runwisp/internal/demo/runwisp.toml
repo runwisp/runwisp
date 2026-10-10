@@ -28,6 +28,7 @@ name             = "demo-server"
 shutdown_timeout = "15s"
 external_url     = "https://runwisp.acme-notes.example"
 timezone         = "Europe/Bratislava"
+check_updates    = false
 
 [defaults]
 timeout      = "30m"
