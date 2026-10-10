@@ -242,6 +242,9 @@
           "latestVersion": {
             "type": "string"
           },
+          "name": {
+            "type": "string"
+          },
           "port": {
             "format": "int64",
             "type": "integer"
@@ -287,6 +290,7 @@
         },
         "required": [
           "version",
+          "name",
           "fingerprint",
           "port",
           "externalUrl",

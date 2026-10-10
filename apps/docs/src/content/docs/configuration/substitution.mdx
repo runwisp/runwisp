@@ -35,6 +35,9 @@ systemd unit, or container that started `runwisp daemon`).
     ```
 
 - A variable that is set but empty gives an empty string.
+- Since 1.6, `${HOSTNAME}` falls back to the machine's hostname when the
+  variable isn't set. Shells often don't export it, and systemd and launchd
+  never set it.
 
 ## `${file:path}`: file contents
 

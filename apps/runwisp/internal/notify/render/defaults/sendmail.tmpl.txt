@@ -16,4 +16,4 @@
 {{- end }}
 
 --
-from runwisp{{ with fingerprint }} · {{ . }}{{ end }}
+from runwisp{{ with instanceName }} · {{ . }}{{ end }}

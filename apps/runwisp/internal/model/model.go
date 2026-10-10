@@ -635,7 +635,10 @@ const (
 // distinct from StationEnabled, which only reports that a station connection is
 // configured.
 type DaemonInfo struct {
-	Version          string    `json:"version"`
+	Version string `json:"version"`
+	// Name mirrors [daemon] name: the display label shown in place of the
+	// fingerprint. Empty when unset.
+	Name             string    `json:"name"`
 	Fingerprint      string    `json:"fingerprint"`
 	Port             int       `json:"port"`
 	ExternalURL      string    `json:"externalUrl"`

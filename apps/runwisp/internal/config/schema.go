@@ -231,6 +231,10 @@ type NotificationRoute struct {
 
 // Daemon holds daemon-wide toggles.
 //
+// Name is a display label for this instance, shown in place of the
+// fingerprint in the TUI, Web UI and notification footers. Empty means show
+// the fingerprint. It never replaces the fingerprint as an identity.
+//
 // ShutdownTimeout caps how long in-flight tasks may drain after SIGTERM. The
 // default matches Docker's 10-second stop-grace.
 //
@@ -245,6 +249,7 @@ type NotificationRoute struct {
 // self-signed HTTPS on a non-loopback bind). TLSCert/TLSKey, when both set,
 // take precedence over auto self-signing on any bind.
 type Daemon struct {
+	Name                 string
 	AllowStationDispatch bool
 	ShutdownTimeout      time.Duration
 	ExternalURL          string

@@ -891,6 +891,7 @@ export interface components {
             externalUrl: string;
             fingerprint: string;
             latestVersion: string;
+            name: string;
             /** Format: int64 */
             port: number;
             resolvedTimezone: string;

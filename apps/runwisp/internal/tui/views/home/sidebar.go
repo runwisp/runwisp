@@ -36,11 +36,13 @@ const (
 // task even while the displayed list is narrowed), whereas cursor/scroll/hovered
 // index the displayed items.
 type Sidebar struct {
-	name        string
-	version     string
-	fingerprint string
-	allItems    []sidebarItem
-	items       []sidebarItem
+	name    string
+	version string
+	// label identifies the instance under the brand: [daemon] name, else the
+	// fingerprint. Kept fresh by SetLabel from the /api/daemon poll.
+	label    string
+	allItems []sidebarItem
+	items    []sidebarItem
 
 	width     int
 	height    int
@@ -70,16 +72,16 @@ type Sidebar struct {
 // hit-test against this constant is exact.
 const versionRow = 2
 
-func NewSidebar(name, version, fingerprint string, tasks []model.Task) Sidebar {
+func NewSidebar(name, version, label string, tasks []model.Task) Sidebar {
 	all := buildItems(tasks)
 	return Sidebar{
-		name:        name,
-		version:     version,
-		fingerprint: fingerprint,
-		allItems:    all,
-		items:       all,
-		hovered:     -1,
-		focused:     true,
+		name:     name,
+		version:  version,
+		label:    label,
+		allItems: all,
+		items:    all,
+		hovered:  -1,
+		focused:  true,
 	}
 }
 
@@ -191,6 +193,12 @@ func (s *Sidebar) SetFocused(focused bool) {
 
 func (s *Sidebar) SetHovered(idx int) {
 	s.hovered = idx
+}
+
+// SetLabel replaces the instance label under the brand, so a reload that
+// changes [daemon] name shows up without restarting the TUI.
+func (s *Sidebar) SetLabel(label string) {
+	s.label = label
 }
 
 // SetUpdate records the background update-check result. Losing availability
@@ -484,7 +492,7 @@ func (s *Sidebar) SetTaskMarks(marks map[string]uikit.TaskMark) {
 }
 
 func (s *Sidebar) brandHeight() int {
-	if s.fingerprint != "" {
+	if s.label != "" {
 		return 5
 	}
 	return 4
@@ -502,9 +510,9 @@ func (s *Sidebar) View() string {
 	writeSidebarLine(&b, s.renderVersionLine(), w)
 	rendered++
 
-	if s.fingerprint != "" {
-		fingerprint := truncateToWidth(s.fingerprint, max(0, w-3))
-		writeSidebarLine(&b, uikit.SidebarFingerprintStyle.Render("   "+fingerprint), w)
+	if s.label != "" {
+		label := truncateToWidth(s.label, max(0, w-3))
+		writeSidebarLine(&b, uikit.SidebarFingerprintStyle.Render("   "+label), w)
 		rendered++
 	}
 

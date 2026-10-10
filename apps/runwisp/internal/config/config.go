@@ -328,7 +328,7 @@ func parseWire(data []byte, baseDir string) (*tomlConfig, error) {
 	if err := dec.Decode(&raw); err != nil {
 		return nil, formatDecodeError(err)
 	}
-	if err := expandConfig(&raw, baseDir, os.LookupEnv); err != nil {
+	if err := expandConfig(&raw, baseDir, withHostname(os.LookupEnv, os.Hostname)); err != nil {
 		return nil, err
 	}
 	return &raw, nil

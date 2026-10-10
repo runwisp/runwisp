@@ -149,7 +149,7 @@ type TUIConfig struct {
 }
 
 func NewModel(cfg TUIConfig) Model {
-	sidebar := home.NewSidebar("RunWisp", cfg.Info.Version, cfg.Info.Fingerprint, cfg.Info.Tasks)
+	sidebar := home.NewSidebar("RunWisp", cfg.Info.Version, cfg.Info.Label(), cfg.Info.Tasks)
 	execWindow := execlist.NewExecWindow(cfg.Client)
 	execList := execlist.NewExecList(execWindow)
 	infoView := info.NewInfoView(cfg.Info)

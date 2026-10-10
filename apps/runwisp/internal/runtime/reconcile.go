@@ -558,6 +558,7 @@ func CheckNonReloadable(old, updated *config.Config) error {
 // there holds the two in step.
 func restartOnly(d config.Daemon) config.Daemon {
 	d.ShutdownTimeout = 0
+	d.Name = ""
 	d.ExternalURL = ""
 	d.CheckUpdates = false
 	d.TrustedProxies = nil

@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The run list on the Web UI task page shows two small CPU and RAM bars per run, colored by how the run compares with the task's usual run.
 - The TUI sidebar marks each task that is running, whose last run failed, or that is paused or stopped.
 - The TUI run header shows the exit code of a failed run next to its status.
+- `[daemon] name` labels the daemon in the TUI, the Web UI, the browser tab title and notification footers in place of the fingerprint. `name = "${HOSTNAME}"` uses the machine's hostname.
 
 ### Changed
 

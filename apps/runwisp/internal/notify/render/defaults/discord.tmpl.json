@@ -1,7 +1,7 @@
 {{- /* Discord notification — single embed, color-coded by outcome. */ -}}
 {{- $tail := "" -}}{{- if or (eq .Kind "run.failed") (eq .Kind "run.timeout") -}}{{- $tail = outputTail . -}}{{- end -}}
 {{- $url := "" -}}{{- if eq .Kind "log.disk_pressure" -}}{{- $url = taskURL .TaskName -}}{{- else -}}{{- $url = runURL .Run -}}{{- end -}}
-{{- $footer := "from runwisp" -}}{{- with fingerprint -}}{{- $footer = printf "from runwisp · %s" . -}}{{- end -}}
+{{- $footer := "from runwisp" -}}{{- with instanceName -}}{{- $footer = printf "from runwisp · %s" . -}}{{- end -}}
 {{- $color := "5793266" -}}
 {{- if eq .Kind "run.succeeded" -}}{{- $color = "5763719" -}}
 {{- else if eq .Severity "error" -}}{{- $color = "15548997" -}}

@@ -4,7 +4,7 @@
 <script lang="ts">
     import { Bell } from "@lucide/svelte";
     import { EmptyState, ErrorState, Link, PageHeader, Skeleton } from "@runwisp/ui";
-    import { notificationStore } from "$lib/stores";
+    import { notificationStore, systemStore } from "$lib/stores";
     import NotificationItem from "$lib/components/NotificationItem.svelte";
 
     let items = $derived(notificationStore.items);
@@ -28,7 +28,7 @@
 {/snippet}
 
 <svelte:head>
-    <title>Notifications · RunWisp</title>
+    <title>{systemStore.title("Notifications")}</title>
 </svelte:head>
 
 <div class="mx-auto max-w-3xl space-y-4">

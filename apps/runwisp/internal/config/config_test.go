@@ -1929,6 +1929,19 @@ run = "echo hi"
 		assert.Equal(t, 20*time.Second, cfg.Daemon.ShutdownTimeout)
 	})
 
+	t.Run("daemon name is trimmed", func(t *testing.T) {
+		path := writeTOML(t, `
+[daemon]
+name = "  storage-nas "
+
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, "storage-nas", cfg.Daemon.Name)
+	})
+
 	t.Run("daemon external_url parses and strips trailing slash", func(t *testing.T) {
 		path := writeTOML(t, `
 [daemon]

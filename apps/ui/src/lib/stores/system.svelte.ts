@@ -20,6 +20,8 @@ class SystemStore {
     memUsage = $state(0);
     metricsHistory = $state<MetricsSample[]>([]);
     fingerprint = $state("—");
+    // [daemon] name; shown in place of the fingerprint when set.
+    name = $state("");
     timezone = $state("");
     timezoneSource = $state("");
     configStale = $state(false);
@@ -59,6 +61,12 @@ class SystemStore {
         return this.#taskUsage ? this.#taskUsage[task.name] : task.usage;
     }
 
+    // Browser tab title, prefixed with [daemon] name so tabs of several
+    // daemons stay apart.
+    title(page?: string): string {
+        return [page, this.name, "RunWisp"].filter(Boolean).join(" · ");
+    }
+
     runUsage(runId: string): ResourceUsage | undefined {
         return this.#runUsage[runId];
     }
@@ -92,6 +100,7 @@ class SystemStore {
             this.memUsage = sys.memUsage;
             this.metricsHistory = history;
             this.fingerprint = info.fingerprint;
+            this.name = info.name;
             this.timezone = info.resolvedTimezone;
             this.timezoneSource = info.timezoneSource;
             this.configStale = info.configStale;

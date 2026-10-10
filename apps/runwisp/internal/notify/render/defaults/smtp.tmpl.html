@@ -18,7 +18,7 @@
 {{- if $url }}
 <p style="margin:0 0 16px 0;"><a href="{{ $url }}" style="display:inline-block;padding:9px 14px;background:#0e7c86;color:#ffffff;text-decoration:none;border-radius:3px;font-size:14px;font-weight:600;">{{ linkLabel .Kind }}</a></p>
 {{- end }}
-<p style="margin:16px 0 0 0;padding-top:16px;border-top:1px solid #e0e7e7;font-size:12px;line-height:1.45;color:#869798;font-style:italic;">from runwisp{{ with fingerprint }} · {{ htmlEsc . }}{{ end }}</p>
+<p style="margin:16px 0 0 0;padding-top:16px;border-top:1px solid #e0e7e7;font-size:12px;line-height:1.45;color:#869798;font-style:italic;">from runwisp{{ with instanceName }} · {{ htmlEsc . }}{{ end }}</p>
 </div>
 </body>
 </html>

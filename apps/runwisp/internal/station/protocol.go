@@ -41,14 +41,19 @@ func NewPingMessage(stats *protocol.SystemStatsInfo) protocol.PingMessage {
 }
 
 // makeSystemStatsProvider adapts the daemon's model-typed stats source into the
-// wire-typed provider the heartbeat loop calls. Returns nil when no source is
-// wired so the session sends plain pings.
-func makeSystemStatsProvider(fn func() model.SystemStats) func() *protocol.SystemStatsInfo {
+// wire-typed provider the heartbeat loop calls, stamping the live instance name
+// when instanceName is wired. Returns nil when no stats source is wired so the
+// session sends plain pings.
+func makeSystemStatsProvider(fn func() model.SystemStats, instanceName func() string) func() *protocol.SystemStatsInfo {
 	if fn == nil {
 		return nil
 	}
 	return func() *protocol.SystemStatsInfo {
-		return toProtocolSystemStats(fn())
+		info := toProtocolSystemStats(fn())
+		if instanceName != nil {
+			info.InstanceName = instanceName()
+		}
+		return info
 	}
 }
 

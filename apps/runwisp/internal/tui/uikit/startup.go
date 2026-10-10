@@ -4,6 +4,7 @@
 package uikit
 
 import (
+	"cmp"
 	"fmt"
 	"time"
 
@@ -38,6 +39,8 @@ type StartupInfo struct {
 	// wildcard binds mapped to localhost). Empty when the Web UI is disabled.
 	ListenURL string
 
+	// Name is [daemon] name, empty when unset.
+	Name        string
 	Fingerprint string
 	// TLSFingerprint is the SHA-256 (hex) of the served TLS certificate, shown
 	// so the operator can verify it out-of-band against what a remote client
@@ -100,11 +103,18 @@ type StartupInfo struct {
 	CatchUpTriggered int
 }
 
+// Label is how the TUI identifies the instance: [daemon] name when set, else
+// the fingerprint.
+func (s *StartupInfo) Label() string {
+	return cmp.Or(s.Name, s.Fingerprint)
+}
+
 // ApplyDaemonInfo adopts the daemon-reported fields of info, as read at attach
 // and refreshed by the /api/daemon poll and after a reload. Tasks are left to
 // the caller: adopting a new task set also means rebuilding the sidebar.
 func (s *StartupInfo) ApplyDaemonInfo(info model.DaemonInfo) {
 	s.Version = info.Version
+	s.Name = info.Name
 	s.Fingerprint = info.Fingerprint
 	s.Port = info.Port
 	s.StationEnabled = info.StationEnabled

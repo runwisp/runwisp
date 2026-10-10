@@ -100,7 +100,7 @@
 </script>
 
 <svelte:head>
-    <title>RunWisp</title>
+    <title>{systemStore.title()}</title>
     <meta
         name="description"
         content="Web-based task scheduling and process supervision with real-time monitoring"

@@ -97,6 +97,9 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 	// Info tab breaks it down.
 	printDotField(w, "Config", info.ConfigPath)
 	printDotField(w, "Data", info.DataDir)
+	if info.Name != "" {
+		printDotField(w, "Name", info.Name)
+	}
 	if info.Fingerprint != "" {
 		printDotField(w, "Fingerprint", info.Fingerprint)
 	}

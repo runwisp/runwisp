@@ -504,6 +504,7 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time
 
 	return &model.DaemonInfo{
 		Version:          version.Version,
+		Name:             cfg.Config.Daemon.Name,
 		Fingerprint:      cfg.Fingerprint,
 		Port:             port,
 		ExternalURL:      cfg.Config.Daemon.ExternalURL,

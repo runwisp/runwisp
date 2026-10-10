@@ -132,12 +132,12 @@
                 </span>
             {/if}
         </span>
-        {#if status === "connected" && systemStore.fingerprint}
+        {#if status === "connected" && (systemStore.name || systemStore.fingerprint)}
             <span
                 class="truncate font-mono text-2xs text-on-surface-faint"
-                title="Instance fingerprint"
+                title={systemStore.name ? "Instance name" : "Instance fingerprint"}
             >
-                {systemStore.fingerprint}
+                {systemStore.name || systemStore.fingerprint}
             </span>
         {/if}
     </div>

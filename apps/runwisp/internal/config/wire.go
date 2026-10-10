@@ -840,6 +840,7 @@ func (w *storageWire) toStorage() (Storage, error) {
 // make adding a crontab require a restart. Only the root config may set them;
 // either key in an included file is a hard error.
 type daemonWire struct {
+	Name                 string `toml:"name,omitempty"`
 	AllowStationDispatch bool   `toml:"allow_station_dispatch,omitempty"`
 	ShutdownTimeout      string `toml:"shutdown_timeout,omitempty"`
 	ExternalURL          string `toml:"external_url,omitempty"`
@@ -901,6 +902,7 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 		checkUpdates = *w.CheckUpdates
 	}
 	return Daemon{
+		Name:                 strings.TrimSpace(w.Name),
 		AllowStationDispatch: w.AllowStationDispatch,
 		ShutdownTimeout:      shutdown,
 		ExternalURL:          externalURL,

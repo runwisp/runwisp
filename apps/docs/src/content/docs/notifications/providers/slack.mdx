@@ -79,7 +79,8 @@ tail) and these helpers:
 
 - Event: `statusEmoji`, `statusVerb`, `humanTime`, `humanDuration`,
   `runDuration`, `triggerPhrase`, `eventSentence`, `eventTrigger`, `linkLabel`,
-  `runURL`, `taskURL`, `outputTail`, `fingerprint`, and `emoji` (a Slack emoji
+  `runURL`, `taskURL`, `outputTail`, `fingerprint`, `instanceName` (the daemon's
+  [`name`](/configuration/daemon/#name), or the fingerprint when unset), and `emoji` (a Slack emoji
   code for the event's severity).
 - Escaping: `jsonStr` (for a JSON string), `htmlEsc` (for HTML), `tgEscape`
   (for Telegram HTML), `slackEsc` (for Slack mrkdwn text), and `slackCode` (for

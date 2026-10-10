@@ -92,6 +92,17 @@ func TestNewSidebar_BasicState(t *testing.T) {
 	assert.Equal(t, -1, s.hovered)
 }
 
+func TestSidebar_SetLabelReplacesBrandLine(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "misty-pond", makeTasks("t"))
+	s.SetSize(30, 20)
+	assert.Contains(t, s.View(), "misty-pond")
+
+	s.SetLabel("storage-nas")
+	view := s.View()
+	assert.Contains(t, view, "storage-nas")
+	assert.NotContains(t, view, "misty-pond")
+}
+
 func TestSidebar_SetFocused(t *testing.T) {
 	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("t"))
 	s.SetFocused(false)

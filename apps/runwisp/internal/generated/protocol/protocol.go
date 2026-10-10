@@ -363,6 +363,10 @@ type SystemStatsInfo struct {
 	Version string `json:"version,omitzero"`
 	// Hostname of the runner machine.
 	Host string `json:"host,omitzero"`
+	// The daemon's `[daemon] name` display label, read per heartbeat so a
+	// config reload shows up on the next ping. Empty when unset (show the
+	// fingerprint instead). Add-only field; old daemons omit it.
+	InstanceName string `json:"instanceName,omitzero"`
 	// Operating system (e.g. linux, darwin, windows).
 	Os string `json:"os,omitzero"`
 	// CPU architecture (e.g. amd64, arm64).

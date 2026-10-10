@@ -30,6 +30,7 @@ min_free_space: size =0(no check) — stop accepting log lines when partition fr
 ### [daemon]
 
 ```
+name:                 string      — display label shown instead of the fingerprint (TUI, Web UI, tab title, notification footers); ${HOSTNAME} falls back to os hostname
 allow_station_dispatch: bool =false — accept peer-dispatched ad-hoc shell/container/compose runs (opt-in; one-shot, never edits TOML; HTTP & existing-task triggers always allowed)
 shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flight runs on shutdown
 timezone:             IANA string =host system zone — TZ for cron eval when a task pins none
