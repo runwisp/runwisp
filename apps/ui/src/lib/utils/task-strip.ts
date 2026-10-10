@@ -329,7 +329,7 @@ function upStrip(c: ServiceCtx, instances: Instance[], now: Date): TaskStripMode
     const since = instances
         .map((i) => i.startedAt)
         .filter((s) => s !== undefined)
-        .sort()[0];
+        .sort((a, b) => a.localeCompare(b))[0];
     const multi = c.desired > 1;
     const count = multi ? `${String(c.up)} of ${String(c.desired)} instances up` : "Up";
     const live = c.up > 0 || c.task.service === undefined;
