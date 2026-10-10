@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { FOLD_DISTANCE, FOLD_MS, HeaderFold, fitsUnfolded, foldStep } from "./header-fold.svelte";
+import {
+    FOLD_DISTANCE,
+    FOLD_MS,
+    HeaderFold,
+    fitsUnfolded,
+    foldStep,
+    measuredStripDelta,
+} from "./header-fold.svelte";
 
 const mid = { atTop: false, atBottom: false };
 
@@ -40,6 +47,31 @@ describe("fitsUnfolded", () => {
         expect(fitsUnfolded(500, 600, false, 120)).toBe(true);
         expect(fitsUnfolded(500, 600, true, 120)).toBe(false);
         expect(fitsUnfolded(480, 600, true, 120)).toBe(true);
+    });
+});
+
+describe("measuredStripDelta", () => {
+    const desktop = { phone: false, foldedHeight: 0 };
+
+    it("takes the full strip height on desktop while unfolded", () => {
+        expect(measuredStripDelta(0, { ...desktop, folded: false, fullHeight: 96 })).toBe(96);
+    });
+
+    it("keeps the unfolded height while the strip slides out", () => {
+        // The slide reports the strip shrinking toward 0 once folded.
+        let delta = measuredStripDelta(0, { ...desktop, folded: false, fullHeight: 96 });
+        for (const h of [70, 30, 0]) {
+            delta = measuredStripDelta(delta, { ...desktop, folded: true, fullHeight: h });
+        }
+        expect(delta).toBe(96);
+        // So a log that fits only folded still counts as not fitting unfolded.
+        expect(fitsUnfolded(550, 600, true, delta)).toBe(false);
+    });
+
+    it("takes the difference to the one-line strip on a phone", () => {
+        const m = { phone: true, folded: true, fullHeight: 140, foldedHeight: 40 };
+        expect(measuredStripDelta(0, m)).toBe(100);
+        expect(measuredStripDelta(0, { ...m, fullHeight: 20 })).toBe(0);
     });
 });
 

@@ -58,6 +58,22 @@ export function fitsUnfolded(
     return contentHeight <= (folded ? clientHeight - stripDelta : clientHeight);
 }
 
+/**
+ * How much the fold gives the log, from the strip's measured heights: the
+ * strip's full height on desktop (its row moves into the top bar), the
+ * difference to one line on a phone. Desktop measures the unfolded strip only
+ * while it is unfolded: folding slides it out, and the heights it reports on
+ * the way down would shrink the delta toward 0, so a log that fits only folded
+ * would be judged to fit unfolded and flip the fold back.
+ */
+export function measuredStripDelta(
+    current: number,
+    m: { phone: boolean; folded: boolean; fullHeight: number; foldedHeight: number },
+): number {
+    if (m.phone) return Math.max(0, m.fullHeight - m.foldedHeight);
+    return m.folded ? current : m.fullHeight;
+}
+
 type Scroller = Pick<Element, "scrollTop" | "scrollHeight" | "clientHeight">;
 type LogBox = Pick<HTMLElement, "dataset" | "clientHeight">;
 interface Sample {

@@ -9,13 +9,13 @@
     import type { RunsListFilters, RunOutputMatch } from "@runwisp/ui";
     import {
         activeFilterCount,
-        formatRelativeTimeWithAbsolute,
         RunsList,
         RunDetailPanel,
         Button,
         Modal,
         Alert,
         AlertDialog,
+        TickingNow,
     } from "@runwisp/ui";
     import { tasksApi } from "$lib/api";
     import TaskStrip from "$lib/components/task/TaskStrip.svelte";
@@ -26,7 +26,7 @@
     import { createRunSelection } from "$lib/utils/run-selection.svelte";
     import { HistoryRail } from "$lib/utils/history-rail.svelte";
     import ParamForm from "./ParamForm.svelte";
-    import { hasCron, taskInstanceCount } from "$lib/utils/task";
+    import { noRunsMessage, taskInstanceCount } from "$lib/utils/task";
 
     let {
         task,
@@ -245,39 +245,16 @@
         rail.picked();
     }
 
-    // No Run button beside the empty state: the strip's is right above it.
-    const empty = $derived.by(() => {
-        if (task.heldBy) {
-            return {
-                title: "No runs recorded",
-                description:
-                    "While cron holds this job, it runs outside RunWisp. Hand it over to see its runs here.",
-            };
-        }
-        if (hasCron(task) && task.nextRunAt && systemStore.schedulingActive) {
-            return {
-                title: "No runs yet",
-                description: `The first run is ${formatRelativeTimeWithAbsolute(task.nextRunAt)}.`,
-            };
-        }
-        if (taskIsService) {
-            return {
-                title: "No runs yet",
-                description: "Each instance's output shows here once it starts.",
-            };
-        }
-        return {
-            title: "No runs yet",
-            description: `Use Run above, runwisp run ${task.name}, or the REST API.`,
-        };
-    });
+    const clock = new TickingNow();
+    $effect(() => clock.start());
+    const empty = $derived(noRunsMessage(task, systemStore.schedulingActive, clock.now));
 </script>
 
 <!-- Card-less, full-bleed: the rail and detail panel fill the content area
      edge-to-edge (cancelling AppLayout's p-6), divided only by the rail's
      right border. The topbar/sidebar are the outer frame; no nested card. -->
 <div bind:this={root} class="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col">
-    {#if !rail.phone || panes.list}
+    {#if panes.strip}
         <TaskStrip
             {task}
             {running}

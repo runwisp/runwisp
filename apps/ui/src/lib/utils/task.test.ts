@@ -8,6 +8,7 @@ import {
     canTogglePause,
     instanceCountResolver,
     isServiceStopped,
+    noRunsMessage,
     serviceLabel,
     taskIcon,
     taskTriggerTooltip,
@@ -98,5 +99,19 @@ describe("taskIcon", () => {
         expect(taskIcon({ ...svc, serviceStopped: true })).toBe(PowerOff);
         expect(taskIcon(svc)).toBe(AppWindow);
         expect(taskTriggerTooltip({ ...svc, serviceStopped: true })).toBe("Service · stopped");
+    });
+});
+
+describe("noRunsMessage", () => {
+    it("counts down to the first run as now ticks", () => {
+        const task = makeTask({ nextRunAt: "2026-10-09T12:10:00Z" });
+        const at = (iso: string) => noRunsMessage(task, true, new Date(iso)).description;
+        expect(at("2026-10-09T12:00:00Z")).toContain("in 10 minutes");
+        expect(at("2026-10-09T12:05:00Z")).toContain("in 5 minutes");
+    });
+
+    it("points a manual task at the strip's Run above", () => {
+        const m = noRunsMessage(makeTask({ cron: "" }), true, new Date());
+        expect(m.description).toBe("Use Run above, runwisp run nightly, or the REST API.");
     });
 });

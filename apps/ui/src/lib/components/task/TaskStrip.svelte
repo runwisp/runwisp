@@ -18,7 +18,7 @@
     } from "@runwisp/ui";
     import { tasksApi } from "$lib/api";
     import { systemStore, taskBarStore, taskStore } from "$lib/stores";
-    import { FOLD_MS, type HeaderFold } from "$lib/utils/header-fold.svelte";
+    import { FOLD_MS, measuredStripDelta, type HeaderFold } from "$lib/utils/header-fold.svelte";
     import { UNDO_MS } from "$lib/utils/run-actions";
     import { taskInstanceCount } from "$lib/utils/task";
     import { taskStrip, type StripActionKind } from "$lib/utils/task-strip";
@@ -163,12 +163,16 @@
         return () => ro.disconnect();
     });
 
-    // How much the fold gives the log: the strip's full height on desktop
-    // (its row moves into the top bar), the difference to one line on a phone.
+    // How much the fold gives the log (see measuredStripDelta).
     let fullHeight = $state(0);
     let foldedHeight = $state(0);
     $effect(() => {
-        fold.stripDelta = phone ? Math.max(0, fullHeight - foldedHeight) : fullHeight;
+        fold.stripDelta = measuredStripDelta(fold.stripDelta, {
+            phone,
+            folded: fold.folded,
+            fullHeight,
+            foldedHeight,
+        });
     });
 
     // Folded on desktop, the top bar shows the row.
