@@ -10,7 +10,10 @@
         component: Link,
         tags: ["autodocs"],
         argTypes: {
-            variant: { control: "select", options: ["default", "muted", "primary", "danger"] },
+            variant: {
+                control: "select",
+                options: ["default", "muted", "primary", "danger", "unstyled"],
+            },
             underline: { control: "select", options: ["always", "hover", "none"] },
         },
     });
@@ -35,4 +38,25 @@
     >
         Task configuration docs →
     </Link>
+</Story>
+
+<!-- `unstyled` adds nothing beyond `class`: the row brings its own layout and colours. -->
+<Story name="Unstyled nav row" asChild>
+    <nav class="w-64 space-y-0.5">
+        <Link
+            href="#tasks"
+            variant="unstyled"
+            aria-current="page"
+            class="flex items-center gap-3 rounded-sm bg-primary-soft px-3 py-2 font-mono text-sm text-primary-soft-text"
+        >
+            Tasks
+        </Link>
+        <Link
+            href="#runners"
+            variant="unstyled"
+            class="flex items-center gap-3 rounded-sm px-3 py-2 font-mono text-sm text-on-surface-muted hover:bg-surface-sunken hover:text-primary"
+        >
+            Runners
+        </Link>
+    </nav>
 </Story>
