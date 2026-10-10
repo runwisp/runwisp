@@ -13,7 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The TUI task info (`i`) shows the task's timeout, its log limit and retention, its usual CPU time and memory, and opens with the first lines of its `run` command; press `c` to see the whole command. It scrolls when it doesn't fit.
 - `runwisp upgrade` updates RunWisp the way it was installed (Homebrew, npm/bun/pnpm/yarn, or the install script) and can restart the daemon now, once it is idle, or later.
 - `@runwisp/node`: an npm package that runs node-cron tasks under RunWisp, so every run is recorded with its output and exit code and shown in the web UI. Swap the import and keep your `schedule()` calls, or define tasks and services with every `runwisp.toml` key. See [From node-cron](https://docs.runwisp.com/coming-from/node-cron/).
+- `@runwisp/node` integrates with NestJS (replacing `@nestjs/schedule`), Nuxt and Next.js (running Nitro's `scheduledTasks` and Vercel Cron jobs), and Astro.
 - Tasks and services take `sdk = true`, which runs them in an app that defines them through an SDK instead of a shell command, and `runwisp daemon --app` reads its config from such an app.
+- `runwisp import cron` names the jobs that Bun's `Bun.cron()` wrote into a crontab after their title.
+- `runwisp cron <expression>` checks a cron expression and lists when it fires next, in any timezone (`--json` for scripts).
 
 ### Changed
 

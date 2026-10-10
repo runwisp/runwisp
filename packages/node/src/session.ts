@@ -5,13 +5,20 @@
 // upgraded to newline-delimited JSON. The messages mirror
 // apps/runwisp/internal/apphost/host.go.
 
-import { request } from "node:http";
-import type { Socket } from "node:net";
+import { createRequire } from "node:module";
+import { connect, type Socket } from "node:net";
 import { createInterface } from "node:readline";
 
 import { field } from "./daemon.ts";
 
-const PROTOCOL = "runwisp-app";
+/** The Upgrade token: the app protocol and its version, as in apps/runwisp/internal/apphost. */
+export const PROTOCOL = "runwisp-app/1";
+
+/** Who connects: copies of one app share a daemon, a different app is refused. */
+export interface AppIdentity {
+    app: string;
+    pid: number;
+}
 
 /** A run of one of this app's tasks or services. */
 export interface RunRequest {
@@ -21,6 +28,8 @@ export interface RunRequest {
     /** The unit's env, secrets and env params, resolved by RunWisp. */
     env: Record<string, string>;
     params: Record<string, string>;
+    /** The firing, for a run the schedule started; absent for one started by hand. */
+    at?: Date;
 }
 
 export type ConfigReply = { ok: true } | { ok: false; error: string; restart: boolean };
@@ -29,8 +38,14 @@ export type ConfigReply = { ok: true } | { ok: false; error: string; restart: bo
 export interface SessionEvents {
     /** Whether this copy of the app runs the tasks and supplies the config. Others stand by. */
     role(session: Session, active: boolean): void;
+    /** This active copy is now the only app connected. */
+    alone(session: Session): void;
     run(session: Session, request: RunRequest): void;
     stop(run: string): void;
+    /** RunWisp skipped a firing of task (on_overlap: "skip") scheduled for at. */
+    overlap(task: string, at: Date): void;
+    /** Firings of task were missed while RunWisp was down, the latest at at. */
+    missed(task: string, at: Date): void;
     closed(session: Session): void;
 }
 
@@ -45,8 +60,36 @@ function strings(value: unknown): Record<string, string> {
     );
 }
 
+/** This package's version, for errors about a runwisp binary that doesn't match it. */
+function packageVersion(): string {
+    try {
+        const pkg: unknown = createRequire(import.meta.url)("../package.json");
+        const version = field(pkg, "version");
+        return typeof version === "string" ? version : "?";
+    } catch {
+        return "?";
+    }
+}
+
+/** Why the daemon refused the app connection, from its HTTP answer. */
+export function refusal(status: string, head: string, body: string): Error {
+    if (status === "426") {
+        const theirs = /^upgrade:\s*runwisp-app\/(\d+)\s*$/im.exec(head)?.[1];
+        const age = Number(theirs) > Number(PROTOCOL.split("/")[1]) ? "newer" : "older";
+        return new Error(
+            `this runwisp binary is ${age} than @runwisp/node ${packageVersion()} supports (app protocol ${theirs ?? "unknown"}, this package speaks ${PROTOCOL}): install matching versions of runwisp and @runwisp/node`,
+        );
+    }
+    const why = body.trim();
+    return new Error(`RunWisp refused the app connection (HTTP ${status})${why ? `: ${why}` : ""}`);
+}
+
 export class Session {
     active = false;
+    /** Whether this copy is the only app connected, as the daemon last said. */
+    alone = false;
+    /** The active copy's pid, as told to a standby copy; 0 when unknown. */
+    activePid = 0;
     private readonly socket: Socket;
     private readonly events: SessionEvents;
     private readonly replies: ((reply: ConfigReply) => void)[] = [];
@@ -77,16 +120,40 @@ export class Session {
         });
     }
 
-    /** Connects, and resolves once the daemon said whether this copy is active. */
-    static open(socketPath: string, events: SessionEvents): Promise<Session> {
+    /**
+     * Connects, and resolves once the daemon said whether this copy is active.
+     * The upgrade is written by hand: Bun before 1.4 never emits node:http's
+     * "upgrade" event.
+     */
+    static open(socketPath: string, events: SessionEvents, who: AppIdentity): Promise<Session> {
         return new Promise((resolve, reject) => {
-            const req = request({
-                socketPath,
-                path: "/api/local/app",
-                headers: { host: "runwisp", connection: "Upgrade", upgrade: PROTOCOL },
-            });
-            req.on("upgrade", (_res, socket, head) => {
-                if (head.length > 0) socket.unshift(head);
+            const socket = connect(socketPath);
+            let head = Buffer.alloc(0);
+            // Set once the daemon answered with an error: why it refused.
+            let refused: (() => Error) | undefined;
+            const onData = (chunk: Buffer) => {
+                head = Buffer.concat([head, chunk]);
+                const end = head.indexOf("\r\n\r\n");
+                if (end === -1) return;
+                socket.off("data", onData);
+                const headText = head.toString("latin1", 0, end);
+                const status = /^HTTP\/1\.[01] (\d{3})/.exec(headText)?.[1] ?? "?";
+                if (status !== "101") {
+                    // The reason is the body: read it, then hang up (the daemon keeps the connection alive).
+                    const length = Number(/^content-length:\s*(\d+)/im.exec(headText)?.[1] ?? 0);
+                    let body = head.subarray(end + 4);
+                    refused = () => refusal(status, headText, body.toString("utf8"));
+                    const onBody = (more?: Buffer) => {
+                        if (more) body = Buffer.concat([body, more]);
+                        if (body.length >= length) socket.destroy();
+                    };
+                    socket.on("data", onBody);
+                    onBody();
+                    return;
+                }
+                socket.pause();
+                const rest = head.subarray(end + 4);
+                if (rest.length > 0) socket.unshift(rest);
                 new Session(socket, {
                     ...events,
                     role: (session, active) => {
@@ -98,17 +165,16 @@ export class Session {
                         events.closed(session);
                     },
                 });
+            };
+            socket.on("data", onData);
+            socket.once("error", reject);
+            socket.once("close", () => {
+                reject(refused ? refused() : new Error("RunWisp closed the app connection"));
             });
-            req.on("response", (res) => {
-                res.resume();
-                reject(
-                    new Error(
-                        `RunWisp refused the app connection (HTTP ${String(res.statusCode)})`,
-                    ),
-                );
-            });
-            req.on("error", reject);
-            req.end();
+            const query = new URLSearchParams({ app: who.app, pid: String(who.pid) });
+            socket.write(
+                `GET /api/local/app?${query.toString()} HTTP/1.1\r\nHost: runwisp\r\nConnection: Upgrade\r\nUpgrade: ${PROTOCOL}\r\n\r\n`,
+            );
         });
     }
 
@@ -116,8 +182,13 @@ export class Session {
         if (this.socket.writable) this.socket.write(JSON.stringify(message) + "\n");
     }
 
-    output(run: string, stream: Stream, line: string): void {
-        this.send({ type: "output", run, stream, line });
+    /** With partial, line is a piece of a line that the next output continues. */
+    output(run: string, stream: Stream, line: string, partial = false): void {
+        this.send(
+            partial
+                ? { type: "output", run, stream, line, partial }
+                : { type: "output", run, stream, line },
+        );
     }
 
     exit(run: string, code: number): void {
@@ -139,7 +210,7 @@ export class Session {
     /**
      * Says this copy is shutting down, not restarting. The next copy takes
      * over and this one hears it is on standby; when it was the last, RunWisp
-     * stops instead, stopping its runs as it does at any shutdown.
+     * stops once this copy disconnects, so its runs can finish first.
      */
     leave(): void {
         this.send({ type: "close" });
@@ -157,26 +228,31 @@ export class Session {
         } catch {
             return;
         }
-        const run = field(message, "run");
         switch (field(message, "type")) {
-            case "role":
+            case "role": {
+                const pid = field(message, "pid");
                 this.active = field(message, "active") === true;
+                this.alone = field(message, "alone") === true;
+                this.activePid = typeof pid === "number" ? pid : 0;
                 this.events.role(this, this.active);
                 break;
-            case "run": {
-                const task = field(message, "task");
-                if (typeof run !== "string" || typeof task !== "string") return;
-                this.events.run(this, {
-                    run,
-                    task,
-                    env: strings(field(message, "env")),
-                    params: strings(field(message, "params")),
-                });
-                break;
             }
-            case "stop":
+            case "alone":
+                this.alone = true;
+                this.events.alone(this);
+                break;
+            case "overlap":
+            case "missed":
+                this.receiveSkipped(message);
+                break;
+            case "run":
+                this.receiveRun(message);
+                break;
+            case "stop": {
+                const run = field(message, "run");
                 if (typeof run === "string") this.events.stop(run);
                 break;
+            }
             case "config_ok":
                 this.replies.shift()?.({ ok: true });
                 break;
@@ -192,5 +268,28 @@ export class Session {
             default:
             // Unknown types are ignored, so the daemon can be newer than the app.
         }
+    }
+
+    /** A firing RunWisp skipped (overlap) or missed while it was down. */
+    private receiveSkipped(message: unknown): void {
+        const task = field(message, "task");
+        const at = field(message, "at");
+        if (typeof task !== "string" || typeof at !== "string") return;
+        if (field(message, "type") === "overlap") this.events.overlap(task, new Date(at));
+        else this.events.missed(task, new Date(at));
+    }
+
+    private receiveRun(message: unknown): void {
+        const run = field(message, "run");
+        const task = field(message, "task");
+        const at = field(message, "at");
+        if (typeof run !== "string" || typeof task !== "string") return;
+        this.events.run(this, {
+            run,
+            task,
+            env: strings(field(message, "env")),
+            params: strings(field(message, "params")),
+            ...(typeof at === "string" ? { at: new Date(at) } : {}),
+        });
     }
 }

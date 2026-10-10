@@ -291,6 +291,20 @@ run = "exec ./bin/web"
 	assert.ErrorIs(t, err, server.ErrServiceNotRunnable)
 }
 
+// An sdk task's callback lives in the app: with no daemon to hand it to, say
+// so instead of "unsupported execution type".
+func TestRunExecStandalone_SDKTaskRejected(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(cfgPath, []byte("[tasks.digest]\nsdk = true\n"), 0o600))
+
+	exitCode, err := runExecStandalone("digest", Flags{CfgFile: cfgPath, DataDir: dir}, nil, false)
+	assert.Equal(t, 0, exitCode)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `task "digest" runs in your app`)
+	assert.NotContains(t, err.Error(), "unsupported execution type")
+}
+
 func TestRunExecStandalone_BadConfigFile(t *testing.T) {
 	t.Parallel()
 	_, err := runExecStandalone("anything", Flags{CfgFile: "/does/not/exist/runwisp.toml"}, nil, false)

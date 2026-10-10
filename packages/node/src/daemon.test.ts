@@ -1,7 +1,15 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import {
+    chmodSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -12,9 +20,15 @@ import {
     call,
     choosePort,
     daemonPaths,
+    defaultAppName,
+    launchFingerprint,
     pickPort,
     prepareDirs,
+    processAlive,
+    procState,
+    recordLaunch,
     resolveSettings,
+    staleReason,
     validateConfig,
     type Settings,
 } from "./daemon.ts";
@@ -44,6 +58,24 @@ describe("daemon calls", () => {
         await new Promise<void>((resolve) => server.listen(socket, resolve));
         try {
             await expect(call(socket, "GET", "/health", 100)).rejects.toThrow("did not answer");
+        } finally {
+            server.close();
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it("fail when the daemon hangs up in the middle of an answer", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "rwn-"));
+        const socket = join(dir, "dying.sock");
+        const server = createServer((conn) => {
+            conn.write('HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{"items":');
+            setTimeout(() => conn.destroy(), 10);
+        });
+        await new Promise<void>((resolve) => server.listen(socket, resolve));
+        try {
+            await expect(call(socket, "GET", "/api/tasks", 60_000)).rejects.toThrow(
+                "hung up during GET /api/tasks",
+            );
         } finally {
             server.close();
             rmSync(dir, { recursive: true, force: true });
@@ -102,6 +134,7 @@ describe("port", () => {
         try {
             const paths = daemonPaths(data);
             const settings: Settings = {
+                app: "app",
                 data,
                 port: undefined,
                 host: "127.0.0.1",
@@ -113,6 +146,101 @@ describe("port", () => {
             expect(readFileSync(paths.port, "utf8")).toBe(String(port));
             expect(await choosePort(settings, paths)).toBe(port);
             expect(await choosePort({ ...settings, port: 1234 }, paths)).toBe(1234);
+        } finally {
+            rmSync(data, { recursive: true, force: true });
+        }
+    });
+});
+
+describe("processes", () => {
+    it("reads the state from a /proc stat line, whatever the command name holds", () => {
+        expect(procState("42 (node) S 1 42 42 0 -1")).toBe("S");
+        expect(procState("42 (we) ird) Z 1 42")).toBe("Z");
+        expect(procState("")).toBeUndefined();
+    });
+
+    // node as PID 1 in Docker never reaps the daemon it reparented.
+    it("counts a zombie as gone", () => {
+        expect(processAlive(process.pid, () => `${String(process.pid)} (runwisp) Z 1`)).toBe(false);
+        expect(processAlive(process.pid, () => `${String(process.pid)} (node) R 1`)).toBe(true);
+        expect(
+            processAlive(process.pid, () => {
+                throw new Error("no /proc here");
+            }),
+        ).toBe(true);
+        expect(processAlive(2 ** 30)).toBe(false);
+    });
+});
+
+describe("app name", () => {
+    it("is the nearest package.json name, else the directory", () => {
+        const root = mkdtempSync(join(tmpdir(), "rwn-"));
+        try {
+            const app = join(root, "app");
+            const nested = join(app, "src", "jobs");
+            mkdirSync(nested, { recursive: true });
+            writeFileSync(join(app, "package.json"), JSON.stringify({ name: "billing" }));
+            expect(defaultAppName(nested)).toBe("billing");
+            writeFileSync(join(nested, "package.json"), JSON.stringify({ private: true }));
+            expect(defaultAppName(nested)).toBe("billing");
+            expect(defaultAppName(root)).toBe(root);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+});
+
+describe("stale daemon", () => {
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
+    function setup() {
+        const data = mkdtempSync(join(tmpdir(), "rwn-"));
+        const binary = join(data, "runwisp");
+        writeFileSync(binary, '#!/bin/sh\necho "runwisp version 1.2.0"\n');
+        chmodSync(binary, 0o755);
+        const settings: Settings = {
+            ...resolveSettings({ data, binary, app: "app" }),
+        };
+        const daemon = { pid: 1234, version: "1.2.0", configPath: "", configSource: "app" };
+        return { data, settings, paths: daemonPaths(data), daemon };
+    }
+
+    it("is fresh when started with this env and binary", () => {
+        const { data, settings, paths, daemon } = setup();
+        try {
+            recordLaunch(paths, daemon.pid, launchFingerprint(settings));
+            expect(staleReason(settings, paths, daemon)).toBeUndefined();
+            // Unknown: nothing recorded, or recorded for another daemon.
+            rmSync(paths.launch);
+            expect(staleReason(settings, paths, daemon)).toBeUndefined();
+            recordLaunch(paths, 999, "other");
+            expect(staleReason(settings, paths, daemon)).toBeUndefined();
+        } finally {
+            rmSync(data, { recursive: true, force: true });
+        }
+    });
+
+    it("is stale after the env changed, without holding the env's values", () => {
+        const { data, settings, paths, daemon } = setup();
+        try {
+            vi.stubEnv("API_SECRET", "old-secret");
+            recordLaunch(paths, daemon.pid, launchFingerprint(settings));
+            expect(readFileSync(paths.launch, "utf8")).not.toContain("old-secret");
+            vi.stubEnv("API_SECRET", "rotated");
+            expect(staleReason(settings, paths, daemon)).toContain("environment");
+        } finally {
+            rmSync(data, { recursive: true, force: true });
+        }
+    });
+
+    it("is stale when it runs another runwisp version", () => {
+        const { data, settings, paths, daemon } = setup();
+        try {
+            expect(staleReason(settings, paths, { ...daemon, version: "1.1.0" })).toBe(
+                `it runs runwisp 1.1.0 and ${settings.binary} is 1.2.0`,
+            );
         } finally {
             rmSync(data, { recursive: true, force: true });
         }

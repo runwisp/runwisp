@@ -29,10 +29,18 @@ RunWisp dashboard: http://127.0.0.1:9477, password: npx runwisp password --data 
 ```
 
 - Thrown errors fail the run, with the stack trace in its log.
-- Runs once per data directory, however many copies of the app run.
+- Runs once per data directory, however many copies of the app run. A
+  different app on the same data directory is refused.
 - Retries, jitter, timeouts and notifications through `task()`.
 
-Linux, macOS and WSL, Node 20 or later. Read the
+Framework integrations:
+
+- `@runwisp/node/nestjs`: a drop-in for `@nestjs/schedule`.
+- `@runwisp/node/nuxt`: a Nuxt module that also runs Nitro's `scheduledTasks`.
+- `@runwisp/node/next`: `withRunWisp()` for `next.config`, and Vercel Cron jobs from `vercel.json`.
+- `@runwisp/node/astro`: starts the tasks when `astro dev` or the Node adapter's built server starts.
+
+Linux, macOS and WSL, Node 20.19, 22.12 or later, or Bun 1.1 or later. Read the
 [JavaScript SDK guide](https://docs.runwisp.com/sdk/javascript/) for every
 option, and [From node-cron](https://docs.runwisp.com/coming-from/node-cron/)
 for what differs from node-cron.

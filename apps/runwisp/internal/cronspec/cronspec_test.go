@@ -440,3 +440,46 @@ func TestOversizedStepsSelectRangeStart(t *testing.T) {
 		assert.Error(t, err, spec)
 	}
 }
+
+// TestExplain pins the expanded fields and the per-field errors behind
+// `runwisp cron --json` (and the SDK's validateDetailed and parse).
+func TestExplain(t *testing.T) {
+	fields, errs := Explain("*/20 9-10 * jan sun,7")
+	require.Empty(t, errs)
+	assert.Equal(t, &Fields{
+		Second:     []int{0},
+		Minute:     []int{0, 20, 40},
+		Hour:       []int{9, 10},
+		DayOfMonth: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
+		Month:      []int{1},
+		DayOfWeek:  []int{0},
+	}, fields)
+
+	fields, errs = Explain("@hourly")
+	require.Empty(t, errs)
+	assert.Equal(t, []int{0}, fields.Minute)
+	assert.Len(t, fields.Hour, 24)
+
+	fields, errs = Explain("@every 5m")
+	assert.Nil(t, fields)
+	assert.Empty(t, errs)
+
+	fields, errs = Explain("1 61 25 * * *")
+	assert.Nil(t, fields)
+	require.Len(t, errs, 2)
+	assert.Equal(t, "minute", errs[0].Field)
+	assert.Equal(t, "61", errs[0].Value)
+	assert.Contains(t, errs[0].Message, "above maximum (59)")
+	assert.Equal(t, "hour", errs[1].Field)
+	assert.Equal(t, "25", errs[1].Value)
+
+	_, errs = Explain("0 3 30 2 *")
+	require.Len(t, errs, 1)
+	assert.Equal(t, FieldError{Field: "dayOfMonth", Value: "30", Message: "schedule never fires (the day of month does not exist in the given months)"}, errs[0])
+
+	for _, spec := range []string{"* * *", "@fortnightly", "@every 10ms", "CRON_TZ=Nowhere/Land 0 3 * * *", ""} {
+		_, errs = Explain(spec)
+		require.Len(t, errs, 1, spec)
+		assert.Equal(t, "expression", errs[0].Field, spec)
+	}
+}

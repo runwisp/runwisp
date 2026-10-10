@@ -91,6 +91,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db *storage.SQLi
 
 	usage := procstat.New()
 	apps := apphost.New()
+	apps.ForwardSkippedFirings(eventBus)
 	exec := initExecutor(cfg.Config, eventBus, f.LogDir(), cfg.Fingerprint, usage, apps)
 
 	taskManager, tasksMap := initTaskManager(cfg, db, exec, eventBus)

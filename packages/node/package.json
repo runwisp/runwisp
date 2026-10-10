@@ -21,10 +21,15 @@
         "background-jobs",
         "cron-history",
         "dashboard",
-        "runwisp"
+        "runwisp",
+        "nestjs",
+        "nuxt",
+        "nextjs",
+        "astro",
+        "sveltekit"
     ],
     "engines": {
-        "node": ">=20"
+        "node": "^20.19.0 || >=22.12.0"
     },
     "publishConfig": {
         "access": "public"
@@ -32,21 +37,73 @@
     "files": [
         "dist"
     ],
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "typesVersions": {
+        "*": {
+            "nestjs": [
+                "./dist/nestjs.d.ts"
+            ],
+            "nuxt": [
+                "./dist/nuxt.d.ts"
+            ],
+            "next": [
+                "./dist/next.d.ts"
+            ],
+            "astro": [
+                "./dist/astro.d.ts"
+            ]
+        }
+    },
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
             "default": "./dist/index.js"
+        },
+        "./nestjs": {
+            "types": "./dist/nestjs.d.ts",
+            "default": "./dist/nestjs.js"
+        },
+        "./nuxt": {
+            "types": "./dist/nuxt.d.ts",
+            "default": "./dist/nuxt.js"
+        },
+        "./next": {
+            "types": "./dist/next.d.ts",
+            "default": "./dist/next.js"
+        },
+        "./astro": {
+            "types": "./dist/astro.d.ts",
+            "default": "./dist/astro.js"
         }
     },
     "dependencies": {
         "runwisp": "^1.3.1"
     },
+    "peerDependencies": {
+        "@nestjs/common": ">=10",
+        "@nestjs/core": ">=10"
+    },
+    "peerDependenciesMeta": {
+        "@nestjs/common": {
+            "optional": true
+        },
+        "@nestjs/core": {
+            "optional": true
+        }
+    },
     "devDependencies": {
+        "@nestjs/common": "^12.1.2",
+        "@nestjs/core": "^12.1.2",
+        "@nestjs/testing": "^12.1.2",
         "@runwisp/eslint-config": "workspace:*",
         "@runwisp/typescript-config": "workspace:*",
-        "@types/node": "^26.6.4",
+        "@types/node": "^26.6.5",
+        "astro": "^7.3.8",
         "eslint": "^10.12.0",
         "openapi-typescript": "^7.13.0",
+        "reflect-metadata": "^0.2.2",
+        "rxjs": "^7.8.2",
         "typescript": "6.0.3",
         "vitest": "^5.0.3"
     }

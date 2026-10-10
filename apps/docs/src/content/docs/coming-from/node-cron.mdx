@@ -39,24 +39,54 @@ directory and [every option](/sdk/javascript/#new-runwispoptions).
 
 Give every task a `name`. It's the task's name in RunWisp, and its run history
 is kept under it. Without one, a name is derived from the task's code, so it
-changes when the code does.
+changes when the code does, and two tasks with the same cron and code are an
+error. Registering an unnamed task again later replaces it, with a warning: a
+dev server does this when it reloads, but in a loop, pass `{ name }`. RunWisp turns characters other than `a-z A-Z 0-9 . _ : -` into `-`, so
+two names that differ only there are an error too.
 
 ## What stays the same
 
-`schedule`, `createTask`, `validate`, `getTasks`, `getTask` and the returned
-task (`start`, `stop`, `destroy`, `execute`, `getStatus`, `getNextRun`, events)
-work as in node-cron 4. The cron syntax is RunWisp's, which also accepts a
-seconds field. See [cron](/configuration/tasks/#cron).
+node-cron 4's API works as is: `schedule`, `createTask`, `validate`,
+`validateDetailed`, `parse`, `getTasks`, `getTask`, `setLogger`, `shutdown`,
+`solvePath`, the returned task (`start`, `stop`, `destroy`, `execute`,
+`getStatus`, `getNextRun`, `getNextRuns`, `match`, `msToNext`, `isBusy`,
+`lastRun`) and its [events](/sdk/javascript/#events). `solvePath` is a named
+export: `import { solvePath } from "@runwisp/node"`.
 
 | node-cron option                                    | Under RunWisp                                                                                                                                                               |
 | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `name`                                              | The task's name in RunWisp.                                                                                                                                                 |
-| `timezone`                                          | [`timezone`](/configuration/tasks/#timezone).                                                                                                                               |
+| `timezone`                                          | [`timezone`](/configuration/tasks/#timezone). Without it, the daemon's [`timezone`](/configuration/daemon/#timezone) applies.                                               |
 | `noOverlap`                                         | [`on_overlap = "skip"`](/configuration/tasks/#on_overlap). Without it, runs overlap as in node-cron, up to [`max_concurrent = 1024`](/configuration/tasks/#max_concurrent). |
 | `executeTimeout`                                    | [`timeout`](/configuration/tasks/#timeout): the run is stopped and fails.                                                                                                   |
-| `maxExecutions`                                     | Kept: the task is destroyed after that many runs.                                                                                                                           |
-| `distributed`, `runCoordinator`, `distributedLease` | Ignored. Each run happens once per data directory.                                                                                                                          |
-| `maxRandomDelay`                                    | Ignored. Use `jitter` with `task()`.                                                                                                                                        |
+| `maxExecutions`                                     | Kept: the task is destroyed after that many scheduled runs.                                                                                                                 |
+| `logger`, `suppressMissedWarning`                   | Kept.                                                                                                                                                                       |
+| `distributed`, `runCoordinator`, `distributedLease` | Ignored, with a warning. Each run happens once per data directory. `setRunCoordinator()` is ignored the same way.                                                           |
+| `maxRandomDelay`                                    | Ignored, with a warning. Use `jitter` with `task()`.                                                                                                                        |
+| `missedExecutionTolerance`                          | Ignored. A run is missed only while RunWisp is down.                                                                                                                        |
+| `startTimeout`, `unref`                             | Ignored. A task file starts per run, and nothing in the app keeps the process alive per task.                                                                               |
+
+## Task files
+
+Pass a path instead of a callback, and the file's exported `task` function runs
+in a new Node process, as node-cron's background tasks do:
+
+```ts
+cron.schedule("0 3 * * *", "./jobs/backup.js", { name: "nightly-backup" });
+```
+
+```js
+// jobs/backup.js
+export async function task(ctx) {
+    console.log("dumping the database", ctx.date);
+}
+```
+
+A relative path resolves against the file that calls `schedule`. The process's
+output goes to the run's log, and a thrown error or a crash fails the run.
+Stopping the run sends the process `SIGTERM`. The run's
+[environment](/sdk/javascript/#environment-and-parameters) is added to the
+process's.
 
 ## What changes
 
@@ -64,17 +94,40 @@ seconds field. See [cron](/configuration/tasks/#cron).
   log, and still prints to the app's console. See
   [Output and failures](/sdk/javascript/#output-and-failures).
 - **Failures are recorded.** A thrown error or rejected promise fails the run
-  with exit code 1 and the stack trace in its log.
+  with exit code 1 and the stack trace in its log, rather than going to the
+  logger.
 - **`stop()` unschedules the task in RunWisp**, and `start()` schedules it
   again. A stopped task stays in the dashboard and runs only when started by
   hand.
 - **`destroy()` removes the task.** Its past runs stay until
-  [retention](/configuration/tasks/#keep_runs) removes them.
+  [retention](/configuration/tasks/#keep_runs) removes them. `shutdown()`
+  destroys every task too.
 - **`execute()` runs the callback in the app** and isn't recorded. Use the
-  dashboard's Run button for a recorded run.
-- **Missed runs are not caught up**, as in node-cron.
-- **A file path instead of a callback** (node-cron's background tasks) is not
-  supported.
+  dashboard's Run button for a recorded run. Both count as `"invoked"`, not
+  toward `maxExecutions`.
+- **Missed runs are not caught up**, as in node-cron. `execution:missed` comes
+  for the time RunWisp was down: once per outage, when the app connects again,
+  with `date` the latest missed time.
+- **A task file starts a new process per run**, rather than one process for
+  the task's life. Module state is not kept between runs, and `task:failed` is
+  never sent: a crash fails that run.
+- **`execution:skipped` is never sent.** There is no run coordinator to skip a
+  run.
+
+## Cron syntax
+
+The cron syntax is RunWisp's, the one the daemon uses. See
+[cron](/configuration/tasks/#cron). It differs from node-cron's:
+
+- No `L`, `W` or `#`.
+- Month and weekday names are three letters only: `jan`, `mon`.
+- A range can't wrap around: write `fri-sun,mon`, not `fri-mon`.
+- When both day of month and day of week are restricted, either one matching
+  is enough, as in crontab. node-cron needs both.
+- `@every 1h30m` and a `TZ=Europe/Bratislava` prefix also work.
+
+`parse()` lists each field's values in ascending order, with no duplicates.
+Test an expression with [`runwisp cron`](/reference/cli/#runwisp-cron).
 
 ## Go further
 

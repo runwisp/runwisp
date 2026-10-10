@@ -306,6 +306,10 @@ runwisp                      — no subcommand: attach TUI to running daemon, el
 runwisp daemon               — start headless daemon (no TUI); --app reads the config as a JSON document on stdin instead of runwisp.toml (what SDKs run)
 runwisp tui                  — attach a TUI to a running daemon
 runwisp validate             — validate runwisp.toml without starting anything; --json for the structured document (see above); --app validates a JSON document on stdin
+runwisp cron <expr>          — check a cron expression and list its next runs exactly as the daemon fires them (no config/daemon needed);
+                               --count N (=5), --after RFC3339 (=now), --timezone IANA (=host zone), --json: {valid, expression, timezone,
+                               fields{second,minute,hour,dayOfMonth,month,dayOfWeek: []int, absent for @every}, next: []RFC3339,
+                               errors: [{field, value, message}]}; exit 1 when invalid
 runwisp list                 — list configured tasks and schedules; --json for a machine-readable document
 runwisp status               — is the daemon alive?; --json for daemon health + every task's last run (+ pausedAt when its schedule is paused) + externalUrl/externalUrlSource (config|detected); human output lists paused schedules and the Web UI address
 runwisp run <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive

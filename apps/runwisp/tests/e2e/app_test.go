@@ -76,7 +76,7 @@ func TestAppDaemon(t *testing.T) {
 	require.Equal(t, []string{"boot"}, taskNames(t, client))
 
 	app := dialApp(t, daemon.dataDir)
-	assert.Equal(t, map[string]any{"type": "role", "active": true}, app.next())
+	assert.Equal(t, map[string]any{"type": "role", "active": true, "alone": true}, app.next())
 
 	app.send(map[string]any{"type": "config", "doc": map[string]any{
 		"daemon": map[string]any{"shutdown_timeout": "500ms"},
@@ -109,4 +109,32 @@ func TestAppDaemon(t *testing.T) {
 
 	require.NoError(t, app.conn.Close())
 	require.True(t, daemon.waitForExit(20*time.Second), "daemon should exit once no app is connected:\n%s", daemon.output.Tail(4000))
+}
+
+// A firing missed while the daemon was down reaches the app that connects
+// after boot: the SDK's execution:missed.
+func TestAppDaemonForwardsMissedFirings(t *testing.T) {
+	t.Parallel()
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	dataDir := testutil.ShortTempDir(t)
+	seedAnchorRun(t, dataDir, "tick", -15*time.Minute)
+	configPath := filepath.Join(t.TempDir(), "runwisp.toml") // anchors paths; never read
+	doc := []byte(`{"daemon":{"shutdown_timeout":"500ms"},"tasks":{"tick":{"sdk":true,"cron":"* * * * *","catch_up":0}}}`)
+	daemon := launchDaemon(t, projectDir, binaryPath, configPath, dataDir, reserveTCPPort(t), doc)
+
+	app := dialApp(t, daemon.dataDir)
+	assert.Equal(t, "role", app.next()["type"])
+	msg := app.next()
+	for msg["type"] == "run" { // a minute may turn meanwhile
+		msg = app.next()
+	}
+	assert.Equal(t, "missed", msg["type"], "%v", msg)
+	assert.Equal(t, "tick", msg["task"])
+	raw, ok := msg["at"].(string)
+	require.True(t, ok, "%v", msg)
+	at, err := time.Parse(time.RFC3339, raw)
+	require.NoError(t, err)
+	assert.WithinDuration(t, time.Now(), at, 2*time.Minute, "dated at the latest missed tick")
 }

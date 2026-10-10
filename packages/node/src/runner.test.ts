@@ -43,7 +43,7 @@ describe("Runner", () => {
     it("reports output and the exit code, and 143 for a stopped run", async () => {
         const { session, lines, exited } = reporter();
         const serve: Serve = (req, signal, sink) => {
-            sink("stdout", `running ${req.run}`);
+            sink("stdout", `running ${req.run}`, false);
             if (req.run === "ok") return Promise.resolve(0);
             return new Promise((resolve) => {
                 signal.addEventListener("abort", () => {

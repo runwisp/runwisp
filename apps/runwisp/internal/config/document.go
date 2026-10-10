@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -45,8 +46,12 @@ func LoadDocument(path string, doc []byte) (*Config, error) {
 // jsonToTOML rewrites a JSON object as TOML text. Integral numbers stay
 // integers, so `"max_concurrent": 2` decodes into an int field like
 // `max_concurrent = 2` does. TOML has no null, so a null is rejected by key
-// path rather than silently dropped.
+// path rather than silently dropped, and TOML rejects a key defined twice, so
+// a duplicate JSON key is rejected rather than last-one-wins.
 func jsonToTOML(doc []byte) ([]byte, error) {
+	if err := rejectDuplicateKeys(json.NewDecoder(bytes.NewReader(doc)), nil); err != nil {
+		return nil, err
+	}
 	dec := json.NewDecoder(bytes.NewReader(doc))
 	dec.UseNumber()
 	var top any
@@ -102,4 +107,50 @@ func tomlValue(v any, path []string) (any, error) {
 	default:
 		return v, nil
 	}
+}
+
+// rejectDuplicateKeys walks one JSON value and fails on an object that has a
+// key twice, naming its key path. encoding/json keeps the last one silently.
+func rejectDuplicateKeys(dec *json.Decoder, path []string) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	switch tok {
+	case json.Delim('{'):
+		if err := rejectDuplicateFields(dec, path); err != nil {
+			return err
+		}
+	case json.Delim('['):
+		for i := 0; dec.More(); i++ {
+			if err := rejectDuplicateKeys(dec, append(slices.Clone(path), strconv.Itoa(i))); err != nil {
+				return err
+			}
+		}
+	default:
+		return nil
+	}
+	_, err = dec.Token() // the closing } or ]
+	return err
+}
+
+// rejectDuplicateFields walks the fields of an object whose { was just read.
+func rejectDuplicateFields(dec *json.Decoder, path []string) error {
+	seen := map[string]bool{}
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		key, _ := tok.(string) // an object key is always a string
+		keyPath := append(slices.Clone(path), key)
+		if seen[key] {
+			return fmt.Errorf("%s: duplicate key", strings.Join(keyPath, "."))
+		}
+		seen[key] = true
+		if err := rejectDuplicateKeys(dec, keyPath); err != nil {
+			return err
+		}
+	}
+	return nil
 }

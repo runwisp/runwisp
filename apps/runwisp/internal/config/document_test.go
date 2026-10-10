@@ -84,11 +84,14 @@ func TestLoadDocumentErrors(t *testing.T) {
 		doc  string
 		want string
 	}{
-		"not an object":  {`[]`, "must be a JSON object"},
-		"trailing data":  {`{} {}`, "unexpected data"},
-		"null":           {`{"tasks": {"a": {"run": "true", "cron": null}}}`, "tasks.a.cron: null"},
-		"float into int": {`{"tasks": {"a": {"run": "true", "max_concurrent": 1.5}}}`, "max_concurrent"},
-		"invalid task":   {`{"tasks": {"a": {"cron": "* * * * *"}}}`, "run command is required"},
+		"not an object":      {`[]`, "must be a JSON object"},
+		"trailing data":      {`{} {}`, "unexpected data"},
+		"null":               {`{"tasks": {"a": {"run": "true", "cron": null}}}`, "tasks.a.cron: null"},
+		"float into int":     {`{"tasks": {"a": {"run": "true", "max_concurrent": 1.5}}}`, "max_concurrent"},
+		"invalid task":       {`{"tasks": {"a": {"cron": "* * * * *"}}}`, "run command is required"},
+		"duplicate key":      {`{"tasks": {"a": {"run": "true", "cron": "@daily", "cron": "@hourly"}}}`, "tasks.a.cron: duplicate key"},
+		"duplicate task":     {`{"tasks": {"a": {"run": "true"}, "a": {"run": "false"}}}`, "tasks.a: duplicate key"},
+		"duplicate in array": {`{"route": [{"notify": ["x"], "notify": ["y"]}]}`, "route.0.notify: duplicate key"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

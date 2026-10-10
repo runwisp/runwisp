@@ -7,19 +7,28 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import {
+    closeSync,
+    existsSync,
+    openSync,
+    readFileSync,
+    realpathSync,
+    writeFileSync,
+} from "node:fs";
 import { lstat, mkdir } from "node:fs/promises";
 import { request } from "node:http";
 import { createServer } from "node:net";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import type { Config } from "./generated/config.ts";
 import type { RunWispOptions } from "./runwisp.ts";
 
 export interface Settings {
+    /** Names the app to the daemon: copies of one app share it, a different app is refused. */
+    app: string;
     data: string;
     /** undefined: none was given, so RunWisp picks a free one (see choosePort). */
     port: number | undefined;
@@ -35,6 +44,8 @@ export interface DaemonPaths {
     socket: string;
     log: string;
     port: string;
+    /** What the daemon this app started was started with (pid and fingerprint), to tell when it is stale. */
+    launch: string;
 }
 
 export const DEFAULT_PORT = 9477;
@@ -42,11 +53,41 @@ export const DEFAULT_PORT = 9477;
 /** The `runwisp` npm package's launcher, else `runwisp` on PATH. */
 export function resolveBinary(explicit: string | undefined): string {
     if (explicit) return explicit;
+    let launcher: string;
     try {
-        return createRequire(import.meta.url).resolve("runwisp/bin/runwisp");
+        launcher = createRequire(import.meta.url).resolve("runwisp/bin/runwisp");
     } catch {
         return "runwisp";
     }
+    // Turbopack, for one, swaps the resolve for a module id when it bundles this file.
+    if (!isAbsolute(launcher)) {
+        throw new Error(
+            "@runwisp/node was bundled into the app, so it can't find the runwisp binary: mark it external (Next.js: withRunWisp from @runwisp/node/next)",
+        );
+    }
+    return launcher;
+}
+
+/**
+ * The runwisp binary's files on this platform, as absolute paths: what a
+ * bundler that copies only the files it traces (Nitro, Next standalone)
+ * must be told to copy. Empty without the runwisp npm package.
+ */
+export function binaryFiles(): string[] {
+    let launcher: string;
+    try {
+        launcher = createRequire(import.meta.url).resolve("runwisp/bin/runwisp");
+    } catch {
+        return [];
+    }
+    const pkg = `@runwisp/${process.platform}-${process.arch}/runwisp`;
+    // Where the launcher looks, and in isolated layouts (pnpm, bun --linker
+    // isolated) the real file behind that symlink.
+    const bins = [
+        join(launcher, "../../node_modules", pkg),
+        join(launcher, "../../..", pkg),
+    ].filter((f) => existsSync(f));
+    return [...new Set([launcher, ...bins, ...bins.map((f) => realpathSync(f))])];
 }
 
 /** An env var, treating empty as unset like the runwisp CLI does. */
@@ -60,8 +101,27 @@ function defaultDataDir(): string {
     return env("RUNWISP_DATA") ?? (process.getuid?.() === 0 ? "/var/lib/runwisp" : ".runwisp");
 }
 
+/**
+ * The app's name: the `name` in the nearest package.json from dir up, else
+ * dir itself. Copies of one app agree on it, wherever each is deployed.
+ */
+export function defaultAppName(dir: string): string {
+    for (let at = resolve(dir); ; at = dirname(at)) {
+        try {
+            const name = field(JSON.parse(readFileSync(join(at, "package.json"), "utf8")), "name");
+            if (typeof name === "string" && name !== "") return name;
+        } catch {
+            // No package.json here, or one without a name: look further up.
+        }
+        if (dirname(at) === at) return resolve(dir);
+    }
+}
+
 export function resolveSettings(
-    options: Pick<RunWispOptions, "data" | "port" | "host" | "password" | "auth" | "binary">,
+    options: Pick<
+        RunWispOptions,
+        "app" | "data" | "port" | "host" | "password" | "auth" | "binary"
+    >,
 ): Settings {
     const envPort = Number(env("RUNWISP_PORT"));
     // Options win over the env: a password option turns the login on even with RUNWISP_AUTH=off.
@@ -71,6 +131,7 @@ export function resolveSettings(
         throw new Error("password and auth: false can't be used together");
     }
     return {
+        app: options.app ?? defaultAppName(process.cwd()),
         data: resolve(options.data ?? defaultDataDir()),
         port: options.port ?? (Number.isInteger(envPort) && envPort > 0 ? envPort : undefined),
         host: options.host ?? env("RUNWISP_HOST") ?? "127.0.0.1",
@@ -116,6 +177,7 @@ export function daemonPaths(data: string): DaemonPaths {
         socket: socketPath(data, "runwisp.sock", "daemon"),
         log: join(data, "daemon.log"),
         port: join(data, "node.port"),
+        launch: join(data, "node.launch"),
     };
 }
 
@@ -190,6 +252,14 @@ export function call(
             { socketPath: socket, method, path, headers: { host: "runwisp" } },
             (res) => {
                 const chunks: Buffer[] = [];
+                // The daemon dying mid-answer must not leave the call hanging.
+                const hungUp = (cause?: Error) => {
+                    reject(new Error(`RunWisp hung up during ${method} ${path}`, { cause }));
+                };
+                res.on("error", hungUp);
+                res.on("close", () => {
+                    if (!res.complete) hungUp();
+                });
                 res.on("data", (chunk: Buffer) => chunks.push(chunk));
                 res.on("end", () => {
                     const text = Buffer.concat(chunks).toString("utf8");
@@ -242,6 +312,7 @@ export async function healthy(socket: string): Promise<boolean> {
 
 export interface Identity {
     pid: number;
+    version: string;
     configPath: string;
     /** "app" when an app supplies the config, "file" for a runwisp.toml. */
     configSource: string;
@@ -250,26 +321,49 @@ export interface Identity {
 export async function identity(socket: string): Promise<Identity> {
     const res = await call(socket, "GET", "/api/daemon/identity");
     const pid = field(res.body, "pid");
+    const version = field(res.body, "version");
     const configPath = field(res.body, "configPath");
     const configSource = field(res.body, "configSource");
     if (
         res.status !== 200 ||
         typeof pid !== "number" ||
+        typeof version !== "string" ||
         typeof configPath !== "string" ||
         typeof configSource !== "string"
     ) {
         throw new Error(`RunWisp identity: ${errorMessage(res)}`);
     }
-    return { pid, configPath, configSource };
+    return { pid, version, configPath, configSource };
 }
 
-function processAlive(pid: number): boolean {
+/** The state letter of a /proc/<pid>/stat line: "Z" for a zombie. */
+export function procState(stat: string): string | undefined {
+    // The command name, in parentheses, may itself hold ") ": the state follows the last one.
+    return /^\) (\S)/.exec(stat.slice(stat.lastIndexOf(")")))?.[1];
+}
+
+function readProcStat(pid: number): string {
+    return readFileSync(`/proc/${String(pid)}/stat`, "utf8");
+}
+
+/**
+ * Whether pid runs. A zombie counts as gone: with node as PID 1 (Docker
+ * without an init), an exited daemon is reparented to it and never reaped.
+ * Where /proc is missing (macOS), kill(0) decides alone.
+ */
+export function processAlive(pid: number, readStat = readProcStat): boolean {
     try {
         process.kill(pid, 0);
-        return true;
     } catch (err) {
         return err instanceof Error && "code" in err && err.code === "EPERM";
     }
+    let stat: string;
+    try {
+        stat = readStat(pid);
+    } catch {
+        return true;
+    }
+    return procState(stat) !== "Z";
 }
 
 /** Stops the daemon answering on socket, if any, and waits up to 10s for it to exit. */
@@ -306,17 +400,8 @@ function tail(path: string, lines: number): string {
     }
 }
 
-/**
- * Starts `runwisp daemon --app` with the app's config on its stdin, output in
- * <data>/daemon.log, and waits until it answers on its socket. Detached:
- * copies of the app share it, and it exits on its own once none is connected.
- */
-export async function startDaemon(
-    settings: Settings,
-    paths: DaemonPaths,
-    port: number,
-    config: string,
-): Promise<void> {
+/** The env a daemon this app starts runs with, and so do its shell tasks. */
+function daemonEnv(settings: Settings): NodeJS.ProcessEnv {
     // settings already resolved these from the env; the inherited ones must not override them.
     const env: NodeJS.ProcessEnv = {
         ...process.env,
@@ -325,6 +410,78 @@ export async function startDaemon(
     };
     if (settings.password !== undefined) env.RUNWISP_PASSWORD = settings.password;
     if (!settings.auth) env.RUNWISP_AUTH = "off";
+    return env;
+}
+
+/**
+ * A hash of what a daemon started now would run with: the binary path and its
+ * whole env. Holds no env value, so it is safe to store and log.
+ */
+export function launchFingerprint(settings: Settings): string {
+    const env = Object.entries(daemonEnv(settings))
+        .filter((entry): entry is [string, string] => entry[1] !== undefined)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return createHash("sha256")
+        .update(JSON.stringify([settings.binary, env]))
+        .digest("hex");
+}
+
+/** Notes what the daemon with pid was started with, for staleReason. */
+export function recordLaunch(paths: DaemonPaths, pid: number, fingerprint: string): void {
+    writeFileSync(paths.launch, JSON.stringify({ pid, fingerprint }), { mode: 0o600 });
+}
+
+/** The version `binary --version` reports, or undefined if it can't say. */
+function binaryVersion(binary: string): string | undefined {
+    try {
+        const out = execFileSync(binary, ["--version"], { encoding: "utf8", stdio: "pipe" });
+        return /version (\S+)/.exec(out)?.[1];
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Why the running daemon is not what this app would start now, or undefined
+ * when it is (or nothing says otherwise): another runwisp version, or for a
+ * daemon this data dir's app started, another env or binary path. A daemon
+ * outlives app restarts, so without this a redeploy with a rotated secret or
+ * an upgraded runwisp would keep the old one.
+ */
+export function staleReason(
+    settings: Settings,
+    paths: DaemonPaths,
+    daemon: Identity,
+): string | undefined {
+    const version = binaryVersion(settings.binary);
+    if (version !== undefined && version !== daemon.version) {
+        return `it runs runwisp ${daemon.version} and ${settings.binary} is ${version}`;
+    }
+    let launch: unknown;
+    try {
+        launch = JSON.parse(readFileSync(paths.launch, "utf8"));
+    } catch {
+        return undefined;
+    }
+    if (field(launch, "pid") !== daemon.pid) return undefined;
+    if (field(launch, "fingerprint") === launchFingerprint(settings)) return undefined;
+    return "the app's environment or runwisp binary path changed since it started";
+}
+
+/**
+ * Starts `runwisp daemon --app` with the app's config on its stdin, output in
+ * <data>/daemon.log, and waits until it answers on its socket. Outside the
+ * app's process tree: copies of the app share it, it outlives an app restart,
+ * and it exits on its own once none is connected. Resolves to the pid it
+ * started, which is not the one answering if another copy won a start race.
+ */
+export async function startDaemon(
+    settings: Settings,
+    paths: DaemonPaths,
+    port: number,
+    config: string,
+): Promise<number> {
+    const env = daemonEnv(settings);
     const args = [
         "daemon",
         "--app",
@@ -340,48 +497,55 @@ export async function startDaemon(
         String(port),
     ];
     const log = openSync(paths.log, "a", 0o600);
-    const child = spawn(settings.binary, args, {
-        env,
-        stdio: ["pipe", log, log],
-        detached: true,
-    });
+    // The daemon must leave the app's process tree: watchers (nest start --watch)
+    // kill every descendant by parent pid, and setsid alone keeps the parent. sh
+    // starts it in the background, prints its pid and exits, so it is reparented
+    // to init. A background job's stdin is /dev/null, so the config pipe goes
+    // through fd 3.
+    const child = spawn(
+        "/bin/sh",
+        ["-c", 'exec 3<&0; "$@" <&3 3<&- >&2 & echo $!', "sh", settings.binary, ...args],
+        {
+            env,
+            stdio: ["pipe", "pipe", log],
+            detached: true,
+        },
+    );
     closeSync(log);
     child.unref();
-    // An error here (the binary is missing) is reported by the child's own error event.
+    // An error here (sh is missing) is reported by the child's own error event.
     child.stdin?.on("error", () => undefined);
     child.stdin?.end(config);
-    const exited: { code?: number | null; error?: Error } = {};
-    child.once("exit", (code) => (exited.code = code));
+    let output = "";
+    child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
+    const exited: { error?: Error } = {};
     child.once("error", (err) => (exited.error = err));
 
     const deadline = Date.now() + 15_000;
+    const pid = () => Number(output.trim());
     while (Date.now() < deadline) {
-        if (await healthy(paths.socket)) return;
-        if (exited.error)
-            throw new Error(`could not run ${settings.binary}: ${exited.error.message}`);
-        if (exited.code !== undefined) break;
+        if (await healthy(paths.socket)) return pid();
+        if (exited.error) throw new Error(`could not run /bin/sh: ${exited.error.message}`);
+        // The daemon died at startup (a missing binary shows as sh's "not found" in the log).
+        if (output.endsWith("\n") && !processAlive(pid())) break;
         await sleep(100);
     }
     // Lost a start race to another copy of the app: its daemon is fine to use.
-    if (await healthy(paths.socket)) return;
+    if (await healthy(paths.socket)) return pid();
     throw new Error(`RunWisp did not start (log: ${paths.log})\n${tail(paths.log, 20)}`);
 }
 
 /**
- * Checks a config with `runwisp validate --app`, so the rules are exactly
- * RunWisp's. Returns RunWisp's error, or undefined when valid. Throws when the
- * binary can't validate at all.
+ * Runs a runwisp command that prints a JSON document, and returns it parsed,
+ * also when the command exits non-zero (an invalid config or expression).
+ * Throws when the binary can't answer at all.
  */
-export function validateConfig(
-    binary: string,
-    paths: DaemonPaths,
-    config: Config,
-): string | undefined {
+function runJson(binary: string, args: string[], input?: string): unknown {
     let output: string;
     let stderr = "";
     try {
-        output = execFileSync(binary, ["validate", "--app", "--json", "--config", paths.config], {
-            input: JSON.stringify(config),
+        output = execFileSync(binary, args, {
+            ...(input === undefined ? {} : { input }),
             encoding: "utf8",
             stdio: "pipe",
         });
@@ -395,22 +559,102 @@ export function validateConfig(
         output = String(field(err, "stdout"));
         stderr = String(field(err, "stderr")).trim();
     }
-    let errors: unknown;
     try {
-        errors = field(JSON.parse(output), "errors");
+        return JSON.parse(output);
     } catch {
-        errors = undefined;
+        // An older runwisp without the command or flag, say.
+        throw new Error(`could not run runwisp ${String(args[0])} with ${binary}: ${stderr}`);
     }
-    // An older runwisp without --app, say.
-    if (!Array.isArray(errors)) throw new Error(`could not validate with ${binary}: ${stderr}`);
+}
+
+/**
+ * Checks a config with `runwisp validate --app`, so the rules are exactly
+ * RunWisp's. Returns RunWisp's error, or undefined when valid. Throws when the
+ * binary can't validate at all.
+ */
+export function validateConfig(
+    binary: string,
+    paths: DaemonPaths,
+    config: Config,
+): string | undefined {
+    const errors = field(
+        runJson(
+            binary,
+            ["validate", "--app", "--json", "--config", paths.config],
+            JSON.stringify(config),
+        ),
+        "errors",
+    );
+    if (!Array.isArray(errors)) throw new Error(`could not validate with ${binary}`);
     const messages = errors.map((e) => field(e, "message")).filter((m) => typeof m === "string");
     return messages.length > 0 ? messages.join("; ") : undefined;
 }
 
-/** Checks a cron expression with `runwisp validate`, so the grammar is exactly RunWisp's. */
-export function validateCron(binary: string, paths: DaemonPaths, expression: string): boolean {
-    return (
-        validateConfig(binary, paths, { tasks: { check: { cron: expression, run: "true" } } }) ===
-        undefined
-    );
+/** What `runwisp cron --json` says about an expression. */
+export interface CronAnswer {
+    valid: boolean;
+    /** Absent for an invalid expression, and for @every, which has no fields. */
+    fields?: CronFields;
+    errors: { field: string; value?: string; message: string }[];
+    /** The next firings after the time asked about. */
+    next: Date[];
+}
+
+export interface CronFields {
+    second: number[];
+    minute: number[];
+    hour: number[];
+    dayOfMonth: number[];
+    month: number[];
+    dayOfWeek: number[];
+}
+
+function numbers(value: unknown): number[] {
+    return Array.isArray(value) ? value.filter((n) => typeof n === "number") : [];
+}
+
+/**
+ * Asks `runwisp cron` about expression: whether it is valid, its fields, and
+ * its next count firings after `after` in timezone (undefined: the host's,
+ * which is the daemon's default), exactly as the daemon fires them.
+ */
+export function askCron(
+    binary: string,
+    expression: string,
+    question: { timezone?: string | undefined; after?: Date; count: number },
+): CronAnswer {
+    const args = ["cron", "--json", "--count", String(question.count)];
+    if (question.after) args.push("--after", question.after.toISOString());
+    if (question.timezone !== undefined) args.push("--timezone", question.timezone);
+    const doc = runJson(binary, [...args, "--", expression]);
+    const valid = field(doc, "valid");
+    const errors = field(doc, "errors");
+    const next = field(doc, "next");
+    if (typeof valid !== "boolean" || !Array.isArray(errors) || !Array.isArray(next)) {
+        throw new Error(`could not read what ${binary} cron answered`);
+    }
+    const answer: CronAnswer = {
+        valid,
+        errors: errors.map((e) => {
+            const value = field(e, "value");
+            return {
+                field: String(field(e, "field")),
+                ...(typeof value === "string" ? { value } : {}),
+                message: String(field(e, "message")),
+            };
+        }),
+        next: next.filter((at) => typeof at === "string").map((at) => new Date(at)),
+    };
+    const fields = field(doc, "fields");
+    if (fields !== undefined) {
+        answer.fields = {
+            second: numbers(field(fields, "second")),
+            minute: numbers(field(fields, "minute")),
+            hour: numbers(field(fields, "hour")),
+            dayOfMonth: numbers(field(fields, "dayOfMonth")),
+            month: numbers(field(fields, "month")),
+            dayOfWeek: numbers(field(fields, "dayOfWeek")),
+        };
+    }
+    return answer;
 }

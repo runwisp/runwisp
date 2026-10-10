@@ -1,0 +1,96 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Bun
+description: Run @runwisp/node under Bun, and replace Bun.cron. Every run is recorded with its output, exit code and duration.
+head:
+    - tag: title
+      content: "Bun.cron with RunWisp: scheduled tasks you can see"
+---
+
+`@runwisp/node` runs under Bun 1.1 or later the same way it runs under Node.js.
+It also replaces both forms of `Bun.cron`.
+
+## Set up
+
+```bash
+bun add @runwisp/node
+```
+
+```ts
+// index.ts
+import { RunWisp } from "@runwisp/node";
+
+const runwisp = new RunWisp({ exitOnSignal: true });
+
+runwisp.task("sync-inventory", { cron: "*/15 * * * *" }, async () => {
+    await syncInventory();
+});
+```
+
+```bash
+bun index.ts
+```
+
+Everything in the [JavaScript SDK](/sdk/javascript/) guide applies.
+[`exitOnSignal`](/sdk/javascript/#exitonsignal) lets running tasks finish when
+you stop the script with Ctrl-C.
+
+## Replace Bun.cron in your app
+
+`Bun.cron(schedule, handler)` runs a callback in your process. Give the task a
+name and pass the same schedule:
+
+```ts
+// Bun.cron("*/15 * * * *", () => syncInventory(), { tz: "Europe/Berlin" });
+runwisp.task(
+    "sync-inventory",
+    { cron: "*/15 * * * *", timezone: "Europe/Berlin", on_overlap: "skip" },
+    () => syncInventory(),
+);
+```
+
+RunWisp accepts Bun's cron syntax as is, including month and weekday names and
+`@daily`-style nicknames. It also takes an optional [seconds field](/configuration/tasks/#cron).
+
+| Bun.cron                                                                 | @runwisp/node                                                                                         |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `{ tz }`                                                                 | [`timezone`](/configuration/tasks/#timezone)                                                          |
+| A time that comes while the handler still runs is skipped.               | `on_overlap: "skip"`. Without it, the run waits for the previous one.                                 |
+| A thrown error exits the process, unless you handle `uncaughtException`. | The run fails, with the stack trace in its log. The app keeps running.                                |
+| `job.stop()`                                                             | `task.stop()` pauses the task, `task.destroy()` removes it.                                           |
+| `job.unref()`                                                            | No equivalent. The app keeps running until you call [`close()`](/sdk/javascript/#when-the-app-stops). |
+| `Bun.cron.parse(schedule)`                                               | `task.getNextRun()`                                                                                   |
+
+## Replace Bun.cron with a script
+
+`Bun.cron(path, schedule, title)` registers a script with the system scheduler:
+crontab on Linux, launchd on macOS. RunWisp runs the same script and records
+each run, which crontab and launchd don't.
+
+On Linux, import the jobs from your crontab:
+
+```bash
+crontab -l | runwisp import cron
+```
+
+Each job Bun registered becomes a task named after its title. Review the
+output, save it as `runwisp.toml`, and remove the jobs from crontab so they
+don't run twice:
+
+```ts
+await Bun.cron.remove("weekly-report");
+```
+
+On macOS, write the task yourself. The command is the one Bun runs, which calls
+the script's `scheduled()` handler:
+
+```toml
+# Was: await Bun.cron("./worker.ts", "30 2 * * MON", "weekly-report");
+[tasks.weekly-report]
+cron = "30 2 * * MON"
+run = "bun run --cron-title=weekly-report --cron-period='30 2 * * MON' ./worker.ts"
+```
+
+A `scheduled()` handler that throws fails the run. See
+[From cron](/coming-from/cron/) for the rest of moving off crontab.

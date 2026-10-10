@@ -3,7 +3,7 @@
 
 // One copy of an app that uses @runwisp/node, for the e2e tests:
 // `node app.ts <data> <port> <binary>`. Prints "ready" once RunWisp serves its
-// tasks, and closes on a "close" line on stdin.
+// tasks, and closes on a "close" line on stdin. RUNWISP_TEST_APP names it.
 
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -13,7 +13,16 @@ import { RunWisp } from "../../src/index.ts";
 const [data, port, binary] = process.argv.slice(2);
 if (!data || !port || !binary) throw new Error("usage: app.ts <data> <port> <binary>");
 
-const cron = new RunWisp({ data, port: Number(port), binary, log: false });
+const app = process.env["RUNWISP_TEST_APP"];
+const cron = new RunWisp({
+    data,
+    port: Number(port),
+    binary,
+    log: false,
+    ...(app === undefined ? {} : { app }),
+    // Runs in the daemon, so it sees the daemon's env, not this copy's.
+    config: { tasks: { "shell-env": { run: 'echo "foo=$FOO"' } } },
+});
 
 cron.task("who", {}, () => {
     console.log(`pid ${String(process.pid)}`);

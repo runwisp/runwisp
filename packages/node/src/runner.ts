@@ -155,8 +155,8 @@ export class Runner {
         executions.push(execution);
         let code = 1;
         try {
-            code = await this.serve(request, abort.signal, (stream, line) => {
-                session.output(run, stream, line);
+            code = await this.serve(request, abort.signal, (stream, line, partial) => {
+                session.output(run, stream, line, partial);
             });
         } finally {
             executions.splice(executions.indexOf(execution), 1);

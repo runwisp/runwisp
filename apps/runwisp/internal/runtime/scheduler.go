@@ -124,6 +124,20 @@ type firedHour struct {
 	ticks map[wallSecond]struct{}
 }
 
+// repeat records a firing at wall and reports whether wall already fired in
+// its wall hour: the DST fall-back repeat fireOnce suppresses. The set is
+// reset whenever the wall hour moves on.
+func (f *firedHour) repeat(wall wallSecond) bool {
+	if hour := wall.inHour(); f.ticks == nil || f.hour != hour {
+		f.hour, f.ticks = hour, make(map[wallSecond]struct{})
+	}
+	if _, seen := f.ticks[wall]; seen {
+		return true
+	}
+	f.ticks[wall] = struct{}{}
+	return false
+}
+
 // NewScheduler creates a scheduler. location controls how task cron expressions
 // are interpreted; nil means UTC, which is the project default. clock overrides
 // the scheduler's wall-clock reads; pass nil for time.Now — production always
@@ -384,6 +398,41 @@ func resolveTaskSchedule(task *model.Task, defaultLoc *time.Location) (string, *
 	return spec, loc
 }
 
+// maxDSTRewind is the furthest a fall-back transition turns the clock back.
+// NextFirings starts this far before its from, so it knows which ticks just
+// before from a repeat after it would duplicate.
+const maxDSTRewind = 2 * time.Hour
+
+// NextFirings returns the next n times after from that the scheduler fires
+// task, in its effective timezone (its own, else defaultLoc): spring-forward
+// gap ticks recovered, fall-back repeats dropped as fireOnce drops them. Fewer
+// than n when the schedule stops matching. An @every schedule counts from
+// from, as one added at from would.
+func NextFirings(task *model.Task, defaultLoc *time.Location, from time.Time, n int) ([]time.Time, error) {
+	spec, loc := resolveTaskSchedule(task, defaultLoc)
+	schedule, err := cronspec.NewParser().Parse(spec)
+	if err != nil {
+		return nil, err
+	}
+	zoned := zonedSchedule{schedule, loc}
+	fixedInterval := isFixedInterval(schedule)
+	start := from
+	if !fixedInterval {
+		start = from.Add(-maxDSTRewind)
+	}
+	var fired firedHour
+	out := make([]time.Time, 0, n)
+	for next := zoned.Next(start); len(out) < n && !next.IsZero(); next = zoned.Next(next) {
+		if !fixedInterval && fired.repeat(newWallSecond(next)) {
+			continue
+		}
+		if next.After(from) {
+			out = append(out, next)
+		}
+	}
+	return out, nil
+}
+
 func (scheduler *Scheduler) addTask(task *model.Task) error {
 	taskName := task.Name
 	spec, loc := scheduler.effectiveSpec(task)
@@ -440,9 +489,7 @@ func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location, fixedI
 
 	now := scheduler.now()
 	nowLocal := now.In(loc)
-	wm := newWallSecond(nowLocal)
 
-	hour := wm.inHour()
 	scheduler.mutex.Lock()
 	if _, paused := scheduler.paused[taskName]; paused {
 		scheduler.mutex.Unlock()
@@ -452,14 +499,11 @@ func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location, fixedI
 	duplicate := false
 	if !fixedInterval {
 		fired, ok := scheduler.firedTicks[taskName]
-		if !ok || fired.hour != hour {
-			fired = &firedHour{hour: hour, ticks: make(map[wallSecond]struct{})}
+		if !ok {
+			fired = &firedHour{}
 			scheduler.firedTicks[taskName] = fired
 		}
-		_, duplicate = fired.ticks[wm]
-		if !duplicate {
-			fired.ticks[wm] = struct{}{}
-		}
+		duplicate = fired.repeat(newWallSecond(nowLocal))
 	}
 	plan, hasJitter := scheduler.jitterPlans[taskName]
 	scheduler.mutex.Unlock()

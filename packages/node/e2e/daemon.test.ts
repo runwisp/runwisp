@@ -78,6 +78,8 @@ describe("RunWisp with the real daemon", () => {
         cron.task("broken", {}, () => {
             throw new Error("boom");
         });
+        // node-cron's background task: a path relative to this file.
+        cron.schedule("0 3 * * *", "./fixtures/job.ts", { name: "background" });
         await cron.start();
     });
 
@@ -157,6 +159,46 @@ describe("RunWisp with the real daemon", () => {
         expect(() => cron.task("pager", { notify: ["nobody"] }, () => undefined)).toThrow("nobody");
     });
 
+    it("runs a background task file in its own process, its output in the run", async () => {
+        const run = await trigger("background");
+        expect(run.exitCode).toBe(0);
+        expect(run.log).toContain("background invoked pid");
+        expect(run.log).toContain("region eu");
+        expect(run.log).not.toContain(`pid ${String(process.pid)} `);
+    });
+
+    it("answers node-cron's cron questions with the daemon's schedule", () => {
+        const task = cron.schedule("0 3 * * *", () => undefined, {
+            name: "nightly",
+            timezone: "Asia/Tokyo",
+        });
+        // 03:00 in Tokyo is 18:00 UTC the day before.
+        const next = task.getNextRun();
+        expect(next?.getUTCHours()).toBe(18);
+        expect(next?.getUTCMinutes()).toBe(0);
+        const runs = task.getNextRuns(3).map((at) => at.getTime());
+        expect(runs[0]).toBe(next?.getTime());
+        expect(runs[2]).toBe((next?.getTime() ?? 0) + 2 * 86_400_000);
+        if (!next) throw new Error("no next run");
+        expect(task.match(new Date(next.getTime() + 999))).toBe(true);
+        expect(task.match(new Date(next.getTime() + 1000))).toBe(false);
+        task.destroy();
+
+        expect(cron.validateDetailed("61 * * * *")).toEqual({
+            valid: false,
+            errors: [expect.objectContaining({ field: "minute", value: "61" })],
+        });
+        expect(cron.parse("30 9 * * mon-fri")).toEqual({
+            second: [0],
+            minute: [30],
+            hour: [9],
+            dayOfMonth: Array.from({ length: 31 }, (_, i) => i + 1),
+            month: Array.from({ length: 12 }, (_, i) => i + 1),
+            dayOfWeek: [1, 2, 3, 4, 5],
+        });
+        expect(() => cron.parse("@every 1h")).toThrow("is an interval");
+    });
+
     it("serves runs that fire as soon as the daemon starts", async () => {
         const firstExitCode = async (): Promise<unknown> => {
             const items = field(
@@ -188,8 +230,12 @@ describe("RunWisp with the real daemon", () => {
         expect(cron.getTask("tick")?.getNextRun()).toBeNull();
     });
 
-    it("stops the daemon it started on close()", async () => {
+    // With a service running, close() stops it itself instead of waiting for
+    // the daemon's idle shutdown.
+    it("stops the daemon it started on close(), right away", async () => {
+        const begun = Date.now();
         await cron.close();
+        expect(Date.now() - begun).toBeLessThan(5_000);
         await expect.poll(() => healthy(socket), { timeout: 5_000 }).toBe(false);
     });
 });

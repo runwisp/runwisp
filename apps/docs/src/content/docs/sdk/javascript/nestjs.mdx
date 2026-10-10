@@ -1,0 +1,165 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: NestJS
+description: Schedule tasks in a NestJS app with @runwisp/node, a drop-in for @nestjs/schedule. Every run is recorded with its output, exit code and duration.
+head:
+    - tag: title
+      content: "Cron jobs in NestJS with RunWisp: replace @nestjs/schedule"
+---
+
+`@runwisp/node/nestjs` has the API of `@nestjs/schedule`: the same module,
+decorators and `SchedulerRegistry`. RunWisp runs the schedule, and your methods
+run in the app with your injected services.
+
+It works with NestJS 10, 11 and 12, on Node.js 20.19, 22.12 or later, or on
+[Bun](#bun).
+
+## Set up
+
+```bash
+npm install @runwisp/node
+```
+
+Import `RunWispModule` once, in the root module:
+
+```ts
+// src/app.module.ts
+import { Module } from "@nestjs/common";
+import { RunWispModule } from "@runwisp/node/nestjs";
+import { DatabaseModule } from "./database.module.js";
+import { TasksService } from "./tasks.service.js";
+
+@Module({
+    imports: [DatabaseModule, RunWispModule.forRoot()],
+    providers: [TasksService],
+})
+export class AppModule {}
+```
+
+`forRoot()` takes the [`new RunWisp()` options](/sdk/javascript/#new-runwispoptions).
+Turn on shutdown hooks in `main.ts`, so running tasks finish before the app
+exits:
+
+```ts
+// src/main.ts
+const app = await NestFactory.create(AppModule);
+app.enableShutdownHooks();
+```
+
+On shutdown, running tasks finish before any `onModuleDestroy`,
+`beforeApplicationShutdown` or `onApplicationShutdown` hook runs, so a database
+client closed in one stays open for them. This holds for `app.close()` too, and
+whatever the order of `imports`.
+
+## Define tasks
+
+```ts
+// src/tasks.service.ts
+import { Injectable, Logger } from "@nestjs/common";
+import { Cron, CronExpression, Interval } from "@runwisp/node/nestjs";
+import { ReportsService } from "./reports.service.js";
+
+@Injectable()
+export class TasksService {
+    private readonly logger = new Logger(TasksService.name);
+
+    constructor(private readonly reports: ReportsService) {}
+
+    @Cron(CronExpression.EVERY_DAY_AT_3AM, { name: "nightly-report" })
+    async sendReport() {
+        await this.reports.send();
+        this.logger.log("report sent");
+    }
+
+    @Interval("sync", 30_000)
+    sync() {}
+}
+```
+
+Each method becomes a RunWisp task. Without a `name`, the task is named
+`ClassName.methodName`. What the method logs goes to the run's log, and a
+thrown error fails the run. The method gets the run's
+[context](/sdk/javascript/#callback-context) as its argument, with a `signal`
+for [stopping](/sdk/javascript/#stop-a-run).
+
+The app prints the dashboard address on startup.
+
+## Replace @nestjs/schedule
+
+Replace `@nestjs/schedule` with `@runwisp/node/nestjs` in your imports.
+`ScheduleModule` is another name for `RunWispModule`, so the rest of the code
+stays as it is.
+
+| @nestjs/schedule            | @runwisp/node/nestjs                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------- |
+| `@Cron(expression, opts)`   | Same. `timeZone`, `waitForCompletion` and `disabled` work. A `Date` is not supported.       |
+| `@Interval(ms)`             | Runs every `ms` milliseconds, at least 1000.                                                |
+| `@Timeout(ms)`              | Runs once when RunWisp starts. The delay is ignored.                                        |
+| `SchedulerRegistry`         | Jobs are [task handles](/sdk/javascript/#task-handle): `stop()`, `start()`, `getNextRun()`. |
+| `addCronJob`, `addInterval` | Not supported. Inject `RunWisp` and call [`task()`](/sdk/javascript/#define-a-task).        |
+
+`@nestjs/schedule` runs every job in every copy of the app. RunWisp runs each
+run once per data directory, however many copies run. See
+[Several copies of the app](/sdk/javascript/#several-copies-of-the-app).
+
+## Add tasks in code
+
+The module exports the `RunWisp` instance. Inject it for tasks with the full
+set of [task options](/sdk/javascript/#task-options):
+
+```ts
+import { Injectable, OnModuleInit } from "@nestjs/common";
+import { RunWisp } from "@runwisp/node/nestjs";
+
+@Injectable()
+export class BackupService implements OnModuleInit {
+    constructor(private readonly runwisp: RunWisp) {}
+
+    onModuleInit() {
+        this.runwisp.task("backup", { cron: "0 4 * * *", retry_attempts: 3 }, () => this.backup());
+    }
+}
+```
+
+## Tests
+
+Set `RUNWISP_NODE=off` in your test environment, so tests that boot the app
+don't start RunWisp. See [Unit tests](/sdk/javascript/#unit-tests).
+
+Vitest, the default from Nest 12, loads `@runwisp/node` as is. Jest needs
+version 30.4 or later, Node.js 24.9 or later, and
+`NODE_OPTIONS=--experimental-vm-modules`. If your imports end in `.js`, map
+them in the Jest config:
+
+```json
+// package.json
+{
+    "jest": {
+        "moduleNameMapper": { "^(\\.{1,2}/.*)\\.js$": "$1" }
+    }
+}
+```
+
+## CommonJS projects
+
+`@runwisp/node` is an ES module. Projects that compile to CommonJS, the default
+before Nest 12, load it with `require()`. In `tsconfig.json`, use
+`"module": "commonjs"` with TypeScript 5, or `"module": "nodenext"` with
+TypeScript 5.8 or later. `"module": "node16"` can't load it.
+
+## Bun
+
+Bun runs the app from source, decorators and injection included:
+
+```bash
+bun run src/main.ts
+```
+
+To keep using the Nest CLI, tell it to start the app with Bun:
+
+```bash
+bun --bun x nest start --exec bun
+```
+
+Use `RUNWISP_NODE=off bun test` for tests.

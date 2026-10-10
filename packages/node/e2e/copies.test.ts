@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,9 +22,10 @@ describe("copies of the app, crashes and stops", () => {
     const copies: ChildProcess[] = [];
 
     /** Starts a copy of the app and resolves once it is ready. */
-    function startCopy(): Promise<ChildProcess> {
+    function startCopy(env: NodeJS.ProcessEnv = {}): Promise<ChildProcess> {
         const child = spawn(process.execPath, [APP, data, String(port), binary], {
             stdio: ["pipe", "pipe", "pipe"],
+            env: { ...process.env, ...env },
         });
         copies.push(child);
         // Some tests crash a copy on purpose: show its stderr only when it never got ready.
@@ -107,6 +108,47 @@ describe("copies of the app, crashes and stops", () => {
         await exited(again);
         await expect.poll(() => healthy(socket), { timeout: 20_000, interval: 500 }).toBe(false);
     }, 40_000);
+
+    it("keeps RunWisp when a watcher kills the app's process tree", async () => {
+        const only = await startCopy();
+        // What nest start --watch does on each change: kill every descendant by ppid.
+        const ps = execFileSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" });
+        for (const line of ps.trim().split("\n")) {
+            const [pid, ppid] = line.trim().split(/\s+/).map(Number);
+            if (ppid === only.pid && pid !== undefined) process.kill(pid, "SIGKILL");
+        }
+        only.kill("SIGKILL");
+        await exited(only);
+
+        expect(await healthy(socket)).toBe(true);
+        const again = await startCopy();
+        expect((await trigger(socket, "who")).log).toContain(`pid ${String(again.pid)}`);
+    });
+
+    // A redeploy with a rotated secret: the daemon outlived the old copy, and
+    // shell tasks must not keep running with the old env.
+    it("restarts a RunWisp started with another env once the new copy is alone", async () => {
+        const old = await startCopy({ FOO: "old" });
+        expect((await trigger(socket, "shell-env")).log).toContain("foo=old");
+        old.kill("SIGKILL");
+        await exited(old);
+
+        await startCopy({ FOO: "new" });
+        expect((await trigger(socket, "shell-env")).log).toContain("foo=new");
+    });
+
+    it("keeps a RunWisp with another env while a copy started with it is connected", async () => {
+        await startCopy({ FOO: "old" });
+        await startCopy({ FOO: "new" });
+        expect((await trigger(socket, "shell-env")).log).toContain("foo=old");
+    });
+
+    it("refuses a different app on the same data directory", async () => {
+        await startCopy();
+        await expect(startCopy({ RUNWISP_TEST_APP: "another-app" })).rejects.toThrow(
+            'another app ("@runwisp/node"',
+        );
+    });
 
     it("skips a run while the previous one ignores its stop signal", async () => {
         await startCopy();

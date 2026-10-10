@@ -499,6 +499,9 @@ func runExecStandalone(taskName string, f Flags, params map[string]*string, asJS
 	case model.TriggerBlockedManualDisabled:
 		return 0, standaloneManualTriggerDisabledError(taskName)
 	}
+	if _, ok := target.ExecutionDef.(*model.SDKExecution); ok {
+		return 0, standaloneSDKTaskError(taskName)
+	}
 
 	eventBus := events.NewEventBus()
 	// One-shot CLI run carries no daemon fingerprint; an empty one keeps its

@@ -9,7 +9,7 @@ import { createInterface } from "node:readline";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { Session, type RunRequest, type SessionEvents } from "./session.ts";
+import { refusal, Session, type RunRequest, type SessionEvents } from "./session.ts";
 
 /** A daemon's end of the app connection: answers the upgrade, then hands over the socket. */
 async function fakeDaemon(
@@ -26,7 +26,7 @@ async function fakeDaemon(
             else if (line === "") {
                 upgraded = true;
                 socket.write(
-                    "HTTP/1.1 101 Switching Protocols\r\nUpgrade: runwisp-app\r\nConnection: Upgrade\r\n\r\n",
+                    "HTTP/1.1 101 Switching Protocols\r\nUpgrade: runwisp-app/1\r\nConnection: Upgrade\r\n\r\n",
                 );
                 onApp(socket, received);
             }
@@ -39,17 +39,23 @@ async function fakeDaemon(
 
 const dirs: string[] = [];
 const servers: Server[] = [];
+const WHO = { app: "shop", pid: 42 };
 
 function recorder() {
     const runs: RunRequest[] = [];
     const roles: boolean[] = [];
+    const overlaps: [string, Date][] = [];
+    const missed: [string, Date][] = [];
     const events: SessionEvents = {
         role: (_s, active) => roles.push(active),
+        alone: () => undefined,
         run: (_s, request) => runs.push(request),
         stop: () => undefined,
+        overlap: (task, at) => overlaps.push([task, at]),
+        missed: (task, at) => missed.push([task, at]),
         closed: () => undefined,
     };
-    return { runs, roles, events };
+    return { runs, roles, overlaps, missed, events };
 }
 
 describe("Session", () => {
@@ -61,15 +67,24 @@ describe("Session", () => {
     it("delivers a run that arrives together with the role", async () => {
         const { path } = await fakeDaemon((socket) => {
             socket.write(
-                '{"type":"role","active":true}\n{"type":"run","run":"r1","task":"digest","env":{"A":"1"}}\n',
+                '{"type":"role","active":true}\n{"type":"run","run":"r1","task":"digest","env":{"A":"1"}}\n{"type":"run","run":"r2","task":"digest","at":"2026-01-02T03:04:00Z"}\n',
             );
         });
         const { runs, events } = recorder();
-        const session = await Session.open(path, events);
+        const session = await Session.open(path, events, WHO);
         expect(session.active).toBe(true);
         await expect
             .poll(() => runs)
-            .toEqual([{ run: "r1", task: "digest", env: { A: "1" }, params: {} }]);
+            .toEqual([
+                { run: "r1", task: "digest", env: { A: "1" }, params: {} },
+                {
+                    run: "r2",
+                    task: "digest",
+                    env: {},
+                    params: {},
+                    at: new Date("2026-01-02T03:04:00Z"),
+                },
+            ]);
         await session.close();
     });
 
@@ -86,7 +101,7 @@ describe("Session", () => {
             };
             socket.on("data", () => setImmediate(answer));
         });
-        const session = await Session.open(path, recorder().events);
+        const session = await Session.open(path, recorder().events, WHO);
         expect(await session.config('{"tasks":{}}')).toEqual({ ok: true });
         expect(await session.config('{"daemon":"bad"}')).toEqual({
             ok: false,
@@ -105,7 +120,7 @@ describe("Session", () => {
             socket.write('{"type":"role","active":false}\n');
         });
         const { roles, events } = recorder();
-        const session = await Session.open(path, events);
+        const session = await Session.open(path, events, WHO);
         expect(roles).toEqual([false]);
 
         session.leave();
@@ -114,6 +129,54 @@ describe("Session", () => {
         const pending = session.config("{}");
         daemonSide?.destroy();
         expect(await pending).toMatchObject({ ok: false, restart: false });
+    });
+
+    it("names the app and its pid, and reads who is active, overlaps and missed runs", async () => {
+        let request = "";
+        const { path } = await fakeDaemon((socket) => {
+            socket.write(
+                '{"type":"role","active":false,"pid":7}\n{"type":"overlap","task":"digest","at":"2026-01-02T03:04:00Z"}\n{"type":"missed","task":"report","at":"2026-01-02T03:00:00Z"}\n',
+            );
+        });
+        const server = servers.at(-1);
+        server?.prependListener("connection", (socket: Socket) => {
+            socket.once("data", (chunk: Buffer) => (request = chunk.toString()));
+        });
+        const { overlaps, missed, events } = recorder();
+        const session = await Session.open(path, events, { app: "my app", pid: 42 });
+        expect(request).toContain("GET /api/local/app?app=my+app&pid=42 HTTP/1.1");
+        expect(request).toContain("Upgrade: runwisp-app/1");
+        expect(session.activePid).toBe(7);
+        await expect.poll(() => overlaps).toEqual([["digest", new Date("2026-01-02T03:04:00Z")]]);
+        await expect.poll(() => missed).toEqual([["report", new Date("2026-01-02T03:00:00Z")]]);
+        await session.close();
+    });
+
+    it("says why the daemon refused, from its answer", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "rwn-"));
+        dirs.push(dir);
+        const path = join(dir, "runwisp.sock");
+        const body = 'another app ("billing", pid 11) uses this RunWisp daemon\n';
+        // Kept open, as Go's server does: the app must not wait for it to close.
+        const server = createServer((socket) => {
+            socket.write(
+                `HTTP/1.1 409 Conflict\r\nContent-Length: ${String(body.length)}\r\n\r\n${body}`,
+            );
+        });
+        servers.push(server);
+        await new Promise<void>((resolve) => server.listen(path, resolve));
+        await expect(Session.open(path, recorder().events, WHO)).rejects.toThrow(
+            'RunWisp refused the app connection (HTTP 409): another app ("billing", pid 11)',
+        );
+    });
+
+    it("tells a runwisp binary that speaks another app protocol apart", () => {
+        expect(refusal("426", "HTTP/1.1 426\r\nUpgrade: runwisp-app/2", "").message).toMatch(
+            /^this runwisp binary is newer than @runwisp\/node \S+ supports .*install matching versions/,
+        );
+        expect(refusal("426", "HTTP/1.1 426\r\nUpgrade: runwisp-app/0", "").message).toContain(
+            "is older than",
+        );
     });
 
     it("rejects when the daemon refuses the upgrade", async () => {
@@ -125,6 +188,6 @@ describe("Session", () => {
         });
         servers.push(server);
         await new Promise<void>((resolve) => server.listen(path, resolve));
-        await expect(Session.open(path, recorder().events)).rejects.toThrow("HTTP 403");
+        await expect(Session.open(path, recorder().events, WHO)).rejects.toThrow("HTTP 403");
     });
 });

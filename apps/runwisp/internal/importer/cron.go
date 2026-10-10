@@ -347,6 +347,12 @@ func (cp *crontabParser) importJob(line string) bool {
 	command := cc.run
 
 	base := deriveCronName(command)
+	description := cp.pendingComment
+	// Bun.cron() marks each job it writes with "# bun-cron: <title>"; the title names it.
+	if title, ok := strings.CutPrefix(description, "bun-cron: "); ok {
+		base = finalizeTaskName(title, base)
+		description = ""
+	}
 	// The per-line user column, or the whole file's owner for a spool crontab.
 	// applyOwner resolves which, so buildJob doesn't have to know the difference.
 	owner := cp.applyOwner(j)
@@ -362,8 +368,8 @@ func (cp *crontabParser) importJob(line string) bool {
 				"Re-run with --system to split it out, or --system=false to accept it as written.")
 	}
 	b := block{header: "tasks." + name}
-	if cp.pendingComment != "" {
-		b.set("description", tomlString(cp.pendingComment))
+	if description != "" {
+		b.set("description", tomlString(description))
 	}
 
 	cp.applySchedule(&b, ref, j.schedule, j.runOnStart)

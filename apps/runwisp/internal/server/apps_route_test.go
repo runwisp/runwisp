@@ -70,5 +70,5 @@ func TestAppsRoute_UpgradesOnTheSocket(t *testing.T) {
 
 	line, err := r.ReadString('\n')
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"type":"role","active":true}`, line)
+	assert.JSONEq(t, `{"type":"role","active":true,"alone":true}`, line)
 }

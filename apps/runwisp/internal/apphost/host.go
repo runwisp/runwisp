@@ -17,24 +17,33 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
 )
 
-// Protocol is the Upgrade token an app sends to open its connection.
-const Protocol = "runwisp-app"
+// Protocol is the Upgrade token an app sends to open its connection. The
+// number is the protocol version: a daemon answers any other token with 426,
+// so an SDK and a binary that don't match fail on connect, not mid-run.
+const Protocol = "runwisp-app/1"
 
 // defaultHandoff is how long a handler run waits for an app to connect: the
 // app connects right after the daemon it spawned comes up, and a standby copy
 // takes over within about a second of the active one leaving.
 const defaultHandoff = 10 * time.Second
+
+// maxHeldMissed bounds the missed-firing messages held for the first app to
+// connect.
+const maxHeldMissed = 100
 
 // maxLine bounds one NDJSON message. Output lines travel inside messages, so
 // this is also the longest output line an app can send in one piece.
@@ -42,19 +51,28 @@ const maxLine = 16 << 20
 
 // message is one NDJSON line on an app connection, in either direction.
 //
-// Daemon to app: role {active}, run {run, task, env, params}, stop {run},
+// Daemon to app: role {active, alone, pid} (pid: the active copy's, sent to a
+// standby), alone (this active copy became the only one connected), run {run,
+// task, env, params, at} (at: the firing, for a run the schedule started),
+// stop {run}, overlap {task, at} (a firing on_overlap = "skip" dropped),
+// missed {task, at} (firings missed while the daemon was down, at the latest),
 // config_ok {result}, config_error {error, restart}.
-// App to daemon: output {run, stream, line}, exit {run, code}, config {doc},
-// close (the app is shutting down for good, not restarting; see leave).
+// App to daemon: output {run, stream, line, partial} (partial: no newline
+// after line), exit {run, code}, config {doc}, close (the app is shutting
+// down for good, not restarting; see leave).
 type message struct {
 	Type    string              `json:"type"`
 	Active  *bool               `json:"active,omitempty"`
+	Alone   bool                `json:"alone,omitempty"`
+	Pid     int                 `json:"pid,omitempty"`
 	Run     string              `json:"run,omitempty"`
 	Task    string              `json:"task,omitempty"`
+	At      *time.Time          `json:"at,omitempty"`
 	Env     map[string]string   `json:"env,omitempty"`
 	Params  map[string]string   `json:"params,omitempty"`
 	Stream  string              `json:"stream,omitempty"`
 	Line    string              `json:"line,omitempty"`
+	Partial bool                `json:"partial,omitempty"`
 	Code    *int                `json:"code,omitempty"`
 	Doc     json.RawMessage     `json:"doc,omitempty"`
 	Result  *model.ReloadResult `json:"result,omitempty"`
@@ -71,14 +89,27 @@ type Host struct {
 	// app supplies; nil otherwise.
 	config *config.DocumentSource
 	reload func() (model.ReloadResult, error)
+	// configMu makes "is the sender active" and applying its document one
+	// step, so a copy that just handed over can't have its document land
+	// after the next copy's.
+	configMu sync.Mutex
+
+	unsubscribe func()
 
 	mu       sync.Mutex
 	sessions []*session // in connection order; sessions[0] is active
-	changed  chan struct{}
-	closed   bool
-	// quit is set when the last app said it is shutting down, so an idle
-	// daemon need not wait for it to come back.
+	// leaving are apps that said they are shutting down and are still
+	// connected while their runs finish. They count as connected for
+	// ExitWhenIdle, so the daemon doesn't stop those runs.
+	leaving []*session
+	changed chan struct{}
+	closed  bool
+	// quit is set once the last app said it is shutting down and then
+	// disconnected, so an idle daemon need not wait for it to come back.
 	quit bool
+	// missed holds the missed messages published while no app was connected,
+	// for the next app to become active.
+	missed []message
 }
 
 // AcceptConfig lets the active app replace the daemon's config. Each document
@@ -90,6 +121,51 @@ func (h *Host) AcceptConfig(src *config.DocumentSource, reload func() (model.Rel
 	h.reload = reload
 }
 
+// ForwardSkippedFirings tells the active app about firings of its tasks that
+// never ran, so a task handle can emit node-cron's execution:overlap (a run
+// on_overlap = "skip" dropped) and execution:missed (ticks missed while the
+// daemon was down). Missed ones are found at boot, before the app that
+// started the daemon connects, so they wait for it. The app ignores names it
+// doesn't serve.
+func (h *Host) ForwardSkippedFirings(bus *events.Bus) {
+	h.unsubscribe = bus.Subscribe(events.EventRunFailed, func(e events.Event) {
+		re, ok := e.Data.(events.RunEvent)
+		if !ok || re.Run == nil || re.Run.EndReason == nil {
+			return
+		}
+		at := re.Run.CreatedAt
+		m := message{Task: re.Run.TaskName, At: &at}
+		switch *re.Run.EndReason {
+		case model.ReasonSkipped:
+			m.Type = "overlap"
+		case model.ReasonMissed:
+			m.Type = "missed"
+		default:
+			return
+		}
+		h.mu.Lock()
+		var active *session
+		if len(h.sessions) > 0 {
+			active = h.sessions[0]
+		} else if m.Type == "missed" {
+			h.missed = append(h.missed, m)
+			if len(h.missed) > maxHeldMissed {
+				h.missed = h.missed[1:]
+			}
+		}
+		h.mu.Unlock()
+		if active == nil {
+			return
+		}
+		// Off the publisher's goroutine: a slow app must not stall the scheduler.
+		go func() {
+			if err := active.send(m); err != nil {
+				slog.Debug("Failed to tell an app about a firing that didn't run", "err", err)
+			}
+		}()
+	})
+}
+
 // ExitWhenIdle calls exit once no app has been connected for idle, counting
 // from now, for a daemon that exists only to serve its app. It exits right
 // away when the last app said it is shutting down.
@@ -97,7 +173,7 @@ func (h *Host) ExitWhenIdle(idle time.Duration, exit func()) {
 	go func() {
 		for {
 			h.mu.Lock()
-			connected, changed, closed, quit := len(h.sessions), h.changed, h.closed, h.quit
+			connected, changed, closed, quit := len(h.sessions)+len(h.leaving), h.changed, h.closed, h.quit
 			h.mu.Unlock()
 			if closed {
 				return
@@ -128,10 +204,23 @@ func New() *Host {
 // ServeHTTP upgrades a request to an app connection and serves it until either
 // side closes it. The caller decides who may connect: the daemon mounts this on
 // its local socket only.
+//
+// The query names the app (?app=) and its pid (?pid=). Copies of one app share
+// a daemon; a different app is refused while one is connected, so two apps
+// pointed at one data directory fail loudly instead of swapping configs.
 func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !strings.EqualFold(r.Header.Get("Upgrade"), Protocol) {
 		w.Header().Set("Upgrade", Protocol)
 		http.Error(w, "expected Upgrade: "+Protocol, http.StatusUpgradeRequired)
+		return
+	}
+	app := r.URL.Query().Get("app")
+	pid, _ := strconv.Atoi(r.URL.Query().Get("pid"))
+	h.mu.Lock()
+	other := h.otherAppLocked(app)
+	h.mu.Unlock()
+	if other != nil {
+		http.Error(w, other.error(), http.StatusConflict)
 		return
 	}
 	conn, buf, err := http.NewResponseController(w).Hijack()
@@ -154,13 +243,13 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		io.Reader
 		io.Writer
 		io.Closer
-	}{buf.Reader, conn, conn})
+	}{buf.Reader, conn, conn}, app, pid)
 }
 
-// ServeConn serves one app connection until it closes. Its runs that are
-// still going end as failed when it does.
-func (h *Host) ServeConn(conn io.ReadWriteCloser) {
-	s := newSession(conn)
+// ServeConn serves one connection of app (whose process is pid) until it
+// closes. Its runs that are still going end as failed when it does.
+func (h *Host) ServeConn(conn io.ReadWriteCloser, app string, pid int) {
+	s := newSession(conn, app, pid)
 	if !h.add(s) {
 		_ = conn.Close()
 		return
@@ -186,22 +275,39 @@ func (h *Host) ServeConn(conn io.ReadWriteCloser) {
 			s.handle(m)
 		}
 	}
-	if err := scanner.Err(); err != nil && !errors.Is(err, io.ErrClosedPipe) {
-		slog.Debug("App connection ended", "err", err)
+	switch err := scanner.Err(); {
+	case err == nil, errors.Is(err, io.ErrClosedPipe), errors.Is(err, net.ErrClosed):
+	case errors.Is(err, bufio.ErrTooLong):
+		slog.Warn("App sent a message over the size limit; closing its connection, which fails its runs", "limit_bytes", maxLine)
+	default:
+		slog.Warn("App connection failed; its runs fail", "err", err)
 	}
 }
 
 // Close disconnects every app and refuses new ones. Runs still in flight end
 // as failed.
 func (h *Host) Close() {
+	if h.unsubscribe != nil {
+		h.unsubscribe()
+	}
 	h.mu.Lock()
 	h.closed = true
-	sessions := slices.Clone(h.sessions)
+	sessions := slices.Concat(h.sessions, h.leaving)
 	h.broadcastLocked()
 	h.mu.Unlock()
 	for _, s := range sessions {
 		_ = s.conn.Close()
 	}
+}
+
+// otherAppLocked returns a connected session of an app other than app, if any.
+func (h *Host) otherAppLocked(app string) *session {
+	for _, s := range slices.Concat(h.sessions, h.leaving) {
+		if s.app != app {
+			return s
+		}
+	}
+	return nil
 }
 
 func (h *Host) add(s *session) bool {
@@ -210,15 +316,37 @@ func (h *Host) add(s *session) bool {
 		h.mu.Unlock()
 		return false
 	}
+	// Rechecked here: ServeHTTP's check and this one aren't one step.
+	if other := h.otherAppLocked(s.app); other != nil {
+		h.mu.Unlock()
+		slog.Warn("Refused an app connection", "err", other.error())
+		return false
+	}
 	h.sessions = append(h.sessions, s)
 	h.quit = false
+	active := h.sessions[0]
 	connected := len(h.sessions)
+	alone := h.aloneLocked()
+	var missed []message
+	if active == s {
+		missed, h.missed = h.missed, nil
+	}
 	h.broadcastLocked()
 	h.mu.Unlock()
 
-	s.sendRole(connected == 1)
-	slog.Info("App connected", "active", connected == 1, "connected", connected)
+	s.sendRole(active == s, alone, active.pid)
+	for _, m := range missed {
+		if err := s.send(m); err != nil {
+			slog.Debug("Failed to tell an app about a missed firing", "err", err)
+		}
+	}
+	slog.Info("App connected", "app", s.app, "pid", s.pid, "active", active == s, "connected", connected)
 	return true
+}
+
+// aloneLocked reports whether the active app is the only one connected.
+func (h *Host) aloneLocked() bool {
+	return len(h.sessions) == 1 && len(h.leaving) == 0
 }
 
 // detachLocked takes s out of the connected apps and returns the copy that
@@ -236,34 +364,61 @@ func (h *Host) detachLocked(s *session) (next *session) {
 func (h *Host) remove(s *session) {
 	h.mu.Lock()
 	next := h.detachLocked(s)
-	connected := len(h.sessions)
+	h.leaving = slices.DeleteFunc(h.leaving, func(other *session) bool { return other == s })
+	connected := len(h.sessions) + len(h.leaving)
+	if s.last && connected == 0 {
+		h.quit = true
+	}
+	// The active copy hears it is alone once the others are gone: then it can
+	// restart the daemon without stopping another copy's runs.
+	var alone *session
+	if next == nil && h.aloneLocked() && h.sessions[0] != s {
+		alone = h.sessions[0]
+	}
+	nextAlone := h.aloneLocked()
+	h.broadcastLocked()
 	h.mu.Unlock()
 
 	_ = s.conn.Close()
 	s.disconnect()
 	if next != nil {
-		next.sendRole(true)
+		next.sendRole(true, nextAlone, 0)
 	}
-	slog.Info("App disconnected", "connected", connected)
+	if alone != nil {
+		if err := alone.send(message{Type: "alone"}); err != nil {
+			slog.Debug("Failed to tell an app it is alone", "err", err)
+		}
+	}
+	slog.Info("App disconnected", "app", s.app, "pid", s.pid, "connected", connected)
 }
 
 // leave takes an app that is shutting down out of service. Its runs keep
-// going until they end. When other copies are connected, the next one takes
-// over and the app is told it is on standby, so it stops what only the active
-// copy runs. When it was the last, the daemon may exit right away
-// (ExitWhenIdle) and stops its runs the way it stops any run at shutdown.
+// going until they end, and the daemon stays up for them. When other copies
+// are connected, the next one takes over and the app is told it is on
+// standby. When it was the last, the daemon may exit right away
+// (ExitWhenIdle) once the app disconnects, which it does after its runs end.
 func (h *Host) leave(s *session) {
 	h.mu.Lock()
+	if s.leaving {
+		h.mu.Unlock()
+		return
+	}
+	s.leaving = true
 	next := h.detachLocked(s)
-	h.quit = len(h.sessions) == 0
-	quit := h.quit
+	h.leaving = append(h.leaving, s)
+	last := len(h.sessions) == 0
+	s.last = last
+	var activePid int
+	if !last {
+		activePid = h.sessions[0].pid
+	}
 	h.mu.Unlock()
 
-	if !quit {
-		s.sendRole(false)
+	if !last {
+		s.sendRole(false, false, activePid)
 	}
 	if next != nil {
-		next.sendRole(true)
+		next.sendRole(true, false, 0)
 	}
 }
 
@@ -297,29 +452,34 @@ func (h *Host) active(stop <-chan struct{}) *session {
 }
 
 // applyConfig applies a config document from an app and tells it the outcome.
-//
-// ponytail: pushes from one app are applied as they arrive, so two in flight
-// may answer out of order; the SDK keeps one in flight at a time.
+// Documents apply one at a time, each only if its sender is still active.
 func (h *Host) applyConfig(s *session, doc json.RawMessage) {
-	reply := message{Type: "config_error"}
-	switch {
-	case h.reload == nil:
-		reply.Error = "this daemon reads its config from runwisp.toml, not from an app"
-	case !h.isActive(s):
-		reply.Error = "this copy of the app is on standby; the active copy's config applies"
-	default:
-		h.config.Set(doc)
-		result, err := h.reload()
-		if err == nil {
-			reply = message{Type: "config_ok", Result: &result}
-		} else {
-			reply.Error = err.Error()
-			reply.Restart = errors.Is(err, runtime.ErrRestartRequired)
-		}
-	}
-	if err := s.send(reply); err != nil {
+	if err := s.send(h.configReply(s, doc)); err != nil {
 		slog.Debug("Failed to answer an app's config", "err", err)
 	}
+}
+
+// configReply applies doc if s is still the active copy and returns the answer.
+func (h *Host) configReply(s *session, doc json.RawMessage) message {
+	reply := message{Type: "config_error"}
+	if h.reload == nil {
+		reply.Error = "this daemon reads its config from runwisp.toml, not from an app"
+		return reply
+	}
+	h.configMu.Lock()
+	defer h.configMu.Unlock()
+	if !h.isActive(s) {
+		reply.Error = "this copy of the app is on standby; the active copy's config applies"
+		return reply
+	}
+	h.config.Set(doc)
+	result, err := h.reload()
+	if err != nil {
+		reply.Error = err.Error()
+		reply.Restart = errors.Is(err, runtime.ErrRestartRequired)
+		return reply
+	}
+	return message{Type: "config_ok", Result: &result}
 }
 
 func (h *Host) isActive(s *session) bool {
@@ -331,6 +491,8 @@ func (h *Host) isActive(s *session) bool {
 // session is one connected app.
 type session struct {
 	conn io.ReadWriteCloser
+	app  string
+	pid  int
 
 	wmu sync.Mutex
 	enc *json.Encoder
@@ -338,10 +500,19 @@ type session struct {
 	mu   sync.Mutex
 	runs map[string]*handlerRun
 	gone bool
+
+	// leaving is set, under Host.mu, once the app said it is shutting down;
+	// last when it was the last copy then.
+	leaving, last bool
 }
 
-func newSession(conn io.ReadWriteCloser) *session {
-	return &session{conn: conn, enc: json.NewEncoder(conn), runs: map[string]*handlerRun{}}
+func newSession(conn io.ReadWriteCloser, app string, pid int) *session {
+	return &session{conn: conn, app: app, pid: pid, enc: json.NewEncoder(conn), runs: map[string]*handlerRun{}}
+}
+
+// error says why another app can't connect while this one is.
+func (s *session) error() string {
+	return fmt.Sprintf("another app (%q, pid %d) uses this RunWisp daemon; give each app its own data directory", s.app, s.pid)
 }
 
 func (s *session) send(m message) error {
@@ -350,8 +521,14 @@ func (s *session) send(m message) error {
 	return s.enc.Encode(m)
 }
 
-func (s *session) sendRole(active bool) {
-	if err := s.send(message{Type: "role", Active: &active}); err != nil {
+// sendRole tells the app whether it is active and, if so, whether it is the
+// only app connected; a standby hears the active copy's pid.
+func (s *session) sendRole(active, alone bool, activePid int) {
+	m := message{Type: "role", Active: &active, Alone: alone && active}
+	if !active {
+		m.Pid = activePid
+	}
+	if err := s.send(m); err != nil {
 		slog.Debug("Failed to tell an app its role", "err", err)
 	}
 }
@@ -367,7 +544,10 @@ func (s *session) handle(m message) {
 		if m.Stream == "stderr" {
 			w = r.stderr
 		}
-		_, _ = io.WriteString(w, m.Line+"\n")
+		if !m.Partial {
+			m.Line += "\n"
+		}
+		_, _ = io.WriteString(w, m.Line)
 	case "exit":
 		if r := s.run(m.Run); r != nil && m.Code != nil {
 			r.finish(*m.Code)

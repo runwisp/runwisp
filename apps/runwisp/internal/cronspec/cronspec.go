@@ -15,6 +15,7 @@ package cronspec
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -338,4 +339,90 @@ func Validate(spec, timezone string) error {
 	}
 	_, err := NewParser().Parse(full)
 	return err
+}
+
+// Fields are the values each field of a cron spec matches, ascending. Day of
+// week runs 0-6 with Sunday as 0, however the spec wrote it.
+type Fields struct {
+	Second     []int `json:"second"`
+	Minute     []int `json:"minute"`
+	Hour       []int `json:"hour"`
+	DayOfMonth []int `json:"dayOfMonth"`
+	Month      []int `json:"month"`
+	DayOfWeek  []int `json:"dayOfWeek"`
+}
+
+// FieldError says why one field of a spec doesn't parse. Field is
+// "expression" when the fault is the spec as a whole: its field count, an
+// unknown descriptor, a TZ= prefix, an @every interval.
+type FieldError struct {
+	Field   string `json:"field"`
+	Value   string `json:"value,omitempty"`
+	Message string `json:"message"`
+}
+
+// fieldNames name the fields of a 6-field spec; a 5-field one starts at minute.
+var fieldNames = [6]string{"second", "minute", "hour", "dayOfMonth", "month", "dayOfWeek"}
+
+// Explain parses spec as Validate does and returns the values each field
+// matches, or why it doesn't parse: one error per faulty field, else one for
+// the whole spec. fields is nil for @every, which has none.
+func Explain(spec string) (*Fields, []FieldError) {
+	sched, err := NewParser().Parse(spec)
+	if err != nil {
+		return nil, fieldErrors(spec, err)
+	}
+	gap, ok := sched.(dstGapSchedule)
+	if !ok {
+		return nil, nil
+	}
+	s := gap.inner
+	return &Fields{
+		Second:     bitValues(s.Second, 0, 59),
+		Minute:     bitValues(s.Minute, 0, 59),
+		Hour:       bitValues(s.Hour, 0, 23),
+		DayOfMonth: bitValues(s.Dom, 1, 31),
+		Month:      bitValues(s.Month, 1, 12),
+		DayOfWeek:  bitValues(s.Dow, 0, 6),
+	}, nil
+}
+
+// fieldErrors parses each field of spec on its own, the others "*", to tell
+// which ones are at fault; whole is the error for the spec as a whole.
+func fieldErrors(spec string, whole error) []FieldError {
+	fields := strings.Fields(spec)
+	body := fieldsAfterTZ(spec)
+	prefix := strings.Join(fields[:len(fields)-len(body)], " ")
+	if len(body) != 5 && len(body) != 6 {
+		return []FieldError{{Field: "expression", Value: spec, Message: whole.Error()}}
+	}
+	if _, err := NewParser().Parse(strings.TrimSpace(prefix + " * * * * *")); err != nil {
+		return []FieldError{{Field: "expression", Value: spec, Message: err.Error()}}
+	}
+	names := fieldNames[6-len(body):]
+	var errs []FieldError
+	for i, value := range body {
+		alone := slices.Repeat([]string{"*"}, len(body))
+		alone[i] = value
+		if _, err := NewParser().Parse(strings.TrimSpace(prefix + " " + strings.Join(alone, " "))); err != nil {
+			errs = append(errs, FieldError{Field: names[i], Value: value, Message: err.Error()})
+		}
+	}
+	if len(errs) == 0 {
+		// Each field parses, together they never fire: a day of month that
+		// none of the months has.
+		errs = append(errs, FieldError{Field: "dayOfMonth", Value: body[len(body)-3], Message: whole.Error()})
+	}
+	return errs
+}
+
+// bitValues lists the values from lo to hi set in one of go-cron's field bitsets.
+func bitValues(bits uint64, lo, hi int) []int {
+	var out []int
+	for v := lo; v <= hi; v++ {
+		if bits&(1<<v) != 0 {
+			out = append(out, v)
+		}
+	}
+	return out
 }

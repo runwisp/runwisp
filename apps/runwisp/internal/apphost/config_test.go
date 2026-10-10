@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -146,11 +147,103 @@ func TestExitWhenIdleRightAwayAfterClose(t *testing.T) {
 	app := connect(t, h)
 	app.role()
 	app.send(message{Type: "close"})
+	// Its runs may still be finishing: wait until it disconnects.
+	select {
+	case <-exited:
+		t.Fatal("exited before the last app disconnected")
+	case <-time.After(50 * time.Millisecond):
+	}
+	require.NoError(t, app.conn.Close())
 	select {
 	case <-exited:
 	case <-time.After(time.Second):
 		t.Fatal("did not exit after the last app closed")
 	}
+}
+
+// A copy that leaves as the last one keeps the daemon up while its runs
+// finish, however long they take: the idle window starts once it disconnects.
+func TestExitWhenIdleWaitsForALeavingAppsRuns(t *testing.T) {
+	h := New()
+	idle := make(chan time.Time)
+	close(idle)
+	h.after = func(d time.Duration) <-chan time.Time {
+		if d == time.Minute {
+			return idle // the idle window runs out as soon as it starts
+		}
+		return nil
+	}
+	app := connect(t, h)
+	app.role()
+	exited := make(chan struct{})
+	h.ExitWhenIdle(time.Minute, func() { close(exited) })
+	p := startRun(t, h, app, "r1")
+
+	app.send(message{Type: "close"})
+	select {
+	case <-exited:
+		t.Fatal("exited while the leaving app's run was still going")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	go func() {
+		app.send(message{Type: "exit", Run: "r1", Code: code(0)})
+		_ = app.conn.Close()
+	}()
+	_, _, exit := output(t, p)
+	assert.Equal(t, 0, exit)
+	select {
+	case <-exited:
+	case <-time.After(time.Second):
+		t.Fatal("did not exit after the last app disconnected")
+	}
+}
+
+// A document a copy sends just before it hands over is applied only if it is
+// still active when its turn comes, so the next copy's config wins.
+func TestConfigFromACopyThatHandedOverIsRefused(t *testing.T) {
+	h := New()
+	src := config.NewDocumentSource("/srv/app/runwisp.toml", []byte(`{}`))
+	gate := make(chan struct{})
+	var calls sync.Mutex
+	reloads := 0
+	h.AcceptConfig(src, func() (model.ReloadResult, error) {
+		calls.Lock()
+		reloads++
+		first := reloads == 1
+		calls.Unlock()
+		if first {
+			<-gate // the first push is still applying
+		}
+		return model.ReloadResult{}, nil
+	})
+	old := connect(t, h)
+	old.role()
+	next := connect(t, h)
+	next.role()
+
+	old.send(message{Type: "config", Doc: json.RawMessage(`{"tasks":{"a":{"sdk":true}}}`)})
+	old.send(message{Type: "config", Doc: json.RawMessage(`{"tasks":{"b":{"sdk":true}}}`)})
+	old.send(message{Type: "close"})
+	// The close hands over while the first push still applies.
+	replies := make(chan message, 3)
+	go func() {
+		for range 3 {
+			replies <- old.next()
+		}
+	}()
+	assert.True(t, next.role())
+	close(gate)
+
+	var got []string
+	for range 3 {
+		m := <-replies
+		got = append(got, m.Type)
+		if m.Type == "config_error" {
+			assert.Contains(t, m.Error, "standby")
+		}
+	}
+	assert.ElementsMatch(t, []string{"role", "config_ok", "config_error"}, got)
 }
 
 // A copy that shuts down while another is connected hands over: the other

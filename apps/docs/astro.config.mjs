@@ -197,7 +197,18 @@ export default defineConfig({
                     label: "SDKs",
                     items: [
                         { label: "Overview", slug: "sdk" },
-                        { label: "JavaScript", slug: "sdk/javascript" },
+                        {
+                            label: "JavaScript",
+                            items: [
+                                { label: "Overview", slug: "sdk/javascript" },
+                                { label: "Bun", slug: "sdk/javascript/bun" },
+                                { label: "Next.js", slug: "sdk/javascript/nextjs" },
+                                { label: "Nuxt", slug: "sdk/javascript/nuxt" },
+                                { label: "SvelteKit", slug: "sdk/javascript/sveltekit" },
+                                { label: "Astro", slug: "sdk/javascript/astro" },
+                                { label: "NestJS", slug: "sdk/javascript/nestjs" },
+                            ],
+                        },
                     ],
                 },
                 {

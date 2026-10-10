@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 export type { Config, ServiceConfig, TaskConfig } from "./generated/config.ts";
+export { solvePath } from "./background.ts";
+export type { CronFieldError, DetailedValidation, ParsedFields } from "./cron.ts";
 export {
     RunWisp,
     type Logger,
@@ -10,13 +12,15 @@ export {
     type ServiceOptions,
     type TaskOptions,
 } from "./runwisp.ts";
-export {
+// The task handle is a type only: RunWisp creates them.
+export type {
+    Execution,
+    LastRun,
+    NodeCronOptions,
+    RunContext,
+    RunCoordinator,
     ScheduledTask,
-    type Execution,
-    type LastRun,
-    type NodeCronOptions,
-    type RunContext,
-    type TaskContext,
-    type TaskEvent,
-    type TaskFn,
+    TaskContext,
+    TaskEvent,
+    TaskFn,
 } from "./scheduled-task.ts";

@@ -46,25 +46,30 @@ func (h *Host) Start(ctx context.Context, task *model.Task, run *model.Run, def 
 	if run == nil {
 		return nil, errors.New("sdk runs need a run record")
 	}
+	// Also when ctx ends the wait: a daemon stopping after its last app left.
 	s := h.active(ctx.Done())
 	if s == nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
 		return nil, fmt.Errorf("no app is connected to run %q", task.Name)
 	}
 
 	stdoutR, stdoutW := io.Pipe()
 	stderrR, stderrW := io.Pipe()
 	r := &handlerRun{stdout: stdoutW, stderr: stderrW, done: make(chan struct{})}
-	err := s.begin(r, message{
+	m := message{
 		Type: "run",
 		Run:  run.ID,
 		Task: task.Name,
 		// What a shell run would add; the app's own environment stays the app's.
 		Env:    task.EnvOverlay(run.Params),
 		Params: run.Params,
-	})
+	}
+	if run.TriggeredBy == model.TriggeredByCron {
+		// A cron run's CreatedAt is its tick, even when jitter or a queue
+		// started it later.
+		at := run.CreatedAt
+		m.At = &at
+	}
+	err := s.begin(r, m)
 	if err != nil {
 		return nil, err
 	}
