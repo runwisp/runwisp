@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The TUI shows run durations the same way notifications do (`3m 4s`, `12s`, `450ms`), and runs started in the last 30 seconds read `just now`.
+- The TUI shows run durations the same way notifications do (`3m 4s`, `12s`, `0.5s`), and runs started in the last 30 seconds read `just now`.
 - A daemon bound to any loopback address, such as `127.0.0.2` or `::1`, is treated as local: it serves plain HTTP by default and skips the exposed-address warning.
 - Web UI and remote CLI sessions use a simpler signed token instead of a JWT. Browsers and `runwisp --url` clients sign in once more after upgrading.
 - Stop, Start and Pause are on the task header in the TUI and on the task strip in the Web UI, without opening a run first.
