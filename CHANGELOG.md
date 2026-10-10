@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-10
+
 ### Added
 
 - **A new Web UI task page**: a strip at the top tells you what the task is doing and what comes next, such as the next run, a failed last run, or which service instance gave up and why, with the task's actions right next to it.
@@ -1002,7 +1004,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.5.1...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.6.0...main
+[1.6.0]: https://github.com/runwisp/runwisp/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/runwisp/runwisp/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/runwisp/runwisp/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/runwisp/runwisp/compare/v1.3.1...v1.4.0
