@@ -127,12 +127,13 @@ test.describe("task strip", () => {
         await strip.getByRole("button", { name: "Start", exact: true }).click();
         await page.getByRole("dialog").getByRole("button", { name: "Start Now" }).click();
 
-        await expect(strip).toContainText("exited", { timeout: 15_000 });
-        await expect(strip).toContainText("restart is never");
+        // A clean exit with no restart coming reads as stopped, not broken.
+        await expect(strip).toContainText("Stopped", { timeout: 15_000 });
+        await expect(strip).toContainText("Stays down until you start it");
         await expect(strip).not.toContainText(/restarting/i);
         await expect(strip.getByRole("button", { name: "Start", exact: true })).toBeVisible();
 
-        // The API agrees: the instance is stopped, not restarting.
+        // The API agrees: stopped, not restarting.
         const res = await page.request.get(`/api/tasks/${service}`, {
             headers: { Authorization: `Bearer ${daemonState.token}` },
         });
