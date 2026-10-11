@@ -16,6 +16,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/configedit"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
 // This file owns how an import *reads*: the counts, the per-job rows, the
@@ -30,17 +31,13 @@ type importStyles struct {
 	ok, changed, attn, dim lipgloss.Style
 }
 
-// newImportStyles builds the shared palette. Colors assume a dark terminal
-// background — the common case, and the one lipgloss itself falls back to
-// when it can't detect the background — rather than probing the real
-// terminal, which would round-trip an OSC query into a batch CLI command
-// whose output routinely goes to a file or a pipe.
+// newImportStyles builds the shared palette from uikit's terminal shades,
+// which read on a light or a dark terminal without probing it.
 func newImportStyles() importStyles {
-	ld := lipgloss.LightDark(true)
 	return importStyles{
-		ok:      lipgloss.NewStyle().Foreground(ld(lipgloss.Color("2"), lipgloss.Color("10"))),
-		changed: lipgloss.NewStyle().Foreground(ld(lipgloss.Color("6"), lipgloss.Color("14"))),
-		attn:    lipgloss.NewStyle().Bold(true).Foreground(ld(lipgloss.Color("3"), lipgloss.Color("11"))),
+		ok:      lipgloss.NewStyle().Foreground(uikit.ColorTermSuccess),
+		changed: lipgloss.NewStyle().Foreground(uikit.ColorSecondary),
+		attn:    lipgloss.NewStyle().Bold(true).Foreground(uikit.ColorTermWarning),
 		dim:     lipgloss.NewStyle().Faint(true),
 	}
 }

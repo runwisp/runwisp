@@ -217,7 +217,7 @@ func (v *InfoView) renderSparklineRow(w int, label, pct, detail string, history 
 	var lines []string
 
 	bgStyle := lipgloss.NewStyle().Background(uikit.ColorBg)
-	chartStyle := uikit.OnBg(uikit.ColorChartBg, color)
+	chartStyle := uikit.OnBg(uikit.ColorBgRaised, color)
 
 	labelStr := uikit.OnBg(uikit.ColorBg, color).Bold(true).Render("  " + label + " ")
 	pctStr := uikit.InfoStatValueStyle.Render(pct)

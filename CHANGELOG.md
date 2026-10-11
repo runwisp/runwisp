@@ -19,10 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A finished run's header in the TUI reads `CPU 0.3s · RAM 3.3 MB` and shortens to the memory alone on a narrow terminal.
 - The **Star** button on the TUI Home screen works from the keyboard: press ↑ from the top row, then Enter.
 - A run that fails because its `compose_service` container isn't running explains why in the run log: it names the compose project RunWisp searched and how to point it at the right one.
+- The TUI, `runwisp --help`, CLI errors, the startup banner and log lines use the teal brand colors of the Web UI, readable on light and dark terminals.
 
 ### Fixed
 
 - A task or service with `compose_file` now runs in the compose file's own project, like `docker compose up` in that directory. A fresh container joins the stack's network and named volumes, so a scheduled job can reach `db` and see the stack's data instead of an empty volume of its own.
+- The TUI log search (`/`) and the shutdown spinner use the TUI's colors instead of falling back to the terminal's own.
 
 ## [1.6.0] - 2026-10-10
 

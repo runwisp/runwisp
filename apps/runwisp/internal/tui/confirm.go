@@ -193,7 +193,7 @@ func (d *ConfirmDialog) StartShutdown() tea.Cmd {
 	d.message = "Stopping daemon..."
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(uikit.ColorPrimary)
+	s.Style = uikit.OnBg(uikit.ColorBgLight, uikit.ColorPrimary)
 	d.spinner = s
 	return d.spinnerTick()
 }
@@ -311,7 +311,7 @@ func (d *ConfirmDialog) buttonStyle(i int, kind buttonKind) lipgloss.Style {
 	style := lipgloss.NewStyle().Padding(0, 3).Bold(true)
 	hover := d.hovered == i
 	if d.selected == i || hover {
-		return style.Background(kind.fill(hover)).Foreground(uikit.ColorWhite)
+		return style.Background(kind.fill(hover)).Foreground(uikit.ColorBg)
 	}
 	return style.Background(uikit.ColorButtonRaised).Foreground(uikit.ColorText)
 }

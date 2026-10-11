@@ -86,7 +86,7 @@ Machine-readable reference for agents: https://docs.runwisp.com/llms.txt`,
 func init() {
 	// Minimal bootstrap so anything logged before flags are parsed is sane;
 	// PersistentPreRunE finalizes level/format from flags + env.
-	clilog.Configure(clilog.Options{Level: slog.LevelInfo, Format: clilog.FormatAuto})
+	configureLogs(clilog.Options{Level: slog.LevelInfo, Format: clilog.FormatAuto})
 
 	// "" (not a literal default) so PersistentPreRunE can tell "flag left
 	// alone" from "flag set to what the default would produce anyway" and
@@ -173,7 +173,7 @@ func resolveLogConfig() error {
 
 	flags.LogLevel = level
 	flags.LogFormat = format
-	clilog.Configure(clilog.Options{Level: level, Format: format})
+	configureLogs(clilog.Options{Level: level, Format: format})
 	return nil
 }
 

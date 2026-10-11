@@ -16,9 +16,9 @@ import (
 func (m *Model) View(width, height int) string {
 	w := max(width-8, 40)
 
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(uikit.ColorPrimary)
-	mutedStyle := lipgloss.NewStyle().Foreground(uikit.ColorTextMuted)
-	errStyle := lipgloss.NewStyle().Foreground(uikit.ColorError)
+	titleStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorPrimary).Bold(true)
+	mutedStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted)
+	errStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorError)
 
 	var b strings.Builder
 	b.WriteString(titleStyle.Render(fmt.Sprintf("Search logs for %s", m.taskName)))
@@ -51,19 +51,21 @@ func (m *Model) View(width, height int) string {
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(uikit.ColorPrimary).
+		BorderBackground(uikit.ColorBg).
 		Background(uikit.ColorBg).
 		Padding(1, 2).
 		Width(w)
 	rendered := box.Render(b.String())
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, rendered)
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, rendered,
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(uikit.ColorBg)))
 }
 
 // renderHits writes the result list to b. Truncates each line to fit width,
 // shows a vertical cursor (▶) on the selected row.
 func (m *Model) renderHits(b *strings.Builder, width int) {
-	hitStyle := lipgloss.NewStyle().Foreground(uikit.ColorText)
+	hitStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorText)
 	selStyle := uikit.OnBg(uikit.ColorPrimary, uikit.ColorBg)
-	mutedStyle := lipgloss.NewStyle().Foreground(uikit.ColorTextMuted)
+	mutedStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted)
 
 	total := len(m.hits)
 	start, end := hitWindow(m.cursor, total)

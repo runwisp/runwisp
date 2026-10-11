@@ -19,7 +19,7 @@ func TestVisibleWidth_MatchesAnsi(t *testing.T) {
 		"backup-postgres",
 		"1.2s",
 		"\x1b[38;2;1;2;3mcolored\x1b[m",
-		lipgloss.NewStyle().Background(ColorPrimaryDim).Foreground(ColorWhite).Render("  running  "),
+		lipgloss.NewStyle().Background(ColorPrimaryDim).Foreground(ColorTextBright).Render("  running  "),
 		"tab\tafter",
 		"ellipsis…",    // wide-ish rune fallback
 		"│ scrollbar",  // box-drawing → fallback

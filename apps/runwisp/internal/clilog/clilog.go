@@ -49,6 +49,9 @@ type Options struct {
 	// and the lipgloss color profile is left untouched (the TUI owns the
 	// screen and renders its own colors).
 	TUIMode bool
+	// Colors paints colored output. The caller supplies uikit's palette, since
+	// clilog declares no colors (see LevelColors).
+	Colors LevelColors
 }
 
 var (
@@ -133,7 +136,11 @@ func applyHandler(opts Options) {
 		// out is wrapped in a colorprofile.Writer because lipgloss v2 styles
 		// always render full ANSI — downsampling for the real terminal (or
 		// stripping entirely for NO_COLOR / a non-TTY destination) happens here.
-		h = newPrettyHandler(colorprofile.NewWriter(out, os.Environ()), opts.Level, includeTime(opts), useColor(opts))
+		var colors *LevelColors
+		if useColor(opts) {
+			colors = &opts.Colors
+		}
+		h = newPrettyHandler(colorprofile.NewWriter(out, os.Environ()), opts.Level, includeTime(opts), colors)
 	}
 	slog.SetDefault(slog.New(h))
 }

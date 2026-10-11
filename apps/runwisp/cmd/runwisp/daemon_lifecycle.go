@@ -421,7 +421,7 @@ func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
 		// So pin the slog level to DEBUG here regardless of --log-level; the
 		// flag still governs the headless / JSON output, which is the
 		// public-facing surface.
-		clilog.Configure(clilog.Options{
+		configureLogs(clilog.Options{
 			Level:   slog.LevelDebug,
 			Format:  clilog.FormatText,
 			Output:  io.MultiWriter(rt.debugWriter, rt.logBuffer),
@@ -458,7 +458,7 @@ func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
 		// color gating) and narrate run lifecycle to stderr like a headless
 		// boot would. The ring buffer stays tee'd so remote TUI clients still
 		// see daemon logs.
-		clilog.Configure(clilog.Options{
+		configureLogs(clilog.Options{
 			Level:      f.LogLevel,
 			Format:     f.LogFormat,
 			Output:     io.MultiWriter(os.Stderr, clilog.NewPlainWriter(rt.logBuffer)),

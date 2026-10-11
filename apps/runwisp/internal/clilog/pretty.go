@@ -5,6 +5,7 @@ package clilog
 
 import (
 	"context"
+	"image/color"
 	"io"
 	"log/slog"
 	"strconv"
@@ -16,16 +17,18 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// Palette mirrors internal/tui so the live log stream and the startup banner
-// read as one product. clilog stays independent of internal/tui (see the
-// package doc), so the few shared colors are redeclared here rather than imported.
-var (
-	prettyDim   = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")) // dim gray; also the DEBUG label
-	prettyMsg   = lipgloss.NewStyle().Bold(true)
-	prettyInfo  = lipgloss.NewStyle().Foreground(lipgloss.Color("#009371")) // green
-	prettyWarn  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FBBF24")) // yellow
-	prettyError = lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")) // red
-)
+// LevelColors paints the pretty handler. clilog declares no colours of its
+// own: the caller passes them from uikit's palette, the single source of truth
+// for every colour RunWisp paints (see internal/tui/uikit/theme.go). clilog
+// stays independent of internal/tui, so it can't import that palette itself.
+type LevelColors struct {
+	Dim, Info, Warn, Error color.Color // Dim also paints the DEBUG label
+}
+
+// prettyStyles are the lipgloss styles built once from LevelColors.
+type prettyStyles struct {
+	dim, msg, info, warn, err lipgloss.Style
+}
 
 // prettyHandler is a slog.Handler that renders a human-readable line:
 //
@@ -45,16 +48,28 @@ type prettyHandler struct {
 	level       slog.Leveler
 	includeTime bool
 	color       bool
+	st          prettyStyles
 
 	groupPrefix  string // accumulated "a.b." prefix from WithGroup
 	preformatted string // attrs accrued via WithAttrs, already rendered
 }
 
-// newPrettyHandler builds a pretty handler. color is explicit (rather than read
-// from the package-level stderrTTY) so the formatter can be unit-tested with
-// color forced on or off.
-func newPrettyHandler(w io.Writer, level slog.Leveler, includeTime, color bool) *prettyHandler {
-	return &prettyHandler{w: w, mu: &sync.Mutex{}, level: level, includeTime: includeTime, color: color}
+// newPrettyHandler builds a pretty handler; nil colors means plain output.
+// Color is explicit (rather than read from the package-level stderrTTY) so the
+// formatter can be unit-tested with color forced on or off.
+func newPrettyHandler(w io.Writer, level slog.Leveler, includeTime bool, colors *LevelColors) *prettyHandler {
+	h := &prettyHandler{w: w, mu: &sync.Mutex{}, level: level, includeTime: includeTime}
+	if colors != nil {
+		h.color = true
+		h.st = prettyStyles{
+			dim:  lipgloss.NewStyle().Foreground(colors.Dim),
+			msg:  lipgloss.NewStyle().Bold(true),
+			info: lipgloss.NewStyle().Foreground(colors.Info),
+			warn: lipgloss.NewStyle().Foreground(colors.Warn),
+			err:  lipgloss.NewStyle().Foreground(colors.Error),
+		}
+	}
+	return h
 }
 
 func (h *prettyHandler) Enabled(_ context.Context, l slog.Level) bool {
@@ -65,13 +80,13 @@ func (h *prettyHandler) Handle(_ context.Context, r slog.Record) error {
 	var b strings.Builder
 
 	if h.includeTime && !r.Time.IsZero() {
-		b.WriteString(h.paint(prettyDim, r.Time.Format("2006-01-02 15:04:05")))
+		b.WriteString(h.paint(h.st.dim, r.Time.Format("2006-01-02 15:04:05")))
 		b.WriteByte(' ')
 	}
 
 	b.WriteString(h.levelLabel(r.Level))
 	b.WriteByte(' ')
-	b.WriteString(h.paint(prettyMsg, escapeControl(r.Message)))
+	b.WriteString(h.paint(h.st.msg, escapeControl(r.Message)))
 
 	b.WriteString(h.preformatted)
 	r.Attrs(func(a slog.Attr) bool {
@@ -115,14 +130,14 @@ func (h *prettyHandler) clone() *prettyHandler {
 
 // levelLabel renders a bracketed, colored level tag.
 func (h *prettyHandler) levelLabel(l slog.Level) string {
-	label, st := "[INFO]", prettyInfo
+	label, st := "[INFO]", h.st.info
 	switch {
 	case l < slog.LevelInfo:
-		label, st = "[DEBUG]", prettyDim
+		label, st = "[DEBUG]", h.st.dim
 	case l >= slog.LevelError:
-		label, st = "[ERROR]", prettyError
+		label, st = "[ERROR]", h.st.err
 	case l >= slog.LevelWarn:
-		label, st = "[WARN]", prettyWarn
+		label, st = "[WARN]", h.st.warn
 	}
 	return h.paint(st, label)
 }
@@ -149,7 +164,7 @@ func (h *prettyHandler) appendAttr(b *strings.Builder, prefix string, a slog.Att
 		return
 	}
 	b.WriteByte(' ')
-	b.WriteString(h.paint(prettyDim, prefix+a.Key+"="))
+	b.WriteString(h.paint(h.st.dim, prefix+a.Key+"="))
 	b.WriteString(quoteIfNeeded(a.Value.String()))
 }
 

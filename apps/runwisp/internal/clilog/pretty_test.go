@@ -18,7 +18,7 @@ func newTestLogger(h slog.Handler) *slog.Logger { return slog.New(h) }
 
 func TestPrettyHandler_PlainHasNoEscapes(t *testing.T) {
 	var buf bytes.Buffer
-	log := newTestLogger(newPrettyHandler(&buf, slog.LevelInfo, false, false))
+	log := newTestLogger(newPrettyHandler(&buf, slog.LevelInfo, false, nil))
 
 	log.Info("ready, listening", "url", "http://127.0.0.1:9477")
 
@@ -33,7 +33,7 @@ func TestPrettyHandler_ColorEmitsEscapes(t *testing.T) {
 	// lipgloss v2 styles always render full ANSI regardless of destination, so
 	// no profile setup is needed here — that's applyHandler's job in production.
 	var buf bytes.Buffer
-	log := newTestLogger(newPrettyHandler(&buf, slog.LevelInfo, false, true))
+	log := newTestLogger(newPrettyHandler(&buf, slog.LevelInfo, false, &LevelColors{}))
 
 	log.Warn("disk getting full", "pct", 91)
 
@@ -48,7 +48,7 @@ func TestPrettyHandler_ColorEmitsEscapes(t *testing.T) {
 
 func TestPrettyHandler_QuotesValuesWithSpaces(t *testing.T) {
 	var buf bytes.Buffer
-	log := newTestLogger(newPrettyHandler(&buf, slog.LevelInfo, false, false))
+	log := newTestLogger(newPrettyHandler(&buf, slog.LevelInfo, false, nil))
 
 	log.Info("init warning", "detail", "two words")
 
@@ -61,7 +61,7 @@ func TestPrettyHandler_QuotesValuesWithSpaces(t *testing.T) {
 // be Go-quoted (control bytes rendered as visible \x escapes), never emitted raw.
 func TestPrettyHandler_EscapesControlBytesInAttrValue(t *testing.T) {
 	var buf bytes.Buffer
-	log := newTestLogger(newPrettyHandler(&buf, slog.LevelInfo, false, false))
+	log := newTestLogger(newPrettyHandler(&buf, slog.LevelInfo, false, nil))
 
 	log.Info("search", "task", "evil\x1b[2Jname")
 
@@ -74,7 +74,7 @@ func TestPrettyHandler_EscapesControlBytesInAttrValue(t *testing.T) {
 // also carry untrusted data, so control bytes there are escaped too.
 func TestPrettyHandler_EscapesControlBytesInMessage(t *testing.T) {
 	var buf bytes.Buffer
-	log := newTestLogger(newPrettyHandler(&buf, slog.LevelInfo, false, false))
+	log := newTestLogger(newPrettyHandler(&buf, slog.LevelInfo, false, nil))
 
 	log.Info("boot\x1b[31mred")
 
@@ -85,7 +85,7 @@ func TestPrettyHandler_EscapesControlBytesInMessage(t *testing.T) {
 
 func TestPrettyHandler_AttrsAndGroups(t *testing.T) {
 	var buf bytes.Buffer
-	h := newPrettyHandler(&buf, slog.LevelInfo, false, false)
+	h := newPrettyHandler(&buf, slog.LevelInfo, false, nil)
 	log := newTestLogger(h).
 		With("version", "0.11.0").
 		WithGroup("scheduler").
@@ -101,7 +101,7 @@ func TestPrettyHandler_AttrsAndGroups(t *testing.T) {
 
 func TestPrettyHandler_LevelFiltering(t *testing.T) {
 	var buf bytes.Buffer
-	log := newTestLogger(newPrettyHandler(&buf, slog.LevelWarn, false, false))
+	log := newTestLogger(newPrettyHandler(&buf, slog.LevelWarn, false, nil))
 
 	log.Info("infoline")
 	log.Warn("warnline")
@@ -115,8 +115,8 @@ func TestPrettyHandler_IncludeTime(t *testing.T) {
 	var withTime, withoutTime bytes.Buffer
 	rec := slog.NewRecord(refTime(), slog.LevelInfo, "hello", 0)
 
-	require.NoError(t, newPrettyHandler(&withTime, slog.LevelInfo, true, false).Handle(context.Background(), rec))
-	require.NoError(t, newPrettyHandler(&withoutTime, slog.LevelInfo, false, false).Handle(context.Background(), rec))
+	require.NoError(t, newPrettyHandler(&withTime, slog.LevelInfo, true, nil).Handle(context.Background(), rec))
+	require.NoError(t, newPrettyHandler(&withoutTime, slog.LevelInfo, false, nil).Handle(context.Background(), rec))
 
 	assert.Contains(t, withTime.String(), "2026-06-27 12:30:45", "includeTime renders a full datetime")
 	assert.NotContains(t, withoutTime.String(), "12:30:45", "without includeTime there is no timestamp")

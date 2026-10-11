@@ -477,12 +477,12 @@ func (s *Sidebar) renderVersionLine() string {
 	}
 	if s.focused && s.versionFocused {
 		sep := uikit.SidebarVersionStyle.Render(" ")
-		marker := uikit.OnBg(uikit.ColorWarning, uikit.ColorSidebarBg).
+		marker := uikit.OnBg(uikit.ColorWarning, uikit.ColorBgRaised).
 			Bold(true).
 			Render(" ⚠ " + s.latestVersion + " ")
 		return base + sep + marker
 	}
-	marker := uikit.OnBg(uikit.ColorSidebarBg, uikit.ColorWarning).
+	marker := uikit.OnBg(uikit.ColorBgRaised, uikit.ColorWarning).
 		Render(" ⚠")
 	return base + marker
 }
@@ -526,7 +526,7 @@ func (s *Sidebar) View() string {
 	}
 
 	if s.filtering && len(s.items) == 0 {
-		writeSidebarLine(&b, uikit.OnBg(uikit.ColorSidebarBg, uikit.ColorTextMuted).Render("   no matching tasks"), w)
+		writeSidebarLine(&b, uikit.OnBg(uikit.ColorBgRaised, uikit.ColorTextMuted).Render("   no matching tasks"), w)
 		rendered++
 	}
 
@@ -626,7 +626,7 @@ func (s *Sidebar) filterHeaderHeight() int {
 // renderFilterLine draws the type-to-filter prompt shown above the item list.
 func (s *Sidebar) renderFilterLine(w int) string {
 	text := truncateToWidth(" / "+s.filter+"▏", w)
-	return uikit.OnBg(uikit.ColorSidebarBg, uikit.ColorPrimary).
+	return uikit.OnBg(uikit.ColorBgRaised, uikit.ColorPrimary).
 		Render(text)
 }
 
@@ -676,7 +676,7 @@ func (s *Sidebar) ensureVisible() {
 // writeSidebarLine clips content to width before padding, so no row (e.g. a
 // long version string) can spill into the main panel.
 func writeSidebarLine(b *strings.Builder, content string, width int) {
-	b.WriteString(uikit.PadLine(truncateToWidth(content, width), width, uikit.ColorSidebarBg))
+	b.WriteString(uikit.PadLine(truncateToWidth(content, width), width, uikit.ColorBgRaised))
 	b.WriteString("\n")
 }
 
