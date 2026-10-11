@@ -497,15 +497,7 @@ func resumePendingRuns(ctx context.Context, db storage.RunRepository, taskManage
 // configLoadedAt is when the boot path snapshotted runwisp.toml; the dynamic
 // config_stale flag is injected per request by the server, not stored here.
 func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time.Time, port int) *model.DaemonInfo {
-	snapshot := svc.Tasks.Snapshot()
-	taskNames := slices.Sorted(maps.Keys(snapshot))
-
-	tasks := make([]model.Task, 0, len(taskNames))
-	for _, name := range taskNames {
-		tasks = append(tasks, *snapshot[name])
-	}
-
-	capInfos := capInfosFromAvailability(svc.Executor.Availability())
+	tasks, capInfos := liveTaskInfo(svc)
 
 	return &model.DaemonInfo{
 		Version:          version.Version,
@@ -524,6 +516,21 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time
 		Capabilities:     capInfos,
 		CheckUpdates:     cfg.Config.Daemon.CheckUpdates,
 	}
+}
+
+// liveTaskInfo is the reload-sensitive part of DaemonInfo: the TOML task list,
+// sorted by name, and the capabilities, whose config entry follows that list
+// (a reload can add the first task or remove the last one).
+func liveTaskInfo(svc *daemonServices) ([]model.Task, []model.CapInfo) {
+	snapshot := svc.Tasks.Snapshot()
+	taskNames := slices.Sorted(maps.Keys(snapshot))
+	tasks := make([]model.Task, 0, len(taskNames))
+	for _, name := range taskNames {
+		tasks = append(tasks, *snapshot[name])
+	}
+	avail := svc.Executor.Availability()
+	avail.Config = executor.ConfigStatus(len(tasks) > 0)
+	return tasks, capInfosFromAvailability(avail)
 }
 
 func capInfosFromAvailability(a executor.Availability) []model.CapInfo {

@@ -149,7 +149,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		updates:     updateChecker,
 		output:      output,
 	}
-	reconciler, reloadFn := newReconciler(cfg, svc, f, configSnap, settings.prepare)
+	reconciler, reloadFn := newReconciler(cfg, svc, f, configSnap, settings)
 	if mode == modeStandalone {
 		// Cron holds only matter to a local scheduler.
 		defer reconciler.WatchCronHolds(cronprobe.Probe)()
@@ -288,7 +288,7 @@ func rerouteLogsToStderrOnError(err *error) {
 // SIGHUP. In station mode svc.Scheduler is nil (the Station schedules), so the
 // reconciler swaps tasks, services and settings but touches no cron entries; the
 // station client re-syncs the task list on the tasks.changed event published below.
-func newReconciler(cfg *daemonConfig, svc *daemonServices, f Flags, snap *config.Snapshot, settings runtime.SettingsHook) (*runtime.Reconciler, func() (model.ReloadResult, error)) {
+func newReconciler(cfg *daemonConfig, svc *daemonServices, f Flags, snap *config.Snapshot, settings *settingsApplier) (*runtime.Reconciler, func() (model.ReloadResult, error)) {
 	r := runtime.NewReconciler(runtime.ReconcilerDeps{
 		ConfigPath: f.CfgFile,
 		Baseline:   cfg.Config,
@@ -297,20 +297,33 @@ func newReconciler(cfg *daemonConfig, svc *daemonServices, f Flags, snap *config
 		Manager:    svc.TaskManager,
 		DB:         svc.DB,
 		Snapshot:   snap,
-		Settings:   settings,
+		Settings:   settings.prepare,
 		Now:        time.Now,
 	})
 	// The `failures` policy lives on model.Task, so Reconcile() swaps it into the
 	// live registry and every run terminating afterwards is classified under the
 	// new policy — notify routes on that persisted bit, so no notify-side refresh
 	// is needed on reload. A successful reload tells dashboards to refetch the
-	// task list (added/removed tasks, pauses a reload cleared).
+	// task list (added/removed tasks, pauses a reload cleared). /api/daemon's
+	// task list and config capability follow the reloaded set too; that refresh
+	// runs here, after Reconcile swapped the registry, not in the settings commit
+	// (which runs before it).
 	return r, func() (model.ReloadResult, error) {
 		result, err := r.Reconcile()
-		if err == nil && svc.EventBus != nil {
+		if err != nil {
+			return result, err
+		}
+		if settings.srv != nil {
+			tasks, caps := liveTaskInfo(svc)
+			settings.srv.UpdateDaemonInfo(func(info *model.DaemonInfo) {
+				info.Tasks, info.Capabilities = tasks, caps
+				info.ConfigLoadedAt = snap.LoadedAt()
+			})
+		}
+		if svc.EventBus != nil {
 			svc.EventBus.Publish(events.EventTasksChanged, events.TasksChangedEvent{})
 		}
-		return result, err
+		return result, nil
 	}
 }
 

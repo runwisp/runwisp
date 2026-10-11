@@ -85,7 +85,7 @@ func TestReload_StationMode(t *testing.T) {
 	defer func() { cancel(); <-done }()
 
 	settings := &settingsApplier{svc: svc}
-	_, reloadFn := newReconciler(dc, svc, f, config.NewSnapshot(f.CfgFile, cfg, time.Now()), settings.prepare)
+	_, reloadFn := newReconciler(dc, svc, f, config.NewSnapshot(f.CfgFile, cfg, time.Now()), settings)
 
 	write("echo after")
 	// Run subscribes asynchronously; retry the (idempotent) reload until the
