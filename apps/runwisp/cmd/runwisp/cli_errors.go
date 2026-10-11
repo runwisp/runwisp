@@ -112,14 +112,14 @@ func renderError(w io.Writer, title, details, hint string) {
 	badge := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(uikit.ColorBg).
-		Background(uikit.ColorError).
+		Background(uikit.ColorTermDanger).
 		Padding(0, 1).
 		Render("ERROR")
 	fmt.Fprintln(cw, badge+" "+title)
 
 	if details != "" {
 		fmt.Fprintln(cw)
-		bullet := lipgloss.NewStyle().Foreground(uikit.ColorError).Render("•")
+		bullet := lipgloss.NewStyle().Foreground(uikit.ColorTermDanger).Render("•")
 		for _, line := range strings.Split(strings.TrimRight(details, "\n"), "\n") {
 			if strings.HasPrefix(line, "  - ") {
 				fmt.Fprintln(cw, "  "+bullet+" "+strings.TrimPrefix(line, "  - "))

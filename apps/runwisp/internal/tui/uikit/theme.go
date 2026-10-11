@@ -16,8 +16,16 @@ import (
 
 // Brand palette — official RunWisp colors, the web UI's dark theme
 // (packages/ui/src/lib/theme-tokens.css, `:root.dark`) ported to the
-// terminal. Every colour the TUI paints comes from this block; add a shade
-// here only when no existing one reads right.
+// terminal.
+//
+// This block is the single source of truth for every colour RunWisp paints in
+// a terminal: the TUI, and the CLI (fang help, errors, the startup banner, log
+// lines, the import summary). Keep it that way: never declare a colour
+// anywhere else, reference one of these. A package that can't import uikit
+// (clilog) takes its colours as a parameter from a caller that can
+// (cmd/runwisp/theme.go). TestNoColorsOutsidePalette fails on a hex colour
+// declared outside this file. Add a shade here only when no existing one
+// reads right.
 var (
 	ColorPrimary      = lipgloss.Color("#2fd4dd") // --rw-primary
 	ColorPrimaryHover = lipgloss.Color("#5fe3ea") // --rw-primary-hover
@@ -47,6 +55,17 @@ var (
 
 	ColorErrorHover   = lipgloss.Color("#ff7568") // --rw-danger-hover
 	ColorWarningHover = lipgloss.Color("#ecb845") // --rw-warning-hover
+
+	// Terminal shades, for the CLI only. CLI output paints no background, so
+	// it lands on the terminal's own, light or dark, and the bright accents
+	// above wash out on white. These are the web UI's light-theme tokens:
+	// mid-tones at 3:1 or better on both white and near-black, so the CLI
+	// needs no background probe. The CLI's accent and dim text are
+	// ColorSecondary and ColorTextMuted, which already clear that bar. TUI
+	// views must not use these (palette_test leaves them out).
+	ColorTermSuccess = lipgloss.Color("#1e8a4a") // --rw-success (light)
+	ColorTermWarning = lipgloss.Color("#c4781a") // --rw-warning (light)
+	ColorTermDanger  = lipgloss.Color("#d6453d") // --rw-danger (light)
 )
 
 var (

@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A finished run's header in the TUI reads `CPU 0.3s · RAM 3.3 MB` and shortens to the memory alone on a narrow terminal.
 - The **Star** button on the TUI Home screen works from the keyboard: press ↑ from the top row, then Enter.
 - A run that fails because its `compose_service` container isn't running explains why in the run log: it names the compose project RunWisp searched and how to point it at the right one.
-- The TUI and `runwisp --help` use the teal brand colors of the Web UI.
+- The TUI, `runwisp --help`, CLI errors, the startup banner and log lines use the teal brand colors of the Web UI, readable on light and dark terminals.
 
 ### Fixed
 

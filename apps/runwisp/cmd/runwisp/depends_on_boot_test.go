@@ -165,6 +165,14 @@ func TestPreStopServices_StopsDependentBeforeDependency(t *testing.T) {
 	assert.Equal(t, 0, activeCount(tm, "web"), "web should be drained")
 	assert.Equal(t, 0, activeCount(tm, "db"), "db should be drained")
 
+	// A run leaves the active set (retireRun) before its terminal event is
+	// published (publishTerminal flushes storage first), so preStopServices can
+	// return before db's event lands. Wait for both before checking the order.
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(stoppedSeq) == 2
+	}, 2*time.Second, 5*time.Millisecond, "both services should report a terminal run")
 	mu.Lock()
 	defer mu.Unlock()
 	require.Equal(t, []string{"web", "db"}, stoppedSeq,

@@ -19,14 +19,15 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
+// Startup banner styles. The banner prints onto the terminal's own background,
+// not the TUI's, so it takes the light-or-dark-safe terminal shades.
 var (
-	brandMark = lipgloss.NewStyle().Foreground(uikit.ColorSecondary).Bold(true)
-	brandText = lipgloss.NewStyle().Foreground(uikit.ColorPrimary).Bold(true)
-	dimStyle  = lipgloss.NewStyle().Foreground(uikit.ColorTextMuted)
-	greenMark = lipgloss.NewStyle().Foreground(uikit.ColorSecondary)
-	yellowSt  = lipgloss.NewStyle().Foreground(uikit.ColorWarning)
-	cyanBold  = lipgloss.NewStyle().Foreground(uikit.ColorRunning).Bold(true)
-	boldStyle = lipgloss.NewStyle().Bold(true)
+	brandStyle = lipgloss.NewStyle().Foreground(uikit.ColorSecondary).Bold(true)
+	dimStyle   = lipgloss.NewStyle().Foreground(uikit.ColorTextMuted)
+	okMark     = lipgloss.NewStyle().Foreground(uikit.ColorTermSuccess)
+	warnStyle  = lipgloss.NewStyle().Foreground(uikit.ColorTermWarning)
+	urlStyle   = lipgloss.NewStyle().Foreground(uikit.ColorSecondary).Bold(true)
+	boldStyle  = lipgloss.NewStyle().Bold(true)
 )
 
 // StartTUI launches the interactive Bubble Tea TUI connected to a daemon via API.
@@ -86,8 +87,8 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 	w = colorprofile.NewWriter(w, os.Environ())
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "  %s %s %s\n",
-		brandMark.Render("⟡"),
-		brandText.Render("RunWisp"),
+		brandStyle.Render("⟡"),
+		brandStyle.Render("RunWisp"),
 		dimStyle.Render("v"+info.Version),
 	)
 	fmt.Fprintf(w, "    %s\n", dimStyle.Render(runtime.GOOS+"/"+runtime.GOARCH))
@@ -120,7 +121,7 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 
 	if info.CrashedRuns > 0 {
 		fmt.Fprintf(w, "  %s\n",
-			yellowSt.Render(fmt.Sprintf("Marked %d crashed runs from previous session", info.CrashedRuns)),
+			warnStyle.Render(fmt.Sprintf("Marked %d crashed runs from previous session", info.CrashedRuns)),
 		)
 	}
 
@@ -128,16 +129,16 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 
 	if info.CatchUpTriggered > 0 {
 		fmt.Fprintf(w, "  %s\n",
-			yellowSt.Render(fmt.Sprintf("Triggered %d catch-up runs for missed cron ticks", info.CatchUpTriggered)),
+			warnStyle.Render(fmt.Sprintf("Triggered %d catch-up runs for missed cron ticks", info.CatchUpTriggered)),
 		)
 		fmt.Fprintln(w)
 	}
 
 	for _, warn := range info.InitWarnings {
-		fmt.Fprintf(w, "  %s %s\n", yellowSt.Render("⚠"), warn)
+		fmt.Fprintf(w, "  %s %s\n", warnStyle.Render("⚠"), warn)
 	}
 	for _, warn := range info.ScheduleWarnings {
-		fmt.Fprintf(w, "  %s %s\n", yellowSt.Render("⚠"), warn)
+		fmt.Fprintf(w, "  %s %s\n", warnStyle.Render("⚠"), warn)
 	}
 	if len(info.InitWarnings)+len(info.ScheduleWarnings) > 0 {
 		fmt.Fprintln(w)
@@ -154,7 +155,7 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 	}
 
 	if info.ListenURL != "" {
-		fmt.Fprintf(w, "  Listening on %s\n", cyanBold.Render(info.ListenURL))
+		fmt.Fprintf(w, "  Listening on %s\n", urlStyle.Render(info.ListenURL))
 	}
 	if info.Headless {
 		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Press Ctrl+C to stop."))
@@ -167,7 +168,7 @@ func printCapabilitiesSection(w io.Writer, capabilities []model.CapInfo) {
 	var caps []string
 	for _, c := range capabilities {
 		if c.Available {
-			caps = append(caps, greenMark.Render("✓")+" "+c.Name)
+			caps = append(caps, okMark.Render("✓")+" "+c.Name)
 		} else {
 			caps = append(caps, dimStyle.Render("–")+" "+dimStyle.Render(c.Name))
 		}
@@ -235,5 +236,5 @@ func printDotField(w io.Writer, label, value string) {
 // PrintShutdownComplete renders the goodbye message.
 func PrintShutdownComplete() {
 	w := os.Stderr
-	fmt.Fprintf(w, "  %s Goodbye!\n\n", greenMark.Render("✓"))
+	fmt.Fprintf(w, "  %s Goodbye!\n\n", okMark.Render("✓"))
 }

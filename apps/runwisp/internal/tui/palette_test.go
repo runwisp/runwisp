@@ -18,8 +18,10 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/logsearch"
 )
 
-// palette lists every colour in uikit/theme.go. A view that paints anything
-// else, a stray hex or a bubbles default ANSI grey, fails the test below.
+// palette lists every TUI colour in uikit/theme.go; the CLI-only terminal
+// shades (ColorTerm*) are left out on purpose. A view that paints anything
+// else, a stray hex, a terminal shade or a bubbles default ANSI grey, fails
+// the test below.
 var palette = []color.Color{
 	uikit.ColorPrimary, uikit.ColorPrimaryDim, uikit.ColorPrimaryHover,
 	uikit.ColorSecondary,

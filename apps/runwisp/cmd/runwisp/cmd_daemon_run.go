@@ -368,7 +368,7 @@ func configureBootLogRouting(logBuffer *server.DaemonLogBuffer, f Flags, headles
 	if headless {
 		// Headless: slog → stderr (tee'd to the ring buffer for remote TUI
 		// streaming) with daemon-mode timestamps and TTY-aware color gating.
-		clilog.Configure(clilog.Options{
+		configureLogs(clilog.Options{
 			Level:      f.LogLevel,
 			Format:     f.LogFormat,
 			Output:     io.MultiWriter(os.Stderr, clilog.NewPlainWriter(logBuffer)),
@@ -383,7 +383,7 @@ func configureBootLogRouting(logBuffer *server.DaemonLogBuffer, f Flags, headles
 	// flushes them. The fancy startup banner still prints to stderr via
 	// tui.PrintStartup; this only redirects the slog stream.
 	debugWriter := tui.NewDebugLogWriter()
-	clilog.Configure(clilog.Options{
+	configureLogs(clilog.Options{
 		Level:   slog.LevelDebug,
 		Format:  clilog.FormatText,
 		Output:  io.MultiWriter(debugWriter, logBuffer),
