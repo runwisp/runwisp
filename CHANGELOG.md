@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Details** in the Web UI writes long durations in days: `keep_for = "120d"` rather than `"2880h"`.
 - A finished run's header in the TUI reads `CPU 0.3s · RAM 3.3 MB` and shortens to the memory alone on a narrow terminal.
 - The **Star** button on the TUI Home screen works from the keyboard: press ↑ from the top row, then Enter.
+- A run that fails because its `compose_service` container isn't running explains why in the run log: it names the compose project RunWisp searched and how to point it at the right one.
+
+### Fixed
+
+- A task or service with `compose_file` now runs in the compose file's own project, like `docker compose up` in that directory. A fresh container joins the stack's network and named volumes, so a scheduled job can reach `db` and see the stack's data instead of an empty volume of its own.
 
 ## [1.6.0] - 2026-10-10
 

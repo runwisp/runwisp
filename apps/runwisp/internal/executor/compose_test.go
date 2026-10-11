@@ -845,3 +845,67 @@ func drain(r io.ReadCloser) {
 	}
 	_, _ = io.Copy(io.Discard, r)
 }
+
+// A unit that leaves the project to compose (compose_file on a task) passes no
+// -p, and names its container after the task, flattened to what Docker accepts.
+func TestComposeBackend_Start_NoProjectNamesContainerAfterTask(t *testing.T) {
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "calls.log")
+	installRecordingDockerShim(t, dir, logFile, "")
+
+	b := &ComposeBackend{dockerCmd: "docker", fingerprint: "fp-test"}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "backup", Mode: model.ComposeModeRun}
+
+	proc, err := b.Start(context.Background(), &model.Task{Name: "db:nightly"}, &model.Run{InstanceIndex: 0}, ce)
+	require.NoError(t, err)
+	go drain(proc.Stdout)
+	go drain(proc.Stderr)
+	proc.Wait()
+
+	calls := readDockerCalls(t, logFile)
+	assert.Contains(t, calls, "compose -f /tmp/dc.yml run ", "no -p: compose resolves the project")
+	assert.Contains(t, calls, "--name db_nightly_backup_0")
+}
+
+// execHintShim answers `compose ... ps` with psOutput and psExit; every other
+// call (the exec itself) fails the way compose does when no container runs.
+func execHintShim(t *testing.T, psOutput string, psExit int) {
+	t.Helper()
+	installDockerShimScript(t, t.TempDir(), "#!/bin/sh\n"+
+		"if [ \"$1\" = \"compose\" ] && [ \"$2\" = \"version\" ]; then exit 0; fi\n"+
+		"for a in \"$@\"; do if [ \"$a\" = ps ]; then printf '%s' '"+psOutput+"'; exit "+strconv.Itoa(psExit)+"; fi; done\n"+
+		"echo 'service \"app\" is not running' >&2\n"+
+		"exit 1\n")
+}
+
+func TestComposeBackend_ExecNotRunningHint(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "compose.yaml")
+	require.NoError(t, os.WriteFile(file, []byte("name: shop\nservices:\n  app:\n    image: alpine\n"), 0o644))
+	ce := &model.ComposeExecution{File: file, Service: "app", Mode: model.ComposeModeExec, Command: "true"}
+
+	t.Run("names the project compose searched", func(t *testing.T) {
+		execHintShim(t, "", 0)
+		hint := (&ComposeBackend{dockerCmd: "docker"}).execNotRunningHint(ce)
+		assert.Contains(t, hint, `No running "app" container in compose project "shop"`)
+		assert.Contains(t, hint, file)
+	})
+	t.Run("a running container means the command failed", func(t *testing.T) {
+		execHintShim(t, "abc123\n", 0)
+		assert.Empty(t, (&ComposeBackend{dockerCmd: "docker"}).execNotRunningHint(ce))
+	})
+	t.Run("no guess when docker can't tell", func(t *testing.T) {
+		execHintShim(t, "", 1)
+		assert.Empty(t, (&ComposeBackend{dockerCmd: "docker"}).execNotRunningHint(ce))
+	})
+	t.Run("wired as the exec run's ExitHint", func(t *testing.T) {
+		execHintShim(t, "", 0)
+		proc, err := (&ComposeBackend{dockerCmd: "docker"}).Start(context.Background(), &model.Task{Name: "schedule"}, &model.Run{}, ce)
+		require.NoError(t, err)
+		go drain(proc.Stdout)
+		go drain(proc.Stderr)
+		code, _ := proc.Wait()
+		assert.Equal(t, 1, code)
+		require.NotNil(t, proc.ExitHint)
+		assert.Contains(t, proc.ExitHint(), `compose project "shop"`)
+	})
+}

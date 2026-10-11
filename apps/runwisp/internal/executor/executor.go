@@ -270,6 +270,11 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	if msg := abnormalExitMessage(result.Error); msg != "" {
 		r.systemLine(writer, task, run, msg)
 	}
+	if proc.ExitHint != nil && exitCode != 0 && !result.TimedOut && !result.Stopped && result.KillReason == "" {
+		if msg := proc.ExitHint(); msg != "" {
+			r.systemLine(writer, task, run, msg)
+		}
+	}
 	result.OutputMatched = matcher.pattern() != ""
 	peak, sampled := stopSampling()
 	var ru *syscall.Rusage

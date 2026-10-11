@@ -26,11 +26,13 @@ import (
 // scriptedBackend stands in for the shell backend: a task named "svc" runs
 // until its ctx ends, a probe prints output and exits with exitCode (or hangs
 // until its ctx ends when hang is set, or fails to start when startErr is set).
+// exitHint becomes the probe's Process.ExitHint.
 type scriptedBackend struct {
 	output   string
 	exitCode int
 	hang     bool
 	startErr error
+	exitHint func() string
 }
 
 func (b *scriptedBackend) Start(ctx context.Context, task *model.Task, _ *model.Run, _ model.ExecutionDef) (*Process, error) {
@@ -55,6 +57,7 @@ func (b *scriptedBackend) Start(ctx context.Context, task *model.Task, _ *model.
 			}
 			return b.exitCode, nil
 		},
+		ExitHint: b.exitHint,
 	}, nil
 }
 

@@ -11,6 +11,9 @@ import "time"
 // Project is the trimmed-down view of a parsed compose file that the rest of
 // the daemon cares about.
 type Project struct {
+	// Name is the project name compose resolves: COMPOSE_PROJECT_NAME, the
+	// file's top-level `name:`, or the directory, normalized.
+	Name string
 	// Services holds the resolved services in the file, post-profile filtering,
 	// in the order returned by the loader.
 	Services []Service

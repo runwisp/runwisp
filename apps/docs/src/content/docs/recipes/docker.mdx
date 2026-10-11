@@ -2,29 +2,158 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Docker tasks
-description: Run containers from RunWisp tasks. One-shot containers, commands in a running compose service, image prefetch, pruning, and what RunWisp needs when it runs in a container itself.
+description: Schedule jobs in your Docker containers. Run a command in a running compose service, run a compose service in a fresh container, start one-shot containers, and prune images, with RunWisp on the host or in a container.
 head:
     - tag: title
       content: "Running Docker containers from RunWisp tasks (recipe)"
 ---
 
-This page is about tasks whose [`run`](/configuration/tasks/#run) command uses `docker`. To supervise the
-services in an existing `docker-compose.yml`, see
-[From docker-compose](/coming-from/docker-compose/). To run RunWisp itself in a
-container, see [Running in Docker](/getting-started/docker/).
+A task can run a command in one of your running containers, or start a new
+container for each run. Your stack keeps running from `docker compose up`;
+RunWisp only adds the scheduled jobs. To let RunWisp supervise the services of
+a compose file instead, see [From docker-compose](/coming-from/docker-compose/).
 
-## Two flags to get right
+## Run a command in an existing container
 
-**Always use `--rm`.** Without it, every run leaves a stopped container behind.
-An hourly task leaves about 8,700 a year. The Docker daemon does the cleanup,
-so it still happens if RunWisp kills the client on timeout.
+```toml title="runwisp.toml"
+[tasks.laravel-schedule]
+cron            = "* * * * *"
+compose_file    = "/srv/shop/compose.yaml"
+compose_service = "app"
+run             = "php artisan schedule:run"
+```
 
-**Never use `-d`.** A detached `docker run` prints a container ID and exits `0`
-at once. RunWisp records a successful 40 ms run, and the real job's output,
-exit code, and duration are lost. Stay attached: the container's stdout and
-stderr go into the run log, and its exit code becomes the run's exit code.
+RunWisp runs the command in the running `app` container with
+`docker compose exec`, so it gets the app's code, environment, and
+credentials. Use it for anything that belongs to an app: an `artisan` command,
+a `manage.py` job, `psql` against your database.
 
-## A one-shot container
+- The task's [`env`](/configuration/tasks/#env),
+  [`secrets`](/configuration/tasks/#secrets), and
+  [`params`](/configuration/tasks/#params) are passed in, stdout and stderr
+  stay separate, and [fail-fast](/configuration/tasks/#fail-fast) applies.
+- The container must already be running. A run that finds none fails, and its
+  log names the compose project RunWisp searched.
+- [`timeout`](/configuration/tasks/#timeout) can't stop the process inside the
+  container. Limit it in the command too:
+  `run = "timeout 3600 php artisan long-job"`.
+
+[`compose_mode`](/configuration/compose/#running-a-command-in-a-service-compose_mode)
+has the details.
+
+### A container outside compose
+
+For a container that isn't compose-managed, call `docker exec` yourself:
+
+```toml title="runwisp.toml"
+[tasks.laravel-schedule]
+cron = "* * * * *"
+run  = "docker exec myapp php artisan schedule:run"
+```
+
+- **No `-it`.** A run has no terminal, and `docker exec -it` fails with
+  `the input device is not a TTY`. `-t` alone works, but adds `\r` to every
+  line and merges stderr into stdout.
+- **Use a fixed name.** Set `--name` (or `container_name:`) on the container,
+  so the name in the task doesn't change.
+- **Limit the time inside**, as above:
+  `docker exec myapp timeout 3600 php artisan long-job`.
+
+## Run a compose service on a schedule
+
+A job with its own image (a backup, a migration, a report) can be a compose
+service that RunWisp starts on a schedule:
+
+```yaml title="compose.yaml"
+services:
+    # ...
+    backup:
+        image: postgres:17
+        profiles: [jobs]
+        environment:
+            PGPASSWORD: ${DB_PASSWORD}
+        command: pg_dump -h db -U shop -f /dumps/shop.sql shop
+        volumes:
+            - ./dumps:/dumps
+```
+
+```toml title="runwisp.toml"
+[tasks.backup-db]
+cron            = "0 3 * * *"
+compose_file    = "/srv/shop/compose.yaml"
+compose_service = "backup"
+```
+
+Each run is `docker compose run --rm backup`: a new container with the
+service's image, environment, and volumes, removed when it exits. It runs in
+the same compose project as the rest of the stack, so it reaches `db` by name
+and mounts the stack's named volumes.
+
+`profiles: [jobs]` keeps `docker compose up` from starting the job with the
+rest of the stack. RunWisp still runs it.
+
+To run your own command in a fresh container instead of the service's, set
+[`run`](/configuration/tasks/#run) and
+[`compose_mode = "run"`](/configuration/tasks/#compose_mode).
+
+## Which one to use
+
+| The task…                                                          | Use                                                                                                    |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| belongs to an app in a container (`artisan`, `manage.py`, your DB) | [`compose_service`](/configuration/tasks/#compose_service) + [`run`](/configuration/tasks/#run) (exec) |
+| has its own image (`backup`, `migrate`)                            | [`compose_service`](/configuration/tasks/#compose_service) alone (fresh container)                     |
+| targets a container that isn't compose-managed                     | `run = "docker exec …"`                                                                                |
+| runs an image that is in no compose file                           | `run = "docker run --rm …"`                                                                            |
+| belongs to no app (prune, `restic`, `curl` a URL)                  | a plain `run`, with the tools installed where RunWisp runs                                             |
+
+## If RunWisp runs in a container
+
+A task runs inside the RunWisp container. To run `docker` or
+[`compose_file`](/configuration/tasks/#compose_file) tasks from there, the
+`runwisp` service needs three changes:
+
+```yaml title="compose.yaml"
+services:
+    runwisp:
+        image: runwisp/runwisp:latest-docker
+        # ...
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+            - /srv/shop:/srv/shop:ro
+            # ...
+```
+
+1. **A Docker CLI.** A `-docker` tag includes the CLI and the Compose plugin.
+   Without it, compose tasks fail with `docker compose unavailable`. You can
+   also add `docker-cli docker-cli-compose` in your own Dockerfile.
+2. **The host's Docker socket.** It is root access to the host: a task can
+   start a privileged container. Your TOML is trusted input, so this is
+   usually fine, but decide it on purpose.
+3. **The project directory, at its host path.** The CLI in the RunWisp
+   container reads `compose.yaml`, and the host's Docker creates the
+   containers. Compose names the project after the directory and resolves
+   `./dumps` and `env_file:` against it. At the same path, both match what
+   `docker compose up` used on the host. RunWisp only reads the directory, so
+   `:ro` is enough.
+
+With the directory mounted at another path, such as `/srv`, an exec run fails
+with:
+
+```text
+service "app" is not running
+No running "app" container in compose project "srv" (from /srv/compose.yaml). Start the stack, or if it runs under another project name (see `docker compose ls`), set that name as the top-level `name:` in the compose file.
+```
+
+`docker compose ls` on the host shows the project your stack runs under. Mount
+the directory at its host path, or set that project name as `name:` at the top
+of `compose.yaml`.
+
+See [Running in Docker](/getting-started/docker/) for the rest of the
+container's setup.
+
+## Start a container with `docker run`
+
+For an image that is in no compose file:
 
 ```toml title="runwisp.toml"
 [tasks.crunch-numbers]
@@ -45,13 +174,20 @@ docker run --rm --init \\
 """
 ```
 
-- **`--memory` / `--cpus`**: a runaway job gets killed inside its container
-  and shows up as a failed run, instead of the host's OOM killer picking a
-  random process.
+- **`--rm`**: without it, every run leaves a stopped container behind. An
+  hourly task leaves about 8,700 a year. The Docker daemon does the cleanup,
+  so it still happens if RunWisp kills the client on timeout.
+- **No `-d`**: a detached `docker run` prints a container ID and exits `0` at
+  once. RunWisp records a successful 40 ms run, and the real job's output,
+  exit code, and duration are lost. Attached, the container's output goes into
+  the run log and its exit code becomes the run's.
 - **`--init`**: runs a small init as PID 1 that forwards signals and reaps
   zombie processes. Many images ignore SIGTERM without it, so a
   [`timeout`](/configuration/tasks/#timeout) ends in a SIGKILL instead of a
   clean stop.
+- **`--memory` / `--cpus`**: a runaway job gets killed inside its container
+  and shows up as a failed run, instead of the host's OOM killer picking a
+  random process.
 - **`--network`**: give the container only the network it needs. `internal`
   is an example name from `docker network create`.
 - **`--env-file`, not `-e KEY=value`**: values on the command line show up in
@@ -96,73 +232,33 @@ docker run --rm --init --name "$NAME" ghcr.io/example/analytics:current
 
 With [`on_overlap = "skip"`](/configuration/tasks/#on_overlap), two copies can never run at once.
 
-## Run a command in an existing container
+## A long-running container is a service
 
-If the work belongs to an app that already runs in a container (an `artisan`
-command, a `manage.py` job, `psql` against your database), run it there
-instead of installing the app's tools a second time. Name the compose service
-and set [`run`](/configuration/tasks/#run):
+Don't restart a container from cron:
 
 ```toml title="runwisp.toml"
-[tasks.laravel-schedule]
-cron            = "* * * * *"
-compose_file    = "/srv/myapp/compose.yaml"
-compose_service = "app"
-run             = "php artisan schedule:run"
-```
-
-RunWisp runs the command with `docker compose exec` in the running container.
-The task's [`env`](/configuration/tasks/#env), [`secrets`](/configuration/tasks/#secrets), and [`params`](/configuration/tasks/#params) are passed in, stdout and stderr stay
-separate, and [fail-fast](/configuration/tasks/#fail-fast) applies. It works
-whether you started the app with `docker compose up` or RunWisp runs it via
-[`[compose.*]`](/configuration/compose/).
-
-The container must already be running, and [`timeout`](/configuration/tasks/#timeout) can't stop the process
-inside it. [`compose_mode`](/configuration/compose/#running-a-command-in-a-service-compose_mode)
-has the details and the workaround.
-
-### Without compose
-
-For a container that isn't compose-managed, call `docker exec` yourself:
-
-```toml title="runwisp.toml"
-[tasks.laravel-schedule]
+# Don't do this
+[tasks.run-worker-forever]
 cron = "* * * * *"
-run  = "docker exec myapp-app-1 php artisan schedule:run"
+run  = "docker run --rm ghcr.io/example/worker:current"
 ```
 
-- **No TTY.** A run has no terminal. `docker exec -it` fails with
-  `the input device is not a TTY`. `-t` alone works, but adds `\r` to every
-  line and merges stderr into stdout.
-- **Use a fixed name.** Compose may rename `myapp-app-1`. Set
-  `container_name:`, or use `docker compose -f … exec <service>`.
-- **Limit the time inside.** `timeout` can't reach the process in the
-  container, so wrap it: `docker exec myapp-app-1 timeout 3600 php artisan long-job`.
-
-## A fresh container each run
-
-If the job is already a service in your compose file, point a task at it and
-leave out [`run`](/configuration/tasks/#run):
+Use a [service](/configuration/services/). RunWisp restarts it when it exits:
 
 ```toml title="runwisp.toml"
-[tasks.nightly-backup]
-cron            = "0 3 * * *"
-compose_file    = "./docker-compose.yml"
-compose_service = "backup"
+[services.worker]
+restart_delay   = "2s"
+restart_backoff = "exponential"
+run = """
+exec docker run --rm --init \\
+  --env-file=/etc/worker/.env \\
+  --network=internal \\
+  ghcr.io/example/worker:current
+"""
 ```
 
-RunWisp runs `docker compose run --rm`: a new container from the compose
-file's image, env, and networks, removed afterwards. To run your own command in
-a fresh container, set `run` and [`compose_mode = "run"`](/configuration/tasks/#compose_mode).
-
-## Which one to use
-
-| The task…                                                          | Use                                                                                                    |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| belongs to an app in a container (`artisan`, `manage.py`, your DB) | [`compose_service`](/configuration/tasks/#compose_service) + [`run`](/configuration/tasks/#run) (exec) |
-| is already a compose service (`backup`, `migrate`)                 | [`compose_service`](/configuration/tasks/#compose_service) alone (fresh container)                     |
-| targets a container that isn't compose-managed                     | `run = "docker exec …"`                                                                                |
-| belongs to no app (prune, `restic`, `curl` a URL)                  | a plain `run`, with the tools installed where RunWisp runs                                             |
+`exec` replaces the shell with the `docker` client, so the container's exit
+code reaches RunWisp directly.
 
 ## Prefetch images
 
@@ -214,59 +310,8 @@ docker volume create --label keep app-pgdata
 docker volume prune --filter 'label!=keep'
 ```
 
-## A long-running container is a service
-
-Don't restart a container from cron:
-
-```toml title="runwisp.toml"
-# Don't do this
-[tasks.run-worker-forever]
-cron = "* * * * *"
-run  = "docker run --rm ghcr.io/example/worker:current"
-```
-
-Use a [service](/configuration/services/). RunWisp restarts it when it exits:
-
-```toml title="runwisp.toml"
-[services.worker]
-restart_delay   = "2s"
-restart_backoff = "exponential"
-run = """
-exec docker run --rm --init \\
-  --env-file=/etc/worker/.env \\
-  --network=internal \\
-  ghcr.io/example/worker:current
-"""
-```
-
-`exec` replaces the shell with the `docker` client, so the container's exit
-code reaches RunWisp directly.
-
-## If RunWisp runs in a container
-
-A task runs inside the RunWisp container, so every tool it calls must be in
-that image; see
-[Tasks run inside this container](/getting-started/docker/#tasks-run-inside-this-container).
-
-To run `docker` from a task (anything on this page), the container also needs:
-
-1. **A Docker CLI.** Use a `-docker` tag, such as
-   `runwisp/runwisp:latest-docker`. It includes the Compose plugin. Without it,
-   compose-backed runs fail with `docker compose unavailable`. You can also
-   add `docker-cli docker-cli-compose` in your own Dockerfile.
-2. **The host's Docker socket:**
-
-    ```yaml
-    volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
-    ```
-
-Access to the Docker socket is root access to the host: a task can start a
-privileged container. Your TOML is trusted input, so this is usually fine, but
-decide it on purpose.
-
 ## Learn more
 
+- [Running in Docker](/getting-started/docker/)
 - [`[compose.*]`](/configuration/compose/)
 - [Tasks vs services](/concepts/tasks-vs-services/)
-- [Running in Docker](/getting-started/docker/)

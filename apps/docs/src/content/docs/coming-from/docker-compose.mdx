@@ -12,6 +12,9 @@ RunWisp can run the services in an existing compose file. Each compose service
 becomes a RunWisp service with run history, logs, restarts, and notifications.
 The containers still run under Docker, and RunWisp never edits the compose file.
 
+To keep running the stack with `docker compose up` and only schedule jobs in
+it, you don't need this page: see [Docker tasks](/recipes/docker/).
+
 ## Point RunWisp at the compose file
 
 Run `runwisp` in the directory with your `docker-compose.yml`. It detects the

@@ -151,7 +151,7 @@ log_on_full:       enum =drop_old   — drop_new | drop_old | kill
 keep_runs:         int              — row retention (inherits [defaults]); 0..1000000 (0 = keep none)
 keep_for:          dur              — age retention (inherits [defaults])
 run:               string (req)     — shell command; with compose_file it is the command run in the service (see compose_mode)
-compose_file:      path             — run a compose service instead of run=
+compose_file:      path             — run a compose service instead of run=; runs in the file's own compose project (COMPOSE_PROJECT_NAME > top-level name: > dir name), like `docker compose up` there
 compose_service:   string =taskname — which compose service; requires compose_file
 compose_mode:      enum             — exec | run. exec = `docker compose exec` into the service's RUNNING container (requires run);
                                       run = `docker compose run --rm` fresh container (runs `run` if set, else the service's own

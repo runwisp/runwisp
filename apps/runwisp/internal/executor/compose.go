@@ -4,6 +4,7 @@
 package executor
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -17,6 +18,7 @@ import (
 
 	"log/slog"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/composespec"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
@@ -149,7 +151,10 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 		reclaimCtx, cancel := context.WithTimeout(ctx, composeHousekeepingTimeout)
 		slot = b.reclaim(reclaimCtx, task.Name, instanceIndex)
 		cancel()
-		containerName = b.claimName(composeContainerName(ce.ProjectName, ce.Service, instanceIndex), runID)
+		// A unit with no project of its own (compose_file on a task or service)
+		// still needs a container name no other unit uses.
+		prefix := cmp.Or(ce.ProjectName, model.SanitizeTaskName(task.Name))
+		containerName = b.claimName(composeContainerName(prefix, ce.Service, instanceIndex), runID)
 	}
 
 	args := buildComposeArgs(ce, task, run, b.fingerprint, containerName)
@@ -206,7 +211,39 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 		}
 	}
 
+	if ce.Mode == model.ComposeModeExec {
+		proc.ExitHint = func() string { return b.execNotRunningHint(ce) }
+	}
+
 	return proc, nil
+}
+
+// execNotRunningHint explains a failed exec whose target container is not
+// running. Compose's own `service "app" is not running` does not say which
+// project it searched, and a project resolved from the wrong directory (the
+// compose file mounted into the RunWisp container at another path) is the
+// usual cause. Returns "" when the container is running, so a failure of the
+// command itself gets no hint, or when Docker can't tell.
+func (b *ComposeBackend) execNotRunningHint(ce *model.ComposeExecution) string {
+	ctx, cancel := context.WithTimeout(context.Background(), composeHousekeepingTimeout)
+	defer cancel()
+	args := append(composeProjectArgs(ce), "ps", "-q", ce.Service)
+	cmd := exec.CommandContext(ctx, b.dockerCmd, args...)
+	cmd.Dir = ce.WorkingDir
+	cmd.Env = buildProcessEnv(os.Environ())
+	out, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(out)) != "" {
+		return ""
+	}
+	project := ce.ProjectName
+	if project == "" {
+		if p, err := composespec.Load(ce.File, ce.Profiles, ce.EnvFile, ce.WorkingDir); err == nil {
+			project = p.Name
+		}
+	}
+	return fmt.Sprintf("No running %q container in compose project %q (from %s). "+
+		"Start the stack, or if it runs under another project name (see `docker compose ls`), "+
+		"set that name as the top-level `name:` in the compose file.", ce.Service, project, ce.File)
 }
 
 // claimName returns the --name for a run of one slot: the plain name unless an
@@ -362,6 +399,21 @@ func parseContainerIDs(out []byte) []string {
 // fingerprint scopes the ownership labels stamped on the container, and
 // containerName is the --name used in run mode.
 func buildComposeArgs(ce *model.ComposeExecution, task *model.Task, run *model.Run, fingerprint, containerName string) []string {
+	args := composeProjectArgs(ce)
+	switch ce.Mode {
+	case model.ComposeModeStack:
+		args = append(args, "up", "--abort-on-container-exit", "--no-log-prefix")
+	case model.ComposeModeExec:
+		args = appendComposeExecArgs(args, ce, task, run)
+	default:
+		args = appendComposeRunArgs(args, ce, task, run, fingerprint, containerName)
+	}
+	return args
+}
+
+// composeProjectArgs is the `compose -f … [-p …] [--profile …] [--env-file …]`
+// prefix that selects the project, shared by every compose subcommand.
+func composeProjectArgs(ce *model.ComposeExecution) []string {
 	args := []string{"compose", "-f", ce.File}
 	if ce.ProjectName != "" {
 		args = append(args, "-p", ce.ProjectName)
@@ -371,15 +423,6 @@ func buildComposeArgs(ce *model.ComposeExecution, task *model.Task, run *model.R
 	}
 	for _, ef := range ce.EnvFile {
 		args = append(args, "--env-file", ef)
-	}
-
-	switch ce.Mode {
-	case model.ComposeModeStack:
-		args = append(args, "up", "--abort-on-container-exit", "--no-log-prefix")
-	case model.ComposeModeExec:
-		args = appendComposeExecArgs(args, ce, task, run)
-	default:
-		args = appendComposeRunArgs(args, ce, task, run, fingerprint, containerName)
 	}
 	return args
 }

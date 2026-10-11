@@ -336,9 +336,11 @@ compose_service = "app"
 		"exec mode must let compose resolve the project the way `docker compose -f … exec` does")
 }
 
-// Run mode still names the project after the unit: it creates the container, so
-// it owns the namespace and the deterministic --name built from it.
-func TestComposeExpansion_RunModeKeepsProjectName(t *testing.T) {
+// Run mode leaves the project to compose too. Naming it after the unit put the
+// fresh container in a project of its own: its own network, where the stack's
+// `db` did not resolve, and its own named volumes, so `pgdata` was a new empty
+// volume instead of the stack's data.
+func TestComposeExpansion_RunModeLeavesProjectToCompose(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[tasks.nightly-backup]
 cron            = "0 3 * * *"
 compose_file    = "./docker-compose.yml"
@@ -348,7 +350,10 @@ compose_service = "backup"
 
 	ce, ok := cfg.Tasks[0].ExecutionDef.(*model.ComposeExecution)
 	require.True(t, ok)
-	assert.Equal(t, "nightly-backup", ce.ProjectName)
+	assert.Equal(t, model.ComposeModeRun, ce.Mode)
+	assert.Empty(t, ce.ProjectName,
+		"run mode must join the stack the compose file describes, not a project named after the task")
+	assert.Empty(t, cfg.Tasks[0].Compose.ProjectName)
 }
 
 // No `run` keeps the historical behaviour: a fresh container running the
@@ -448,7 +453,7 @@ compose_service = "web"
 	ce, ok := api.ExecutionDef.(*model.ComposeExecution)
 	require.True(t, ok)
 	assert.Equal(t, "web", ce.Service)
-	assert.Equal(t, "api", ce.ProjectName)
+	assert.Empty(t, ce.ProjectName)
 }
 
 // TestComposeExpansion_PathsAreAbsoluteUnderRelativeConfigDir reproduces the

@@ -388,6 +388,35 @@ func TestAbnormalExitMessage(t *testing.T) {
 		abnormalExitMessage(errors.New("docker gone")), "a backend error is not a signal death")
 }
 
+// A backend's ExitHint explains a non-zero exit as a system line; a clean exit
+// never asks for one.
+func TestExecuteExitHint(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		exitCode int
+		want     bool
+	}{
+		{"failed exit gets the hint", 1, true},
+		{"clean exit asks for none", 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			r, eb := newScriptedExecutor(t, &scriptedBackend{exitCode: tc.exitCode, exitHint: func() string {
+				calls++
+				return "no running container"
+			}})
+			getLogPath := captureLogPath(eb)
+
+			r.Execute(context.Background(), &model.Task{Name: "t", Run: "x"}, newRun())
+
+			logContent, err := os.ReadFile(getLogPath())
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, strings.Contains(string(logContent), "no running container"))
+			assert.Equal(t, tc.want, calls == 1)
+		})
+	}
+}
+
 func TestExecuteCommandStartFailure(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "executor-test")
 	require.NoError(t, err)

@@ -392,27 +392,25 @@ func (w *taskServiceWireCore) applyComposeBackend(task *model.Task, name, label 
 		return err
 	}
 	command := ""
-	// Exec mode targets a container someone else created, under a project name
-	// RunWisp cannot know; the task name would make `compose exec` search a
-	// project that does not exist. Leaving it empty lets compose resolve the
-	// project as a hand-typed `docker compose -f … exec` would: from the file's
-	// directory, its top-level `name:`, or COMPOSE_PROJECT_NAME.
-	projectName := name
 	if mode == model.ComposeModeExec {
 		command = w.Run
-		projectName = ""
 	}
+	// No project name: compose resolves it as a hand-typed `docker compose -f …`
+	// would (COMPOSE_PROJECT_NAME, the file's top-level `name:`, or its
+	// directory), so the unit lands in the stack the file describes. Exec finds
+	// the stack's running container, and a fresh `run` container joins the
+	// stack's network and named volumes. Naming the project after the unit put
+	// it in a namespace of its own, where `db` did not resolve and `pgdata` was
+	// a new, empty volume.
 	task.ExecutionDef = &model.ComposeExecution{
-		File:        w.ComposeFile,
-		ProjectName: projectName,
-		Service:     svc,
-		Mode:        mode,
-		Command:     command,
+		File:    w.ComposeFile,
+		Service: svc,
+		Mode:    mode,
+		Command: command,
 	}
 	task.Compose = &model.TaskComposeRef{
-		File:        w.ComposeFile,
-		Service:     svc,
-		ProjectName: name,
+		File:    w.ComposeFile,
+		Service: svc,
 	}
 	return nil
 }

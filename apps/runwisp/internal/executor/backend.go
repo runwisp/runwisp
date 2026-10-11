@@ -29,6 +29,10 @@ type Process struct {
 	Stderr  io.ReadCloser // error stream (nil when not applicable)
 	Wait    func() (exitCode int, err error)
 	Cleanup func() // optional: clean up temp resources after Wait
+	// ExitHint, when non-nil, is called after a non-zero exit the run did not
+	// cause itself (no timeout, stop, or kill) and may return a system log line
+	// explaining it. "" adds nothing.
+	ExitHint func() string
 	// ForceKill, when non-nil, immediately SIGKILLs the running process (and
 	// its group, when applicable). Unlike the cmd.Cancel ladder this skips
 	// the per-task graceful_stop window — used by the daemon shutdown

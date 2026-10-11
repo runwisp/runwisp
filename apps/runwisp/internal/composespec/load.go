@@ -77,7 +77,7 @@ func Load(file string, profiles, envFiles []string, workingDir string) (*Project
 		})
 	}
 
-	return &Project{Services: services}, nil
+	return &Project{Name: project.Name, Services: services}, nil
 }
 
 // bindMountSources extracts the resolved host-side source path of every
