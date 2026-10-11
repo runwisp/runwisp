@@ -8,6 +8,8 @@ head:
       content: "Bun.cron with RunWisp: scheduled tasks you can see"
 ---
 
+**since**: `1.7`
+
 `@runwisp/node` runs under Bun 1.1 or later the same way it runs under Node.js.
 It also replaces both forms of `Bun.cron`.
 
@@ -85,7 +87,7 @@ await Bun.cron.remove("weekly-report");
 On macOS, write the task yourself. The command is the one Bun runs, which calls
 the script's `scheduled()` handler:
 
-```toml
+```toml title="runwisp.toml"
 # Was: await Bun.cron("./worker.ts", "30 2 * * MON", "weekly-report");
 [tasks.weekly-report]
 cron = "30 2 * * MON"

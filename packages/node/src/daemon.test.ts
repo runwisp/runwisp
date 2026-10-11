@@ -207,16 +207,20 @@ describe("stale daemon", () => {
         return { data, settings, paths: daemonPaths(data), daemon };
     }
 
+    // A shell task sees the daemon's whole env; an sdk one runs in the app.
+    const SHELL = JSON.stringify({ tasks: { backup: { run: "./backup.sh" } } });
+    const SDK = JSON.stringify({ tasks: { nightly: { sdk: true } } });
+
     it("is fresh when started with this env and binary", () => {
         const { data, settings, paths, daemon } = setup();
         try {
-            recordLaunch(paths, daemon.pid, launchFingerprint(settings));
-            expect(staleReason(settings, paths, daemon)).toBeUndefined();
+            recordLaunch(paths, daemon.pid, launchFingerprint(settings, SHELL));
+            expect(staleReason(settings, paths, daemon, SHELL)).toBeUndefined();
             // Unknown: nothing recorded, or recorded for another daemon.
             rmSync(paths.launch);
-            expect(staleReason(settings, paths, daemon)).toBeUndefined();
+            expect(staleReason(settings, paths, daemon, SHELL)).toBeUndefined();
             recordLaunch(paths, 999, "other");
-            expect(staleReason(settings, paths, daemon)).toBeUndefined();
+            expect(staleReason(settings, paths, daemon, SHELL)).toBeUndefined();
         } finally {
             rmSync(data, { recursive: true, force: true });
         }
@@ -226,10 +230,31 @@ describe("stale daemon", () => {
         const { data, settings, paths, daemon } = setup();
         try {
             vi.stubEnv("API_SECRET", "old-secret");
-            recordLaunch(paths, daemon.pid, launchFingerprint(settings));
+            recordLaunch(paths, daemon.pid, launchFingerprint(settings, SHELL));
             expect(readFileSync(paths.launch, "utf8")).not.toContain("old-secret");
             vi.stubEnv("API_SECRET", "rotated");
-            expect(staleReason(settings, paths, daemon)).toContain("environment");
+            expect(staleReason(settings, paths, daemon, SHELL)).toContain("environment");
+        } finally {
+            rmSync(data, { recursive: true, force: true });
+        }
+    });
+
+    // PM2 cluster mode gives each copy its own NODE_APP_INSTANCE.
+    it("ignores env RunWisp doesn't read when every unit runs in the app", () => {
+        const { data, settings, paths, daemon } = setup();
+        try {
+            vi.stubEnv("NODE_APP_INSTANCE", "0");
+            recordLaunch(paths, daemon.pid, launchFingerprint(settings, SDK));
+            vi.stubEnv("NODE_APP_INSTANCE", "1");
+            expect(staleReason(settings, paths, daemon, SDK)).toBeUndefined();
+
+            const named = JSON.stringify({
+                tasks: { nightly: { sdk: true, env: { TOKEN: "${API_SECRET}" } } },
+            });
+            vi.stubEnv("API_SECRET", "old-secret");
+            recordLaunch(paths, daemon.pid, launchFingerprint(settings, named));
+            vi.stubEnv("API_SECRET", "rotated");
+            expect(staleReason(settings, paths, daemon, named)).toContain("environment");
         } finally {
             rmSync(data, { recursive: true, force: true });
         }
@@ -238,7 +263,7 @@ describe("stale daemon", () => {
     it("is stale when it runs another runwisp version", () => {
         const { data, settings, paths, daemon } = setup();
         try {
-            expect(staleReason(settings, paths, { ...daemon, version: "1.1.0" })).toBe(
+            expect(staleReason(settings, paths, { ...daemon, version: "1.1.0" }, SHELL)).toBe(
                 `it runs runwisp 1.1.0 and ${settings.binary} is 1.2.0`,
             );
         } finally {

@@ -75,15 +75,25 @@ Machine-readable reference for agents: https://docs.runwisp.com/llms.txt`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if err := resolveLogConfig(); err != nil {
+		if err := resolveFlags(cmd); err != nil {
 			return err
 		}
-		if err := resolvePortConfig(cmd); err != nil {
-			return err
-		}
-		resolvePathDefaults(os.Geteuid())
 		return datadir.EnsureDir(flags.DataDir)
 	},
+}
+
+// resolveFlags finalizes the global flags from the command line and the
+// environment. The root's pre-run then creates the data dir; a command that
+// never touches it calls this alone.
+func resolveFlags(cmd *cobra.Command) error {
+	if err := resolveLogConfig(); err != nil {
+		return err
+	}
+	if err := resolvePortConfig(cmd); err != nil {
+		return err
+	}
+	resolvePathDefaults(os.Geteuid())
+	return nil
 }
 
 func init() {

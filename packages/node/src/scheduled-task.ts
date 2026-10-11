@@ -44,7 +44,7 @@ export interface NodeCronOptions {
     missedExecutionTolerance?: number;
     /** Ignored: a background task's process starts per run, under the run's timeout. */
     startTimeout?: number;
-    /** Ignored: no timer in this process holds the schedule. close() lets the process exit. */
+    /** true: this task doesn't keep the process alive, as with node-cron. */
     unref?: boolean;
 }
 
@@ -110,6 +110,8 @@ type Listener = (context: TaskContext) => unknown;
 /** What a task needs from the RunWisp instance that owns it. */
 export interface TaskControl {
     setPaused(name: string, paused: boolean): void;
+    /** Whether the task keeps the process alive: node-cron's ref() and unref(). */
+    setHeld(name: string, held: boolean): void;
     remove(name: string): void;
     /** task's next firing: what RunWisp reported while it is still ahead, else computed. */
     nextRun(task: ScheduledTask, pattern: string, timezone: string | undefined): Date | null;
@@ -309,14 +311,14 @@ export class ScheduledTask {
         return this.#last;
     }
 
-    /** No-op: RunWisp holds the schedule, not a timer in this process. */
+    /** Keeps the process alive while this task is scheduled, the default. */
     ref(): void {
-        // Nothing keeps the process alive per task.
+        if (this.#status !== "destroyed") this.#control.setHeld(this.id, true);
     }
 
-    /** No-op: RunWisp holds the schedule, not a timer in this process. */
+    /** Lets the process exit even though this task is scheduled. */
     unref(): void {
-        // Nothing keeps the process alive per task.
+        if (this.#status !== "destroyed") this.#control.setHeld(this.id, false);
     }
 
     on(event: TaskEvent, listener: Listener): void {

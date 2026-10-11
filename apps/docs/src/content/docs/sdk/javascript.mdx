@@ -8,6 +8,8 @@ head:
       content: "RunWisp JavaScript SDK (@runwisp/node): scheduled tasks you can see"
 ---
 
+**since**: `1.7`
+
 `@runwisp/node` schedules tasks from your Node.js or Bun app. Your callbacks run in the
 app. RunWisp records every run with its output, exit code and duration. See
 [SDKs](/sdk/) for how it works.
@@ -203,10 +205,13 @@ Copies are told apart from other apps by [`app`](#app). RunWisp refuses a
 different app while one is connected, so give each app its own
 [data directory](#data).
 
-Shell tasks run in RunWisp with the environment of the copy that started it.
-When a copy starts with a different environment or a different `runwisp`
-binary, RunWisp restarts once that copy is the only one connected. Runs in
-progress get their [`graceful_stop`](/configuration/tasks/#graceful_stop).
+Shell tasks and `${VAR}` in the config use the environment of the copy that
+started RunWisp. When a copy starts with a different `runwisp` binary, or with
+a different value for a variable RunWisp uses, RunWisp restarts once that copy
+is the only one connected. With shell tasks, that is any variable; with only
+tasks defined in code, it is `RUNWISP_*`, `TZ` and the variables the config
+names. Runs in progress get their
+[`graceful_stop`](/configuration/tasks/#graceful_stop).
 
 If RunWisp stops or can't start, the app logs why and tries again, waiting up
 to 30 seconds between attempts.

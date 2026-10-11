@@ -131,10 +131,7 @@ func runUpgrade(cmd *cobra.Command, f Flags, yesFlag bool, restartFlag string) e
 		return err
 	}
 
-	if !isDaemonRunning(f) {
-		if os.Geteuid() == 0 && os.Getenv("SUDO_USER") != "" {
-			fmt.Fprintln(out, "If a daemon runs as another user, restart it as that user with 'runwisp restart'.")
-		}
+	if !restartable(ctx, f, out, latest) {
 		return nil
 	}
 	choice, err := resolveRestartChoice(restartFlag, in, out, isTTY, latest)
@@ -171,6 +168,22 @@ func upgradeBinary(ctx context.Context, cmd *cobra.Command, argv []string, lates
 	}
 	fmt.Fprintf(out, "Upgraded %s to %s.\n", exe, latest)
 	return nil
+}
+
+// restartable reports whether there's a daemon here that upgrade can restart,
+// and otherwise prints how it gets the new version.
+func restartable(ctx context.Context, f Flags, out io.Writer, latest string) bool {
+	if !isDaemonRunning(f) {
+		if os.Geteuid() == 0 && os.Getenv("SUDO_USER") != "" {
+			fmt.Fprintln(out, "If a daemon runs as another user, restart it as that user with 'runwisp restart'.")
+		}
+		return false
+	}
+	if info, err := apiclient.NewUnix(localAPISocketPath(f)).GetInstanceInfo(ctx); err == nil && isAppDaemon(info) {
+		fmt.Fprintf(out, "The daemon here was started by an app: restart the app to switch it to %s.\n", latest)
+		return false
+	}
+	return true
 }
 
 // resolveRestartChoice returns flag when set, asks on a terminal, and falls

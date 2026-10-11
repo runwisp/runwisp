@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { daemonPaths, healthy, stopDaemon } from "../src/daemon.ts";
+import { call, daemonPaths, field, healthy, stopDaemon } from "../src/daemon.ts";
 import { binary, freePort, trigger } from "./helpers.ts";
 
 const APP = fileURLToPath(new URL("./fixtures/app.ts", import.meta.url));
@@ -94,6 +94,36 @@ describe("copies of the app, crashes and stops", () => {
         await closeCopy(second);
         await expect.poll(() => healthy(socket), { timeout: 5_000 }).toBe(false);
     });
+
+    // A deploy closes copies on purpose: their services stop, they don't fail.
+    it("records a closed copy's service as stopped and runs it in the next copy", async () => {
+        const beat = async (): Promise<unknown[]> => {
+            const runs = await call(socket, "GET", "/api/runs?taskName=beat&limit=10");
+            const items: unknown = field(runs.body, "items");
+            if (!Array.isArray(items)) return [];
+            const list: unknown[] = items;
+            return list;
+        };
+        const first = await startCopy();
+        await startCopy();
+        await expect.poll(async () => (await beat()).length, { timeout: 5_000 }).toBe(1);
+
+        await closeCopy(first);
+        await expect.poll(async () => (await beat()).length, { timeout: 5_000 }).toBe(2);
+        const [running, closed] = await beat();
+        expect(field(closed, "endReason")).toBe("stopped");
+        expect(field(running, "status")).toBe("running");
+    });
+
+    it("lets a script exit once it destroyed its last task, as node-cron does", async () => {
+        const script = fileURLToPath(new URL("./fixtures/destroyed.ts", import.meta.url));
+        const child = spawn(process.execPath, [script, data, String(port), binary], {
+            stdio: "inherit",
+        });
+        copies.push(child);
+        await exited(child);
+        expect(child.exitCode).toBe(0);
+    }, 20_000);
 
     it("keeps RunWisp for a restarting app, and stops it once the app is gone for good", async () => {
         const only = await startCopy();

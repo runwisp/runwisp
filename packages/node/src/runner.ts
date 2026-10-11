@@ -72,13 +72,6 @@ export class Runner {
         }
     }
 
-    /** Asks every run of the given tasks to stop. */
-    stopTasks(tasks: Iterable<string>): void {
-        for (const task of tasks) {
-            for (const execution of this.running.get(task) ?? []) execution.abort.abort();
-        }
-    }
-
     /** Takes no more runs, and resolves once no callback is running. */
     async close(): Promise<void> {
         this.closing = true;

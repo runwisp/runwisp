@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A task or service with `compose_file` now runs in the compose file's own project, like `docker compose up` in that directory. A fresh container joins the stack's network and named volumes, so a scheduled job can reach `db` and see the stack's data instead of an empty volume of its own.
 - The TUI log search (`/`) and the shutdown spinner use the TUI's colors instead of falling back to the terminal's own.
 - The TUI log search (`/`) now shows its results every time instead of sometimes staying empty.
+- `runwisp validate` no longer creates the data directory.
 
 ## [1.6.0] - 2026-10-10
 

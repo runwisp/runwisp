@@ -95,6 +95,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db *storage.SQLi
 	exec := initExecutor(cfg.Config, eventBus, f.LogDir(), cfg.Fingerprint, usage, apps)
 
 	taskManager, tasksMap := initTaskManager(cfg, db, exec, eventBus)
+	apps.ControlServices(taskManager)
 	// Single guarded owner of the live task set. Boot-only helpers below still
 	// read the bare tasksMap (no reload can race them yet); long-lived readers
 	// (retention, server, station snapshot) and the reconciler go through the

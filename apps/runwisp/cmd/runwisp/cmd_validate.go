@@ -23,6 +23,9 @@ var validateCmd = &cobra.Command{
 	Example: `  runwisp validate
   runwisp validate -c ./deploy/runwisp.toml
   runwisp validate --json   # machine-readable; errors carry key/line/column`,
+	// Only reads the config: no data dir to create, unlike the root's pre-run.
+	// An SDK validates on every schedule(), from wherever the app runs.
+	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error { return resolveFlags(cmd) },
 	RunE: func(cmd *cobra.Command, args []string) error {
 		f, err := withAppDocument(flags, cmd.InOrStdin(), validateApp)
 		if err != nil {

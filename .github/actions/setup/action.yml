@@ -52,7 +52,7 @@ runs:
 
     # packages/node's e2e runs a TypeScript app fixture with the node on PATH,
     # which needs built-in type stripping (Node 22.18+).
-    - uses: actions/setup-node@v6
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
       with:
         node-version: '24'
 

@@ -414,16 +414,38 @@ function daemonEnv(settings: Settings): NodeJS.ProcessEnv {
 }
 
 /**
- * A hash of what a daemon started now would run with: the binary path and its
- * whole env. Holds no env value, so it is safe to store and log.
+ * A hash of what a daemon started now with document would run with: the
+ * binary path and the env it reads. That is the whole env when the config has
+ * units that run in the daemon, whose shell sees it all. Else it is only what
+ * RunWisp itself reads: RUNWISP_*, TZ and the ${VAR}s the config names, so
+ * a variable that differs per copy, like PM2's NODE_APP_INSTANCE, doesn't make
+ * the daemon stale. Holds no env value, so it is safe to store and log.
  */
-export function launchFingerprint(settings: Settings): string {
+export function launchFingerprint(settings: Settings, document: string): string {
+    const named = new Set(Array.from(document.matchAll(/\$\{([^}:]+)\}/g), (m) => m[1]));
+    const whole = runsInDaemon(document);
     const env = Object.entries(daemonEnv(settings))
         .filter((entry): entry is [string, string] => entry[1] !== undefined)
+        .filter(
+            ([name]) => whole || name.startsWith("RUNWISP_") || name === "TZ" || named.has(name),
+        )
         .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
     return createHash("sha256")
         .update(JSON.stringify([settings.binary, env]))
         .digest("hex");
+}
+
+/** Whether document has a task or service that runs in the daemon rather than in the app. */
+function runsInDaemon(document: string): boolean {
+    const doc: unknown = JSON.parse(document);
+    return ["tasks", "services"].some((kind) => {
+        const units = field(doc, kind);
+        return (
+            typeof units === "object" &&
+            !!units &&
+            Object.values(units).some((unit) => field(unit, "sdk") !== true)
+        );
+    });
 }
 
 /** Notes what the daemon with pid was started with, for staleReason. */
@@ -452,6 +474,7 @@ export function staleReason(
     settings: Settings,
     paths: DaemonPaths,
     daemon: Identity,
+    document: string,
 ): string | undefined {
     const version = binaryVersion(settings.binary);
     if (version !== undefined && version !== daemon.version) {
@@ -464,7 +487,7 @@ export function staleReason(
         return undefined;
     }
     if (field(launch, "pid") !== daemon.pid) return undefined;
-    if (field(launch, "fingerprint") === launchFingerprint(settings)) return undefined;
+    if (field(launch, "fingerprint") === launchFingerprint(settings, document)) return undefined;
     return "the app's environment or runwisp binary path changed since it started";
 }
 

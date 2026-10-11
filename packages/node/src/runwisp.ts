@@ -86,6 +86,8 @@ interface TaskJob {
     options: TaskOptions;
     /** A stopped node-cron task: in RunWisp without its cron. */
     paused: boolean;
+    /** Keeps the process alive; false after node-cron's unref. */
+    held: boolean;
     task: ScheduledTask;
     internals: TaskInternals;
 }
@@ -201,6 +203,12 @@ export class RunWisp {
             if (!job) return;
             job.paused = paused;
             this.changed();
+        },
+        setHeld: (name, held) => {
+            const job = this.tasks.get(name);
+            if (!job) return;
+            job.held = held;
+            this.holdProcess();
         },
         remove: (name) => {
             this.tasks.delete(name);
@@ -400,9 +408,8 @@ export class RunWisp {
         // run RunWisp sent meanwhile finds its task gone.
         for (const job of this.tasks.values()) job.internals.retire();
         this.tasks.clear();
-        // The next copy, if any, runs them now; the last copy hears nothing
-        // back from RunWisp, so this can't wait to be told.
-        this.runner.stopTasks(this.services.keys());
+        // RunWisp stops the services on leave, so they end as stopped, not
+        // failed, and the next copy, if any, runs them now.
         await this.runner.close();
         process.off("uncaughtExceptionMonitor", this.runner.reportCrash);
         const session = this.session;
@@ -470,7 +477,10 @@ export class RunWisp {
         name: string | undefined,
         fn: TaskFn,
         options: TaskOptions,
-        nodeCron: Pick<NodeCronOptions, "maxExecutions" | "logger" | "suppressMissedWarning">,
+        nodeCron: Pick<
+            NodeCronOptions,
+            "maxExecutions" | "logger" | "suppressMissedWarning" | "unref"
+        >,
     ): ScheduledTask {
         this.assertName(id, this.services);
         this.check(this.unitConfig({ tasks: { [id]: { ...options, sdk: true } } }));
@@ -494,7 +504,13 @@ export class RunWisp {
             logger: nodeCron.logger,
             suppressMissedWarning: nodeCron.suppressMissedWarning,
         });
-        this.tasks.set(id, { options, paused: true, task, internals });
+        this.tasks.set(id, {
+            options,
+            paused: true,
+            held: nodeCron.unref !== true,
+            task,
+            internals,
+        });
         this.changed();
         return task;
     }
@@ -592,7 +608,18 @@ export class RunWisp {
         return JSON.stringify({ ...this.config, tasks, services } satisfies Config);
     }
 
+    /**
+     * The connection to RunWisp keeps the process alive only while a task or
+     * service would, as node-cron's timers do: a script that destroys its
+     * last task exits.
+     */
+    private holdProcess(): void {
+        const held = this.services.size > 0 || [...this.tasks.values()].some((job) => job.held);
+        this.session?.hold(held);
+    }
+
     private changed(): void {
+        this.holdProcess();
         this.sync().catch(() => {
             // Reported once by the queue below.
         });
@@ -648,10 +675,11 @@ export class RunWisp {
     /** Starts RunWisp with this app's config unless another copy already did, and connects to it. */
     private async attach(): Promise<void> {
         await prepareDirs(this.settings.data, this.paths);
+        const document = this.document();
         let started: number | undefined;
         if (!(await healthy(this.paths.socket))) {
             const port = await choosePort(this.settings, this.paths);
-            started = await startDaemon(this.settings, this.paths, port, this.document());
+            started = await startDaemon(this.settings, this.paths, port, document);
         }
         const daemon = await identity(this.paths.socket);
         if (daemon.configSource !== "app") {
@@ -660,10 +688,10 @@ export class RunWisp {
             );
         }
         if (started === daemon.pid) {
-            recordLaunch(this.paths, daemon.pid, launchFingerprint(this.settings));
+            recordLaunch(this.paths, daemon.pid, launchFingerprint(this.settings, document));
             this.stale = undefined;
         } else {
-            this.stale = staleReason(this.settings, this.paths, daemon);
+            this.stale = staleReason(this.settings, this.paths, daemon, document);
         }
         const events: SessionEvents = {
             role: (session, active) => {
@@ -714,6 +742,7 @@ export class RunWisp {
             app: this.settings.app,
             pid: process.pid,
         });
+        this.holdProcess();
         this.retries = 0;
         if (this.stale !== undefined && !this.session.alone) {
             this.log?.warn(

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"sync"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
@@ -17,6 +18,9 @@ import (
 // handlerRun is one run an app is serving. Its pipes feed the executor, which
 // writes the log, applies log caps and redaction, and publishes the lines.
 type handlerRun struct {
+	task    string
+	service bool
+
 	stdout, stderr *io.PipeWriter
 	done           chan struct{}
 	once           sync.Once
@@ -54,13 +58,13 @@ func (h *Host) Start(ctx context.Context, task *model.Task, run *model.Run, def 
 
 	stdoutR, stdoutW := io.Pipe()
 	stderrR, stderrW := io.Pipe()
-	r := &handlerRun{stdout: stdoutW, stderr: stderrW, done: make(chan struct{})}
+	r := &handlerRun{task: task.Name, service: task.Kind.IsService(), stdout: stdoutW, stderr: stderrW, done: make(chan struct{})}
 	m := message{
 		Type: "run",
 		Run:  run.ID,
 		Task: task.Name,
 		// What a shell run would add; the app's own environment stays the app's.
-		Env:    task.EnvOverlay(run.Params),
+		Env:    runEnv(task, run),
 		Params: run.Params,
 	}
 	if run.TriggeredBy == model.TriggeredByCron {
@@ -86,6 +90,14 @@ func (h *Host) Start(ctx context.Context, task *model.Task, run *model.Run, def 
 		},
 		ForceKill: func() { r.finish(-1) },
 	}, nil
+}
+
+// runEnv is the env a run's callback gets: its instance index beneath what
+// a shell run would add from the task.
+func runEnv(task *model.Task, run *model.Run) map[string]string {
+	env := executor.InstanceIndexEnv(run)
+	maps.Copy(env, task.EnvOverlay(run.Params))
+	return env
 }
 
 // stopOnCancel asks the app to stop the run once its context ends (a stop,

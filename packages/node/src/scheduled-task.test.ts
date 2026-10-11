@@ -29,6 +29,7 @@ function setup(fn: TaskFn, settings: Partial<TaskSettings> = {}) {
     };
     const control: TaskControl = {
         setPaused: (name, paused) => calls.push(`${name}:${paused ? "pause" : "resume"}`),
+        setHeld: (name, held) => calls.push(`${name}:${held ? "ref" : "unref"}`),
         remove: (name) => calls.push(`${name}:remove`),
         nextRun: () => new Date(Date.now() + 60_000),
         nextRuns: (pattern, timezone, count) => {
@@ -84,6 +85,15 @@ describe("ScheduledTask", () => {
         task.start();
         task.destroy();
         expect(events).toEqual(["task:started", "task:stopped", "task:destroyed"]);
+    });
+
+    it("passes ref and unref on to RunWisp until it is destroyed", () => {
+        const { task, calls } = setup(() => undefined);
+        task.unref();
+        task.ref();
+        task.destroy();
+        task.unref();
+        expect(calls).toEqual(["nightly:unref", "nightly:ref", "nightly:remove"]);
     });
 
     it("answers getNextRuns and match from the schedule, whatever the status", () => {

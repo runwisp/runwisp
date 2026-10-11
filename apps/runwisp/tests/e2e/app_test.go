@@ -92,7 +92,7 @@ func TestAppDaemon(t *testing.T) {
 	assert.Equal(t, "run", msg["type"])
 	assert.Equal(t, run.ID, msg["run"])
 	assert.Equal(t, "digest", msg["task"])
-	assert.Equal(t, map[string]any{"REGION": "eu"}, msg["env"])
+	assert.Equal(t, map[string]any{"REGION": "eu", "RUNWISP_INSTANCE_INDEX": "0"}, msg["env"])
 
 	app.send(map[string]any{"type": "output", "run": run.ID, "stream": "stdout", "line": "sent 3 emails"})
 	app.send(map[string]any{"type": "exit", "run": run.ID, "code": 3})

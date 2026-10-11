@@ -195,6 +195,12 @@ export class Session {
         this.send({ type: "exit", run, code });
     }
 
+    /** Whether the connection keeps the process alive. */
+    hold(held: boolean): void {
+        if (held) this.socket.ref();
+        else this.socket.unref();
+    }
+
     /** Replaces the daemon's config with doc (JSON), as a reload would. One at a time. */
     config(doc: string): Promise<ConfigReply> {
         return new Promise((resolve) => {

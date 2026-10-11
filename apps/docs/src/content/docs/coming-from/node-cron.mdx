@@ -8,6 +8,8 @@ head:
       content: "Migrate from node-cron to RunWisp: see what ran, when, and why it failed"
 ---
 
+**since**: `1.7`
+
 `@runwisp/node` runs your node-cron tasks under RunWisp. Your callbacks still
 run inside your app. RunWisp schedules them and records every run with its
 output, exit code and duration.
@@ -64,7 +66,7 @@ export: `import { solvePath } from "@runwisp/node"`.
 | `distributed`, `runCoordinator`, `distributedLease` | Ignored, with a warning. Each run happens once per data directory. `setRunCoordinator()` is ignored the same way.                                                           |
 | `maxRandomDelay`                                    | Ignored, with a warning. Use `jitter` with `task()`.                                                                                                                        |
 | `missedExecutionTolerance`                          | Ignored. A run is missed only while RunWisp is down.                                                                                                                        |
-| `startTimeout`, `unref`                             | Ignored. A task file starts per run, and nothing in the app keeps the process alive per task.                                                                               |
+| `startTimeout`                                      | Ignored. A task file starts per run.                                                                                                                                        |
 
 ## Task files
 

@@ -431,9 +431,9 @@ describe("RunWisp with a daemon", () => {
         return { data, daemon, cron, lines };
     };
 
-    // The last copy hears no role change when it leaves: close() stops its
-    // services itself rather than waiting for the daemon to go away.
-    it("stops its services on close() without waiting for RunWisp", async () => {
+    // RunWisp stops the services of a copy that leaves, so their runs end as
+    // stopped; close() waits for them to return.
+    it("stops its services on close() when RunWisp asks", async () => {
         const { daemon, cron } = setup();
         await daemon.listen();
         let started = false;
@@ -449,9 +449,13 @@ describe("RunWisp with a daemon", () => {
             expect(started).toBe(true);
         });
 
-        const begun = Date.now();
-        await cron.close();
-        expect(Date.now() - begun).toBeLessThan(1000);
+        const closing = cron.close();
+        await vi.waitFor(() => {
+            expect(daemon.received).toContainEqual({ type: "close" });
+        });
+        expect(daemon.received).not.toContainEqual(expect.objectContaining({ type: "exit" }));
+        daemon.send({ type: "stop", run: "r1" });
+        await closing;
         expect(daemon.received).toContainEqual({ type: "exit", run: "r1", code: 143 });
     });
 

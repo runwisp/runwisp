@@ -34,6 +34,13 @@ cron.task("stubborn", { on_overlap: "skip", timeout: "1s", graceful_stop: "3s" }
     if (++stubborn.runs === 1) await sleep(10_000);
 });
 
+cron.service("beat", {}, async (ctx) => {
+    console.log(`pid ${String(process.pid)}`);
+    await new Promise((resolve) => {
+        ctx.signal.addEventListener("abort", resolve);
+    });
+});
+
 cron.task("crash", {}, async () => {
     setTimeout(() => {
         throw new Error("kaboom");

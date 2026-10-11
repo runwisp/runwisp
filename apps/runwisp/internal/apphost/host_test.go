@@ -138,7 +138,7 @@ func TestRunRoundTrip(t *testing.T) {
 		Secrets:    map[string]string{"TOKEN": "secret"},
 		Parameters: []model.TaskParam{{Key: "DRY_RUN", Kind: model.ParamEnv}},
 	}
-	run := &model.Run{ID: "r1", Params: map[string]string{"DRY_RUN": "1"}}
+	run := &model.Run{ID: "r1", Params: map[string]string{"DRY_RUN": "1"}, InstanceIndex: 2}
 
 	started := make(chan *executor.Process, 1)
 	go func() {
@@ -152,7 +152,7 @@ func TestRunRoundTrip(t *testing.T) {
 		Type:   "run",
 		Run:    "r1",
 		Task:   "digest",
-		Env:    map[string]string{"REGION": "eu", "TOKEN": "secret", "DRY_RUN": "1"},
+		Env:    map[string]string{"RUNWISP_INSTANCE_INDEX": "2", "REGION": "eu", "TOKEN": "secret", "DRY_RUN": "1"},
 		Params: map[string]string{"DRY_RUN": "1"},
 	}, m)
 	p := <-started
@@ -471,4 +471,83 @@ func TestCronRunCarriesItsFiring(t *testing.T) {
 		}
 		app.send(message{Type: "exit", Run: run.ID, Code: code(0)})
 	}
+}
+
+// fakeServices records what the Host asks of the run manager.
+type fakeServices struct {
+	mu    sync.Mutex
+	calls []string
+}
+
+func (f *fakeServices) record(call string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, call)
+	return nil
+}
+
+func (f *fakeServices) RestartServiceInstances(name string) error { return f.record("restart " + name) }
+func (f *fakeServices) StopService(name string) error             { return f.record("stop " + name) }
+func (f *fakeServices) StartService(name string) error            { return f.record("start " + name) }
+
+func (f *fakeServices) recorded() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.calls...)
+}
+
+var worker = &model.Task{Name: "worker", Kind: model.KindService}
+
+// startService starts a run of the worker service on app.
+func startService(t *testing.T, h *Host, app *fakeApp, id string) *executor.Process {
+	t.Helper()
+	started := make(chan *executor.Process, 1)
+	go func() {
+		p, err := h.Start(context.Background(), worker, &model.Run{ID: id}, digest)
+		assert.NoError(t, err)
+		started <- p
+	}()
+	require.Equal(t, id, app.next().Run)
+	return <-started
+}
+
+// TestClosingStopsServicesBeforeTheirExit guards a graceful app shutdown
+// against recording its services as failed: the daemon must stop them, so the
+// executor classifies the exit the app then sends as a stop.
+func TestClosingStopsServicesBeforeTheirExit(t *testing.T) {
+	services := &fakeServices{}
+	h := New()
+	h.ControlServices(services)
+	app := connect(t, h)
+	require.True(t, app.role())
+	p := startService(t, h, app, "r1")
+
+	app.send(message{Type: "close"})
+	app.send(message{Type: "exit", Run: "r1", Code: code(143)})
+	_, _, _ = output(t, p)
+	assert.Equal(t, []string{"stop worker"}, services.recorded())
+
+	// The next copy to connect runs them again.
+	next := connect(t, h)
+	require.True(t, next.role())
+	assert.Eventually(t, func() bool { return len(services.recorded()) == 2 }, 5*time.Second, time.Millisecond)
+	assert.Equal(t, []string{"stop worker", "start worker"}, services.recorded())
+}
+
+func TestClosingHandsServicesToTheNextCopy(t *testing.T) {
+	services := &fakeServices{}
+	h := New()
+	h.ControlServices(services)
+	first := connect(t, h)
+	require.True(t, first.role())
+	second := connect(t, h)
+	require.False(t, second.role())
+	p := startService(t, h, first, "r1")
+
+	first.send(message{Type: "close"})
+	require.False(t, first.role())
+	require.True(t, second.role())
+	first.send(message{Type: "exit", Run: "r1", Code: code(143)})
+	_, _, _ = output(t, p)
+	assert.Equal(t, []string{"restart worker"}, services.recorded())
 }

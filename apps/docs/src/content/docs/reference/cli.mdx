@@ -82,9 +82,9 @@ Starts the daemon in the foreground with no TUI. Use it under Docker, systemd,
 or any init system. Exits non-zero if the config is missing, instead of
 prompting.
 
-| Flag    | Description                                                                                                                                                                   |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--app` | Read the config as a JSON document on stdin instead of `runwisp.toml`, with the same keys. [SDKs](/sdk/) start the daemon this way. It stops 10 seconds after the app leaves. |
+| Flag    | Description                                                                                                                                                                              |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--app` | Read the config as a JSON document on stdin instead of `runwisp.toml`, with the same keys. [SDKs](/sdk/) start the daemon this way. It stops 10 seconds after the app leaves. Since 1.7. |
 
 ### `runwisp tui`
 
@@ -112,10 +112,10 @@ Loads and checks `runwisp.toml` exactly like daemon startup, then prints a
 summary (task and service counts, the timezone) and any warnings. Starts
 nothing. Exits non-zero on an invalid config.
 
-| Flag     | Description                                                      |
-| -------- | ---------------------------------------------------------------- |
-| `--json` | Print one JSON document instead of the summary.                  |
-| `--app`  | Check a JSON document on stdin, as `runwisp daemon --app` would. |
+| Flag     | Description                                                                 |
+| -------- | --------------------------------------------------------------------------- |
+| `--json` | Print one JSON document instead of the summary.                             |
+| `--app`  | Check a JSON document on stdin, as `runwisp daemon --app` would. Since 1.7. |
 
 Parse errors in JSON carry the exact location:
 
@@ -320,6 +320,8 @@ runwisp restart --attach 'web*'
 With no argument, restarts the daemon. Needed for settings a reload can't apply
 (see [Reload & restart](/operations/reload/)). Installed as a service, the
 restart goes through systemd or launchd.
+A daemon an [SDK](/sdk/) app started can't be restarted this way: restart the
+app.
 
 With one or more targets (task names, service names, or quoted globs matched
 against both), restarts only those without touching the daemon. For a
@@ -544,7 +546,8 @@ prints how to upgrade instead.
 A running daemon keeps the old version until it restarts. Upgrade asks
 whether to restart it `now`, when `idle` (once no task runs are active;
 services don't count), or `later`. Without a terminal and without `--restart`,
-it leaves the daemon running.
+it leaves the daemon running. A daemon an [SDK](/sdk/) app started is left
+running too: restart the app.
 
 | Flag        | Description                                                      |
 | ----------- | ---------------------------------------------------------------- |

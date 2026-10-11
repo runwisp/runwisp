@@ -96,6 +96,17 @@ type Host struct {
 
 	unsubscribe func()
 
+	// services is set by ControlServices; nil leaves an app's services to
+	// end however the app ends them.
+	services Services
+	// servicesMu makes stopping a leaving copy's services and starting them
+	// for the next copy one step each, so a copy that connects meanwhile
+	// can't miss them.
+	servicesMu sync.Mutex
+	// parked are the services stopped when the last copy left, for the next
+	// copy to connect to start.
+	parked []string
+
 	mu       sync.Mutex
 	sessions []*session // in connection order; sessions[0] is active
 	// leaving are apps that said they are shutting down and are still
@@ -119,6 +130,21 @@ type Host struct {
 func (h *Host) AcceptConfig(src *config.DocumentSource, reload func() (model.ReloadResult, error)) {
 	h.config = src
 	h.reload = reload
+}
+
+// Services is the part of the run manager a Host uses to take an app's sdk
+// services off a copy that is shutting down.
+type Services interface {
+	RestartServiceInstances(name string) error
+	StopService(name string) error
+	StartService(name string) error
+}
+
+// ControlServices lets the Host stop the sdk services of a copy that says it
+// is shutting down, so their runs end as stopped, not as failed when the app
+// stops them on its way out. Call before the first app connects.
+func (h *Host) ControlServices(services Services) {
+	h.services = services
 }
 
 // ForwardSkippedFirings tells the active app about firings of its tasks that
@@ -340,6 +366,9 @@ func (h *Host) add(s *session) bool {
 			slog.Debug("Failed to tell an app about a missed firing", "err", err)
 		}
 	}
+	if active == s {
+		h.resumeServices()
+	}
 	slog.Info("App connected", "app", s.app, "pid", s.pid, "active", active == s, "connected", connected)
 	return true
 }
@@ -420,6 +449,59 @@ func (h *Host) leave(s *session) {
 	if next != nil {
 		next.sendRole(true, false, 0)
 	}
+	h.releaseServices(s.services(), last)
+}
+
+// releaseServices stops the services a leaving copy runs. Called before the
+// read loop reads on, so the stop comes before the exits the app sends as it
+// stops them itself. With another copy connected they restart on it right
+// away; after the last copy they stay down until the next one connects.
+func (h *Host) releaseServices(names []string, last bool) {
+	if h.services == nil || len(names) == 0 {
+		return
+	}
+	h.servicesMu.Lock()
+	defer h.servicesMu.Unlock()
+	for _, name := range names {
+		var err error
+		if last {
+			err = h.services.StopService(name)
+		} else {
+			err = h.services.RestartServiceInstances(name)
+		}
+		if err != nil {
+			slog.Warn("Failed to stop a service of an app that is shutting down", "task", name, "err", err)
+		}
+	}
+	if !last {
+		return
+	}
+	h.parked = append(h.parked, names...)
+	h.mu.Lock()
+	connected := len(h.sessions) > 0
+	h.mu.Unlock()
+	if connected {
+		// A copy connected after the last one left and before its services
+		// were parked: they're its to run.
+		h.resumeServicesLocked()
+	}
+}
+
+// resumeServices starts the services parked when the last copy left, for the
+// copy that just became active.
+func (h *Host) resumeServices() {
+	h.servicesMu.Lock()
+	defer h.servicesMu.Unlock()
+	h.resumeServicesLocked()
+}
+
+func (h *Host) resumeServicesLocked() {
+	for _, name := range h.parked {
+		if err := h.services.StartService(name); err != nil {
+			slog.Debug("Failed to start a service for the app that connected", "task", name, "err", err)
+		}
+	}
+	h.parked = nil
 }
 
 // broadcastLocked wakes everything waiting for the set of apps to change.
@@ -577,6 +659,19 @@ func (s *session) begin(r *handlerRun, m message) error {
 		return fmt.Errorf("send the run to the app: %w", err)
 	}
 	return nil
+}
+
+// services returns the names of the services the app is running, once each.
+func (s *session) services() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var names []string
+	for _, r := range s.runs {
+		if r.service && !slices.Contains(names, r.task) {
+			names = append(names, r.task)
+		}
+	}
+	return names
 }
 
 func (s *session) forget(id string) {
