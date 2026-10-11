@@ -146,8 +146,8 @@ func TestCheckOnceSendsInstallSource(t *testing.T) {
 
 func TestInstallSourceMarkerAndFallback(t *testing.T) {
 	t.Setenv("RUNWISP_INSTALL_SOURCE", "")
-	if got := installSource(); got != "other" {
-		t.Fatalf("no env, no marker: installSource() = %q, want \"other\"", got)
+	if got := InstallSource(); got != "other" {
+		t.Fatalf("no env, no marker: InstallSource() = %q, want \"other\"", got)
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -161,8 +161,8 @@ func TestInstallSourceMarkerAndFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Remove(marker) })
-	if got := installSource(); got != "script" {
-		t.Fatalf("marker: installSource() = %q, want \"script\"", got)
+	if got := InstallSource(); got != "script" {
+		t.Fatalf("marker: InstallSource() = %q, want \"script\"", got)
 	}
 }
 

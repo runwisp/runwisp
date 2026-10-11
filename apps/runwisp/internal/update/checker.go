@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package update polls concierge.runwisp.com for the latest published release
-// and reports whether the running daemon is out of date. It is strictly
+// and reports whether the running daemon is out of date. The check is strictly
 // best-effort and optional: every failure is swallowed, the check never blocks
 // the daemon, and with the NIC unplugged the daemon runs exactly as before —
-// the indicator simply never lights up.
+// the indicator simply never lights up. upgrade.go backs `runwisp upgrade`,
+// which only ever runs when the operator asks.
 package update
 
 import (
@@ -51,7 +52,7 @@ type Checker struct {
 	current string // running daemon version (may lack a leading "v")
 	os      string
 	arch    string
-	source  string // install channel, see installSource
+	source  string // install channel, see InstallSource
 
 	baseURL string
 	client  *http.Client
@@ -73,7 +74,7 @@ func NewChecker(current, goos, goarch string, enabled bool) *Checker {
 		current: current,
 		os:      goos,
 		arch:    goarch,
-		source:  installSource(),
+		source:  InstallSource(),
 		enabled: enabled,
 		baseURL: DefaultBaseURL,
 		client:  &http.Client{Timeout: requestTimeout},
@@ -123,27 +124,35 @@ func (c *Checker) finishCheck() {
 	c.cancelCheck = nil
 }
 
-// installSource reports how this binary was installed. The same
+// InstallSource reports how this binary was installed. The same
 // release binary ships through every channel, so it can't be baked in at build
 // time: the Docker image and npm wrapper set RUNWISP_INSTALL_SOURCE
 // (docker / npm / npx), and get.runwisp.com, the Homebrew formula and the npm
 // platform packages write "script" / "homebrew" / "npm" to a .runwisp-source
 // file next to the binary, which covers a daemon started without the wrapper
 // (e.g. by `runwisp service install`). Anything else is "other".
-func installSource() string {
+func InstallSource() string {
 	if s := os.Getenv("RUNWISP_INSTALL_SOURCE"); s != "" {
 		return s
 	}
-	if exe, err := os.Executable(); err == nil {
-		if exe, err = filepath.EvalSymlinks(exe); err == nil {
-			if b, err := os.ReadFile(filepath.Join(filepath.Dir(exe), ".runwisp-source")); err == nil {
-				if s := strings.TrimSpace(string(b)); s != "" {
-					return s
-				}
+	if exe, err := Executable(); err == nil {
+		if b, err := os.ReadFile(filepath.Join(filepath.Dir(exe), ".runwisp-source")); err == nil {
+			if s := strings.TrimSpace(string(b)); s != "" {
+				return s
 			}
 		}
 	}
 	return "other"
+}
+
+// Executable is the running binary's real path, symlinks resolved: the file an
+// install channel actually put on disk.
+func Executable() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(exe)
 }
 
 // Status reports whether a newer release exists and, if so, its version string
@@ -189,7 +198,7 @@ func (c *Checker) checkOnce(ctx context.Context) time.Duration {
 		return fallbackInterval
 	}
 
-	available := !resp.Prerelease && isNewer(resp.Version, c.current)
+	available := !resp.Prerelease && IsNewer(resp.Version, c.current)
 	c.mu.Lock()
 	if c.enabled { // turned off mid-request: keep the cleared state
 		c.available = available
@@ -245,8 +254,8 @@ func IsRelease(current string) bool {
 	return semver.IsValid(base) && base != "v0.0.0"
 }
 
-// isNewer reports whether latest is a strictly higher semver than current.
-func isNewer(latest, current string) bool {
+// IsNewer reports whether latest is a strictly higher semver than current.
+func IsNewer(latest, current string) bool {
 	lv, cv := normalize(latest), normalize(current)
 	if !semver.IsValid(lv) || !semver.IsValid(cv) {
 		return false
