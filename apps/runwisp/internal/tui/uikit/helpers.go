@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
 	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
@@ -25,6 +26,24 @@ const MaxContentWidth = 110
 // OnBg is a style that draws fg text on a bg fill.
 func OnBg(bg, fg color.Color) lipgloss.Style {
 	return lipgloss.NewStyle().Background(bg).Foreground(fg)
+}
+
+// InputStyles dresses a text input in the palette on a bg surface. Left at
+// bubbles' defaults it paints ANSI greys outside the palette, the focused
+// cursor reverses against the terminal default into a white block, and the
+// prompt, text and padding fall back to the terminal background.
+func InputStyles(bg color.Color) textinput.Styles {
+	state := textinput.StyleState{
+		Prompt:      OnBg(bg, ColorTextMuted),
+		Text:        OnBg(bg, ColorText),
+		Placeholder: OnBg(bg, ColorTextMuted),
+		Suggestion:  OnBg(bg, ColorTextMuted),
+	}
+	styles := textinput.DefaultStyles(true)
+	styles.Focused = state
+	styles.Blurred = state
+	styles.Cursor.Color = ColorPrimary
+	return styles
 }
 
 // PadLine right-pads content with a styled-background space run so the row

@@ -205,7 +205,7 @@ func rowStyle(selected, hovered bool) (bg color.Color, indicator string) {
 	if selected {
 		bg = uikit.ColorBgLight
 	} else if hovered {
-		bg = uikit.ColorExecRowHover
+		bg = uikit.ColorBgRaised
 	}
 
 	indicator = "  "

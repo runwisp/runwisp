@@ -304,10 +304,10 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	isHovered := rowIdx == e.hoveredRow && !isCursor
 	if isCursor {
 		bg = uikit.ColorPrimaryDim
-		fg = uikit.ColorWhite
+		fg = uikit.ColorTextBright
 		bold = true
 	} else if isHovered {
-		bg = uikit.ColorExecRowHover
+		bg = uikit.ColorBgRaised
 	}
 	rowStyle := uikit.OnBg(bg, fg).Bold(bold)
 	if item == nil {

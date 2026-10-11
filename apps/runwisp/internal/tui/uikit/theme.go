@@ -14,55 +14,57 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
-// Brand palette — official RunWisp colors.
+// Brand palette — official RunWisp colors, the web UI's dark theme
+// (packages/ui/src/lib/theme-tokens.css, `:root.dark`) ported to the
+// terminal. Every colour the TUI paints comes from this block; add a shade
+// here only when no existing one reads right.
 var (
-	ColorPrimary       = lipgloss.Color("#526ee3")
-	ColorPrimaryDim    = lipgloss.Color("#3d54b5")
-	ColorSecondary     = lipgloss.Color("#009371")
-	ColorSecondaryDim  = lipgloss.Color("#006e54")
-	ColorBg            = lipgloss.Color("#1a1b26")
-	ColorBgLight       = lipgloss.Color("#24253a")
-	ColorChartBg       = lipgloss.Color("#1f2030")
-	ColorSidebarBg     = lipgloss.Color("#1e2140")
-	ColorSidebarActive = lipgloss.Color("#2a3060")
-	ColorSidebarHover  = lipgloss.Color("#262b50")
-	ColorText          = lipgloss.Color("#c0caf5")
-	ColorTextMuted     = lipgloss.Color("#565f89")
-	ColorTextBright    = lipgloss.Color("#e0e6ff")
-	ColorSuccess       = lipgloss.Color("#9ece6a")
-	ColorError         = lipgloss.Color("#f7768e")
-	ColorWarning       = lipgloss.Color("#e0af68")
-	ColorRunning       = lipgloss.Color("#7aa2f7")
-	ColorPending       = lipgloss.Color("#bb9af7")
-	ColorWhite         = lipgloss.Color("#ffffff")
-	ColorTextDim       = lipgloss.Color("#a8b2d8")
+	ColorPrimary      = lipgloss.Color("#2fd4dd") // --rw-primary
+	ColorPrimaryHover = lipgloss.Color("#5fe3ea") // --rw-primary-hover
+	ColorPrimaryDim   = lipgloss.Color("#0e7c86") // logo gradient end
+	ColorSecondary    = lipgloss.Color("#15a0a8") // logo gradient start
+	ColorBg           = lipgloss.Color("#0c1719") // --rw-surface
+	ColorBgLight      = lipgloss.Color("#16292b") // brand ink
+	// ColorBgRaised is the one surface a step above ColorBg: the sidebar, a
+	// hovered row in the main panel, and the info view's chart well.
+	ColorBgRaised      = lipgloss.Color("#122226") // --rw-surface-raised
+	ColorSidebarActive = lipgloss.Color("#123438") // --rw-primary-soft over ColorBgRaised
+	ColorSidebarHover  = lipgloss.Color("#132c30") // half of ColorSidebarActive's tint
+	ColorText          = lipgloss.Color("#c3cfda") // --rw-con-text
+	ColorTextMuted     = lipgloss.Color("#6c7d8c") // --rw-con-dim
+	ColorTextBright    = lipgloss.Color("#e8eff4") // --rw-on-surface
+	ColorSuccess       = lipgloss.Color("#3fc26b") // --rw-success
+	ColorError         = lipgloss.Color("#f15a4d") // --rw-danger
+	ColorWarning       = lipgloss.Color("#e0a52e") // --rw-warning
+	ColorRunning       = lipgloss.Color("#2fd4dd") // --rw-info
+	ColorPending       = lipgloss.Color("#be7ace") // --rw-ansi-magenta
+	ColorTextDim       = lipgloss.Color("#94a6b1") // --rw-on-surface-muted
 
 	// ColorButtonRaised is a secondary button's resting fill (Back, an
 	// unselected dialog choice); ColorButtonRaisedHover is its hover fill.
-	ColorButtonRaised      = lipgloss.Color("#2a2d48")
-	ColorButtonRaisedHover = lipgloss.Color("#3a3d5c")
+	ColorButtonRaised      = lipgloss.Color("#2a3a45") // --rw-outline-hover
+	ColorButtonRaisedHover = lipgloss.Color("#3a4f5c") // one step lighter
 
-	ColorPrimaryHover = lipgloss.Color("#6b85f0")
-	ColorErrorHover   = lipgloss.Color("#f99aae")
-	ColorWarningHover = lipgloss.Color("#ebc580")
+	ColorErrorHover   = lipgloss.Color("#ff7568") // --rw-danger-hover
+	ColorWarningHover = lipgloss.Color("#ecb845") // --rw-warning-hover
 )
 
 var (
 	SidebarBrandStyle = lipgloss.NewStyle().
-				Background(ColorSidebarBg).
+				Background(ColorBgRaised).
 				Foreground(ColorPrimary).
 				Bold(true)
 	SidebarMarkStyle = lipgloss.NewStyle().
-				Background(ColorSidebarBg).
+				Background(ColorBgRaised).
 				Foreground(ColorSecondary).
 				Bold(true)
 
 	SidebarVersionStyle = lipgloss.NewStyle().
-				Background(ColorSidebarBg).
+				Background(ColorBgRaised).
 				Foreground(ColorTextMuted)
 
 	SidebarFingerprintStyle = lipgloss.NewStyle().
-				Background(ColorSidebarBg).
+				Background(ColorBgRaised).
 				Foreground(ColorTextMuted).
 				Italic(true)
 
@@ -73,12 +75,12 @@ var (
 	// focused, but still brighter than the group headers so the hierarchy
 	// doesn't flip when focus moves to the main panel.
 	SidebarItemNoneStyle = lipgloss.NewStyle().
-				Background(ColorSidebarBg).
+				Background(ColorBgRaised).
 				Foreground(ColorTextDim)
 
 	// focused: sidebar focused, not selected, not under cursor.
 	SidebarItemFocusedStyle = lipgloss.NewStyle().
-				Background(ColorSidebarBg).
+				Background(ColorBgRaised).
 				Foreground(ColorText)
 
 	// selected: sidebar unfocused, item is the active selection. Bright text
@@ -92,7 +94,7 @@ var (
 	// focused+selected: sidebar focused, item selected, cursor elsewhere.
 	SidebarItemFocusedSelectedStyle = lipgloss.NewStyle().
 					Background(ColorSidebarActive).
-					Foreground(ColorSecondary).
+					Foreground(ColorPrimary).
 					Bold(true)
 
 	// focused+cursor: sidebar focused, cursor on item, not selected.
@@ -103,7 +105,7 @@ var (
 	// focused+cursor+selected: sidebar focused, cursor on item, item is selected.
 	SidebarItemFocusedCursorSelectedStyle = lipgloss.NewStyle().
 						Background(ColorSidebarActive).
-						Foreground(ColorWhite).
+						Foreground(ColorTextBright).
 						Bold(true)
 
 	// hovered: mouse pointer is over this item (not selected, not cursor).
@@ -113,7 +115,7 @@ var (
 
 	// group header: non-selectable label above a group of tasks.
 	SidebarGroupHeaderStyle = lipgloss.NewStyle().
-				Background(ColorSidebarBg).
+				Background(ColorBgRaised).
 				Foreground(ColorTextMuted).
 				Bold(true)
 )
@@ -128,9 +130,6 @@ var (
 				Background(ColorBgLight).
 				Foreground(ColorTextMuted)
 )
-
-// ColorExecRowHover is the background colour for the hovered execution row.
-var ColorExecRowHover = lipgloss.Color("#1f2038")
 
 // StatusColor maps a run's display status (phase or end reason) to its
 // accent colour. Every failure reason takes the error colour.
@@ -213,13 +212,13 @@ var HelpBarStyle = lipgloss.NewStyle().
 var (
 	BtnRunNowStyle = lipgloss.NewStyle().
 			Background(ColorPrimary).
-			Foreground(ColorWhite).
+			Foreground(ColorBg).
 			Bold(true).
 			Padding(0, 1)
 
 	BtnStopStyle = lipgloss.NewStyle().
 			Background(ColorError).
-			Foreground(ColorWhite).
+			Foreground(ColorBg).
 			Bold(true).
 			Padding(0, 1)
 
@@ -231,13 +230,13 @@ var (
 
 	BtnRunNowHoverStyle = lipgloss.NewStyle().
 				Background(ColorPrimaryHover).
-				Foreground(ColorWhite).
+				Foreground(ColorBg).
 				Bold(true).
 				Padding(0, 1)
 
 	BtnStopHoverStyle = lipgloss.NewStyle().
 				Background(ColorErrorHover).
-				Foreground(ColorWhite).
+				Foreground(ColorBg).
 				Bold(true).
 				Padding(0, 1)
 

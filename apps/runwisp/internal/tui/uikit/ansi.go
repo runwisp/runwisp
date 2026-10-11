@@ -162,9 +162,9 @@ func FillBg(n int, bg color.Color) string {
 // Opening SGR sequences for the backgrounds nearly every padded row uses,
 // derived once at init instead of on every call in the render path.
 var (
-	sgrBg        = ansi.NewStyle().BackgroundColor(ColorBg).String()
-	sgrBgLight   = ansi.NewStyle().BackgroundColor(ColorBgLight).String()
-	sgrSidebarBg = ansi.NewStyle().BackgroundColor(ColorSidebarBg).String()
+	sgrBg       = ansi.NewStyle().BackgroundColor(ColorBg).String()
+	sgrBgLight  = ansi.NewStyle().BackgroundColor(ColorBgLight).String()
+	sgrBgRaised = ansi.NewStyle().BackgroundColor(ColorBgRaised).String()
 )
 
 // bgSGR returns the opening SGR sequence that paints bg as the background.
@@ -174,8 +174,8 @@ func bgSGR(bg color.Color) string {
 		return sgrBg
 	case ColorBgLight:
 		return sgrBgLight
-	case ColorSidebarBg:
-		return sgrSidebarBg
+	case ColorBgRaised:
+		return sgrBgRaised
 	}
 	return ansi.NewStyle().BackgroundColor(bg).String()
 }

@@ -194,21 +194,7 @@ func newTextInput(def *string) textinput.Model {
 	ti := textinput.New()
 	ti.CharLimit = 1024
 	ti.SetWidth(40)
-	// Dress the input in the modal's surface colors. Left at defaults, the
-	// focused cursor reverses against the terminal default and renders as a
-	// jarring white block on an otherwise empty field; the prompt, text and
-	// padding default to no background and stand out against ColorBgLight.
-	surface := lipgloss.NewStyle().Background(uikit.ColorBgLight)
-	state := textinput.StyleState{
-		Prompt:      surface.Foreground(uikit.ColorTextMuted),
-		Text:        surface.Foreground(uikit.ColorText),
-		Placeholder: surface.Foreground(uikit.ColorTextMuted),
-	}
-	styles := textinput.DefaultStyles(true)
-	styles.Focused = state
-	styles.Blurred = state
-	styles.Cursor.Color = uikit.ColorPrimary
-	ti.SetStyles(styles)
+	ti.SetStyles(uikit.InputStyles(uikit.ColorBgLight))
 	if def != nil {
 		ti.SetValue(*def)
 	}

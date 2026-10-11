@@ -15,6 +15,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
 const (
@@ -64,6 +65,7 @@ func New(client *apiclient.Client, taskName string) Model {
 	ti.Placeholder = "Search…"
 	ti.CharLimit = 1024
 	ti.SetWidth(48)
+	ti.SetStyles(uikit.InputStyles(uikit.ColorBg))
 	ti.Focus()
 	return Model{
 		taskName: taskName,
