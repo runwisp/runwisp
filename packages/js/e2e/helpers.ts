@@ -6,7 +6,7 @@ import { createServer } from "node:net";
 import { call, field, resolveBinary } from "../src/daemon.ts";
 
 // The freshly built binary in CI, else the one from the runwisp npm package.
-export const binary = resolveBinary(process.env["RUNWISP_NODE_TEST_BINARY"]);
+export const binary = resolveBinary(process.env["RUNWISP_JS_TEST_BINARY"]);
 
 export function freePort(): Promise<number> {
     return new Promise((resolve, reject) => {

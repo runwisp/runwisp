@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // A drop-in for @nestjs/schedule: the same module, decorators and registry,
-// with RunWisp holding the schedule. Importing from "@runwisp/node/nestjs"
+// with RunWisp holding the schedule. Importing from "@runwisp/js/nestjs"
 // instead of "@nestjs/schedule" is the whole migration.
 
 import {
@@ -136,7 +136,7 @@ export type CronExpression = (typeof CronExpression)[keyof typeof CronExpression
 export function Cron(cronTime: string, options: CronOptions = {}): MethodDecorator {
     if (typeof cronTime !== "string") {
         throw new TypeError(
-            "@runwisp/node/nestjs: @Cron takes a cron expression; a Date (a one-off job) is not supported",
+            "@runwisp/js/nestjs: @Cron takes a cron expression; a Date (a one-off job) is not supported",
         );
     }
     return SetMetadata<string, Schedule>(SCHEDULE, { kind: "cron", cron: cronTime, options });
@@ -172,7 +172,7 @@ const NOUNS: Record<Kind, string> = { cron: "cron job", interval: "interval", ti
 
 function unsupported(method: string): Error {
     return new Error(
-        `@runwisp/node/nestjs: SchedulerRegistry.${method}() is not supported; inject RunWisp and call task() instead`,
+        `@runwisp/js/nestjs: SchedulerRegistry.${method}() is not supported; inject RunWisp and call task() instead`,
     );
 }
 

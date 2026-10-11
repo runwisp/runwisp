@@ -65,7 +65,7 @@ tasks:
         description: "vitest e2e against the built runwisp binary."
         command: "vitest run"
         env:
-            RUNWISP_NODE_TEST_BINARY: "$workspaceRoot/apps/runwisp/runwisp"
+            RUNWISP_JS_TEST_BINARY: "$workspaceRoot/apps/runwisp/runwisp"
         deps:
             - "runwisp:build"
             - "~:generate-config"

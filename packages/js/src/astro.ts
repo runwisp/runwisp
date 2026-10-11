@@ -57,7 +57,7 @@ export default function runwisp(options: RunWispAstroOptions): RunWispAstroInteg
     const id = `/${options.tasks.replace(/^\.?\/+/, "")}`;
     let adapter: string | undefined;
     return {
-        name: "@runwisp/node",
+        name: "@runwisp/js",
         hooks: {
             "astro:config:done": ({ config }) => {
                 adapter = config.adapter?.name;
@@ -82,13 +82,13 @@ export default function runwisp(options: RunWispAstroOptions): RunWispAstroInteg
             "astro:build:start": () => {
                 if (adapter === NODE_ADAPTER) return;
                 throw new Error(
-                    `@runwisp/node/astro: tasks run only with the ${NODE_ADAPTER} adapter, and this build uses ${adapter ?? "no adapter"}. Use ${NODE_ADAPTER}, or remove the runwisp integration.`,
+                    `@runwisp/js/astro: tasks run only with the ${NODE_ADAPTER} adapter, and this build uses ${adapter ?? "no adapter"}. Use ${NODE_ADAPTER}, or remove the runwisp integration.`,
                 );
             },
             "astro:build:setup": ({ vite, target }) => {
                 if (target !== "server") return;
                 const plugin: VitePlugin = {
-                    name: "@runwisp/node",
+                    name: "@runwisp/js",
                     // The Node adapter's server module runs when the built
                     // server starts, standalone and in middleware mode.
                     transform: (code, file) =>

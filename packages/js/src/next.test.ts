@@ -17,7 +17,7 @@ describe("withRunWisp", () => {
             outputFileTracingIncludes: { "**": ["./data/**"], "/*": ["./y"], "/api": ["./x"] },
         });
         expect(config.reactStrictMode).toBe(true);
-        expect(config.serverExternalPackages).toEqual(["sharp", "@runwisp/node"]);
+        expect(config.serverExternalPackages).toEqual(["sharp", "@runwisp/js"]);
         expect(config.outputFileTracingIncludes).toEqual({
             "**": [
                 "./data/**",

@@ -9,7 +9,7 @@ import { constants } from "node:os";
 
 import { config, dev, exitOnSignal, options } from "#runwisp/nuxt";
 
-import { RunWisp } from "@runwisp/node";
+import { RunWisp } from "@runwisp/js";
 
 export interface NitroAppLike {
     hooks: { hook(name: "close", fn: () => Promise<void>): void };

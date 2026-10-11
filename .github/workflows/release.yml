@@ -411,12 +411,12 @@ jobs:
         working-directory: npm/runwisp
         run: npm publish --access public --tag "${NPM_TAG}" --provenance
 
-  # Unlike the other workspace packages, @runwisp/node ships compiled dist/
+  # Unlike the other workspace packages, @runwisp/js ships compiled dist/
   # (Node won't strip types inside node_modules) and pins the runwisp binary
   # package of the same release, so it publishes after it, from a full checkout.
-  npm-publish-node:
+  npm-publish-js:
     if: github.event_name == 'release'
-    name: Publish @runwisp/node
+    name: Publish @runwisp/js
     needs: npm-publish-runwisp
     runs-on: ubuntu-latest
     permissions:
@@ -440,7 +440,7 @@ jobs:
         run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Build
-        working-directory: packages/node
+        working-directory: packages/js
         run: |
           bun scripts/generate-config.ts
           bunx tsc -p tsconfig.build.json
@@ -462,7 +462,7 @@ jobs:
       - name: Stamp version and the runwisp dependency
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
-        working-directory: packages/node
+        working-directory: packages/js
         run: |
           node -e "
             const fs = require('fs');
@@ -476,7 +476,7 @@ jobs:
       - name: Publish
         env:
           NPM_TAG: ${{ steps.version.outputs.NPM_TAG }}
-        working-directory: packages/node
+        working-directory: packages/js
         run: npm publish --access public --tag "${NPM_TAG}" --provenance
 
   deploy-docs:

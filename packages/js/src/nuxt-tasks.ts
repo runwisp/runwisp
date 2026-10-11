@@ -8,7 +8,7 @@
 import { runTask } from "#imports";
 import { options, scheduled } from "#runwisp/nuxt";
 
-import { RunWisp } from "@runwisp/node";
+import { RunWisp } from "@runwisp/js";
 
 export default function (): void {
     scheduleNitroTasks(import.meta.prerender);

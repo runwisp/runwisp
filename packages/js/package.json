@@ -1,5 +1,5 @@
 {
-    "name": "@runwisp/node",
+    "name": "@runwisp/js",
     "description": "node-cron compatible scheduler backed by RunWisp: every run is recorded with its output, exit code and duration, and shown in a web UI.",
     "type": "module",
     "version": "0.0.0",
@@ -7,7 +7,7 @@
     "repository": {
         "type": "git",
         "url": "https://github.com/runwisp/runwisp.git",
-        "directory": "packages/node"
+        "directory": "packages/js"
     },
     "homepage": "https://docs.runwisp.com/sdk/javascript/",
     "bugs": {

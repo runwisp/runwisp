@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-// One copy of an app that uses @runwisp/node, for the e2e tests:
+// One copy of an app that uses @runwisp/js, for the e2e tests:
 // `node app.ts <data> <port> <binary>`. Prints "ready" once RunWisp serves its
 // tasks, and closes on a "close" line on stdin. RUNWISP_TEST_APP names it.
 

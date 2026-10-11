@@ -89,7 +89,7 @@ async function boot() {
     return module;
 }
 
-describe("@runwisp/node/nestjs", () => {
+describe("@runwisp/js/nestjs", () => {
     it("registers decorated methods as RunWisp tasks", async () => {
         const module = await boot();
         const tasks = module.get(RunWisp).getTasks();

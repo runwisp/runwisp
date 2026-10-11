@@ -172,7 +172,7 @@ describe("Session", () => {
 
     it("tells a runwisp binary that speaks another app protocol apart", () => {
         expect(refusal("426", "HTTP/1.1 426\r\nUpgrade: runwisp-app/2", "").message).toMatch(
-            /^this runwisp binary is newer than @runwisp\/node \S+ supports .*install matching versions/,
+            /^this runwisp binary is newer than @runwisp\/js \S+ supports .*install matching versions/,
         );
         expect(refusal("426", "HTTP/1.1 426\r\nUpgrade: runwisp-app/0", "").message).toContain(
             "is older than",

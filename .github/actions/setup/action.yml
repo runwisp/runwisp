@@ -50,7 +50,7 @@ runs:
         key: go-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum', 'apps/runwisp/scripts/sqlc-generate.sh', 'apps/runwisp/scripts/lint-go.sh', 'apps/runwisp/scripts/check-go.sh') }}
         restore-keys: go-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-
 
-    # packages/node's e2e runs a TypeScript app fixture with the node on PATH,
+    # packages/js's e2e runs a TypeScript app fixture with the node on PATH,
     # which needs built-in type stripping (Node 22.18+).
     - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
       with:

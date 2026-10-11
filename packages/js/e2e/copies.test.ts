@@ -176,7 +176,7 @@ describe("copies of the app, crashes and stops", () => {
     it("refuses a different app on the same data directory", async () => {
         await startCopy();
         await expect(startCopy({ RUNWISP_TEST_APP: "another-app" })).rejects.toThrow(
-            'another app ("@runwisp/node"',
+            'another app ("@runwisp/js"',
         );
     });
 

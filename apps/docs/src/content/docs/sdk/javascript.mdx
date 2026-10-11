@@ -2,30 +2,30 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: JavaScript SDK
-description: Schedule tasks from Node.js or Bun with @runwisp/node. Every run is recorded with its output, exit code and duration, and shown in the web UI.
+description: Schedule tasks from Node.js or Bun with @runwisp/js. Every run is recorded with its output, exit code and duration, and shown in the web UI.
 head:
     - tag: title
-      content: "RunWisp JavaScript SDK (@runwisp/node): scheduled tasks you can see"
+      content: "RunWisp JavaScript SDK (@runwisp/js): scheduled tasks you can see"
 ---
 
 **since**: `1.7`
 
-`@runwisp/node` schedules tasks from your Node.js or Bun app. Your callbacks run in the
+`@runwisp/js` schedules tasks from your Node.js or Bun app. Your callbacks run in the
 app. RunWisp records every run with its output, exit code and duration. See
 [SDKs](/sdk/) for how it works.
 
-Coming from node-cron? `@runwisp/node` also has node-cron's API. See
+Coming from node-cron? `@runwisp/js` also has node-cron's API. See
 [From node-cron](/coming-from/node-cron/).
 
 ## Install
 
 ```bash
-npm install @runwisp/node
+npm install @runwisp/js
 ```
 
 It needs Node.js 20.19, 22.12 or later, or [Bun](/sdk/javascript/bun/) 1.1 or
 later, on Linux, macOS or WSL. The `runwisp` binary comes with it as a
-dependency, so keep `@runwisp/node` out of bundles that only copy JavaScript.
+dependency, so keep `@runwisp/js` out of bundles that only copy JavaScript.
 
 Using a framework? See [Next.js](/sdk/javascript/nextjs/),
 [Nuxt](/sdk/javascript/nuxt/), [SvelteKit](/sdk/javascript/sveltekit/),
@@ -34,7 +34,7 @@ Using a framework? See [Next.js](/sdk/javascript/nextjs/),
 ## Define a task
 
 ```ts
-import { RunWisp } from "@runwisp/node";
+import { RunWisp } from "@runwisp/js";
 
 const runwisp = new RunWisp();
 
@@ -236,7 +236,7 @@ running fails with `no app is connected`.
 
 ## Unit tests
 
-Pass `enabled: false`, or set `RUNWISP_NODE=off`, to start nothing. Tasks still
+Pass `enabled: false`, or set `RUNWISP_JS=off`, to start nothing. Tasks still
 register, and `task.execute()` runs the callback:
 
 ```ts
@@ -323,7 +323,7 @@ The rest of a `runwisp.toml`, with the same keys. See
 
 #### enabled
 
-**type**: `boolean` **default**: `true`, or `false` if `RUNWISP_NODE=off`
+**type**: `boolean` **default**: `true`, or `false` if `RUNWISP_JS=off`
 
 `false` starts nothing. Tasks still register and `execute()` runs them.
 

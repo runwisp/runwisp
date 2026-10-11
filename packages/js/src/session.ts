@@ -77,7 +77,7 @@ export function refusal(status: string, head: string, body: string): Error {
         const theirs = /^upgrade:\s*runwisp-app\/(\d+)\s*$/im.exec(head)?.[1];
         const age = Number(theirs) > Number(PROTOCOL.split("/")[1]) ? "newer" : "older";
         return new Error(
-            `this runwisp binary is ${age} than @runwisp/node ${packageVersion()} supports (app protocol ${theirs ?? "unknown"}, this package speaks ${PROTOCOL}): install matching versions of runwisp and @runwisp/node`,
+            `this runwisp binary is ${age} than @runwisp/js ${packageVersion()} supports (app protocol ${theirs ?? "unknown"}, this package speaks ${PROTOCOL}): install matching versions of runwisp and @runwisp/js`,
         );
     }
     const why = body.trim();

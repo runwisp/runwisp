@@ -14,7 +14,7 @@ tasks:
     deps:
       - 'runwisp:openapi'
       - 'common:generate-api'
-      - 'node:generate-config'
+      - 'js:generate-config'
     options:
       cache: false
       runDepsInParallel: false
@@ -25,7 +25,7 @@ tasks:
       - 'web-ui:format'
       - 'docs:format'
       - 'ui:format'
-      - 'node:format'
+      - 'js:format'
     options:
       cache: false
 
@@ -66,7 +66,7 @@ tasks:
       - 'docs:build'
       - 'ui:check'
       - 'common:check'
-      - 'node:check'
+      - 'js:check'
       - 'asyncapi:check'
     options:
       cache: false

@@ -1,17 +1,17 @@
-# @runwisp/node
+# @runwisp/js
 
-node-cron, but you can see what ran. `@runwisp/node` runs your node-cron tasks
+node-cron, but you can see what ran. `@runwisp/js` runs your node-cron tasks
 under [RunWisp](https://runwisp.com): every run is recorded with its output,
 exit code and duration, and shown in a web UI. Your callbacks still run inside
 your app.
 
 ```bash
-npm install @runwisp/node
+npm install @runwisp/js
 ```
 
 ```ts
 // import cron from "node-cron";
-import { RunWisp } from "@runwisp/node";
+import { RunWisp } from "@runwisp/js";
 
 const cron = new RunWisp();
 
@@ -35,10 +35,10 @@ RunWisp dashboard: http://127.0.0.1:9477, password: npx runwisp password --data 
 
 Framework integrations:
 
-- `@runwisp/node/nestjs`: a drop-in for `@nestjs/schedule`.
-- `@runwisp/node/nuxt`: a Nuxt module that also runs Nitro's `scheduledTasks`.
-- `@runwisp/node/next`: `withRunWisp()` for `next.config`, and Vercel Cron jobs from `vercel.json`.
-- `@runwisp/node/astro`: starts the tasks when `astro dev` or the Node adapter's built server starts.
+- `@runwisp/js/nestjs`: a drop-in for `@nestjs/schedule`.
+- `@runwisp/js/nuxt`: a Nuxt module that also runs Nitro's `scheduledTasks`.
+- `@runwisp/js/next`: `withRunWisp()` for `next.config`, and Vercel Cron jobs from `vercel.json`.
+- `@runwisp/js/astro`: starts the tasks when `astro dev` or the Node adapter's built server starts.
 
 Linux, macOS and WSL, Node 20.19, 22.12 or later, or Bun 1.1 or later. Read the
 [JavaScript SDK guide](https://docs.runwisp.com/sdk/javascript/) for every

@@ -11,7 +11,7 @@ declare module "#imports" {
 }
 
 declare module "#runwisp/nuxt" {
-    import type { Config, RunWispOptions } from "@runwisp/node";
+    import type { Config, RunWispOptions } from "@runwisp/js";
 
     export const dev: boolean;
     export const exitOnSignal: boolean;

@@ -63,7 +63,7 @@ export interface RunWispOptions {
     binary?: string;
     /** Where the dashboard URL and warnings go. Default: console. false silences them. */
     log?: Logger | false;
-    /** false (or `RUNWISP_NODE=off`) starts nothing: for unit tests. Tasks register and `execute()` still works. */
+    /** false (or `RUNWISP_JS=off`) starts nothing: for unit tests. Tasks register and `execute()` still works. */
     enabled?: boolean;
     /** true closes RunWisp on SIGTERM and SIGINT, letting running tasks finish, then exits the process with 128 + the signal number (143, 130): for servers with no shutdown hook. Default: false. */
     exitOnSignal?: boolean;
@@ -230,7 +230,7 @@ export class RunWisp {
         const settings = resolveSettings(options);
         this.settings = settings;
         this.paths = daemonPaths(settings.data);
-        this.enabled = options.enabled ?? process.env["RUNWISP_NODE"] !== "off";
+        this.enabled = options.enabled ?? process.env["RUNWISP_JS"] !== "off";
         this.defaultLog = options.log === false ? undefined : (options.log ?? console);
         this.log = this.defaultLog;
         this.config = options.config ?? {};

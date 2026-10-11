@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: SvelteKit
-description: Schedule tasks in a SvelteKit app with @runwisp/node and adapter-node. Every run is recorded with its output, exit code and duration.
+description: Schedule tasks in a SvelteKit app with @runwisp/js and adapter-node. Every run is recorded with its output, exit code and duration.
 head:
     - tag: title
       content: "Cron jobs in SvelteKit with RunWisp: scheduled tasks you can see"
@@ -10,7 +10,7 @@ head:
 
 **since**: `1.7`
 
-`@runwisp/node` runs scheduled tasks inside your SvelteKit server, in `vite dev`
+`@runwisp/js` runs scheduled tasks inside your SvelteKit server, in `vite dev`
 and with [adapter-node](https://svelte.dev/docs/kit/adapter-node). It needs a
 process that keeps running, so it does not work with serverless adapters.
 
@@ -20,7 +20,7 @@ adapter-node 5.1 or later, on Node.js or on [Bun](#bun).
 ## Set up
 
 ```bash
-npm install @runwisp/node
+npm install @runwisp/js
 ```
 
 Install it as a dependency, not a dev dependency. adapter-node bundles dev
@@ -34,7 +34,7 @@ starts:
 
 ```ts
 // src/hooks.server.ts
-import { RunWisp } from "@runwisp/node";
+import { RunWisp } from "@runwisp/js";
 import type { ServerInit } from "@sveltejs/kit/hooks";
 import { building } from "$app/env";
 import { cleanupSessions } from "#lib/server/sessions.ts";
@@ -84,6 +84,6 @@ Build with adapter-node as above and start the server with
 
 ## Coming from node-cron
 
-`@runwisp/node` has node-cron's API, so a `cron.schedule()` call in
+`@runwisp/js` has node-cron's API, so a `cron.schedule()` call in
 `hooks.server.ts` keeps working with `const cron = new RunWisp()`. Give every
 task a `name`. See [From node-cron](/coming-from/node-cron/).

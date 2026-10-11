@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-// A Nuxt module: `modules: ["@runwisp/node/nuxt"]`. Ships the runwisp binary
+// A Nuxt module: `modules: ["@runwisp/js/nuxt"]`. Ships the runwisp binary
 // with the build, closes RunWisp when the server stops, and runs Nitro's
 // `scheduledTasks` under RunWisp instead of Nitro's own scheduler.
 
@@ -61,12 +61,12 @@ export default function runwispNuxt(moduleOptions: RunWispNuxtOptions, nuxt: Nux
         }
         // Serverless, edge and static builds have no process for the tasks to run in.
         throw new Error(
-            `@runwisp/node/nuxt: tasks need a server that keeps running, and the "${preset}" preset doesn't start one. Build with the node-server or bun preset, or remove the module.`,
+            `@runwisp/js/nuxt: tasks need a server that keeps running, and the "${preset}" preset doesn't start one. Build with the node-server or bun preset, or remove the module.`,
         );
     });
     nuxt.hook("nitro:prepare:types", ({ declarations }) => {
         declarations.push(
-            `declare module "${VIRTUAL_MODULE}" { export const options: import("@runwisp/node").RunWispOptions; }`,
+            `declare module "${VIRTUAL_MODULE}" { export const options: import("@runwisp/js").RunWispOptions; }`,
         );
     });
     nuxt.hook("nitro:config", (config) => {
@@ -97,12 +97,12 @@ export default function runwispNuxt(moduleOptions: RunWispNuxtOptions, nuxt: Nux
         ];
         config.externals = {
             ...config.externals,
-            // Nuxt inlines module packages, but inlined, @runwisp/node can't
+            // Nuxt inlines module packages, but inlined, @runwisp/js can't
             // find the runwisp binary. Only the plugins need bundling, for
-            // their virtual imports; they import @runwisp/node by name, so
+            // their virtual imports; they import @runwisp/js by name, so
             // they share the app's instance.
             inline: [
-                ...(config.externals?.inline ?? []).filter((id) => id !== "@runwisp/node"),
+                ...(config.externals?.inline ?? []).filter((id) => id !== "@runwisp/js"),
                 plugin("nuxt-close"),
                 plugin("nuxt-tasks"),
             ],

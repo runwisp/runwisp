@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Next.js
-description: Schedule tasks in a self-hosted Next.js app with @runwisp/node, and replace Vercel Cron. Every run is recorded with its output, exit code and duration.
+description: Schedule tasks in a self-hosted Next.js app with @runwisp/js, and replace Vercel Cron. Every run is recorded with its output, exit code and duration.
 head:
     - tag: title
       content: "Cron jobs in Next.js with RunWisp: scheduled tasks you can see"
@@ -10,7 +10,7 @@ head:
 
 **since**: `1.7`
 
-`@runwisp/node` runs scheduled tasks inside a self-hosted Next.js app: `next
+`@runwisp/js` runs scheduled tasks inside a self-hosted Next.js app: `next
 start`, `output: "standalone"` or Docker. It needs a process that keeps running,
 so it does not work on Vercel or other serverless hosts.
 
@@ -19,7 +19,7 @@ It works with Next.js 15 or later, on Node.js or on [Bun](#bun).
 ## Set up
 
 ```bash
-npm install @runwisp/node
+npm install @runwisp/js
 ```
 
 Wrap your Next config with `withRunWisp()`. It keeps the package out of Next's
@@ -29,7 +29,7 @@ server bundle, so it finds the `runwisp` binary, and copies the binary into
 ```ts
 // next.config.ts
 import type { NextConfig } from "next";
-import { withRunWisp } from "@runwisp/node/next";
+import { withRunWisp } from "@runwisp/js/next";
 
 const nextConfig: NextConfig = {};
 
@@ -42,7 +42,7 @@ Put the tasks in their own module:
 
 ```ts
 // lib/tasks.ts
-import { RunWisp } from "@runwisp/node";
+import { RunWisp } from "@runwisp/js";
 import { cleanupSessions } from "./sessions";
 
 const runwisp = new RunWisp({ exitOnSignal: Boolean(process.env.NEXT_MANUAL_SIG_HANDLE) });
@@ -80,7 +80,7 @@ the file and your cron routes as they are:
 
 ```ts
 // lib/tasks.ts
-import { scheduleVercelCrons } from "@runwisp/node/next";
+import { scheduleVercelCrons } from "@runwisp/js/next";
 import vercel from "../vercel.json";
 
 scheduleVercelCrons(runwisp, vercel);

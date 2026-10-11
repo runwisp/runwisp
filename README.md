@@ -107,7 +107,7 @@ RunWisp can start from the configuration you already have:
 - [Import crontab](https://docs.runwisp.com/coming-from/cron/#convert-by-hand).
 - [Import supervisord](https://docs.runwisp.com/coming-from/supervisord/)
 - [Import docker compose](https://docs.runwisp.com/coming-from/docker-compose/).
-- [Swap node-cron for `@runwisp/node`](https://docs.runwisp.com/coming-from/node-cron/).
+- [Swap node-cron for `@runwisp/js`](https://docs.runwisp.com/coming-from/node-cron/).
 
 <div align="center">
 <img alt="RunWisp terminal UI showing tasks, live output, and run controls over SSH" src="apps/docs/src/assets/screenshots/tui-demo.webp" width="780">

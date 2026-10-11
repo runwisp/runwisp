@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Astro
-description: Schedule tasks in an Astro app with @runwisp/node and the Node adapter. Every run is recorded with its output, exit code and duration.
+description: Schedule tasks in an Astro app with @runwisp/js and the Node adapter. Every run is recorded with its output, exit code and duration.
 head:
     - tag: title
       content: "Cron jobs in Astro with RunWisp: scheduled tasks you can see"
@@ -10,7 +10,7 @@ head:
 
 **since**: `1.7`
 
-`@runwisp/node` runs scheduled tasks inside your Astro server, in `astro dev`
+`@runwisp/js` runs scheduled tasks inside your Astro server, in `astro dev`
 and with the [Node adapter](https://docs.astro.build/en/guides/integrations-guide/node/).
 It needs a process that keeps running, so `astro build` fails with any other
 adapter, or with none.
@@ -21,7 +21,7 @@ on Bun.
 ## Set up
 
 ```bash
-npm install @runwisp/node
+npm install @runwisp/js
 ```
 
 ## Define tasks
@@ -30,7 +30,7 @@ Put the tasks in their own module:
 
 ```ts
 // src/tasks.ts
-import { RunWisp } from "@runwisp/node";
+import { RunWisp } from "@runwisp/js";
 import { cleanupSessions } from "./lib/sessions";
 
 // Standalone mode has no shutdown hook: let running tasks finish, then exit.
@@ -49,7 +49,7 @@ starts:
 // astro.config.mjs
 import { defineConfig } from "astro/config";
 import node from "@astrojs/node";
-import runwisp from "@runwisp/node/astro";
+import runwisp from "@runwisp/js/astro";
 
 export default defineConfig({
     adapter: node({ mode: "standalone" }),
@@ -78,7 +78,7 @@ RunWisp in your shutdown code. Running tasks finish first:
 
 ```js
 // server.mjs
-import { RunWisp } from "@runwisp/node";
+import { RunWisp } from "@runwisp/js";
 
 process.once("SIGTERM", async () => {
     server.close();
@@ -88,6 +88,6 @@ process.once("SIGTERM", async () => {
 
 ## Coming from node-cron
 
-`@runwisp/node` has node-cron's API, so `cron.schedule()` calls keep working
+`@runwisp/js` has node-cron's API, so `cron.schedule()` calls keep working
 with `const cron = new RunWisp()`. Give every task a `name`. See
 [From node-cron](/coming-from/node-cron/).

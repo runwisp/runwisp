@@ -8,10 +8,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import runwisp from "./astro.ts";
 
-describe("@runwisp/node/astro", () => {
+describe("@runwisp/js/astro", () => {
     it("is an Astro integration", () => {
         const integration: AstroIntegration = runwisp({ tasks: "src/tasks.ts" });
-        expect(integration.name).toBe("@runwisp/node");
+        expect(integration.name).toBe("@runwisp/js");
     });
 
     it("loads the tasks module once the dev server listens", () => {

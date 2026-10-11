@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Bun
-description: Run @runwisp/node under Bun, and replace Bun.cron. Every run is recorded with its output, exit code and duration.
+description: Run @runwisp/js under Bun, and replace Bun.cron. Every run is recorded with its output, exit code and duration.
 head:
     - tag: title
       content: "Bun.cron with RunWisp: scheduled tasks you can see"
@@ -10,18 +10,18 @@ head:
 
 **since**: `1.7`
 
-`@runwisp/node` runs under Bun 1.1 or later the same way it runs under Node.js.
+`@runwisp/js` runs under Bun 1.1 or later the same way it runs under Node.js.
 It also replaces both forms of `Bun.cron`.
 
 ## Set up
 
 ```bash
-bun add @runwisp/node
+bun add @runwisp/js
 ```
 
 ```ts
 // index.ts
-import { RunWisp } from "@runwisp/node";
+import { RunWisp } from "@runwisp/js";
 
 const runwisp = new RunWisp({ exitOnSignal: true });
 
@@ -55,7 +55,7 @@ runwisp.task(
 RunWisp accepts Bun's cron syntax as is, including month and weekday names and
 `@daily`-style nicknames. It also takes an optional [seconds field](/configuration/tasks/#cron).
 
-| Bun.cron                                                                 | @runwisp/node                                                                                         |
+| Bun.cron                                                                 | @runwisp/js                                                                                           |
 | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
 | `{ tz }`                                                                 | [`timezone`](/configuration/tasks/#timezone)                                                          |
 | A time that comes while the handler still runs is skipped.               | `on_overlap: "skip"`. Without it, the run waits for the previous one.                                 |

@@ -26,7 +26,7 @@ const nuxt = vi.hoisted(() => {
 
 vi.mock("#runwisp/nuxt", () => nuxt.settings);
 vi.mock("#imports", () => ({ runTask: vi.fn() }));
-vi.mock("@runwisp/node", () => ({
+vi.mock("@runwisp/js", () => ({
     RunWisp: class {
         static closeAll = vi.fn(() => Promise.resolve());
         constructor(options: unknown) {

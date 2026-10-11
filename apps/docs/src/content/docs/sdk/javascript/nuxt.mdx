@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Nuxt
-description: Schedule tasks in a Nuxt app with @runwisp/node, and replace Nitro's scheduledTasks. Every run is recorded with its output, exit code and duration.
+description: Schedule tasks in a Nuxt app with @runwisp/js, and replace Nitro's scheduledTasks. Every run is recorded with its output, exit code and duration.
 head:
     - tag: title
       content: "Cron jobs in Nuxt with RunWisp: scheduled tasks you can see"
@@ -10,7 +10,7 @@ head:
 
 **since**: `1.7`
 
-`@runwisp/node` runs scheduled tasks inside your Nuxt server, in `nuxi dev` and
+`@runwisp/js` runs scheduled tasks inside your Nuxt server, in `nuxi dev` and
 in the built `.output/server`. It needs a process that keeps running, so
 `nuxi build` fails with serverless, edge or static presets, and so does
 `nuxi generate`.
@@ -22,7 +22,7 @@ fresh Nuxt 3 install gets.
 ## Set up
 
 ```bash
-npm install @runwisp/node
+npm install @runwisp/js
 ```
 
 Add the module:
@@ -30,7 +30,7 @@ Add the module:
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
-    modules: ["@runwisp/node/nuxt"],
+    modules: ["@runwisp/js/nuxt"],
 });
 ```
 
@@ -43,7 +43,7 @@ them to the module:
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
-    modules: [["@runwisp/node/nuxt", { data: "/var/lib/my-app/runwisp", port: 9500 }]],
+    modules: [["@runwisp/js/nuxt", { data: "/var/lib/my-app/runwisp", port: 9500 }]],
 });
 ```
 
@@ -57,7 +57,7 @@ Register tasks in a Nitro plugin. Nitro runs it once when the server starts:
 
 ```ts
 // server/plugins/tasks.ts
-import { RunWisp } from "@runwisp/node";
+import { RunWisp } from "@runwisp/js";
 import { options } from "#runwisp/nuxt";
 
 export default defineNitroPlugin(() => {
@@ -89,7 +89,7 @@ run under RunWisp instead of Nitro's scheduler. Keep your config and your
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
-    modules: ["@runwisp/node/nuxt"],
+    modules: ["@runwisp/js/nuxt"],
     nitro: {
         experimental: { tasks: true },
         scheduledTasks: { "0 * * * *": ["db:cleanup"] },

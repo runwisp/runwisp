@@ -62,7 +62,7 @@ export function resolveBinary(explicit: string | undefined): string {
     // Turbopack, for one, swaps the resolve for a module id when it bundles this file.
     if (!isAbsolute(launcher)) {
         throw new Error(
-            "@runwisp/node was bundled into the app, so it can't find the runwisp binary: mark it external (Next.js: withRunWisp from @runwisp/node/next)",
+            "@runwisp/js was bundled into the app, so it can't find the runwisp binary: mark it external (Next.js: withRunWisp from @runwisp/js/next)",
         );
     }
     return launcher;

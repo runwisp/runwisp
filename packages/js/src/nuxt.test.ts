@@ -38,12 +38,12 @@ function nitroConfig(config: NitroConfig, build: Build = {}) {
     return { config, declarations, settings: typeof virtual === "function" ? virtual() : virtual };
 }
 
-describe("@runwisp/node/nuxt", () => {
+describe("@runwisp/js/nuxt", () => {
     it("moves scheduledTasks from Nitro to RunWisp", () => {
         const { config, settings } = nitroConfig({
             scheduledTasks: { "0 * * * *": ["db:cleanup", "cache:warm"], "@daily": "db:cleanup" },
             plugins: ["./mine.ts"],
-            externals: { inline: ["@runwisp/node", "vue"], traceInclude: ["sharp"] },
+            externals: { inline: ["@runwisp/js", "vue"], traceInclude: ["sharp"] },
         });
         expect(config.scheduledTasks).toBeUndefined();
         expect(config.plugins).toEqual([
@@ -100,7 +100,7 @@ describe("@runwisp/node/nuxt", () => {
             'export const config = {"notifiers":{"ops":{"type":"slack","webhook_url":"${SLACK_URL}"}}};',
         );
         expect(declarations).toEqual([
-            'declare module "#runwisp/nuxt" { export const options: import("@runwisp/node").RunWispOptions; }',
+            'declare module "#runwisp/nuxt" { export const options: import("@runwisp/js").RunWispOptions; }',
         ]);
     });
 

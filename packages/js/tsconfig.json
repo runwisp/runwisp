@@ -5,7 +5,7 @@
         "types": ["node"],
         "erasableSyntaxOnly": true,
         "paths": {
-            "@runwisp/node": ["./src/index.ts"]
+            "@runwisp/js": ["./src/index.ts"]
         }
     },
     "include": ["src/**/*", "e2e/**/*", "scripts/**/*", "vitest.config.ts"],

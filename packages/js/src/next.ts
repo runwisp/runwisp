@@ -16,14 +16,14 @@ export interface NextConfig {
 }
 
 /**
- * Keeps @runwisp/node out of Next's server bundle, so it finds the runwisp
+ * Keeps @runwisp/js out of Next's server bundle, so it finds the runwisp
  * binary, and copies the binary into `output: "standalone"` builds.
  */
 export function withRunWisp<T extends NextConfig>(config: T): T {
     const tracing = config.outputFileTracingIncludes ?? {};
     return {
         ...config,
-        serverExternalPackages: [...(config.serverExternalPackages ?? []), "@runwisp/node"],
+        serverExternalPackages: [...(config.serverExternalPackages ?? []), "@runwisp/js"],
         outputFileTracingIncludes: {
             ...tracing,
             // Next matches the keys against route names with picomatch:

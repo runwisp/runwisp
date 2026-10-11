@@ -17,7 +17,7 @@ export default defineConfig({
             "src/**/*.test.ts",
             "../../packages/ui/src/**/*.test.ts",
             "../../packages/common/src/**/*.test.ts",
-            "../../packages/node/src/**/*.test.ts",
+            "../../packages/js/src/**/*.test.ts",
         ],
         environment: "node",
         server: {
@@ -45,7 +45,7 @@ export default defineConfig({
                 "**/packages/ui/src/lib/utils/run-motion.ts",
                 "**/packages/ui/src/lib/actions/row-motion.ts",
                 "**/packages/common/src/utils/ulid.ts",
-                "**/packages/node/src/**/*.ts",
+                "**/packages/js/src/**/*.ts",
             ],
             exclude: [
                 "src/**/*.test.ts",
@@ -53,7 +53,7 @@ export default defineConfig({
                 "test/**",
                 "**/packages/ui/src/**/*.test.ts",
                 "**/packages/common/src/**/*.test.ts",
-                "**/packages/node/src/**/*.test.ts",
+                "**/packages/js/src/**/*.test.ts",
             ],
         },
     },
