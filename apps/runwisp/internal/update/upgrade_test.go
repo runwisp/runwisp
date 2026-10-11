@@ -139,3 +139,71 @@ func TestMethod(t *testing.T) {
 		t.Errorf("project-local refusal %q should name the project", refusal)
 	}
 }
+
+func TestHelpersRejectBadInput(t *testing.T) {
+	if _, err := assetName("windows", "amd64"); err == nil {
+		t.Error("assetName: windows should have no build")
+	}
+	if _, err := assetName("linux", "386"); err == nil {
+		t.Error("assetName: 386 should have no build")
+	}
+	if _, err := checksumFor([]byte("abc  other.tar.gz\n"), "runwisp-linux-x64.tar.gz"); err == nil {
+		t.Error("checksumFor: missing asset should error")
+	}
+	if _, err := extractBinary([]byte("not gzip")); err == nil {
+		t.Error("extractBinary: non-gzip should error")
+	}
+	if _, err := extractBinary(tarball(t, nil)[:10]); err == nil {
+		t.Error("extractBinary: truncated archive should error")
+	}
+	var empty bytes.Buffer
+	gz := gzip.NewWriter(&empty)
+	tar.NewWriter(gz).Close()
+	gz.Close()
+	if _, err := extractBinary(empty.Bytes()); err == nil {
+		t.Error("extractBinary: archive without runwisp should error")
+	}
+	if err := replaceFile(filepath.Join(t.TempDir(), "missing", "runwisp"), []byte("x")); err == nil {
+		t.Error("replaceFile: missing directory should error")
+	}
+}
+
+func TestSelfReplaceFailuresKeepOldBinary(t *testing.T) {
+	exe := oldBinary(t)
+	ctx := context.Background()
+	if err := SelfReplace(ctx, releaseServer(t, nil), "https://x/rel", "v1.6.0", "windows", "amd64", exe); err == nil {
+		t.Error("unsupported platform should error")
+	}
+	if err := SelfReplace(ctx, releaseServer(t, nil), "https://x/rel", "v9.9.9", "linux", "amd64", exe); err == nil {
+		t.Error("404 on checksums should error")
+	}
+	sums := ok([]byte(strings.Repeat("0", 64) + "  other.tar.gz\n"))
+	client := &http.Client{Transport: releaseRT{"/rel/download/v1.6.0/checksums-sha256.txt": sums}}
+	if err := SelfReplace(ctx, client, "https://x/rel", "v1.6.0", "linux", "amd64", exe); err == nil {
+		t.Error("checksums without the asset should error")
+	}
+	sum := sha256.Sum256([]byte("x"))
+	client = &http.Client{Transport: releaseRT{"/rel/download/v1.6.0/checksums-sha256.txt": ok([]byte(hex.EncodeToString(sum[:]) + "  runwisp-linux-x64.tar.gz\n"))}}
+	if err := SelfReplace(ctx, client, "https://x/rel", "v1.6.0", "linux", "amd64", exe); err == nil {
+		t.Error("404 on the archive should error")
+	}
+	if b, _ := os.ReadFile(exe); string(b) != "old binary" {
+		t.Errorf("binary changed after failed upgrades: %q", b)
+	}
+}
+
+func TestLatestVersionRejectsMissingRedirect(t *testing.T) {
+	client := &http.Client{Transport: releaseRT{}}
+	if _, err := LatestVersion(context.Background(), client, "https://x/rel"); err == nil {
+		t.Error("no Location header should error")
+	}
+}
+
+func TestIsNewerIgnoresInvalidVersions(t *testing.T) {
+	if IsNewer("garbage", "v1.0.0") || IsNewer("v1.1.0", "") {
+		t.Error("invalid versions are never newer")
+	}
+	if !IsNewer("1.1.0", "v1.0.0") || IsNewer("v1.0.0", "v1.0.0") {
+		t.Error("IsNewer compares semver, with or without the v")
+	}
+}
