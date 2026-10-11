@@ -46,7 +46,7 @@
         "@types/event-source-polyfill": "^1.0.5",
         "event-source-polyfill": "^1.0.31",
         "openapi-fetch": "^0.17.0",
-        "zod": "^4.4.3"
+        "zod": "^4.6.6"
     },
     "type": "module"
 }
