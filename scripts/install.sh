@@ -117,6 +117,8 @@ main() {
   dir=$(install_dir)
   mkdir -p "${dir}"
   install -m 0755 "${tmpdir}/runwisp" "${dir}/runwisp"
+  # Tells the update check and `runwisp upgrade` how this binary got here.
+  printf 'script\n' >"${dir}/.runwisp-source"
 
   log "Installed runwisp to ${dir}/runwisp"
 

@@ -520,6 +520,32 @@ or binary changed since install.
 
 ## Other commands
 
+### `runwisp upgrade`
+
+**since**: `1.6`
+
+```bash
+runwisp upgrade
+runwisp upgrade --yes --restart=idle
+```
+
+Upgrades RunWisp to the latest stable release the same way you installed it.
+A Homebrew install runs `brew upgrade runwisp`, and a global npm, bun, pnpm, or
+yarn install runs that package manager. An install from the script or a
+tar.gz downloads the release from GitHub, checks its SHA-256, and replaces the
+binary in place. For Docker, `npx`, and an npm install inside a project, it
+prints how to upgrade instead.
+
+A running daemon keeps the old version until it restarts. Upgrade asks
+whether to restart it `now`, when `idle` (once no task runs are active;
+services don't count), or `later`. Without a terminal and without `--restart`,
+it leaves the daemon running.
+
+| Flag        | Description                                                      |
+| ----------- | ---------------------------------------------------------------- |
+| `--yes`     | Upgrade without asking first. Needed when there's no terminal.   |
+| `--restart` | Answer the restart question up front: `now`, `idle`, or `later`. |
+
 ### `runwisp password`
 
 ```bash

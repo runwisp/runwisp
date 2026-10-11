@@ -82,9 +82,16 @@ func runRestart(cmd *cobra.Command, args []string, f Flags, attach bool) error {
 		return errors.New("--url needs a target; the remote daemon itself can't be restarted from here")
 	}
 
+	return restartDaemon(cmd, f, restartLocal)
+}
+
+// restartDaemon restarts the local daemon: through systemd/launchd when a unit
+// manages it, otherwise by stopping it gracefully and spawning a fresh one.
+// local pins the per-user unit (restart --local).
+func restartDaemon(cmd *cobra.Command, f Flags, local bool) error {
 	out := cmd.OutOrStdout()
 
-	installer, opts, st, ok := serviceState(cmd, f, restartLocal)
+	installer, opts, st, ok := serviceState(cmd, f, local)
 	if ok && shouldDelegateRestart(st) {
 		return restartViaService(out, installer, opts, st, f)
 	}

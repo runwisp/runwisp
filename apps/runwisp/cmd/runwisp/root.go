@@ -123,6 +123,7 @@ func init() {
 	rootCmd.AddCommand(serviceCmd)
 	rootCmd.AddCommand(takeoverCmd)
 	rootCmd.AddCommand(demoCmd)
+	rootCmd.AddCommand(upgradeCmd)
 
 	installAgentHelpPointer(rootCmd, func() bool { return term.IsTerminal(int(os.Stdout.Fd())) })
 }
