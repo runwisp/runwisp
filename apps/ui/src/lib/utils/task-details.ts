@@ -26,9 +26,10 @@ export interface DetailSection {
 
 const q = (s: string) => JSON.stringify(s);
 
-/** Nanoseconds as a duration: "1h30m", "250ms". */
+/** Nanoseconds as a duration: "120d", "1h30m", "250ms". */
 function durationText(ns: number): string {
     const units: [string, number][] = [
+        ["d", 86_400_000],
         ["h", 3_600_000],
         ["m", 60_000],
         ["s", 1000],

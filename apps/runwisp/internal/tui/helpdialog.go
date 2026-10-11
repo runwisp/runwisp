@@ -17,13 +17,7 @@ import (
 // by context. Opened with `?` from anywhere outside text-input overlays. The
 // reference table is taller than most terminals, so the content area scrolls.
 type HelpDialog struct {
-	scroll int
-
-	// viewport and total are cached during View so Update can clamp scrolling
-	// without re-deriving the layout. viewport is the number of content rows the
-	// modal can show given the current screen height.
-	viewport int
-	total    int
+	scroll modalScroll
 }
 
 // Update reports whether the dialog should close.
@@ -42,19 +36,8 @@ func (d *HelpDialog) handleKey(key string) bool {
 	switch key {
 	case "?", "esc", "enter", "q":
 		return true
-	case "up", "k":
-		d.scrollBy(-1)
-	case "down", "j":
-		d.scrollBy(1)
-	case "pgup":
-		d.scrollBy(-d.viewport)
-	case "pgdown":
-		d.scrollBy(d.viewport)
-	case "g", "home":
-		d.scroll = 0
-	case "G", "end":
-		d.scroll = d.maxScroll()
 	}
+	d.scroll.handleKey(key)
 	return false
 }
 
@@ -62,50 +45,23 @@ func (d *HelpDialog) handleKey(key string) bool {
 func (d *HelpDialog) handleMouse(msg tea.MouseMsg) bool {
 	switch msg := msg.(type) {
 	case tea.MouseWheelMsg:
-		switch msg.Button {
-		case tea.MouseWheelUp:
-			d.scrollBy(-1)
-		case tea.MouseWheelDown:
-			d.scrollBy(1)
-		}
+		d.scroll.handleWheel(msg)
 	case tea.MouseClickMsg:
 		return true
 	}
 	return false
 }
 
-// scrollBy moves the viewport by delta rows, clamped to the scrollable range.
-func (d *HelpDialog) scrollBy(delta int) {
-	d.scroll += delta
-	d.scroll = min(max(d.scroll, 0), d.maxScroll())
-}
-
-func (d *HelpDialog) maxScroll() int {
-	return max(d.total-d.viewport, 0)
-}
-
 func (d *HelpDialog) View(screenWidth, screenHeight int) string {
 	keyColWidth := helpKeyColWidth()
 	dialogWidth, innerWidth := modalDimensions(screenWidth, 64, 44)
-
-	content := helpContentLines(innerWidth, keyColWidth)
-
-	// Reserve rows for the chrome that always frames the content: accent bar,
-	// blank+title above, blank+hint+blank below. The rest is the viewport.
-	const chromeRows = 6
-	viewport := screenHeight - chromeRows - 2
-	viewport = min(max(viewport, 3), len(content))
-	d.viewport = viewport
-	d.total = len(content)
-	d.scroll = min(d.scroll, d.maxScroll())
 
 	lines := []string{
 		modalEmptyLine(innerWidth),
 		modalSurfaceLine("Keyboard Shortcuts", innerWidth, uikit.ColorTextBright, true),
 	}
-	end := min(d.scroll+viewport, len(content))
-	lines = append(lines, content[d.scroll:end]...)
-	lines = append(lines, modalFooter(scrollHint(d.maxScroll(), "? / esc close"), innerWidth)...)
+	lines = append(lines, d.scroll.window(helpContentLines(innerWidth, keyColWidth), modalBodyRows(screenHeight))...)
+	lines = append(lines, modalFooter(d.scroll.hint("? / esc close"), innerWidth)...)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, lines)
 	return box.view

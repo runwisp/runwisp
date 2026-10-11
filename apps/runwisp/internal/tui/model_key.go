@@ -112,7 +112,7 @@ func (m Model) delegateKeyToFocusedView(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 		m.infoView.Update(msg)
 	} else if m.panelFocus == uikit.PanelMain && m.sidebar.ActivePage() == uikit.PageDebug {
 		m.debugView.Update(msg)
-	} else if m.panelFocus == uikit.PanelMain && m.homeCursor < 0 {
+	} else if m.panelFocus == uikit.PanelMain && m.homeCursor < 0 && !m.starFocused {
 		cmds = append(cmds, delegateToExecList(&m, msg)...)
 	}
 	return m, tea.Batch(cmds...)
@@ -360,6 +360,9 @@ func (m Model) openCursorFrameHistory() (Model, tea.Cmd, bool) {
 }
 
 func handleKeyEnterMainPanel(m Model) (Model, tea.Cmd, bool) {
+	if m.starFocused {
+		return m, func() tea.Msg { return browseMsg(home.RepoURL) }, true
+	}
 	if m.homeCursor >= 0 {
 		return m, m.activateHomeField(), true
 	}
@@ -418,6 +421,7 @@ func handleKeyI(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	}
 	task := m.taskDisplayByName(taskName)
 	d := NewTaskDetailDialog(taskName, task)
+	d.command = m.info.TaskCommands[taskName]
 	d.paused = m.isPaused(taskName)
 	d.loc = m.taskLoc(task)
 	m.dialogs.Show(dlgTaskDetail, d)
@@ -490,21 +494,26 @@ func handleKeyUp(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
+// handleKeyUpHome walks up from the top of the run list through the header
+// fields to the Star button, the topmost stop when the panel fits it.
 func handleKeyUpHome(m Model) (Model, tea.Cmd, bool) {
-	if m.execList.Cursor() != 0 && m.execList.TotalCount() != 0 {
+	if m.starFocused {
+		return m, nil, true
+	}
+	if m.homeCursor < 0 && m.execList.Cursor() != 0 && m.execList.TotalCount() != 0 {
 		return m, nil, false
 	}
 	fields := home.Fields(m.info, m.hasLaunchTicket())
-	if len(fields) == 0 {
-		return m, nil, false
-	}
-	if m.homeCursor < 0 {
+	switch {
+	case m.homeCursor < 0 && len(fields) > 0:
 		return m, m.focusHomeField(len(fields) - 1), true
-	}
-	if m.homeCursor > 0 {
+	case m.homeCursor > 0:
 		m.homeCursor--
+		return m, m.dialogs.SyncMouseState(), true
+	case home.StarButtonFits(m.contentWidth()):
+		return m, m.focusStar(), true
 	}
-	return m, m.dialogs.SyncMouseState(), true
+	return m, nil, m.homeCursor == 0
 }
 
 func handleKeyDown(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
@@ -515,7 +524,7 @@ func handleKeyDown(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 		m.notifications.BumpBoundaryFlash()
 		return m, notifications.ScheduleFlashClear(), true
 	}
-	if m.panelFocus == uikit.PanelMain && m.execView == nil && m.homeCursor >= 0 {
+	if m.panelFocus == uikit.PanelMain && m.execView == nil && (m.homeCursor >= 0 || m.starFocused) {
 		return handleKeyDownHome(m)
 	}
 	return m, nil, false
@@ -523,6 +532,7 @@ func handleKeyDown(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 
 func handleKeyDownHome(m Model) (Model, tea.Cmd, bool) {
 	fields := home.Fields(m.info, m.hasLaunchTicket())
+	m.starFocused = false
 	if m.homeCursor < len(fields)-1 {
 		m.homeCursor++
 	} else {
@@ -573,7 +583,8 @@ func (m Model) runListFocused() bool {
 		m.panelFocus == uikit.PanelMain &&
 		m.sidebar.ActivePage() == uikit.PageHome &&
 		!m.notifications.IsExpanded() &&
-		m.homeCursor < 0
+		m.homeCursor < 0 &&
+		!m.starFocused
 }
 
 // handleRunListSelectionKey routes the run-list multi-select keys while the

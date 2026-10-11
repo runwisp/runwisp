@@ -48,6 +48,13 @@ func starButtonSpan(w int) (from, to int, ok bool) {
 	return from, to, from >= 2+lipgloss.Width("Home")+2
 }
 
+// StarButtonFits reports whether a header rendered at width w has room for
+// the star button.
+func StarButtonFits(w int) bool {
+	_, _, ok := starButtonSpan(w)
+	return ok
+}
+
 // StarButtonAt reports whether panel column x on StarButtonY hits the star
 // button of a header rendered at width w.
 func StarButtonAt(x, w int) bool {
@@ -76,10 +83,11 @@ func Fields(info uikit.StartupInfo, hasLaunchTicket bool) []Field {
 
 // RenderHeader renders the server info section for the Home page.
 // homeCursor is the index into the focusable fields; -1 means none focused.
-// homeHover is the index of the hovered field; -1 means none.
+// homeHover is the index of the hovered field; -1 means none. starHighlighted
+// lights the star button while it is hovered or focused.
 // Returns the rendered string and the 0-based Y line offset where interactive
 // field rows begin (used for mouse hit-testing).
-func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, homeHover int, starHovered bool) (string, int) {
+func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, homeHover int, starHighlighted bool) (string, int) {
 	var b strings.Builder
 	fields := Fields(info, hasLaunchTicket)
 	lineCount := 0
@@ -92,11 +100,12 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 		Bold(true).
 		Render("  Home")
 	muted := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted)
-	// A quiet star button on the title row: mouse-only, no prompt, no network
-	// call, and dropped when the panel is too narrow to fit it beside the title.
+	// A quiet star button on the title row: no prompt, no network call, and
+	// dropped when the panel is too narrow to fit it beside the title. ↑ from
+	// the first field focuses it.
 	if from, _, ok := starButtonSpan(w); ok {
 		style := uikit.BtnBackStyle
-		if starHovered {
+		if starHighlighted {
 			style = uikit.BtnBackHoverStyle
 		}
 		title += muted.Render(strings.Repeat(" ", from-lipgloss.Width(title))) + style.Render(starButtonLabel)

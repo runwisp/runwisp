@@ -10,11 +10,12 @@ package execlist
 // proportional band via taskColIdeal and then absorbs every spare cell once the
 // fixed columns have reached their caps. In a list scoped to one task the
 // first column is the absolute start time instead, capped like the others, so
-// the table stays compact rather than stretching across the pane.
+// the table stays compact rather than stretching across the pane, and CPU and
+// RAM columns follow DURATION.
 //
-// When the pane is too narrow for every floor, TRIGGER drops first, then
-// DURATION, so the remaining columns stay readable instead of every header
-// truncating ("DURATI", "TRIGG").
+// When the pane is too narrow for every floor, TRIGGER drops first, then RAM,
+// CPU and DURATION, so the remaining columns stay readable instead of every
+// header truncating ("DURATI", "TRIGG").
 const (
 	// Floors: below these a column is dropped (TRIGGER, DURATION) or, for the
 	// columns that always show, truncates rather than shrinking further. Each
@@ -24,6 +25,7 @@ const (
 	startedColMin  = 8
 	durationColMin = 8
 	triggerColMin  = 7
+	usageColMin    = 7 // CPU "12m 30s", RAM "1023 MB"
 
 	// statusColW fits the longest uikit.StatusLabel ("queue full", 10) plus
 	// the badge's own padding.
@@ -34,10 +36,12 @@ const (
 	//   STARTED  "Jan _2 15:04"   (12) → 14
 	//   DURATION "9999h59m"       (≈8) → 10
 	//   TRIGGER  "service"/"startup" (7) → 9
+	//   CPU, RAM "12m 30s"/"1023 MB" (7) → 9
 	//   time     "Jan _2 15:04"   (12) → 14, plus " #12" for a multi-instance service
 	startedColCap   = 14
 	durationColCap  = 10
 	triggerColCap   = 9
+	usageColCap     = 9
 	timeColW        = 14
 	instanceSuffixW = 4
 
@@ -48,7 +52,8 @@ const (
 
 // colWidths holds the resolved width of every execution-table column for a
 // given content width. Field order mirrors the on-screen left-to-right order.
-// A zero started, duration or trigger means the column is hidden.
+// A zero started, duration, cpu, mem or trigger means the column is hidden;
+// cpu and mem only ever show in a scoped list.
 type colWidths struct {
 	// scoped marks a list showing one task's runs: the task name would only
 	// repeat, so the first column shows each run's absolute start time.
@@ -57,14 +62,21 @@ type colWidths struct {
 	status   int
 	started  int
 	duration int
+	cpu      int
+	mem      int
 	trigger  int
+}
+
+// trailing lists the widths of the columns after STATUS, in on-screen order.
+func (c colWidths) trailing() []int {
+	return []int{c.started, c.duration, c.cpu, c.mem, c.trigger}
 }
 
 // rowWidth returns the cells a rendered row occupies: the 2-cell indent, every
 // visible column, and one separating space between neighbours.
 func (c colWidths) rowWidth() int {
 	w := 2 + c.first + 1 + c.status
-	for _, col := range []int{c.started, c.duration, c.trigger} {
+	for _, col := range c.trailing() {
 		if col > 0 {
 			w += 1 + col
 		}
@@ -81,19 +93,22 @@ func gutter(n int) int { return 2 + n - 1 }
 // TASK. A list scoped to one task passes timeW, the width of its start-time
 // column, and keeps its columns compact by padding the last one; timeW 0 means
 // the Home table. As the pane narrows the columns give up space together, then
-// TRIGGER and DURATION drop once even their floors no longer fit.
+// the trailing columns drop, last first, once even their floors no longer fit.
 func computeColWidths(contentW, timeW int) colWidths {
 	if timeW > 0 {
 		w := fitColumns(contentW,
-			[]int{timeW, statusColW, startedColMin, durationColMin, triggerColMin},
-			[]int{timeW, statusColW, startedColCap, durationColCap, triggerColCap})
+			[]int{timeW, statusColW, startedColMin, durationColMin, usageColMin, usageColMin, triggerColMin},
+			[]int{timeW, statusColW, startedColCap, durationColCap, usageColCap, usageColCap, triggerColCap})
 		// The surplus pads the last column instead, so the table stays compact
 		// while a highlighted row still spans the pane.
 		if extra := w[0] - timeW; extra > 0 {
 			w[0] = timeW
 			w[len(w)-1] += extra
 		}
-		return colWidths{scoped: true, first: w[0], status: w[1], started: w[2], duration: at(w, 3), trigger: at(w, 4)}
+		return colWidths{
+			scoped: true, first: w[0], status: w[1], started: w[2],
+			duration: at(w, 3), cpu: at(w, 4), mem: at(w, 5), trigger: at(w, 6),
+		}
 	}
 	w := fitColumns(contentW,
 		[]int{taskColMin, statusColW, startedColMin, durationColMin, triggerColMin},

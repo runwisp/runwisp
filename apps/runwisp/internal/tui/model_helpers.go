@@ -49,6 +49,7 @@ func (m *Model) focusSidebar() tea.Cmd {
 	m.sidebar.SetFocused(true)
 	m.execList.SetFocused(false)
 	m.homeCursor = -1
+	m.starFocused = false
 	if m.execView != nil {
 		m.execView.SetFocused(false)
 	}
@@ -59,6 +60,7 @@ func (m *Model) focusMainPanel() tea.Cmd {
 	m.panelFocus = uikit.PanelMain
 	m.sidebar.SetFocused(false)
 	m.homeCursor = -1
+	m.starFocused = false
 	m.execList.SetFocused(m.execView == nil && m.sidebar.ActivePage() == uikit.PageHome)
 	if m.execView != nil {
 		m.execView.SetFocused(true)
@@ -70,11 +72,19 @@ func (m *Model) focusHomeField(index int) tea.Cmd {
 	m.panelFocus = uikit.PanelMain
 	m.sidebar.SetFocused(false)
 	m.homeCursor = index
+	m.starFocused = false
 	m.execList.SetFocused(false)
 	if m.execView != nil {
 		m.execView.SetFocused(false)
 	}
 	return m.dialogs.SyncMouseState()
+}
+
+// focusStar moves keyboard focus to the Star button on the Home title row.
+func (m *Model) focusStar() tea.Cmd {
+	cmd := m.focusHomeField(-1)
+	m.starFocused = true
+	return cmd
 }
 
 func (m *Model) applySidebarSelectionChange(prevPage uikit.Page, prevTask string) tea.Cmd {
@@ -87,6 +97,7 @@ func (m *Model) applySidebarSelectionChange(prevPage uikit.Page, prevTask string
 		return nil
 	}
 	m.homeCursor = -1
+	m.starFocused = false
 	m.execList.SetFilter(m.sidebar.ActiveTask())
 	m.recalcExecListHeight()
 

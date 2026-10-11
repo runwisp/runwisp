@@ -273,8 +273,8 @@ func (sm *StreamManager) FetchDaemonInfo() tea.Cmd {
 
 // FetchTaskState returns a command that reads the live per-task state
 // /api/daemon doesn't carry: which cron schedules are paused (from the CLI or
-// the Web UI too), which services are stopped, and each running task's CPU
-// and memory use.
+// the Web UI too), which services are stopped, each running task's CPU and
+// memory use, and each task's run command.
 func (sm *StreamManager) FetchTaskState() tea.Cmd {
 	client := sm.client
 	ctx := sm.streamCtx
@@ -283,26 +283,35 @@ func (sm *StreamManager) FetchTaskState() tea.Cmd {
 		if err != nil {
 			return uikit.TaskStateMsg{Err: err}
 		}
-		paused := make(map[string]time.Time)
-		usage := make(map[string]model.ResourceUsage)
-		stopped := make(map[string]bool)
-		lastRuns := make(map[string]model.Run)
-		for _, t := range tasks {
-			if t.LastRun != nil {
-				lastRuns[t.Name] = *t.LastRun
-			}
-			if t.ServiceStopped {
-				stopped[t.Name] = true
-			}
-			if t.PausedAt != nil {
-				paused[t.Name] = *t.PausedAt
-			}
-			if t.Usage != nil {
-				usage[t.Name] = *t.Usage
-			}
-		}
-		return uikit.TaskStateMsg{Paused: paused, Usage: usage, Stopped: stopped, LastRuns: lastRuns}
+		return taskStateMsg(tasks)
 	}
+}
+
+// taskStateMsg keys the per-task state of a /api/tasks read by task name.
+func taskStateMsg(tasks []model.TaskResponse) uikit.TaskStateMsg {
+	paused := make(map[string]time.Time)
+	usage := make(map[string]model.ResourceUsage)
+	stopped := make(map[string]bool)
+	lastRuns := make(map[string]model.Run)
+	commands := make(map[string]string)
+	for _, t := range tasks {
+		if t.RunCommand != "" {
+			commands[t.Name] = t.RunCommand
+		}
+		if t.LastRun != nil {
+			lastRuns[t.Name] = *t.LastRun
+		}
+		if t.ServiceStopped {
+			stopped[t.Name] = true
+		}
+		if t.PausedAt != nil {
+			paused[t.Name] = *t.PausedAt
+		}
+		if t.Usage != nil {
+			usage[t.Name] = *t.Usage
+		}
+	}
+	return uikit.TaskStateMsg{Paused: paused, Usage: usage, Stopped: stopped, LastRuns: lastRuns, Commands: commands}
 }
 
 // SetSchedulePaused pauses (pause=true) or resumes a task's cron schedule.
@@ -513,6 +522,9 @@ func summarizeTaskRuns(taskName string, runs []model.Run, total int64) uikit.Tas
 		default:
 			msg.Other++
 		}
+	}
+	if u, ok := uikit.UsualUsage(runs); ok {
+		msg.Usual = &u
 	}
 	return msg
 }

@@ -90,17 +90,17 @@ func TestLogHistoryDialog_ScrollClampsAndDoesNotClose(t *testing.T) {
 
 	// Up at the top is a no-op (stays at 0) and never closes.
 	assert.False(t, closes(d, tea.KeyPressMsg{Code: tea.KeyUp}))
-	assert.Equal(t, 0, d.scroll)
+	assert.Equal(t, 0, d.scroll.offset)
 
 	// Down advances; End jumps to the bottom; Down at the bottom clamps.
 	assert.False(t, closes(d, tea.KeyPressMsg{Code: tea.KeyDown}))
-	assert.Equal(t, 1, d.scroll)
+	assert.Equal(t, 1, d.scroll.offset)
 
 	d.Update(tea.KeyPressMsg{Code: 'G', Text: "G"})
-	bottom := d.scroll
-	assert.Equal(t, d.maxScroll(), bottom)
+	bottom := d.scroll.offset
+	assert.Equal(t, d.scroll.maxScroll(), bottom)
 	d.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	assert.Equal(t, bottom, d.scroll, "down at bottom should clamp")
+	assert.Equal(t, bottom, d.scroll.offset, "down at bottom should clamp")
 }
 
 func TestLogHistoryDialog_RightClickCloses(t *testing.T) {

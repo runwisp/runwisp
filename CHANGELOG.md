@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The TUI run list shows each run's CPU time and peak memory, colored by how it compares with the task's usual run, so an unusually heavy run stands out.
+- The TUI task info (`i`) shows the task's timeout, its log limit and retention, its usual CPU time and memory, and opens with the first lines of its `run` command; press `c` to see the whole command. It scrolls when it doesn't fit.
+
+### Changed
+
+- **Details** in the Web UI writes long durations in days: `keep_for = "120d"` rather than `"2880h"`.
+- A finished run's header in the TUI reads `CPU 0.3s · RAM 3.3 MB` and shortens to the memory alone on a narrow terminal.
+- The **Star** button on the TUI Home screen works from the keyboard: press ↑ from the top row, then Enter.
+
 ## [1.6.0] - 2026-10-10
 
 ### Added

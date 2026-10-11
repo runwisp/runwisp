@@ -143,7 +143,7 @@ func (m Model) renderHomeContent(panelW int, panelView string) string {
 		return header + panelView + m.execList.View()
 	}
 	starHovered := m.mouse.hoverY == home.StarButtonY && home.StarButtonAt(m.mouse.hoverX-uikit.SidebarWidth, panelW)
-	header, _ := home.RenderHeader(m.info, m.hasLaunchTicket(), panelW, m.homeCursor, m.mouse.homeHover, starHovered)
+	header, _ := home.RenderHeader(m.info, m.hasLaunchTicket(), panelW, m.homeCursor, m.mouse.homeHover, starHovered || m.starFocused)
 	return header + panelView + m.execList.View()
 }
 
@@ -252,6 +252,10 @@ func (m Model) buildSidebarHelpText() helpBar {
 }
 
 func (m Model) buildMainHelpText() helpBar {
+	if m.starFocused {
+		return helpBar{}.add(prioNav, keys.Move.Bar).add(prioAction, "enter star on GitHub").
+			add(prioNav, keys.ToSidebar.Bar).add(prioQuit, keys.Quit.Bar)
+	}
 	if m.homeCursor >= 0 {
 		enter := "enter copy"
 		fields := home.Fields(m.info, m.hasLaunchTicket())
