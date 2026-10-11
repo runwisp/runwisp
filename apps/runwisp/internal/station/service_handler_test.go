@@ -239,6 +239,23 @@ func TestHandleServiceApply_NameFallbackAndDefaults(t *testing.T) {
 	assert.Equal(t, "kill", task.LogOnFull)
 }
 
+func TestHandleServiceApply_RejectsInvalidFailures(t *testing.T) {
+	h := newDispatchHandler(shellAvailable(), nil)
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.ServiceApplyPayload{
+			TaskID:     "svc",
+			Script:     shellScript(t, "sleep 1"),
+			TaskConfig: &protocol.ExecutionTaskConfig{Failures: []string{"failed", "+timeout"}},
+		},
+	})
+	var se *StationError
+	require.ErrorAs(t, err, &se)
+	assert.Equal(t, StationErrorKindValidation, se.Kind)
+	assert.Empty(t, runner.upserted)
+}
+
 func TestHandleServiceApply_DefaultsToStationServiceName(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), nil)
 	runner := h.taskManager.(*fakeTaskRunner)

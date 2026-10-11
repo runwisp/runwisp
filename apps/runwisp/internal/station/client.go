@@ -83,16 +83,15 @@ type Client struct {
 	config  Config
 	runRepo ExternalRunGetter
 
-	syncClient   *TaskSyncClient
-	taskManager  TaskRunner
-	localTasks   *runtime.TaskRegistry
-	availability executor.Availability
-	onConnected  func()
-	handler      *InboundHandler
-	tracker      *ExecutionTracker
-	uploader     *LogUploader
-	bridge       *EventBridge
-	sessions     *sessionRunner
+	syncClient  *TaskSyncClient
+	taskManager TaskRunner
+	localTasks  *runtime.TaskRegistry
+	onConnected func()
+	handler     *InboundHandler
+	tracker     *ExecutionTracker
+	uploader    *LogUploader
+	bridge      *EventBridge
+	sessions    *sessionRunner
 
 	conn *connectionManager
 
@@ -105,6 +104,11 @@ type Client struct {
 	timezone   func() string
 	warnedZone string // last invalid daemon zone already warned about; guarded by syncMu
 	resyncCh   chan struct{}
+	// advertisedConfig is the Config availability the current (or last)
+	// session's dial header carried. The Station learns capabilities only at
+	// dial, so a reload that flips it forces a re-dial (see
+	// endSessionIfCapabilitiesChanged).
+	advertisedConfig atomic.Bool
 }
 
 type wsSession struct {
@@ -119,6 +123,16 @@ type wsSession struct {
 	// racing that window fails loudly instead of reporting success into a
 	// channel with no reader.
 	closed atomic.Bool
+	// ended is closed by end to make sessionRunner.run tear the session down
+	// on the daemon's own initiative; the client then re-dials as after any
+	// clean close.
+	ended   chan struct{}
+	endOnce sync.Once
+}
+
+// end asks the session's run loop to close the session. Idempotent.
+func (s *wsSession) end() {
+	s.endOnce.Do(func() { close(s.ended) })
 }
 
 func NewClient(cfg Config, deps Dependencies) (*Client, error) {
@@ -142,19 +156,18 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 	}
 
 	client := &Client{
-		config:       cfg,
-		runRepo:      deps.RunRepo,
-		syncClient:   NewTaskSyncClient(cfg.TaskSyncURL(), requestTimeout),
-		taskManager:  deps.TaskManager,
-		localTasks:   deps.LocalTasks,
-		availability: deps.Availability,
-		onConnected:  deps.OnConnected,
-		tracker:      tracker,
-		uploader:     uploader,
-		conn:         connMgr,
-		eventBus:     deps.EventBus,
-		timezone:     deps.Timezone,
-		resyncCh:     make(chan struct{}, 1),
+		config:      cfg,
+		runRepo:     deps.RunRepo,
+		syncClient:  NewTaskSyncClient(cfg.TaskSyncURL(), requestTimeout),
+		taskManager: deps.TaskManager,
+		localTasks:  deps.LocalTasks,
+		onConnected: deps.OnConnected,
+		tracker:     tracker,
+		uploader:    uploader,
+		conn:        connMgr,
+		eventBus:    deps.EventBus,
+		timezone:    deps.Timezone,
+		resyncCh:    make(chan struct{}, 1),
 	}
 
 	client.handler = NewInboundHandler(InboundHandlerDeps{
@@ -162,6 +175,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		RunRepo:      deps.RunRepo,
 		LogDir:       deps.LogDir,
 		Availability: deps.Availability,
+		LocalTasks:   deps.LocalTasks,
 		QueueExecUpdate: func(update protocol.ExecutionUpdateMessage) {
 			client.tracker.QueueUpdate(update, connMgr.sendIfReady)
 		},
@@ -281,7 +295,9 @@ func (client *Client) dialWebSocket(ctx context.Context) (*websocket.Conn, error
 	headers.Set("Authorization", fmt.Sprintf("Bearer %s", client.config.StationToken))
 	headers.Set("X-Runner-Agent-Version", client.config.AgentVersion)
 	headers.Set("X-Runner-Fingerprint", client.config.Fingerprint)
-	if capJSON, err := json.Marshal(client.availability); err == nil {
+	avail := client.handler.liveAvailability()
+	client.advertisedConfig.Store(avail.Config.Available)
+	if capJSON, err := json.Marshal(avail); err == nil {
 		headers.Set("X-Runner-Capabilities", string(capJSON))
 	}
 	// Advertise the station→daemon message types this daemon understands so the
@@ -342,6 +358,7 @@ func (client *Client) startResync(ctx context.Context) (stop func()) {
 				if err := client.resyncIfChanged(loopCtx); err != nil && loopCtx.Err() == nil {
 					slog.Warn("task resync failed; the next reconnect will retry", "error", err.Error())
 				}
+				client.endSessionIfCapabilitiesChanged()
 			}
 		}
 	}()
@@ -361,6 +378,22 @@ func (client *Client) resyncIfChanged(ctx context.Context) error {
 		return nil
 	}
 	return client.syncTasksLocked(ctx)
+}
+
+// endSessionIfCapabilitiesChanged ends the current session when the live
+// Config availability no longer matches what its dial header advertised (a
+// reload added the first TOML task or removed the last one), so the client
+// re-dials with a fresh X-Runner-Capabilities header. Called after every
+// tasks.changed and right after a session attaches, so a reload landing
+// between dial and attach is caught too.
+func (client *Client) endSessionIfCapabilitiesChanged() {
+	live := client.handler.liveAvailability().Config.Available
+	if live == client.advertisedConfig.Load() {
+		return
+	}
+	if client.conn.endSession() {
+		slog.Info("task set changed config dispatch availability; reconnecting to re-advertise it", "configAvailable", live)
+	}
 }
 
 func (client *Client) syncTasks(ctx context.Context) error {
@@ -446,10 +479,12 @@ func (client *Client) startSession(ctx context.Context, connection *websocket.Co
 	session := &wsSession{
 		conn:     connection,
 		outbound: make(chan []byte, outboundMessageBufferSize),
+		ended:    make(chan struct{}),
 	}
 	session.lastReceived.Store(time.Now().UnixMilli())
 
 	isFirstConnect := client.conn.attachSession(session)
+	client.endSessionIfCapabilitiesChanged()
 
 	// Clear stale log listeners from a previous session. This is a safety net
 	// in case the previous session's teardown was interrupted by a panic.

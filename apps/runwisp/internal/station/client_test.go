@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1298,4 +1299,66 @@ func TestResync_OnTasksChangedPostsOnlyWhenPayloadChanged(t *testing.T) {
 	fire()
 	require.Eventually(t, func() bool { return count() == 2 }, 5*time.Second, 10*time.Millisecond)
 	assert.Contains(t, bodies[1], "v2")
+}
+
+// The Station learns capabilities only from the dial header, so a reload that
+// gives a zero-task daemon its first task must end the session and re-dial
+// advertising config dispatch as available.
+func TestResync_ConfigAvailabilityFlipForcesRedial(t *testing.T) {
+	var mu sync.Mutex
+	var caps []executor.Availability
+	wsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var avail executor.Availability
+		_ = json.Unmarshal([]byte(r.Header.Get("X-Runner-Capabilities")), &avail)
+		mu.Lock()
+		caps = append(caps, avail)
+		mu.Unlock()
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		_ = sendJSON(conn, protocol.AuthResultMessage{Type: "auth:result", Success: true})
+		for {
+			if _, _, err := conn.Read(context.Background()); err != nil {
+				return
+			}
+		}
+	}))
+	defer wsSrv.Close()
+	syncSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"success":true,"summary":{}}`))
+	}))
+	defer syncSrv.Close()
+	baseURL, _ := url.Parse(wsSrv.URL)
+
+	bus := events.NewEventBus()
+	jm := runtime.NewTaskManager(&testutil.MockExecutor{}, bus, time.Now)
+	defer jm.Shutdown()
+	registry := runtime.NewTaskRegistry(nil)
+	client, err := NewClient(Config{Enabled: true, BaseURL: baseURL, StationToken: "t"}, Dependencies{
+		TaskManager: jm, RunRepo: &testutil.MockRunRepository{}, EventBus: bus,
+		LocalTasks: registry, LogDir: t.TempDir(), Now: time.Now,
+		Availability: executor.Availability{Config: executor.ConfigStatus(false)},
+	})
+	require.NoError(t, err)
+	client.syncClient = NewTaskSyncClient(syncSrv.URL, 5*time.Second)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() { _ = client.Run(ctx) }()
+
+	dials := func() []executor.Availability { mu.Lock(); defer mu.Unlock(); return slices.Clone(caps) }
+	attached := func() bool {
+		client.conn.mu.Lock()
+		defer client.conn.mu.Unlock()
+		return client.conn.session != nil
+	}
+	require.Eventually(t, func() bool { return len(dials()) == 1 && attached() }, 5*time.Second, 10*time.Millisecond)
+	assert.False(t, dials()[0].Config.Available)
+
+	registry.Set(&model.Task{Name: "backup", Run: "true"})
+	bus.Publish(events.EventTasksChanged, events.TasksChangedEvent{})
+
+	require.Eventually(t, func() bool { return len(dials()) == 2 }, 5*time.Second, 10*time.Millisecond)
+	assert.True(t, dials()[1].Config.Available, "the re-dial must advertise config dispatch")
 }

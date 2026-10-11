@@ -136,6 +136,42 @@ func TestMapRunToExecutionUpdateEndedSuccess(t *testing.T) {
 	assert.Equal(t, protocol.ExecutionStatusSucceeded, result.Status)
 }
 
+// A terminal update carries the failure classification (always, so a policy
+// that excludes an exit code reports isFailure=false) and the measured resource
+// totals; a running update carries none of them.
+func TestMapRunToExecutionUpdateTerminalCarriesFailureAndUsage(t *testing.T) {
+	execID := "ext-usage"
+	reason := model.ReasonFailed
+	now := time.Now()
+	peak, cpu := int64(4096), int64(250)
+	run := &model.Run{
+		Status:          model.PhaseEnded,
+		ExecutionID:     &execID,
+		EndReason:       &reason,
+		ExitCode:        3,
+		StartedAt:       &now,
+		EndedAt:         &now,
+		IsFailure:       false,
+		PeakMemoryBytes: &peak,
+		CPUTimeMs:       &cpu,
+	}
+
+	result := mapRunToExecutionUpdate(run)
+	require.NotNil(t, result)
+	assert.Equal(t, protocol.ExecutionStatusFailed, result.Status)
+	require.NotNil(t, result.IsFailure)
+	assert.False(t, *result.IsFailure)
+	assert.Equal(t, &peak, result.PeakMemoryBytes)
+	assert.Equal(t, &cpu, result.CpuTimeMs)
+
+	run.Status, run.EndReason = model.PhaseRunning, nil
+	running := mapRunToExecutionUpdate(run)
+	require.NotNil(t, running)
+	assert.Nil(t, running.IsFailure)
+	assert.Nil(t, running.PeakMemoryBytes)
+	assert.Nil(t, running.CpuTimeMs)
+}
+
 func TestMapRunToExecutionUpdateEndedStartFailed(t *testing.T) {
 	execID := "ext-fatal"
 	reason := model.ReasonStartFailed

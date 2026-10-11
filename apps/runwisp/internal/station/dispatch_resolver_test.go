@@ -393,35 +393,59 @@ func TestResolveDispatchTask_EphemeralNameCollisionAllowed(t *testing.T) {
 	assert.Len(t, runner.upserted, 1)
 }
 
+// Config availability follows the live TOML task set: a daemon that booted
+// with no tasks accepts config dispatch once a reload adds one.
+func TestParseAvailableDef_ConfigAvailabilityIsLive(t *testing.T) {
+	registry := runtime.NewTaskRegistry(nil)
+	h := newDispatchHandler(executor.Availability{Config: executor.ConfigStatus(false)}, nil)
+	h.localTasks = registry
+
+	_, err := h.parseAvailableDef(configScript(t, "backup"))
+	var se *StationError
+	require.ErrorAs(t, err, &se)
+	assert.Equal(t, StationErrorKindConflict, se.Kind)
+
+	registry.Set(&model.Task{Name: "backup"})
+	_, err = h.parseAvailableDef(configScript(t, "backup"))
+	require.NoError(t, err)
+}
+
 // --- buildDynamicStationTask ---
+
+func mustBuildDynamicStationTask(t *testing.T, dispatch *protocol.ExecutionPayload, def model.ExecutionDef) *model.Task {
+	t.Helper()
+	task, err := buildDynamicStationTask(dispatch, def)
+	require.NoError(t, err)
+	return task
+}
 
 func TestBuildDynamicStationTask_UsesTaskID(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := buildDynamicStationTask(&protocol.ExecutionPayload{TaskID: "my-task"}, def)
+	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{TaskID: "my-task"}, def)
 	assert.Equal(t, "station-my-task", task.Name)
 }
 
 func TestBuildDynamicStationTask_FallsBackToTaskName(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := buildDynamicStationTask(&protocol.ExecutionPayload{TaskName: "backup"}, def)
+	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{TaskName: "backup"}, def)
 	assert.Equal(t, "station-backup", task.Name)
 }
 
 func TestBuildDynamicStationTask_DefaultsToStationInline(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := buildDynamicStationTask(&protocol.ExecutionPayload{}, def)
+	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{}, def)
 	assert.Equal(t, "station-inline", task.Name)
 }
 
 func TestBuildDynamicStationTask_SetsTimeout(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := buildDynamicStationTask(&protocol.ExecutionPayload{TaskID: "t", Timeout: 5000}, def)
+	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{TaskID: "t", Timeout: 5000}, def)
 	assert.Equal(t, 5000*time.Millisecond, task.TimeoutValue())
 }
 
 func TestBuildDynamicStationTask_ZeroTimeoutIgnored(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := buildDynamicStationTask(&protocol.ExecutionPayload{TaskID: "t", Timeout: 0}, def)
+	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{TaskID: "t", Timeout: 0}, def)
 	assert.Nil(t, task.Timeout)
 	assert.Equal(t, time.Duration(0), task.TimeoutValue())
 }
@@ -429,7 +453,7 @@ func TestBuildDynamicStationTask_ZeroTimeoutIgnored(t *testing.T) {
 func TestBuildDynamicStationTask_AppliesTaskConfig(t *testing.T) {
 	logOnFull := protocol.LogOnFullDropOld
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := buildDynamicStationTask(&protocol.ExecutionPayload{
+	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{
 		TaskID: "t",
 		TaskConfig: &protocol.ExecutionTaskConfig{
 			Env:          map[string]string{"KEY": "val"},
@@ -447,11 +471,51 @@ func TestBuildDynamicStationTask_AppliesTaskConfig(t *testing.T) {
 
 func TestBuildDynamicStationTask_NilTaskConfigLeavesDefaults(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := buildDynamicStationTask(&protocol.ExecutionPayload{TaskID: "t", TaskConfig: nil}, def)
+	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{TaskID: "t", TaskConfig: nil}, def)
 	assert.Empty(t, task.Env)
 	assert.Zero(t, task.GracefulStopValue())
 	assert.Zero(t, task.LogMaxSize)
 	assert.Empty(t, task.LogOnFull)
+}
+
+func TestBuildDynamicStationTask_FailuresReplaceDefault(t *testing.T) {
+	def := &model.ShellExecution{Script: "echo hi"}
+	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{
+		TaskID:     "t",
+		TaskConfig: &protocol.ExecutionTaskConfig{Failures: []string{"2-3"}},
+	}, def)
+
+	assert.True(t, task.IsFailureReason(model.ReasonFailed, 2, false))
+	assert.False(t, task.IsFailureReason(model.ReasonFailed, 1, false), "exit 1 is outside the replaced set")
+	assert.False(t, task.IsFailureReason(model.ReasonTimeout, -1, false), "timeout is dropped by a bare list")
+}
+
+func TestBuildDynamicStationTask_FailuresDeltaAdjustsDefault(t *testing.T) {
+	def := &model.ShellExecution{Script: "echo hi"}
+	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{
+		TaskID:     "t",
+		TaskConfig: &protocol.ExecutionTaskConfig{Failures: []string{"-timeout", "+stopped"}},
+	}, def)
+
+	assert.False(t, task.IsFailureReason(model.ReasonTimeout, -1, false))
+	assert.True(t, task.IsFailureReason(model.ReasonStopped, -1, false))
+	assert.True(t, task.IsFailureReason(model.ReasonCrashed, -1, false), "untouched default reasons stay")
+}
+
+func TestResolveDispatchTask_RejectsInvalidFailures(t *testing.T) {
+	h := newDispatchHandler(executor.Availability{HTTP: executor.BackendStatus{Available: true}}, nil)
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
+		TaskID:     "probe",
+		Script:     httpScript(t, "https://example.com"),
+		TaskConfig: &protocol.ExecutionTaskConfig{Failures: []string{"bogus"}},
+	})
+	var se *StationError
+	require.ErrorAs(t, err, &se)
+	assert.Equal(t, StationErrorKindValidation, se.Kind)
+	assert.Contains(t, se.Message, `"bogus"`)
+	assert.Empty(t, runner.upserted)
 }
 
 func TestSanitizeStationTaskName(t *testing.T) {
