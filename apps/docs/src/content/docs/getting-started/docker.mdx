@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Running in Docker
-description: Run the RunWisp daemon in a container with the official runwisp/runwisp image. Image tags, required settings, volumes, healthcheck, TLS, timezone, and running as non-root.
+description: Run the RunWisp daemon in a container with the official runwisp/runwisp image, on its own or next to your app in an existing compose file. Image tags, required settings, volumes, healthcheck, TLS, timezone, and running as non-root.
 head:
     - tag: title
       content: "Run RunWisp in Docker: official image, env vars, volumes"
@@ -13,8 +13,7 @@ the same release binary as the install script and the npm package.
 
 ## Quick start
 
-```yaml
-# compose.yaml
+```yaml title="compose.yaml"
 services:
     runwisp:
         image: runwisp/runwisp:latest
@@ -31,12 +30,23 @@ volumes:
     runwisp-data:
 ```
 
-Run `docker compose up -d`, open `http://localhost:9477`, and log in with the
-password. On first start, RunWisp writes a starter config with one example task
-to `./runwisp/runwisp.toml`. Edit it and run
-`docker compose exec runwisp runwisp reload` to apply your changes.
+If your app already has a `compose.yaml`, add the `runwisp` service and the
+`runwisp-data` volume to it. Then start it:
 
-The same with `docker run`:
+```bash
+mkdir runwisp
+docker compose up -d
+```
+
+Open `http://localhost:9477` and log in with the password. On first start,
+RunWisp writes a starter config with one example task to
+`./runwisp/runwisp.toml`. Edit it and apply your changes:
+
+```bash
+docker compose exec runwisp runwisp reload
+```
+
+The same container with `docker run`:
 
 ```bash
 docker run -d --name runwisp \
@@ -45,6 +55,73 @@ docker run -d --name runwisp \
   -v ./runwisp:/etc/runwisp \
   -v runwisp-data:/var/lib/runwisp \
   runwisp/runwisp:latest
+```
+
+## Where tasks run
+
+A task's [`run`](/configuration/tasks/#run) command runs with `/bin/sh -c`
+inside the RunWisp container, so every tool it calls must be in the image. The
+image has `bash`, `tzdata`, and `ca-certificates`, and nothing else: no curl,
+no git, no database clients, no Docker CLI. A task that calls a missing tool
+fails with `pg_dump: not found` in its log.
+
+You have two ways to give a task its tools: run it in your app's container, or
+add the tools to the RunWisp image.
+
+### Run tasks in your app's containers
+
+A job that belongs to your app (`php artisan`, `manage.py`, a database dump)
+can run in the app's own container, with the app's code and credentials.
+Change the `runwisp` service in `compose.yaml`:
+
+```yaml title="compose.yaml"
+services:
+    runwisp:
+        image: runwisp/runwisp:latest-docker
+        # ...
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+            - /srv/shop:/srv/shop:ro
+            - ./runwisp:/etc/runwisp
+            - runwisp-data:/var/lib/runwisp
+```
+
+- The `-docker` tag adds the Docker CLI with the Compose plugin.
+- The Docker socket lets RunWisp start commands in your containers.
+- `/srv/shop` is the directory that holds your `compose.yaml`. Mount it at the
+  same path it has on the host.
+
+[If RunWisp runs in a container](/recipes/docker/#if-runwisp-runs-in-a-container)
+explains each line. Run `docker compose up -d` to recreate the container, then
+point a task at a service:
+
+```toml title="runwisp.toml"
+[tasks.laravel-schedule]
+cron            = "* * * * *"
+compose_file    = "/srv/shop/compose.yaml"
+compose_service = "app"
+run             = "php artisan schedule:run"
+```
+
+RunWisp runs the command in the running `app` container. Your stack keeps
+running from `docker compose up`, as before. To start a fresh container for
+each run instead, see [Docker tasks](/recipes/docker/).
+
+### Add tools to the image
+
+For a job that belongs to no app (`restic`, `curl` a health URL), extend the
+image:
+
+```dockerfile
+FROM runwisp/runwisp:latest
+RUN apk add --no-cache restic curl
+```
+
+On a `-debian` tag, use `apt-get install`. The entrypoint, healthcheck, and
+environment defaults are kept. To check what an image contains:
+
+```bash
+docker run --rm --entrypoint sh runwisp/runwisp:latest -c 'command -v pg_dump curl'
 ```
 
 ## Image variants and tags
@@ -58,8 +135,8 @@ docker run -d --name runwisp \
 
 - Pick Debian if your tasks need glibc or a Debian-only package, otherwise
   Alpine.
-- Pick a `-docker` tag only if your tasks run `docker` themselves (see
-  [Docker tasks](/recipes/docker/)).
+- Pick a `-docker` tag only if your tasks run `docker` themselves, including
+  tasks with [`compose_file`](/configuration/tasks/#compose_file).
 - `X.Y.Z` is the only tag that never changes. `X.Y`, `X`, and `latest` move
   with new releases. Breaking changes only ship in a new major version, so `1`
   is safe to follow.
@@ -121,29 +198,6 @@ entrypoint warns if you pass `--data` or `--socket`.
 - **`/var/lib/runwisp`**: the database and run logs. Without a volume here,
   every container recreate deletes your run history and logs you out.
 
-## Tasks run inside this container
-
-When a task runs, RunWisp runs its [`run`](/configuration/tasks/#run) command with `/bin/sh -c` inside the
-RunWisp container. So every tool your tasks call must be in the image. The
-image has `bash`, `tzdata`, and `ca-certificates`, and nothing else: no curl,
-no git, no database clients, no Docker CLI. A task that calls a missing tool
-fails with `pg_dump: not found` in its log. To check what an image contains:
-
-```bash
-docker run --rm --entrypoint sh runwisp/runwisp:latest -c 'command -v pg_dump curl'
-```
-
-To add tools, extend the image:
-
-```dockerfile
-FROM runwisp/runwisp:latest
-RUN apk add --no-cache postgresql17-client curl
-```
-
-On a `-debian` tag, use `apt-get install`. The entrypoint, healthcheck, and
-environment defaults are kept. To run `docker` itself from a task, see
-[Docker tasks](/recipes/docker/#if-runwisp-runs-in-a-container).
-
 ## Healthcheck
 
 The image has a `HEALTHCHECK` that runs `runwisp status`, so `docker ps` and
@@ -188,10 +242,11 @@ The CLI inside the container talks to the daemon over the control socket and
 needs no password:
 
 ```bash
-docker exec runwisp runwisp status
-docker exec runwisp runwisp list
-docker exec runwisp runwisp run hello
+docker compose exec runwisp runwisp status
+docker compose exec runwisp runwisp list
+docker compose exec runwisp runwisp run hello
 ```
 
-After editing `runwisp.toml` on the host, run
-`docker exec runwisp runwisp reload` (see [Reload](/operations/reload/)).
+With `docker run`, use `docker exec runwisp` instead. After editing
+`runwisp.toml` on the host, run `runwisp reload` the same way (see
+[Reload](/operations/reload/)).

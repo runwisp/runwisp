@@ -5,6 +5,11 @@ Path to a docker-compose file. The unit then runs the compose service named by
 [`run`](/configuration/tasks/#run), each run is `docker compose run --rm <service>` with the
 service's own command. With `run`, see [`compose_mode`](/configuration/tasks/#compose_mode).
 
+The unit runs in the compose project the file describes, the one
+`docker compose up` uses in that directory: `COMPOSE_PROJECT_NAME`, the file's
+top-level `name:`, or the directory name. A fresh container joins that
+project's network and named volumes.
+
 ```toml title="runwisp.toml"
 [tasks.nightly-backup]
 cron            = "0 3 * * *"
