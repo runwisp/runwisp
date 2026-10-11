@@ -132,30 +132,46 @@ func (v *ExecView) renderTitleRow(w int) string {
 	if v.Run.Status == model.PhaseEnded && v.Run.ExitCode > 0 {
 		headerRight = bgLight.Foreground(uikit.ColorError).Render("exit "+strconv.Itoa(v.Run.ExitCode)+"  ") + headerRight
 	}
-	// Resource use sits beside the status, dropped when the row is too narrow.
-	if usage := v.usageText(); usage != "" {
+	// Resource use sits beside the status, shortened and then dropped as the
+	// row narrows.
+	for _, usage := range v.usageTexts() {
 		withUsage := bgLight.Foreground(uikit.ColorTextMuted).Render(usage+"  ") + headerRight
 		if lipgloss.Width(headerLeft)+lipgloss.Width(withUsage)+1 <= w {
 			headerRight = withUsage
+			break
 		}
 	}
 	headerGap := max(w-lipgloss.Width(headerLeft)-lipgloss.Width(headerRight), 1)
 	return headerLeft + bgLight.Render(strings.Repeat(" ", headerGap)) + headerRight
 }
 
-// usageText is the live CPU and memory while the run is running, its peak
-// memory once it has ended, or "" when neither was measured.
-func (v *ExecView) usageText() string {
+// usageTexts is the run's resource use, longest form first so a narrow header
+// can fall back to a shorter one: live CPU and memory while the run is
+// running, its CPU time and peak memory once it has ended. Nil when nothing
+// was measured.
+func (v *ExecView) usageTexts() []string {
 	if v.Run.Status == model.PhaseRunning {
 		if v.Usage == nil {
-			return ""
+			return nil
 		}
-		return uikit.FormatUsage(*v.Usage)
+		return []string{uikit.FormatUsage(*v.Usage), "RAM " + config.FormatByteSize(v.Usage.MemoryBytes)}
 	}
-	if v.Run.PeakMemoryBytes == nil {
-		return ""
+	var cpu, mem string
+	if v.Run.CPUTimeMs != nil {
+		cpu = "CPU " + uikit.FormatCPUTime(*v.Run.CPUTimeMs)
 	}
-	return "peak " + config.FormatByteSize(*v.Run.PeakMemoryBytes)
+	if v.Run.PeakMemoryBytes != nil {
+		mem = "RAM " + config.FormatByteSize(*v.Run.PeakMemoryBytes)
+	}
+	switch {
+	case cpu != "" && mem != "":
+		return []string{cpu + " · " + mem, mem}
+	case cpu != "":
+		return []string{cpu}
+	case mem != "":
+		return []string{mem}
+	}
+	return nil
 }
 
 // renderMetaRow draws header row 2's meta fields (without the buttons) and

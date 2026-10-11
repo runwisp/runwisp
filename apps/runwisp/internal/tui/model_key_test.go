@@ -652,10 +652,10 @@ func TestHandleKeyUp_MainPanelNoExecViewHomeNoActiveTask(t *testing.T) {
 	m.focusMainPanel()
 	// PageHome, no active task, no execView
 
-	// handleKeyUpHome: execList empty and homeCursor<0 and no fields → returns false
-	_, _, handled := handleKeyUp(m, keyMsgSpecial(tea.KeyUp))
-	if handled {
-		t.Fatal("expected handled=false when no fields and no exec items")
+	// handleKeyUpHome: execList empty, homeCursor<0 and no fields → the Star button
+	got, _, handled := handleKeyUp(m, keyMsgSpecial(tea.KeyUp))
+	if !handled || !got.starFocused {
+		t.Fatal("expected ↑ to focus the Star button when no fields and no exec items")
 	}
 }
 
@@ -663,10 +663,10 @@ func TestHandleKeyUp_MainPanelNoExecViewHomeNoActiveTask(t *testing.T) {
 
 func TestHandleKeyUpHome_EmptyFieldsEmptyList(t *testing.T) {
 	m := newTestModel(nil)
-	// No port set -> Fields() returns empty -> handled=false
-	_, _, handled := handleKeyUpHome(m)
-	if handled {
-		t.Fatal("expected handled=false when no fields and empty list")
+	// No port set -> Fields() returns empty -> the Star button is the only stop.
+	got, _, handled := handleKeyUpHome(m)
+	if !handled || !got.starFocused {
+		t.Fatal("expected ↑ to focus the Star button when no fields and empty list")
 	}
 }
 
@@ -1343,7 +1343,8 @@ func TestHandleKeyDown_NotificationsBoundaryFlash(t *testing.T) {
 
 // ─── handleKeyUpHome (cursor at top, no items) ───────────────────────────────
 
-// TestHandleKeyUpHome_CursorTopBoundary covers cursor>0 -> 0 transition.
+// TestHandleKeyUpHome_CursorTopBoundary covers ↑ from the first field: the Star
+// button on the title row takes focus, Enter opens the repo, ↓ comes back.
 func TestHandleKeyUpHome_CursorTopBoundary(t *testing.T) {
 	m := newTestModel(nil)
 	m.info.Port = 8181
@@ -1351,11 +1352,26 @@ func TestHandleKeyUpHome_CursorTopBoundary(t *testing.T) {
 	m.info.Password = "swordfish"
 	m.homeCursor = 0 // already at top
 	newM, _, handled := handleKeyUpHome(m)
-	if !handled {
-		t.Fatal("expected handled=true")
+	if !handled || !newM.starFocused || newM.homeCursor != -1 {
+		t.Fatalf("expected the Star button focused, got starFocused=%v homeCursor=%d", newM.starFocused, newM.homeCursor)
 	}
-	if newM.homeCursor != 0 {
-		t.Fatalf("expected homeCursor=0 (clamped at top), got %d", newM.homeCursor)
+	if !strings.Contains(newM.buildMainHelpText().String(), "star on GitHub") {
+		t.Fatal("expected the help bar to name the Star action")
+	}
+
+	// Another ↑ stays put.
+	if again, _, handled := handleKeyUpHome(newM); !handled || !again.starFocused {
+		t.Fatal("expected ↑ on the Star button to be swallowed")
+	}
+
+	_, cmd, handled := handleKeyEnterMainPanel(newM)
+	if !handled || cmd == nil {
+		t.Fatal("expected Enter on the Star button to open the repo")
+	}
+
+	down, _, handled := handleKeyDown(newM, keyMsgSpecial(tea.KeyDown))
+	if !handled || down.starFocused || down.homeCursor != 0 {
+		t.Fatalf("expected ↓ back to the first field, got starFocused=%v homeCursor=%d", down.starFocused, down.homeCursor)
 	}
 }
 

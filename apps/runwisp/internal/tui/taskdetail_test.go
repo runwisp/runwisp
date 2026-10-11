@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +52,120 @@ func TestSummarizeTaskRuns_ClassifiesAndPicksLatestFailure(t *testing.T) {
 	}
 	if got.LastFailure == nil || !got.LastFailure.Equal(newest) {
 		t.Fatalf("last failure: want %v, got %v", newest, got.LastFailure)
+	}
+}
+
+func TestSummarizeTaskRuns_UsualUsage(t *testing.T) {
+	cpu, mem := int64(1500), int64(32<<20)
+	got := summarizeTaskRuns("alpha", []model.Run{{Status: model.PhaseEnded, CPUTimeMs: &cpu, PeakMemoryBytes: &mem}}, 1)
+	if got.Usual == nil || *got.Usual != (uikit.RunUsage{CPUMs: 1500, MemBytes: 32 << 20}) {
+		t.Fatalf("usual: want 1500ms / 32 MB, got %+v", got.Usual)
+	}
+	if got := summarizeTaskRuns("alpha", []model.Run{{Status: model.PhaseEnded}}, 1); got.Usual != nil {
+		t.Fatalf("usual: want nil without measured runs, got %+v", got.Usual)
+	}
+}
+
+func TestTaskDetailDialog_View_CommandTimeoutAndRetention(t *testing.T) {
+	timeout := 12 * time.Hour
+	keepRuns := 50
+	d := NewTaskDetailDialog("backup", &model.Task{
+		Name: "backup", Kind: model.KindTask, Cron: "29 3 * * *",
+		Timeout: &timeout, LogMaxSize: 10 << 20, LogOnFull: "drop_old",
+		KeepRuns: &keepRuns, KeepFor: 120 * 24 * time.Hour,
+	})
+	d.command = "/usr/local/bin/backup_opensense.sh"
+	cpu, mem := int64(1500), int64(32<<20)
+	d.ApplySummary(summarizeTaskRuns("backup", []model.Run{{Status: model.PhaseEnded, CPUTimeMs: &cpu, PeakMemoryBytes: &mem}}, 1))
+
+	view := ansi.Strip(d.View(80, 40))
+	for _, want := range []string{
+		"Command", "/usr/local/bin/backup_opensense.sh",
+		"Timeout", "12h",
+		"Output and retention", "10 MB · drop_old", "Keep runs", "50", "Keep for", "120d",
+		"Usual CPU", "2s", "Usual memory", "32 MB",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("expected %q in %q", want, view)
+		}
+	}
+}
+
+func TestTaskDetailDialog_View_CommandPreviewFirstExpandsOnC(t *testing.T) {
+	d := NewTaskDetailDialog("backup", &model.Task{Name: "backup", Kind: model.KindTask, Cron: "0 3 * * *"})
+	d.ApplySummary(uikit.TaskSummaryMsg{TaskName: "backup", Total: 1, Window: 1, Success: 1})
+	var cmd []string
+	for i := range 30 {
+		cmd = append(cmd, fmt.Sprintf("step-%02d", i))
+	}
+	d.command = strings.Join(cmd, "\n")
+
+	// The inspector leads with the first three lines and points at the rest.
+	view := ansi.Strip(d.View(80, 80))
+	if strings.Index(view, "Command") > strings.Index(view, "Schedule") {
+		t.Fatal("expected the command before the definition")
+	}
+	if !strings.Contains(view, "step-02") || strings.Contains(view, "step-03") {
+		t.Fatalf("expected only the first three command lines:\n%s", view)
+	}
+	if !strings.Contains(view, "27 more lines") || !strings.Contains(view, "c full command") {
+		t.Fatalf("expected a pointer to the full command:\n%s", view)
+	}
+
+	// c opens the full command on a short screen; it scrolls to the end.
+	if _, closed := d.Update(tea.KeyPressMsg{Code: 'c', Text: "c"}); closed {
+		t.Fatal("c should expand the command, not close")
+	}
+	full := ansi.Strip(d.View(160, 24))
+	if !strings.Contains(full, "step-00") || strings.Contains(full, "step-29") || !strings.Contains(full, "↑/↓ scroll") {
+		t.Fatalf("expected the top of the command and a scroll hint:\n%s", full)
+	}
+	d.Update(tea.KeyPressMsg{Code: 'G', Text: "G"})
+	if bottom := ansi.Strip(d.View(160, 24)); !strings.Contains(bottom, "step-29") {
+		t.Fatalf("expected the command's end in view:\n%s", bottom)
+	}
+	d.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	if d.commandScroll.offset != d.commandScroll.maxScroll()-1 {
+		t.Fatalf("expected the wheel to scroll up one row, offset %d", d.commandScroll.offset)
+	}
+
+	// esc steps back to the inspector instead of closing it.
+	if _, closed := d.Update(tea.KeyPressMsg{Code: tea.KeyEscape}); closed || d.commandOpen {
+		t.Fatal("esc should return from the full command to the inspector")
+	}
+	if _, closed := d.Update(tea.KeyPressMsg{Code: tea.KeyEscape}); !closed {
+		t.Fatal("a second esc should close the inspector")
+	}
+}
+
+func TestCommandPreviewLines_ClipsLongLine(t *testing.T) {
+	got := ansi.Strip(strings.Join(commandPreviewLines(strings.Repeat("x", 100), 40), "\n"))
+	if !strings.Contains(got, "…") || !strings.Contains(got, "press c for the full command") || strings.Contains(got, "more lines") {
+		t.Fatalf("expected one clipped line and a pointer, got:\n%s", got)
+	}
+	if got := commandPreviewLines("short", 40); len(got) != 1 {
+		t.Fatalf("expected a short command without a pointer, got %d lines", len(got))
+	}
+}
+
+func TestTaskDetailDialog_View_PlainTaskHasNoCommandOrRetention(t *testing.T) {
+	view := ansi.Strip(NewTaskDetailDialog("test", &model.Task{Name: "test", Cron: "0 3 * * *"}).View(80, 30))
+	for _, absent := range []string{"Command", "Timeout", "Output and retention"} {
+		if strings.Contains(view, absent) {
+			t.Errorf("unexpected %q in %q", absent, view)
+		}
+	}
+}
+
+func TestRetentionLabel(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		2880 * time.Hour: "120d",
+		24 * time.Hour:   "1d",
+		36 * time.Hour:   "36h",
+	} {
+		if got := retentionLabel(d); got != want {
+			t.Errorf("retentionLabel(%v): want %q, got %q", d, want, got)
+		}
 	}
 }
 
@@ -251,6 +366,9 @@ func TestHandleKeyI_OpensInspectorForCursorTask(t *testing.T) {
 	m := newTestModel([]model.Task{{Name: "alpha"}})
 	// Sidebar items: [Home(0), alpha(1), Info(2), Debug(3)] — put the cursor on alpha.
 	selectSidebarItem(&m, 1)
+	// The run command arrives with the /api/tasks poll, not /api/daemon.
+	polled, _ := m.Update(uikit.TaskStateMsg{Commands: map[string]string{"alpha": "./alpha.sh"}})
+	m = polled.(Model)
 
 	updated, cmd := m.handleKey(tea.KeyPressMsg{Code: 'i', Text: "i"})
 	got, ok := updated.(Model)
@@ -259,6 +377,9 @@ func TestHandleKeyI_OpensInspectorForCursorTask(t *testing.T) {
 	}
 	if !got.dialogs.Has(dlgTaskDetail) {
 		t.Fatal("pressing i with a task in focus should open the inspector")
+	}
+	if d, _ := got.dialogs.open[dlgTaskDetail].(*TaskDetailDialog); d == nil || d.command != "./alpha.sh" {
+		t.Fatalf("the inspector should carry the polled run command, got %+v", d)
 	}
 	if cmd == nil {
 		t.Fatal("opening the inspector should kick off the async health fetch")

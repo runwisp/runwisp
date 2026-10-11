@@ -6,6 +6,7 @@ package execlist
 import (
 	"cmp"
 	"fmt"
+	"image/color"
 	"maps"
 	"slices"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
@@ -296,7 +298,7 @@ func (e *ExecList) rowPrefix(runID string) string {
 	return checkboxEmpty + " "
 }
 
-func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidths) string {
+func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidths, usual *uikit.RunUsage) string {
 	bg, fg, bold := uikit.ColorBg, uikit.ColorText, false
 	isCursor := e.focused && rowIdx == e.cursor
 	isHovered := rowIdx == e.hoveredRow && !isCursor
@@ -311,9 +313,31 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	if item == nil {
 		return rowStyle.Render("  " + padCell("loading…", cw.rowWidth()-2))
 	}
+	cpu, mem := usageCells(&item.Run, usual, isCursor)
 	return rowStyle.Render(e.rowPrefix(item.Run.ID)+padCell(e.firstCell(item.Run, cw), cw.first)+" ") +
 		statusCell(item.Run.DisplayStatus(), cw.status, rowStyle) +
-		rowStyle.Render(trailingCells(cw, e.startedCell(item, cw), item.Duration, string(item.Run.TriggeredBy)))
+		trailingCells(cw, rowStyle, cell{text: e.startedCell(item, cw)}, cell{text: item.Duration},
+			cpu, mem, cell{text: string(item.Run.TriggeredBy)})
+}
+
+// usageCells are a run's CPU and RAM cells, colored by how they compare with
+// the task's usual run so a heavy one stands out, like the web UI's usage bars.
+// The cursor row keeps its own highlight colour.
+func usageCells(run *model.Run, usual *uikit.RunUsage, isCursor bool) (cpu, mem cell) {
+	u, ok := uikit.MeasuredUsage(run)
+	if !ok {
+		if isCursor {
+			return cell{text: "–"}, cell{text: "–"}
+		}
+		return cell{text: "–", fg: uikit.ColorTextMuted}, cell{text: "–", fg: uikit.ColorTextMuted}
+	}
+	cpu = cell{text: uikit.FormatCPUTime(u.CPUMs)}
+	mem = cell{text: config.FormatByteSize(u.MemBytes)}
+	if usual != nil && !isCursor {
+		cpu.fg = uikit.UsageColor(u.CPUMs, usual.CPUMs, uikit.UsageFloorCPUMs, nil)
+		mem.fg = uikit.UsageColor(u.MemBytes, usual.MemBytes, uikit.UsageFloorMemBytes, nil)
+	}
+	return cpu, mem
 }
 
 // statusCell is a label-sized badge padded out to the column width in the
@@ -364,23 +388,36 @@ func (e *ExecList) timeColWidth() int {
 	return timeColW
 }
 
-// trailingCells renders the STARTED, DURATION and TRIGGER cells, each led by
-// its separating space; hidden (zero-width) columns are skipped.
-func trailingCells(cw colWidths, started, duration, trigger string) string {
+// cell is one trailing column's value; a nil fg keeps the row's colour.
+type cell struct {
+	text string
+	fg   color.Color
+}
+
+// trailingCells renders the STARTED, DURATION, CPU, RAM and TRIGGER cells in
+// style, each led by its separating space; hidden (zero-width) columns are
+// skipped.
+func trailingCells(cw colWidths, style lipgloss.Style, cells ...cell) string {
 	var s string
-	for _, c := range []struct {
-		text  string
-		width int
-	}{{started, cw.started}, {duration, cw.duration}, {trigger, cw.trigger}} {
-		if c.width > 0 {
-			s += " " + padCell(c.text, c.width)
+	for i, width := range cw.trailing() {
+		if width == 0 {
+			continue
 		}
+		st := style
+		if cells[i].fg != nil {
+			st = st.Foreground(cells[i].fg)
+		}
+		s += st.Render(" " + padCell(cells[i].text, width))
 	}
 	return s
 }
 
 func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, contentW int, cw colWidths, sb scrollbarRender) {
 	end := min(e.Scroll+vpH, n)
+	var usual *uikit.RunUsage
+	if cw.cpu > 0 || cw.mem > 0 {
+		usual = e.window.UsualUsage()
+	}
 	// contentW is w when no scrollbar shows and w-1 when it does; the scrollbar
 	// glyph is exactly one cell. So a row padded to contentW plus the scrollbar
 	// is already exactly w cells — no second PadLine pass needed. Skipping it
@@ -388,7 +425,7 @@ func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, contentW int, c
 	// force VisibleWidth onto its slow grapheme path every frame.
 	visIdx := 0
 	for i := e.Scroll; i < end; i++ {
-		text := e.buildRowText(e.window.Item(i), i, cw)
+		text := e.buildRowText(e.window.Item(i), i, cw, usual)
 		row := uikit.PadLine(text, contentW, uikit.ColorBg)
 		if sb.state.show {
 			if visIdx >= sb.state.thumbStart && visIdx < sb.state.thumbEnd {
@@ -471,11 +508,10 @@ func (e *ExecList) View() string {
 		first = "TIME"
 	}
 	// STATUS sits over the badge text, past the badge's padding.
-	headerText := "  " +
-		padCell(first, cw.first) + " " +
-		padCell(" STATUS", cw.status) +
-		trailingCells(cw, "STARTED", "DURATION", "TRIGGER")
-	b.WriteString(uikit.PadLine(uikit.TableHeaderStyle.Render(headerText), w, uikit.ColorBgLight))
+	header := uikit.TableHeaderStyle.Render("  "+padCell(first, cw.first)+" "+padCell(" STATUS", cw.status)) +
+		trailingCells(cw, uikit.TableHeaderStyle,
+			cell{text: "STARTED"}, cell{text: "DURATION"}, cell{text: "CPU"}, cell{text: "RAM"}, cell{text: "TRIGGER"})
+	b.WriteString(uikit.PadLine(header, w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
 	if e.window.HasStatusFilter() {

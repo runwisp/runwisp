@@ -119,13 +119,15 @@ type SchedulePauseMsg struct {
 
 // TaskStateMsg delivers live per-task state from a fresh /api/tasks read:
 // the tasks whose cron schedule is paused, the live usage of running ones, and
-// the services that are stopped, and each task's newest started run, all keyed
-// by name.
+// the services that are stopped, each task's newest started run, and each
+// task's run command (which /api/daemon's task list leaves out), all keyed by
+// name.
 type TaskStateMsg struct {
 	Paused   map[string]time.Time
 	Usage    map[string]model.ResourceUsage
 	Stopped  map[string]bool
 	LastRuns map[string]model.Run
+	Commands map[string]string
 	Err      error
 }
 
@@ -279,7 +281,8 @@ type RunSummaryMsg struct {
 // panel shows. Total is the task's all-time run count; Success/Failed/Other are
 // classified over the most recent Window runs (the panel labels the window so
 // the numbers aren't mistaken for all-time tallies). LastFailure is the end
-// time of the most recent failing run within that window, if any.
+// time of the most recent failing run within that window, if any. Usual is the
+// median measured usage over the window, nil when no run in it was measured.
 type TaskSummaryMsg struct {
 	TaskName    string
 	Total       int64
@@ -288,6 +291,7 @@ type TaskSummaryMsg struct {
 	Other       int
 	Window      int
 	LastFailure *time.Time
+	Usual       *RunUsage
 	Err         error
 }
 

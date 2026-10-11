@@ -86,6 +86,9 @@ type Model struct {
 
 	// Home page cursor for interactive fields (-1 = not in header area).
 	homeCursor int
+	// starFocused is true while keyboard focus is on the Home title row's
+	// Star button, the stop above the first field; homeCursor is then -1.
+	starFocused bool
 	// Cached header geometry, recomputed by recalcExecListHeight.
 	layout headerLayout
 

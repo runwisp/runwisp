@@ -17,7 +17,7 @@ import (
 type LogHistoryDialog struct {
 	line   int64     // absolute (0-based) anchor line number, for the title
 	rows   []histRow // flattened, pre-rendered display rows
-	scroll int
+	scroll modalScroll
 }
 
 type histRow struct {
@@ -38,7 +38,7 @@ func NewLogHistoryDialog(line int64, frames [][]string, committed string) *LogHi
 	}
 	rows = append(rows, histRow{text: "committed", header: true})
 	rows = append(rows, histRow{text: uikit.SanitizeControls(committed)})
-	return &LogHistoryDialog{line: line, rows: rows}
+	return &LogHistoryDialog{line: line, rows: rows, scroll: modalScroll{viewport: logHistoryVisibleRows, total: len(rows)}}
 }
 
 func frameLabel(n, total int) string {
@@ -51,40 +51,19 @@ const logHistoryVisibleRows = 16
 
 // Update reports true when the dialog should close.
 func (d *LogHistoryDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
-	keyMsg, ok := msg.(tea.KeyPressMsg)
-	if !ok {
-		if _, ok := msg.(tea.MouseClickMsg); ok {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "esc", "enter", "q":
 			return nil, true
 		}
-		return nil, false
-	}
-	switch keyMsg.String() {
-	case "esc", "enter", "q":
+		d.scroll.handleKey(msg.String())
+	case tea.MouseWheelMsg:
+		d.scroll.handleWheel(msg)
+	case tea.MouseClickMsg:
 		return nil, true
-	case "up", "k":
-		if d.scroll > 0 {
-			d.scroll--
-		}
-	case "down", "j":
-		if d.scroll < d.maxScroll() {
-			d.scroll++
-		}
-	case "pgup":
-		d.scroll -= logHistoryVisibleRows
-		d.scroll = max(d.scroll, 0)
-	case "pgdown":
-		d.scroll += logHistoryVisibleRows
-		d.scroll = min(d.scroll, d.maxScroll())
-	case "g", "home":
-		d.scroll = 0
-	case "G", "end":
-		d.scroll = d.maxScroll()
 	}
 	return nil, false
-}
-
-func (d *LogHistoryDialog) maxScroll() int {
-	return max(len(d.rows)-logHistoryVisibleRows, 0)
 }
 
 func (d *LogHistoryDialog) View(screenWidth, screenHeight int) string {
@@ -96,23 +75,14 @@ func (d *LogHistoryDialog) View(screenWidth, screenHeight int) string {
 		modalEmptyLine(innerWidth),
 	}
 
-	end := min(d.scroll+logHistoryVisibleRows, len(d.rows))
-	for i := d.scroll; i < end; i++ {
-		lines = append(lines, histContentLine(d.rows[i], innerWidth))
+	body := make([]string, len(d.rows))
+	for i, r := range d.rows {
+		body[i] = histContentLine(r, innerWidth)
 	}
-
-	lines = append(lines, modalFooter(scrollHint(d.maxScroll(), "esc close"), innerWidth)...)
+	lines = append(lines, d.scroll.window(body, logHistoryVisibleRows)...)
+	lines = append(lines, modalFooter(d.scroll.hint("esc close"), innerWidth)...)
 
 	return renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, lines).view
-}
-
-// scrollHint is a scrollable modal's footer: the close hint, prefixed with
-// the scroll keys when there is anything to scroll.
-func scrollHint(maxScroll int, closeHint string) string {
-	if maxScroll == 0 {
-		return closeHint
-	}
-	return "↑/↓ scroll · " + closeHint
 }
 
 // histContentLine renders one frame row (or frame header) inside the modal,

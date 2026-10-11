@@ -107,6 +107,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.info.TaskUsage = msg.Usage
 			m.infoView.SetTaskUsage(msg.Usage)
 			m.info.StoppedServices = msg.Stopped
+			m.info.TaskCommands = msg.Commands
 			m.lastRuns = lastRuns{}
 			maps.Copy(m.lastRuns, msg.LastRuns)
 			if m.currentRun() != nil {

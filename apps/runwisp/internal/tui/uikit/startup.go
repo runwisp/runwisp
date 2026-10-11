@@ -84,6 +84,9 @@ type StartupInfo struct {
 	// restart coming), so its runs offer Start rather than Stop.
 	// Kept current by the same /api/tasks poll.
 	StoppedServices map[string]bool
+	// TaskCommands maps each task to its run command, which Tasks leaves out
+	// of JSON. Kept current by the same /api/tasks poll.
+	TaskCommands map[string]string
 	// RunUsage maps each measured running run (by ID) to its live CPU and
 	// memory use. Fed by the event stream's system samples.
 	RunUsage map[string]model.ResourceUsage

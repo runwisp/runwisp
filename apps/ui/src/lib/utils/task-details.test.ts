@@ -47,6 +47,15 @@ describe("taskDetailSections", () => {
         ]);
     });
 
+    it("writes long durations in days", () => {
+        const HOUR_NS = 60 * MINUTE_NS;
+        const task = makeTask({ keepFor: 2880 * HOUR_NS, timeout: 36 * HOUR_NS });
+        expect(section(task, "Output and retention")?.rows).toEqual([
+            { key: "keep_for", value: '"120d"' },
+        ]);
+        expect(section(task, "Execution")?.rows).toEqual([{ key: "timeout", value: '"1d12h"' }]);
+    });
+
     it("hides keys left at their defaults", () => {
         const cron = taskDetailSections(makeTask({ cron: "15 3 * * *" }));
         expect(cron.map((s) => s.title)).toEqual(["Schedule"]);

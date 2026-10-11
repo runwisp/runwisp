@@ -32,7 +32,7 @@ func pauseTestTasks() []model.Task {
 func TestStreamManager_FetchTaskState(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"items":[{"name":"backup","pausedAt":"2026-09-29T10:00:00Z","lastRun":{"id":"01J","taskName":"backup","isFailure":true}},{"name":"other","usage":{"cpuPercent":50,"memoryBytes":2048}}]}`))
+		_, _ = w.Write([]byte(`{"items":[{"name":"backup","pausedAt":"2026-09-29T10:00:00Z","lastRun":{"id":"01J","taskName":"backup","isFailure":true}},{"name":"other","run":"./other.sh","usage":{"cpuPercent":50,"memoryBytes":2048}}]}`))
 	}))
 	defer srv.Close()
 	sm := NewStreamManager(apiclient.New(srv.URL, ""))
@@ -44,6 +44,7 @@ func TestStreamManager_FetchTaskState(t *testing.T) {
 	assert.Equal(t, map[string]time.Time{"backup": time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)}, msg.Paused)
 	assert.Equal(t, map[string]model.ResourceUsage{"other": {CPUPercent: 50, MemoryBytes: 2048}}, msg.Usage)
 	assert.Equal(t, map[string]model.Run{"backup": {ID: "01J", TaskName: "backup", IsFailure: true}}, msg.LastRuns)
+	assert.Equal(t, map[string]string{"other": "./other.sh"}, msg.Commands)
 }
 
 // The /api/tasks poll feeds live usage to both the task header and the Info page.

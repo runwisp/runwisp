@@ -1290,7 +1290,18 @@ func TestExecView_HeaderShowsUsage(t *testing.T) {
 	ev.Usage = &model.ResourceUsage{CPUPercent: 37.6, MemoryBytes: 48 << 20}
 	assert("CPU 38% · 48 MB")
 
-	peak := int64(64 << 20)
-	ev.Run.Status, ev.Run.PeakMemoryBytes = model.PhaseEnded, &peak
-	assert("peak 64 MB")
+	peak, cpu := int64(64<<20), int64(300)
+	ev.Run.Status, ev.Run.PeakMemoryBytes, ev.Run.CPUTimeMs = model.PhaseEnded, &peak, &cpu
+	assert("CPU 300ms · RAM 64 MB")
+
+	// A narrower pane keeps the memory alone, then drops usage entirely.
+	ev.SetSize(62, 20)
+	assert("RAM 64 MB")
+	if strings.Contains(ansi.Strip(ev.View()), "CPU") {
+		t.Fatal("expected CPU dropped on a narrow header")
+	}
+	ev.SetSize(40, 20)
+	if strings.Contains(ansi.Strip(ev.View()), "RAM") {
+		t.Fatal("expected usage dropped on a very narrow header")
+	}
 }
