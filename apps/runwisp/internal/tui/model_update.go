@@ -148,6 +148,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleRunSummary(msg)
 	case uikit.TaskSummaryMsg:
 		m.dialogs.ApplyTaskSummary(msg)
+	default:
+		// Async results and cursor blinks for the open log-search overlay; it
+		// only ever sees key presses otherwise, so its results never landed.
+		if m.logSearch != nil {
+			newLS, cmd := m.logSearch.Update(msg)
+			m.logSearch = &newLS
+			return m, cmd
+		}
 	}
 	return m, nil
 }

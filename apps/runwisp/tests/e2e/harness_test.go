@@ -214,6 +214,9 @@ type tuiSession struct {
 	sessionStart time.Time
 	castMu       sync.Mutex
 	castEntries  []tuiCastEntry
+	// keyEntries records every key press the same way, so the replay can
+	// overlay key chips on the clip.
+	keyEntries []tuiKeyEntry
 }
 
 // tuiCastEntry is one timestamped chunk of raw PTY output. D is
@@ -221,6 +224,12 @@ type tuiSession struct {
 type tuiCastEntry struct {
 	T float64 `json:"t"`
 	D []byte  `json:"d"`
+}
+
+// tuiKeyEntry is one key sent to the PTY, timestamped like tuiCastEntry.
+type tuiKeyEntry struct {
+	T float64 `json:"t"`
+	K string  `json:"k"`
 }
 
 type daemonProcess struct {
@@ -475,13 +484,32 @@ func (s *tuiSession) castSnapshot() []tuiCastEntry {
 	return append([]tuiCastEntry(nil), s.castEntries...)
 }
 
+// keySnapshot returns a copy of every key pressed so far.
+func (s *tuiSession) keySnapshot() []tuiKeyEntry {
+	s.castMu.Lock()
+	defer s.castMu.Unlock()
+
+	return append([]tuiKeyEntry(nil), s.keyEntries...)
+}
+
 func (s *tuiSession) press(t testing.TB, keys ...string) {
 	t.Helper()
 
+	s.pressEvery(t, 100*time.Millisecond, keys...)
+}
+
+// pressEvery is press with a caller-chosen gap after each write, for input
+// that must be faster than typing (a mouse glide).
+func (s *tuiSession) pressEvery(t testing.TB, gap time.Duration, keys ...string) {
+	t.Helper()
+
 	for _, key := range keys {
+		s.castMu.Lock()
+		s.keyEntries = append(s.keyEntries, tuiKeyEntry{T: time.Since(s.sessionStart).Seconds(), K: key})
+		s.castMu.Unlock()
 		_, err := s.ptyFile.WriteString(key)
 		require.NoError(t, err)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(gap)
 	}
 }
 

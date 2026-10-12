@@ -1517,6 +1517,29 @@ func TestHandleLogSearchKey_ForwardsKey(t *testing.T) {
 	}
 }
 
+// The overlay's search runs as an async command; its result message must reach
+// the overlay through Model.Update, not just key presses, or "Searching…" never
+// clears.
+func TestUpdate_RoutesSearchResultToOverlay(t *testing.T) {
+	m := newTestModel(nil)
+	ls := logsearch.New(m.streams.client, "task-x")
+	m.logSearch = &ls
+
+	newM, _ := m.handleLogSearchKey(keyMsg("x"))
+	newM, cmd := newM.(Model).handleLogSearchKey(keyMsgSpecial(tea.KeyEnter))
+	got := newM.(Model)
+	if cmd == nil || !strings.Contains(got.logSearch.View(80, 24), "Searching…") {
+		t.Fatal("expected an in-flight search after Enter")
+	}
+
+	// The dummy client points at a dead port, so the result is an error; any
+	// result clears the loading state.
+	newM, _ = got.Update(cmd())
+	if strings.Contains(newM.(Model).logSearch.View(80, 24), "Searching…") {
+		t.Fatal("search result never reached the overlay")
+	}
+}
+
 func TestHandleLogSearchSelect_OpensRunWhenNotAlreadyOpen(t *testing.T) {
 	m := newTestModel(nil)
 	ls := logsearch.New(m.streams.client, "task-x")

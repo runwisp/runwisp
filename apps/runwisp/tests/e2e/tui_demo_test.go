@@ -65,59 +65,83 @@ func TestCaptureTUIDemo(t *testing.T) {
 	markTime := s.elapsed()
 	time.Sleep(800 * time.Millisecond)
 
-	// Scroll the homepage's recent-activity table down to a run with a long,
-	// scrollable log (reindex-search: one line per indexed document, thousands
-	// of lines), and open it.
-	s.press(t, keyRight)
-	selectHomeActivityRow(t, s, "reindex-search")
-	time.Sleep(500 * time.Millisecond)
-	s.press(t, keyEnter)
-	s.waitForAll(t, 10*time.Second, "← Back", "[reindex]")
-	time.Sleep(800 * time.Millisecond)
+	m := &demoMouse{s: s, col: 90, row: 12}
 
-	// Scroll its log in place (not fullscreen). Opening a run always lands
-	// header focus on "← Back" (see openExecView in model.go), and Up/Down
-	// there just walk the header fields, not the log, so two silent Downs
-	// move focus off the header and into the pane first. From there, a
-	// slow, one-line-at-a-time scroll back through history: each press
-	// only moves the view by a single line, so consecutive frames overlap
-	// and the motion reads as scrolling, unlike a couple of large page
-	// jumps between unrelated chunks of the log.
-	s.press(t, keyDown, keyDown)
-	s.press(t, repeatKey(keyUp, 30)...)
-	time.Sleep(600 * time.Millisecond)
-
-	// Back to the homepage list, then to the sidebar.
-	s.press(t, keyEsc)
-	time.Sleep(400 * time.Millisecond)
-	s.press(t, keyLeft)
+	// Home: the pointer sweeps the recent-activity table (rows highlight under
+	// it), then the wheel scrolls it.
+	m.glideTo(t, 70, 8)
+	m.glideTo(t, 70, 20)
+	m.wheel(t, true, 4)
+	m.wheel(t, false, 4)
 	time.Sleep(300 * time.Millisecond)
 
-	// Sidebar: a scheduled backup whose run streams a live `\r` progress bar,
-	// showcasing that RunWisp captures in-place terminal redraws, not just
-	// line-by-line logs.
-	const backupTask = "backup-postgres"
-	selectSidebarItem(t, s, backupTask)
-	s.waitForAll(t, 5*time.Second, backupTask, "Run Now")
+	// Failures stay visible: cycle the status filter to FAILED
+	// (all -> running -> succeeded -> failed), then double-click the top failed
+	// run to show its captured stderr.
 	s.press(t, keyRight)
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+	s.press(t, "f", "f", "f")
+	s.waitForAll(t, 5*time.Second, "FILTER: FAILED")
+	time.Sleep(700 * time.Millisecond)
+	m.doubleClick(t, "failed", mainPanel)
+	s.waitForAll(t, 10*time.Second, "← Back")
+	time.Sleep(1500 * time.Millisecond)
+	m.click(t, "← Back", mainPanel)
+	time.Sleep(300 * time.Millisecond)
+	// The status filter sticks across tasks; cycle it back to "all"
+	// (failed -> skipped -> stopped -> all) so later task views show their runs.
+	s.pressEvery(t, 150*time.Millisecond, "f", "f", "f")
+	time.Sleep(300 * time.Millisecond)
 
-	// Run it now: trigger, confirm, and watch the exec view that opens
-	// automatically stream the progress bars to completion.
-	s.press(t, "r")
-	s.waitForAll(t, 5*time.Second, fmt.Sprintf("Run '%s' now?", backupTask))
-	time.Sleep(500 * time.Millisecond)
-	// The dialog defaults to "No" selected (see internal/tui/confirm.go), so
-	// switch to "Yes" first, visibly, before confirming with Enter.
+	// Live in-place redraws: rotate-logs redraws four per-file progress bars
+	// with cursor-up escapes. Click it in the sidebar, click Run Now, and watch
+	// the exec view stream them.
+	m.click(t, "rotate-logs", sidebar)
+	s.waitForAll(t, 5*time.Second, "Run Now")
+	m.click(t, "Run Now", mainPanel)
+	confirmRun(t, s, "rotate-logs")
+	s.waitForAll(t, 15*time.Second, "done")
+	time.Sleep(1500 * time.Millisecond)
+
+	// Log search over a huge log: reindex-search wrote 8000 lines. Search, jump
+	// to a hit, then wheel through the surrounding lines.
+	m.click(t, "← Back", mainPanel)
+	time.Sleep(300 * time.Millisecond)
+	s.press(t, keyLeft)
+	jumpToTask(t, s, "rei", "reindex-search")
+	// Right focuses the run list; "/" there searches every run of the task. The
+	// query matches one line near the end of each run's log: a hit outside the
+	// loaded tail page would open the run without scrolling to it.
 	s.press(t, keyRight)
 	time.Sleep(500 * time.Millisecond)
+	s.press(t, "/")
+	time.Sleep(400 * time.Millisecond)
+	s.press(t, strings.Split("org=7 id=0000796", "")...)
+	time.Sleep(300 * time.Millisecond)
 	s.press(t, keyEnter)
+	s.waitForAll(t, 30*time.Second, "L7963")
+	time.Sleep(1200 * time.Millisecond)
+	s.press(t, keyEnter)
+	s.waitForAll(t, 10*time.Second, "← Back", "[reindex]")
+	time.Sleep(1200 * time.Millisecond)
+	m.wheel(t, true, 6)
+	m.wheel(t, false, 10)
+	time.Sleep(400 * time.Millisecond)
+
+	// Finale: a scheduled backup whose run streams coloured SQL and live `\r`
+	// progress bars.
+	m.click(t, "← Back", mainPanel)
+	time.Sleep(300 * time.Millisecond)
+	m.click(t, "backup-postgres", sidebar)
+	s.waitForAll(t, 5*time.Second, "Run Now")
+	m.click(t, "Run Now", mainPanel)
+	confirmRun(t, s, "backup-postgres")
 	s.waitForAll(t, 8*time.Second, "uploaded to s3")
-	time.Sleep(900 * time.Millisecond)
+	time.Sleep(1200 * time.Millisecond)
 
 	entries := s.castSnapshot()
 	require.NotEmpty(t, entries, "captured cast should not be empty")
-	writeCast(t, castFile, markTime, entries)
+	writeCast(t, castFile, markTime, entries, s.keySnapshot())
 
 	// SIGTERM only, never confirm "Shut Down".
 	s.forceStop()
@@ -130,82 +154,131 @@ func TestCaptureTUIDemo(t *testing.T) {
 type tuiCastFile struct {
 	MarkTime float64        `json:"markTime"`
 	Entries  []tuiCastEntry `json:"entries"`
+	Keys     []tuiKeyEntry  `json:"keys"`
 }
 
 // writeCast serializes a cast to path as JSON.
-func writeCast(t *testing.T, path string, markTime time.Duration, entries []tuiCastEntry) {
+func writeCast(t *testing.T, path string, markTime time.Duration, entries []tuiCastEntry, keys []tuiKeyEntry) {
 	t.Helper()
 
-	data, err := json.Marshal(tuiCastFile{MarkTime: markTime.Seconds(), Entries: entries})
+	data, err := json.Marshal(tuiCastFile{MarkTime: markTime.Seconds(), Entries: entries, Keys: keys})
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, data, 0o600))
 }
 
-// repeatKey returns key repeated n times, for driving a slow, one-line-at-a-
-// time scroll (see the reindex-search log step) instead of a couple of large
-// jumps that read as the view hopping between unrelated pages.
-func repeatKey(key string, n int) []string {
-	keys := make([]string, n)
-	for i := range keys {
-		keys[i] = key
-	}
-	return keys
-}
-
-// selectHomeActivityRow scrolls the homepage's (already-focused) recent-
-// activity table downward until the cursor lands on a row for name, so a
-// following Enter opens that run. The demo seeds a handful of manual runs for
-// name within the last several minutes (see internal/demo/seed.go's
-// planManual), so it always lands within the first couple of screens; maxRows
-// is a generous bound in case other tasks' runs crowd it further down.
-func selectHomeActivityRow(t *testing.T, s *tuiSession, name string) {
+// jumpToTask opens the sidebar filter, types query one key at a time, and
+// selects the task it narrows to. The task name is asserted on screen, so a
+// renamed demo task fails loudly instead of recording the wrong tour.
+func jumpToTask(t *testing.T, s *tuiSession, query, task string) {
 	t.Helper()
 
-	const maxRows = 60
-	for i := 0; i < maxRows; i++ {
-		if homeActivityCursorRowHas(s.snapshot(), i, name) {
-			return
-		}
-		s.press(t, keyDown)
-	}
-	require.FailNowf(t, "could not scroll home activity to row", "name=%q\nscreen:\n%s", name, s.snapshot())
+	s.press(t, "/")
+	time.Sleep(300 * time.Millisecond)
+	s.press(t, strings.Split(query, "")...)
+	time.Sleep(300 * time.Millisecond)
+	s.press(t, keyEnter)
+	s.waitForAll(t, 5*time.Second, task, "Run Now")
 }
 
-// homeActivityCursorRowHas reports whether name appears in the row currently
-// under the activity table's cursor. The cursor highlight is a colour
-// (invisible in vt10x's plain-text snapshot, like the sidebar's, see
-// selectSidebarItem), but its position is otherwise fully determined:
-// cursorIndex tracks the number of Down presses since the table gained focus
-// (its cursor always starts at row 0), and the footer's "viewing A-B of N"
-// line reports the current scroll offset, so the row at cursorIndex-offset in
-// the data section is always the one the cursor sits on.
-func homeActivityCursorRowHas(screen string, cursorIndex int, name string) bool {
-	lines := strings.Split(screen, "\n")
+// confirmRun answers the "Run now?" dialog with keys (dialogs switch mouse
+// mode off). It defaults to "No", so it switches to "Yes" visibly first (see
+// internal/tui/confirm.go).
+func confirmRun(t *testing.T, s *tuiSession, task string) {
+	t.Helper()
 
-	headerIdx := -1
-	for i, line := range lines {
-		if strings.Contains(line, "TASK") && strings.Contains(line, "TRIGGER") {
-			headerIdx = i
-			break
+	s.waitForAll(t, 5*time.Second, fmt.Sprintf("Run '%s' now?", task))
+	time.Sleep(400 * time.Millisecond)
+	s.press(t, keyRight)
+	time.Sleep(400 * time.Millisecond)
+	s.press(t, keyEnter)
+}
+
+// Column ranges (0-based, half-open) for demoMouse.findCell: the sidebar is
+// uikit.SidebarWidth wide, the main panel is the rest.
+var (
+	sidebar   = [2]int{0, 28}
+	mainPanel = [2]int{28, 1 << 20}
+)
+
+// demoMouse drives the TUI's mouse support (tea.MouseModeAllMotion) with SGR
+// sequences written to the PTY. Targets are located on the live screen, so a
+// moved button fails loudly. Every event goes through tuiSession.pressEvery and
+// is therefore recorded for the replay's pointer overlay.
+type demoMouse struct {
+	s        *tuiSession
+	col, row int // 0-based pointer position
+}
+
+func sgrMouse(code, col, row int, release bool) string {
+	end := 'M'
+	if release {
+		end = 'm'
+	}
+	return fmt.Sprintf("\x1b[<%d;%d;%d%c", code, col+1, row+1, end)
+}
+
+// glideTo moves the pointer in short motion steps so hover highlights follow it.
+func (m *demoMouse) glideTo(t *testing.T, col, row int) {
+	t.Helper()
+
+	const steps = 8
+	seqs := make([]string, 0, steps)
+	for i := 1; i <= steps; i++ {
+		c := m.col + (col-m.col)*i/steps
+		r := m.row + (row-m.row)*i/steps
+		seqs = append(seqs, sgrMouse(35, c, r, false))
+	}
+	m.s.pressEvery(t, 35*time.Millisecond, seqs...)
+	m.col, m.row = col, row
+}
+
+// findCell returns the first cell of text on screen within the column range.
+func (m *demoMouse) findCell(t *testing.T, text string, cols [2]int) (col, row int) {
+	t.Helper()
+
+	for r, line := range strings.Split(m.s.snapshot(), "\n") {
+		runes := []rune(line)
+		for c := cols[0]; c < len(runes) && c < cols[1]; c++ {
+			if strings.HasPrefix(string(runes[c:]), text) {
+				return c, r
+			}
 		}
 	}
-	if headerIdx == -1 {
-		return false
-	}
-	dataLines := lines[headerIdx+1:]
+	require.FailNowf(t, "mouse target not on screen", "text=%q\nscreen:\n%s", text, m.s.snapshot())
+	return 0, 0
+}
 
-	scrollOffset := 0
-	for _, line := range dataLines {
-		var from, to, total int
-		if _, err := fmt.Sscanf(strings.TrimSpace(line), "viewing %d–%d of %d", &from, &to, &total); err == nil {
-			scrollOffset = from - 1
-			break
-		}
-	}
+func (m *demoMouse) click(t *testing.T, text string, cols [2]int) {
+	t.Helper()
 
-	rowInView := cursorIndex - scrollOffset
-	if rowInView < 0 || rowInView >= len(dataLines) {
-		return false
+	col, row := m.findCell(t, text, cols)
+	m.glideTo(t, col+1, row)
+	time.Sleep(150 * time.Millisecond)
+	m.s.pressEvery(t, 80*time.Millisecond, sgrMouse(0, m.col, m.row, false), sgrMouse(0, m.col, m.row, true))
+}
+
+// doubleClick clicks twice inside the TUI's doubleClickThreshold (400ms).
+func (m *demoMouse) doubleClick(t *testing.T, text string, cols [2]int) {
+	t.Helper()
+
+	col, row := m.findCell(t, text, cols)
+	m.glideTo(t, col+1, row)
+	time.Sleep(150 * time.Millisecond)
+	down, up := sgrMouse(0, m.col, m.row, false), sgrMouse(0, m.col, m.row, true)
+	m.s.pressEvery(t, 50*time.Millisecond, down, up, down, up)
+}
+
+// wheel scrolls n notches at the current pointer position.
+func (m *demoMouse) wheel(t *testing.T, down bool, n int) {
+	t.Helper()
+
+	code := 64
+	if down {
+		code = 65
 	}
-	return strings.Contains(dataLines[rowInView], name)
+	seqs := make([]string, n)
+	for i := range seqs {
+		seqs[i] = sgrMouse(code, m.col, m.row, false)
+	}
+	m.s.pressEvery(t, 120*time.Millisecond, seqs...)
 }
