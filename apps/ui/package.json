@@ -39,7 +39,7 @@
         "vitest": "^5.0.4"
     },
     "dependencies": {
-        "@lucide/svelte": "^1.55.0",
+        "@lucide/svelte": "^1.56.0",
         "@noble/hashes": "^2.4.0",
         "@runwisp/common": "workspace:*",
         "@runwisp/ui": "workspace:*",

@@ -328,6 +328,33 @@ run = "echo runwisp-exec-test"
 	assert.Equal(t, 0, exitCode)
 }
 
+// TestRunExecStandalone_OutputMatchFailureExitsNonZero covers a run the
+// `failures` policy ends as failed although the process exited 0 (an
+// output:<regex> match). The standalone path must report a non-zero exit code
+// the same way the daemon-backed path does (exitCodeFromRun), or a script
+// chained on `runwisp run --standalone` sails past the failure.
+func TestRunExecStandalone_OutputMatchFailureExitsNonZero(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns a subprocess")
+	}
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	cfg := `
+[daemon]
+timezone = "UTC"
+
+[tasks.noisy]
+run = "echo ERROR: disk full"
+failures = ["output:ERROR"]
+`
+	require.NoError(t, os.WriteFile(cfgPath, []byte(cfg), 0o600))
+
+	exitCode, err := runExecStandalone("noisy", Flags{CfgFile: cfgPath, DataDir: dir}, nil, false)
+	require.NoError(t, err)
+	assert.Equal(t, 1, exitCode)
+}
+
 // TestRunExecStandalone_ParamsReachTheRun proves --param values actually
 // reach runtime.TriggerRunOptions instead of being silently dropped: a
 // required parameter with no default fails the run when omitted and succeeds

@@ -330,6 +330,20 @@ func TestCronRunsInTheHomeDirectory(t *testing.T) {
 	}
 }
 
+// TestCronHomeLineSetsTheWorkingDir: crond starts a job in the HOME it hands it,
+// so a crontab's own HOME= moves the job's working directory, not just its env.
+// The line only reaches the jobs below it, and a relative HOME changes nothing.
+func TestCronHomeLineSetsTheWorkingDir(t *testing.T) {
+	in := "0 1 * * * /bin/before\nHOME=/srv/app\n0 2 * * * ./after.sh\nHOME=rel\n0 3 * * * ./rel.sh\n"
+	res := parseCron(t, in, CronOptions{})
+	out := res.TOML()
+	before, rest, _ := strings.Cut(out, "[tasks.after]")
+	after, rel, _ := strings.Cut(rest, "[tasks.rel]")
+	mustContain(t, before, `working_dir = "~"`)
+	mustContain(t, after, `working_dir = "/srv/app"`)
+	mustContain(t, rel, `working_dir = "~"`)
+}
+
 // TestCronSystemWorkingDirIsTheUsersHome is the half that used to be left out.
 // A system crontab's job runs as its user column, and crond runs it in that
 // user's home — so `~` is the right answer for both crontab formats. It only

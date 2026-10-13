@@ -257,3 +257,34 @@ func TestFollowRunLog_QuietStreamDoesNotSpendStallBudget(t *testing.T) {
 	assert.True(t, done, "a quiet run must be followed until it ends")
 	assert.Equal(t, []string{"finally"}, got)
 }
+
+// TestFollowRunLog_ReopensAfterConnectionCutMidStream covers a reverse proxy
+// (or NAT) cutting a live stream part-way through: the body ends with a read
+// error instead of a clean close. followRunLog promises to ride out transport
+// blips, so it must re-open from the next unseen line rather than abort the run
+// follow (which would drop the exit code of a run that is still going).
+func TestFollowRunLog_ReopensAfterConnectionCutMidStream(t *testing.T) {
+	var streamHits atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		if streamHits.Add(1) == 1 {
+			fmt.Fprint(w, "event: line\ndata: {\"n\":0,\"stream\":\"stdout\",\"text\":\"one\"}\n\n")
+			w.(http.Flusher).Flush()
+			panic(http.ErrAbortHandler) // cut the connection without ending the chunked body
+		}
+		assert.Equal(t, "1", r.URL.Query().Get("from"), "resume from the next unseen line")
+		fmt.Fprint(w, "event: line\ndata: {\"n\":1,\"stream\":\"stdout\",\"text\":\"two\"}\n\n")
+		fmt.Fprint(w, "event: done\ndata: {\"finalLine\":1,\"status\":\"ended\"}\n\n")
+	}))
+	defer srv.Close()
+
+	var got []string
+	done, err := followRunLog(t.Context(), apiclient.New(srv.URL, ""), "task", "run-1", 0, time.Second, func(l server.LogLineEntry) {
+		got = append(got, l.Text)
+	})
+	require.NoError(t, err)
+	assert.True(t, done)
+	assert.Equal(t, []string{"one", "two"}, got)
+}

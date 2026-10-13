@@ -539,8 +539,8 @@ func runExecStandalone(taskName string, f Flags, params map[string]*string, asJS
 		}
 	}
 
-	if result.Run.EndReason != nil && *result.Run.EndReason != model.ReasonSuccess {
-		return result.Run.ExitCode, nil
+	if code := exitCodeFromRun(result.Run); code != 0 {
+		return code, nil
 	}
 
 	if !asJSON {

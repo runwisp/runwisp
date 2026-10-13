@@ -47,8 +47,8 @@ var errLogStreamStalled = errors.New("log stream never became available")
 // end) to onLine until the run ends, re-opening the SSE stream across transport
 // blips and the server's per-connection timeout without repeating or losing a
 // line. Lines the daemon dropped are warned about under taskName. It returns
-// done=true once the stream reports the run ended (err is then a stream error,
-// if any), and done=false with a nil error when ctx is cancelled.
+// done=true once the stream reports the run ended, and done=false with a nil
+// error when ctx is cancelled.
 func followRunLog(ctx context.Context, client *apiclient.Client, taskName, runID string, from int64, quietAfter time.Duration, onLine func(server.LogLineEntry)) (bool, error) {
 	stalls := 0
 	for {
@@ -104,7 +104,8 @@ func followOnce(ctx context.Context, client *apiclient.Client, taskName, runID s
 	if err != nil {
 		return from - 1, true, fmt.Errorf("open log stream: %w", err)
 	}
-	return drainLogStream(ch, taskName, runID, from, onLine)
+	highest, done = drainLogStream(ch, taskName, runID, from, onLine)
+	return highest, done, nil
 }
 
 // runNotPersistedYet reports whether a stream-open error is the daemon's 404
@@ -117,8 +118,10 @@ func runNotPersistedYet(err error) bool {
 // drainLogStream forwards one connection's lines to onLine until it closes.
 // Lines below `from` were delivered on an earlier connection and are skipped.
 // It returns the highest line number forwarded (from-1 when none) and whether
-// the run ended.
-func drainLogStream(ch <-chan apiclient.LogStreamMsg, taskName, runID string, from int64, onLine func(server.LogLineEntry)) (highest int64, done bool, err error) {
+// the run ended. A read error ends the connection like a clean close would: a
+// reverse proxy or NAT cutting a live stream is a transport blip, so the caller
+// re-opens from the next unseen line instead of abandoning a run still going.
+func drainLogStream(ch <-chan apiclient.LogStreamMsg, taskName, runID string, from int64, onLine func(server.LogLineEntry)) (highest int64, done bool) {
 	highest = from - 1
 	for msg := range ch {
 		switch msg.Kind {
@@ -131,12 +134,13 @@ func drainLogStream(ch <-chan apiclient.LogStreamMsg, taskName, runID string, fr
 		case apiclient.LogStreamMsgKindDropped:
 			warnDroppedLines(taskName, runID, msg.Dropped)
 		case apiclient.LogStreamMsgKindDone:
-			return highest, true, nil
+			return highest, true
 		case apiclient.LogStreamMsgKindErr:
-			return highest, true, fmt.Errorf("log stream error: %w", msg.ErrValue)
+			slog.Debug("Log stream connection lost; re-opening", "run", runID, "err", msg.ErrValue)
+			return highest, false
 		}
 	}
-	return highest, false, nil
+	return highest, false
 }
 
 // writeLogLine prints one captured line the way the task wrote it: its stderr

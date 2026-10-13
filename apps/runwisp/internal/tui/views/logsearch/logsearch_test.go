@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
@@ -273,6 +274,25 @@ func TestView_RendersHits_AndOverflow(t *testing.T) {
 	}
 	if !strings.Contains(out, "▶") {
 		t.Fatalf("expected selection cursor, got:\n%s", out)
+	}
+}
+
+// TestView_HitTruncationIsRuneSafe: a hit's text is clipped by display width,
+// not byte length. A multi-byte line that fits the overlay must render whole,
+// and one that does not must be cut on a rune boundary.
+func TestView_HitTruncationIsRuneSafe(t *testing.T) {
+	m := newTestModel(t)
+	fits := strings.Repeat("é", 40) // 80 bytes but only 40 columns
+	m.hits = []server.LogSearchHit{
+		{RunID: "01ARZ3NDEKTSV4RRFFQ69G5FAA", N: 1, Text: fits},
+		{RunID: "01ARZ3NDEKTSV4RRFFQ69G5FAB", N: 2, Text: strings.Repeat("é", 250)},
+	}
+	out := m.View(100, 24)
+	if !strings.Contains(out, fits) {
+		t.Fatalf("line that fits the overlay was truncated:\n%s", out)
+	}
+	if !utf8.ValidString(out) {
+		t.Fatalf("truncation split a multi-byte rune:\n%q", out)
 	}
 }
 

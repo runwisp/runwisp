@@ -6,7 +6,9 @@ package executor
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -374,6 +376,31 @@ func TestSsrfSafeDialer_DnsFailureBubblesUp(t *testing.T) {
 	_, err := d(context.Background(), "tcp", "nonexistent.invalid:80")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "resolve host")
+}
+
+func TestDialAny_FallsBackWhenFirstAddressUnreachable(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	var tried []string
+	dial := func(_ context.Context, _, addr string) (net.Conn, error) {
+		tried = append(tried, addr)
+		if addr == "[2001:db8::1]:443" {
+			return nil, errors.New("network unreachable")
+		}
+		return client, nil
+	}
+	conn, err := dialAny(context.Background(), dial, "tcp", []string{"2001:db8::1", "93.184.216.34"}, "443")
+	require.NoError(t, err)
+	assert.Same(t, client, conn)
+	assert.Equal(t, []string{"[2001:db8::1]:443", "93.184.216.34:443"}, tried)
+}
+
+func TestDialAny_AllFailReturnsError(t *testing.T) {
+	dial := func(context.Context, string, string) (net.Conn, error) { return nil, errors.New("refused") }
+	_, err := dialAny(context.Background(), dial, "tcp", []string{"93.184.216.34", "93.184.216.35"}, "80")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refused")
 }
 
 // TestStartProcess_SuccessRunsExecuteAndReturnsExitCode exercises the goroutine
