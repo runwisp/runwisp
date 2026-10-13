@@ -102,10 +102,28 @@ func ssrfSafeDialer() func(ctx context.Context, network, addr string) (net.Conn,
 			}
 		}
 
-		// Dial the first resolved IP directly; the Transport manages TLS using
+		// Dial the pre-resolved IPs directly; the Transport manages TLS using
 		// the original hostname for SNI and certificate verification.
-		return base.DialContext(ctx, network, net.JoinHostPort(ips[0], port))
+		return dialAny(ctx, base.DialContext, network, ips, port)
 	}
+}
+
+// dialAny tries each validated IP in order and returns the first connection, so
+// a multi-record host whose first address is unreachable (a down server, a
+// broken IPv6 route) still connects through a later one like a plain net.Dial.
+func dialAny(ctx context.Context, dial func(ctx context.Context, network, addr string) (net.Conn, error), network string, ips []string, port string) (net.Conn, error) {
+	var errs []error
+	for _, ip := range ips {
+		conn, err := dial(ctx, network, net.JoinHostPort(ip, port))
+		if err == nil {
+			return conn, nil
+		}
+		errs = append(errs, err)
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return nil, errors.Join(errs...)
 }
 
 // HTTPBackend executes HTTP requests and streams the response as output.

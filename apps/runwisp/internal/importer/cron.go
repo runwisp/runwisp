@@ -542,7 +542,14 @@ func (cp *crontabParser) noteSuspectUserColumn(line, user string) bool {
 // against whoever the task runs as: the daemon's own account for a per-user
 // crontab that emits no `user`, and the user column's account for a system
 // crontab.
+//
+// A HOME= line in the crontab overrides that default: crond changes into the
+// HOME it hands the job, so the job started there, not in the account's own home.
 func (cp *crontabParser) applyWorkingDir(b *block) {
+	if home := cp.env["HOME"]; filepath.IsAbs(home) {
+		b.set("working_dir", tomlString(home))
+		return
+	}
 	b.set("working_dir", tomlString("~"))
 }
 

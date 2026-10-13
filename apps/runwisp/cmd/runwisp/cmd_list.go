@@ -105,8 +105,8 @@ func renderTaskTable(out io.Writer, tasks []model.Task) error {
 		}
 
 		desc := task.Description
-		if len(desc) > 50 {
-			desc = desc[:47] + "..."
+		if r := []rune(desc); len(r) > 50 {
+			desc = string(r[:47]) + "..."
 		}
 
 		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\n",

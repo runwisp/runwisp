@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -75,6 +77,20 @@ func TestRunList_ServiceTaskShowsInstances(t *testing.T) {
 func TestRunList_LongDescriptionTruncated(t *testing.T) {
 	f := Flags{CfgFile: writeConfig(t, minimalCfgLongDescription)}
 	assert.Contains(t, runListString(t, f), "...")
+}
+
+// TestRunList_NonASCIIDescriptionTruncatesOnRuneBoundary: the 50 limit counts
+// characters, not bytes, so a short accented description is shown whole and a
+// long one is never cut through a multi-byte rune.
+func TestRunList_NonASCIIDescriptionTruncatesOnRuneBoundary(t *testing.T) {
+	short := strings.Repeat("ž", 40) // 80 bytes, 40 characters
+	long := strings.Repeat("ž", 60)
+	cfg := "[tasks.short]\nrun = \"true\"\ndescription = \"" + short + "\"\n" +
+		"[tasks.long]\nrun = \"true\"\ndescription = \"" + long + "\"\n"
+	out := runListString(t, Flags{CfgFile: writeConfig(t, cfg)})
+	assert.Contains(t, out, short+"\n", "a description within 50 characters must not be truncated")
+	assert.Contains(t, out, strings.Repeat("ž", 47)+"...")
+	assert.True(t, utf8.ValidString(out), "truncation must not split a multi-byte rune")
 }
 
 func TestRunList_MissingConfigFile(t *testing.T) {

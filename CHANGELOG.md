@@ -57,6 +57,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- HTTP tasks connect through a host's other addresses when the first one is unreachable, such as a broken IPv6 route, instead of failing.
+- `runwisp run --standalone` exits non-zero when the run failed on an output match, even if the process itself exited 0.
+- Following a run's log with `runwisp run --url`, `logs -f` or `--attach` reconnects when the connection drops mid-stream instead of aborting while the task is still running.
+- `runwisp list` and the TUI log search cut long text on characters, not bytes, so accented text is no longer shortened early or split mid-character.
+- Importing a crontab with `HOME=` sets each job's `working_dir` to that directory.
+- Importing supervisord `environment=` and `directory=` fills in `%(program_name)s` and flags expansions RunWisp can't resolve, as it already did for `command=`.
 - The daemon stops promptly when a notifier is unreachable. A failing delivery gets its current attempt and is reported in the bell, instead of retrying until `shutdown_timeout` runs out.
 - Services with `instances` get `RUNWISP_INSTANCE_INDEX` with every backend, not only with compose.
 - Pressing Ctrl+C on `runwisp logs -f` or `--attach` stops cleanly instead of sometimes reporting `lost the connection to the daemon`.

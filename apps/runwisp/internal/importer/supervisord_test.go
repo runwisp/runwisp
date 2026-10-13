@@ -474,3 +474,19 @@ func TestSupervisordIndentedKeysAreNotContinuations(t *testing.T) {
 	mustContain(t, out, `B = "2"`)
 	mustContain(t, out, "autostart = false")
 }
+
+// TestSupervisordEnvAndDirectoryExpansions: supervisord runs %(...)s over
+// environment= and directory= as well as command=. `%(program_name)s` is filled
+// in, and `PATH="/opt/bin:%(ENV_PATH)s"` (the usual case) can't be, so it has to
+// be flagged rather than land as a PATH holding the literal text.
+func TestSupervisordEnvAndDirectoryExpansions(t *testing.T) {
+	res := parseSup(t, "[program:web]\ncommand=/bin/web\n"+
+		"directory=/srv/%(program_name)s\n"+
+		`environment=PATH="/opt/bin:%(ENV_PATH)s",NAME="%(program_name)s"`+"\n")
+	out := res.TOML()
+	mustContain(t, out, `working_dir = "/srv/web"`)
+	mustContain(t, out, `NAME = "web"`)
+	if !hasNoteKind(res, NoteCommandExpansion) {
+		t.Fatalf("expected an unresolved-expansion note, got %+v", allNotes(res))
+	}
+}

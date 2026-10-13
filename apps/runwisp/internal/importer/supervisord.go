@@ -238,7 +238,7 @@ func (sd *supervisordState) processProgram(rawName string, s *iniSection, group 
 	} else {
 		sd.applyRunOnce(&b, s, ref)
 	}
-	env := sd.applyProgramKeys(&b, s, ref, isService)
+	env := sd.applyProgramKeys(&b, s, ref, rawName, isService)
 
 	blocks := []block{b}
 	if eb, ok := envBlock(prefix+name+".env", env); ok {
@@ -362,7 +362,7 @@ var supervisordCosmeticKey = map[string]bool{
 // program has no environment= line). Keys that only make sense for an always-on
 // service are dropped with a note when the program landed as a task, and the
 // remaining unmapped keys are reported together at the end.
-func (sd *supervisordState) applyProgramKeys(b *block, s *iniSection, ref itemRef, isService bool) map[string]string {
+func (sd *supervisordState) applyProgramKeys(b *block, s *iniSection, ref itemRef, rawName string, isService bool) map[string]string {
 	var env map[string]string
 	var dropped []string
 	for _, key := range s.keys {
@@ -373,7 +373,7 @@ func (sd *supervisordState) applyProgramKeys(b *block, s *iniSection, ref itemRe
 		case "autostart":
 			sd.applyAutostart(b, value, ref, isService)
 		case "directory":
-			sd.applyDirectory(b, value, ref)
+			sd.applyDirectory(b, expandKeyTokens(ref, key, value, rawName), ref)
 		case "user":
 			b.set("user", tomlString(value))
 		case "umask":
@@ -391,7 +391,7 @@ func (sd *supervisordState) applyProgramKeys(b *block, s *iniSection, ref itemRe
 				sd.noteUnreadable(ref, key, value)
 			}
 		case "environment":
-			env = parseSupervisordEnv(value)
+			env = parseSupervisordEnv(expandKeyTokens(ref, key, value, rawName))
 		case "priority", "startsecs", "startretries", "numprocs":
 			sd.applyServiceKey(b, key, value, ref, isService)
 		case "stdout_logfile", "stderr_logfile", "redirect_stderr",
@@ -419,6 +419,20 @@ func (sd *supervisordState) applyProgramKeys(b *block, s *iniSection, ref itemRe
 				strings.Join(dropped, ", ")+".")
 	}
 	return env
+}
+
+// expandKeyTokens is applyCommand's expansion for the other keys supervisord runs
+// %(...)s over, environment= and directory=. `PATH="/opt/bin:%(ENV_PATH)s"` is
+// the usual case, and importing it verbatim gives the service a PATH that holds
+// the literal text, so what RunWisp can't fill in is flagged like a command's.
+func expandKeyTokens(ref itemRef, key, value, rawName string) string {
+	expanded, unresolved := expandSupervisordTokens(value, rawName)
+	if unresolved {
+		ref.note(NoteCommandExpansion,
+			key+" uses supervisord %(...)s expansions RunWisp doesn't fill in "+
+				"(e.g. %(ENV_x)s, %(here)s). The value was imported as written; review it.")
+	}
+	return expanded
 }
 
 // noteUnreadable reports a key RunWisp maps but whose value it couldn't read, so
