@@ -6,7 +6,7 @@
     "license": "Apache-2.0",
     "repository": {
         "type": "git",
-        "url": "https://github.com/runwisp/runwisp.git",
+        "url": "git+https://github.com/runwisp/runwisp.git",
         "directory": "packages/js"
     },
     "homepage": "https://docs.runwisp.com/sdk/javascript/",
