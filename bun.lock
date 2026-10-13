@@ -43,7 +43,7 @@
       "name": "@runwisp/web-ui",
       "version": "0.0.0",
       "dependencies": {
-        "@lucide/svelte": "^1.55.0",
+        "@lucide/svelte": "^1.56.0",
         "@noble/hashes": "^2.4.0",
         "@runwisp/common": "workspace:*",
         "@runwisp/ui": "workspace:*",
@@ -484,7 +484,7 @@
 
     "@keyv/serialize": ["@keyv/serialize@1.1.1", "", {}, "sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA=="],
 
-    "@lucide/svelte": ["@lucide/svelte@1.55.0", "", { "peerDependencies": { "svelte": "^5" } }, "sha512-CTxJ3qbkDK2oCW1VJYKhqAUfOongRJqc9YWmJZn8E06QpCU7i5yAnUny4h/zMNy/iYpMtGiJDRSb6AVIornuXg=="],
+    "@lucide/svelte": ["@lucide/svelte@1.56.0", "", { "peerDependencies": { "svelte": "^5" } }, "sha512-YzbcmneHmPog3wAdXSl7oORgJhFc6klu8rRLMmm5uXwPQ8B0740c7dcNd3oJ72nCPvlbCW1XEmsWa4I0SDIogw=="],
 
     "@mdx-js/react": ["@mdx-js/react@3.1.1", "", { "dependencies": { "@types/mdx": "^2.0.0" }, "peerDependencies": { "@types/react": ">=16", "react": ">=16" } }, "sha512-f++rKLQgUVYDAtECQ6fn/is15GkEH9+nZPM3MS0RcxVqoTfawHvDlSCH7JbMhAM6uJ32v3eXLvLmLvjGu7PTQw=="],
 
