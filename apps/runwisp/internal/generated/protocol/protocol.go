@@ -62,7 +62,7 @@ type ExecutionPayload struct {
 	// this dispatch (transient station-side issuance error); the daemon keeps
 	// the local file and skips upload.
 	LogUploadURL string `json:"logUploadUrl,omitzero"`
-	// S3 object key the daemon must echo back as `logPath` on the
+	// Storage object key the daemon must echo back as `logPath` on the
 	// terminal `execution:update` message after a successful upload.
 	// Format `{orgId}/{yyyy-mm}/{executionId}.log.gz`. Optional: omitted
 	// (or empty) whenever `logUploadUrl` is.
@@ -247,7 +247,7 @@ type ServiceInstanceSnapshot struct {
 
 // Daemon → station. A full per-service snapshot of the supervisor's state.
 // Sent on change and on a slow heartbeat — never per log line. Station keeps
-// only the latest snapshot (Valkey), never per-instance rows. Additive:
+// only the latest snapshot in memory, never per-instance rows. Additive:
 // old station ignores it; new station tolerates its absence.
 type ServiceStatusMessage struct {
 	Type             string                    `json:"type"`
@@ -348,7 +348,7 @@ type PingMessage struct {
 	// Optional live system snapshot piggybacked on the heartbeat so the
 	// control plane can show a runner's CPU/memory/identity without a
 	// dedicated message or any DB write (station stores only the latest
-	// snapshot in Valkey). Add-only field; old daemons omit it and old
+	// snapshot in memory). Add-only field; old daemons omit it and old
 	// station ignores it.
 	SystemStats *SystemStatsInfo `json:"systemStats,omitzero"`
 }
@@ -405,7 +405,7 @@ type ExecutionUpdateMessage struct {
 	ExitCode        *int            `json:"exitCode,omitzero"`
 	StartedAt       *time.Time      `json:"startedAt,omitzero"`
 	FinishedAt      *time.Time      `json:"finishedAt,omitzero"`
-	// Echoed S3 object key from `ExecutionPayload.logPath`, set only on
+	// Echoed storage object key from `ExecutionPayload.logPath`, set only on
 	// terminal updates after a successful upload.
 	LogPath *string `json:"logPath,omitzero"`
 	// Gzipped byte count of the uploaded archive. Set only on terminal
@@ -460,7 +460,7 @@ type LogLineMessage struct {
 // Daemon → station. A coalesced batch of live log lines for one execution
 // with an active log:listen subscription — the same per-line payload as
 // log:line, but grouped so a burst of output ships as one frame instead
-// of one frame per line (fewer WS frames, NATS publishes, and SSE writes
+// of one frame per line (fewer WS frames, bus publishes, and SSE writes
 // on the hot path). Lines are in ascending `n` order. An additive
 // daemon→station type: old station never receives it, and a daemon may still
 // send single log:line frames — a receiver must handle both.
