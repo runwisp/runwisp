@@ -201,3 +201,31 @@ func TestMCP_ListReadsLocalConfig(t *testing.T) {
 	assert.False(t, isErr)
 	assert.Contains(t, text, "nightly")
 }
+
+// TestMCP_ToolsReportDaemonFailures: with no daemon, or one answering 500, each
+// tool fails as an error result the agent can read, never as a protocol error.
+func TestMCP_ToolsReportDaemonFailures(t *testing.T) {
+	failing := http.NewServeMux()
+	failing.HandleFunc("/health", func(http.ResponseWriter, *http.Request) {})
+	failing.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "boom", http.StatusInternalServerError) })
+	failingFlags, _, _ := serveServiceSocket(t, failing)
+
+	calls := map[string]map[string]any{
+		"runs":        nil,
+		"logs":        {"target": "alpha"},
+		"search_logs": {"task": "alpha", "query": "x"},
+		"run_task":    {"task": "alpha"},
+		"stop_run":    {"runId": "run-1"},
+		"reload":      nil,
+	}
+	for name, f := range map[string]Flags{"no daemon": {DataDir: t.TempDir()}, "500": failingFlags} {
+		s := mcpSession(t, f, remoteFlags{})
+		for tool, args := range calls {
+			t.Run(name+"/"+tool, func(t *testing.T) {
+				text, isErr := callMCP(t, s, tool, args)
+				assert.True(t, isErr)
+				assert.NotEmpty(t, text)
+			})
+		}
+	}
+}
