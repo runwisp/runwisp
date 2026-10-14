@@ -256,7 +256,11 @@ type Daemon struct {
 	// CheckUpdates gates the daemon's outbound poll of concierge.runwisp.com for
 	// a newer release (surfaced as a Web UI / TUI indicator, never auto-applied).
 	// Default true; set false to keep the daemon fully offline.
-	CheckUpdates   bool
+	CheckUpdates bool
+	// LogOutput copies every run's output lines to the daemon's own stdout and
+	// stderr, so `docker logs` shows what the jobs printed. Default false; the
+	// RUNWISP_LOG_OUTPUT env var overrides it (the Docker image sets it).
+	LogOutput      bool
 	MetricsEnabled bool
 	MetricsListen  string
 	TLS            string

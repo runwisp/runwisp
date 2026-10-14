@@ -1,0 +1,8 @@
+clean	[job-exec "app-schedule"]	app-schedule	@every 1m	docker exec -u www-data -e APP_ENV -e LOG_LEVEL shop-app-1 php artisan schedule:run
+changed	[job-run "nightly-backup"]	nightly-backup	0 0 3 * * *	docker run --rm --init --network shop_default -v /srv/shop/dumps:/dumps -e PGPASSWORD postgres:17 pg_dump -h db -U shop -f /dumps/shop.sql shop
+	keys-unsupported
+clean	[job-local "prune-logs"]	prune-logs	@daily	find /var/log/app -mtime +14 -delete
+blocked	[job-service-run "swarm-task"]			
+	section-unsupported
+file
+	section-daemon

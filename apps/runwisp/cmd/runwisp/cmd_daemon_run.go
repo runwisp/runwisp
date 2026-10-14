@@ -139,10 +139,15 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	defer cancelUpdate()
 	go updateChecker.Run(updateCtx)
 
+	// Job output on the daemon's own stdout/stderr (`docker logs`). Subscribed
+	// only when headless, below: a TUI owns the terminal.
+	output := runlog.NewOutputMirror(os.Stdout, os.Stderr, f.LogFormat == clilog.FormatJSON, cfg.Config.Daemon.LogOutput)
+
 	settings := &settingsApplier{
 		svc:         svc,
 		fingerprint: cfg.Fingerprint,
 		updates:     updateChecker,
+		output:      output,
 	}
 	reconciler, reloadFn := newReconciler(mode, cfg, svc, f, configSnap, settings.prepare)
 	if reconciler != nil {
@@ -256,10 +261,11 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		logBuffer:     logBuffer,
 		cancelStation: cancelStation,
 		stationWG:     stationWG,
+		output:        output,
 	}
 
 	if headless {
-		defer runlog.Subscribe(svc.EventBus)()
+		defer rt.subscribeRunLogs()()
 		emitReadiness(rt, startupInfo.ListenURL, f)
 		return runHeadless(rt)
 	}

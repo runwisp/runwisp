@@ -225,6 +225,12 @@ func expandComposeAlias(alias string, raw map[string]any, baseDir string, existi
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	// Unset means the file's own project (COMPOSE_PROJECT_NAME, its top-level
+	// `name:`, or its directory), so the imported services join the stack that
+	// `docker compose up` creates instead of a second one named after the alias.
+	if block.ProjectName == "" {
+		block.ProjectName = project.Name
+	}
 
 	switch block.Import {
 	case composeImportStack:
@@ -312,8 +318,8 @@ func parseComposeBlock(alias string, raw map[string]any) (*composeBlock, error) 
 }
 
 // applyComposeBlockDefaults fills the unset scalar fields of a parsed block
-// with their compose-import defaults (mode, pull, name_format, group, and
-// project_name all default off the alias).
+// with their compose-import defaults (import mode, pull, name_format, and
+// group, which defaults off the alias).
 func applyComposeBlockDefaults(block *composeBlock, alias string) {
 	if block.Import == "" {
 		block.Import = composeImportServices
@@ -326,9 +332,6 @@ func applyComposeBlockDefaults(block *composeBlock, alias string) {
 	}
 	if block.Group == "" {
 		block.Group = alias
-	}
-	if block.ProjectName == "" {
-		block.ProjectName = alias
 	}
 }
 
@@ -637,15 +640,16 @@ func buildComposeServiceTask(block *composeBlock, svc *composespec.Service, svcN
 		return model.Task{}, err
 	}
 	task.ExecutionDef = &model.ComposeExecution{
-		File:        block.File,
-		ProjectName: block.ProjectName,
-		Service:     svcName,
-		Mode:        model.ComposeModeRun,
-		Profiles:    block.Profiles,
-		EnvFile:     block.EnvFile,
-		WorkingDir:  block.WorkingDir,
-		WithDeps:    block.WithDeps,
-		Pull:        block.Pull,
+		File:         block.File,
+		ProjectName:  block.ProjectName,
+		Service:      svcName,
+		Mode:         model.ComposeModeRun,
+		Profiles:     block.Profiles,
+		EnvFile:      block.EnvFile,
+		WorkingDir:   block.WorkingDir,
+		WithDeps:     block.WithDeps,
+		Pull:         block.Pull,
+		ServicePorts: true,
 	}
 	task.Compose = &model.TaskComposeRef{
 		File:        block.File,
@@ -855,4 +859,36 @@ func resolveComposeFile(declared, baseDir string) (string, error) {
 	}
 	return "", fmt.Errorf("no compose file found in %s (searched: %s)",
 		baseDir, strings.Join(ComposeAutoDiscoveryFilenames, ", "))
+}
+
+// checkComposeServicesExist rejects a [tasks.*] / [services.*] unit whose
+// compose_service is not in its compose file, so a typo fails `runwisp validate`
+// instead of the first run. Every profile counts as active: `docker compose run`
+// and `exec` enable the profile of the service they target, so a job parked
+// behind `profiles: [jobs]` is still runnable.
+//
+// A file that can't be parsed here is skipped, not rejected: it may need
+// variables only the daemon's environment has, and docker reports the real
+// error at run time. Units a [compose.*] block imported were already checked
+// against their file, so they are skipped (ServicePorts marks them).
+func checkComposeServicesExist(cfg *Config) error {
+	services := map[string][]string{}
+	for _, unit := range cfg.units() {
+		ce, ok := unit.ExecutionDef.(*model.ComposeExecution)
+		if !ok || ce.Service == "" || ce.ServicePorts || !filepath.IsAbs(ce.File) {
+			continue
+		}
+		names, seen := services[ce.File]
+		if !seen {
+			if project, err := composespec.Load(ce.File, []string{"*"}, ce.EnvFile, ce.WorkingDir); err == nil {
+				names = project.ServiceNames()
+			}
+			services[ce.File] = names
+		}
+		if len(names) > 0 && !slices.Contains(names, ce.Service) {
+			return fmt.Errorf("%q: compose_service %q is not a service in %s (it has: %s)",
+				unit.Name, ce.Service, ce.File, strings.Join(names, ", "))
+		}
+	}
+	return nil
 }

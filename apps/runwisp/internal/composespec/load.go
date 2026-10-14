@@ -74,6 +74,7 @@ func Load(file string, profiles, envFiles []string, workingDir string) (*Project
 			StopGracePeriod: grace,
 			Image:           svc.Image,
 			BindSources:     bindMountSources(svc.Volumes),
+			Labels:          svc.Labels,
 		})
 	}
 

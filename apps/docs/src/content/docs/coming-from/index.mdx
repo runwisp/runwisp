@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Migrating to RunWisp
-description: Move to RunWisp from cron, supervisord, systemd, or docker-compose. RunWisp reads or converts your existing config.
+description: Move to RunWisp from cron, supervisord, systemd, docker-compose, or Ofelia. RunWisp reads or converts your existing config.
 head:
     - tag: title
       content: "Migrate to RunWisp from cron, supervisord, systemd, or docker-compose"
@@ -33,6 +33,11 @@ coming from:
         title="From docker-compose"
         description="Run the services in an existing compose file, without editing it."
         href="/coming-from/docker-compose/"
+    />
+    <LinkCard
+        title="From Ofelia"
+        description="Convert job-exec, job-run and job-local jobs, from labels or an INI file."
+        href="/coming-from/ofelia/"
     />
 </CardGrid>
 

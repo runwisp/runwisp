@@ -1,0 +1,28 @@
+services:
+  app:
+    image: shop/app
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.schedule.schedule: "@every 1m"
+      ofelia.job-exec.schedule.command: "php artisan schedule:run"
+      ofelia.job-exec.schedule.no-overlap: "true"
+      ofelia.job-exec.report.schedule: "0 0 6 * * *"
+      ofelia.job-exec.report.command: "php artisan report:daily"
+      ofelia.job-exec.report.user: www-data
+  worker:
+    image: shop/worker
+    labels:
+      - "ofelia.enabled=true"
+      - "ofelia.job-run.cleanup.schedule=@weekly"
+      - "ofelia.job-run.cleanup.image=alpine"
+      - "ofelia.job-run.cleanup.command=rm -rf /tmp/cache"
+      - 'ofelia.job-run.cleanup.volume=["/srv/cache:/tmp/cache"]'
+  disabled:
+    image: shop/other
+    labels:
+      ofelia.job-exec.ignored.schedule: "@daily"
+      ofelia.job-exec.ignored.command: "true"
+  ofelia:
+    image: mcuadros/ofelia
+    labels:
+      ofelia.slack-webhook: "https://hooks.slack.com/services/T000/B000/XXXX"

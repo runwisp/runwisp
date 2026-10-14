@@ -74,6 +74,13 @@ type ComposeBackend struct {
 	probeMu sync.Mutex
 	avail   bool
 
+	// selfMu guards selfProject, the compose project of RunWisp's own
+	// container (see ownProject). selfRefs lists what names that container;
+	// nil means the real /proc lookup, tests inject a fixed list.
+	selfMu      sync.Mutex
+	selfProject string
+	selfRefs    func() []string
+
 	// mu guards the maps below, which are created lazily so a bare struct
 	// literal is usable.
 	mu sync.Mutex
@@ -118,16 +125,54 @@ func (b *ComposeBackend) available(ctx context.Context) bool {
 	return b.avail
 }
 
-func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model.Run, def model.ExecutionDef) (*Process, error) {
+// withOwnProject fills in the project of RunWisp's own container for a unit
+// with no compose file, and returns any other unit unchanged.
+func (b *ComposeBackend) withOwnProject(ctx context.Context, ce *model.ComposeExecution) (*model.ComposeExecution, error) {
+	if ce.File != "" {
+		return ce, nil
+	}
+	project, err := b.ownProject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	own := *ce
+	own.ProjectName = project
+	return &own, nil
+}
+
+// claimRunSlot reclaims the previous daemon life's container for this slot and
+// picks the deterministic name for the new one (services mode only).
+func (b *ComposeBackend) claimRunSlot(ctx context.Context, ce *model.ComposeExecution, task *model.Task, instanceIndex int, runID string) (*composeSlot, string) {
+	reclaimCtx, cancel := context.WithTimeout(ctx, composeHousekeepingTimeout)
+	slot := b.reclaim(reclaimCtx, task.Name, instanceIndex)
+	cancel()
+	// A unit with no project of its own (compose_file on a task or service)
+	// still needs a container name no other unit uses.
+	prefix := cmp.Or(ce.ProjectName, model.SanitizeTaskName(task.Name))
+	return slot, b.claimName(composeContainerName(prefix, ce.Service, instanceIndex), runID)
+}
+
+// resolve checks that a compose unit can start here and returns it with its
+// project filled in.
+func (b *ComposeBackend) resolve(ctx context.Context, def model.ExecutionDef) (*model.ComposeExecution, error) {
 	ce, ok := def.(*model.ComposeExecution)
 	if !ok {
 		return nil, fmt.Errorf("ComposeBackend received non-compose execution: %s", def.ExecType())
 	}
-	if ce.File == "" {
+	// An exec unit with no file targets the project RunWisp itself runs in.
+	if ce.File == "" && ce.Mode != model.ComposeModeExec {
 		return nil, fmt.Errorf("compose execution missing file path")
 	}
 	if !b.available(ctx) {
 		return nil, fmt.Errorf("docker compose unavailable: install Docker (with the compose plugin) or check that `docker compose version` succeeds")
+	}
+	return b.withOwnProject(ctx, ce)
+}
+
+func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model.Run, def model.ExecutionDef) (*Process, error) {
+	ce, err := b.resolve(ctx, def)
+	if err != nil {
+		return nil, err
 	}
 
 	instanceIndex := 0
@@ -148,13 +193,7 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 	containerName := ""
 	var slot *composeSlot
 	if ce.Mode == model.ComposeModeRun {
-		reclaimCtx, cancel := context.WithTimeout(ctx, composeHousekeepingTimeout)
-		slot = b.reclaim(reclaimCtx, task.Name, instanceIndex)
-		cancel()
-		// A unit with no project of its own (compose_file on a task or service)
-		// still needs a container name no other unit uses.
-		prefix := cmp.Or(ce.ProjectName, model.SanitizeTaskName(task.Name))
-		containerName = b.claimName(composeContainerName(prefix, ce.Service, instanceIndex), runID)
+		slot, containerName = b.claimRunSlot(ctx, ce, task, instanceIndex, runID)
 	}
 
 	args := buildComposeArgs(ce, task, run, b.fingerprint, containerName)
@@ -240,6 +279,10 @@ func (b *ComposeBackend) execNotRunningHint(ce *model.ComposeExecution) string {
 		if p, err := composespec.Load(ce.File, ce.Profiles, ce.EnvFile, ce.WorkingDir); err == nil {
 			project = p.Name
 		}
+	}
+	if ce.File == "" {
+		return fmt.Sprintf("No running %q container in compose project %q, the project RunWisp's own container belongs to. "+
+			"Start that service, or check its name with `docker compose ps`.", ce.Service, project)
 	}
 	return fmt.Sprintf("No running %q container in compose project %q (from %s). "+
 		"Start the stack, or if it runs under another project name (see `docker compose ls`), "+
@@ -414,7 +457,10 @@ func buildComposeArgs(ce *model.ComposeExecution, task *model.Task, run *model.R
 // composeProjectArgs is the `compose -f … [-p …] [--profile …] [--env-file …]`
 // prefix that selects the project, shared by every compose subcommand.
 func composeProjectArgs(ce *model.ComposeExecution) []string {
-	args := []string{"compose", "-f", ce.File}
+	args := []string{"compose"}
+	if ce.File != "" {
+		args = append(args, "-f", ce.File)
+	}
 	if ce.ProjectName != "" {
 		args = append(args, "-p", ce.ProjectName)
 	}
@@ -470,7 +516,10 @@ func appendComposeExecArgs(args []string, ce *model.ComposeExecution, task *mode
 // ownership labels, per-execution env, the service, and the per-execution
 // arg/option/flag tokens.
 func appendComposeRunArgs(args []string, ce *model.ComposeExecution, task *model.Task, run *model.Run, fingerprint, containerName string) []string {
-	args = append(args, "run", "--rm", "--service-ports", "--use-aliases")
+	args = append(args, "run", "--rm")
+	if ce.ServicePorts {
+		args = append(args, "--service-ports", "--use-aliases")
+	}
 	if !ce.WithDeps {
 		args = append(args, "--no-deps")
 	}

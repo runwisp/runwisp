@@ -310,6 +310,21 @@ type daemonRuntime struct {
 	logBuffer     *server.DaemonLogBuffer
 	cancelStation context.CancelFunc
 	stationWG     *sync.WaitGroup
+	// output mirrors job output to the daemon's stdout/stderr when
+	// [daemon] log_output is on.
+	output *runlog.OutputMirror
+}
+
+// subscribeRunLogs starts narrating runs on the daemon's own log streams: one
+// line per lifecycle transition, plus the jobs' output when log_output is on.
+// It returns the func that stops both.
+func (rt *daemonRuntime) subscribeRunLogs() func() {
+	stopLifecycle := runlog.Subscribe(rt.svc.EventBus)
+	stopOutput := rt.output.Subscribe(rt.svc.EventBus)
+	return func() {
+		stopOutput()
+		stopLifecycle()
+	}
 }
 
 // runHeadless blocks until SIGINT/SIGTERM, then gracefully shuts down. The
@@ -464,7 +479,7 @@ func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
 			Output:     io.MultiWriter(os.Stderr, clilog.NewPlainWriter(rt.logBuffer)),
 			DaemonMode: true,
 		})
-		defer runlog.Subscribe(rt.svc.EventBus)()
+		defer rt.subscribeRunLogs()()
 		slog.Info("TUI detached. Daemon running in background. Press Ctrl+C to stop.")
 		return runHeadless(rt)
 	}

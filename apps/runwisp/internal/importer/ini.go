@@ -16,6 +16,10 @@ type iniSection struct {
 	name   string
 	keys   []string
 	values map[string]string
+	// all holds every value a key was given, in order. values keeps only the
+	// last, which is supervisord's rule; Ofelia's gcfg reads a repeated key
+	// (environment, volume) as a list.
+	all map[string][]string
 }
 
 func (s *iniSection) set(key, value string) {
@@ -23,6 +27,10 @@ func (s *iniSection) set(key, value string) {
 		s.keys = append(s.keys, key)
 	}
 	s.values[key] = value
+	if s.all == nil {
+		s.all = map[string][]string{}
+	}
+	s.all[key] = append(s.all[key], value)
 }
 
 // get returns the value and whether the key was present.

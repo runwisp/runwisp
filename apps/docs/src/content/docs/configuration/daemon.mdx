@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: "[daemon]"
-description: "Daemon-wide settings: name, shutdown_timeout, timezone, external_url, TLS, metrics, trusted proxies, include, and include_cron."
+description: "Daemon-wide settings: name, shutdown_timeout, timezone, external_url, log_output, TLS, metrics, trusted proxies, include, and include_cron."
 ---
 
 `[daemon]` holds settings for the whole daemon. The table is optional.
@@ -22,6 +22,7 @@ shutdown_timeout = "10s"
 timezone         = "Europe/Bratislava"
 external_url     = "https://runwisp.example.com"
 check_updates    = true
+log_output       = false
 tls              = "off"
 tls_cert         = ""
 tls_key          = ""
@@ -127,6 +128,26 @@ offline.
 ```toml title="runwisp.toml"
 [daemon]
 check_updates = false
+```
+
+### `log_output`
+
+**type**: `boolean` **default**: `false` **since**: `1.7`
+
+Prints each line a run writes to the daemon's own stdout as `task | line` (stderr
+lines go to stderr), so `docker logs` and `journalctl` show job output next to
+the daemon's lifecycle lines. With `--log-format=json`, each line is one JSON
+object. The run logs on disk are unchanged.
+
+- The `RUNWISP_LOG_OUTPUT` env var (`true` or `false`) overrides this key. The
+  [Docker image](/getting-started/docker/) sets it to `true`.
+- A burst larger than the buffer is not mirrored in full. RunWisp prints how
+  many lines it skipped; the run log has all of them.
+- A TUI session ignores it, because the output would draw over the screen.
+
+```toml title="runwisp.toml"
+[daemon]
+log_output = true
 ```
 
 ### `tls`, `tls_cert`, `tls_key`

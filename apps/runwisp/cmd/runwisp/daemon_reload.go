@@ -14,6 +14,7 @@ import (
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runlog"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/update"
 )
@@ -25,6 +26,7 @@ type settingsApplier struct {
 	svc         *daemonServices
 	fingerprint string
 	updates     *update.Checker
+	output      *runlog.OutputMirror
 	srv         *server.Server
 	// readFile reads template_path files; nil means os.ReadFile.
 	readFile func(string) ([]byte, error)
@@ -81,6 +83,9 @@ func (a *settingsApplier) prepare(old, updated *config.Config) ([]string, func()
 	set(old.Daemon.ExternalURL != updated.Daemon.ExternalURL, "daemon.external_url", func() {})
 	set(old.Daemon.CheckUpdates != updated.Daemon.CheckUpdates, "daemon.check_updates", func() {
 		a.updates.SetEnabled(updated.Daemon.CheckUpdates)
+	})
+	set(old.Daemon.LogOutput != updated.Daemon.LogOutput, "daemon.log_output", func() {
+		a.output.SetEnabled(updated.Daemon.LogOutput)
 	})
 	set(old.Daemon.ShutdownTimeout != updated.Daemon.ShutdownTimeout, "daemon.shutdown_timeout", func() {
 		a.svc.TaskShutdownTimeout.Store(int64(updated.Daemon.ShutdownTimeout))

@@ -561,6 +561,7 @@ func restartOnly(d config.Daemon) config.Daemon {
 	d.Name = ""
 	d.ExternalURL = ""
 	d.CheckUpdates = false
+	d.LogOutput = false
 	d.TrustedProxies = nil
 	return d
 }

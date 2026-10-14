@@ -244,7 +244,11 @@ func (d *TaskDetailDialog) definitionRows(row func(label, value string, color co
 	}
 	if task.Compose != nil {
 		ref := task.Compose.File
-		if task.Compose.Service != "" {
+		switch {
+		case ref == "":
+			// The sidecar form: no file, the service of RunWisp's own project.
+			ref = task.Compose.Service
+		case task.Compose.Service != "":
 			ref += " (" + task.Compose.Service + ")"
 		}
 		add("Compose", ref)

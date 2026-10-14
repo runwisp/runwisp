@@ -172,6 +172,12 @@ else
 	fail "HEALTHCHECK" "status=$status; logs: $(docker logs "$container" 2>&1 | tail -20)"
 fi
 
+if [[ "$(docker exec "$container" cat /proc/1/comm 2>/dev/null)" == "tini" ]]; then
+	pass "tini is PID 1, so orphaned task processes are reaped"
+else
+	fail "PID 1" "want tini, got $(docker exec "$container" cat /proc/1/comm 2>&1)"
+fi
+
 if docker exec "$container" runwisp status >/dev/null 2>&1; then
 	pass "runwisp status works over the control socket"
 else
