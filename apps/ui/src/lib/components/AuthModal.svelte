@@ -73,8 +73,8 @@
         try {
             // The login response sets the HttpOnly session cookie server-side;
             // the browser holds no copy of the session token. We just flip local auth state.
-            await authApi.login(password);
-            authStore.markAuthenticated();
+            const { readOnly } = await authApi.login(password);
+            authStore.markAuthenticated(readOnly);
             isOpen = false;
             logger.info("Authentication successful");
             // Keep the password in the (now-removed) form until after it leaves

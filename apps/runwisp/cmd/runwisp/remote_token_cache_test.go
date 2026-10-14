@@ -6,6 +6,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -126,4 +127,12 @@ func TestTokenCache_SeparateURLs(t *testing.T) {
 	storeCachedToken("https://b.example.com", b)
 	assert.Equal(t, a, loadCachedToken("https://a.example.com"))
 	assert.Equal(t, b, loadCachedToken("https://b.example.com"))
+}
+
+func TestTokenCache_SkipsViewerTokens(t *testing.T) {
+	useTempCacheDir(t)
+	viewer := strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10) + ".viewer.mac"
+	storeCachedToken("https://x", viewer)
+	assert.Empty(t, loadCachedToken("https://x"),
+		"a read-only token must not shadow a later admin login to the same URL")
 }

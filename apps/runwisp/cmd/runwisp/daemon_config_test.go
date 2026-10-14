@@ -211,3 +211,36 @@ func TestResolveAuthMode_ConflictWithPassword(t *testing.T) {
 		t.Fatal("expected error when RUNWISP_AUTH=off and RUNWISP_PASSWORD are both set")
 	}
 }
+
+func TestResolveViewerPassword(t *testing.T) {
+	t.Run("unset leaves read-only access off", func(t *testing.T) {
+		t.Setenv("RUNWISP_VIEWER_PASSWORD", "")
+		pw, err := resolveViewerPassword("admin", false)
+		if err != nil || pw != "" {
+			t.Fatalf("got %q, %v; want empty and no error", pw, err)
+		}
+	})
+	t.Run("set is returned", func(t *testing.T) {
+		t.Setenv("RUNWISP_VIEWER_PASSWORD", "view")
+		pw, err := resolveViewerPassword("admin", false)
+		if err != nil || pw != "view" {
+			t.Fatalf("got %q, %v; want view", pw, err)
+		}
+	})
+	t.Run("same as admin is rejected", func(t *testing.T) {
+		t.Setenv("RUNWISP_VIEWER_PASSWORD", "same")
+		if _, err := resolveViewerPassword("same", false); err == nil {
+			t.Fatal("expected error when viewer and admin passwords match")
+		}
+	})
+}
+
+func TestResolveAuthMode_RejectsViewerPasswordWithAuthOff(t *testing.T) {
+	t.Setenv("RUNWISP_AUTH", "off")
+	t.Setenv("RUNWISP_PASSWORD", "")
+	t.Setenv("RUNWISP_VIEWER_PASSWORD", "view")
+
+	if _, err := resolveAuthMode(); err == nil {
+		t.Fatal("expected error when RUNWISP_AUTH=off and RUNWISP_VIEWER_PASSWORD are both set")
+	}
+}

@@ -96,3 +96,15 @@ func TestRunPassword_UnexpectedHTTPStatusFallsThrough(t *testing.T) {
 	assert.True(t, strings.Contains(stderr.String(), "unexpected error"),
 		"non-404/403 HTTP errors must surface as unexpected, not refusal")
 }
+
+func TestRunPasswordVia_ViewerRefusalNamesViewerEnvVar(t *testing.T) {
+	fetch := func(context.Context) (*server.LocalCredentialsBody, error) {
+		return nil, apiclient.ErrLocalCredentialsUnavailable
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := runPasswordVia(t.Context(), &stdout, &stderr, fetch, "/tmp/runwisp.sock", "RUNWISP_VIEWER_PASSWORD")
+	assert.Equal(t, passwordExitRefused, code)
+	assert.Empty(t, stdout.String())
+	assert.Contains(t, stderr.String(), "RUNWISP_VIEWER_PASSWORD")
+}

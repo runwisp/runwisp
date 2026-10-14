@@ -5,6 +5,7 @@
     import { TriangleAlert, X } from "@lucide/svelte";
     import { toast, extractErrorMessage } from "@runwisp/ui";
     import { systemStore } from "$lib/stores/system.svelte";
+    import { authStore } from "$lib/stores/auth.svelte";
     import { systemApi } from "$lib/api";
     import { reloadSummary } from "./stale-config-banner.js";
 
@@ -44,14 +45,16 @@
             <code class="font-semibold">runwisp.toml</code> has changed since it was loaded. The UI never
             edits config; your file is the source of truth.
         </span>
-        <button
-            type="button"
-            disabled={reloading}
-            class="rounded-[3px] border border-warning-soft-border px-2 py-1 font-semibold hover:bg-warning-soft-border/50 disabled:opacity-50"
-            onclick={handleReload}
-        >
-            {reloading ? "Reloading…" : "Reload"}
-        </button>
+        {#if !authStore.current.readOnly}
+            <button
+                type="button"
+                disabled={reloading}
+                class="rounded-[3px] border border-warning-soft-border px-2 py-1 font-semibold hover:bg-warning-soft-border/50 disabled:opacity-50"
+                onclick={handleReload}
+            >
+                {reloading ? "Reloading…" : "Reload"}
+            </button>
+        {/if}
         <button
             type="button"
             aria-label="Dismiss"

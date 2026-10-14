@@ -51,10 +51,12 @@ func loadCachedToken(baseURL string) string {
 
 // storeCachedToken persists token for baseURL, read-modify-writing the cache
 // map. Failures are logged at debug and swallowed — caching is an
-// optimization, never a precondition for the trigger.
+// optimization, never a precondition for the trigger. A read-only (viewer)
+// token is never cached: it would be reused ahead of a later admin login to the
+// same URL and make every write fail with 403.
 func storeCachedToken(baseURL, token string) {
 	path, err := tokenCachePath()
-	if err != nil {
+	if err != nil || auth.IsViewerToken(token) {
 		return
 	}
 	storeJSONCacheEntry(path, "token", apiclient.NormalizeBaseURL(baseURL), token)

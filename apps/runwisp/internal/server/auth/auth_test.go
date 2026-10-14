@@ -126,7 +126,7 @@ func TestLogin_Success(t *testing.T) {
 	nonce, err := svc.nonces.create()
 	require.NoError(t, err)
 
-	token, err := svc.Login(nonce, computeChallenge("secret", nonce))
+	token, _, err := svc.Login(nonce, computeChallenge("secret", nonce))
 	require.NoError(t, err)
 	assert.NotEmpty(t, token)
 }
@@ -137,14 +137,14 @@ func TestLogin_WrongPassword(t *testing.T) {
 	nonce, err := svc.nonces.create()
 	require.NoError(t, err)
 
-	_, err = svc.Login(nonce, computeChallenge("wrong-password", nonce))
+	_, _, err = svc.Login(nonce, computeChallenge("wrong-password", nonce))
 	assert.ErrorIs(t, err, ErrInvalidPassword)
 }
 
 func TestLogin_InvalidNonce(t *testing.T) {
 	svc := newServiceOrFail(t, "secret", nil)
 
-	_, err := svc.Login("deadbeef", "anything")
+	_, _, err := svc.Login("deadbeef", "anything")
 	assert.ErrorIs(t, err, ErrInvalidNonce)
 }
 
@@ -156,11 +156,11 @@ func TestLogin_NonceReplay(t *testing.T) {
 	response := computeChallenge("secret", nonce)
 
 	// First attempt should succeed
-	_, err = svc.Login(nonce, response)
+	_, _, err = svc.Login(nonce, response)
 	require.NoError(t, err)
 
 	// Replay the same nonce — should fail
-	_, err = svc.Login(nonce, response)
+	_, _, err = svc.Login(nonce, response)
 	assert.ErrorIs(t, err, ErrInvalidNonce)
 }
 
@@ -170,7 +170,7 @@ func TestLogin_IssuesValidSessionToken(t *testing.T) {
 	nonce, err := svc.nonces.create()
 	require.NoError(t, err)
 
-	token, err := svc.Login(nonce, computeChallenge("secret", nonce))
+	token, _, err := svc.Login(nonce, computeChallenge("secret", nonce))
 	require.NoError(t, err)
 
 	assert.True(t, svc.ValidToken(token))
@@ -317,4 +317,95 @@ func TestService_CreateLaunchTicket(t *testing.T) {
 	// Ticket should be consumable through the public API.
 	assert.True(t, svc.ConsumeLaunchTicket(ticket))
 	assert.False(t, svc.ConsumeLaunchTicket(ticket))
+}
+
+func loginAs(t *testing.T, svc *Service, password string) (token string, readOnly bool, err error) {
+	t.Helper()
+	nonce, err := svc.nonces.create()
+	require.NoError(t, err)
+	return svc.Login(nonce, computeChallenge(password, nonce))
+}
+
+func TestLogin_ViewerPassword(t *testing.T) {
+	svc := newServiceOrFail(t, "admin-pw", nil)
+
+	_, _, err := loginAs(t, svc, "view-pw")
+	assert.ErrorIs(t, err, ErrInvalidPassword, "no viewer secret configured, so it matches nothing")
+
+	svc.SetViewerPassword("view-pw")
+
+	token, readOnly, err := loginAs(t, svc, "view-pw")
+	require.NoError(t, err)
+	assert.True(t, readOnly)
+	assert.True(t, IsViewerToken(token))
+	ro, ok := svc.VerifyToken(token)
+	assert.True(t, ok)
+	assert.True(t, ro)
+
+	adminToken, readOnly, err := loginAs(t, svc, "admin-pw")
+	require.NoError(t, err)
+	assert.False(t, readOnly)
+	assert.False(t, IsViewerToken(adminToken))
+	ro, ok = svc.VerifyToken(adminToken)
+	assert.True(t, ok)
+	assert.False(t, ro)
+
+	_, _, err = loginAs(t, svc, "neither")
+	assert.ErrorIs(t, err, ErrInvalidPassword)
+}
+
+func TestVerifyToken_Viewer(t *testing.T) {
+	svc := newServiceOrFail(t, "admin-pw", nil)
+	svc.SetViewerPassword("view-pw")
+	viewerToken := svc.issueViewerToken(time.Hour)
+	adminToken := svc.IssueToken(time.Hour)
+	exp, _, _ := strings.Cut(viewerToken, ".")
+	_, adminMAC, _ := strings.Cut(adminToken, ".")
+
+	// Splicing the viewer role onto an admin MAC, or dropping the role from a
+	// viewer token, must never yield a session of the other role.
+	_, ok := svc.VerifyToken(exp + ".viewer." + adminMAC)
+	assert.False(t, ok, "admin MAC under the viewer role")
+	_, ok = svc.VerifyToken(exp + "." + strings.TrimPrefix(viewerToken, exp+".viewer."))
+	assert.False(t, ok, "viewer MAC presented as an admin token")
+	_, ok = svc.VerifyToken(exp + ".root." + adminMAC)
+	assert.False(t, ok, "unknown role")
+	_, ok = svc.VerifyToken(svc.issueViewerToken(-time.Second))
+	assert.False(t, ok, "expired")
+
+	// Rotating the viewer password revokes viewer sessions but not admin ones.
+	svc.SetViewerPassword("another-view-pw")
+	_, ok = svc.VerifyToken(viewerToken)
+	assert.False(t, ok)
+	_, ok = svc.VerifyToken(adminToken)
+	assert.True(t, ok)
+
+	// A viewer token from a daemon that has the feature on is dead on one without it.
+	off := newServiceOrFail(t, "admin-pw", nil)
+	_, ok = off.VerifyToken(viewerToken)
+	assert.False(t, ok)
+}
+
+func TestMintViewerPassword(t *testing.T) {
+	svc := newServiceOrFail(t, "admin-pw", nil)
+	assert.Empty(t, svc.ViewerPassword())
+
+	first, err := svc.MintViewerPassword()
+	require.NoError(t, err)
+	assert.NotEqual(t, "admin-pw", first)
+	second, err := svc.MintViewerPassword()
+	require.NoError(t, err)
+	assert.Equal(t, first, second, "minting twice returns the same password")
+
+	_, readOnly, err := loginAs(t, svc, first)
+	require.NoError(t, err)
+	assert.True(t, readOnly)
+}
+
+func TestSetViewerPassword_EmptyLeavesOff(t *testing.T) {
+	svc := newServiceOrFail(t, "admin-pw", nil)
+	svc.SetViewerPassword("")
+	_, _, err := loginAs(t, svc, "")
+	assert.ErrorIs(t, err, ErrInvalidPassword)
+	assert.Empty(t, svc.issueViewerToken(time.Hour))
 }

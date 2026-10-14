@@ -39,6 +39,7 @@ Besides the `RUNWISP_*` twins of the global options above:
 | Variable                  | Description                                                                                                                                   |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RUNWISP_PASSWORD`        | The Web UI and REST API password, kept in memory only. Unset: a new one every boot. See [Authentication](/operations/auth/).                  |
+| `RUNWISP_VIEWER_PASSWORD` | Optional second password that signs in read-only. Unset: no read-only access. See [Read-only access](/operations/auth/#read-only-access).     |
 | `RUNWISP_AUTH`            | `off` disables authentication. Can't be combined with `RUNWISP_PASSWORD`. See [Authentication](/operations/auth/#running-without-a-password). |
 | `RUNWISP_URL`             | Remote daemon URL for `run`, `logs`, `start`, `stop`, `restart`, and `tui`, same as `--url`.                                                  |
 | `RUNWISP_TLS`             | Overrides [`[daemon] tls`](/configuration/daemon/#tls-tls_cert-tls_key) (`auto` or `off`).                                                    |
@@ -562,13 +563,17 @@ runwisp password | wl-copy
 
 Prints the generated Web UI password.
 
-| Exit code | Meaning                                      |
-| --------- | -------------------------------------------- |
-| `0`       | Printed.                                     |
-| `1`       | Refused: the daemon uses `RUNWISP_PASSWORD`. |
-| `2`       | The daemon isn't reachable.                  |
-| `5`       | Authentication is off; there's no password.  |
-| `3`, `4`  | Unexpected error.                            |
+| Option     | Description                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `--viewer` | Print the [read-only password](/operations/auth/#read-only-access) instead, making one up on first use. **since**: `1.7` |
+
+| Exit code | Meaning                                                                                  |
+| --------- | ---------------------------------------------------------------------------------------- |
+| `0`       | Printed.                                                                                 |
+| `1`       | Refused: the daemon uses `RUNWISP_PASSWORD` (`RUNWISP_VIEWER_PASSWORD` with `--viewer`). |
+| `2`       | The daemon isn't reachable.                                                              |
+| `5`       | Authentication is off; there's no password.                                              |
+| `3`, `4`  | Unexpected error.                                                                        |
 
 ### `runwisp schema`
 

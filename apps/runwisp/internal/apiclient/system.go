@@ -122,8 +122,20 @@ var ErrAuthDisabled = errors.New("daemon runs with authentication disabled")
 // the caller can distinguish "not on a socket" (403) from real transport
 // failures.
 func (c *Client) GetLocalCredentials(ctx context.Context) (*server.LocalCredentialsBody, error) {
+	return c.localCredentials(ctx, http.MethodGet, "/api/local/credentials")
+}
+
+// MintViewerPassword fetches the read-only password over the local socket,
+// enabling read-only access with a fresh random password if none is set yet.
+// Errors map like GetLocalCredentials; ErrLocalCredentialsUnavailable here means
+// the daemon was given RUNWISP_VIEWER_PASSWORD.
+func (c *Client) MintViewerPassword(ctx context.Context) (*server.LocalCredentialsBody, error) {
+	return c.localCredentials(ctx, http.MethodPost, "/api/local/viewer-password")
+}
+
+func (c *Client) localCredentials(ctx context.Context, method, path string) (*server.LocalCredentialsBody, error) {
 	var body server.LocalCredentialsBody
-	if err := c.doJSON(ctx, http.MethodGet, "/api/local/credentials", nil, &body); err != nil {
+	if err := c.doJSON(ctx, method, path, nil, &body); err != nil {
 		if IsHTTPStatus(err, http.StatusNotFound) {
 			return nil, ErrLocalCredentialsUnavailable
 		}

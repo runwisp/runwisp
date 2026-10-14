@@ -540,10 +540,10 @@ func chapChallenge(t *testing.T, s *Server) string {
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
-	var resp map[string]string
+	var resp AuthChallengeBody
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	require.NotEmpty(t, resp["nonce"], "challenge must return a nonce")
-	return resp["nonce"]
+	require.NotEmpty(t, resp.Nonce, "challenge must return a nonce")
+	return resp.Nonce
 }
 
 // chapAttempt performs a full CHAP handshake (challenge → chap.Response →
@@ -576,9 +576,9 @@ func TestCHAPLogin_Success(t *testing.T) {
 	w := chapAttempt(t, s, "secret")
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	var resp map[string]string
+	var resp AuthLoginBody
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.NotEmpty(t, resp["token"], "a correct response must mint a session token")
+	assert.NotEmpty(t, resp.Token, "a correct response must mint a session token")
 }
 
 func TestCHAPLogin_WrongPassword(t *testing.T) {
@@ -629,11 +629,11 @@ func TestProtectedRoute_RejectedWithoutToken(t *testing.T) {
 func TestProtectedRoute_AcceptedWithValidToken(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
-	var resp map[string]string
+	var resp AuthLoginBody
 	require.NoError(t, json.Unmarshal(chapAttempt(t, s, "secret").Body.Bytes(), &resp))
 
 	req := httptest.NewRequest("GET", "/api/tasks", nil)
-	req.Header.Set("Authorization", "Bearer "+resp["token"])
+	req.Header.Set("Authorization", "Bearer "+resp.Token)
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
 
