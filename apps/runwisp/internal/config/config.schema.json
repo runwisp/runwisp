@@ -208,7 +208,7 @@
       "unevaluatedProperties": false,
       "properties": {
         "group": { "type": "string", "default": "Tasks", "description": "UI grouping label." },
-        "cron": { "type": "string", "description": "5- or 6-field cron (optional leading seconds); also @hourly, @every 1h30m. Omit => manual-only." },
+        "cron": { "type": "string", "description": "5- or 6-field cron (optional leading seconds); also @hourly, @every 1h30m. Day of month takes L, L-3, LW, 15W; day of week takes FRI#3, FRI#L. Omit => manual-only." },
         "timezone": { "type": "string", "description": "Per-task IANA timezone override." },
         "jitter": { "$ref": "#/$defs/duration", "description": "Cap how far this cron task's start may slip; needs cron." },
         "run_on_start": { "anyOf": [{ "type": "boolean" }, { "enum": ["daemon", "boot"] }], "default": false, "description": "Fire once at start, on top of any cron. true or \"daemon\": every daemon start. \"boot\": once per machine or container boot, like cron @reboot." },

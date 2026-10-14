@@ -22,25 +22,32 @@ A task without `cron` runs only when you start it. Scheduled runs use each
 
 The usual 5 fields: minute, hour, day of month, month, day of week.
 
-| Expression              | Runs                                  |
-| ----------------------- | ------------------------------------- |
-| `* * * * *`             | every minute                          |
-| `*/5 * * * *`           | every 5 minutes                       |
-| `0 * * * *`             | at the top of every hour              |
-| `0 2 * * *`             | every day at 02:00                    |
-| `30 9 * * 1-5`          | at 09:30, Monday to Friday            |
-| `0 0 1 * *`             | at midnight on the 1st of every month |
-| `@hourly`               | at the top of every hour              |
-| `@daily` / `@midnight`  | every day at 00:00                    |
-| `@weekly`               | Sundays at 00:00                      |
-| `@monthly`              | the 1st at 00:00                      |
-| `@yearly` / `@annually` | January 1st at 00:00                  |
-| `@every 1h30m`          | every 90 minutes                      |
+| Expression              | Runs                                      |
+| ----------------------- | ----------------------------------------- |
+| `* * * * *`             | every minute                              |
+| `*/5 * * * *`           | every 5 minutes                           |
+| `0 * * * *`             | at the top of every hour                  |
+| `0 2 * * *`             | every day at 02:00                        |
+| `30 9 * * 1-5`          | at 09:30, Monday to Friday                |
+| `0 0 1 * *`             | at midnight on the 1st of every month     |
+| `0 0 L * *`             | at midnight on the last day of the month  |
+| `0 9 15W * *`           | at 09:00 on the weekday nearest the 15th  |
+| `0 9 * * FRI#3`         | at 09:00 on the third Friday of the month |
+| `@hourly`               | at the top of every hour                  |
+| `@daily` / `@midnight`  | every day at 00:00                        |
+| `@weekly`               | Sundays at 00:00                          |
+| `@monthly`              | the 1st at 00:00                          |
+| `@yearly` / `@annually` | January 1st at 00:00                      |
+| `@every 1h30m`          | every 90 minutes                          |
 
 Fields take lists (`1,15`), ranges (`1-5`), and steps (`*/10`). A range can
 wrap around: `22-2` in the hour field runs from 22:00 to 02:00, and `FRI-MON`
 runs Friday to Monday. In the day of week field, both `0` and `7` mean Sunday.
-`@every` is a fixed interval that doesn't line up with the clock.
+The day of month field also takes `L` (last day), `L-3` (three days before the
+last), `LW` (last weekday) and `15W` (the weekday nearest the 15th, never
+crossing into another month). The day of week field takes `FRI#3` (third Friday)
+and `FRI#L` (last Friday). `@every` is a fixed interval that doesn't line up
+with the clock.
 
 For more than once a minute, add a seconds field in front. Plain 5-field
 expressions run at second `:00`.

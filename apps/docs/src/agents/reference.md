@@ -120,7 +120,7 @@ Required: the table + [`run`](/configuration/tasks/#run) (unless [`compose_file`
 ```
 group:             string =Tasks   — UI grouping label
 description:        string          — human description
-cron:              string          — 5- or 6-field cron (optional leading seconds); ranges may wrap (22-2, FRI-MON); also @hourly, @every 1h30m; omit => manual-only
+cron:              string          — 5- or 6-field cron (optional leading seconds); ranges may wrap (22-2, FRI-MON); day of month takes L, L-3, LW, 15W, day of week FRI#3, FRI#L; also @hourly, @every 1h30m; omit => manual-only
 timezone:          IANA string      — per-task TZ override (else [daemon] timezone)
 jitter:            dur              — cap how far this cron task's start may slip; needs cron (inherits [defaults])
 run_on_start:      bool|enum =false — fire once at start, on top of any cron: true|"daemon" = every daemon start; "boot" = once per machine/container boot (@reboot; Linux boot_id + PID 1 start time, macOS kern.bootsessionuuid, else every start); import cron @reboot + systemd oneshot write "boot", supervisord autorestart=false writes true
