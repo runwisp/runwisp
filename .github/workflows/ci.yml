@@ -268,13 +268,19 @@ jobs:
               exit 1
             fi
 
+            # RUNWISP_LOG_OUTPUT=true in the image copies job output to `docker logs`.
+            # The run_on_start run can still be in flight when /health first answers.
+            for _ in $(seq 1 20); do
+              if docker logs runwisp-ci 2>&1 | grep -q 'hello | hello from container'; then break; fi
+              sleep 0.5
+            done
+
             docker stop runwisp-ci
             status=$(docker inspect runwisp-ci --format '{{.State.ExitCode}}')
             logs=$(docker logs runwisp-ci 2>&1)
             echo "${logs}"
             docker rm runwisp-ci
 
-            # RUNWISP_LOG_OUTPUT=true in the image copies job output to `docker logs`.
             if ! grep -q 'hello | hello from container' <<<"${logs}"; then
               echo "job output missing from docker logs" >&2
               exit 1
