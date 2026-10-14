@@ -5,11 +5,10 @@
 // upgraded to newline-delimited JSON. The messages mirror
 // apps/runwisp/internal/apphost/host.go.
 
-import { createRequire } from "node:module";
 import { connect, type Socket } from "node:net";
 import { createInterface } from "node:readline";
 
-import { field } from "./daemon.ts";
+import { field, sdkVersion, type Identity } from "./daemon.ts";
 
 /** The Upgrade token: the app protocol and its version, as in apps/runwisp/internal/apphost. */
 export const PROTOCOL = "runwisp-app/1";
@@ -32,13 +31,15 @@ export interface RunRequest {
     at?: Date;
 }
 
-export type ConfigReply = { ok: true } | { ok: false; error: string; restart: boolean };
+/** warnings: the non-fatal findings in the config RunWisp now runs. */
+export type ConfigReply =
+    { ok: true; warnings: string[] } | { ok: false; error: string; restart: boolean };
 
 /** Each gets the session, which may arrive before open() resolves. */
 export interface SessionEvents {
     /** Whether this copy of the app runs the tasks and supplies the config. Others stand by. */
     role(session: Session, active: boolean): void;
-    /** This active copy is now the only app connected. */
+    /** No other copy has runs in RunWisp any more, so this active copy may restart it. */
     alone(session: Session): void;
     run(session: Session, request: RunRequest): void;
     stop(run: string): void;
@@ -60,24 +61,25 @@ function strings(value: unknown): Record<string, string> {
     );
 }
 
-/** This package's version, for errors about a runwisp binary that doesn't match it. */
-function packageVersion(): string {
-    try {
-        const pkg: unknown = createRequire(import.meta.url)("../package.json");
-        const version = field(pkg, "version");
-        return typeof version === "string" ? version : "?";
-    } catch {
-        return "?";
-    }
-}
-
-/** Why the daemon refused the app connection, from its HTTP answer. */
-export function refusal(status: string, head: string, body: string): Error {
+/**
+ * Why the daemon refused the app connection, from its HTTP answer. running:
+ * the daemon that answered, when known.
+ */
+export function refusal(
+    status: string,
+    head: string,
+    body: string,
+    running?: Pick<Identity, "pid" | "version">,
+): Error {
     if (status === "426") {
-        const theirs = /^upgrade:\s*runwisp-app\/(\d+)\s*$/im.exec(head)?.[1];
-        const age = Number(theirs) > Number(PROTOCOL.split("/")[1]) ? "newer" : "older";
+        // Usually a daemon an older (or newer) app started, still running.
+        const theirs = /^upgrade:\s*runwisp-app\/(\d+)\s*$/im.exec(head)?.[1] ?? "unknown";
+        const daemon = running
+            ? `RunWisp ${running.version} (pid ${String(running.pid)})`
+            : "The RunWisp running for this data directory";
+        const stop = running ? ` (kill ${String(running.pid)})` : "";
         return new Error(
-            `this runwisp binary is ${age} than @runwisp/js ${packageVersion()} supports (app protocol ${theirs ?? "unknown"}, this package speaks ${PROTOCOL}): install matching versions of runwisp and @runwisp/js`,
+            `${daemon} speaks app protocol ${theirs}, and @runwisp/js ${sdkVersion() ?? "?"} speaks ${PROTOCOL}. It exits once no copy of the app that started it is left, and this app then starts its own; to switch now, stop it${stop}. If this persists, install the same version of runwisp and @runwisp/js.`,
         );
     }
     const why = body.trim();
@@ -86,7 +88,7 @@ export function refusal(status: string, head: string, body: string): Error {
 
 export class Session {
     active = false;
-    /** Whether this copy is the only app connected, as the daemon last said. */
+    /** Whether no other copy has runs in RunWisp (standby copies have none), as the daemon last said. */
     alone = false;
     /** The active copy's pid, as told to a standby copy; 0 when unknown. */
     activePid = 0;
@@ -125,7 +127,12 @@ export class Session {
      * The upgrade is written by hand: Bun before 1.4 never emits node:http's
      * "upgrade" event.
      */
-    static open(socketPath: string, events: SessionEvents, who: AppIdentity): Promise<Session> {
+    static open(
+        socketPath: string,
+        events: SessionEvents,
+        who: AppIdentity,
+        running?: Pick<Identity, "pid" | "version">,
+    ): Promise<Session> {
         return new Promise((resolve, reject) => {
             const socket = connect(socketPath);
             let head = Buffer.alloc(0);
@@ -142,7 +149,7 @@ export class Session {
                     // The reason is the body: read it, then hang up (the daemon keeps the connection alive).
                     const length = Number(/^content-length:\s*(\d+)/im.exec(headText)?.[1] ?? 0);
                     let body = head.subarray(end + 4);
-                    refused = () => refusal(status, headText, body.toString("utf8"));
+                    refused = () => refusal(status, headText, body.toString("utf8"), running);
                     const onBody = (more?: Buffer) => {
                         if (more) body = Buffer.concat([body, more]);
                         if (body.length >= length) socket.destroy();
@@ -224,7 +231,7 @@ export class Session {
      * stops once this copy disconnects, so its runs can finish first.
      */
     leave(): void {
-        this.send({ type: "close" });
+        this.send({ type: "leave" });
     }
 
     close(): Promise<void> {
@@ -264,9 +271,16 @@ export class Session {
                 if (typeof run === "string") this.events.stop(run);
                 break;
             }
-            case "config_ok":
-                this.replies.shift()?.({ ok: true });
+            case "config_ok": {
+                const warnings = field(field(message, "result"), "warnings");
+                this.replies.shift()?.({
+                    ok: true,
+                    warnings: Array.isArray(warnings)
+                        ? warnings.filter((w) => typeof w === "string")
+                        : [],
+                });
                 break;
+            }
             case "config_error": {
                 const error = field(message, "error");
                 this.replies.shift()?.({

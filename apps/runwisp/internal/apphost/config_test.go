@@ -146,7 +146,7 @@ func TestExitWhenIdleRightAwayAfterClose(t *testing.T) {
 
 	app := connect(t, h)
 	app.role()
-	app.send(message{Type: "close"})
+	app.send(message{Type: "leave"})
 	// Its runs may still be finishing: wait until it disconnects.
 	select {
 	case <-exited:
@@ -179,7 +179,7 @@ func TestExitWhenIdleWaitsForALeavingAppsRuns(t *testing.T) {
 	h.ExitWhenIdle(time.Minute, func() { close(exited) })
 	p := startRun(t, h, app, "r1")
 
-	app.send(message{Type: "close"})
+	app.send(message{Type: "leave"})
 	select {
 	case <-exited:
 		t.Fatal("exited while the leaving app's run was still going")
@@ -224,7 +224,7 @@ func TestConfigFromACopyThatHandedOverIsRefused(t *testing.T) {
 
 	old.send(message{Type: "config", Doc: json.RawMessage(`{"tasks":{"a":{"sdk":true}}}`)})
 	old.send(message{Type: "config", Doc: json.RawMessage(`{"tasks":{"b":{"sdk":true}}}`)})
-	old.send(message{Type: "close"})
+	old.send(message{Type: "leave"})
 	// The close hands over while the first push still applies.
 	replies := make(chan message, 3)
 	go func() {
@@ -255,7 +255,7 @@ func TestCloseHandsOverToTheNextCopy(t *testing.T) {
 	second := connect(t, h)
 	require.False(t, second.role())
 
-	first.send(message{Type: "close"})
+	first.send(message{Type: "leave"})
 	assert.False(t, first.role())
 	assert.True(t, second.role())
 

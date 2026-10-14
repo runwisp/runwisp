@@ -176,8 +176,8 @@ export function daemonPaths(data: string): DaemonPaths {
         config: join(process.cwd(), "runwisp.toml"),
         socket: socketPath(data, "runwisp.sock", "daemon"),
         log: join(data, "daemon.log"),
-        port: join(data, "node.port"),
-        launch: join(data, "node.launch"),
+        port: join(data, "app.port"),
+        launch: join(data, "app.launch"),
     };
 }
 
@@ -186,7 +186,7 @@ export function dashboardUrl(bindHost: string, port: number): string {
     return `http://${host.includes(":") ? `[${host}]` : host}:${String(port)}`;
 }
 
-/** The port a previous start picked, from <data>/node.port. */
+/** The port a previous start picked, from <data>/app.port. */
 export function savedPort(paths: DaemonPaths): number | undefined {
     try {
         const port = Number(readFileSync(paths.port, "utf8"));
@@ -453,8 +453,18 @@ export function recordLaunch(paths: DaemonPaths, pid: number, fingerprint: strin
     writeFileSync(paths.launch, JSON.stringify({ pid, fingerprint }), { mode: 0o600 });
 }
 
+/** This package's version, or undefined if it can't say. */
+export function sdkVersion(): string | undefined {
+    try {
+        const version = field(createRequire(import.meta.url)("../package.json"), "version");
+        return typeof version === "string" ? version : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 /** The version `binary --version` reports, or undefined if it can't say. */
-function binaryVersion(binary: string): string | undefined {
+export function binaryVersion(binary: string): string | undefined {
     try {
         const out = execFileSync(binary, ["--version"], { encoding: "utf8", stdio: "pipe" });
         return /version (\S+)/.exec(out)?.[1];
@@ -475,8 +485,8 @@ export function staleReason(
     paths: DaemonPaths,
     daemon: Identity,
     document: string,
+    version = binaryVersion(settings.binary),
 ): string | undefined {
-    const version = binaryVersion(settings.binary);
     if (version !== undefined && version !== daemon.version) {
         return `it runs runwisp ${daemon.version} and ${settings.binary} is ${version}`;
     }
@@ -489,6 +499,23 @@ export function staleReason(
     if (field(launch, "pid") !== daemon.pid) return undefined;
     if (field(launch, "fingerprint") === launchFingerprint(settings, document)) return undefined;
     return "the app's environment or runwisp binary path changed since it started";
+}
+
+/**
+ * A warning when binary (at version) is not the runwisp this package was
+ * released with. Only another app protocol keeps them from working together,
+ * so this is the one sign of a `binary` option or a `runwisp` on PATH left
+ * behind by an upgrade. Dev builds (0.0.0, -dev) never warn.
+ */
+export function versionMismatch(
+    binary: string,
+    version: string | undefined,
+    sdk = sdkVersion(),
+): string | undefined {
+    const unknown = (v: string | undefined) =>
+        v === undefined || v === "0.0.0" || v.includes("-dev");
+    if (unknown(version) || unknown(sdk) || version === sdk) return undefined;
+    return `runwisp: ${binary} is runwisp ${String(version)} and @runwisp/js is ${String(sdk)}: install the same version of both`;
 }
 
 /**

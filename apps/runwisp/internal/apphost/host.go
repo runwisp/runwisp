@@ -33,7 +33,8 @@ import (
 
 // Protocol is the Upgrade token an app sends to open its connection. The
 // number is the protocol version: a daemon answers any other token with 426,
-// so an SDK and a binary that don't match fail on connect, not mid-run.
+// so an SDK and a binary that don't match fail on connect, not mid-run. The
+// protocol is private to @runwisp/js and versioned by this token alone.
 const Protocol = "runwisp-app/1"
 
 // defaultHandoff is how long a handler run waits for an app to connect: the
@@ -61,14 +62,17 @@ const maxLine = 16 << 20
 // message is one NDJSON line on an app connection, in either direction.
 //
 // Daemon to app: role {active, alone, pid} (pid: the active copy's, sent to a
-// standby), alone (this active copy became the only one connected), run {run,
-// task, env, params, at} (at: the firing, for a run the schedule started),
-// stop {run}, overlap {task, at} (a firing on_overlap = "skip" dropped),
-// missed {task, at} (firings missed while the daemon was down, at the latest),
-// config_ok {result}, config_error {error, restart}.
+// standby; alone: see aloneLocked), alone (this active copy became alone), run
+// {run, task, env, params, at} (at: the firing, for a run the schedule
+// started), stop {run}, overlap {task, at} (a firing on_overlap = "skip"
+// dropped), missed {task, at} (firings missed while the daemon was down, at the
+// latest), config_ok {result}, config_error {error, restart}.
 // App to daemon: output {run, stream, line, partial} (partial: no newline
-// after line), exit {run, code}, config {doc}, close (the app is shutting
-// down for good, not restarting; see leave).
+// after line), exit {run, code}, config {doc}, leave (the app is shutting
+// down for good, not restarting; see Host.leave).
+//
+// A line that is JSON but doesn't fit this shape (a field of another type) is
+// skipped, so either side can be newer than the other.
 type message struct {
 	Type    string              `json:"type"`
 	Active  *bool               `json:"active,omitempty"`
@@ -249,7 +253,7 @@ func New() *Host {
 // a daemon; a different app is refused while one is connected, so two apps
 // pointed at one data directory fail loudly instead of swapping configs.
 func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !strings.EqualFold(r.Header.Get("Upgrade"), Protocol) {
+	if !upgradesTo(r.Header.Get("Upgrade"), Protocol) {
 		w.Header().Set("Upgrade", Protocol)
 		http.Error(w, "expected Upgrade: "+Protocol, http.StatusUpgradeRequired)
 		return
@@ -280,6 +284,17 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.ServeConn(hijacked{conn, buf.Reader}, app, pid)
+}
+
+// upgradesTo reports whether an Upgrade header, a comma-separated list of
+// protocols, offers protocol.
+func upgradesTo(header, protocol string) bool {
+	for offered := range strings.SplitSeq(header, ",") {
+		if strings.EqualFold(strings.TrimSpace(offered), protocol) {
+			return true
+		}
+	}
+	return false
 }
 
 // hijacked reads through the buffer the HTTP server may already have filled,
@@ -313,8 +328,12 @@ func (h *Host) ServeConn(conn io.ReadWriteCloser, app string, pid int) {
 	for scanner.Scan() {
 		var m message
 		if err := json.Unmarshal(scanner.Bytes(), &m); err != nil {
-			slog.Warn("App sent a malformed message; closing its connection", "err", err)
-			return
+			if !json.Valid(scanner.Bytes()) {
+				slog.Warn("App sent a malformed message; closing its connection", "err", err)
+				return
+			}
+			slog.Warn("App sent a message this daemon can't read; skipping it", "err", err)
+			continue
 		}
 		switch m.Type {
 		case "config":
@@ -327,7 +346,7 @@ func (h *Host) ServeConn(conn io.ReadWriteCloser, app string, pid int) {
 				<-prev
 				h.applyConfig(s, m.Doc)
 			}()
-		case "close":
+		case "leave":
 			h.leave(s)
 		default:
 			s.handle(m)
@@ -413,9 +432,12 @@ func (h *Host) add(s *session) bool {
 	return true
 }
 
-// aloneLocked reports whether the active app is the only one connected.
+// aloneLocked reports whether the active app is alone in having runs here, so
+// it can restart the daemon without stopping another copy's runs: standby
+// copies hold none (they reconnect to whatever daemon comes up), and no copy
+// that left is still finishing some.
 func (h *Host) aloneLocked() bool {
-	return len(h.sessions) == 1 && len(h.leaving) == 0
+	return len(h.sessions) > 0 && len(h.leaving) == 0
 }
 
 // detachLocked takes s out of the connected apps and returns the copy that
@@ -432,16 +454,17 @@ func (h *Host) detachLocked(s *session) (next *session) {
 
 func (h *Host) remove(s *session) {
 	h.mu.Lock()
+	wasAlone := h.aloneLocked()
 	next := h.detachLocked(s)
 	h.leaving = slices.DeleteFunc(h.leaving, func(other *session) bool { return other == s })
 	connected := len(h.sessions) + len(h.leaving)
 	if s.last && connected == 0 {
 		h.quit = true
 	}
-	// The active copy hears it is alone once the others are gone: then it can
-	// restart the daemon without stopping another copy's runs.
+	// The active copy hears it is alone once the last copy that left is gone:
+	// then it can restart the daemon without stopping another copy's runs.
 	var alone *session
-	if next == nil && h.aloneLocked() && h.sessions[0] != s {
+	if next == nil && !wasAlone && h.aloneLocked() {
 		alone = h.sessions[0]
 	}
 	nextAlone := h.aloneLocked()

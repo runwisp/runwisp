@@ -208,7 +208,8 @@ different app while one is connected, so give each app its own
 Shell tasks and `${VAR}` in the config use the environment of the copy that
 started RunWisp. When a copy starts with a different `runwisp` binary, or with
 a different value for a variable RunWisp uses, RunWisp restarts once that copy
-is the only one connected. With shell tasks, that is any variable; with only
+runs the tasks and no copy that stopped is still finishing runs. Waiting copies
+connect to the new RunWisp. With shell tasks, that is any variable; with only
 tasks defined in code, it is `RUNWISP_*`, `TZ` and the variables the config
 names. Runs in progress get their
 [`graceful_stop`](/configuration/tasks/#graceful_stop).

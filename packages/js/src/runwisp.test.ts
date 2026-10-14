@@ -362,6 +362,7 @@ function fakeDaemon(
     role = '{"type":"role","active":true,"alone":true}',
     /** Replies to the first configs, in order; config_ok after that. */
     configReplies: string[] = [],
+    version = "1.0.0",
 ) {
     const received: unknown[] = [];
     const apps: Socket[] = [];
@@ -371,7 +372,7 @@ function fakeDaemon(
             // A pid nothing has, should a test ever stop this daemon.
             "/api/daemon/identity": {
                 pid: 2 ** 30,
-                version: "1.0.0",
+                version,
                 configPath: join(data, "runwisp.toml"),
                 configSource: "app",
             },
@@ -475,10 +476,10 @@ describe("RunWisp with a daemon", () => {
         for (const cleanup of cleanups.splice(0)) await cleanup();
         for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
     });
-    const setup = (role?: string, configReplies?: string[]) => {
+    const setup = (role?: string, configReplies?: string[], version?: string) => {
         const data = mkdtempSync(join(tmpdir(), "rwn-"));
         dirs.push(data);
-        const daemon = fakeDaemon(data, role, configReplies);
+        const daemon = fakeDaemon(data, role, configReplies, version);
         cleanups.push(daemon.close);
         const lines: string[] = [];
         const log: Logger = {
@@ -511,7 +512,7 @@ describe("RunWisp with a daemon", () => {
 
         const closing = cron.close();
         await vi.waitFor(() => {
-            expect(daemon.received).toContainEqual({ type: "close" });
+            expect(daemon.received).toContainEqual({ type: "leave" });
         });
         expect(daemon.received).not.toContainEqual(expect.objectContaining({ type: "exit" }));
         daemon.send({ type: "stop", run: "r1" });
@@ -534,6 +535,57 @@ describe("RunWisp with a daemon", () => {
         expect(daemon.apps).toHaveLength(2);
         // The first connection is gone, so the new one isn't mistaken for a standby copy.
         expect(daemon.apps[0]?.destroyed).toBe(true);
+    });
+
+    // With replicas (PM2 cluster) other copies stay connected on standby: the
+    // active copy restarts a stale RunWisp once RunWisp says it is alone.
+    it("restarts a stale RunWisp when told it is alone", async () => {
+        const { daemon, cron, lines } = setup('{"type":"role","active":true}', [], "0.9.0");
+        await daemon.listen();
+        await cron.start();
+        expect(lines).toContainEqual(
+            expect.stringContaining("RunWisp is stale (it runs runwisp 0.9.0"),
+        );
+        expect(daemon.apps).toHaveLength(1);
+
+        daemon.send({ type: "alone" });
+        await vi.waitFor(() => {
+            expect(daemon.apps).toHaveLength(2);
+        });
+        expect(lines).toContainEqual(
+            expect.stringMatching(/^runwisp: restarting RunWisp since it runs runwisp 0\.9\.0 /),
+        );
+        expect(daemon.apps[0]?.destroyed).toBe(true);
+    });
+
+    it("reconnects a standby copy when the active copy restarts RunWisp", async () => {
+        const { daemon, cron } = setup('{"type":"role","active":false,"pid":4242}');
+        await daemon.listen();
+        await cron.start();
+        daemon.apps[0]?.destroy();
+        await vi.waitFor(
+            () => {
+                expect(daemon.apps).toHaveLength(2);
+            },
+            { timeout: 5000 },
+        );
+    });
+
+    it("logs each config warning once, not again for a push that repeats it", async () => {
+        const { daemon, cron, lines } = setup(undefined, [
+            '{"type":"config_ok","result":{"warnings":["w1","w1"]}}',
+            '{"type":"config_ok","result":{"warnings":["w1","w2"]}}',
+        ]);
+        await daemon.listen();
+        cron.schedule("0 3 * * *", () => undefined, { name: "a" });
+        await cron.start();
+        cron.schedule("0 3 * * *", () => undefined, { name: "b" });
+        await cron.start();
+        expect(daemon.received.filter((m) => field(m, "type") === "config")).toHaveLength(2);
+        expect(lines.filter((l) => l.startsWith("runwisp: w"))).toEqual([
+            "runwisp: w1",
+            "runwisp: w2",
+        ]);
     });
 
     it("keeps retrying to connect, backing off, until RunWisp answers", async () => {

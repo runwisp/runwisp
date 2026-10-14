@@ -10,6 +10,7 @@ import { forkedTask, solvePath } from "./background.ts";
 import { ownStack, runCaptured } from "./capture.ts";
 import { CronAnswers, type DetailedValidation, type ParsedFields } from "./cron.ts";
 import {
+    binaryVersion,
     choosePort,
     daemonPaths,
     dashboardUrl,
@@ -26,6 +27,7 @@ import {
     startDaemon,
     stopDaemon,
     validateConfig,
+    versionMismatch,
     type DaemonPaths,
     type Settings,
 } from "./daemon.ts";
@@ -206,6 +208,8 @@ export class RunWisp {
     private session: Session | undefined;
     /** Why the daemon attached to is not what this copy would start; restarted once this copy is alone. */
     private stale: string | undefined;
+    /** The warnings RunWisp gave for the config last pushed, so a push that repeats them stays quiet. */
+    private configWarnings = new Set<string>();
     private standby = false;
     private retries = 0;
     private retryTimer: NodeJS.Timeout | undefined;
@@ -705,6 +709,9 @@ export class RunWisp {
             started = await startDaemon(this.settings, this.paths, port, document);
         }
         const daemon = await identity(this.paths.socket);
+        const version = binaryVersion(this.settings.binary);
+        const mismatch = versionMismatch(this.settings.binary, version);
+        if (mismatch !== undefined) this.warnOnce("version", mismatch);
         if (daemon.configSource !== "app") {
             throw new Error(
                 `the RunWisp daemon on ${this.settings.data} runs ${daemon.configPath}, not this app's tasks; pass a different data directory`,
@@ -714,7 +721,7 @@ export class RunWisp {
             recordLaunch(this.paths, daemon.pid, launchFingerprint(this.settings, document));
             this.stale = undefined;
         } else {
-            this.stale = staleReason(this.settings, this.paths, daemon, document);
+            this.stale = staleReason(this.settings, this.paths, daemon, document, version);
         }
         const events: SessionEvents = {
             role: (session, active) => {
@@ -761,15 +768,17 @@ export class RunWisp {
                 this.retryLater();
             },
         };
-        this.session = await Session.open(this.paths.socket, events, {
-            app: this.settings.app,
-            pid: process.pid,
-        });
+        this.session = await Session.open(
+            this.paths.socket,
+            events,
+            { app: this.settings.app, pid: process.pid },
+            daemon,
+        );
         this.holdProcess();
         this.retries = 0;
         if (this.stale !== undefined && !this.session.alone) {
             this.log?.warn(
-                `runwisp: RunWisp is stale (${this.stale}); it restarts once this is the only copy of the app connected`,
+                `runwisp: RunWisp is stale (${this.stale}); it restarts once this copy runs the tasks and no other copy is still finishing runs`,
             );
         }
         process.off("uncaughtExceptionMonitor", this.runner.reportCrash);
@@ -809,21 +818,38 @@ export class RunWisp {
             await this.restart(`since ${why}`);
             return;
         }
-        if (session?.active === true) {
-            const doc = this.document();
-            if (doc !== this.pushed) {
-                const reply = await session.config(doc);
-                if (reply.ok) {
-                    this.pushed = doc;
-                } else if (reply.restart) {
-                    await this.restart(`to apply the new config (${reply.error})`);
-                    return;
-                } else {
-                    throw new Error(reply.error);
-                }
-            }
-        }
+        const pushes = session?.active === true && this.document() !== this.pushed;
+        if (pushes && !(await this.push(session))) return;
         await this.refreshNextRuns().catch(() => undefined);
+    }
+
+    /** Pushes this copy's config. false when RunWisp restarts to apply it instead. */
+    private async push(session: Session): Promise<boolean> {
+        const doc = this.document();
+        const reply = await session.config(doc);
+        if (reply.ok) {
+            this.pushed = doc;
+            this.warnConfig(reply.warnings);
+            return true;
+        }
+        if (reply.restart) {
+            await this.restart(`to apply the new config (${reply.error})`);
+            return false;
+        }
+        // Most likely the old daemon not knowing the new config: alone() retries.
+        const stale =
+            this.stale === undefined
+                ? ""
+                : ` (RunWisp is stale, ${this.stale}; it restarts with this config once no other copy is still finishing runs)`;
+        throw new Error(reply.error + stale);
+    }
+
+    /** Logs RunWisp's warnings about the config, each once while RunWisp keeps giving it. */
+    private warnConfig(warnings: string[]): void {
+        for (const warning of new Set(warnings)) {
+            if (!this.configWarnings.has(warning)) this.log?.warn(`runwisp: ${warning}`);
+        }
+        this.configWarnings = new Set(warnings);
     }
 
     /** A change only a daemon restart applies: restart it with this copy's config and env. */

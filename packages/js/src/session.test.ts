@@ -97,12 +97,12 @@ describe("Session", () => {
                     socket.write(
                         '{"type":"config_error","error":"tls_cert changed","restart":true}\n',
                     );
-                } else socket.write('{"type":"config_ok","result":{}}\n');
+                } else socket.write('{"type":"config_ok","result":{"warnings":["w1",7]}}\n');
             };
             socket.on("data", () => setImmediate(answer));
         });
         const session = await Session.open(path, recorder().events, WHO);
-        expect(await session.config('{"tasks":{}}')).toEqual({ ok: true });
+        expect(await session.config('{"tasks":{}}')).toEqual({ ok: true, warnings: ["w1"] });
         expect(await session.config('{"daemon":"bad"}')).toEqual({
             ok: false,
             error: "tls_cert changed",
@@ -123,7 +123,7 @@ describe("Session", () => {
             error: "a config push is already pending",
             restart: false,
         });
-        expect(await first).toEqual({ ok: true });
+        expect(await first).toEqual({ ok: true, warnings: [] });
         await session.close();
     });
 
@@ -140,7 +140,7 @@ describe("Session", () => {
         expect(roles).toEqual([false]);
 
         session.leave();
-        await expect.poll(() => received).toEqual(['{"type":"close"}']);
+        await expect.poll(() => received).toEqual(['{"type":"leave"}']);
 
         const pending = session.config("{}");
         daemonSide?.destroy();
@@ -186,13 +186,40 @@ describe("Session", () => {
         );
     });
 
-    it("tells a runwisp binary that speaks another app protocol apart", () => {
-        expect(refusal("426", "HTTP/1.1 426\r\nUpgrade: runwisp-app/2", "").message).toMatch(
-            /^this runwisp binary is newer than @runwisp\/js \S+ supports .*install matching versions/,
+    it("names the running daemon that speaks another app protocol, and how to replace it", () => {
+        const head = "HTTP/1.1 426\r\nUpgrade: runwisp-app/0";
+        const message = refusal("426", head, "", { pid: 77, version: "1.6.0" }).message;
+        expect(message).toMatch(
+            /^RunWisp 1\.6\.0 \(pid 77\) speaks app protocol 0, and @runwisp\/js \S+ speaks runwisp-app\/1\./,
         );
-        expect(refusal("426", "HTTP/1.1 426\r\nUpgrade: runwisp-app/0", "").message).toContain(
-            "is older than",
-        );
+        expect(message).toContain("stop it (kill 77)");
+        expect(refusal("426", head, "").message).toMatch(/^The RunWisp running for this data/);
+    });
+
+    it("ignores what it can't read from the daemon and keeps going", async () => {
+        const { path } = await fakeDaemon((socket) => {
+            socket.write(
+                [
+                    '{"type":"role","active":"yes","pid":"7"}',
+                    "[1]",
+                    "null",
+                    "not json",
+                    '{"type":"run","run":5,"task":"digest"}',
+                    '{"type":"missed","task":"digest","at":5}',
+                    '{"type":"from-the-future","run":{}}',
+                    '{"type":"run","run":"r1","task":"digest","env":{"A":1,"B":"2"},"params":[]}',
+                ].join("\n") + "\n",
+            );
+        });
+        const { runs, missed, events } = recorder();
+        const session = await Session.open(path, events, WHO);
+        expect(session.active).toBe(false);
+        expect(session.activePid).toBe(0);
+        await expect
+            .poll(() => runs)
+            .toEqual([{ run: "r1", task: "digest", env: { B: "2" }, params: {} }]);
+        expect(missed).toEqual([]);
+        await session.close();
     });
 
     it("rejects when the daemon refuses the upgrade", async () => {

@@ -30,6 +30,7 @@ import {
     resolveSettings,
     staleReason,
     validateConfig,
+    versionMismatch,
     type Settings,
 } from "./daemon.ts";
 
@@ -187,6 +188,18 @@ describe("app name", () => {
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
+    });
+});
+
+describe("binary version", () => {
+    it("warns when the runwisp binary is not this package's version, except for dev builds", () => {
+        expect(versionMismatch("/usr/bin/runwisp", "1.6.0", "1.7.0")).toBe(
+            "runwisp: /usr/bin/runwisp is runwisp 1.6.0 and @runwisp/js is 1.7.0: install the same version of both",
+        );
+        expect(versionMismatch("runwisp", "1.7.0", "1.7.0")).toBeUndefined();
+        expect(versionMismatch("runwisp", "0.0.0-dev", "1.7.0")).toBeUndefined();
+        expect(versionMismatch("runwisp", "1.7.0", "0.0.0")).toBeUndefined();
+        expect(versionMismatch("runwisp", undefined, "1.7.0")).toBeUndefined();
     });
 });
 

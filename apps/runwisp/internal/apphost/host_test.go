@@ -351,8 +351,8 @@ func TestOverlongMessageIsAWarning(t *testing.T) {
 	assert.Contains(t, logs.String(), "over the size limit")
 }
 
-// The active copy's pid reaches a standby, and the active copy hears when it
-// is the only one left.
+// The active copy's pid reaches a standby, and standby copies don't keep the
+// active one from being alone: they hold no runs.
 func TestRoleSaysWhoIsActiveAndWhenAlone(t *testing.T) {
 	h := New()
 	first := connectAs(t, h, "app", 11)
@@ -363,8 +363,37 @@ func TestRoleSaysWhoIsActiveAndWhenAlone(t *testing.T) {
 	m = second.next()
 	assert.Equal(t, message{Type: "role", Active: new(false), Pid: 11}, m)
 
+	// A standby going away changes nothing for the active copy.
 	require.NoError(t, second.conn.Close())
-	assert.Equal(t, message{Type: "alone"}, first.next())
+	require.NoError(t, first.conn.SetReadDeadline(time.Now().Add(50*time.Millisecond)))
+	var none message
+	assert.Error(t, first.dec.Decode(&none), "got %+v", none)
+}
+
+// TestAloneOnceTheLeavingCopyIsGone guards a stale daemon's restart with
+// replicas (PM2 cluster): the copy that takes over hears it is alone once the
+// copy that left finished its runs, even with standby copies still connected.
+// Counting the standbys kept it from ever hearing, so the old daemon stayed.
+func TestAloneOnceTheLeavingCopyIsGone(t *testing.T) {
+	h := New()
+	first := connectAs(t, h, "app", 11)
+	require.True(t, first.role())
+	second := connectAs(t, h, "app", 22)
+	require.False(t, second.role())
+	third := connectAs(t, h, "app", 33)
+	require.False(t, third.role())
+	p := startRun(t, h, first, "r1")
+
+	first.send(message{Type: "leave"})
+	require.False(t, first.role())
+	// Not alone yet: the copy that left still has a run here.
+	assert.Equal(t, message{Type: "role", Active: new(true)}, second.next())
+
+	first.send(message{Type: "exit", Run: "r1", Code: code(0)})
+	_, _, _ = output(t, p)
+	require.NoError(t, first.conn.Close())
+	require.NoError(t, second.conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+	assert.Equal(t, message{Type: "alone"}, second.next())
 }
 
 // Two different apps on one daemon would swap configs: the second is refused.
@@ -390,6 +419,61 @@ func TestOtherProtocolVersionIsRefused(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusUpgradeRequired, rec.Code)
 	assert.Equal(t, "runwisp-app/1", rec.Header().Get("Upgrade"))
+}
+
+// The Upgrade header is a list: an SDK may offer several protocols.
+func TestUpgradeAcceptsAListOfProtocols(t *testing.T) {
+	for header, want := range map[string]bool{
+		"runwisp-app/1":                 true,
+		"RunWisp-App/1":                 true,
+		"websocket, runwisp-app/1":      true,
+		" runwisp-app/2 ,runwisp-app/1": true,
+		"runwisp-app/2":                 false,
+		"runwisp-app/10, websocket":     false,
+		"":                              false,
+	} {
+		assert.Equal(t, want, upgradesTo(header, Protocol), header)
+	}
+}
+
+// A message that is JSON but has a field of another type (a newer SDK, a bug)
+// is skipped, not a reason to drop the connection and fail its runs.
+func TestIllTypedMessageIsSkipped(t *testing.T) {
+	logs := captureSlog(t)
+	h := New()
+	app := connect(t, h)
+	app.role()
+	p := startRun(t, h, app, "r1")
+
+	go func() {
+		for _, line := range []string{
+			`{"type":"exit","run":"r1","code":"zero"}`,
+			`{"type":"output","run":"r1","at":"not a time","line":"lost"}`,
+			`{"type":"from-the-future","line":5}`,
+		} {
+			_, err := io.WriteString(app.conn, line+"\n")
+			assert.NoError(t, err)
+		}
+		// Output blocks until output() below reads it.
+		_ = app.enc.Encode(message{Type: "output", Run: "r1", Stream: "stdout", Line: "kept"})
+		_ = app.enc.Encode(message{Type: "exit", Run: "r1", Code: code(0)})
+	}()
+	stdout, _, exit := output(t, p)
+	assert.Equal(t, "kept\n", stdout)
+	assert.Equal(t, 0, exit)
+	assert.Contains(t, logs.String(), "can't read; skipping it")
+}
+
+// A line that isn't JSON at all means the stream is lost: the connection ends.
+func TestMalformedMessageClosesTheConnection(t *testing.T) {
+	h := New()
+	app := connect(t, h)
+	app.role()
+	p := startRun(t, h, app, "r1")
+
+	go func() { _, _ = io.WriteString(app.conn, "{not json\n") }()
+	_, _, exit := output(t, p)
+	assert.Equal(t, -1, exit)
 }
 
 // A firing on_overlap = "skip" dropped reaches the active app.
@@ -528,7 +612,7 @@ func TestClosingStopsServicesBeforeTheirExit(t *testing.T) {
 	require.True(t, app.role())
 	p := startService(t, h, app, "r1")
 
-	app.send(message{Type: "close"})
+	app.send(message{Type: "leave"})
 	app.send(message{Type: "exit", Run: "r1", Code: code(143)})
 	_, _, _ = output(t, p)
 	assert.Equal(t, []string{"stop worker"}, services.recorded())
@@ -550,7 +634,7 @@ func TestClosingHandsServicesToTheNextCopy(t *testing.T) {
 	require.False(t, second.role())
 	p := startService(t, h, first, "r1")
 
-	first.send(message{Type: "close"})
+	first.send(message{Type: "leave"})
 	require.False(t, first.role())
 	require.True(t, second.role())
 	first.send(message{Type: "exit", Run: "r1", Code: code(143)})
