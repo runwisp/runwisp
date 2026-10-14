@@ -144,6 +144,7 @@ describe("RunWisp with the real daemon", () => {
     it("rejects what RunWisp would reject, when the task is added", () => {
         expect(cron.validate("*/5 * * * *")).toBe(true);
         expect(cron.validate("61 * * * *")).toBe(false);
+        expect(cron.validate("@every 1500ms")).toBe(false);
         expect(() => cron.schedule("not cron", () => undefined, { name: "x" })).toThrow(
             `invalid cron for task "x"`,
         );
@@ -153,6 +154,8 @@ describe("RunWisp with the real daemon", () => {
         expect(() => cron.task("tz", { timezone: "Mars/Base" }, () => undefined)).toThrow(
             "Mars/Base",
         );
+        // A JS caller has no types to stop it; RunWisp still refuses.
+        // @ts-expect-error: run has no place next to a callback.
         expect(() => cron.task("both", { run: "true" }, () => undefined)).toThrow(
             "sets both sdk and run",
         );

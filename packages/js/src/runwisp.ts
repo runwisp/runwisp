@@ -75,10 +75,28 @@ export interface RunWispOptions {
     config?: Config;
 }
 
-/** A `[tasks.<name>]` table, minus `sdk`: the callback runs the task. */
-export type TaskConfigOptions = Omit<TaskConfig, "sdk">;
-/** A `[services.<name>]` table, minus `sdk`: the callback runs the service. */
-export type ServiceOptions = Omit<ServiceConfig, "sdk">;
+/**
+ * The `[tasks]` and `[services]` keys a callback has no use for: `sdk`, and
+ * the keys that only shape a process RunWisp starts, which RunWisp rejects
+ * next to `sdk`.
+ */
+type ProcessKeys =
+    | "sdk"
+    | "run"
+    | "compose_file"
+    | "compose_service"
+    | "compose_mode"
+    | "shell"
+    | "umask"
+    | "user"
+    | "env_base"
+    | "working_dir"
+    | "stop_signal";
+
+/** A `[tasks.<name>]` table, minus the keys for a process: the callback runs the task. */
+export type TaskConfigOptions = Omit<TaskConfig, ProcessKeys>;
+/** A `[services.<name>]` table, minus the keys for a process: the callback runs the service. */
+export type ServiceConfigOptions = Omit<ServiceConfig, ProcessKeys>;
 /** A service's callback: runs until `ctx.signal` aborts. RunWisp restarts it when it returns or throws. */
 export type ServiceFn = (context: RunContext) => unknown;
 
@@ -93,7 +111,7 @@ interface TaskJob {
 }
 
 interface ServiceJob {
-    options: ServiceOptions;
+    options: ServiceConfigOptions;
     fn: ServiceFn;
 }
 
@@ -139,6 +157,9 @@ const IGNORED_NODE_CRON_OPTIONS: Partial<Record<keyof TaskOptions, string>> = {
     runCoordinator: RUNS_ONCE,
     distributedLease: RUNS_ONCE,
     maxRandomDelay: "use task() with the jitter option instead",
+    missedExecutionTolerance:
+        "RunWisp fires a late tick when it can, and records ticks missed while it was down",
+    startTimeout: "a background task's process starts per run, under the run's timeout",
 };
 
 function shellQuote(value: string): string {
@@ -317,7 +338,7 @@ export class RunWisp {
      * running, restarting it when it returns or throws, and asks it to stop
      * through `ctx.signal`.
      */
-    service(name: string, options: ServiceOptions, fn: ServiceFn): void {
+    service(name: string, options: ServiceConfigOptions, fn: ServiceFn): void {
         this.assertName(name, this.tasks);
         this.check(this.unitConfig({ services: { [name]: { ...options, sdk: true } } }));
         this.services.set(name, { options, fn });

@@ -12,7 +12,13 @@ import { setImmediate as nextTurn } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { daemonPaths, field } from "./daemon.ts";
-import { RunWisp, type Logger, type RunWispOptions } from "./runwisp.ts";
+import {
+    RunWisp,
+    type Logger,
+    type RunWispOptions,
+    type ServiceConfigOptions,
+    type TaskConfigOptions,
+} from "./runwisp.ts";
 
 function offline() {
     const warnings: string[] = [];
@@ -149,7 +155,40 @@ describe("RunWisp (enabled: false)", () => {
     it("warns about node-cron options RunWisp makes unnecessary", () => {
         const { cron, warnings } = offline();
         cron.schedule("* * * * *", () => undefined, { name: "a", distributed: true, unref: true });
-        expect(warnings).toEqual([expect.stringContaining(`"distributed" is ignored`)]);
+        cron.schedule("* * * * *", () => undefined, {
+            name: "b",
+            missedExecutionTolerance: 5,
+            startTimeout: 5,
+        });
+        expect(warnings).toEqual([
+            expect.stringContaining(`"distributed" is ignored`),
+            expect.stringContaining(`"missedExecutionTolerance" is ignored`),
+            expect.stringContaining(`"startTimeout" is ignored`),
+        ]);
+    });
+
+    it("leaves the keys for a process out of the task and service options", () => {
+        type Leaked = Extract<
+            keyof TaskConfigOptions | keyof ServiceConfigOptions,
+            | "sdk"
+            | "run"
+            | "compose_file"
+            | "compose_service"
+            | "compose_mode"
+            | "shell"
+            | "umask"
+            | "user"
+            | "env_base"
+            | "working_dir"
+            | "stop_signal"
+        >;
+        const none: [Leaked] extends [never] ? true : false = true;
+        expect(none).toBe(true);
+        // @ts-expect-error: the callback runs the task, not a shell command.
+        const task: TaskConfigOptions = { run: "true" };
+        // @ts-expect-error: the callback runs the service, not a container.
+        const service: ServiceConfigOptions = { compose_file: "compose.yaml" };
+        expect([task, service]).toHaveLength(2);
     });
 
     it("sends warnings where setLogger says, and back to the log option for undefined", () => {

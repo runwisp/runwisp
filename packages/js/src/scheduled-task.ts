@@ -20,7 +20,11 @@ export interface RunCoordinator {
     onComplete?(key: string): void | Promise<void>;
 }
 
-/** node-cron's TaskOptions: what `schedule()` takes. `TaskConfigOptions` is the `[tasks.<name>]` table. */
+/**
+ * node-cron's TaskOptions: what `schedule()` takes. `TaskConfigOptions` is the
+ * `[tasks.<name>]` table. The deprecated options are ignored and stay only so
+ * node-cron code compiles.
+ */
 export interface TaskOptions {
     timezone?: string;
     name?: string;
@@ -28,21 +32,21 @@ export interface TaskOptions {
     maxExecutions?: number;
     /** Milliseconds; becomes the task's RunWisp `timeout`. */
     executeTimeout?: number;
-    /** Ignored, with a warning: RunWisp runs each task once per data directory. */
+    /** @deprecated Ignored, with a warning: RunWisp runs each task once per data directory. */
     distributed?: boolean;
-    /** Ignored, with a warning: RunWisp runs each task once per data directory. */
+    /** @deprecated Ignored, with a warning: RunWisp runs each task once per data directory. */
     runCoordinator?: RunCoordinator;
-    /** Ignored, with a warning: RunWisp runs each task once per data directory. */
+    /** @deprecated Ignored, with a warning: RunWisp runs each task once per data directory. */
     distributedLease?: number;
-    /** Ignored, with a warning: use task() with the `jitter` key instead. */
+    /** @deprecated Ignored, with a warning: use task() with the `jitter` key instead. */
     maxRandomDelay?: number;
     /** Gets this task's warnings and its event listeners' errors instead of the RunWisp instance's log. */
     logger?: Logger;
     /** true: no warning for a missed run when nothing listens for execution:missed. */
     suppressMissedWarning?: boolean;
-    /** Ignored: RunWisp fires a late tick when it can, and records ticks missed while it was down. */
+    /** @deprecated Ignored, with a warning: RunWisp fires a late tick when it can, and records ticks missed while it was down. */
     missedExecutionTolerance?: number;
-    /** Ignored: a background task's process starts per run, under the run's timeout. */
+    /** @deprecated Ignored, with a warning: a background task's process starts per run, under the run's timeout. */
     startTimeout?: number;
     /** true: this task doesn't keep the process alive, as with node-cron. */
     unref?: boolean;

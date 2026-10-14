@@ -65,8 +65,8 @@ export: `import { solvePath } from "@runwisp/js"`.
 | `logger`, `suppressMissedWarning`                   | Kept.                                                                                                                                                                       |
 | `distributed`, `runCoordinator`, `distributedLease` | Ignored, with a warning. Each run happens once per data directory. `setRunCoordinator()` is ignored the same way.                                                           |
 | `maxRandomDelay`                                    | Ignored, with a warning. Use `jitter` with `task()`.                                                                                                                        |
-| `missedExecutionTolerance`                          | Ignored. A run is missed only while RunWisp is down.                                                                                                                        |
-| `startTimeout`                                      | Ignored. A task file starts per run.                                                                                                                                        |
+| `missedExecutionTolerance`                          | Ignored, with a warning. A run is missed only while RunWisp is down.                                                                                                        |
+| `startTimeout`                                      | Ignored, with a warning. A task file starts per run.                                                                                                                        |
 
 ## Task files
 

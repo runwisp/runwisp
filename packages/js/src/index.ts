@@ -9,7 +9,7 @@ export {
     type Logger,
     type RunWispOptions,
     type ServiceFn,
-    type ServiceOptions,
+    type ServiceConfigOptions,
     type TaskConfigOptions,
 } from "./runwisp.ts";
 // The task handle is a type only: RunWisp creates them.
