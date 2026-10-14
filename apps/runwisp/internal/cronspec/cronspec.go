@@ -8,7 +8,8 @@
 // grammar can never drift between validation and execution.
 //
 // go-cron already gives the grammar its vixie-cron edges: day-of-week 7 is
-// Sunday and @every rejects intervals below 1s. A tick inside a spring-forward
+// Sunday and @every rejects intervals below 1s; RunWisp also rejects one that
+// isn't a whole number of seconds (see fractionalEvery). A tick inside a spring-forward
 // DST gap fires once at the first valid instant after it (see dstGapSchedule).
 package cronspec
 
@@ -66,7 +67,24 @@ func (p specParser) Parse(spec string) (cron.Schedule, error) {
 		}
 		return dstGapSchedule{inner: s}, nil
 	}
+	if err := fractionalEvery(spec); err != nil {
+		return nil, err
+	}
 	return sched, nil
+}
+
+// fractionalEvery rejects an @every interval that isn't a whole number of
+// seconds ("@every 1500ms"). go-cron truncates it to the second, so the task
+// would fire at an interval the config doesn't say.
+func fractionalEvery(spec string) error {
+	body := fieldsAfterTZ(spec)
+	if len(body) != 2 || body[0] != "@every" {
+		return nil
+	}
+	if d, err := time.ParseDuration(body[1]); err == nil && d%time.Second != 0 {
+		return fmt.Errorf("@every %s: the interval must be a whole number of seconds", body[1])
+	}
+	return nil
 }
 
 // fieldMax is each field's highest value, in 6-field order (day-of-week 7 is

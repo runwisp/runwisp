@@ -47,6 +47,9 @@ func TestValidate(t *testing.T) {
 		{name: "every negative", spec: "@every -1s", wantErr: true},
 		{name: "every sub-second", spec: "@every 1ms", wantErr: true},
 		{name: "every sub-second with timezone", spec: "@every 500ms", timezone: "UTC", wantErr: true},
+		{name: "every fractional second", spec: "@every 1500ms", wantErr: true},
+		{name: "every fractional second with timezone", spec: "@every 1m0.5s", timezone: "UTC", wantErr: true},
+		{name: "every whole seconds in ms", spec: "@every 2000ms"},
 		{name: "four fields", spec: "* * * *", wantErr: true},
 		{name: "seven fields", spec: "0 0 0 3 * * *", wantErr: true},
 		{name: "out of range minute", spec: "61 * * * *", wantErr: true},
@@ -81,7 +84,7 @@ func TestValidate(t *testing.T) {
 // scheduler, the TUI's next-run hint, the demo seeder) never see a schedule
 // whose Next is the zero time.
 func TestParserRejectsWhatValidateRejects(t *testing.T) {
-	for _, spec := range []string{"0 0 30 2 *", "@every 1ms", "@manual", "@triggered", "@none", "CRON_TZ=UTC @manual"} {
+	for _, spec := range []string{"0 0 30 2 *", "@every 1ms", "@every 1500ms", "@manual", "@triggered", "@none", "CRON_TZ=UTC @manual"} {
 		_, err := NewParser().Parse(spec)
 		assert.Error(t, err, spec)
 	}
@@ -464,6 +467,9 @@ func TestExplain(t *testing.T) {
 	assert.Nil(t, fields)
 	assert.Empty(t, errs)
 
+	_, errs = Explain("@every 1500ms")
+	assert.Equal(t, []FieldError{{Field: "expression", Value: "@every 1500ms", Message: "@every 1500ms: the interval must be a whole number of seconds"}}, errs)
+
 	fields, errs = Explain("1 61 25 * * *")
 	assert.Nil(t, fields)
 	require.Len(t, errs, 2)
@@ -477,7 +483,7 @@ func TestExplain(t *testing.T) {
 	require.Len(t, errs, 1)
 	assert.Equal(t, FieldError{Field: "dayOfMonth", Value: "30", Message: "schedule never fires (the day of month does not exist in the given months)"}, errs[0])
 
-	for _, spec := range []string{"* * *", "@fortnightly", "@every 10ms", "CRON_TZ=Nowhere/Land 0 3 * * *", ""} {
+	for _, spec := range []string{"* * *", "@fortnightly", "@every 10ms", "@every 1500ms", "CRON_TZ=Nowhere/Land 0 3 * * *", ""} {
 		_, errs = Explain(spec)
 		require.Len(t, errs, 1, spec)
 		assert.Equal(t, "expression", errs[0].Field, spec)

@@ -114,7 +114,8 @@ Possible values:
 - `0 9 * * 1-5`: 09:00 Monday to Friday
 - `*/30 * * * * *`: every 30 seconds (6-field, leading seconds)
 - `@hourly`, `@daily`: shorthand forms
-- `@every 1h30m`: fixed interval, ignores wall-clock alignment
+- `@every 1h30m`: fixed interval, ignores wall-clock alignment. The interval
+  is a whole number of seconds, at least `1s`.
 
 [How scheduling works](/concepts/scheduling/) has the full cron grammar, DST
 rules, and catch-up details. `runwisp validate` runs the same checks as daemon
