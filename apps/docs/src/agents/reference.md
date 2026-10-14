@@ -403,6 +403,7 @@ runwisp openapi              — print the OpenAPI 3.1 spec (JSON) to stdout
 runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-12) to stdout; published at https://docs.runwisp.com/config.schema.json
 runwisp station              — start in station mode; --token --url --env-file(=.env) --no-tui
 runwisp demo                 — boot a throwaway, fully-populated instance; --no-tui --seed-only --station --token --url --env-file
+runwisp mcp                  — MCP server on stdio; tools status, runs, logs, search_logs, run_task, stop_run, reload (+ list, validate for the local daemon only); each returns the matching --json document; --url/--password (or RUNWISP_URL/RUNWISP_PASSWORD) targets a remote daemon, over SSH: `ssh host runwisp mcp`
 runwisp upgrade              — upgrade to the latest stable release via the install channel: homebrew → brew upgrade; global npm/bun/pnpm/yarn → that manager; script/tar.gz → download from GitHub, verify SHA-256, atomic in-place swap; docker/npx/project-local npm → refuses with instructions; dev build refuses. -y/--yes (needed without a TTY), --restart now|idle|later (idle = wait until no task runs are pending/running, services ignored; no TTY + no flag = later)
 runwisp service install      — install autostart; -y --print --dry-run --force --local --binary <path>
                              — DEFAULT scope is the system-wide singleton /etc/systemd/system/runwisp.service

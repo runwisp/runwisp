@@ -64,6 +64,43 @@ An agent on the same machine as the daemon needs no password: the CLI talks to
 it over the [control socket](/reference/cli/#control-socket). Neither the socket
 nor the REST API can change a task definition; only `runwisp.toml` can.
 
+## MCP server
+
+**since**: `1.6`
+
+`runwisp mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io)
+server on stdin and stdout, so an agent can call RunWisp without shelling out:
+
+```bash
+claude mcp add runwisp -- runwisp mcp
+```
+
+Every tool returns the same JSON its command prints with `--json`.
+
+| Tool          | What it does                                                                       |
+| ------------- | ---------------------------------------------------------------------------------- |
+| `status`      | Daemon health and every task with its last run. Start here.                        |
+| `runs`        | Run history, newest first, filtered by `task` or `status`.                         |
+| `logs`        | Output of a task's latest run, or of a run ID. 100 lines by default, 1000 at most. |
+| `search_logs` | Substring or regex search across a task's runs.                                    |
+| `run_task`    | Trigger a task and wait for its outcome. Set `noWait` to return at once.           |
+| `stop_run`    | Stop an active run.                                                                |
+| `reload`      | Apply `runwisp.toml` to the daemon.                                                |
+| `list`        | Tasks in the local `runwisp.toml`. Works without a daemon.                         |
+| `validate`    | Check the local `runwisp.toml`. Works without a daemon.                            |
+
+There is no tool that edits a task. The agent edits `runwisp.toml` itself, then
+calls `validate` and `reload`.
+
+For a daemon on another machine, either run the server there over SSH:
+
+```bash
+claude mcp add runwisp -- ssh host runwisp mcp
+```
+
+or pass `--url` (and `RUNWISP_PASSWORD`) to connect over HTTP. With `--url`,
+`list` and `validate` are not offered, because they read a local file.
+
 ## Learn more
 
 - [CLI reference](/reference/cli/)

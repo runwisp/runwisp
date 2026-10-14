@@ -546,6 +546,24 @@ it leaves the daemon running.
 | `--yes`     | Upgrade without asking first. Needed when there's no terminal.   |
 | `--restart` | Answer the restart question up front: `now`, `idle`, or `later`. |
 
+### `runwisp mcp`
+
+**since**: `1.6`
+
+```bash
+runwisp mcp
+runwisp mcp --url https://runwisp.example.com
+```
+
+Serves RunWisp to an AI agent as a [Model Context Protocol](https://modelcontextprotocol.io)
+server on stdin and stdout. See [AI agents](/reference/agents/#mcp-server) for
+the tools and how to register it.
+
+| Flag         | Description                                                        |
+| ------------ | ------------------------------------------------------------------ |
+| `--url`      | Control a remote daemon at this base URL instead of the local one. |
+| `--password` | Password for `--url`. Falls back to `RUNWISP_PASSWORD`.            |
+
 ### `runwisp password`
 
 ```bash
