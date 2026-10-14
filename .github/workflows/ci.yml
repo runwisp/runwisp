@@ -247,8 +247,8 @@ jobs:
           mkdir -p /tmp/runwisp-ci
           cat > /tmp/runwisp-ci/runwisp.toml <<'EOF'
           [tasks.hello]
+          cron = "@every 1s"
           run = "echo hello from container"
-          run_on_start = true
           EOF
 
           for image in runwisp:ci-alpine runwisp:ci-debian; do
