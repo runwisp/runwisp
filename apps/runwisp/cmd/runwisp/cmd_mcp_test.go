@@ -126,3 +126,78 @@ func TestMCP_RunTaskWaitsAndKeepsStdoutClean(t *testing.T) {
 	assert.Equal(t, 7, *doc.ExitCode)
 	assert.False(t, strings.Contains(text, "boom-line"))
 }
+
+// mcpDaemonSession serves the fake log daemon plus the control endpoints the
+// MCP tools use beyond `runwisp logs`, and connects a session to it.
+func mcpDaemonSession(t *testing.T, d *fakeLogDaemon) *mcp.ClientSession {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.Handle("/", d.handler())
+	mux.HandleFunc("POST /api/tasks/alpha/run", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(model.Run{ID: "run-new", TaskName: "alpha", Status: model.PhaseRunning})
+	})
+	mux.HandleFunc("GET /api/tasks/{name}/log/search", func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "boom", r.URL.Query().Get("q"))
+		_, _ = w.Write([]byte(`{"items":[],"exhausted":true,"scannedRuns":1}`))
+	})
+	mux.HandleFunc("POST /api/runs/{id}/stop", func(w http.ResponseWriter, _ *http.Request) {})
+	mux.HandleFunc("POST /api/daemon/reload", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"added":["beta"]}`))
+	})
+	f, _, _ := serveServiceSocket(t, mux)
+	return mcpSession(t, f, remoteFlags{})
+}
+
+func TestMCP_ReadAndControlTools(t *testing.T) {
+	d := newFakeLogDaemon()
+	d.addTask("alpha", model.KindTask, 1)
+	d.addRun("run-1", "alpha", 0, model.ReasonFailed, 7, "first", "err:boom")
+	s := mcpDaemonSession(t, d)
+
+	runs, isErr := callMCP(t, s, "runs", map[string]any{"task": "alpha"})
+	assert.False(t, isErr)
+	assert.Contains(t, runs, `"run-1"`)
+
+	logs, isErr := callMCP(t, s, "logs", map[string]any{"target": "alpha", "lines": 5})
+	assert.False(t, isErr)
+	assert.Contains(t, logs, "boom")
+
+	search, isErr := callMCP(t, s, "search_logs", map[string]any{"task": "alpha", "query": "boom"})
+	assert.False(t, isErr)
+	assert.Contains(t, search, `"scannedRuns": 1`)
+
+	stop, isErr := callMCP(t, s, "stop_run", map[string]any{"runId": "run-1"})
+	assert.False(t, isErr)
+	assert.Equal(t, "stop requested for run run-1", stop)
+
+	reload, isErr := callMCP(t, s, "reload", nil)
+	assert.False(t, isErr)
+	assert.Contains(t, reload, "beta")
+
+	started, isErr := callMCP(t, s, "run_task", map[string]any{"task": "alpha", "noWait": true})
+	assert.False(t, isErr)
+	assert.Contains(t, started, "run-new")
+}
+
+func TestMCP_RunTaskTriggerFailureIsErrorDocument(t *testing.T) {
+	d := newFakeLogDaemon()
+	d.addTask("alpha", model.KindTask, 1)
+	d.control = func(string, string) int { return http.StatusNotFound }
+	s := mcpDaemonSession(t, d)
+
+	text, isErr := callMCP(t, s, "run_task", map[string]any{"task": "missing"})
+
+	assert.True(t, isErr)
+	assert.Contains(t, text, "missing")
+}
+
+func TestMCP_ListReadsLocalConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runwisp.toml")
+	require.NoError(t, os.WriteFile(path, []byte("[tasks.nightly]\nrun = \"true\"\ncron = \"0 3 * * *\"\n"), 0o600))
+	s := mcpSession(t, Flags{CfgFile: path}, remoteFlags{})
+
+	text, isErr := callMCP(t, s, "list", nil)
+
+	assert.False(t, isErr)
+	assert.Contains(t, text, "nightly")
+}
