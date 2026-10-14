@@ -69,6 +69,8 @@ tasks:
         deps:
             - "runwisp:build"
             - "~:generate-config"
+            # e2e/commonjs.test.ts require()s the built package.
+            - "~:build"
         inputs:
             - "src/**/*"
             - "e2e/**/*"
