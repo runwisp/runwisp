@@ -147,7 +147,7 @@ func (sr *sessionRunner) heartbeatLoop(ctx context.Context, session *wsSession) 
 			// Piggyback the full systemStats snapshot only every Nth beat (and on
 			// the first): the volatile cpu/mem gauges don't need 5s resolution and
 			// the mostly-static identity fields never do, so shipping them every
-			// heartbeat is a per-runner Valkey write and payload the control plane
+			// heartbeat is a per-runner state write and payload the control plane
 			// throws away. Plain pings in between keep the socket warm.
 			var stats *protocol.SystemStatsInfo
 			if beat%statsEveryNHeartbeats == 0 {

@@ -255,7 +255,7 @@ func TestArchiveEmptyExecutionIDIsNoop(t *testing.T) {
 }
 
 // Archive rejects an empty log file path once a pending entry exists for the
-// execution — otherwise we'd PUT an empty body to S3.
+// execution — otherwise we'd PUT an empty body to the upload URL.
 func TestArchiveEmptyLogPathErrors(t *testing.T) {
 	repo := newFakePendingRepo()
 	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())

@@ -21,7 +21,7 @@ import (
 // archiveTimeout caps a single terminal archive operation. Daemon log files
 // in the field are typically a few MB; even on a slow link, gzip + PUT
 // finishes in well under a minute. Keep this conservative so the eventbridge
-// goroutine never wedges on a misbehaving S3 endpoint.
+// goroutine never wedges on a misbehaving upload endpoint.
 const archiveTimeout = 90 * time.Second
 
 // LogUploaderResult is the artefact of a successful upload — what the daemon

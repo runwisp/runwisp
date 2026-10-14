@@ -40,7 +40,7 @@ const (
 	// snapshot (cpu/mem/identity) rides only every Nth heartbeat, not every one.
 	// Liveness is governed by the watchdog + lastReceived, not by stats, so the
 	// 5s ping stays frequent while the ~30s stats cadence (N=6) keeps the
-	// control plane's per-runner view fresh without a Valkey write every 5s per
+	// control plane's per-runner view fresh without a state write every 5s per
 	// runner. The first heartbeat of a session always carries stats.
 	statsEveryNHeartbeats = 6
 )

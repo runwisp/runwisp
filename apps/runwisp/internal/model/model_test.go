@@ -292,7 +292,7 @@ func TestTaskJSON_HidesSecrets(t *testing.T) {
 }
 
 // TestTask_CheckTrigger locks the one rule every manual-trigger surface (REST,
-// cloud dispatch, standalone CLI run) relies on instead of re-deriving it.
+// station dispatch, standalone CLI run) relies on instead of re-deriving it.
 func TestTask_CheckTrigger(t *testing.T) {
 	tests := []struct {
 		name string
