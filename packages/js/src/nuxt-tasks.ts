@@ -6,7 +6,8 @@
 // which runs it with runTask().
 
 import { runTask } from "#imports";
-import { options, scheduled } from "#runwisp/nuxt";
+import { options } from "#runwisp/nuxt";
+import { scheduled } from "#runwisp/nuxt-internal";
 
 import { RunWisp } from "@runwisp/js";
 
@@ -24,6 +25,11 @@ export function scheduleNitroTasks(prerender: boolean): void {
         const count = (seen.get(task) ?? 0) + 1;
         seen.set(task, count);
         const name = count === 1 ? task : `${task}-${String(count)}`;
-        runwisp.task(name, { cron }, () => runTask(task, { payload: {} }));
+        // As under Nitro's scheduler: a missed time is not run late, and
+        // runTask() joins a run of the task already going instead of
+        // starting another.
+        runwisp.task(name, { cron, catch_up: 0, on_overlap: "skip", max_concurrent: 1 }, () =>
+            runTask(task, { payload: {} }),
+        );
     }
 }

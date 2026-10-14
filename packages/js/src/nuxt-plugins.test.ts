@@ -7,24 +7,25 @@ interface Settings {
     dev: boolean;
     exitOnSignal: boolean;
     scheduled: [cron: string, task: string][];
-    options: { data: string; port: number };
     config: { notifiers: Record<string, unknown> } | undefined;
 }
 
 const nuxt = vi.hoisted(() => {
     const created: unknown[] = [];
     const tasks: string[] = [];
+    const taskOptions: unknown[] = [];
+    const options = { data: "/srv/app/.runwisp", port: 9500 };
     const settings: Settings = {
         dev: false,
         exitOnSignal: false,
         scheduled: [["0 * * * *", "db:cleanup"]],
-        options: { data: "/srv/app/.runwisp", port: 9500 },
         config: undefined,
     };
-    return { created, tasks, settings };
+    return { created, tasks, taskOptions, options, settings };
 });
 
-vi.mock("#runwisp/nuxt", () => nuxt.settings);
+vi.mock("#runwisp/nuxt", () => ({ options: nuxt.options }));
+vi.mock("#runwisp/nuxt-internal", () => nuxt.settings);
 vi.mock("#imports", () => ({ runTask: vi.fn() }));
 vi.mock("@runwisp/js", () => ({
     RunWisp: class {
@@ -32,8 +33,9 @@ vi.mock("@runwisp/js", () => ({
         constructor(options: unknown) {
             nuxt.created.push(options);
         }
-        task(name: string) {
+        task(name: string, options: unknown) {
             nuxt.tasks.push(name);
+            nuxt.taskOptions.push(options);
         }
     },
 }));
@@ -47,6 +49,7 @@ describe("the Nuxt module's Nitro plugins", () => {
     beforeEach(() => {
         nuxt.created.length = 0;
         nuxt.tasks.length = 0;
+        nuxt.taskOptions.length = 0;
         nuxt.settings.config = undefined;
         nuxt.settings.exitOnSignal = false;
         nitroApp.hooks.hook.mockClear();
@@ -58,6 +61,15 @@ describe("the Nuxt module's Nitro plugins", () => {
         scheduleNitroTasks(false);
         expect(nuxt.created).toEqual([{ data: "/srv/app/.runwisp", port: 9500 }]);
         expect(nuxt.tasks).toEqual(["db:cleanup"]);
+    });
+
+    // Nitro's scheduler never runs a missed time late, and its runTask()
+    // joins a run of the task already going instead of starting another.
+    it("schedule Nitro's tasks with Nitro's catch-up and overlap", () => {
+        scheduleNitroTasks(false);
+        expect(nuxt.taskOptions).toEqual([
+            { cron: "0 * * * *", catch_up: 0, on_overlap: "skip", max_concurrent: 1 },
+        ]);
     });
 
     it("hand the module's config to the first RunWisp, before the app's plugins", () => {

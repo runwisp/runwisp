@@ -7,7 +7,8 @@
 
 import { constants } from "node:os";
 
-import { config, dev, exitOnSignal, options } from "#runwisp/nuxt";
+import { options } from "#runwisp/nuxt";
+import { config, dev, exitOnSignal } from "#runwisp/nuxt-internal";
 
 import { RunWisp } from "@runwisp/js";
 

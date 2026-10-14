@@ -102,6 +102,11 @@ Each scheduled Nitro task becomes a RunWisp task with the same name. What it
 prints goes to the run's log, and a task that throws fails the run. A task
 listed under a second schedule is named `db:cleanup-2`, and so on.
 
+As under Nitro's scheduler, times missed while the server was down are not run
+late, and a run that comes while the task is still running is skipped. The
+tasks get [`catch_up = 0`](/configuration/tasks/#catch_up) and
+[`on_overlap = "skip"`](/configuration/tasks/#on_overlap).
+
 ## Build for production
 
 Build on the platform you deploy to, for example inside your Docker image. The

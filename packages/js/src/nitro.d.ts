@@ -11,13 +11,18 @@ declare module "#imports" {
 }
 
 declare module "#runwisp/nuxt" {
-    import type { Config, RunWispOptions } from "@runwisp/js";
+    import type { RunWispOptions } from "@runwisp/js";
+
+    /** The module's options, without config: what every `new RunWisp()` in the app passes. */
+    export const options: RunWispOptions;
+}
+
+declare module "#runwisp/nuxt-internal" {
+    import type { Config } from "@runwisp/js";
 
     export const dev: boolean;
     export const exitOnSignal: boolean;
     export const scheduled: [cron: string, task: string][];
-    /** The module's options, without config: what every `new RunWisp()` in the app passes. */
-    export const options: RunWispOptions;
     export const config: Config | undefined;
 }
 

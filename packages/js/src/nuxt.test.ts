@@ -3,13 +3,14 @@
 
 import { describe, expect, it } from "vitest";
 
-import runwispNuxt, {
+import {
+    INTERNAL_MODULE,
     TYPES,
     VIRTUAL_MODULE,
     type NitroConfig,
     type NuxtHooks,
-    type RunWispNuxtOptions,
-} from "./nuxt.ts";
+} from "./nuxt-meta.ts";
+import runwispNuxt, { type RunWispNuxtOptions } from "./nuxt.ts";
 
 const NODE_SERVER = "/app/node_modules/nitropack/dist/presets/node/runtime/node-server";
 
@@ -22,7 +23,7 @@ interface Build {
     inline?: RunWispNuxtOptions;
 }
 
-/** Runs the module's hooks as Nuxt would, and the virtual module as Nitro reads it. */
+/** Runs the module's hooks as Nuxt would, and the virtual modules as Nitro reads them. */
 function nitroConfig(config: NitroConfig, build: Build = {}) {
     const { dev = false, preset = "node-server", options, inline = {} } = build;
     const entry = "entry" in build ? build.entry : NODE_SERVER;
@@ -38,18 +39,22 @@ function nitroConfig(config: NitroConfig, build: Build = {}) {
     hooks["nitro:init"]?.({ options: { preset, entry } });
     const references: { path: string }[] = [];
     hooks["nitro:prepare:types"]?.({ references });
-    const virtual = config.virtual?.[VIRTUAL_MODULE];
+    const read = (id: string) => {
+        const virtual = config.virtual?.[id];
+        return typeof virtual === "function" ? virtual() : virtual;
+    };
     return {
         config,
         templates,
         references,
-        settings: typeof virtual === "function" ? virtual() : virtual,
+        options: read(VIRTUAL_MODULE),
+        settings: read(INTERNAL_MODULE),
     };
 }
 
 describe("@runwisp/js/nuxt", () => {
     it("moves scheduledTasks from Nitro to RunWisp", () => {
-        const { config, settings } = nitroConfig({
+        const { config, options, settings } = nitroConfig({
             scheduledTasks: { "0 * * * *": ["db:cleanup", "cache:warm"], "@daily": "db:cleanup" },
             plugins: ["./mine.ts"],
             externals: { inline: ["@runwisp/js", "vue"], traceInclude: ["sharp"] },
@@ -60,12 +65,13 @@ describe("@runwisp/js/nuxt", () => {
             expect.stringMatching(/nuxt-close\.ts$/),
             expect.stringMatching(/nuxt-tasks\.ts$/),
         ]);
+        // The app's module exports only what TYPES declares.
+        expect(options).toBe("export const options = {};");
         expect(settings).toBe(
             [
                 "export const dev = false;",
                 "export const exitOnSignal = false;",
                 'export const scheduled = [["0 * * * *","db:cleanup"],["0 * * * *","cache:warm"],["@daily","db:cleanup"]];',
-                "export const options = {};",
                 "export const config = undefined;",
             ].join("\n"),
         );
@@ -92,7 +98,7 @@ describe("@runwisp/js/nuxt", () => {
     // The app's plugins pass the same options, so that every `new RunWisp()`
     // gets the one RunWisp; config goes to the first one only.
     it("hands its options to the plugins and the app", () => {
-        const { settings, templates, references } = nitroConfig(
+        const { options, settings, templates, references } = nitroConfig(
             {},
             {
                 options: {
@@ -102,9 +108,7 @@ describe("@runwisp/js/nuxt", () => {
                 },
             },
         );
-        expect(settings).toContain(
-            'export const options = {"data":"/srv/app/.runwisp","port":9500};',
-        );
+        expect(options).toBe('export const options = {"data":"/srv/app/.runwisp","port":9500};');
         expect(settings).toContain(
             'export const config = {"notifiers":{"ops":{"type":"slack","webhook_url":"${SLACK_URL}"}}};',
         );
@@ -117,13 +121,11 @@ describe("@runwisp/js/nuxt", () => {
     });
 
     it("takes options from the module entry over the runwisp key", () => {
-        const { settings } = nitroConfig(
+        const { options } = nitroConfig(
             {},
             { options: { data: "/srv/app/.runwisp", port: 9500 }, inline: { port: 9600 } },
         );
-        expect(settings).toContain(
-            'export const options = {"data":"/srv/app/.runwisp","port":9600};',
-        );
+        expect(options).toBe('export const options = {"data":"/srv/app/.runwisp","port":9600};');
     });
 
     it("does nothing with runwisp: false", () => {

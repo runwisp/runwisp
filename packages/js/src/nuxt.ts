@@ -10,6 +10,7 @@ import { dirname, extname, join, parse } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { binaryFiles } from "./daemon.ts";
+import { INTERNAL_MODULE, TYPES, VIRTUAL_MODULE, type NuxtHooks } from "./nuxt-meta.ts";
 import type { RunWispOptions } from "./runwisp.ts";
 
 /**
@@ -19,22 +20,7 @@ import type { RunWispOptions } from "./runwisp.ts";
  */
 export type RunWispNuxtOptions = Omit<RunWispOptions, "log" | "exitOnSignal" | "password">;
 
-/** The part of Nitro's config this module changes. */
-export interface NitroConfig {
-    scheduledTasks?: Record<string, string | string[]>;
-    plugins?: string[];
-    virtual?: Record<string, string | (() => string | Promise<string>)>;
-    externals?: { inline?: (string | RegExp)[]; traceInclude?: string[] };
-}
-
-/** The Nuxt hooks this module uses. */
-export interface NuxtHooks {
-    "nitro:config": (config: NitroConfig) => void;
-    "nitro:init": (nitro: { options: { preset: string; entry?: string | undefined } }) => void;
-    "nitro:prepare:types": (types: { references: { path: string }[] }) => void;
-}
-
-export interface NuxtLike {
+interface NuxtLike {
     options: {
         dev: boolean;
         buildDir: string;
@@ -43,12 +29,6 @@ export interface NuxtLike {
     };
     hook<K extends keyof NuxtHooks>(name: K, fn: NuxtHooks[K]): void;
 }
-
-/** What the module tells its Nitro plugins, as a virtual module. */
-export const VIRTUAL_MODULE = "#runwisp/nuxt";
-
-/** The virtual module's types, for the app's server code. */
-export const TYPES = `declare module "${VIRTUAL_MODULE}" { export const options: import("@runwisp/js").RunWispOptions; }\n`;
 
 const here = fileURLToPath(import.meta.url);
 const plugin = (name: string) => join(dirname(here), `${name}${extname(here)}`);
@@ -91,17 +71,15 @@ export default function runwispNuxt(inlineOptions: RunWispNuxtOptions, nuxt: Nux
 
         config.virtual = {
             ...config.virtual,
+            [VIRTUAL_MODULE]: () => moduleSource({ options }),
             // Read when Nitro bundles the plugins, by which time it has picked the preset.
-            [VIRTUAL_MODULE]: () =>
-                Object.entries({
+            [INTERNAL_MODULE]: () =>
+                moduleSource({
                     dev: nuxt.options.dev,
                     exitOnSignal,
                     scheduled,
-                    options,
                     config: runwispConfig,
-                })
-                    .map(([key, value]) => `export const ${key} = ${JSON.stringify(value)};`)
-                    .join("\n"),
+                }),
         };
         config.plugins = [
             ...(config.plugins ?? []),
@@ -122,6 +100,12 @@ export default function runwispNuxt(inlineOptions: RunWispNuxtOptions, nuxt: Nux
             traceInclude: [...(config.externals?.traceInclude ?? []), ...binaryFiles()],
         };
     });
+}
+
+function moduleSource(values: Record<string, unknown>): string {
+    return Object.entries(values)
+        .map(([key, value]) => `export const ${key} = ${JSON.stringify(value)};`)
+        .join("\n");
 }
 
 // Nuxt reads the config key from here, and types the `runwisp` key with it.
