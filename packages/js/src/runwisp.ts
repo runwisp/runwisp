@@ -32,6 +32,7 @@ import {
     type Settings,
 } from "./daemon.ts";
 import type { Config, ServiceConfig, TaskConfig } from "./generated/config.ts";
+import { OVERLAPPING } from "./overlap.ts";
 import { Runner, type OverlapPolicy, type Serve } from "./runner.ts";
 import {
     createScheduledTask,
@@ -139,9 +140,6 @@ function instances(): Map<string, RunWisp> {
 const SHARED_SETTINGS = ["app", "port", "host", "auth", "password", "binary"] as const;
 
 const UNIT_NAME = /^[a-zA-Z0-9._:-]{1,100}$/;
-
-// node-cron lets runs overlap unless noOverlap is set; RunWisp's cap on that.
-const NODE_CRON_MAX_CONCURRENT = 1024;
 
 // How soon a copy reconnects after RunWisp went away, doubling per failed try up to the cap.
 const RECONNECT_MS = 1000;
@@ -316,11 +314,14 @@ export class RunWisp {
             .trim()
             .replaceAll(/[^a-zA-Z0-9._:-]+/g, "-")
             .slice(0, 100);
-        // node-cron never catches up on runs missed while the app was down.
-        const taskOptions: TaskConfigOptions = { cron: expression, catch_up: 0 };
+        // node-cron never catches up on runs missed while the app was down,
+        // and lets runs overlap unless noOverlap is set.
+        const taskOptions: TaskConfigOptions = {
+            cron: expression,
+            catch_up: 0,
+            ...(options.noOverlap === true ? { on_overlap: "skip" } : OVERLAPPING),
+        };
         if (options.timezone !== undefined) taskOptions.timezone = options.timezone;
-        if (options.noOverlap === true) taskOptions.on_overlap = "skip";
-        else taskOptions.max_concurrent = NODE_CRON_MAX_CONCURRENT;
         if (options.executeTimeout !== undefined)
             taskOptions.timeout = `${String(options.executeTimeout)}ms`;
         return this.addTask(id, derived ? undefined : name, run, taskOptions, options);
