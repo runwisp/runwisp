@@ -191,6 +191,8 @@ func statusEmoji(k notify.Kind) string {
 		return "🛑"
 	case notify.KindRunStarted:
 		return "▶️"
+	case notify.KindRunLongRunning:
+		return "⏳"
 	case notify.KindLogDiskPressure:
 		return "💾"
 	case notify.KindNotifyDeliveryFailed:
@@ -220,6 +222,8 @@ func statusVerb(k notify.Kind) string {
 		return "gave up restarting"
 	case notify.KindRunStarted:
 		return "started"
+	case notify.KindRunLongRunning:
+		return "is still running"
 	case notify.KindLogDiskPressure:
 		return "log output paused"
 	case notify.KindNotifyDeliveryFailed:
@@ -324,6 +328,8 @@ func kindSentence(e *notify.Event) string {
 		return missedSentence(e)
 	case notify.KindRunStarted:
 		return "Run started."
+	case notify.KindRunLongRunning:
+		return longRunningSentence(e)
 	case notify.KindLogDiskPressure:
 		return "Disk pressure is high; log capture is paused for this task until disk space is recovered."
 	case notify.KindNotifyDeliveryFailed:
@@ -376,6 +382,15 @@ func timeoutSentence(e *notify.Event) string {
 		return fmt.Sprintf("The task was killed after the configured timeout (%s elapsed).", d)
 	}
 	return "The task was killed after the configured timeout."
+}
+
+// longRunningSentence reports a run that is still going past its warn_after
+// threshold, with the elapsed time when the event carries it.
+func longRunningSentence(e *notify.Event) string {
+	if ms, ok := e.Extra["elapsed_ms"].(int64); ok {
+		return fmt.Sprintf("The run is still going after %s.", textutil.FormatDuration(time.Duration(ms)*time.Millisecond))
+	}
+	return "The run is still going."
 }
 
 // stoppedSentence reports a manually stopped run, including duration when known.

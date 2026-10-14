@@ -97,6 +97,9 @@ func applyInheritedDefaults(task *model.Task, d Defaults) {
 	if !task.Kind.IsService() && task.Jitter == nil && d.Jitter > 0 {
 		task.Jitter = new(d.Jitter)
 	}
+	if !task.Kind.IsService() && task.WarnAfter == nil && d.WarnAfter > 0 {
+		task.WarnAfter = new(d.WarnAfter)
+	}
 	task.Shell = cmp.Or(task.Shell, d.Shell, model.DefaultShell)
 	applyInheritedStopSignal(task, d)
 	task.LogMaxSize = cmp.Or(task.LogMaxSize, d.LogMaxSize, defaultTaskLogMaxSize)

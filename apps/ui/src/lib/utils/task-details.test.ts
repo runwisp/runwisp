@@ -56,6 +56,14 @@ describe("taskDetailSections", () => {
         expect(section(task, "Execution")?.rows).toEqual([{ key: "timeout", value: '"1d12h"' }]);
     });
 
+    it("shows warn_after next to timeout", () => {
+        const task = makeTask({ warnAfter: 45 * MINUTE_NS, timeout: 120 * MINUTE_NS });
+        expect(section(task, "Execution")?.rows).toEqual([
+            { key: "timeout", value: '"2h"' },
+            { key: "warn_after", value: '"45m"' },
+        ]);
+    });
+
     it("hides keys left at their defaults", () => {
         const cron = taskDetailSections(makeTask({ cron: "15 3 * * *" }));
         expect(cron.map((s) => s.title)).toEqual(["Schedule"]);

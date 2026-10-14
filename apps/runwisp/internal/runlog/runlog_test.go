@@ -180,3 +180,17 @@ func TestLogEnded(t *testing.T) {
 		assert.Contains(t, out, "reason=stopped")
 	})
 }
+
+func TestSubscribe_LogsLongRunning(t *testing.T) {
+	bus := events.NewEventBus()
+	buf := captureSlog(t)
+	defer Subscribe(bus)()
+
+	run := sampleRun(model.ReasonSuccess, 0)
+	bus.Publish(events.EventRunLongRunning, events.RunEvent{Run: run})
+
+	out := buf.String()
+	assert.Contains(t, out, "level=WARN")
+	assert.Contains(t, out, "run still running")
+	assert.Contains(t, out, "task=backup")
+}

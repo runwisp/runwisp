@@ -107,6 +107,7 @@ function taskOnlyRows(task: Task, row: Row): DetailRow[] {
 function executionRows(task: Task, row: Row): DetailRow[] {
     return [
         ...row("timeout", (t) => dur(t.timeout)),
+        ...row("warn_after", (t) => dur(t.warnAfter)),
         ...taskOnlyRows(task, row),
         ...row("user", (t) => str(t.user)),
         ...row("working_dir", (t) => str(t.workingDir)),

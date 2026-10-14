@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/kinds"
 )
 
 // Severity classifies how attention-worthy an event is.
@@ -29,6 +30,7 @@ type Kind string
 
 const (
 	KindRunStarted           Kind = "run.started"
+	KindRunLongRunning       Kind = "run.long_running"
 	KindRunSucceeded         Kind = "run.succeeded"
 	KindRunFailed            Kind = "run.failed"
 	KindRunTimeout           Kind = "run.timeout"
@@ -45,6 +47,8 @@ func (k Kind) Title(ev *Event) string {
 	switch k {
 	case KindRunStarted:
 		return fmt.Sprintf("%s started", ev.TaskName)
+	case KindRunLongRunning:
+		return fmt.Sprintf("%s still running", ev.TaskName)
 	case KindRunSucceeded:
 		return fmt.Sprintf("%s succeeded", ev.TaskName)
 	case KindRunFailed:
@@ -93,6 +97,8 @@ func (ev *Event) Outcome() string {
 		return string(ev.Kind)
 	case KindRunStarted:
 		return "started"
+	case KindRunLongRunning:
+		return kinds.LongRunningKind
 	}
 	if ev.Run != nil && ev.Run.EndReason != nil {
 		return string(*ev.Run.EndReason)

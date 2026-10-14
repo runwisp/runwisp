@@ -26,7 +26,8 @@ coalesce_limit     = 10
 
 **type**: `string[]` **default**: `["inapp"]`
 
-Notifier ids that get every failure, on top of each task's own
+Notifier ids that get every failure and every
+[`warn_after`](/configuration/tasks/#warn_after) warning, on top of each task's own
 [`notify`](/configuration/tasks/#notify) list (duplicates removed). They also
 cover tasks with no `notify` at all. `"inapp"` is the bell in the Web UI and TUI.
 

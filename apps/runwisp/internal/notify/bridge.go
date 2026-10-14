@@ -24,7 +24,7 @@ func MapEvent(e events.Event) *Event {
 		if !ok {
 			return nil
 		}
-		return &Event{
+		ev := &Event{
 			Kind:      kind,
 			Severity:  runSeverity(kind, d.Run.IsFailure),
 			IsFailure: d.Run.IsFailure,
@@ -34,6 +34,10 @@ func MapEvent(e events.Event) *Event {
 			LogPath:   d.LogPath,
 			Reason:    runReasonString(d.Run, d.Error),
 		}
+		if kind == KindRunLongRunning {
+			applyLongRunning(ev)
+		}
+		return ev
 	case events.LogDiskPressureEvent:
 		return &Event{
 			Kind:      KindLogDiskPressure,
@@ -66,6 +70,18 @@ func MapEvent(e events.Event) *Event {
 	default:
 		return nil
 	}
+}
+
+// applyLongRunning fills in a long_running event: how long the run has been
+// going by the time the event fired. The run is still live, so it has no
+// duration of its own yet and runReasonString has nothing to say.
+func applyLongRunning(ev *Event) {
+	if ev.Run.StartedAt == nil {
+		return
+	}
+	elapsed := ev.Timestamp.Sub(*ev.Run.StartedAt)
+	ev.Reason = fmt.Sprintf("still running after %s", elapsed.Round(time.Second))
+	ev.Extra = map[string]any{"elapsed_ms": elapsed.Milliseconds()}
 }
 
 func serviceFatalReason(d events.ServiceFatalEvent) string {
@@ -107,6 +123,8 @@ func mapRunEventType(t events.EventType, run *model.Run) (Kind, bool) {
 	switch t {
 	case events.EventRunStarted:
 		return KindRunStarted, true
+	case events.EventRunLongRunning:
+		return KindRunLongRunning, true
 	case events.EventRunCompleted:
 		return KindRunSucceeded, true
 	case events.EventRunFailed:

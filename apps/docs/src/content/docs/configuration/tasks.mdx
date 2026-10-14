@@ -294,6 +294,32 @@ cron    = "*/10 * * * *"
 timeout = "9m"
 ```
 
+### warn_after
+
+**type**: `duration` **default**: none **since**: `1.7`
+
+Sends one [`long_running`](/configuration/routes/#matchkinds) notification when
+a run is still going this long after it started. The run keeps going; pair it
+with [`timeout`](#timeout) to stop it later. The clock starts when the run
+starts, not while it waits in a queue. `"0s"` turns off a `[defaults]` value.
+
+```toml title="runwisp.toml"
+[tasks.backup-db]
+# ...
+cron       = "0 3 * * *"
+warn_after = "45m"
+timeout    = "2h"
+```
+
+- It goes to the task's [`notify`](#notify) list and
+  [`global_notifiers`](/configuration/notify/#global_notifiers), or to any
+  [`[[route]]`](/configuration/routes/) that lists `long_running`.
+- A run that ends first sends nothing. A `warn_after` at or above `timeout`
+  never fires.
+- It is not a failure: the run's own outcome is judged by
+  [`failures`](#failures) when it ends.
+- Tasks only. A service has no end to run long past.
+
 ### retry_attempts
 
 **type**: `integer` **default**: `0` **min**: `0` **max**: `100`

@@ -23,6 +23,7 @@ const (
 	EventRunFailed       EventType = "run.failed"
 	EventRunUpdated      EventType = "run.updated"
 	EventRunDeleted      EventType = "run.deleted"
+	EventRunLongRunning  EventType = "run.long_running"
 	EventLogLine         EventType = "log.line"
 	EventLogRegion       EventType = "log.region"
 	EventLogDiskPressure EventType = "log.disk_pressure"
@@ -44,6 +45,7 @@ var AllEventTypes = []EventType{
 	EventRunFailed,
 	EventRunUpdated,
 	EventRunDeleted,
+	EventRunLongRunning,
 	EventLogLine,
 	EventLogRegion,
 	EventLogDiskPressure,
