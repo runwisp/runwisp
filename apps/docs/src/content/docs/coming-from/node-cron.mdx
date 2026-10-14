@@ -123,7 +123,6 @@ The cron syntax is RunWisp's, the one the daemon uses. See
 
 - No `L`, `W` or `#`.
 - Month and weekday names are three letters only: `jan`, `mon`.
-- A range can't wrap around: write `fri-sun,mon`, not `fri-mon`.
 - When both day of month and day of week are restricted, either one matching
   is enough, as in crontab. node-cron needs both.
 - `@every 1h30m` and a `TZ=Europe/Bratislava` prefix also work.
