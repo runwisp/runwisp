@@ -18,10 +18,9 @@ it, you don't need this page: see [Docker tasks](/recipes/docker/).
 ## Point RunWisp at the compose file
 
 Run `runwisp` in the directory with your `docker-compose.yml`. It detects the
-file and asks what the starter config should do. The default keeps your stack
-running from `docker compose up` and schedules jobs in its services (see
-[Docker tasks](/recipes/docker/)). Answer no, then yes to the next question, to
-create a `runwisp.toml` that imports the services instead:
+file and first offers a starter that only schedules jobs in the stack. Decline
+it, and accept the next offer to create a `runwisp.toml` that imports the
+services:
 
 ```toml title="runwisp.toml"
 [compose.myapp]

@@ -12,8 +12,7 @@ head:
 
 `runwisp import ofelia` converts the jobs of [Ofelia](https://github.com/mcuadros/ofelia),
 the cron scheduler for Docker, into `runwisp.toml`. Each job becomes a
-[task](/configuration/tasks/). RunWisp adds run history, captured output, and
-failure notifications to the same schedules.
+[task](/configuration/tasks/) with the same schedule.
 
 ## Convert the jobs
 
@@ -93,11 +92,9 @@ run = "php artisan schedule:run"
 on_overlap = "skip"
 ```
 
-The `compose_file` is the absolute path of the file you passed. RunWisp runs the
-command in the running `app` container with `docker compose exec`, as Ofelia
-did. If RunWisp is a service of the same compose project, delete `compose_file`
-and RunWisp finds the project itself; see
-[Docker tasks](/recipes/docker/#if-runwisp-runs-in-a-container).
+RunWisp runs the command in the running `app` container, as Ofelia did. If
+RunWisp is a service of the same compose project, you can delete
+`compose_file`; see [Docker tasks](/recipes/docker/#if-runwisp-runs-in-a-container).
 
 ## Stop Ofelia
 
@@ -132,8 +129,7 @@ job's row.
 - **Environment values.** Values from `environment` are written into the TOML.
   Move secrets to [`secrets`](/configuration/tasks/#secrets).
 - **Notifications.** Ofelia's `[global]` Slack, mail and `save-folder` settings
-  are skipped with a note. Use [Notifications](/notifications/) instead;
-  RunWisp keeps every run's output itself.
+  are skipped with a note. Use [Notifications](/notifications/) instead.
 
 ## Learn more
 

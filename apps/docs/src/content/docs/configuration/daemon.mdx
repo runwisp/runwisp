@@ -134,16 +134,15 @@ check_updates = false
 
 **type**: `boolean` **default**: `false` **since**: `1.7`
 
-Prints each line a run writes to the daemon's own stdout as `task | line` (stderr
-lines go to stderr), so `docker logs` and `journalctl` show job output next to
-the daemon's lifecycle lines. With `--log-format=json`, each line is one JSON
-object. The run logs on disk are unchanged.
+Prints each line a run writes to the daemon's stdout as `task | line` (stderr
+lines go to stderr), so `docker logs` and `journalctl` show job output. With
+`--log-format=json`, each line is one JSON object. Run logs are unchanged.
 
 - The `RUNWISP_LOG_OUTPUT` env var (`true` or `false`) overrides this key. The
   [Docker image](/getting-started/docker/) sets it to `true`.
-- A burst larger than the buffer is not mirrored in full. RunWisp prints how
-  many lines it skipped; the run log has all of them.
-- A TUI session ignores it, because the output would draw over the screen.
+- In a burst, RunWisp may skip lines here and prints how many; the run log
+  keeps them all.
+- A TUI session ignores it.
 
 ```toml title="runwisp.toml"
 [daemon]

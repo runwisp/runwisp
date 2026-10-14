@@ -23,10 +23,6 @@ compose_service = "app"
 run             = "php artisan schedule:run"
 ```
 
-When RunWisp is a service of that same compose project, leave out
-`compose_file`: it finds the project from its own container (see
-[If RunWisp runs in a container](#if-runwisp-runs-in-a-container)).
-
 RunWisp runs the command in the running `app` container with
 `docker compose exec`, so it gets the app's code, environment, and
 credentials. Use it for anything that belongs to an app: an `artisan` command,
@@ -98,9 +94,9 @@ rest of the stack. RunWisp still runs it.
 
 To run your own command in a fresh container instead of the service's, set
 [`run`](/configuration/tasks/#run) and
-[`compose_mode = "run"`](/configuration/tasks/#compose_mode). A fresh container
-publishes no ports and takes no network alias, so a job on your `app` service
-never competes with the running `app` for either.
+[`compose_mode = "run"`](/configuration/tasks/#compose_mode). The new
+container publishes no ports and takes no network alias, so it can run beside
+the service.
 
 ## Which one to use
 
@@ -135,8 +131,8 @@ services:
    start a privileged container. Your TOML is trusted input, so this is
    usually fine, but decide it on purpose.
 
-With those two, a task in `exec` mode names only the service. RunWisp is part of
-the compose project, so it reads the project from its own container:
+A task that runs a command in a service of RunWisp's own compose project can
+leave out `compose_file`. RunWisp reads the project from its own container:
 
 ```toml title="runwisp.toml"
 [tasks.laravel-schedule]
@@ -147,21 +143,19 @@ run             = "php artisan schedule:run"
 
 ### Fresh containers and other projects
 
-Starting a fresh container (`compose_mode = "run"`, or no `run`) needs the
-compose file, and so does a project RunWisp is not a part of. Set `compose_file`
-and add a third change:
+A task that starts a fresh container, or targets another compose project, needs
+`compose_file`. Mount the project directory at its host path:
 
 ```yaml title="compose.yaml"
 volumes:
     - /srv/shop:/srv/shop:ro
 ```
 
-3. **The project directory, at its host path.** The CLI in the RunWisp
-   container reads `compose.yaml`, and the host's Docker creates the
-   containers. Compose names the project after the directory and resolves
-   `./dumps` and `env_file:` against it. At the same path, both match what
-   `docker compose up` used on the host. RunWisp only reads the directory, so
-   `:ro` is enough.
+The CLI in the RunWisp container reads `compose.yaml`, and the host's Docker
+creates the containers. Compose names the project after the directory and
+resolves `./dumps` and `env_file:` against it. At the same path, both match what
+`docker compose up` used on the host. RunWisp only reads the directory, so `:ro`
+is enough.
 
 With the directory mounted at another path, such as `/srv`, an exec run fails
 with:

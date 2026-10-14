@@ -153,7 +153,7 @@ keep_runs:         int              — row retention (inherits [defaults]); 0..
 keep_for:          dur              — age retention (inherits [defaults])
 run:               string (req)     — shell command; with compose_file it is the command run in the service (see compose_mode)
 compose_file:      path             — run a compose service instead of run=; runs in the file's own compose project (COMPOSE_PROJECT_NAME > top-level name: > dir name), like `docker compose up` there
-compose_service:   string =taskname — which compose service; requires compose_file, except exec mode (run set) in a container of the same compose project: RunWisp reads the project from its own container labels (docker socket only); compose_mode="run" still needs compose_file. With compose_file the service must exist in it (validate rejects unknown). since 1.7 (no compose_file)
+compose_service:   string =taskname — which compose service; must exist in compose_file (validate rejects unknown). Without compose_file (since 1.7): exec mode only, project read from RunWisp's own container labels (docker socket only); validate warns when not in a container
 compose_mode:      enum             — exec | run. exec = `docker compose exec` into the service's RUNNING container (requires run);
                                       run = `docker compose run --rm` fresh container (runs `run` if set, else the service's own
                                       command). Default: exec when run is set, else run. Command runs as `/bin/sh -e -c` inside the
@@ -342,10 +342,10 @@ runwisp start/restart/stop --attach <target...> — then follow, like `logs -f`,
 runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --dry-run --quiet --system
 runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --dry-run --quiet
 runwisp import systemd [UNIT...] — convert systemd .service units to runwisp.toml; -o/--output --write --force --dry-run --quiet
-runwisp import ofelia [FILE...] — convert Ofelia jobs (INI config, or a .yml/.yaml compose file with ofelia.* labels, or stdin) to tasks: job-exec (compose label -> compose_file+compose_service+run; INI container -> docker exec), job-run (docker run --rm --init), job-local; no-overlap -> on_overlap=skip; job-service-run/job-compose unsupported; since 1.7
                              — Restart= → [services.*], Type=oneshot → [tasks.*]; name from filename. Reject-as-note:
                                multiple ExecStart/ExecStartPre/Post, Type=notify|forking, sandboxing, socket activation,
                                %i templates. NO `takeover systemd` (disable units yourself: systemctl disable --now)
+runwisp import ofelia [FILE...] — convert Ofelia jobs (INI config, or a .yml/.yaml compose file with ofelia.* labels, or stdin) to tasks: job-exec (compose label -> compose_file+compose_service+run; INI container -> docker exec), job-run (docker run --rm --init), job-local; no-overlap -> on_overlap=skip; job-service-run/job-compose unsupported; since 1.7
                              — -o writes one standalone file; --write installs the two-tier layout
                                (tasks → machine-owned runwisp.d/imported.toml, root runwisp.toml's
                                [daemon].include wired to load it; both written atomically or rolled back;
