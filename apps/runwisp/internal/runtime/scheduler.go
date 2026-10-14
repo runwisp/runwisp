@@ -353,35 +353,9 @@ func (scheduler *Scheduler) RemoveTask(name string) {
 	delete(scheduler.jitterPlans, name)
 }
 
-// effectiveSpec is resolveTaskSchedule against the scheduler's default location.
+// effectiveSpec is cronspec.Resolve against the scheduler's default location.
 func (scheduler *Scheduler) effectiveSpec(task *model.Task) (string, *time.Location) {
-	return resolveTaskSchedule(task, scheduler.location)
-}
-
-// resolveTaskSchedule builds the cron spec actually fed to the parser —
-// task.Cron prefixed with CRON_TZ= when the task pins its own timezone — and
-// the location used as the reference for wall-clock evaluation: the task's
-// own timezone when set, else defaultLoc, else time.Local. Shared by the live
-// scheduler (effectiveSpec) and startup catch-up (catchupSchedule) so both
-// interpret a task's schedule identically.
-func resolveTaskSchedule(task *model.Task, defaultLoc *time.Location) (string, *time.Location) {
-	spec := task.Cron
-	loc := defaultLoc
-	if loc == nil {
-		loc = time.Local
-	}
-	if task.Timezone != "" {
-		// CRON_TZ= prefix is honored by go-cron's parser and
-		// overrides the default location for this entry.
-		spec = "CRON_TZ=" + task.Timezone + " " + task.Cron
-		// Best-effort resolve: if it doesn't parse, the caller's parser.Parse
-		// will fail and surface an error/warning. On success, use the task TZ
-		// as the reference for wall-clock evaluation.
-		if l, err := time.LoadLocation(task.Timezone); err == nil {
-			loc = l
-		}
-	}
-	return spec, loc
+	return cronspec.Resolve(task.Cron, task.Timezone, scheduler.location)
 }
 
 func (scheduler *Scheduler) addTask(task *model.Task) error {

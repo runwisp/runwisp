@@ -9,8 +9,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,7 +36,7 @@ run = "echo hi"
 graceful_stop = "30s"
 `)
 	var out strings.Builder
-	require.NoError(t, runValidate(&out, f, false))
+	require.NoError(t, runValidate(&out, f, validateOpts{}))
 	assert.Contains(t, out.String(), "is valid")
 	assert.Contains(t, out.String(), "! ")
 	assert.Contains(t, out.String(), "graceful_stop")
@@ -44,7 +46,7 @@ func TestRunValidateNoWarnings(t *testing.T) {
 	t.Parallel()
 	f := writeValidateConfig(t, "[tasks.t]\nrun = \"echo hi\"\n")
 	var out strings.Builder
-	require.NoError(t, runValidate(&out, f, false))
+	require.NoError(t, runValidate(&out, f, validateOpts{}))
 	assert.Contains(t, out.String(), "is valid")
 	assert.NotContains(t, out.String(), "! ")
 }
@@ -53,7 +55,7 @@ func TestRunValidateRejectsBadCron(t *testing.T) {
 	t.Parallel()
 	f := writeValidateConfig(t, "[tasks.t]\nrun = \"echo hi\"\ncron = \"61 * * * *\"\n")
 	var out strings.Builder
-	err := runValidate(&out, f, false)
+	err := runValidate(&out, f, validateOpts{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid cron")
 	assert.Contains(t, err.Error(), "expected 5 fields")
@@ -63,7 +65,7 @@ func TestRunValidate_ValidEmpty(t *testing.T) {
 	t.Parallel()
 	f := writeValidateConfig(t, "# empty\n")
 	var buf bytes.Buffer
-	require.NoError(t, runValidate(&buf, f, false))
+	require.NoError(t, runValidate(&buf, f, validateOpts{}))
 	out := buf.String()
 	assert.Contains(t, out, "is valid")
 	assert.Contains(t, out, "tasks:    0")
@@ -86,7 +88,7 @@ run = "true"
 run = "exec /usr/bin/web"
 `)
 	var buf bytes.Buffer
-	require.NoError(t, runValidate(&buf, f, false))
+	require.NoError(t, runValidate(&buf, f, validateOpts{}))
 	out := buf.String()
 	assert.Contains(t, out, "tasks:    2")
 	assert.Contains(t, out, "services: 1")
@@ -97,7 +99,7 @@ func TestRunValidate_InvalidTOMLReturnsUserFacingError(t *testing.T) {
 	f := writeValidateConfig(t, "this is not = valid toml ===\n")
 	var buf bytes.Buffer
 
-	err := runValidate(&buf, f, false)
+	err := runValidate(&buf, f, validateOpts{})
 	require.Error(t, err)
 
 	var ufe *userFacingError
@@ -112,7 +114,7 @@ func TestRunValidate_MissingFileReturnsUserFacingError(t *testing.T) {
 	f := Flags{CfgFile: filepath.Join(t.TempDir(), "absent.toml")}
 
 	var buf bytes.Buffer
-	err := runValidate(&buf, f, false)
+	err := runValidate(&buf, f, validateOpts{})
 	require.Error(t, err)
 
 	var ufe *userFacingError
@@ -132,7 +134,7 @@ boguskey = 1
 anotherbogus = 2
 `)
 	var buf bytes.Buffer
-	err := runValidate(&buf, f, true)
+	err := runValidate(&buf, f, validateOpts{JSON: true})
 	require.Error(t, err)
 
 	var doc validateJSONDoc
@@ -140,4 +142,89 @@ anotherbogus = 2
 	assert.False(t, doc.Valid)
 	require.GreaterOrEqual(t, len(doc.Errors), 2, "each unknown key must get its own errors[] entry")
 	assert.NotEqual(t, doc.Errors[0].Line, doc.Errors[1].Line, "each error must carry its own source location")
+}
+
+const explainConfig = `
+[daemon]
+timezone = "Europe/Bratislava"
+
+[tasks.backup]
+run = "echo hi"
+cron = "30 2 * * *"
+jitter = "5m"
+
+[tasks.report]
+run = "echo hi"
+cron = "@every 90m"
+`
+
+// 2027-03-27 12:00 UTC: the next backup tick falls in Europe/Bratislava's
+// spring-forward gap.
+var explainNow = time.Date(2027, 3, 27, 12, 0, 0, 0, time.UTC)
+
+func TestRunValidateExplainText(t *testing.T) {
+	t.Parallel()
+	f := writeValidateConfig(t, explainConfig)
+	var out strings.Builder
+	require.NoError(t, runValidate(&out, f, validateOpts{Explain: true, Now: explainNow}))
+	got := out.String()
+	assert.Contains(t, got, "backup  30 2 * * *  (Europe/Bratislava)\n  At 02:30\n")
+	assert.Contains(t, got, "starts up to 5m late when other tasks are running")
+	assert.Contains(t, got, "Sun 2027-03-28 03:30 CEST  DST: the scheduled time does not exist")
+	assert.Contains(t, got, "Mon 2027-03-29 02:30 CEST\n")
+	assert.Contains(t, got, "report  @every 90m  (Europe/Bratislava)\n  Every 1 hour 30 minutes\n")
+	assert.Len(t, regexp.MustCompile(`(?m)^  \w{3} 2027-`).FindAllString(got, -1), 6, "three firings per task")
+}
+
+func TestRunValidateExplainJSON(t *testing.T) {
+	t.Parallel()
+	f := writeValidateConfig(t, explainConfig)
+	var buf bytes.Buffer
+	require.NoError(t, runValidate(&buf, f, validateOpts{JSON: true, Explain: true, Now: explainNow}))
+	var doc struct {
+		Schedules []struct {
+			Task, Description string
+			Next              []struct {
+				At         string
+				DSTShifted bool
+			}
+		}
+	}
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+	require.Len(t, doc.Schedules, 2)
+	assert.Equal(t, "backup", doc.Schedules[0].Task)
+	assert.Equal(t, "At 02:30", doc.Schedules[0].Description)
+	require.Len(t, doc.Schedules[0].Next, 3)
+	assert.True(t, doc.Schedules[0].Next[0].DSTShifted)
+	assert.Equal(t, "2027-03-28T03:30:00+02:00", doc.Schedules[0].Next[0].At)
+}
+
+func TestRunValidateWithoutExplainHasNoSchedules(t *testing.T) {
+	t.Parallel()
+	f := writeValidateConfig(t, explainConfig)
+	var buf bytes.Buffer
+	require.NoError(t, runValidate(&buf, f, validateOpts{JSON: true}))
+	assert.NotContains(t, buf.String(), "schedules")
+	var out strings.Builder
+	require.NoError(t, runValidate(&out, f, validateOpts{}))
+	assert.NotContains(t, out.String(), "At 02:30")
+}
+
+func TestRunValidateWarnsOnSharedInstant(t *testing.T) {
+	t.Parallel()
+	f := writeValidateConfig(t, `
+[tasks.a]
+run = "echo a"
+cron = "0 3 * * *"
+[tasks.b]
+run = "echo b"
+cron = "0 3 * * *"
+[tasks.c]
+run = "echo c"
+cron = "0 3 * * *"
+`)
+	var out strings.Builder
+	require.NoError(t, runValidate(&out, f, validateOpts{}))
+	assert.Contains(t, out.String(), "! 3 tasks fire at the same instant")
+	assert.Contains(t, out.String(), "jitter")
 }

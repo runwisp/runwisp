@@ -162,6 +162,10 @@ turns, and none starts later than its `jitter`. Each task's latest start time is
 fixed when the daemon starts, so the same config always gives the same order.
 The run history shows both the scheduled time and the real start.
 
+When three or more tasks without a `jitter` would start at the same second,
+`runwisp validate` and the daemon at startup warn and name them. To see when
+each schedule fires, run `runwisp validate --explain`.
+
 ## Pausing a schedule
 
 Pause a task to stop its schedule without editing `runwisp.toml`, for example

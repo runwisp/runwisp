@@ -28,7 +28,7 @@ func (m *defaultTaskManager) watchRun(ctx context.Context, task *model.Task, run
 	if !task.Kind.IsService() || probe == nil || run.StartedAt == nil {
 		return
 	}
-	spec, _ := resolveTaskSchedule(probe, nil)
+	spec, _ := cronspec.Resolve(probe.Cron, probe.Timezone, nil)
 	schedule, err := cronspec.NewParser().Parse(spec)
 	if err != nil {
 		// Load validated this exact spec, so this is unreachable short of a

@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
@@ -267,7 +268,24 @@ func Warnings(cfg *Config) []string {
 	w = append(w, composeExecServiceWarnings(cfg)...)
 	w = append(w, composeOwnProjectWarnings(cfg)...)
 	w = append(w, cfg.composeWarnings...)
+	w = append(w, cfg.scheduleWarnings...)
 	return append(w, cronSourceWarnings(cfg)...)
+}
+
+// refreshScheduleWarnings recomputes cfg.scheduleWarnings from the tasks that
+// are live right now, in the scheduler's zone. Call it after anything that
+// changes which tasks fire (load, a cron hold flipping).
+func (c *Config) refreshScheduleWarnings(now time.Time) {
+	c.scheduleWarnings = scheduleCollisionWarnings(c.Tasks, c.SchedulerLocation(), now)
+}
+
+// SchedulerLocation is the zone cron expressions without their own timezone are
+// evaluated in: the resolved [daemon] timezone, or time.Local if it is unset.
+func (c *Config) SchedulerLocation() *time.Location {
+	if loc, err := time.LoadLocation(c.Scheduler.Timezone); err == nil && c.Scheduler.Timezone != "" {
+		return loc
+	}
+	return time.Local
 }
 
 // composeExecServiceWarnings reports long-running services running in compose

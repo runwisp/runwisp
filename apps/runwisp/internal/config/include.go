@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
@@ -91,6 +92,7 @@ func loadWithIncludes(path string) (*Config, entrySources, error) {
 		cfg.cronDaemon = cronprobe.Probe()
 	}
 	markCronHold(cfg)
+	cfg.refreshScheduleWarnings(time.Now())
 	// After buildConfig, so the notifier set is known: a crontab's MAILTO stops being
 	// something to report once the config can actually deliver mail.
 	dropAnsweredFindings(cfg)
@@ -179,6 +181,7 @@ func WithCronHold(cfg *Config, state cronprobe.State) (updated *Config, changed 
 	if len(changed) == 0 {
 		return cfg, nil
 	}
+	next.refreshScheduleWarnings(time.Now())
 	return &next, changed
 }
 

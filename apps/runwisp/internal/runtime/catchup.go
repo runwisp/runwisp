@@ -105,10 +105,10 @@ func RunMissedTickCatchUp(tasks map[string]*model.Task, runner RunTrigger, now t
 
 // catchupSchedule builds a task's schedule and the location its ticks are
 // evaluated in, via the same resolution the live scheduler uses
-// (resolveTaskSchedule). Counting missed ticks in the wrong zone would
+// (cronspec.Resolve). Counting missed ticks in the wrong zone would
 // mis-detect the downtime gap for any task not on the host's local time.
 func catchupSchedule(parser cron.ScheduleParser, task *model.Task, defaultLoc *time.Location) (cron.Schedule, *time.Location, error) {
-	spec, loc := resolveTaskSchedule(task, defaultLoc)
+	spec, loc := cronspec.Resolve(task.Cron, task.Timezone, defaultLoc)
 	schedule, err := parser.Parse(spec)
 	if err != nil {
 		return nil, nil, err

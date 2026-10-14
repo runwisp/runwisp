@@ -305,6 +305,29 @@ type validateJSONDoc struct {
 	Services       int           `json:"services"`
 	Warnings       []messageJSON `json:"warnings"`
 	Errors         []messageJSON `json:"errors"`
+	// Schedules is present only with --explain.
+	Schedules []scheduleJSON `json:"schedules,omitempty"`
+}
+
+// scheduleJSON is one task's `validate --explain` entry: the cron in words and
+// its next firings in the zone the scheduler evaluates it in.
+type scheduleJSON struct {
+	Task        string       `json:"task"`
+	Cron        string       `json:"cron"`
+	Timezone    string       `json:"timezone"`
+	Description string       `json:"description"`
+	Jitter      string       `json:"jitter,omitempty"`
+	Next        []firingJSON `json:"next"`
+}
+
+// firingJSON is one upcoming tick. DSTShifted: the wall time does not exist
+// that day and the run lands at the first valid instant after it. DSTSkipped:
+// a fall-back repeat the scheduler drops. Display is for the text rendering.
+type firingJSON struct {
+	At         string `json:"at"`
+	Display    string `json:"-"`
+	DSTShifted bool   `json:"dstShifted,omitempty"`
+	DSTSkipped bool   `json:"dstSkipped,omitempty"`
 }
 
 // messageJSON is a validation error or advisory warning. For parse-time errors

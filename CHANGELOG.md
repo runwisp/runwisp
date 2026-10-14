@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Cron expressions accept `L` (last day of the month), `LW`, `15W` (nearest weekday) and `FRI#3` / `FRI#L` (nth or last weekday).
+- `runwisp validate --explain` describes each schedule in words and lists its next 3 firings in the zone the scheduler uses, marking times a daylight saving change moves or skips.
+- `runwisp validate` and daemon startup warn when three or more tasks without a `jitter` would start at the same second, and suggest setting one.
 - The TUI run list shows each run's CPU time and peak memory, colored by how it compares with the task's usual run, so an unusually heavy run stands out.
 - The TUI task info (`i`) shows the task's timeout, its log limit and retention, its usual CPU time and memory, and opens with the first lines of its `run` command; press `c` to see the whole command. It scrolls when it doesn't fit.
 - `warn_after` on a task sends a notification once when a run is still going after that long, without stopping it. It reaches the same places as a failure alert, or any `[[route]]` that lists `long_running`.

@@ -158,7 +158,7 @@ func TestServiceHealthCheck_MissedDeadlineIsAFailedStart(t *testing.T) {
 func TestProbeScheduleFollowsLiveDaemonZone(t *testing.T) {
 	m := &defaultTaskManager{}
 	parse := func(probe *model.Task) cron.Schedule {
-		spec, _ := resolveTaskSchedule(probe, nil)
+		spec, _ := cronspec.Resolve(probe.Cron, probe.Timezone, nil)
 		schedule, err := cronspec.NewParser().Parse(spec)
 		require.NoError(t, err)
 		return probeSchedule{schedule, probe.Timezone == "", m}

@@ -32,6 +32,12 @@ type Config struct {
 	// other advisory check; never fatal to Load.
 	composeWarnings []string
 
+	// scheduleWarnings are the schedule pile-up findings (see
+	// scheduleCollisionWarnings), computed once at load and again when a cron
+	// hold changes: Warnings is answered on every /api/daemon request and must
+	// not walk every schedule each time.
+	scheduleWarnings []string
+
 	// includeFiles are the absolute paths of the TOML files merged in via
 	// [daemon].include at this load. includeGlobs are those patterns resolved
 	// against the root config dir. watchFiles is every additional on-disk input
