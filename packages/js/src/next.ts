@@ -7,10 +7,11 @@
 import { relative } from "node:path";
 
 import { binaryFiles } from "./daemon.ts";
+import { OVERLAPPING } from "./overlap.ts";
 import type { RunWisp } from "./runwisp.ts";
 
 /** The part of Next's config withRunWisp() changes. */
-export interface NextConfig {
+interface NextConfig {
     serverExternalPackages?: string[];
     outputFileTracingIncludes?: Record<string, string[]>;
 }
@@ -21,8 +22,10 @@ export interface NextConfig {
  */
 export function withRunWisp<T extends NextConfig>(config: T): T {
     // Vercel runs each request in a short-lived function: no process for the
-    // tasks to run in, and nothing would tell you they never ran.
-    if (process.env["VERCEL"]) {
+    // tasks to run in, and nothing would tell you they never ran. `vercel env
+    // pull` writes VERCEL=1 into .env.local too, which Next loads before this
+    // config, but with VERCEL_ENV=development, which a deployment never has.
+    if (process.env["VERCEL"] && process.env["VERCEL_ENV"] !== "development") {
         throw new Error(
             "@runwisp/js/next: tasks need a server that keeps running, and Vercel doesn't run one. Self-host the app, or remove withRunWisp().",
         );
@@ -58,7 +61,8 @@ export interface VercelCronOptions {
  * Schedules each of vercel.json's `crons` as a RunWisp task, named after its
  * path, that requests the path the way Vercel does: a GET with
  * `Authorization: Bearer $CRON_SECRET`. A response other than 2xx fails the
- * run. Schedules are in UTC, as on Vercel.
+ * run. Schedules are in UTC, as on Vercel, and as there, a missed time is
+ * not run late and runs may overlap.
  */
 export function scheduleVercelCrons(
     runwisp: RunWisp,
@@ -72,7 +76,8 @@ export function scheduleVercelCrons(
                 .replace(/^\/+/, "")
                 .replaceAll(/[^a-zA-Z0-9._:-]+/g, "-")
                 .slice(0, 100) || "root";
-        runwisp.task(name, { cron: schedule, timezone: "UTC" }, async ({ signal }) => {
+        const cron = { cron: schedule, timezone: "UTC", catch_up: 0, ...OVERLAPPING };
+        runwisp.task(name, cron, async ({ signal }) => {
             const secret = process.env["CRON_SECRET"];
             const response = await fetch(new URL(path, baseUrl), {
                 headers: {

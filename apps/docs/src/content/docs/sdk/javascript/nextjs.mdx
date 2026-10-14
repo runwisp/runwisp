@@ -13,7 +13,8 @@ head:
 `@runwisp/js` runs scheduled tasks inside a self-hosted Next.js app: `next
 start`, `output: "standalone"` or Docker. It needs a process that keeps running,
 so it does not work on Vercel or other serverless hosts. `withRunWisp()` fails
-the build on Vercel.
+the build on Vercel. The `.env.local` that `vercel env pull` writes doesn't
+count, so `next dev` still works with it.
 
 It works with Next.js 15 or later, on Node.js or on [Bun](#bun).
 
@@ -93,6 +94,11 @@ Each cron becomes a task named after its path, so `/api/cron/cleanup` is
 $CRON_SECRET` when `CRON_SECRET` is set. The response goes to the run's log, and
 a status other than 2xx fails the run. Schedules are in UTC, as on Vercel. Pass
 `{ baseUrl }` as the third argument if the app listens elsewhere.
+
+As on Vercel, times missed while the app was down are not run late, and a run
+that comes while the last one is still going starts anyway. The tasks get
+[`catch_up = 0`](/configuration/tasks/#catch_up) and
+[`max_concurrent = 1024`](/configuration/tasks/#max_concurrent).
 
 ## Shut down cleanly
 

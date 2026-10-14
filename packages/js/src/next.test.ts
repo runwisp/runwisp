@@ -39,7 +39,17 @@ describe("withRunWisp on Vercel", () => {
 
     it("fails the build instead of scheduling tasks that never run", () => {
         vi.stubEnv("VERCEL", "1");
+        vi.stubEnv("VERCEL_ENV", "production");
         expect(() => withRunWisp({})).toThrow(/Vercel/);
+        vi.stubEnv("VERCEL_ENV", "preview");
+        expect(() => withRunWisp({})).toThrow(/Vercel/);
+    });
+
+    // `vercel env pull` writes these into .env.local, which `next dev` loads.
+    it("works with the env from vercel env pull", () => {
+        vi.stubEnv("VERCEL", "1");
+        vi.stubEnv("VERCEL_ENV", "development");
+        expect(() => withRunWisp({})).not.toThrow();
     });
 });
 
@@ -51,6 +61,7 @@ describe("scheduleVercelCrons", () => {
 
     it("requests each cron path like Vercel does, failing the run on an error status", async () => {
         const runwisp = new RunWisp({ enabled: false, log: false, binary: "/nonexistent/runwisp" });
+        const task = vi.spyOn(runwisp, "task");
         scheduleVercelCrons(
             runwisp,
             {
@@ -66,6 +77,18 @@ describe("scheduleVercelCrons", () => {
             "api-cron-report-full-1",
         ]);
         expect(runwisp.getTask("api-cron-cleanup")?.getPattern()).toBe("0 * * * *");
+        // Vercel never runs a missed time late, and its invocations overlap.
+        expect(task).toHaveBeenCalledWith(
+            "api-cron-cleanup",
+            {
+                cron: "0 * * * *",
+                timezone: "UTC",
+                catch_up: 0,
+                on_overlap: "queue",
+                max_concurrent: 1024,
+            },
+            expect.any(Function),
+        );
 
         vi.stubEnv("CRON_SECRET", "s3cret");
         const fetch = vi.fn<typeof globalThis.fetch>(() =>

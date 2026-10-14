@@ -26,7 +26,7 @@ interface VitePlugin {
     transform(code: string, file: string): string | undefined;
 }
 
-export interface RunWispAstroIntegration {
+interface RunWispAstroIntegration {
     name: string;
     hooks: {
         "astro:config:done": (options: {
