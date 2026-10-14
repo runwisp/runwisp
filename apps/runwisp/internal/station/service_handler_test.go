@@ -10,9 +10,12 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -55,6 +58,34 @@ func TestHandleServiceApply_UpsertsServiceTask(t *testing.T) {
 	assert.Equal(t, "bar", task.Env["FOO"])
 	// autostart=true brings the service up to its desired count.
 	assert.Equal(t, []string{task.Name}, runner.startedServices)
+}
+
+// Regression: buildServiceTask dropped Autostart, so the real runtime created
+// the supervisor parked and the follow-up StartServiceInstances was a no-op,
+// leaving the service stopped with zero instances.
+func TestHandleServiceApply_AutostartStartsInstancesOnRealManager(t *testing.T) {
+	gate := testutil.NewGateExecutor()
+	manager := runtime.NewTaskManager(gate, events.NewEventBus(), time.Now)
+	t.Cleanup(manager.Shutdown)
+	h := newDispatchHandler(shellAvailable(), nil)
+	h.taskManager = manager
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.ServiceApplyPayload{
+			TaskID:    "svc-auto",
+			Script:    shellScript(t, "sleep 1"),
+			Instances: 2,
+			Autostart: true,
+		},
+	})
+	require.NoError(t, err)
+
+	gate.WaitStarted(t)
+	gate.WaitStarted(t)
+	snap, ok := manager.ServiceSnapshot(sanitizeStationTaskName("svc-auto"))
+	require.True(t, ok)
+	assert.Equal(t, model.ServiceRunning, snap.State)
+	assert.Equal(t, 2, snap.RunningInstances)
 }
 
 func TestHandleServiceApply_NoAutostartDoesNotStart(t *testing.T) {
