@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import runwispNuxt, {
+    TYPES,
     VIRTUAL_MODULE,
     type NitroConfig,
     type NuxtHooks,
@@ -16,26 +17,34 @@ interface Build {
     dev?: boolean;
     preset?: string;
     entry?: string | undefined;
-    options?: RunWispNuxtOptions;
+    /** The `runwisp` key of the Nuxt config. */
+    options?: RunWispNuxtOptions | false;
+    inline?: RunWispNuxtOptions;
 }
 
 /** Runs the module's hooks as Nuxt would, and the virtual module as Nitro reads it. */
 function nitroConfig(config: NitroConfig, build: Build = {}) {
-    const { dev = false, preset = "node-server", options = {} } = build;
+    const { dev = false, preset = "node-server", options, inline = {} } = build;
     const entry = "entry" in build ? build.entry : NODE_SERVER;
     const hooks: Partial<NuxtHooks> = {};
-    runwispNuxt(options, {
-        options: { dev },
+    const templates: { filename: string; getContents: () => string }[] = [];
+    runwispNuxt(inline, {
+        options: { dev, buildDir: "/app/.nuxt", build: { templates }, runwisp: options },
         hook: (name, fn) => {
             hooks[name] = fn;
         },
     });
     hooks["nitro:config"]?.(config);
     hooks["nitro:init"]?.({ options: { preset, entry } });
-    const declarations: string[] = [];
-    hooks["nitro:prepare:types"]?.({ declarations });
+    const references: { path: string }[] = [];
+    hooks["nitro:prepare:types"]?.({ references });
     const virtual = config.virtual?.[VIRTUAL_MODULE];
-    return { config, declarations, settings: typeof virtual === "function" ? virtual() : virtual };
+    return {
+        config,
+        templates,
+        references,
+        settings: typeof virtual === "function" ? virtual() : virtual,
+    };
 }
 
 describe("@runwisp/js/nuxt", () => {
@@ -83,7 +92,7 @@ describe("@runwisp/js/nuxt", () => {
     // The app's plugins pass the same options, so that every `new RunWisp()`
     // gets the one RunWisp; config goes to the first one only.
     it("hands its options to the plugins and the app", () => {
-        const { settings, declarations } = nitroConfig(
+        const { settings, templates, references } = nitroConfig(
             {},
             {
                 options: {
@@ -99,9 +108,37 @@ describe("@runwisp/js/nuxt", () => {
         expect(settings).toContain(
             'export const config = {"notifiers":{"ops":{"type":"slack","webhook_url":"${SLACK_URL}"}}};',
         );
-        expect(declarations).toEqual([
-            'declare module "#runwisp/nuxt" { export const options: import("@runwisp/js").RunWispOptions; }',
+        // A file of its own, so the declaration stays ambient.
+        expect(templates.map((t) => [t.filename, t.getContents()])).toEqual([
+            ["types/runwisp-nuxt.d.ts", TYPES],
         ]);
+        expect(TYPES).not.toMatch(/^(import|export) /m);
+        expect(references).toEqual([{ path: "/app/.nuxt/types/runwisp-nuxt.d.ts" }]);
+    });
+
+    it("takes options from the module entry over the runwisp key", () => {
+        const { settings } = nitroConfig(
+            {},
+            { options: { data: "/srv/app/.runwisp", port: 9500 }, inline: { port: 9600 } },
+        );
+        expect(settings).toContain(
+            'export const options = {"data":"/srv/app/.runwisp","port":9600};',
+        );
+    });
+
+    it("does nothing with runwisp: false", () => {
+        const { config } = nitroConfig(
+            { scheduledTasks: { "@daily": "db:cleanup" } },
+            { options: false },
+        );
+        expect(config).toEqual({ scheduledTasks: { "@daily": "db:cleanup" } });
+    });
+
+    it("tells Nuxt its config key", async () => {
+        expect(await runwispNuxt.getMeta()).toEqual({
+            name: "@runwisp/js/nuxt",
+            configKey: "runwisp",
+        });
     });
 
     // Nitro's bun server never runs the close hook, so the plugin handles SIGTERM.

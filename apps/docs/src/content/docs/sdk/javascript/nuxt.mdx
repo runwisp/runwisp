@@ -37,13 +37,14 @@ export default defineNuxtConfig({
 The module copies the `runwisp` binary into the build, and lets running tasks
 finish before the built server exits.
 
-To set [`new RunWisp()` options](/sdk/javascript/#new-runwispoptions), pass
-them to the module:
+To set [`new RunWisp()` options](/sdk/javascript/#new-runwispoptions), put
+them under the `runwisp` key:
 
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
-    modules: [["@runwisp/js/nuxt", { data: "/var/lib/my-app/runwisp", port: 9500 }]],
+    modules: ["@runwisp/js/nuxt"],
+    runwisp: { data: "/var/lib/my-app/runwisp", port: 9500 },
 });
 ```
 

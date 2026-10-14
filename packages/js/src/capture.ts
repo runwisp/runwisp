@@ -4,6 +4,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { StringDecoder } from "node:string_decoder";
 import { format } from "node:util";
 
 import type { Stream } from "./session.ts";
@@ -129,11 +130,18 @@ function installOutputCapture(captures: AsyncLocalStorage<CaptureTarget>): void 
         ["stderr", process.stderr],
     ] as const) {
         const original = out.write.bind(out);
+        // A multibyte character can be split between two chunks of one stream.
+        const decoders = new WeakMap<CaptureTarget, StringDecoder>();
         const write = (chunk: unknown, ...rest: unknown[]): boolean => {
             const capture = captures.getStore();
             if (capture && !capture.inConsole) {
                 const encoding = typeof rest[0] === "string" ? rest[0] : undefined;
-                capture.push(stream, chunkText(chunk, encoding));
+                let decoder = decoders.get(capture);
+                if (!decoder) {
+                    decoder = new StringDecoder();
+                    decoders.set(capture, decoder);
+                }
+                capture.push(stream, chunkText(chunk, encoding, decoder));
             }
             const flushed: unknown = Reflect.apply(original, out, [chunk, ...rest]);
             return flushed === true;
@@ -143,13 +151,13 @@ function installOutputCapture(captures: AsyncLocalStorage<CaptureTarget>): void 
     }
 }
 
-function chunkText(chunk: unknown, encoding: string | undefined): string {
+function chunkText(chunk: unknown, encoding: string | undefined, decoder: StringDecoder): string {
     if (typeof chunk === "string") {
         return encoding !== undefined && Buffer.isEncoding(encoding)
             ? Buffer.from(chunk, encoding).toString()
             : chunk;
     }
-    if (chunk instanceof Uint8Array) return Buffer.from(chunk).toString();
+    if (chunk instanceof Uint8Array) return decoder.write(Buffer.from(chunk));
     return String(chunk);
 }
 

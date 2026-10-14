@@ -62,6 +62,21 @@ describe("runCaptured", () => {
         ]);
     });
 
+    it("keeps a multibyte character that two writes split", async () => {
+        const lines: string[] = [];
+        const bytes = Buffer.from("snow ☃ man\n");
+        await runCaptured(
+            (_s, l) => lines.push(l),
+            () => {
+                // The snowman is three bytes: cut it after the first.
+                process.stdout.write(bytes.subarray(0, 6));
+                process.stdout.write(bytes.subarray(6));
+                return Promise.resolve();
+            },
+        );
+        expect(lines).toEqual(["snow ☃ man"]);
+    });
+
     // One message must stay far below the daemon's 16 MiB line cap; \r
     // progress output never ends a line at all.
     it("sends a long or never-ending line in pieces the next one continues", () => {

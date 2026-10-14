@@ -11,7 +11,7 @@ import { setImmediate as nextTurn } from "node:timers/promises";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { daemonPaths } from "./daemon.ts";
+import { daemonPaths, field } from "./daemon.ts";
 import { RunWisp, type Logger, type RunWispOptions } from "./runwisp.ts";
 
 function offline() {
@@ -35,6 +35,21 @@ describe("RunWisp (enabled: false)", () => {
         expect(cron.getTask("send-emails")).toBe(task);
         expect(cron.createTask("0 4 * * *", () => undefined, { name: "later" }).getStatus()).toBe(
             "stopped",
+        );
+    });
+
+    it("works destructured, as node-cron's named exports do", () => {
+        const { cron } = offline();
+        const { schedule, getTask, validate } = cron;
+        expect(schedule("0 3 * * *", () => undefined, { name: "x" }).id).toBe("x");
+        expect(getTask("x")).toBeDefined();
+        expect(typeof validate).toBe("function");
+    });
+
+    it("accepts task names that Object.prototype also has", () => {
+        const { cron } = offline();
+        expect(cron.task("constructor", { cron: "* * * * *" }, () => undefined).id).toBe(
+            "constructor",
         );
     });
 
@@ -303,7 +318,12 @@ esac
 const NEXT = new Date("2999-01-01T03:00:00Z");
 
 /** The daemon's side of the socket API, enough for one app to connect and run. */
-function fakeDaemon(data: string, role = '{"type":"role","active":true,"alone":true}') {
+function fakeDaemon(
+    data: string,
+    role = '{"type":"role","active":true,"alone":true}',
+    /** Replies to the first configs, in order; config_ok after that. */
+    configReplies: string[] = [],
+) {
     const received: unknown[] = [];
     const apps: Socket[] = [];
     const server: Server = createServer((req, res) => {
@@ -332,13 +352,14 @@ function fakeDaemon(data: string, role = '{"type":"role","active":true,"alone":t
             const message: unknown = JSON.parse(line);
             received.push(message);
             if (line.startsWith('{"type":"config"'))
-                socket.write('{"type":"config_ok","result":{}}\n');
+                socket.write(`${configReplies.shift() ?? '{"type":"config_ok","result":{}}'}\n`);
         });
     });
     const listen = () =>
         new Promise<void>((resolve) => server.listen(daemonPaths(data).socket, resolve));
     return {
         received,
+        apps,
         listen,
         send: (message: object) => {
             for (const socket of apps) socket.write(`${JSON.stringify(message)}\n`);
@@ -415,10 +436,10 @@ describe("RunWisp with a daemon", () => {
         for (const cleanup of cleanups.splice(0)) await cleanup();
         for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
     });
-    const setup = (role?: string) => {
+    const setup = (role?: string, configReplies?: string[]) => {
         const data = mkdtempSync(join(tmpdir(), "rwn-"));
         dirs.push(data);
-        const daemon = fakeDaemon(data, role);
+        const daemon = fakeDaemon(data, role, configReplies);
         cleanups.push(daemon.close);
         const lines: string[] = [];
         const log: Logger = {
@@ -457,6 +478,23 @@ describe("RunWisp with a daemon", () => {
         daemon.send({ type: "stop", run: "r1" });
         await closing;
         expect(daemon.received).toContainEqual({ type: "exit", run: "r1", code: 143 });
+    });
+
+    it("restarts RunWisp for a change only a restart applies, leaving the old connection first", async () => {
+        const { daemon, cron, lines } = setup(undefined, [
+            '{"type":"config_error","error":"listener changed","restart":true}',
+        ]);
+        await daemon.listen();
+        cron.schedule("0 3 * * *", () => undefined, { name: "a" });
+        await vi.waitFor(() => {
+            expect(daemon.received.filter((m) => field(m, "type") === "config")).toHaveLength(2);
+        });
+        expect(lines).toContain(
+            "runwisp: restarting RunWisp to apply the new config (listener changed)",
+        );
+        expect(daemon.apps).toHaveLength(2);
+        // The first connection is gone, so the new one isn't mistaken for a standby copy.
+        expect(daemon.apps[0]?.destroyed).toBe(true);
     });
 
     it("keeps retrying to connect, backing off, until RunWisp answers", async () => {

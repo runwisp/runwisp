@@ -111,6 +111,22 @@ describe("Session", () => {
         await session.close();
     });
 
+    it("refuses a second config while one waits for its answer, as replies carry no id", async () => {
+        const { path } = await fakeDaemon((socket) => {
+            socket.write('{"type":"role","active":true}\n');
+            socket.on("data", () => setImmediate(() => socket.write('{"type":"config_ok"}\n')));
+        });
+        const session = await Session.open(path, recorder().events, WHO);
+        const first = session.config("{}");
+        expect(await session.config("{}")).toEqual({
+            ok: false,
+            error: "a config push is already pending",
+            restart: false,
+        });
+        expect(await first).toEqual({ ok: true });
+        await session.close();
+    });
+
     it("says it is leaving, and fails a pending config when the daemon goes away", async () => {
         let daemonSide: Socket | undefined;
         let received: string[] = [];

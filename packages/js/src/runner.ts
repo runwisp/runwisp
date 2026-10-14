@@ -129,7 +129,7 @@ export class Runner {
                     resolve();
                 });
             });
-            while (executions.length >= maxConcurrent && !abort.signal.aborted) {
+            while (executions.length >= maxConcurrent && !abort.signal.aborted && !this.closing) {
                 await Promise.race([aborted, ...executions.map((e) => e.done)]);
                 // The last previous run removes the list when it ends, and a
                 // later run may have started a new one meanwhile.
@@ -137,6 +137,11 @@ export class Runner {
             }
             if (abort.signal.aborted) {
                 exit(143);
+                return;
+            }
+            if (this.closing) {
+                say("the app is shutting down");
+                exit(1);
                 return;
             }
         }

@@ -109,6 +109,10 @@ func runSDKCron(w io.Writer, expr string, opts sdkCronOptions, now time.Time) er
 	return nil
 }
 
+// maxSDKCronCount bounds --count, so a typo can't make the command compute and
+// print millions of firings.
+const maxSDKCronCount = 1000
+
 // resolve checks the flags and returns the zone and the time to count from.
 func (opts sdkCronOptions) resolve(now time.Time) (*time.Location, time.Time, error) {
 	loc, err := config.ResolveTimezone("--timezone", cmp.Or(opts.timezone, config.ResolveSystemTimezone()))
@@ -118,8 +122,8 @@ func (opts sdkCronOptions) resolve(now time.Time) (*time.Location, time.Time, er
 	if loc == nil {
 		loc = time.UTC
 	}
-	if opts.count < 0 {
-		return nil, now, &userFacingError{title: "invalid --count", details: "--count must be 0 or more"}
+	if opts.count < 0 || opts.count > maxSDKCronCount {
+		return nil, now, &userFacingError{title: "invalid --count", details: fmt.Sprintf("--count must be between 0 and %d", maxSDKCronCount)}
 	}
 	if opts.after == "" {
 		return loc, now, nil

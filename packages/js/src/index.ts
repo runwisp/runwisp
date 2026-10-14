@@ -10,13 +10,13 @@ export {
     type RunWispOptions,
     type ServiceFn,
     type ServiceOptions,
-    type TaskOptions,
+    type TaskConfigOptions,
 } from "./runwisp.ts";
 // The task handle is a type only: RunWisp creates them.
 export type {
     Execution,
     LastRun,
-    NodeCronOptions,
+    TaskOptions,
     RunContext,
     RunCoordinator,
     ScheduledTask,

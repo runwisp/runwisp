@@ -34,7 +34,7 @@ import { Runner, type OverlapPolicy, type Serve } from "./runner.ts";
 import {
     createScheduledTask,
     type Logger,
-    type NodeCronOptions,
+    type TaskOptions,
     type RunContext,
     type RunCoordinator,
     type ScheduledTask,
@@ -76,14 +76,14 @@ export interface RunWispOptions {
 }
 
 /** A `[tasks.<name>]` table, minus `sdk`: the callback runs the task. */
-export type TaskOptions = Omit<TaskConfig, "sdk">;
+export type TaskConfigOptions = Omit<TaskConfig, "sdk">;
 /** A `[services.<name>]` table, minus `sdk`: the callback runs the service. */
 export type ServiceOptions = Omit<ServiceConfig, "sdk">;
 /** A service's callback: runs until `ctx.signal` aborts. RunWisp restarts it when it returns or throws. */
 export type ServiceFn = (context: RunContext) => unknown;
 
 interface TaskJob {
-    options: TaskOptions;
+    options: TaskConfigOptions;
     /** A stopped node-cron task: in RunWisp without its cron. */
     paused: boolean;
     /** Keeps the process alive; false after node-cron's unref. */
@@ -134,7 +134,7 @@ const SVELTEKIT_SHUTDOWN = "sveltekit:shutdown";
 
 const RUNS_ONCE = "each task runs once per data directory, however many copies of the app run";
 
-const IGNORED_NODE_CRON_OPTIONS: Partial<Record<keyof NodeCronOptions, string>> = {
+const IGNORED_NODE_CRON_OPTIONS: Partial<Record<keyof TaskOptions, string>> = {
     distributed: RUNS_ONCE,
     runCoordinator: RUNS_ONCE,
     distributedLease: RUNS_ONCE,
@@ -260,22 +260,22 @@ export class RunWisp {
      * is a callback, or the path of a module exporting `task` (relative to the
      * calling file), which runs in a new Node process per run.
      */
-    schedule(
+    readonly schedule = (
         expression: string,
         fn: TaskFn | string,
-        options: NodeCronOptions = {},
-    ): ScheduledTask {
+        options: TaskOptions = {},
+    ): ScheduledTask => {
         const task = this.createTask(expression, fn, options);
         task.start();
         return task;
-    }
+    };
 
     /** node-cron's `createTask`: registers the task in RunWisp, stopped (no schedule) until `start()`. */
-    createTask(
+    readonly createTask = (
         expression: string,
         fn: TaskFn | string,
-        options: NodeCronOptions = {},
-    ): ScheduledTask {
+        options: TaskOptions = {},
+    ): ScheduledTask => {
         if (typeof fn !== "function" && typeof fn !== "string") {
             throw new TypeError(
                 "a task is a function, or the path of a module that exports `task`",
@@ -292,21 +292,21 @@ export class RunWisp {
             .replaceAll(/[^a-zA-Z0-9._:-]+/g, "-")
             .slice(0, 100);
         // node-cron never catches up on runs missed while the app was down.
-        const taskOptions: TaskOptions = { cron: expression, catch_up: 0 };
+        const taskOptions: TaskConfigOptions = { cron: expression, catch_up: 0 };
         if (options.timezone !== undefined) taskOptions.timezone = options.timezone;
         if (options.noOverlap === true) taskOptions.on_overlap = "skip";
         else taskOptions.max_concurrent = NODE_CRON_MAX_CONCURRENT;
         if (options.executeTimeout !== undefined)
             taskOptions.timeout = `${String(options.executeTimeout)}ms`;
         return this.addTask(id, derived ? undefined : name, run, taskOptions, options);
-    }
+    };
 
     /**
      * Registers a task with any `[tasks.<name>]` key (retries, jitter,
      * catch-up, timeout, notifications, ...) and starts it. Without `cron`,
      * the task only runs from the web UI, TUI or CLI.
      */
-    task(name: string, options: TaskOptions, fn: TaskFn): ScheduledTask {
+    task(name: string, options: TaskConfigOptions, fn: TaskFn): ScheduledTask {
         const task = this.addTask(name, name, fn, options, {});
         task.start();
         return task;
@@ -325,44 +325,44 @@ export class RunWisp {
     }
 
     /** node-cron's `validate`, answered by `runwisp sdk-cron` so the grammar is exactly RunWisp's. */
-    validate(expression: string): boolean {
+    readonly validate = (expression: string): boolean => {
         return this.cron.explain(expression).valid;
-    }
+    };
 
     /** node-cron's `validateDetailed`: per-field errors, or the values each field matches. */
-    validateDetailed(expression: string): DetailedValidation {
+    readonly validateDetailed = (expression: string): DetailedValidation => {
         return this.cron.explain(expression);
-    }
+    };
 
     /** node-cron's `parse`: the values each field matches. Throws for an invalid expression, and for `@every`, which has no fields. */
-    parse(expression: string): ParsedFields {
+    readonly parse = (expression: string): ParsedFields => {
         const { fields, errors } = this.cron.explain(expression);
         if (fields) return fields;
         throw new Error(
             errors[0]?.message ?? `"${expression}" is an interval, which has no fields to parse`,
         );
-    }
+    };
 
     /** node-cron's `setLogger`: where warnings and errors go from now on. undefined: back to the `log` option. */
-    setLogger(logger?: Logger | false): void {
+    readonly setLogger = (logger?: Logger | false): void => {
         this.log = logger === false ? undefined : (logger ?? this.defaultLog);
-    }
+    };
 
     /** node-cron's `setRunCoordinator`: accepted, never called. RunWisp runs each task once per data directory. */
-    setRunCoordinator(_coordinator?: RunCoordinator): void {
+    readonly setRunCoordinator = (_coordinator?: RunCoordinator): void => {
         this.warnOnce(
             "runCoordinator",
             `runwisp: node-cron option "runCoordinator" is ignored: ${RUNS_ONCE}`,
         );
-    }
+    };
 
-    getTasks(): Map<string, ScheduledTask> {
+    readonly getTasks = (): Map<string, ScheduledTask> => {
         return new Map([...this.tasks].map(([name, job]) => [name, job.task]));
-    }
+    };
 
-    getTask(id: string): ScheduledTask | undefined {
+    readonly getTask = (id: string): ScheduledTask | undefined => {
         return this.tasks.get(id)?.task;
-    }
+    };
 
     /** Starts (or connects to) RunWisp now instead of on the first task. Rejects with RunWisp's error if it can't. */
     start(): Promise<void> {
@@ -378,7 +378,7 @@ export class RunWisp {
      * node-cron's `shutdown`: close(), waiting at most timeout ms for running
      * tasks to finish. Every task is destroyed: getTasks() is empty after.
      */
-    async shutdown(timeout = 5000): Promise<void> {
+    readonly shutdown = async (timeout = 5000): Promise<void> => {
         let timer: NodeJS.Timeout | undefined;
         const waited = new Promise<void>((resolve) => {
             timer = setTimeout(resolve, timeout);
@@ -389,7 +389,7 @@ export class RunWisp {
         } finally {
             clearTimeout(timer);
         }
-    }
+    };
 
     /**
      * Stops serving tasks, after the running ones finish, and stops the
@@ -464,8 +464,8 @@ export class RunWisp {
         }
         if (
             otherKind.has(name) ||
-            name in (this.config.tasks ?? {}) ||
-            name in (this.config.services ?? {})
+            Object.hasOwn(this.config.tasks ?? {}, name) ||
+            Object.hasOwn(this.config.services ?? {}, name)
         ) {
             throw new Error(`a task named "${name}" is already scheduled`);
         }
@@ -476,11 +476,8 @@ export class RunWisp {
         id: string,
         name: string | undefined,
         fn: TaskFn,
-        options: TaskOptions,
-        nodeCron: Pick<
-            NodeCronOptions,
-            "maxExecutions" | "logger" | "suppressMissedWarning" | "unref"
-        >,
+        options: TaskConfigOptions,
+        nodeCron: Pick<TaskOptions, "maxExecutions" | "logger" | "suppressMissedWarning" | "unref">,
     ): ScheduledTask {
         this.assertName(id, this.services);
         this.check(this.unitConfig({ tasks: { [id]: { ...options, sdk: true } } }));
@@ -583,7 +580,7 @@ export class RunWisp {
         return name;
     }
 
-    private warnIgnored(options: NodeCronOptions): void {
+    private warnIgnored(options: TaskOptions): void {
         for (const [key, why] of Object.entries(IGNORED_NODE_CRON_OPTIONS)) {
             if (key in options)
                 this.warnOnce(key, `runwisp: node-cron option "${key}" is ignored: ${why}`);
@@ -614,8 +611,11 @@ export class RunWisp {
      * last task exits.
      */
     private holdProcess(): void {
-        const held = this.services.size > 0 || [...this.tasks.values()].some((job) => job.held);
-        this.session?.hold(held);
+        this.session?.hold(this.holdsProcess());
+    }
+
+    private holdsProcess(): boolean {
+        return this.services.size > 0 || [...this.tasks.values()].some((job) => job.held);
     }
 
     private changed(): void {
@@ -661,6 +661,8 @@ export class RunWisp {
             this.retryTimer = undefined;
             this.changed();
         }, delay);
+        // Only tasks that would keep the process alive keep the retries going.
+        if (!this.holdsProcess()) this.retryTimer.unref();
         return delay;
     }
 
@@ -806,8 +808,11 @@ export class RunWisp {
     /** A change only a daemon restart applies: restart it with this copy's config and env. */
     private async restart(why: string): Promise<void> {
         this.log?.warn(`runwisp: restarting RunWisp ${why}`);
+        const old = this.session;
         this.session = undefined;
         this.booted = undefined;
+        // Disconnect first: if the daemon doesn't stop, boot() must not meet our own old connection.
+        await old?.close();
         await stopDaemon(this.paths.socket);
         // Another copy may have restarted it meanwhile, with its own config.
         await this.boot();

@@ -12,7 +12,8 @@ head:
 
 `@runwisp/js` runs scheduled tasks inside a self-hosted Next.js app: `next
 start`, `output: "standalone"` or Docker. It needs a process that keeps running,
-so it does not work on Vercel or other serverless hosts.
+so it does not work on Vercel or other serverless hosts. `withRunWisp()` fails
+the build on Vercel.
 
 It works with Next.js 15 or later, on Node.js or on [Bun](#bun).
 
@@ -110,6 +111,10 @@ Next, the example treats any value as set, `false` included:
 
 Build on the platform you deploy to, for example inside your Docker image. The
 binary is installed for the machine that runs `npm install`.
+
+In Docker, set `HOSTNAME=0.0.0.0`. Docker sets `HOSTNAME` to the container ID,
+so a standalone server listens on that address only, and
+[`scheduleVercelCrons()`](#vercel-cron) cannot reach it on `localhost`.
 
 ## Bun
 

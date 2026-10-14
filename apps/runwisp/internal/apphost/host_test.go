@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
@@ -338,9 +340,13 @@ func TestOverlongMessageIsAWarning(t *testing.T) {
 		line := `{"type":"output","run":"r1","stream":"stdout","line":"` + strings.Repeat("x", maxLine) + "\"}\n"
 		_, _ = io.WriteString(app.conn, line) // fails once the daemon hangs up
 	}()
-	_, stderr, exit := output(t, p)
+	_, _, exit := output(t, p)
 	assert.Equal(t, -1, exit)
-	assert.Contains(t, stderr, "disconnected")
+	assert.Eventually(t, func() bool { // the stalled connection was closed, too
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return len(h.sessions) == 0
+	}, time.Second, time.Millisecond)
 	assert.Contains(t, logs.String(), "level=WARN")
 	assert.Contains(t, logs.String(), "over the size limit")
 }
@@ -550,4 +556,114 @@ func TestClosingHandsServicesToTheNextCopy(t *testing.T) {
 	first.send(message{Type: "exit", Run: "r1", Code: code(143)})
 	_, _, _ = output(t, p)
 	assert.Equal(t, []string{"restart worker"}, services.recorded())
+}
+
+// lastRole reads what the app is sent until the daemon goes quiet and returns
+// whether the last role message made it active.
+func (a *fakeApp) lastRole() bool {
+	a.t.Helper()
+	active := false
+	for {
+		require.NoError(a.t, a.conn.SetReadDeadline(time.Now().Add(20*time.Millisecond)))
+		var m message
+		if err := a.dec.Decode(&m); err != nil {
+			return active
+		}
+		if m.Type == "role" {
+			active = *m.Active
+		}
+	}
+}
+
+func TestRoleMessagesStayInOrderWhenACopyLeaves(t *testing.T) {
+	for range 100 {
+		h := New()
+		a := connectAs(t, h, "app", 1)
+		require.True(t, a.role())
+
+		// B connects while A leaves: whichever the host sees first, B ends up
+		// active, not told to stand by after being told to take over.
+		var wg sync.WaitGroup
+		var b *fakeApp
+		wg.Add(2)
+		go func() { defer wg.Done(); b = connectAs(t, h, "app", 2) }()
+		go func() { defer wg.Done(); _ = a.conn.Close() }()
+		wg.Wait()
+
+		assert.True(t, b.lastRole())
+		h.Close()
+	}
+}
+
+// A role decided earlier but written later than a newer one must not reach the
+// app: it would overwrite the newer role.
+func TestStaleRoleIsDropped(t *testing.T) {
+	appSide, daemonSide := net.Pipe()
+	t.Cleanup(func() { _ = appSide.Close() })
+	app := &fakeApp{t: t, conn: appSide, dec: json.NewDecoder(appSide), enc: json.NewEncoder(appSide)}
+	s := newSession(daemonSide, "app", 1, time.Second)
+
+	go func() {
+		s.sendRole(2, true, false, 0)
+		s.sendRole(1, false, false, 7) // decided before the one above
+		s.sendRole(3, false, false, 8)
+	}()
+	assert.True(t, app.role())
+	m := app.next()
+	require.NotNil(t, m.Active)
+	assert.False(t, *m.Active)
+	assert.Equal(t, 8, m.Pid)
+}
+
+func TestStalledAppIsDisconnectedAndItsRunFails(t *testing.T) {
+	h := New()
+	h.writeTimeout = 50 * time.Millisecond
+	app := connect(t, h)
+	require.True(t, app.role())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan *executor.Process, 1)
+	go func() {
+		p, err := h.Start(ctx, &model.Task{Name: "digest"}, &model.Run{ID: "r1"}, digest)
+		assert.NoError(t, err)
+		started <- p
+	}()
+	require.Equal(t, "r1", app.next().Run)
+	p := <-started
+
+	// The app stays connected but reads nothing, so the stop can't be written.
+	cancel()
+	_, _, exit := output(t, p)
+	assert.Equal(t, -1, exit)
+	assert.Eventually(t, func() bool { // the stalled connection was closed, too
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return len(h.sessions) == 0
+	}, time.Second, time.Millisecond)
+}
+
+func TestConfigRepliesComeBackInRequestOrder(t *testing.T) {
+	h := New()
+	src := config.NewDocumentSource("/srv/app/runwisp.toml", []byte(`{}`))
+	var calls int
+	h.AcceptConfig(src, func() (model.ReloadResult, error) {
+		calls++
+		// The first apply is the slowest, so a reply sent by a goroutine of
+		// its own would come last.
+		if calls == 1 {
+			time.Sleep(50 * time.Millisecond)
+		}
+		return model.ReloadResult{Added: []string{fmt.Sprint("t", calls)}}, nil
+	})
+	app := connect(t, h)
+	app.role()
+
+	for range 3 {
+		app.send(message{Type: "config", Doc: json.RawMessage(digestDoc)})
+	}
+	for _, want := range []string{"t1", "t2", "t3"} {
+		m := app.next()
+		require.Equal(t, "config_ok", m.Type, m.Error)
+		assert.Equal(t, []string{want}, m.Result.Added)
+	}
 }

@@ -20,6 +20,13 @@ export interface NextConfig {
  * binary, and copies the binary into `output: "standalone"` builds.
  */
 export function withRunWisp<T extends NextConfig>(config: T): T {
+    // Vercel runs each request in a short-lived function: no process for the
+    // tasks to run in, and nothing would tell you they never ran.
+    if (process.env["VERCEL"]) {
+        throw new Error(
+            "@runwisp/js/next: tasks need a server that keeps running, and Vercel doesn't run one. Self-host the app, or remove withRunWisp().",
+        );
+    }
     const tracing = config.outputFileTracingIncludes ?? {};
     return {
         ...config,

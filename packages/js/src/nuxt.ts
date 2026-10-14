@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-// A Nuxt module: `modules: ["@runwisp/js/nuxt"]`. Ships the runwisp binary
+// A Nuxt module: `modules: ["@runwisp/js/nuxt"]`, configured under the
+// `runwisp` key of the Nuxt config. Ships the runwisp binary
 // with the build, closes RunWisp when the server stops, and runs Nitro's
 // `scheduledTasks` under RunWisp instead of Nitro's own scheduler.
 
@@ -30,16 +31,24 @@ export interface NitroConfig {
 export interface NuxtHooks {
     "nitro:config": (config: NitroConfig) => void;
     "nitro:init": (nitro: { options: { preset: string; entry?: string | undefined } }) => void;
-    "nitro:prepare:types": (types: { declarations: string[] }) => void;
+    "nitro:prepare:types": (types: { references: { path: string }[] }) => void;
 }
 
 export interface NuxtLike {
-    options: { dev: boolean };
+    options: {
+        dev: boolean;
+        buildDir: string;
+        build: { templates: { filename: string; getContents: () => string }[] };
+        runwisp?: RunWispNuxtOptions | false | undefined;
+    };
     hook<K extends keyof NuxtHooks>(name: K, fn: NuxtHooks[K]): void;
 }
 
 /** What the module tells its Nitro plugins, as a virtual module. */
 export const VIRTUAL_MODULE = "#runwisp/nuxt";
+
+/** The virtual module's types, for the app's server code. */
+export const TYPES = `declare module "${VIRTUAL_MODULE}" { export const options: import("@runwisp/js").RunWispOptions; }\n`;
 
 const here = fileURLToPath(import.meta.url);
 const plugin = (name: string) => join(dirname(here), `${name}${extname(here)}`);
@@ -48,8 +57,10 @@ const plugin = (name: string) => join(dirname(here), `${name}${extname(here)}`);
 // Bun: node-server is also what most host presets (heroku, render-com) use.
 const SERVER_ENTRIES = new Set(["node-server", "node-cluster", "node-listener", "bun"]);
 
-export default function runwispNuxt(moduleOptions: RunWispNuxtOptions, nuxt: NuxtLike): void {
-    const { config: runwispConfig, ...options } = moduleOptions;
+export default function runwispNuxt(inlineOptions: RunWispNuxtOptions, nuxt: NuxtLike): void {
+    // `runwisp: false` turns a Nuxt module off.
+    if (nuxt.options.runwisp === false) return;
+    const { config: runwispConfig, ...options } = { ...nuxt.options.runwisp, ...inlineOptions };
     // The bun preset's server exits on SIGTERM without closing Nitro, so the
     // close hook never runs: the plugin handles the signal itself there.
     let exitOnSignal = false;
@@ -64,10 +75,12 @@ export default function runwispNuxt(moduleOptions: RunWispNuxtOptions, nuxt: Nux
             `@runwisp/js/nuxt: tasks need a server that keeps running, and the "${preset}" preset doesn't start one. Build with the node-server or bun preset, or remove the module.`,
         );
     });
-    nuxt.hook("nitro:prepare:types", ({ declarations }) => {
-        declarations.push(
-            `declare module "${VIRTUAL_MODULE}" { export const options: import("@runwisp/js").RunWispOptions; }`,
-        );
+    // Its own file: Nitro's types file has imports, which would turn the
+    // declaration into an augmentation of a module that doesn't exist.
+    const types = { filename: "types/runwisp-nuxt.d.ts", getContents: () => TYPES };
+    nuxt.options.build.templates.push(types);
+    nuxt.hook("nitro:prepare:types", ({ references }) => {
+        references.push({ path: join(nuxt.options.buildDir, types.filename) });
     });
     nuxt.hook("nitro:config", (config) => {
         // Nitro allows one task under several schedules; RunWisp has one per task.
@@ -110,3 +123,6 @@ export default function runwispNuxt(moduleOptions: RunWispNuxtOptions, nuxt: Nux
         };
     });
 }
+
+// Nuxt reads the config key from here, and types the `runwisp` key with it.
+runwispNuxt.getMeta = () => Promise.resolve({ name: "@runwisp/js/nuxt", configKey: "runwisp" });

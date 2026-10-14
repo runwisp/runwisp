@@ -15,7 +15,7 @@ import {
 import { DiscoveryModule, DiscoveryService, MetadataScanner, Reflector } from "@nestjs/core";
 
 import { RunWisp, type RunWispOptions } from "./runwisp.ts";
-import type { NodeCronOptions, ScheduledTask, TaskFn } from "./scheduled-task.ts";
+import type { TaskOptions, ScheduledTask, TaskFn } from "./scheduled-task.ts";
 
 const SCHEDULE = "runwisp:schedule";
 
@@ -380,7 +380,7 @@ class Explorer implements OnModuleInit, OnModuleDestroy {
                     );
                 }
                 // Overlap and missed-run behavior as in @nestjs/schedule (and node-cron).
-                const cron: NodeCronOptions = { name };
+                const cron: TaskOptions = { name };
                 if (options.timeZone !== undefined) cron.timezone = options.timeZone;
                 if (options.waitForCompletion === true) cron.noOverlap = true;
                 return options.disabled === true

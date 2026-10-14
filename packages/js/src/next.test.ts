@@ -32,6 +32,17 @@ describe("withRunWisp", () => {
     });
 });
 
+describe("withRunWisp on Vercel", () => {
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
+    it("fails the build instead of scheduling tasks that never run", () => {
+        vi.stubEnv("VERCEL", "1");
+        expect(() => withRunWisp({})).toThrow(/Vercel/);
+    });
+});
+
 describe("scheduleVercelCrons", () => {
     afterEach(() => {
         vi.unstubAllGlobals();

@@ -208,6 +208,11 @@ export class Session {
                 resolve({ ok: false, error: "RunWisp is not connected", restart: false });
                 return;
             }
+            // Replies carry no id: they are matched to requests in order.
+            if (this.replies.length > 0) {
+                resolve({ ok: false, error: "a config push is already pending", restart: false });
+                return;
+            }
             this.replies.push(resolve);
             this.socket.write(`{"type":"config","doc":${doc}}\n`);
         });

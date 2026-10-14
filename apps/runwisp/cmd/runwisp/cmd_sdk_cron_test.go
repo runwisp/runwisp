@@ -44,8 +44,14 @@ func TestRunCron(t *testing.T) {
 	require.Len(t, doc.Errors, 1)
 	assert.Equal(t, "hour", doc.Errors[0].Field)
 
-	for _, opts := range []sdkCronOptions{{timezone: "Nowhere/Land"}, {after: "tomorrow"}, {count: -1}} {
+	for _, opts := range []sdkCronOptions{{timezone: "Nowhere/Land"}, {after: "tomorrow"}, {count: -1}, {count: maxSDKCronCount + 1}} {
 		_, userFacing = isUserFacing(runSDKCron(&out, "@daily", opts, now))
 		assert.True(t, userFacing, "%+v", opts)
 	}
+
+	out.Reset()
+	require.NoError(t, runSDKCron(&out, "@daily", sdkCronOptions{count: maxSDKCronCount, json: true}, now))
+	doc = sdkCronDoc{}
+	require.NoError(t, json.Unmarshal(out.Bytes(), &doc))
+	assert.Len(t, doc.Next, maxSDKCronCount)
 }

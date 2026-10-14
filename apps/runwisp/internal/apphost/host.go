@@ -41,6 +41,15 @@ const Protocol = "runwisp-app/1"
 // takes over within about a second of the active one leaving.
 const defaultHandoff = 10 * time.Second
 
+// defaultWriteTimeout is how long one write to an app may take. An app that
+// stays connected but stops reading would otherwise block the run manager in
+// the middle of a send; past this its connection is closed and its runs fail.
+const defaultWriteTimeout = 10 * time.Second
+
+// maxQueuedNotices bounds the overlap and missed messages waiting for a slow
+// app; past it they are dropped.
+const maxQueuedNotices = 64
+
 // maxHeldMissed bounds the missed-firing messages held for the first app to
 // connect.
 const maxHeldMissed = 100
@@ -83,7 +92,8 @@ type message struct {
 // Host tracks the connected apps and implements executor.Backend for sdk
 // units.
 type Host struct {
-	after func(time.Duration) <-chan time.Time
+	after        func(time.Duration) <-chan time.Time
+	writeTimeout time.Duration
 
 	// config and reload are set by AcceptConfig on a daemon whose config an
 	// app supplies; nil otherwise.
@@ -115,6 +125,9 @@ type Host struct {
 	leaving []*session
 	changed chan struct{}
 	closed  bool
+	// roleSeq numbers the role and alone messages as they are decided, under
+	// mu; a session drops one that arrives after a newer one (see sendOrdered).
+	roleSeq uint64
 	// quit is set once the last app said it is shutting down and then
 	// disconnected, so an idle daemon need not wait for it to come back.
 	quit bool
@@ -183,12 +196,13 @@ func (h *Host) ForwardSkippedFirings(bus *events.Bus) {
 		if active == nil {
 			return
 		}
-		// Off the publisher's goroutine: a slow app must not stall the scheduler.
-		go func() {
-			if err := active.send(m); err != nil {
-				slog.Debug("Failed to tell an app about a firing that didn't run", "err", err)
-			}
-		}()
+		// Queued for the session's own goroutine: a slow app must not stall the
+		// scheduler, and it hears these in order.
+		select {
+		case active.notices <- m:
+		default:
+			slog.Debug("Dropped a firing that didn't run: the app is too slow")
+		}
 	})
 }
 
@@ -224,7 +238,7 @@ func (h *Host) ExitWhenIdle(idle time.Duration, exit func()) {
 
 // New returns a Host with no apps connected.
 func New() *Host {
-	return &Host{after: time.After, changed: make(chan struct{})}
+	return &Host{after: time.After, writeTimeout: defaultWriteTimeout, changed: make(chan struct{})}
 }
 
 // ServeHTTP upgrades a request to an app connection and serves it until either
@@ -265,22 +279,34 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = conn.Close()
 		return
 	}
-	h.ServeConn(struct {
-		io.Reader
-		io.Writer
-		io.Closer
-	}{buf.Reader, conn, conn}, app, pid)
+	h.ServeConn(hijacked{conn, buf.Reader}, app, pid)
 }
+
+// hijacked reads through the buffer the HTTP server may already have filled,
+// and keeps the connection's deadlines for writes.
+type hijacked struct {
+	net.Conn
+	r io.Reader
+}
+
+func (c hijacked) Read(p []byte) (int, error) { return c.r.Read(p) }
 
 // ServeConn serves one connection of app (whose process is pid) until it
 // closes. Its runs that are still going end as failed when it does.
 func (h *Host) ServeConn(conn io.ReadWriteCloser, app string, pid int) {
-	s := newSession(conn, app, pid)
+	s := newSession(conn, app, pid, h.writeTimeout)
 	if !h.add(s) {
 		_ = conn.Close()
 		return
 	}
 	defer h.remove(s)
+	defer close(s.done)
+	go s.sendNotices()
+
+	// Configs apply in the order they arrive and are answered in that order:
+	// each waits for the one before it. ponytail: unbounded chain, but an app
+	// sends a document per config change and waits on each answer.
+	configsDone := closedChan
 
 	scanner := bufio.NewScanner(conn)
 	scanner.Buffer(make([]byte, 0, 64<<10), maxLine)
@@ -294,7 +320,13 @@ func (h *Host) ServeConn(conn io.ReadWriteCloser, app string, pid int) {
 		case "config":
 			// Off the read loop: a reload may stop a handler run and wait for
 			// the exit this loop has to read.
-			go h.applyConfig(s, m.Doc)
+			prev, done := configsDone, make(chan struct{})
+			configsDone = done
+			go func() {
+				defer close(done)
+				<-prev
+				h.applyConfig(s, m.Doc)
+			}()
 		case "close":
 			h.leave(s)
 		default:
@@ -309,6 +341,12 @@ func (h *Host) ServeConn(conn io.ReadWriteCloser, app string, pid int) {
 		slog.Warn("App connection failed; its runs fail", "err", err)
 	}
 }
+
+var closedChan = func() chan struct{} {
+	c := make(chan struct{})
+	close(c)
+	return c
+}()
 
 // Close disconnects every app and refuses new ones. Runs still in flight end
 // as failed.
@@ -349,6 +387,8 @@ func (h *Host) add(s *session) bool {
 		return false
 	}
 	h.sessions = append(h.sessions, s)
+	h.roleSeq++
+	seq := h.roleSeq
 	h.quit = false
 	active := h.sessions[0]
 	connected := len(h.sessions)
@@ -360,7 +400,7 @@ func (h *Host) add(s *session) bool {
 	h.broadcastLocked()
 	h.mu.Unlock()
 
-	s.sendRole(active == s, alone, active.pid)
+	s.sendRole(seq, active == s, alone, active.pid)
 	for _, m := range missed {
 		if err := s.send(m); err != nil {
 			slog.Debug("Failed to tell an app about a missed firing", "err", err)
@@ -405,16 +445,18 @@ func (h *Host) remove(s *session) {
 		alone = h.sessions[0]
 	}
 	nextAlone := h.aloneLocked()
+	h.roleSeq++
+	seq := h.roleSeq
 	h.broadcastLocked()
 	h.mu.Unlock()
 
 	_ = s.conn.Close()
 	s.disconnect()
 	if next != nil {
-		next.sendRole(true, nextAlone, 0)
+		next.sendRole(seq, true, nextAlone, 0)
 	}
 	if alone != nil {
-		if err := alone.send(message{Type: "alone"}); err != nil {
+		if err := alone.sendOrdered(seq, message{Type: "alone"}); err != nil {
 			slog.Debug("Failed to tell an app it is alone", "err", err)
 		}
 	}
@@ -441,13 +483,15 @@ func (h *Host) leave(s *session) {
 	if !last {
 		activePid = h.sessions[0].pid
 	}
+	h.roleSeq++
+	seq := h.roleSeq
 	h.mu.Unlock()
 
 	if !last {
-		s.sendRole(false, false, activePid)
+		s.sendRole(seq, false, false, activePid)
 	}
 	if next != nil {
-		next.sendRole(true, false, 0)
+		next.sendRole(seq, true, false, 0)
 	}
 	h.releaseServices(s.services(), last)
 }
@@ -576,8 +620,15 @@ type session struct {
 	app  string
 	pid  int
 
-	wmu sync.Mutex
-	enc *json.Encoder
+	// wmu orders writes. seq is the newest role or alone message written.
+	wmu          sync.Mutex
+	enc          *json.Encoder
+	writeTimeout time.Duration
+	seq          uint64
+
+	// notices holds overlap and missed messages for sendNotices to write.
+	notices chan message
+	done    chan struct{} // closed when the connection is over
 
 	mu   sync.Mutex
 	runs map[string]*handlerRun
@@ -588,8 +639,12 @@ type session struct {
 	leaving, last bool
 }
 
-func newSession(conn io.ReadWriteCloser, app string, pid int) *session {
-	return &session{conn: conn, app: app, pid: pid, enc: json.NewEncoder(conn), runs: map[string]*handlerRun{}}
+func newSession(conn io.ReadWriteCloser, app string, pid int, writeTimeout time.Duration) *session {
+	return &session{
+		conn: conn, app: app, pid: pid, enc: json.NewEncoder(conn), writeTimeout: writeTimeout,
+		notices: make(chan message, maxQueuedNotices), done: make(chan struct{}),
+		runs: map[string]*handlerRun{},
+	}
 }
 
 // error says why another app can't connect while this one is.
@@ -600,17 +655,59 @@ func (s *session) error() string {
 func (s *session) send(m message) error {
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
-	return s.enc.Encode(m)
+	return s.writeLocked(m)
+}
+
+// sendOrdered sends a role or alone message numbered seq when Host decided it
+// (under its lock). One that a newer decision already overtook is stale and is
+// dropped, so the app's last role is the daemon's latest.
+func (s *session) sendOrdered(seq uint64, m message) error {
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
+	if seq < s.seq {
+		return nil
+	}
+	s.seq = seq
+	return s.writeLocked(m)
+}
+
+// writeLocked writes m within the write timeout. A write that fails or times
+// out leaves the stream unusable, so the connection is closed: the read loop
+// ends and the app's runs fail.
+func (s *session) writeLocked(m message) error {
+	if c, ok := s.conn.(interface{ SetWriteDeadline(time.Time) error }); ok && s.writeTimeout > 0 {
+		_ = c.SetWriteDeadline(time.Now().Add(s.writeTimeout))
+	}
+	err := s.enc.Encode(m)
+	if err != nil {
+		_ = s.conn.Close()
+	}
+	return err
+}
+
+// sendNotices writes the queued overlap and missed messages until the
+// connection is over.
+func (s *session) sendNotices() {
+	for {
+		select {
+		case m := <-s.notices:
+			if err := s.send(m); err != nil {
+				slog.Debug("Failed to tell an app about a firing that didn't run", "err", err)
+			}
+		case <-s.done:
+			return
+		}
+	}
 }
 
 // sendRole tells the app whether it is active and, if so, whether it is the
 // only app connected; a standby hears the active copy's pid.
-func (s *session) sendRole(active, alone bool, activePid int) {
+func (s *session) sendRole(seq uint64, active, alone bool, activePid int) {
 	m := message{Type: "role", Active: &active, Alone: alone && active}
 	if !active {
 		m.Pid = activePid
 	}
-	if err := s.send(m); err != nil {
+	if err := s.sendOrdered(seq, m); err != nil {
 		slog.Debug("Failed to tell an app its role", "err", err)
 	}
 }

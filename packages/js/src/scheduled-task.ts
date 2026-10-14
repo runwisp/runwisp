@@ -20,8 +20,8 @@ export interface RunCoordinator {
     onComplete?(key: string): void | Promise<void>;
 }
 
-/** node-cron's TaskOptions. */
-export interface NodeCronOptions {
+/** node-cron's TaskOptions: what `schedule()` takes. `TaskConfigOptions` is the `[tasks.<name>]` table. */
+export interface TaskOptions {
     timezone?: string;
     name?: string;
     noOverlap?: boolean;
