@@ -14,6 +14,7 @@ import {
 } from "@nestjs/common";
 import { DiscoveryModule, DiscoveryService, MetadataScanner, Reflector } from "@nestjs/core";
 
+import { OVERLAPPING } from "./overlap.ts";
 import { RunWisp, type RunWispOptions } from "./runwisp.ts";
 import type { TaskOptions, ScheduledTask, TaskFn } from "./scheduled-task.ts";
 
@@ -34,15 +35,23 @@ export interface CronOptions {
     waitForCompletion?: boolean;
     /** true registers the task without its schedule: it runs from the web UI, TUI or CLI, or after `getCronJob(name).start()`. */
     disabled?: boolean;
-    /** Not supported: use timeZone. */
+    /** @deprecated Ignored: RunWisp takes a time zone, not a fixed offset. Use timeZone. */
     utcOffset?: number;
-    /** Not supported: RunWisp has no startup delay for scheduled runs. */
+    /** @deprecated Ignored: RunWisp has no startup delay for scheduled runs. */
     initialDelay?: number;
-    /** Ignored: RunWisp holds the schedule, not a timer in this process. */
+    /** @deprecated Ignored: RunWisp holds the schedule, not a timer in this process. */
     unrefTimeout?: boolean;
-    /** Ignored: RunWisp never runs a missed time late. */
+    /** @deprecated Ignored: RunWisp never runs a missed time late. */
     threshold?: number;
 }
+
+// Accepted so code written for @nestjs/schedule compiles, and warned about once each.
+const IGNORED_CRON_OPTIONS: [keyof CronOptions, string][] = [
+    ["utcOffset", "RunWisp takes a time zone, not a fixed offset; use timeZone"],
+    ["initialDelay", "RunWisp has no startup delay for scheduled runs"],
+    ["unrefTimeout", "RunWisp holds the schedule, not a timer in this process"],
+    ["threshold", "RunWisp never runs a missed time late"],
+];
 
 /** @nestjs/schedule's CronExpression, with the same values. */
 export const CronExpression = {
@@ -142,7 +151,7 @@ export function Cron(cronTime: string, options: CronOptions = {}): MethodDecorat
     return SetMetadata<string, Schedule>(SCHEDULE, { kind: "cron", cron: cronTime, options });
 }
 
-/** Runs the method every `timeout` milliseconds (at least 1000). */
+/** Runs the method every `timeout` milliseconds: whole seconds, at least 1000. */
 export function Interval(timeout: number): MethodDecorator;
 export function Interval(name: string, timeout: number): MethodDecorator;
 export function Interval(nameOrTimeout: string | number, timeout?: number): MethodDecorator {
@@ -165,6 +174,12 @@ function timed(
         typeof nameOrTimeout === "string"
             ? { kind, name: nameOrTimeout, ms: timeout ?? 0 }
             : { kind, name: undefined, ms: nameOrTimeout };
+    // RunWisp's intervals are whole seconds: rounding would change how often it runs.
+    if (kind === "interval" && !(Number.isInteger(schedule.ms / 1000) && schedule.ms >= 1000)) {
+        throw new TypeError(
+            `@runwisp/js/nestjs: @Interval(${String(schedule.ms)}): RunWisp runs intervals in whole seconds, so it takes a multiple of 1000 milliseconds, at least 1000`,
+        );
+    }
     return SetMetadata(SCHEDULE, schedule);
 }
 
@@ -176,19 +191,33 @@ function unsupported(method: string): Error {
     );
 }
 
+interface Job {
+    kind: Kind;
+    task: ScheduledTask;
+}
+
+// Each registry's jobs, kept out of the class so that adding one is not public API.
+const registries = new WeakMap<SchedulerRegistry, Map<string, Job>>();
+
+function jobsOf(registry: SchedulerRegistry): Map<string, Job> {
+    let jobs = registries.get(registry);
+    if (!jobs) {
+        jobs = new Map();
+        registries.set(registry, jobs);
+    }
+    return jobs;
+}
+
 /**
  * @nestjs/schedule's SchedulerRegistry, for the decorated methods. Each job
  * is the task's handle: `stop()`, `start()`, `getNextRun()`, `isBusy()`.
  */
 export class SchedulerRegistry {
-    private readonly jobs = new Map<string, { kind: Kind; task: ScheduledTask }>();
-
-    /** @internal */
-    add(kind: Kind, name: string, task: ScheduledTask): void {
-        this.jobs.set(name, { kind, task });
+    private get jobs(): Map<string, Job> {
+        return jobsOf(this);
     }
 
-    doesExist(type: Kind, name: string): boolean {
+    doesExist(type: "cron" | "interval" | "timeout", name: string): boolean {
         return this.jobs.get(name)?.kind === type;
     }
 
@@ -268,6 +297,7 @@ const SHUTDOWN_HOOKS = ["onModuleDestroy", "beforeApplicationShutdown", "onAppli
  */
 class Explorer implements OnModuleInit, OnModuleDestroy {
     private readonly logger = new Logger("RunWisp");
+    private readonly warned = new Set<keyof CronOptions>();
     private readonly runwisp: RunWisp;
     private readonly registry: SchedulerRegistry;
     private readonly discovery: DiscoveryService;
@@ -348,7 +378,10 @@ class Explorer implements OnModuleInit, OnModuleDestroy {
             }
             const name =
                 (schedule.kind === "cron" ? schedule.options.name : schedule.name) ?? owner;
-            this.registry.add(schedule.kind, name, this.register(schedule, name, fn));
+            jobsOf(this.registry).set(name, {
+                kind: schedule.kind,
+                task: this.register(schedule, name, fn),
+            });
         }
     }
 
@@ -374,10 +407,10 @@ class Explorer implements OnModuleInit, OnModuleDestroy {
         switch (schedule.kind) {
             case "cron": {
                 const { options } = schedule;
-                if (options.utcOffset !== undefined || options.initialDelay !== undefined) {
-                    this.logger.warn(
-                        `${name}: utcOffset and initialDelay are not supported and are ignored; use timeZone`,
-                    );
+                for (const [key, why] of IGNORED_CRON_OPTIONS) {
+                    if (options[key] === undefined || this.warned.has(key)) continue;
+                    this.warned.add(key);
+                    this.logger.warn(`${name}: @Cron option ${key} is ignored: ${why}`);
                 }
                 // Overlap and missed-run behavior as in @nestjs/schedule (and node-cron).
                 const cron: TaskOptions = { name };
@@ -388,9 +421,13 @@ class Explorer implements OnModuleInit, OnModuleDestroy {
                     : this.runwisp.schedule(schedule.cron, fn, cron);
             }
             case "interval":
-                return this.runwisp.schedule(`@every ${String(schedule.ms)}ms`, fn, { name });
+                return this.runwisp.schedule(`@every ${String(schedule.ms / 1000)}s`, fn, {
+                    name,
+                });
+            // Once per start, as @nestjs/schedule's is once per app start;
+            // runs started by hand overlap like the other decorators'.
             case "timeout":
-                return this.runwisp.task(name, { run_on_start: true }, fn);
+                return this.runwisp.task(name, { run_on_start: true, ...OVERLAPPING }, fn);
         }
     }
 }

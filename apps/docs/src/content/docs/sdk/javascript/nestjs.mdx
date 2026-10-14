@@ -81,7 +81,15 @@ export class TasksService {
 
 Each method becomes a RunWisp task. Without a `name`, the task is named
 `ClassName.methodName`. What the method logs goes to the run's log, and a
-thrown error fails the run. The method gets the run's
+thrown error fails the run.
+
+As with `@nestjs/schedule`, runs overlap: a run that comes while the last one
+is still going starts anyway, unless `waitForCompletion` skips it. Times missed
+while the app was down are not run late. The tasks get
+[`catch_up = 0`](/configuration/tasks/#catch_up), and
+[`max_concurrent = 1024`](/configuration/tasks/#max_concurrent), or
+[`on_overlap = "skip"`](/configuration/tasks/#on_overlap) with
+`waitForCompletion`. The method gets the run's
 [context](/sdk/javascript/#callback-context) as its argument, with a `signal`
 for [stopping](/sdk/javascript/#stop-a-run).
 
@@ -96,10 +104,16 @@ stays as it is.
 | @nestjs/schedule            | @runwisp/js/nestjs                                                                          |
 | --------------------------- | ------------------------------------------------------------------------------------------- |
 | `@Cron(expression, opts)`   | Same. `timeZone`, `waitForCompletion` and `disabled` work. A `Date` is not supported.       |
-| `@Interval(ms)`             | Runs every `ms` milliseconds, at least 1000.                                                |
-| `@Timeout(ms)`              | Runs once when RunWisp starts. The delay is ignored.                                        |
+| `@Interval(ms)`             | Runs every `ms` milliseconds, in whole seconds: `ms` is a multiple of 1000.                 |
+| `@Timeout(ms)`              | Runs once when RunWisp starts, with [`run_on_start`](/configuration/tasks/#run_on_start).   |
 | `SchedulerRegistry`         | Jobs are [task handles](/sdk/javascript/#task-handle): `stop()`, `start()`, `getNextRun()`. |
 | `addCronJob`, `addInterval` | Not supported. Inject `RunWisp` and call [`task()`](/sdk/javascript/#define-a-task).        |
+
+`@Interval` throws when the app starts if `ms` is not a whole number of seconds,
+since RunWisp would run it at a different interval. `@Timeout` ignores the
+delay. `@Cron` accepts `utcOffset`, `initialDelay`, `unrefTimeout` and
+`threshold` so your code compiles, ignores them, and logs a warning once for
+each. Use `timeZone` instead of `utcOffset`.
 
 `@nestjs/schedule` runs every job in every copy of the app. RunWisp runs each
 run once per data directory, however many copies run. See

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import { Module, type DynamicModule } from "@nestjs/common";
+import { Logger, Module, type DynamicModule } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
 import { describe, expect, it, vi } from "vitest";
@@ -101,12 +101,66 @@ describe("@runwisp/js/nestjs", () => {
         ]);
         expect(tasks.get("Jobs.nightly")?.getPattern()).toBe("0 03 * * *");
         expect(tasks.get("Jobs.nightly")?.getStatus()).toBe("idle");
-        expect(tasks.get("Jobs.poll")?.getPattern()).toBe("@every 30000ms");
+        expect(tasks.get("Jobs.poll")?.getPattern()).toBe("@every 30s");
         expect(tasks.get("paused-job")?.getStatus()).toBe("stopped");
         expect(tasks.get("warm-up")?.getPattern()).toBe("");
 
         await tasks.get("Jobs.nightly")?.execute();
         expect(module.get(Jobs).calls).toEqual(["nightly"]);
+        await module.close();
+    });
+
+    // The daemon's intervals are whole seconds: 1500 would run every second.
+    it("rejects an @Interval that isn't whole seconds", () => {
+        for (const ms of [1500, 500, 0, -1000, Number.NaN, Number.POSITIVE_INFINITY]) {
+            expect(() => Interval(ms)).toThrow(TypeError);
+        }
+        expect(() => Interval("sync", 2500)).toThrow(
+            "@Interval(2500): RunWisp runs intervals in whole seconds",
+        );
+        expect(() => Interval(1000)).not.toThrow();
+        expect(() => Timeout(1500)).not.toThrow();
+    });
+
+    // As in @nestjs/schedule: once per start, and runs never wait for each other.
+    it("registers @Timeout to run once on start, with overlapping runs", async () => {
+        const task = vi.spyOn(RunWisp.prototype, "task");
+        const module = await boot();
+        expect(task).toHaveBeenCalledWith(
+            "warm-up",
+            { run_on_start: true, on_overlap: "queue", max_concurrent: 1024 },
+            expect.any(Function),
+        );
+        task.mockRestore();
+        await module.close();
+    });
+
+    it("warns once for each @Cron option it ignores", async () => {
+        class Legacy {
+            a() {}
+            b() {}
+        }
+        for (const key of ["a", "b"]) {
+            const descriptor = Object.getOwnPropertyDescriptor(Legacy.prototype, key);
+            if (!descriptor) throw new Error(`no method ${key}`);
+            Cron("0 * * * *", { utcOffset: 60, threshold: 250, initialDelay: 5 })(
+                Legacy.prototype,
+                key,
+                descriptor,
+            );
+        }
+        const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+        const module = await Test.createTestingModule({
+            imports: [forRoot()],
+            providers: [Legacy],
+        }).compile();
+        await module.init();
+        expect(warn.mock.calls.map(([message]) => String(message))).toEqual([
+            "Legacy.a: @Cron option utcOffset is ignored: RunWisp takes a time zone, not a fixed offset; use timeZone",
+            "Legacy.a: @Cron option initialDelay is ignored: RunWisp has no startup delay for scheduled runs",
+            "Legacy.a: @Cron option threshold is ignored: RunWisp never runs a missed time late",
+        ]);
+        warn.mockRestore();
         await module.close();
     });
 
