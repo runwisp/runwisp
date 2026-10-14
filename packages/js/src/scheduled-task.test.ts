@@ -126,6 +126,19 @@ describe("ScheduledTask", () => {
         expect(task.isBusy()).toBe(false);
     });
 
+    it("identifies a RunWisp run by its run id, and any other by a random one", async () => {
+        const ids: string[] = [];
+        const { task, internals } = setup((ctx) => ids.push(ctx.execution.id));
+        task.on("task:stopped", (ctx) => ids.push(ctx.execution.id));
+        await internals.run(AT, { ...runContext(), runId: "01JRUN" });
+        await task.execute();
+        task.start();
+        task.stop();
+        expect(ids[0]).toBe("01JRUN");
+        expect(ids[1]).not.toBe("01JRUN");
+        expect(ids[2]).not.toBe(ids[1]);
+    });
+
     it("dates a scheduled run by its firing, and counts only scheduled runs as running", async () => {
         let release: () => void = () => undefined;
         const contexts: { date: Date; reason: string; dateLocalIso: string }[] = [];

@@ -631,6 +631,25 @@ describe("RunWisp with a daemon", () => {
         expect(seen[1]?.[1].getTime()).toBeGreaterThanOrEqual(before);
     });
 
+    it("gives the callback RunWisp's run id, as runId and execution.id", async () => {
+        const { daemon, cron } = setup();
+        await daemon.listen();
+        const seen: [string | undefined, string][] = [];
+        const task = cron.schedule("0 3 * * *", (ctx) => seen.push([ctx.runId, ctx.execution.id]), {
+            name: "nightly",
+        });
+        await cron.start();
+        daemon.send({ type: "run", run: "01JRUN", task: "nightly" });
+        await vi.waitFor(() => {
+            expect(seen).toHaveLength(1);
+        });
+        expect(seen[0]).toEqual(["01JRUN", "01JRUN"]);
+        // execute() runs in-process: RunWisp has no run for it.
+        await task.execute();
+        expect(seen[1]?.[0]).toBeUndefined();
+        expect(seen[1]?.[1]).toMatch(/^[0-9a-f-]{36}$/);
+    });
+
     it("shuts down within the timeout, destroying every task", async () => {
         const { daemon, cron } = setup();
         await daemon.listen();

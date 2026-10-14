@@ -110,10 +110,10 @@ export function forkedTask(
                         ),
                     );
             });
-            const { date, dateLocalIso, triggeredAt, execution, env, params } = context;
+            const { date, dateLocalIso, triggeredAt, execution, env, params, runId } = context;
             child.send({
                 path: url,
-                context: { date, dateLocalIso, triggeredAt, execution, env, params },
+                context: { date, dateLocalIso, triggeredAt, execution, env, params, runId },
             });
         });
 }

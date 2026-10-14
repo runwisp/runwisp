@@ -33,7 +33,8 @@ function context(signal = new AbortController().signal): Omit<TaskContext, "task
         date,
         dateLocalIso: "2026-01-02T03:04:00.000Z",
         triggeredAt: date,
-        execution: { id: "e1", reason: "scheduled", startedAt: date },
+        execution: { id: "01JRUN", reason: "scheduled", startedAt: date },
+        runId: "01JRUN",
     };
 }
 
@@ -69,14 +70,14 @@ describe("forkedTask", () => {
         const url = job(
             "ok.mjs",
             `export async function task(ctx) {
-                console.log(process.env.GREETING, ctx.params.who, ctx.date.toISOString(), ctx.execution.reason);
+                console.log(process.env.GREETING, ctx.params.who, ctx.date.toISOString(), ctx.execution.reason, ctx.runId, ctx.execution.id);
                 console.error("to stderr");
                 return { pid: process.pid };
             }`,
         );
         const { lines, result, error } = await captured(url);
         expect(lines).toEqual([
-            ["stdout", "hi you 2026-01-02T03:04:00.000Z scheduled"],
+            ["stdout", "hi you 2026-01-02T03:04:00.000Z scheduled 01JRUN 01JRUN"],
             ["stderr", "to stderr"],
         ]);
         expect(error).toBeUndefined();

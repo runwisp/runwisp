@@ -860,7 +860,12 @@ export class RunWisp {
 
     private readonly serve: Serve = (request, signal, sink) =>
         runCaptured(sink, async () => {
-            const run: RunContext = { signal, env: request.env, params: request.params };
+            const run: RunContext = {
+                signal,
+                env: request.env,
+                params: request.params,
+                runId: request.run,
+            };
             const task = this.tasks.get(request.task)?.internals;
             const service = this.services.get(request.task)?.fn;
             if (!task && !service) {

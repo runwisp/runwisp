@@ -53,6 +53,7 @@ export interface TaskOptions {
 }
 
 export interface Execution {
+    /** The RunWisp run id (`runId`) for a run RunWisp started, so the run can be found in its UI; a random UUID for `execute()` and for events about the task. */
     id: string;
     reason: "invoked" | "scheduled";
     startedAt?: Date;
@@ -69,6 +70,8 @@ export interface RunContext {
     env: Record<string, string>;
     /** The run's parameter values, by key. */
     params: Record<string, string>;
+    /** The RunWisp run id, as in the web UI and REST API. undefined for `execute()`, which RunWisp doesn't record. */
+    runId?: string;
 }
 
 export interface TaskContext extends RunContext {
@@ -363,7 +366,7 @@ export class ScheduledTask {
         if (at && this.#busy > 0) this.#emit("execution:overlap", at);
         const startedAt = new Date();
         const execution: Execution = {
-            id: randomUUID(),
+            id: run.runId ?? randomUUID(),
             reason: at ? "scheduled" : "invoked",
             startedAt,
         };

@@ -383,16 +383,17 @@ daemon's grammar and timezone. Answers are cached.
 
 The callback gets one argument:
 
-| Field          | Description                                                                                                                                                                     |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `signal`       | `AbortSignal`, aborted when the run is stopped or times out.                                                                                                                    |
-| `env`          | The run's [environment](#environment-and-parameters). Empty for `execute()`.                                                                                                    |
-| `params`       | The run's [parameters](#environment-and-parameters). Empty for `execute()`.                                                                                                     |
-| `date`         | The scheduled time a scheduled run is for. Otherwise, when the callback started.                                                                                                |
-| `dateLocalIso` | `date` as local time in the task's timezone, with its offset.                                                                                                                   |
-| `triggeredAt`  | When the callback started.                                                                                                                                                      |
-| `task`         | The task handle.                                                                                                                                                                |
-| `execution`    | `{ id, reason, startedAt, finishedAt?, result?, error? }`. `reason` is `"scheduled"` for a run the schedule started, and `"invoked"` for `execute()` and a run started by hand. |
+| Field          | Description                                                                                                                                                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `signal`       | `AbortSignal`, aborted when the run is stopped or times out.                                                                                                                                                                   |
+| `env`          | The run's [environment](#environment-and-parameters). Empty for `execute()`.                                                                                                                                                   |
+| `params`       | The run's [parameters](#environment-and-parameters). Empty for `execute()`.                                                                                                                                                    |
+| `runId`        | The RunWisp run id, as shown in the web UI. Absent for `execute()`, which RunWisp doesn't record.                                                                                                                              |
+| `date`         | The scheduled time a scheduled run is for. Otherwise, when the callback started.                                                                                                                                               |
+| `dateLocalIso` | `date` as local time in the task's timezone, with its offset.                                                                                                                                                                  |
+| `triggeredAt`  | When the callback started.                                                                                                                                                                                                     |
+| `task`         | The task handle.                                                                                                                                                                                                               |
+| `execution`    | `{ id, reason, startedAt, finishedAt?, result?, error? }`. `id` is the `runId` for a run RunWisp started. `reason` is `"scheduled"` for a run the schedule started, and `"invoked"` for `execute()` and a run started by hand. |
 
 ### Events
 
