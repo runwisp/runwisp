@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The TUI task info (`i`) shows the task's timeout, its log limit and retention, its usual CPU time and memory, and opens with the first lines of its `run` command; press `c` to see the whole command. It scrolls when it doesn't fit.
 - `warn_after` on a task sends a notification once when a run is still going after that long, without stopping it. It reaches the same places as a failure alert, or any `[[route]]` that lists `long_running`.
 - `runwisp upgrade` updates RunWisp the way it was installed (Homebrew, npm/bun/pnpm/yarn, or the install script) and can restart the daemon now, once it is idle, or later.
+- `runwisp import ofelia` converts Ofelia jobs, from an INI config or `ofelia.*` compose labels, into tasks.
+- A task with `compose_service` and `run` can leave out `compose_file` when RunWisp runs in the same compose project; it needs only the Docker socket.
+- `[daemon] log_output` (or `RUNWISP_LOG_OUTPUT`) prints task output to the daemon's stdout as `task | line`. The Docker image turns it on, so `docker compose logs runwisp` shows job output.
+- The Docker image runs RunWisp under `tini`, so processes your tasks leave behind are reaped.
+- `runwisp` next to a compose file first offers a starter that schedules jobs in the running stack, then one that imports its services.
 
 ### Changed
 
@@ -21,9 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The **Star** button on the TUI Home screen works from the keyboard: press ↑ from the top row, then Enter.
 - A run that fails because its `compose_service` container isn't running explains why in the run log: it names the compose project RunWisp searched and how to point it at the right one.
 - The TUI, `runwisp --help`, CLI errors, the startup banner and log lines use the teal brand colors of the Web UI, readable on light and dark terminals.
+- `runwisp validate` rejects a task whose `compose_service` is not in its `compose_file`.
+- A scheduled `compose_mode = "run"` job no longer publishes the service's ports or takes its network alias, so it can run beside the stack.
 
 ### Fixed
 
+- A `[compose.<alias>]` block runs in the compose file's own project unless `project_name` is set, so it no longer starts a second copy of a running stack.
 - A task or service with `compose_file` now runs in the compose file's own project, like `docker compose up` in that directory. A fresh container joins the stack's network and named volumes, so a scheduled job can reach `db` and see the stack's data instead of an empty volume of its own.
 - The TUI log search (`/`) and the shutdown spinner use the TUI's colors instead of falling back to the terminal's own.
 - The TUI log search (`/`) now shows its results every time instead of sometimes staying empty.

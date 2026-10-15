@@ -30,8 +30,9 @@ import (
 // the import command's central promise. Inverted, a new fixture is checked by
 // default and a genuinely-unloadable one has to be written down here.
 var goldensThatMustNotLoad = map[string]string{
-	"testdata/cron/invalid.golden.toml": "an unparseable cron expression becomes a # TODO",
-	"testdata/cron/badtz.golden.toml":   "CRON_TZ names a zone RunWisp cannot load",
+	"testdata/cron/invalid.golden.toml":  "an unparseable cron expression becomes a # TODO",
+	"testdata/cron/badtz.golden.toml":    "CRON_TZ names a zone RunWisp cannot load",
+	"testdata/ofelia/broken.golden.toml": "an unparseable schedule and a missing command become # TODOs",
 	"testdata/systemd/messy.golden.toml": "references EnvironmentFile paths that exist only on the " +
 		"source host — the operator's own box has them, a sandbox doesn't",
 }
@@ -295,4 +296,23 @@ func TestLiveTOMLOfAWhollyUnusableCrontabIsStillValid(t *testing.T) {
 	if len(skippedLive(res)) != 2 {
 		t.Errorf("expected both jobs reported as skipped, got %+v", skippedLive(res))
 	}
+}
+
+// TestOfeliaComposeImportLoads imports a compose file by absolute path, so the
+// emitted compose_file resolves wherever the config is loaded, and requires the
+// result to load: the compose_service of each job-exec is checked against it.
+func TestOfeliaComposeImportLoads(t *testing.T) {
+	body, err := os.ReadFile("testdata/ofelia/compose.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "compose.yml")
+	if err := os.WriteFile(file, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := importer.ParseOfeliaFiles([]string{file}, importer.OfeliaOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertConfigLoads(t, res.TOML())
 }

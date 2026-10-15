@@ -80,33 +80,26 @@ func promptAndScaffold(f Flags, in io.Reader, out io.Writer) (installed bool, er
 		offer = offerFirstRunCutover(f, out, cronScaffoldWriter(composeFile, composeAlias, hasCompose))
 	}
 
-	var question string
-	switch {
-	case hasCron:
-		fmt.Fprintf(out, "Found %d cron job(s) on this box (%s).\n",
-			scan.Jobs, strings.Join(cutover.DescribeSources(scan.Files), ", "))
-		switch {
-		case offer != nil:
-			question = cutover.DescribeOffer(offer.plan)
-		case hasCompose:
-			fmt.Fprint(out, heldNote)
-			question = "Create a starter that imports the compose services and reads these live?"
-		default:
-			fmt.Fprint(out, heldNote)
-			question = "Read them as RunWisp tasks?"
-		}
-	case hasCompose:
-		question = "Create a starter that imports its services?"
-	default:
-		question = "Create a starter with one example task?"
-	}
+	question := firstRunQuestion(out, scan, offer, hasCron, hasCompose)
 
 	// isTTY is unconditionally true: scaffoldIfMissing already gated the call on
 	// a real terminal, and the tests here drive `in` directly with a
 	// strings.Reader that is never one.
-	ok, err := autostart.NewStdioPrompter(in, out, true, false).Confirm(question, true)
+	prompter := autostart.NewStdioPrompter(in, out, true, false)
+	ok, err := prompter.Confirm(question, true)
 	if err != nil {
 		return false, err
+	}
+	// A compose directory without crontabs has two starters: jobs in a stack
+	// that keeps running under `docker compose up`, or RunWisp running its
+	// services. Declining the first offers the second.
+	composeOnly := hasCompose && !hasCron
+	jobsOnly := composeOnly && ok
+	if composeOnly && !ok {
+		ok, err = prompter.Confirm("Create a starter that imports its services instead? (RunWisp runs them in place of `docker compose up`)", true)
+		if err != nil {
+			return false, err
+		}
 	}
 	if !ok {
 		return false, fmt.Errorf("no runwisp.toml at %s — create one and try again (docs: https://docs.runwisp.com/configuration/overview/)", loc)
@@ -116,11 +109,43 @@ func promptAndScaffold(f Flags, in io.Reader, out io.Writer) (installed bool, er
 		return offer.perform(out)
 	}
 
+	if jobsOnly {
+		if err := configedit.WriteNew(path, config.ComposeJobsStarterConfig(composeFile)); err != nil {
+			return false, fmt.Errorf("write starter: %w", err)
+		}
+		fmt.Fprintf(out, "Created %s\n", path)
+		return false, nil
+	}
+
 	if err := writeScaffold(path, composeFile, composeAlias, hasCompose, scan.Globs, hasCron); err != nil {
 		return false, fmt.Errorf("write starter: %w", err)
 	}
 	fmt.Fprintf(out, "Created %s\n", path)
 	return false, nil
+}
+
+// firstRunQuestion words the confirm prompt for what the scaffold found, and
+// prints the context the question leans on.
+func firstRunQuestion(out io.Writer, scan config.CronScan, offer *firstRunCutover, hasCron, hasCompose bool) string {
+	switch {
+	case hasCron:
+		fmt.Fprintf(out, "Found %d cron job(s) on this box (%s).\n",
+			scan.Jobs, strings.Join(cutover.DescribeSources(scan.Files), ", "))
+		switch {
+		case offer != nil:
+			return cutover.DescribeOffer(offer.plan)
+		case hasCompose:
+			fmt.Fprint(out, heldNote)
+			return "Create a starter that imports the compose services and reads these live?"
+		default:
+			fmt.Fprint(out, heldNote)
+			return "Read them as RunWisp tasks?"
+		}
+	case hasCompose:
+		return "Create a starter that schedules jobs in its services? (`docker compose up` keeps running the stack)"
+	default:
+		return "Create a starter with one example task?"
+	}
 }
 
 // heldNote is the offer for a host that cannot retire cron itself (non-root,

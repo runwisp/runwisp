@@ -131,10 +131,11 @@ func TestSettingsApplier_ReportsChangedKeys(t *testing.T) {
 	assert.Empty(t, keys)
 
 	updated := &config.Config{
+		Daemon:  config.Daemon{LogOutput: true},
 		Storage: config.Storage{MaxSize: 1},
 		Notify:  config.NotifyConfig{Routes: []config.NotificationRoute{{NotifierID: []string{"inapp"}}}},
 	}
 	keys, _, err = a.prepare(old, updated)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"storage.max_size", "notifications"}, keys)
+	assert.Equal(t, []string{"daemon.log_output", "storage.max_size", "notifications"}, keys)
 }

@@ -70,6 +70,13 @@ var (
 			"RunWisp, or each one runs twice.",
 		},
 	}
+	sourceOfelia = importSource{
+		label: "Ofelia config",
+		stillRuns: []string{
+			"Ofelia still runs these jobs. Stop it (`docker compose stop ofelia`) before",
+			"starting RunWisp, or each one runs twice.",
+		},
+	}
 	sourceSystemd = importSource{
 		label: "systemd unit",
 		stillRuns: []string{

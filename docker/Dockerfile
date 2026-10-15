@@ -7,7 +7,9 @@
 # distroless are not viable bases; alpine/debian-slim are the smallest bases
 # that provide one. bash gives `run =` tasks a real shell to script against;
 # tzdata gives them real IANA zoneinfo data (the daemon's own scheduler embeds
-# tzdata separately, see cmd/runwisp/main.go). The Docker-CLI variant (see
+# tzdata separately, see cmd/runwisp/main.go). tini is PID 1: the daemon does
+# not reap orphaned grandchildren itself, and a task that backgrounds a process
+# would otherwise leave a zombie behind for the life of the container. The Docker-CLI variant (see
 # ARG VARIANT below) builds from this same file rather than a second one.
 #
 # Build context is arranged by docker/build-local.sh (local builds) or the
@@ -19,11 +21,11 @@ ARG BASE=alpine
 ARG VARIANT=plain
 
 FROM alpine:3.22 AS base-alpine
-RUN apk add --no-cache ca-certificates bash tzdata
+RUN apk add --no-cache ca-certificates bash tzdata tini
 
 FROM debian:trixie-slim AS base-debian
 RUN DEBIAN_FRONTEND=noninteractive apt-get update \
-	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates bash tzdata \
+	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates bash tzdata tini \
 	&& rm -rf /var/lib/apt/lists/*
 
 FROM base-${BASE} AS runtime
@@ -53,6 +55,7 @@ ENV RUNWISP_CONFIG=/etc/runwisp/runwisp.toml \
 	RUNWISP_DATA=/var/lib/runwisp \
 	RUNWISP_HOST=0.0.0.0 \
 	RUNWISP_LOG_FORMAT=text \
+	RUNWISP_LOG_OUTPUT=true \
 	RUNWISP_INSTALL_SOURCE=docker
 
 EXPOSE 9477
@@ -65,7 +68,9 @@ VOLUME ["/var/lib/runwisp"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 	CMD runwisp status >/dev/null 2>&1 || exit 1
 
-ENTRYPOINT ["docker-entrypoint.sh"]
+# -s makes tini reap orphans even when it is not PID 1 (docker run --init puts
+# its own init first).
+ENTRYPOINT ["tini", "-s", "--", "docker-entrypoint.sh"]
 CMD ["runwisp", "daemon"]
 
 FROM runtime AS variant-plain

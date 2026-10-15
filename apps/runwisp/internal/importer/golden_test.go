@@ -295,3 +295,61 @@ func checkGolden(t *testing.T, path, got string) {
 			path, got, want)
 	}
 }
+
+// ofeliaGoldenCases pairs an Ofelia source with the notes it must produce: an
+// INI config (a container exec, a docker run, a local job, a Swarm job RunWisp
+// can't run, and a schedule that doesn't parse) and a compose file whose labels
+// define the jobs (a service without ofelia.enabled is left out, with a note).
+var ofeliaGoldenCases = []struct {
+	name        string
+	file        string
+	expectNotes []NoteKind
+}{
+	{name: "ini", file: "testdata/ofelia/config.ini", expectNotes: []NoteKind{
+		NoteSectionDaemon,      // [global]
+		NoteKeysUnsupported,    // tty = true
+		NoteSectionUnsupported, // job-service-run
+	}},
+	{name: "broken", file: "testdata/ofelia/broken.ini", expectNotes: []NoteKind{
+		NoteCronUnparseable, // "every now and then"
+		NoteNoCommand,       // the second job has no command
+	}},
+	{name: "compose", file: "testdata/ofelia/compose.yml", expectNotes: []NoteKind{
+		NoteSectionDaemon,       // ofelia.slack-webhook
+		NoteSectionUnrecognized, // service "disabled"
+		NoteKeysUnsupported,     // report's user
+	}},
+}
+
+func TestOfeliaGolden(t *testing.T) {
+	for _, tc := range ofeliaGoldenCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// A compose file is imported by absolute path; read it from a temp dir
+			// and write that dir as /srv/shop so the golden is the same everywhere.
+			file, dir := tc.file, ""
+			if filepath.Ext(file) == ".yml" {
+				body, err := os.ReadFile(file)
+				if err != nil {
+					t.Fatal(err)
+				}
+				dir = t.TempDir()
+				file = filepath.Join(dir, "compose.yml")
+				if err := os.WriteFile(file, body, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			res, err := ParseOfeliaFiles([]string{file}, OfeliaOptions{})
+			if err != nil {
+				t.Fatalf("ParseOfeliaFiles: %v", err)
+			}
+			assertReportAccountsForTOML(t, res)
+			toml := res.TOML()
+			if dir != "" {
+				toml = strings.ReplaceAll(toml, dir, "/srv/shop")
+			}
+			checkGolden(t, goldenPath(tc.file), toml)
+			checkReportGolden(t, reportGoldenPath(tc.file), res)
+			assertNotes(t, res, tc.expectNotes)
+		})
+	}
+}

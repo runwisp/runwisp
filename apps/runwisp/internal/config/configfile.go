@@ -17,6 +17,14 @@ func ComposeStarterConfig(composeFilename, alias string) string {
 	return fillCompose(composeStarterConfig, composeFilename, alias)
 }
 
+// ComposeJobsStarterConfig returns the runwisp.toml for a stack that keeps
+// running under `docker compose up`: RunWisp only schedules jobs in it. The
+// example jobs are commented out, since which service they target is the
+// operator's call.
+func ComposeJobsStarterConfig(composeFilename string) string {
+	return fillCompose(composeJobsStarterConfig, composeFilename, "")
+}
+
 // fillCompose substitutes the compose placeholders in a starter template.
 func fillCompose(body, composeFilename, alias string) string {
 	return strings.NewReplacer("{{compose}}", composeFilename, "{{alias}}", alias).Replace(body)
@@ -130,4 +138,30 @@ file = "./{{compose}}"
 # [compose.{{alias}}.web]
 # restart           = "always"
 # notify = ["slack-prod"]
+`
+
+const composeJobsStarterConfig = SchemaDirective + `# runwisp.toml
+# Docs: https://docs.runwisp.com/recipes/docker/
+#
+# RunWisp detected {{compose}} next to this file. Your stack keeps running from
+# ` + "`docker compose up`" + `; RunWisp only schedules jobs in it and records what each
+# one printed and how it ended. Add RunWisp to the stack as a service (see
+# https://docs.runwisp.com/getting-started/docker/) or run it on the host.
+
+[tasks.hello]
+description = "Example task. Trigger it from the TUI (press r) or the Web UI."
+run = "echo hello from runwisp"
+
+# Run a command inside a running service of the stack:
+# [tasks.schedule]
+# cron            = "* * * * *"
+# compose_file    = "./{{compose}}"
+# compose_service = "app"
+# run             = "php artisan schedule:run"
+
+# Start a fresh container of a service on a schedule (a job service in {{compose}}):
+# [tasks.backup]
+# cron            = "0 3 * * *"
+# compose_file    = "./{{compose}}"
+# compose_service = "backup"
 `

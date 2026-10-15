@@ -361,15 +361,13 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 
 // applyComposeBackend routes the task through the compose backend when
 // compose_file is set, rejecting host-process-only keys (shell/umask/user) that
-// have no meaning for a `docker compose` run. compose_service without
-// compose_file is rejected. Both checks run here, where the raw explicit values
-// are still visible (applyInheritedDefaults later erases the explicit-vs-default
-// signal by filling in shell = /bin/sh).
+// have no meaning for a `docker compose` run. compose_service alone is the
+// sidecar form: it execs into a running service of the compose project RunWisp
+// itself runs in, and so needs `run`. Both checks run here, where the raw
+// explicit values are still visible (applyInheritedDefaults later erases the
+// explicit-vs-default signal by filling in shell = /bin/sh).
 func (w *taskServiceWireCore) applyComposeBackend(task *model.Task, name, label string) error {
-	if w.ComposeFile == "" {
-		if w.ComposeService != "" {
-			return fmt.Errorf("%s %q sets compose_service without compose_file", label, name)
-		}
+	if w.ComposeFile == "" && w.ComposeService == "" {
 		return nil
 	}
 	if w.Shell != "" {
@@ -391,6 +389,9 @@ func (w *taskServiceWireCore) applyComposeBackend(task *model.Task, name, label 
 	mode, err := w.resolveComposeMode(name, label)
 	if err != nil {
 		return err
+	}
+	if w.ComposeFile == "" && mode != model.ComposeModeExec {
+		return fmt.Errorf("%s %q sets compose_service without compose_file; that form runs `run` inside the running service, so set `run`, or set compose_file to start a fresh container", label, name)
 	}
 	command := ""
 	if mode == model.ComposeModeExec {
@@ -859,6 +860,7 @@ type daemonWire struct {
 	// CheckUpdates is a pointer so an omitted key (nil → default true) is
 	// distinguishable from an explicit `check_updates = false`.
 	CheckUpdates *bool `toml:"check_updates,omitempty"`
+	LogOutput    bool  `toml:"log_output,omitempty"`
 	// MetricsEnabled is a pointer for the same reason as CheckUpdates: an
 	// omitted key (nil → implied by metrics_listen) must be distinguishable
 	// from an explicit `metrics_enabled = false`, which is a conflicting
@@ -919,6 +921,7 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 		ShutdownTimeout:      shutdown,
 		ExternalURL:          externalURL,
 		CheckUpdates:         checkUpdates,
+		LogOutput:            w.LogOutput,
 		MetricsEnabled:       metricsEnabled,
 		MetricsListen:        metricsListen,
 		TLS:                  tlsMode,

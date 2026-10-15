@@ -18,7 +18,9 @@ it, you don't need this page: see [Docker tasks](/recipes/docker/).
 ## Point RunWisp at the compose file
 
 Run `runwisp` in the directory with your `docker-compose.yml`. It detects the
-file and offers to create a `runwisp.toml` that imports it:
+file and first offers a starter that only schedules jobs in the stack. Decline
+it, and accept the next offer to create a `runwisp.toml` that imports the
+services:
 
 ```toml title="runwisp.toml"
 [compose.myapp]

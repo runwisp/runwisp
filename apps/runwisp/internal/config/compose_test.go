@@ -59,8 +59,28 @@ func TestComposeExpansion_AutoDiscoveryImportsAllServices(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "web", ce.Service)
 	assert.Equal(t, model.ComposeModeRun, ce.Mode)
-	assert.Equal(t, "myapp", ce.ProjectName)
 	assert.Equal(t, model.ComposePullMissing, ce.Pull)
+	assert.True(t, ce.ServicePorts, "an imported service stands in for `up`, so it publishes the service's ports")
+}
+
+// An unset project_name means the compose file's own project, not the alias.
+// Naming it after the alias started a second copy of the stack, with network
+// and named volumes of its own, whenever the alias differed from the directory.
+func TestComposeExpansion_BlockDefaultsToFilesOwnProject(t *testing.T) {
+	cfg, err := Load(writeComposeConfig(t, "name: shopstack\nservices:\n  web:\n    image: nginx\n", `[compose.myapp]
+`))
+	require.NoError(t, err)
+	ce, ok := findTask(t, cfg, "myapp.web").ExecutionDef.(*model.ComposeExecution)
+	require.True(t, ok)
+	assert.Equal(t, "shopstack", ce.ProjectName)
+
+	cfg, err = Load(writeComposeConfig(t, "name: shopstack\nservices:\n  web:\n    image: nginx\n", `[compose.myapp]
+project_name = "pinned"
+`))
+	require.NoError(t, err)
+	ce, ok = findTask(t, cfg, "myapp.web").ExecutionDef.(*model.ComposeExecution)
+	require.True(t, ok)
+	assert.Equal(t, "pinned", ce.ProjectName, "an explicit project_name still wins")
 }
 
 func TestComposeExpansion_ServicesAllowlistFiltersDown(t *testing.T) {
@@ -326,7 +346,7 @@ func TestComposeExpansion_ExecModeLeavesProjectToCompose(t *testing.T) {
 cron            = "* * * * *"
 run             = "php artisan schedule:run"
 compose_file    = "./docker-compose.yml"
-compose_service = "app"
+compose_service = "worker"
 `))
 	require.NoError(t, err)
 
@@ -344,7 +364,7 @@ func TestComposeExpansion_RunModeLeavesProjectToCompose(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[tasks.nightly-backup]
 cron            = "0 3 * * *"
 compose_file    = "./docker-compose.yml"
-compose_service = "backup"
+compose_service = "worker"
 `))
 	require.NoError(t, err)
 
@@ -362,7 +382,7 @@ func TestComposeExpansion_ComposeFileWithoutRunStaysServicesMode(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[tasks.backup]
 cron            = "0 3 * * *"
 compose_file    = "./docker-compose.yml"
-compose_service = "backup"
+compose_service = "worker"
 `))
 	require.NoError(t, err)
 	require.Len(t, cfg.Tasks, 1)
@@ -401,7 +421,7 @@ func TestComposeExpansion_ParamsAcceptedInBothModes(t *testing.T) {
 		runMode, err := Load(writeConfig(t, `[tasks.report]
 cron            = "0 3 * * *"
 compose_file    = "./docker-compose.yml"
-compose_service = "app"
+compose_service = "worker"
 params          = [ `+param+` ]
 `))
 		require.NoError(t, err, "run mode should accept %s", param)
@@ -411,7 +431,7 @@ params          = [ `+param+` ]
 cron            = "0 3 * * *"
 run             = "./report.sh"
 compose_file    = "./docker-compose.yml"
-compose_service = "app"
+compose_service = "worker"
 compose_mode    = "exec"
 params          = [ `+param+` ]
 `))
@@ -495,11 +515,29 @@ compose_service = "web"
 }
 
 func TestComposeExpansion_ComposeServiceWithoutComposeFileRejected(t *testing.T) {
-	_, err := Load(writeConfig(t, `[services.api]
-compose_service = "web"
+	for _, extra := range []string{"", "compose_mode = \"run\"\nrun = \"x\"\n"} {
+		_, err := Load(writeConfig(t, "[services.api]\ncompose_service = \"web\"\n"+extra))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "compose_service")
+	}
+}
+
+// compose_service alone is the sidecar form: exec into a service of the project
+// RunWisp itself runs in. The file is empty here and the executor finds the
+// project from the container's own labels.
+func TestComposeExpansion_ComposeServiceAloneIsOwnProjectExec(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `[tasks.schedule]
+cron            = "* * * * *"
+run             = "php artisan schedule:run"
+compose_service = "app"
 `))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "compose_service")
+	require.NoError(t, err)
+	ce, ok := cfg.Tasks[0].ExecutionDef.(*model.ComposeExecution)
+	require.True(t, ok)
+	assert.Empty(t, ce.File)
+	assert.Equal(t, "app", ce.Service)
+	assert.Equal(t, model.ComposeModeExec, ce.Mode)
+	assert.Equal(t, "php artisan schedule:run", ce.Command)
 }
 
 func TestComposeExpansion_NoComposeFileFoundProducesClearError(t *testing.T) {
@@ -729,4 +767,40 @@ func findTask(t *testing.T, cfg *Config, name string) *model.Task {
 	}
 	t.Fatalf("task %q not found in cfg (have: %v)", name, taskNames(cfg))
 	return nil
+}
+
+// A compose_service typo fails at load (and so `runwisp validate`), not on the
+// first run. A service behind a profile still counts, because docker enables
+// the profile of the service a run or exec targets.
+func TestComposeService_MustExistInFile(t *testing.T) {
+	const file = "services:\n  app:\n    image: nginx\n  backup:\n    image: postgres\n    profiles: [jobs]\n"
+	task := func(svc string) string {
+		return "[tasks.job]\ncron = \"* * * * *\"\ncompose_file = \"./docker-compose.yml\"\ncompose_service = \"" + svc + "\"\n"
+	}
+
+	_, err := Load(writeComposeConfig(t, file, task("backup")))
+	require.NoError(t, err, "a profiled service is runnable")
+
+	_, err = Load(writeComposeConfig(t, file, task("bakcup")))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `compose_service "bakcup"`)
+	assert.Contains(t, err.Error(), "app, backup")
+
+	_, err = Load(writeComposeConfig(t, "services: [", task("anything")))
+	require.NoError(t, err, "a file that does not parse here is left for docker to report")
+}
+
+func TestComposeOwnProjectWarning_OnlyOutsideContainer(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `[tasks.schedule]
+cron            = "* * * * *"
+run             = "true"
+compose_service = "app"
+`))
+	require.NoError(t, err)
+
+	defer func(orig func() bool) { runningInContainer = orig }(runningInContainer)
+	runningInContainer = func() bool { return false }
+	assert.Len(t, composeOwnProjectWarnings(cfg), 1)
+	runningInContainer = func() bool { return true }
+	assert.Empty(t, composeOwnProjectWarnings(cfg))
 }

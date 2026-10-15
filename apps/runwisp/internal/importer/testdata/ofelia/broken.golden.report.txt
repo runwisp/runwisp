@@ -1,0 +1,4 @@
+blocked	[job-exec "no-schedule-words"]	no-schedule-words	every now and then	docker exec shop-app-1 true
+	cron-unparseable
+blocked	[job-exec "no-command"]	no-command	@daily	docker exec shop-app-1
+	no-command

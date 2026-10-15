@@ -29,7 +29,7 @@ file         = "./docker-compose.yml"   # default: auto-discovered next to runwi
 services     = ["api", "worker"]         # keep only these; "-db" drops one instead; omit to import all
 import       = "services"                # "services" (default) | "stack"
 group        = "myapp"                   # UI group; defaults to the alias
-project_name = "myapp"                   # docker compose -p; defaults to the alias
+project_name = "myapp"                   # docker compose -p; defaults to the file's own project
 profiles     = ["production"]            # docker compose --profile
 env_file     = ["./.env.prod"]           # docker compose --env-file
 working_dir  = "/opt/myapp"              # cwd for compose invocation; defaults to dir of `file`
@@ -97,9 +97,11 @@ group = "myapp"
 
 ### project_name
 
-**type**: `string` **default**: the alias
+**type**: `string` **default**: the compose file's own project
 
-The compose project name (`docker compose -p`).
+The compose project name (`docker compose -p`). Unset, it is the project
+`docker compose up` uses in the file's directory: `COMPOSE_PROJECT_NAME`, the
+file's top-level `name:`, or the directory name.
 
 ```toml title="runwisp.toml"
 [compose.myapp]
@@ -367,8 +369,9 @@ compose_file    = "./docker-compose.yml"
 compose_service = "backup"
 ```
 
-Both run in the compose file's own project, not in a `[compose.*]` block's
-[`project_name`](#project_name); see [`compose_file`](/configuration/tasks/#compose_file).
+Both run in the compose file's own project, which is also the default for a
+`[compose.*]` block's [`project_name`](#project_name); see
+[`compose_file`](/configuration/tasks/#compose_file).
 
 ## Running a command in a service: `compose_mode`
 
@@ -388,10 +391,28 @@ run             = "php artisan schedule:run"
 
 [`compose_mode`](/configuration/tasks/#compose_mode) picks the mode:
 
-| Value  | What happens                                                                                                                               |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `exec` | `docker compose exec` in the running container. Requires `run`. Default when `run` is set.                                                 |
-| `run`  | `docker compose run --rm` in a new container. Runs your `run` command if set, else the service's own command. Default when `run` is unset. |
+| Value  | What happens                                                                                                                                                                               |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `exec` | `docker compose exec` in the running container. Requires `run`. Default when `run` is set.                                                                                                 |
+| `run`  | `docker compose run --rm` in a new container, without the service's ports or network aliases. Runs your `run` command if set, else the service's own command. Default when `run` is unset. |
+
+### Without `compose_file`
+
+**since**: `1.7`
+
+When RunWisp runs as a service of the same compose project, an `exec` task can
+leave out `compose_file`. RunWisp reads the project from its own container's
+labels, so it needs only the Docker socket, not the project directory.
+
+```toml title="runwisp.toml"
+[tasks.laravel-schedule]
+cron            = "* * * * *"
+compose_service = "app"
+run             = "php artisan schedule:run"
+```
+
+`compose_mode = "run"` still needs `compose_file`. `runwisp validate` warns
+when RunWisp doesn't run in a container, since every run would fail.
 
 Limits of `exec`:
 

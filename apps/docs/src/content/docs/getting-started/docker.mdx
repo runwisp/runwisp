@@ -81,31 +81,27 @@ services:
         # ...
         volumes:
             - /var/run/docker.sock:/var/run/docker.sock
-            - /srv/shop:/srv/shop:ro
             - ./runwisp:/etc/runwisp
             - runwisp-data:/var/lib/runwisp
 ```
 
 - The `-docker` tag adds the Docker CLI with the Compose plugin.
 - The Docker socket lets RunWisp start commands in your containers.
-- `/srv/shop` is the directory that holds your `compose.yaml`. Mount it at the
-  same path it has on the host.
 
-[If RunWisp runs in a container](/recipes/docker/#if-runwisp-runs-in-a-container)
-explains each line. Run `docker compose up -d` to recreate the container, then
-point a task at a service:
+Run `docker compose up -d` to recreate the container, then point a task at a
+service:
 
 ```toml title="runwisp.toml"
 [tasks.laravel-schedule]
 cron            = "* * * * *"
-compose_file    = "/srv/shop/compose.yaml"
 compose_service = "app"
 run             = "php artisan schedule:run"
 ```
 
-RunWisp runs the command in the running `app` container. Your stack keeps
-running from `docker compose up`, as before. To start a fresh container for
-each run instead, see [Docker tasks](/recipes/docker/).
+RunWisp runs the command in the running `app` container of its own compose
+project. Your stack keeps running from `docker compose up`, as before. To start
+a fresh container for each run, or to target another project, see
+[If RunWisp runs in a container](/recipes/docker/#if-runwisp-runs-in-a-container).
 
 ### Add tools to the image
 
@@ -173,13 +169,14 @@ docker run --rm -v ./runwisp:/etc/runwisp runwisp/runwisp:latest runwisp validat
 
 The image sets these. Override any of them with `-e`.
 
-| Variable             | Image default                      | Purpose                                                            |
-| -------------------- | ---------------------------------- | ------------------------------------------------------------------ |
-| `RUNWISP_CONFIG`     | `/etc/runwisp/runwisp.toml`        | Where the config is read from.                                     |
-| `RUNWISP_DATA`       | `/var/lib/runwisp`                 | SQLite database, run logs, and the control socket.                 |
-| `RUNWISP_HOST`       | `0.0.0.0`                          | Listen on all interfaces, so port mapping works.                   |
-| `RUNWISP_TLS`        | _unset_ (daemon defaults to `off`) | See [Plain HTTP by default](#plain-http-by-default).               |
-| `RUNWISP_LOG_FORMAT` | `text`                             | Readable `docker logs`. Set `json` if a log collector parses them. |
+| Variable             | Image default                      | Purpose                                                                              |
+| -------------------- | ---------------------------------- | ------------------------------------------------------------------------------------ |
+| `RUNWISP_CONFIG`     | `/etc/runwisp/runwisp.toml`        | Where the config is read from.                                                       |
+| `RUNWISP_DATA`       | `/var/lib/runwisp`                 | SQLite database, run logs, and the control socket.                                   |
+| `RUNWISP_HOST`       | `0.0.0.0`                          | Listen on all interfaces, so port mapping works.                                     |
+| `RUNWISP_TLS`        | _unset_ (daemon defaults to `off`) | See [Plain HTTP by default](#plain-http-by-default).                                 |
+| `RUNWISP_LOG_FORMAT` | `text`                             | Readable `docker logs`. Set `json` if a log collector parses them.                   |
+| `RUNWISP_LOG_OUTPUT` | `true`                             | Task output in `docker logs`. See [`log_output`](/configuration/daemon/#log_output). |
 
 Use `-e RUNWISP_DATA=…` rather than the `--data` flag. The healthcheck reads
 only the environment, so a flag makes it look in the wrong place. The
@@ -227,6 +224,34 @@ without extra packages. The image also installs `tzdata` for your tasks, so
 
 To use the host's local time in tasks, set `-e TZ=Europe/Helsinki` or mount
 `/etc/localtime:/etc/localtime:ro`.
+
+## Inside your own image
+
+To replace `cron` or `supervisord` in your app's image, copy the binary into it:
+
+```dockerfile title="Dockerfile"
+FROM php:8.4-fpm
+COPY --from=runwisp/runwisp:1 /usr/local/bin/runwisp /usr/local/bin/runwisp
+COPY runwisp.toml /etc/runwisp/runwisp.toml
+ENV RUNWISP_LOG_OUTPUT=true
+CMD ["runwisp", "daemon"]
+```
+
+Run the container with `init: true` (`docker run --init`): RunWisp doesn't reap
+orphaned processes itself. List the processes as
+[services](/configuration/services/) that stay in the foreground:
+
+```toml title="runwisp.toml"
+[services.php-fpm]
+run = "php-fpm -F"
+
+[services.nginx]
+run = "nginx -g 'daemon off;'"
+```
+
+Set `RUNWISP_PASSWORD` or `RUNWISP_AUTH=off`, as in
+[Required settings](#required-settings). [From supervisord](/coming-from/supervisord/)
+maps the rest of a `supervisord.conf`.
 
 ## Running as non-root
 

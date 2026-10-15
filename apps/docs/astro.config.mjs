@@ -201,6 +201,7 @@ export default defineConfig({
                         { label: "From supervisord", slug: "coming-from/supervisord" },
                         { label: "From systemd", slug: "coming-from/systemd" },
                         { label: "From docker-compose", slug: "coming-from/docker-compose" },
+                        { label: "From Ofelia", slug: "coming-from/ofelia" },
                     ],
                 },
                 {

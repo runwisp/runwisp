@@ -1,0 +1,138 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: From Ofelia
+description: Convert Ofelia jobs (an INI config or ofelia.* compose labels) into runwisp.toml with runwisp import ofelia. How each job type and key maps, and what needs a human.
+head:
+    - tag: title
+      content: "Migrate from Ofelia to RunWisp: convert job-exec, job-run and job-local jobs"
+---
+
+**since**: `1.7`
+
+`runwisp import ofelia` converts the jobs of [Ofelia](https://github.com/mcuadros/ofelia),
+the cron scheduler for Docker, into `runwisp.toml`. Each job becomes a
+[task](/configuration/tasks/) with the same schedule.
+
+## Convert the jobs
+
+Pass the compose file whose services carry `ofelia.*` labels, or Ofelia's INI
+config:
+
+```bash
+runwisp import ofelia compose.yaml -o runwisp.toml
+runwisp import ofelia config.ini -o runwisp.toml
+runwisp validate
+```
+
+Given this INI config:
+
+```ini
+[job-exec "app-schedule"]
+schedule = @every 1m
+container = shop-app-1
+command = php artisan schedule:run
+user = www-data
+environment = APP_ENV=production
+no-overlap = true
+
+[job-run "nightly-backup"]
+schedule = 0 0 3 * * *
+image = postgres:17
+command = pg_dump -h db -U shop -f /dumps/shop.sql shop
+network = shop_default
+volume = /srv/shop/dumps:/dumps
+
+[job-local "prune-logs"]
+schedule = @daily
+command = find /var/log/app -mtime +14 -delete
+dir = /var/log
+```
+
+you get:
+
+```toml title="runwisp.toml"
+[tasks.app-schedule]
+cron = "@every 1m"
+run = "docker exec -u www-data -e APP_ENV shop-app-1 php artisan schedule:run"
+on_overlap = "skip"
+
+[tasks.app-schedule.env]
+APP_ENV = "production"
+
+[tasks.nightly-backup]
+cron = "0 0 3 * * *"
+run = "docker run --rm --init --network shop_default -v /srv/shop/dumps:/dumps postgres:17 pg_dump -h db -U shop -f /dumps/shop.sql shop"
+
+[tasks.prune-logs]
+cron = "@daily"
+run = "find /var/log/app -mtime +14 -delete"
+working_dir = "/var/log"
+```
+
+Ofelia's six-field schedules and `@every` work in RunWisp as they are. A summary
+on stderr has one row per job, marked `✓` (mapped), `~` (changed, with the
+reason), or `!` (needs a fix). If you already have a `runwisp.toml`, use
+`--write` instead of `-o`; see
+[Staging and promoting](/coming-from/cron/#staging-and-promoting). All flags are
+in the [CLI reference](/reference/cli/#runwisp-import).
+
+## Labels on a compose file
+
+A job in `ofelia.*` labels counts when its service has `ofelia.enabled=true`
+(or `ofelia.service=true`). A `job-exec` there runs in the service's own
+container, so it becomes a task that names the compose file and service:
+
+```toml title="runwisp.toml"
+[tasks.schedule]
+cron = "@every 1m"
+compose_file = "/srv/shop/compose.yaml"
+compose_service = "app"
+run = "php artisan schedule:run"
+on_overlap = "skip"
+```
+
+RunWisp runs the command in the running `app` container, as Ofelia did. If
+RunWisp is a service of the same compose project, you can delete
+`compose_file`; see [Docker tasks](/recipes/docker/#if-runwisp-runs-in-a-container).
+
+## Stop Ofelia
+
+The import doesn't stop Ofelia or remove its labels. If both run a job, it runs
+twice. Stop Ofelia first (`docker compose stop ofelia`), then remove its service
+from your compose file once the RunWisp tasks work.
+
+## How the pieces map
+
+| Ofelia                       | runwisp.toml                                                                     | Notes                                                               |
+| ---------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `job-exec` (compose label)   | [`compose_file`](/configuration/tasks/#compose_file) + `compose_service` + `run` | Runs in the running container.                                      |
+| `job-exec` (INI `container`) | [`run`](/configuration/tasks/#run) = `docker exec …`                             | `user`, `working-dir` and `environment` become `docker exec` flags. |
+| `job-run`                    | [`run`](/configuration/tasks/#run) = `docker run --rm --init …`                  | `image`, `network`, `volume`, `environment`.                        |
+| `job-local`                  | [`run`](/configuration/tasks/#run)                                               | `dir` becomes [`working_dir`](/configuration/tasks/#working_dir).   |
+| `schedule`                   | [`cron`](/configuration/tasks/#cron)                                             | Used as written.                                                    |
+| `no-overlap = true`          | [`on_overlap = "skip"`](/configuration/tasks/#on_overlap)                        |                                                                     |
+| `environment`                | [`env`](/configuration/tasks/#env)                                               | Passed to `docker run` and `docker exec` by name.                   |
+
+## What needs a human
+
+Anything that can't be mapped gets a `# TODO` in the TOML and a note on the
+job's row.
+
+- **Overlap.** Ofelia starts a job again while the last run is still going,
+  unless `no-overlap` is set. RunWisp queues the new run by default; set
+  [`on_overlap`](/configuration/tasks/#on_overlap) if you want something else.
+- **`job-service-run` and `job-compose`.** Swarm services are not supported.
+  They get a `!` row and no task.
+- **Other keys.** `tty`, `volumes-from` and similar are dropped and listed by
+  name on the job's row.
+- **Environment values.** Values from `environment` are written into the TOML.
+  Move secrets to [`secrets`](/configuration/tasks/#secrets).
+- **Notifications.** Ofelia's `[global]` Slack, mail and `save-folder` settings
+  are skipped with a note. Use [Notifications](/notifications/) instead.
+
+## Learn more
+
+- [Docker tasks](/recipes/docker/)
+- [`[tasks.*]`](/configuration/tasks/)
+- [From cron](/coming-from/cron/)

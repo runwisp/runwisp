@@ -33,6 +33,9 @@ type Service struct {
 	// working directory. Named volumes and tmpfs mounts are excluded — only a
 	// bind mount can point at a path that doesn't exist from RunWisp's side.
 	BindSources []string
+	// Labels is the service's `labels:`, whichever form (map or list) the file
+	// used. Interpolated, so `${VAR}` is already filled in.
+	Labels map[string]string
 }
 
 // ServiceNames returns just the service names, in loader order. Convenience

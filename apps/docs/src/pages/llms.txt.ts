@@ -64,13 +64,14 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
     },
     { label: "Examples", slugs: ["recipes/backup", "recipes/healthcheck"] },
     {
-        label: "Migrating from cron, supervisord, systemd, or docker-compose",
+        label: "Migrating from cron, supervisord, systemd, docker-compose, or Ofelia",
         slugs: [
             "coming-from",
             "coming-from/cron",
             "coming-from/supervisord",
             "coming-from/systemd",
             "coming-from/docker-compose",
+            "coming-from/ofelia",
         ],
     },
     {
