@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Docker image runs RunWisp under `tini`, so processes your tasks leave behind are reaped.
 - `.deb` and `.rpm` packages for x64 and arm64. They add the RunWisp apt or dnf repository, so system updates keep RunWisp current.
 - `runwisp` next to a compose file first offers a starter that schedules jobs in the running stack, then one that imports its services.
+- `RUNWISP_VIEWER_PASSWORD` adds an optional read-only password: a session signed in with it can view tasks, runs and logs, and the daemon rejects trigger, start, stop, pause, delete and reload for it. The Web UI and TUI hide those controls. `runwisp password --viewer` prints it, generating one if none is set. See [Authentication](https://docs.runwisp.com/operations/auth/#read-only-access).
 
 ### Changed
 

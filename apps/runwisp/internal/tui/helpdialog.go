@@ -17,7 +17,8 @@ import (
 // by context. Opened with `?` from anywhere outside text-input overlays. The
 // reference table is taller than most terminals, so the content area scrolls.
 type HelpDialog struct {
-	scroll modalScroll
+	scroll   modalScroll
+	readOnly bool // leave out actions a read-only session can't take
 }
 
 // Update reports whether the dialog should close.
@@ -53,14 +54,14 @@ func (d *HelpDialog) handleMouse(msg tea.MouseMsg) bool {
 }
 
 func (d *HelpDialog) View(screenWidth, screenHeight int) string {
-	keyColWidth := helpKeyColWidth()
+	keyColWidth := helpKeyColWidth(d.readOnly)
 	dialogWidth, innerWidth := modalDimensions(screenWidth, 64, 44)
 
 	lines := []string{
 		modalEmptyLine(innerWidth),
 		modalSurfaceLine("Keyboard Shortcuts", innerWidth, uikit.ColorTextBright, true),
 	}
-	lines = append(lines, d.scroll.window(helpContentLines(innerWidth, keyColWidth), modalBodyRows(screenHeight))...)
+	lines = append(lines, d.scroll.window(helpContentLines(d.readOnly, innerWidth, keyColWidth), modalBodyRows(screenHeight))...)
 	lines = append(lines, modalFooter(d.scroll.hint("? / esc close"), innerWidth)...)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, lines)
@@ -69,9 +70,9 @@ func (d *HelpDialog) View(screenWidth, screenHeight int) string {
 
 // helpContentLines flattens every section into the scrollable body: a blank
 // spacer and bold header per section, followed by its key→description rows.
-func helpContentLines(innerWidth, keyColWidth int) []string {
+func helpContentLines(readOnly bool, innerWidth, keyColWidth int) []string {
 	var lines []string
-	for _, section := range helpSections() {
+	for _, section := range helpSections(readOnly) {
 		lines = append(lines,
 			modalEmptyLine(innerWidth),
 			modalSectionLine(section.Title, innerWidth),
@@ -84,20 +85,31 @@ func helpContentLines(innerWidth, keyColWidth int) []string {
 }
 
 // helpSections is the key reference plus a legend for the sidebar's task
-// status marks, built from the marks themselves so the two can't drift.
-func helpSections() []keys.Section {
+// status marks, built from the marks themselves so the two can't drift. A
+// read-only session gets no write actions, and no section left empty by that.
+func helpSections(readOnly bool) []keys.Section {
+	sections := slices.Clone(keys.OverlaySections)
+	if readOnly {
+		sections = sections[:0:0]
+		for _, section := range keys.OverlaySections {
+			section.Bindings = slices.DeleteFunc(slices.Clone(section.Bindings), func(b keys.Binding) bool { return b.Writes })
+			if len(section.Bindings) > 0 {
+				sections = append(sections, section)
+			}
+		}
+	}
 	legend := keys.Section{Title: "Sidebar marks"}
 	for _, mark := range uikit.TaskMarks {
 		legend.Bindings = append(legend.Bindings, keys.Binding{Keys: mark.Glyph, Desc: mark.Meaning})
 	}
-	return append(slices.Clone(keys.OverlaySections), legend)
+	return append(sections, legend)
 }
 
 // helpKeyColWidth fits the widest key combo plus its 2-cell indent and a
 // 2-cell gap, so no combo ever wraps.
-func helpKeyColWidth() int {
+func helpKeyColWidth(readOnly bool) int {
 	w := 0
-	for _, section := range helpSections() {
+	for _, section := range helpSections(readOnly) {
 		for _, b := range section.Bindings {
 			w = max(w, uikit.VisibleWidth(b.Keys))
 		}

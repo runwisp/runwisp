@@ -95,15 +95,8 @@ func runTUIViaRemote(ctx context.Context, baseURL, envPassword string) error {
 // handshake, caching the resulting token and re-prompting on a wrong password
 // when interactive.
 func authenticateRemoteTUI(ctx context.Context, baseURL, envPassword string) (*apiclient.Client, error) {
-	if cached := loadCachedToken(baseURL); cached != "" {
-		client := apiclient.NewPinned(baseURL, "", certPinStore{})
-		client.SetToken(cached)
-		// The TUI has no 401 retry of its own, so a token the daemon no longer
-		// accepts (an older daemon's JWT, a changed password) must fall through
-		// to the handshake here rather than open a TUI that can't load anything.
-		if _, err := client.GetDaemonInfo(ctx); !errors.Is(err, apiclient.ErrUnauthorized) {
-			return client, nil
-		}
+	if client := reuseRemoteSession(ctx, baseURL, "", loadCachedToken(baseURL)); client != nil {
+		return client, nil
 	}
 
 	interactive := isInteractiveTerminal()
@@ -113,10 +106,16 @@ func authenticateRemoteTUI(ctx context.Context, baseURL, envPassword string) (*a
 			return nil, err
 		}
 
+		// A viewer session is cached per password (see loadCachedViewerToken),
+		// so it can only be looked up once the password is known.
+		if client := reuseRemoteSession(ctx, baseURL, password, loadCachedViewerToken(baseURL, password)); client != nil {
+			return client, nil
+		}
+
 		client := apiclient.NewPinned(baseURL, password, certPinStore{})
 		authErr := client.Authenticate(ctx)
 		if authErr == nil {
-			storeCachedToken(baseURL, client.Token())
+			storeCachedToken(baseURL, password, client.Token())
 			return client, nil
 		}
 		// Only an interactive prompt is worth retrying; an env-var password
@@ -127,6 +126,23 @@ func authenticateRemoteTUI(ctx context.Context, baseURL, envPassword string) (*a
 		}
 		return nil, remoteLoginError(authErr, baseURL)
 	}
+}
+
+// reuseRemoteSession returns a client carrying the cached token, or nil when
+// there is none or the daemon no longer accepts it. The TUI has no 401 retry of
+// its own, so a token the daemon rejects (an older daemon's JWT, a changed
+// password) must fall through to the handshake here rather than open a TUI
+// that can't load anything.
+func reuseRemoteSession(ctx context.Context, baseURL, password, token string) *apiclient.Client {
+	if token == "" {
+		return nil
+	}
+	client := apiclient.NewPinned(baseURL, password, certPinStore{})
+	client.SetToken(token)
+	if _, err := client.GetDaemonInfo(ctx); errors.Is(err, apiclient.ErrUnauthorized) {
+		return nil
+	}
+	return client
 }
 
 // resolveRemotePassword yields the password for the CHAP handshake: the

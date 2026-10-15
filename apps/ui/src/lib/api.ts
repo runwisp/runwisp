@@ -8,7 +8,11 @@ import { chapResponse } from "./chap";
 import { HTTP_STATUS } from "./config/constants";
 import { handleUnauthorized } from "./utils/auth-required";
 import type { LogPage } from "./logs";
-import { authChallengeResponseSchema, authStatusResponseSchema } from "./types";
+import {
+    authChallengeResponseSchema,
+    authLoginResponseSchema,
+    authStatusResponseSchema,
+} from "./types";
 import { isRecord } from "./utils/parse";
 
 export class AuthRequiredError extends Error {
@@ -92,7 +96,7 @@ async function postTaskAction(path: TaskActionPath, taskName: string): Promise<v
 }
 
 export const authApi = {
-    login: async (password: string): Promise<void> => {
+    login: async (password: string): Promise<{ readOnly: boolean }> => {
         const challengeRes = await fetch("/api/auth/challenge");
         if (challengeRes.status === HTTP_STATUS.TOO_MANY_REQUESTS) throw new RateLimitedError();
         if (!challengeRes.ok) throw new Error("Failed to get auth challenge");
@@ -106,8 +110,10 @@ export const authApi = {
             body: JSON.stringify({ nonce, response }),
         });
         if (res.status === HTTP_STATUS.TOO_MANY_REQUESTS) throw new RateLimitedError();
-        // The response sets the HttpOnly session cookie; the body isn't needed.
+        // The response sets the HttpOnly session cookie; the body only says which
+        // role the password granted.
         if (!res.ok) throw new Error("Authentication failed");
+        return authLoginResponseSchema.parse(await res.json());
     },
 
     status: async (): Promise<AuthStatusBody> => {

@@ -4,7 +4,7 @@
 <script lang="ts">
     import { resolve } from "$app/paths";
     import { NotificationBell } from "@runwisp/ui";
-    import { notificationStore } from "$lib/stores";
+    import { authStore, notificationStore } from "$lib/stores";
     import NotificationItem from "./NotificationItem.svelte";
 
     const POPOVER_LIMIT = 10;
@@ -28,7 +28,7 @@
     tone={hasUnreadError ? "danger" : "primary"}
 >
     {#snippet actions()}
-        {#if notificationStore.unread > 0}
+        {#if notificationStore.unread > 0 && !authStore.current.readOnly}
             <button
                 type="button"
                 class="text-primary-soft-text hover:underline"

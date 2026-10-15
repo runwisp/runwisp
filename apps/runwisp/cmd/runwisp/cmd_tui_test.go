@@ -30,10 +30,10 @@ type fakeDaemon struct {
 	tls          bool // serve HTTPS with httptest's self-signed cert
 }
 
-// daemonInfoAuth answers /api/daemon like the real route: 200 for freshToken,
-// 401 for anything else.
+// daemonInfoAuth answers /api/daemon like the real route: 200 for freshToken
+// or freshViewerToken, 401 for anything else.
 func daemonInfoAuth(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Authorization") != "Bearer "+freshToken {
+	if h := r.Header.Get("Authorization"); h != "Bearer "+freshToken && h != "Bearer "+freshViewerToken {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -178,7 +178,7 @@ func TestAuthenticateRemoteTUI_UsesCachedToken(t *testing.T) {
 	isolatedTokenCache(t)
 	// No password: a handshake would fail, so success proves the cache was used.
 	srv := fakeDaemon{authRequired: true}.start(t)
-	storeCachedToken(srv.URL, freshToken)
+	storeCachedToken(srv.URL, "", freshToken)
 
 	client, err := authenticateRemoteTUI(t.Context(), srv.URL, "")
 	require.NoError(t, err)
@@ -192,12 +192,29 @@ func TestAuthenticateRemoteTUI_UsesCachedToken(t *testing.T) {
 func TestAuthenticateRemoteTUI_RejectedCachedTokenReauthenticates(t *testing.T) {
 	isolatedTokenCache(t)
 	srv := fakeDaemon{authRequired: true, password: "s3cret"}.start(t)
-	storeCachedToken(srv.URL, "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjF9.c2ln")
+	storeCachedToken(srv.URL, "", "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjF9.c2ln")
 
 	client, err := authenticateRemoteTUI(t.Context(), srv.URL, "s3cret")
 	require.NoError(t, err)
 	assert.Equal(t, freshToken, client.Token())
 	assert.Equal(t, freshToken, loadCachedToken(srv.URL))
+}
+
+// TestAuthenticateRemoteTUI_ReusesViewerSession guards the rate-limit bug: a
+// viewer login used to re-run CHAP on every launch, so a few launches within
+// the daemon's auth window locked the client out with a 429.
+func TestAuthenticateRemoteTUI_ReusesViewerSession(t *testing.T) {
+	isolatedTokenCache(t)
+	// No password: a handshake would fail, so success proves the cache was used.
+	srv := fakeDaemon{authRequired: true}.start(t)
+	storeCachedToken(srv.URL, "view", freshViewerToken)
+
+	client, err := authenticateRemoteTUI(t.Context(), srv.URL, "view")
+	require.NoError(t, err)
+	assert.Equal(t, freshViewerToken, client.Token())
+
+	_, err = authenticateRemoteTUI(t.Context(), srv.URL, "admin")
+	require.Error(t, err, "another password must run its own handshake")
 }
 
 func TestAuthenticateRemoteTUI_EnvPasswordStoresToken(t *testing.T) {

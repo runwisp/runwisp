@@ -81,3 +81,41 @@ func (srv *Server) registerLocalCredentialsRoute(api huma.API) {
 		Tags: []string{"System"},
 	}, srv.handleGetLocalCredentials)
 }
+
+// handleMintViewerPassword returns the read-only password, minting a random
+// in-memory one on first call so `runwisp password --viewer` can enable read-only
+// access on a running daemon. Same gates as handleGetLocalCredentials: Unix
+// socket only, nothing to hand out under RUNWISP_AUTH=off, and a password the
+// operator supplied through RUNWISP_VIEWER_PASSWORD is never disclosed (404).
+func (srv *Server) handleMintViewerPassword(ctx context.Context, _ *struct{}) (*LocalCredentialsOutput, error) {
+	if !IsLocalTrustedCtx(ctx) {
+		return nil, huma.Error403Forbidden("local-credentials endpoint is only available on the Unix socket")
+	}
+	if srv.noAuth {
+		return nil, huma.Error409Conflict("daemon is running with RUNWISP_AUTH=off; there is no password to retrieve")
+	}
+	if srv.viewerFromEnv {
+		return nil, huma.Error404NotFound("daemon is configured with RUNWISP_VIEWER_PASSWORD; no shareable password is disclosed")
+	}
+	pw, err := srv.auth.MintViewerPassword()
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to generate viewer password", err)
+	}
+	slog.Info("Ephemeral read-only password retrieved via socket")
+	return &LocalCredentialsOutput{
+		CacheControl: "no-store",
+		Body:         LocalCredentialsBody{Password: pw, Ephemeral: true},
+	}, nil
+}
+
+func (srv *Server) registerViewerPasswordRoute(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "mintViewerPassword",
+		Method:      http.MethodPost,
+		Path:        "/api/local/viewer-password",
+		Summary:     "Enable and retrieve the read-only password (Unix socket only)",
+		Description: "Returns the in-memory read-only password, generating one on first call. Sessions opened with it can view everything and change nothing. " +
+			"Always 403 over TCP. Always 404 when the daemon is configured with RUNWISP_VIEWER_PASSWORD.",
+		Tags: []string{"System"},
+	}, srv.handleMintViewerPassword)
+}

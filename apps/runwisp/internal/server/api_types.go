@@ -308,6 +308,7 @@ type AuthStatusOutput struct {
 type AuthStatusBody struct {
 	AuthRequired  bool `json:"authRequired" doc:"Whether authentication is required"`
 	Authenticated bool `json:"authenticated" doc:"Whether the current request is already authenticated via cookie"`
+	ReadOnly      bool `json:"readOnly" doc:"Whether the session was opened with the read-only password: it can view everything and change nothing"`
 }
 
 type AuthChallengeOutput struct {
@@ -343,7 +344,8 @@ type AuthLoginOutput struct {
 }
 
 type AuthLoginBody struct {
-	Token string `json:"token" doc:"Session token, also set as the runwisp_jwt cookie"`
+	Token    string `json:"token" doc:"Session token, also set as the runwisp_jwt cookie"`
+	ReadOnly bool   `json:"readOnly" doc:"True when the read-only password answered: the session can view but every write is rejected with 403"`
 }
 
 type LaunchTicketBody struct {

@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/chap"
@@ -54,6 +55,15 @@ const (
 	// PBKDF2 salt). Bumping it is the way to invalidate every existing session
 	// on the next restart without changing the operator's RUNWISP_PASSWORD.
 	sessionKDFInfo = "runwisp-session-v1"
+
+	// viewerKDFInfo namespaces the viewer-token key, derived from the session key
+	// and the viewer password so rotating either revokes viewer sessions.
+	viewerKDFInfo = "runwisp-viewer-v1"
+
+	// viewerRole tags a read-only token: "<exp>.viewer.<mac>". Admin tokens carry
+	// no role segment ("<exp>.<mac>"), so sessions issued before the viewer
+	// password existed stay valid.
+	viewerRole = "viewer"
 )
 
 // ErrEmptySessionKey is returned by NewService when the supplied session key
@@ -101,6 +111,14 @@ type Service struct {
 	nonces         *ttlStore
 	launchTickets  *ttlStore
 	trustedProxies TrustedProxyChecker
+	viewer         atomic.Pointer[viewerSecret] // nil: no read-only password configured
+}
+
+// viewerSecret is the optional read-only password and the key its tokens are
+// signed with.
+type viewerSecret struct {
+	password string
+	key      []byte
 }
 
 // NewService builds a Service. sessionKey must be non-empty; callers derive
@@ -125,6 +143,35 @@ func NewService(password string, sessionKey []byte, trustedProxies TrustedProxyC
 // exists so that gate can return the value to the local CLI/TUI.
 func (s *Service) Password() string { return s.password }
 
+// SetViewerPassword enables read-only logins with password. An empty password
+// leaves the feature off.
+func (s *Service) SetViewerPassword(password string) {
+	if password == "" {
+		return
+	}
+	s.viewer.Store(s.newViewerSecret(password))
+}
+
+// MintViewerPassword returns the read-only password, generating a random one
+// first when none is set. Concurrent callers all get the same value.
+func (s *Service) MintViewerPassword() (string, error) {
+	if v := s.viewer.Load(); v != nil {
+		return v.password, nil
+	}
+	pw, err := datadir.GeneratePassword()
+	if err != nil {
+		return "", err
+	}
+	s.viewer.CompareAndSwap(nil, s.newViewerSecret(pw))
+	return s.viewer.Load().password, nil
+}
+
+func (s *Service) newViewerSecret(password string) *viewerSecret {
+	mac := hmac.New(sha256.New, s.sessionKey)
+	mac.Write([]byte(viewerKDFInfo + "\x00" + password))
+	return &viewerSecret{password: password, key: mac.Sum(nil)}
+}
+
 // IssueChallenge mints a single-use nonce; the client signs it with the
 // shared password and returns chap.Response (PBKDF2-HMAC-SHA256 of the
 // password salted with the nonce).
@@ -145,29 +192,60 @@ func (s *Service) ConsumeLaunchTicket(ticket string) bool {
 	return s.launchTickets.consume(ticket)
 }
 
-// IssueToken mints a session token that expires ttl from now. The token is
-// "<exp>.<mac>": exp is the expiry in unix seconds, left readable so clients
+// IssueToken mints an admin session token that expires ttl from now. The token
+// is "<exp>.<mac>": exp is the expiry in unix seconds, left readable so clients
 // can drop a cached token before it goes stale (see TokenExpiry), and mac is
 // HMAC-SHA256 of exp under the session key, so only this daemon can mint or
 // extend one. The key is derived from the daemon password, so rotating the
 // password revokes every outstanding token.
 func (s *Service) IssueToken(ttl time.Duration) string {
-	exp := strconv.FormatInt(time.Now().Add(ttl).Unix(), 10)
-	return exp + "." + s.sign(exp)
+	exp := expiryString(ttl)
+	return exp + "." + sign(s.sessionKey, exp)
 }
 
-func (s *Service) sign(exp string) string {
-	mac := hmac.New(sha256.New, s.sessionKey)
-	mac.Write([]byte(exp))
+// issueToken mints a read-only token, "<exp>.viewer.<mac>", signed with the
+// viewer key.
+func (v *viewerSecret) issueToken(ttl time.Duration) string {
+	payload := expiryString(ttl) + "." + viewerRole
+	return payload + "." + sign(v.key, payload)
+}
+
+func expiryString(ttl time.Duration) string {
+	return strconv.FormatInt(time.Now().Add(ttl).Unix(), 10)
+}
+
+func sign(key []byte, payload string) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(payload))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-// ValidToken reports whether token was minted by this daemon and has not
-// expired. An empty token is invalid.
-func (s *Service) ValidToken(token string) bool {
+// VerifyToken reports whether token was minted by this daemon and has not
+// expired, and whether it is a read-only (viewer) token. An empty token is
+// invalid, as is a viewer token while no viewer password is set.
+func (s *Service) VerifyToken(token string) (readOnly, ok bool) {
 	expiry, ok := TokenExpiry(token)
-	exp, mac, _ := strings.Cut(token, ".")
-	return ok && time.Now().Before(expiry) && hmac.Equal([]byte(mac), []byte(s.sign(exp)))
+	if !ok || !time.Now().Before(expiry) {
+		return false, false
+	}
+	exp, rest, _ := strings.Cut(token, ".")
+	role, mac, hasRole := strings.Cut(rest, ".")
+	if !hasRole {
+		return false, hmac.Equal([]byte(rest), []byte(sign(s.sessionKey, exp)))
+	}
+	v := s.viewer.Load()
+	if role != viewerRole || v == nil {
+		return false, false
+	}
+	return true, hmac.Equal([]byte(mac), []byte(sign(v.key, exp+"."+viewerRole)))
+}
+
+// IsViewerToken reports whether token claims the viewer role. Like TokenExpiry
+// it does not check the MAC; clients use it to tell a read-only session apart.
+func IsViewerToken(token string) bool {
+	_, rest, _ := strings.Cut(token, ".")
+	role, _, ok := strings.Cut(rest, ".")
+	return ok && role == viewerRole
 }
 
 // TokenExpiry reads the expiry out of a session token without checking its
@@ -213,25 +291,32 @@ func (s *Service) IsSecureRequest(r *http.Request) bool {
 // already consumed.
 var ErrInvalidNonce = errors.New("invalid or expired challenge")
 
-// ErrInvalidPassword is returned by Login when response does not match the
-// expected CHAP proof for nonce.
+// ErrInvalidPassword is returned by Login when response matches neither the
+// admin nor the viewer CHAP proof for nonce.
 var ErrInvalidPassword = errors.New("invalid password")
 
 // Login is the CHAP login flow: it consumes the single-use nonce, verifies
-// the signed response, and issues a fresh session token on success. It has no
-// HTTP-layer concerns (cookies, status codes) so the caller — a huma handler
-// in the parent server package — can decide how to deliver the token.
-func (s *Service) Login(nonce, response string) (token string, err error) {
+// the signed response against the admin password, then the viewer password if
+// one is set, and issues a fresh session token on success. readOnly reports
+// which secret answered. It has no HTTP-layer concerns (cookies, status codes)
+// so the caller — a huma handler in the parent server package — can decide how
+// to deliver the token.
+func (s *Service) Login(nonce, response string) (token string, readOnly bool, err error) {
 	if !s.nonces.consume(nonce) {
-		return "", ErrInvalidNonce
+		return "", false, ErrInvalidNonce
 	}
 
-	expected := chap.Response(s.password, nonce)
-	if subtle.ConstantTimeCompare([]byte(response), []byte(expected)) != 1 {
-		return "", ErrInvalidPassword
+	if matchesProof(response, s.password, nonce) {
+		return s.IssueToken(SessionDuration), false, nil
 	}
+	if v := s.viewer.Load(); v != nil && matchesProof(response, v.password, nonce) {
+		return v.issueToken(SessionDuration), true, nil
+	}
+	return "", false, ErrInvalidPassword
+}
 
-	return s.IssueToken(SessionDuration), nil
+func matchesProof(response, password, nonce string) bool {
+	return subtle.ConstantTimeCompare([]byte(response), []byte(chap.Response(password, nonce))) == 1
 }
 
 // BearerToken extracts the credential from an Authorization header value of

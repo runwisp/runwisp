@@ -171,6 +171,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		EventBus:            svc.EventBus,
 		Password:            cfg.Password,
 		PasswordEphemeral:   cfg.PasswordEphemeral,
+		ViewerPassword:      cfg.ViewerPassword,
 		SessionKey:          cfg.SessionKey,
 		NoAuth:              cfg.NoAuth,
 		TrustedProxies:      cfg.Config.Daemon.TrustedProxies,

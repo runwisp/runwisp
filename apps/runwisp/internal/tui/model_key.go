@@ -140,7 +140,7 @@ func handleKeyQuit(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 // the log-search overlay intercept keys before this handler runs, so no extra
 // guards are needed here.
 func handleKeyHelp(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
-	m.dialogs.Show(dlgHelp, &HelpDialog{})
+	m.dialogs.Show(dlgHelp, &HelpDialog{readOnly: m.readOnly})
 	return m, nil, true
 }
 
@@ -156,7 +156,7 @@ func handleKeyN(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 // handleKeyA marks every notification read while the notifications panel is
 // expanded. Elsewhere it falls through so `a` stays free for sub-components.
 func handleKeyA(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
-	if m.notifications.IsExpanded() {
+	if m.notifications.IsExpanded() && !m.readOnly {
 		return m, m.markAllNotificationsRead(), true
 	}
 	return m, nil, false
@@ -373,6 +373,10 @@ func handleKeyEnterMainPanel(m Model) (Model, tea.Cmd, bool) {
 }
 
 func handleKeyR(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
+	if m.readOnly {
+		// Every r/R action writes: run, retry, restart, reload, mark read.
+		return m, nil, true
+	}
 	if m.notifications.IsExpanded() {
 		return m, m.toggleSelectedNotificationRead(), true
 	}
@@ -434,7 +438,7 @@ func handleKeyI(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 func handleKeyP(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	name := m.inspectTaskName()
 	task := m.taskDisplayByName(name)
-	if task == nil || task.Kind.IsService() || task.Cron == "" {
+	if m.readOnly || task == nil || task.Kind.IsService() || task.Cron == "" {
 		return m, nil, false
 	}
 	return m, m.streams.SetSchedulePaused(name, !m.isPaused(name)), true
@@ -593,6 +597,10 @@ func (m Model) runListFocused() bool {
 // (undoably), `c` cancels, `e` reruns, and esc clears it. Keys it doesn't own
 // return handled=false so normal handling continues.
 func (m Model) handleRunListSelectionKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
+	if m.readOnly {
+		// A selection only exists to delete, cancel or rerun.
+		return m, nil, false
+	}
 	if msg.Code == tea.KeySpace {
 		m.execList.ToggleSelectCursor()
 		return m, nil, true

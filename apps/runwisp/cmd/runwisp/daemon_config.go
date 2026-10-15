@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -26,6 +27,7 @@ type daemonConfig struct {
 	Config            *config.Config
 	Password          string
 	PasswordEphemeral bool
+	ViewerPassword    string // RUNWISP_VIEWER_PASSWORD; "" leaves read-only access off
 	SessionKey        []byte
 	NoAuth            bool
 }
@@ -63,6 +65,15 @@ func loadDaemonConfig(ctx context.Context, configRepo *storage.SQLiteDatabase, m
 		return nil, err
 	}
 
+	viewerPassword, err := resolveViewerPassword(password)
+	if err != nil {
+		return nil, err
+	}
+
+	if viewerPassword != "" {
+		slog.Info("read-only access enabled: RUNWISP_VIEWER_PASSWORD signs in sessions that can view but not change anything")
+	}
+
 	sessionKey, err := auth.DeriveSessionKey(password, fp)
 	if err != nil {
 		return nil, err
@@ -74,6 +85,7 @@ func loadDaemonConfig(ctx context.Context, configRepo *storage.SQLiteDatabase, m
 		Config:            cfg,
 		Password:          password,
 		PasswordEphemeral: ephemeral,
+		ViewerPassword:    viewerPassword,
 		SessionKey:        sessionKey,
 		NoAuth:            noAuth,
 	}, nil
@@ -101,7 +113,25 @@ func resolveAuthMode() (noAuth bool, err error) {
 	if os.Getenv("RUNWISP_PASSWORD") != "" {
 		return false, errors.New("RUNWISP_AUTH=off and RUNWISP_PASSWORD are mutually exclusive — unset one of them")
 	}
+	if os.Getenv("RUNWISP_VIEWER_PASSWORD") != "" {
+		return false, errors.New("RUNWISP_AUTH=off and RUNWISP_VIEWER_PASSWORD are mutually exclusive — unset one of them")
+	}
 	return true, nil
+}
+
+// resolveViewerPassword returns the optional read-only password from
+// RUNWISP_VIEWER_PASSWORD, or "" when read-only access is off (the default).
+// It must differ from the admin password: a login answering both secrets would
+// have no way to say which role the operator meant.
+func resolveViewerPassword(adminPassword string) (string, error) {
+	pw := os.Getenv("RUNWISP_VIEWER_PASSWORD")
+	if pw == "" {
+		return "", nil
+	}
+	if pw == adminPassword {
+		return "", errors.New("RUNWISP_VIEWER_PASSWORD must differ from RUNWISP_PASSWORD")
+	}
+	return pw, nil
 }
 
 // resolvePassword returns the daemon password. If RUNWISP_PASSWORD is set, the

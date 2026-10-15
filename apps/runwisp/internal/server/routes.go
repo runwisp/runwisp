@@ -67,6 +67,19 @@ func maxBodySize(limit int64) func(http.Handler) http.Handler {
 	}
 }
 
+// ReadOnlySessionMessage is the 403 body a viewer session gets on any write. The
+// API client matches it to tell a read-only rejection from other 403s.
+const ReadOnlySessionMessage = "read-only session: this password can view but not change anything"
+
+// isSafeMethod reports whether method cannot change daemon state.
+func isSafeMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	return false
+}
+
 // authOrLocalTrusted requires a valid session token on TCP requests and
 // skips the check for requests delivered on the Unix socket. Filesystem
 // permissions (0600 socket + 0700 datadir) and SO_PEERCRED at accept time
@@ -76,8 +89,19 @@ func maxBodySize(limit int64) func(http.Handler) http.Handler {
 func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !IsLocalTrusted(r) && !authSvc.ValidToken(auth.TokenFromRequest(r)) {
+			if IsLocalTrusted(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			readOnly, ok := authSvc.VerifyToken(auth.TokenFromRequest(r))
+			if !ok {
 				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+				return
+			}
+			// A viewer session may look at everything and change nothing, so the
+			// check is the method, not a per-route list a new route could miss.
+			if readOnly && !isSafeMethod(r.Method) {
+				http.Error(w, ReadOnlySessionMessage, http.StatusForbidden)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -267,11 +291,7 @@ func csrfGuard(allowBearer bool) func(http.Handler) http.Handler {
 }
 
 func csrfExempt(r *http.Request, allowBearer bool) bool {
-	switch r.Method {
-	case http.MethodGet, http.MethodHead, http.MethodOptions:
-		return true
-	}
-	if IsLocalTrusted(r) {
+	if isSafeMethod(r.Method) || IsLocalTrusted(r) {
 		return true
 	}
 	if !allowBearer {

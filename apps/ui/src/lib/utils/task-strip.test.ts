@@ -243,3 +243,26 @@ describe("taskStrip: services", () => {
         expect(strip(service({ manualTrigger: false }, [up(0), up(1)])).actions).toEqual([]);
     });
 });
+
+describe("taskStrip read-only", () => {
+    const input = (task: Task, readOnly: boolean) => ({
+        task,
+        running: undefined,
+        schedulingActive: true,
+        now: NOW,
+        readOnly,
+    });
+
+    it.each([
+        ["cron task", makeTask()],
+        ["manual task", makeTask({ cron: "" })],
+        ["paused task", makeTask({ pausedAt: "2026-10-01T00:00:00Z" })],
+        ["service", service()],
+    ])("%s keeps its state but offers no actions", (_name, task) => {
+        expect(taskStrip(input(task, false)).actions.length).toBeGreaterThan(0);
+
+        const model = taskStrip(input(task, true));
+        expect(model.actions).toEqual([]);
+        expect(model.sentence.length).toBeGreaterThan(0);
+    });
+});

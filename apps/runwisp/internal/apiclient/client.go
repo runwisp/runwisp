@@ -17,6 +17,7 @@ import (
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/chap"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 )
 
 // Client communicates with the RunWisp daemon HTTP API.
@@ -135,6 +136,13 @@ func (c *Client) Token() string {
 	return c.token
 }
 
+// ReadOnly reports whether the session was opened with the read-only password,
+// so the daemon rejects every write. Unix-socket clients hold no token and are
+// never read-only.
+func (c *Client) ReadOnly() bool {
+	return auth.IsViewerToken(c.token)
+}
+
 // doJSON performs a JSON request. reqBody is marshalled if non-nil.
 // respBody is unmarshalled from the response if non-nil.
 func (c *Client) doJSON(ctx context.Context, method, path string, reqBody, respBody any) error {
@@ -209,10 +217,11 @@ func (c *Client) send(hc *http.Client, req *http.Request) (*http.Response, error
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		resp.Body.Close()
-		return nil, &HTTPStatusError{
-			StatusCode: resp.StatusCode,
-			Body:       strings.TrimSpace(string(errBody)),
+		body := strings.TrimSpace(string(errBody))
+		if resp.StatusCode == http.StatusForbidden && body == server.ReadOnlySessionMessage {
+			return nil, ErrReadOnly
 		}
+		return nil, &HTTPStatusError{StatusCode: resp.StatusCode, Body: body}
 	}
 
 	return resp, nil
@@ -265,6 +274,10 @@ func (c *Client) CreateLaunchTicket(ctx context.Context) (string, error) {
 
 // ErrUnauthorized is returned when the API returns 401.
 var ErrUnauthorized = errors.New("unauthorized")
+
+// ErrReadOnly is returned when the daemon rejects a write because the session
+// was opened with the read-only password.
+var ErrReadOnly = errors.New("read-only session")
 
 // ErrRateLimited is returned when the API returns 429. Callers should surface
 // a retry-after hint to the user; the daemon's auth endpoints share a single

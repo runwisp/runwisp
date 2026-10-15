@@ -267,6 +267,8 @@ type TaskHeader struct {
 	Usage   *model.ResourceUsage // live CPU and memory of running processes
 	Loc     *time.Location
 	Hovered TaskButton
+	// ReadOnly hides every button: the session can't change anything.
+	ReadOnly bool
 }
 
 type headerButton struct {
@@ -281,6 +283,9 @@ type headerButton struct {
 // service that manual_trigger leaves under operator control; Pause needs a
 // pausable schedule that cron doesn't hold (a paused one can always resume).
 func (h TaskHeader) buttons() []headerButton {
+	if h.ReadOnly {
+		return nil
+	}
 	t := h.Task
 	if t != nil && t.Kind.IsService() {
 		if h.Stopped {
