@@ -48,7 +48,9 @@ run debian:trixie-slim '
   apt-get update -qq && apt-get install -y -qq ca-certificates >/dev/null
   cp /linux/runwisp.asc /usr/share/keyrings/runwisp.asc
   sed "s|https://pkg.runwisp.com|${BASE}|" /linux/runwisp.sources >/etc/apt/sources.list.d/smoke.sources
-  apt-get update && apt-get install -y -o Dpkg::Options::=--force-confold runwisp
+  # The edge can still serve a stale Packages.gz after Packages is fresh.
+  for attempt in 1 2 3 4 5 6; do apt-get update && break; [ "${attempt}" -lt 6 ]; sleep 10; done
+  apt-get install -y -o Dpkg::Options::=--force-confold runwisp
   test "$(cat /usr/lib/runwisp/.runwisp-source)" = deb
   runwisp --version | grep -F "${VERSION}"
 '
