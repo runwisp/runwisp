@@ -201,7 +201,11 @@ jobs:
       # Installs the .deb/.rpm in Debian and Fedora containers and upgrades
       # them from a freshly built, signed apt/dnf repository.
       - name: Linux package tests
-        run: packaging/linux/tests/packages_test.sh
+        run: |
+          # The repository tools release.yml's linux-repo job installs, so the
+          # test builds the repository the same way the release does.
+          sudo apt-get install -y -qq apt-utils createrepo-c
+          packaging/linux/tests/packages_test.sh
 
       - name: Build web UI and sync into Go embed directory
         run: ./node_modules/.bin/moon run runwisp:sync-ui-dist
