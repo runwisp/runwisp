@@ -36,6 +36,8 @@ for attempt in $(seq 1 30); do
 done
 curl -fsS "${base}/runwisp.asc" | cmp -s - "${linux}/runwisp.asc" ||
   { echo "${base}/runwisp.asc is not packaging/linux/runwisp.asc" >&2; exit 1; }
+curl -fsS "${base}/" | grep -qF ">${version}<" ||
+  { echo "${base}/ does not show version ${version}" >&2; exit 1; }
 
 run() {
   local image=$1 script=$2

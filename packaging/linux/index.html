@@ -1,0 +1,140 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: PoppyCake, s.r.o. -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>RunWisp packages</title>
+        <link rel="icon" href="https://runwisp.com/favicon.ico" />
+        <style>
+            :root {
+                color-scheme: light dark;
+                --bg: #f3f6f6;
+                --fg: #0c1719;
+                --muted: #4b5f63;
+                --line: #d3dcdd;
+                --code: #e9eeee;
+                --accent: #0e7c86;
+            }
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --bg: #0c1719;
+                    --fg: #e6eeef;
+                    --muted: #8fa3a6;
+                    --line: #1f3439;
+                    --code: #080f11;
+                    --accent: #2fd4dd;
+                }
+            }
+            * {
+                box-sizing: border-box;
+            }
+            body {
+                margin: 0;
+                background: var(--bg);
+                color: var(--fg);
+                font:
+                    16px/1.6 system-ui,
+                    -apple-system,
+                    "Segoe UI",
+                    sans-serif;
+            }
+            main {
+                max-width: 62rem;
+                margin: 0 auto;
+                padding: 4rem 1.25rem;
+            }
+            h1 {
+                font-size: 1.75rem;
+                margin: 0 0 0.25rem;
+            }
+            h1 span {
+                color: var(--accent);
+            }
+            h2 {
+                font-size: 1.1rem;
+                margin: 2.5rem 0 0.5rem;
+                padding-top: 1.5rem;
+                border-top: 1px solid var(--line);
+            }
+            p {
+                margin: 0.5rem 0;
+            }
+            .lead {
+                color: var(--muted);
+                margin-bottom: 1.5rem;
+            }
+            .version {
+                font-family: ui-monospace, "SF Mono", Menlo, monospace;
+                color: var(--accent);
+            }
+            a {
+                color: var(--accent);
+            }
+            code {
+                font-family: ui-monospace, "SF Mono", Menlo, monospace;
+                font-size: 0.9em;
+            }
+            pre {
+                background: var(--code);
+                border-left: 3px solid var(--accent);
+                padding: 0.9rem 1rem;
+                overflow-x: auto;
+                margin: 0.75rem 0;
+            }
+            pre code {
+                font-size: 0.85rem;
+            }
+            footer {
+                margin-top: 3rem;
+                color: var(--muted);
+                font-size: 0.9rem;
+            }
+        </style>
+    </head>
+    <body>
+        <main>
+            <h1><span>RunWisp</span> packages</h1>
+            <p class="lead">
+                The apt and dnf repository for
+                <a href="https://runwisp.com">RunWisp</a>, signed and updated on
+                every stable release. Current version:
+                <span class="version">@VERSION@</span>.
+            </p>
+
+            <h2>Quickest: install the package</h2>
+            <p>
+                The package adds this repository for you, so
+                <code>apt upgrade</code> or <code>dnf upgrade</code> keeps
+                RunWisp current. Use <code>arm64</code> instead of
+                <code>x64</code> on ARM.
+            </p>
+            <pre><code># Debian, Ubuntu
+curl -fLO https://github.com/runwisp/runwisp/releases/latest/download/runwisp-linux-x64.deb
+sudo apt install ./runwisp-linux-x64.deb
+
+# Fedora, RHEL
+sudo dnf install https://github.com/runwisp/runwisp/releases/latest/download/runwisp-linux-x64.rpm</code></pre>
+
+            <h2>Debian, Ubuntu: add the repository</h2>
+            <pre><code>sudo curl -fsSLo /usr/share/keyrings/runwisp.asc https://pkg.runwisp.com/runwisp.asc
+sudo curl -fsSLo /etc/apt/sources.list.d/runwisp.sources https://pkg.runwisp.com/runwisp.sources
+sudo apt update &amp;&amp; sudo apt install runwisp</code></pre>
+
+            <h2>Fedora, RHEL: add the repository</h2>
+            <pre><code>sudo curl -fsSLo /etc/pki/rpm-gpg/RPM-GPG-KEY-runwisp https://pkg.runwisp.com/runwisp.asc
+sudo curl -fsSLo /etc/yum.repos.d/runwisp.repo https://pkg.runwisp.com/runwisp.repo
+sudo dnf install runwisp</code></pre>
+
+            <footer>
+                <a href="https://docs.runwisp.com/getting-started/quick-start/"
+                    >Quick start</a
+                >
+                · <a href="https://github.com/runwisp/runwisp">GitHub</a> ·
+                <a href="/runwisp.asc">Signing key</a> · Builds for x64 and
+                arm64.
+            </footer>
+        </main>
+    </body>
+</html>
