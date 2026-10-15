@@ -103,6 +103,10 @@ type Task struct {
 
 	// Timeout: nil and *0 both mean "no timeout". Read via TimeoutValue.
 	Timeout *time.Duration `toml:"-"                       json:"timeout,omitempty" doc:"Per-run timeout in nanoseconds"`
+	// WarnAfter is the soft counterpart to Timeout: a run still going this long
+	// after it started raises one long_running notification and keeps running.
+	// Task-only; nil and *0 both mean "no warning". Read via WarnAfterValue.
+	WarnAfter *time.Duration `toml:"-" json:"warnAfter,omitempty" doc:"For tasks: send a long_running notification once when a run is still going after this long, without stopping it, in nanoseconds; 0 means no warning"`
 	// GracefulStop of 0 kills immediately, with no grace window. Applies to
 	// tasks and services. Config-loaded tasks always have it resolved; nil only
 	// occurs for tasks built outside config.Load (station dispatch, tests) and is
@@ -288,6 +292,10 @@ func (t *Task) GracefulStopValue() time.Duration { return OrDefault(t.GracefulSt
 // unset or explicitly disabled with `timeout = "0s"`. Both nil and *0 mean the
 // run manager arms no timeout timer.
 func (t *Task) TimeoutValue() time.Duration { return OrDefault(t.Timeout, 0) }
+
+// WarnAfterValue returns the configured long-running warning threshold, or 0
+// ("no warning") when unset or explicitly disabled with `warn_after = "0s"`.
+func (t *Task) WarnAfterValue() time.Duration { return OrDefault(t.WarnAfter, 0) }
 
 // WithTimeout derives the context one execution of the task runs under: bounded
 // by its timeout when one is set, otherwise only cancellable. The single place

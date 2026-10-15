@@ -35,13 +35,18 @@
             "readOnly": true,
             "type": "string"
           },
+          "readOnly": {
+            "description": "True when the read-only password answered: the session can view but every write is rejected with 403",
+            "type": "boolean"
+          },
           "token": {
             "description": "Session token, also set as the runwisp_jwt cookie",
             "type": "string"
           }
         },
         "required": [
-          "token"
+          "token",
+          "readOnly"
         ],
         "type": "object"
       },
@@ -91,11 +96,16 @@
           "authenticated": {
             "description": "Whether the current request is already authenticated via cookie",
             "type": "boolean"
+          },
+          "readOnly": {
+            "description": "Whether the session was opened with the read-only password: it can view everything and change nothing",
+            "type": "boolean"
           }
         },
         "required": [
           "authRequired",
-          "authenticated"
+          "authenticated",
+          "readOnly"
         ],
         "type": "object"
       },
@@ -2060,6 +2070,11 @@
             "description": "Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root.",
             "type": "string"
           },
+          "warnAfter": {
+            "description": "For tasks: send a long_running notification once when a run is still going after this long, without stopping it, in nanoseconds; 0 means no warning",
+            "format": "int64",
+            "type": "integer"
+          },
           "workingDir": {
             "description": "Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal \"~\" means the run-as user's home, resolved at run time",
             "type": "string"
@@ -2444,6 +2459,11 @@
           "user": {
             "description": "Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root.",
             "type": "string"
+          },
+          "warnAfter": {
+            "description": "For tasks: send a long_running notification once when a run is still going after this long, without stopping it, in nanoseconds; 0 means no warning",
+            "format": "int64",
+            "type": "integer"
           },
           "workingDir": {
             "description": "Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal \"~\" means the run-as user's home, resolved at run time",
@@ -3894,6 +3914,45 @@
           }
         },
         "summary": "Retrieve the daemon's ephemeral password (Unix socket only)",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/api/local/viewer-password": {
+      "post": {
+        "description": "Returns the in-memory read-only password, generating one on first call. Sessions opened with it can view everything and change nothing. Always 403 over TCP. Always 404 when the daemon is configured with RUNWISP_VIEWER_PASSWORD.",
+        "operationId": "mintViewerPassword",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalCredentialsBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Enable and retrieve the read-only password (Unix socket only)",
         "tags": [
           "System"
         ]

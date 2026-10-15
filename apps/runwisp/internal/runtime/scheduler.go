@@ -309,7 +309,7 @@ func (scheduler *Scheduler) SetLocation(location *time.Location, tasks map[strin
 	for _, name := range slices.Sorted(maps.Keys(scheduler.entryIDs)) {
 		entryID, task := scheduler.entryIDs[name], tasks[name]
 		zoned, ok := schedules[entryID].(zonedSchedule)
-		if task == nil || task.Timezone != "" || !ok || isFixedInterval(zoned.Schedule) {
+		if task == nil || task.Timezone != "" || !ok || cronspec.IsFixedInterval(zoned.Schedule) {
 			continue
 		}
 		scheduler.cron.Remove(entryID)
@@ -367,35 +367,9 @@ func (scheduler *Scheduler) RemoveTask(name string) {
 	delete(scheduler.jitterPlans, name)
 }
 
-// effectiveSpec is resolveTaskSchedule against the scheduler's default location.
+// effectiveSpec is cronspec.Resolve against the scheduler's default location.
 func (scheduler *Scheduler) effectiveSpec(task *model.Task) (string, *time.Location) {
-	return resolveTaskSchedule(task, scheduler.location)
-}
-
-// resolveTaskSchedule builds the cron spec actually fed to the parser —
-// task.Cron prefixed with CRON_TZ= when the task pins its own timezone — and
-// the location used as the reference for wall-clock evaluation: the task's
-// own timezone when set, else defaultLoc, else time.Local. Shared by the live
-// scheduler (effectiveSpec) and startup catch-up (catchupSchedule) so both
-// interpret a task's schedule identically.
-func resolveTaskSchedule(task *model.Task, defaultLoc *time.Location) (string, *time.Location) {
-	spec := task.Cron
-	loc := defaultLoc
-	if loc == nil {
-		loc = time.Local
-	}
-	if task.Timezone != "" {
-		// CRON_TZ= prefix is honored by go-cron's parser and
-		// overrides the default location for this entry.
-		spec = "CRON_TZ=" + task.Timezone + " " + task.Cron
-		// Best-effort resolve: if it doesn't parse, the caller's parser.Parse
-		// will fail and surface an error/warning. On success, use the task TZ
-		// as the reference for wall-clock evaluation.
-		if l, err := time.LoadLocation(task.Timezone); err == nil {
-			loc = l
-		}
-	}
-	return spec, loc
+	return cronspec.Resolve(task.Cron, task.Timezone, scheduler.location)
 }
 
 // maxDSTRewind is the furthest a fall-back transition turns the clock back.
@@ -409,13 +383,13 @@ const maxDSTRewind = 2 * time.Hour
 // than n when the schedule stops matching. An @every schedule counts from
 // from, as one added at from would.
 func NextFirings(task *model.Task, defaultLoc *time.Location, from time.Time, n int) ([]time.Time, error) {
-	spec, loc := resolveTaskSchedule(task, defaultLoc)
+	spec, loc := cronspec.Resolve(task.Cron, task.Timezone, defaultLoc)
 	schedule, err := cronspec.NewParser().Parse(spec)
 	if err != nil {
 		return nil, err
 	}
 	zoned := zonedSchedule{schedule, loc}
-	fixedInterval := isFixedInterval(schedule)
+	fixedInterval := cronspec.IsFixedInterval(schedule)
 	start := from
 	if !fixedInterval {
 		start = from.Add(-maxDSTRewind)
@@ -444,7 +418,7 @@ func (scheduler *Scheduler) addTask(task *model.Task) error {
 	if err != nil {
 		return err
 	}
-	fixedInterval := isFixedInterval(schedule)
+	fixedInterval := cronspec.IsFixedInterval(schedule)
 	scheduler.entryIDs[taskName] = scheduler.cron.Schedule(zonedSchedule{schedule, loc}, cron.FuncJob(func() {
 		scheduler.fireOnce(taskName, loc, fixedInterval)
 	}))
@@ -463,24 +437,11 @@ type zonedSchedule struct {
 
 func (z zonedSchedule) Next(t time.Time) time.Time { return z.Schedule.Next(t.In(z.loc)) }
 
-// isFixedInterval reports whether a schedule fires on a fixed duration
-// (@every) instead of matching wall-clock fields. Such a schedule has no
-// wall-clock time it can repeat: on a fall-back day every one of its firings
-// in the rewound hour is a genuine tick of real elapsed time, even though an
-// interval dividing an hour evenly ("@every 30m") lands each of them on a
-// local time already seen an hour earlier. The wall-clock dedup must therefore
-// skip them, mirroring the spring-forward exemption cronspec already makes for
-// the same schedules.
-func isFixedInterval(schedule cron.Schedule) bool {
-	_, ok := schedule.(cron.ConstantDelaySchedule)
-	return ok
-}
-
 // fireOnce is the cron callback for a scheduled task. It dedupes wall-clock
 // duplicates (DST fall-back) by tracking every wall-clock second already
 // fired within the task's current wall hour (see firedHour); a duplicate is
 // recorded as ReasonDSTSkipped and never reaches the executor. fixedInterval
-// tasks (@every) are exempt — see isFixedInterval.
+// tasks (@every) are exempt — see cronspec.IsFixedInterval.
 func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location, fixedInterval bool) {
 	// Runs in go-cron's own goroutine, which has no panic recovery: an
 	// unguarded panic here would crash the process and (with a TUI attached)

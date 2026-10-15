@@ -77,6 +77,45 @@ password. It exits `1` when `RUNWISP_PASSWORD` is set (RunWisp never hands out a
 password you chose) and `5` when authentication is off. Piping it into a
 clipboard tool keeps it out of your scrollback.
 
+## Read-only access
+
+**since**: `1.7`
+
+```bash
+RUNWISP_PASSWORD='long-random-string' \
+RUNWISP_VIEWER_PASSWORD='another-string' runwisp daemon
+```
+
+A second password lets someone look at the dashboard without being able to
+change anything. It's off unless you set it: with no `RUNWISP_VIEWER_PASSWORD`
+there is no second secret and nobody can sign in read-only.
+
+Someone who signs in with it can see tasks, runs, logs and notifications. The
+daemon rejects everything that changes state with a `403`: triggering, starting,
+stopping or restarting a task, pausing, deleting runs, reloading the config and
+marking notifications read. The Web UI hides those controls and shows a
+**Read-only** badge in the top bar. A remote `runwisp tui --url` hides them too
+and marks the sidebar **read-only**. A remote `runwisp run --url` signed in this
+way fails with a message saying so.
+
+- The two passwords must differ. The daemon refuses to start if they match.
+- It can't be combined with `RUNWISP_AUTH=off`.
+- Changing it ends read-only sessions only; full sessions carry on.
+- It can't be used to get the full password: a read-only session can't mint a
+  launch ticket (see [Network clients](#network-clients-web-ui-remote-rest)).
+- The control socket is unaffected. Local clients always have full access.
+
+To get a read-only password without setting one in the environment, ask the
+running daemon for it:
+
+```bash
+runwisp password --viewer
+```
+
+The first call makes up a random password and keeps it in memory until the
+daemon restarts; later calls print the same one. Like `runwisp password`, it
+exits `1` when `RUNWISP_VIEWER_PASSWORD` is set.
+
 ## Running without a password
 
 ```bash

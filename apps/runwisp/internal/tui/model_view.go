@@ -171,9 +171,11 @@ func (m Model) buildContextHelpText() helpBar {
 		return helpBar{}.add(prioAction, "type to filter").add(prioNav, "↑↓ move", "enter select", "esc cancel")
 	}
 	if m.notifications.IsExpanded() {
-		return helpBar{}.add(prioNav, keys.Move.Bar).
-			add(prioAction, keys.NotifOpen.Bar, keys.NotifRead.Bar, keys.NotifReadAll.Bar).
-			add(prioNav, keys.NotifCollapse.Bar).
+		bar := helpBar{}.add(prioNav, keys.Move.Bar).add(prioAction, keys.NotifOpen.Bar)
+		if !m.readOnly {
+			bar = bar.add(prioAction, keys.NotifRead.Bar, keys.NotifReadAll.Bar)
+		}
+		return bar.add(prioNav, keys.NotifCollapse.Bar).
 			add(prioQuit, keys.Quit.Bar)
 	}
 	if m.runListFocused() && m.execList.SelectionActive() {
@@ -278,7 +280,11 @@ func (m Model) buildMainHelpText() helpBar {
 			add(prioAction, keys.TaskInfo.Bar).
 			add(prioNav, keys.ToSidebar.Bar)
 	} else {
-		bar = bar.add(prioNav, keys.Filter.Bar, keys.Select.Bar, keys.ToSidebar.Bar)
+		bar = bar.add(prioNav, keys.Filter.Bar)
+		if !m.readOnly {
+			bar = bar.add(prioNav, keys.Select.Bar)
+		}
+		bar = bar.add(prioNav, keys.ToSidebar.Bar)
 	}
 	if m.sidebar.ActivePage() == uikit.PageHome && m.notifications.PanelHeight() > 0 {
 		bar = bar.add(prioNav, keys.NotifPanel.Bar)

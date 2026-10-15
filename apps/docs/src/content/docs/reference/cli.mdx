@@ -39,6 +39,7 @@ Besides the `RUNWISP_*` twins of the global options above:
 | Variable                  | Description                                                                                                                                   |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RUNWISP_PASSWORD`        | The Web UI and REST API password, kept in memory only. Unset: a new one every boot. See [Authentication](/operations/auth/).                  |
+| `RUNWISP_VIEWER_PASSWORD` | Optional second password that signs in read-only. Unset: no read-only access. See [Read-only access](/operations/auth/#read-only-access).     |
 | `RUNWISP_AUTH`            | `off` disables authentication. Can't be combined with `RUNWISP_PASSWORD`. See [Authentication](/operations/auth/#running-without-a-password). |
 | `RUNWISP_URL`             | Remote daemon URL for `run`, `logs`, `start`, `stop`, `restart`, and `tui`, same as `--url`.                                                  |
 | `RUNWISP_TLS`             | Overrides [`[daemon] tls`](/configuration/daemon/#tls-tls_cert-tls_key) (`auto` or `off`).                                                    |
@@ -105,6 +106,7 @@ Attaches a TUI to a running daemon.
 
 ```bash
 runwisp validate
+runwisp validate --explain
 runwisp validate --json
 ```
 
@@ -112,10 +114,11 @@ Loads and checks `runwisp.toml` exactly like daemon startup, then prints a
 summary (task and service counts, the timezone) and any warnings. Starts
 nothing. Exits non-zero on an invalid config.
 
-| Flag     | Description                                                                 |
-| -------- | --------------------------------------------------------------------------- |
-| `--json` | Print one JSON document instead of the summary.                             |
-| `--app`  | Check a JSON document on stdin, as `runwisp daemon --app` would. Since 1.7. |
+| Flag        | Description                                                                                                                                                                                                                                                                                                     |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--explain` | Since 1.7. Describe each schedule in words and list its next 3 firings in the zone the scheduler uses, with [daylight saving](/concepts/scheduling/) effects marked. `@every` schedules are described but not previewed, since they count from when the daemon starts. With `--json`, adds a `schedules` array. |
+| `--json`    | Print one JSON document instead of the summary.                                                                                                                                                                                                                                                                 |
+| `--app`     | Check a JSON document on stdin, as `runwisp daemon --app` would. Since 1.7.                                                                                                                                                                                                                                     |
 
 Parse errors in JSON carry the exact location:
 
@@ -407,6 +410,7 @@ crontab -l | runwisp import cron
 runwisp import cron /etc/crontab --write
 runwisp import supervisord /etc/supervisor/conf.d/*.conf -o runwisp.toml
 runwisp import systemd /etc/systemd/system/myapp.service
+runwisp import ofelia compose.yaml -o runwisp.toml
 ```
 
 Converts existing config into RunWisp TOML and prints it to stdout. Reads files
@@ -419,6 +423,7 @@ runs twice.
 | `cron [FILE]`         | A crontab. `/etc/crontab` and `/etc/cron.d/*` user columns are detected. |
 | `supervisord [FILE…]` | `[program:*]` sections, following `[include]`.                           |
 | `systemd [UNIT…]`     | `.service` units. `Restart=` → service, `Type=oneshot` → task.           |
+| `ofelia [FILE…]`      | Ofelia jobs, from an INI config or `ofelia.*` compose labels. Since 1.7. |
 
 | Flag             | Description                                                                                                                                 |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -486,6 +491,9 @@ Installs a unit so the daemon starts on boot. See [Autostart](/operations/autost
 | `-y`, `--yes` | Don't ask for confirmation.                                                                                  |
 | `--force`     | Overwrite a hand-edited unit.                                                                                |
 | `--binary`    | Binary path to put in the unit (default: this binary).                                                       |
+| `--station`   | Run the service as `runwisp station --no-tui` (systemd only). Needs `--token` and `--url`.                   |
+| `--token`     | With `--station`: the station token (default: `RUNWISP_STATION_TOKEN`).                                      |
+| `--url`       | With `--station`: the Station URL (default: `RUNWISP_STATION_URL`).                                          |
 
 Re-running is safe: an identical unit is left alone, a changed one asks before
 overwriting.
@@ -537,8 +545,9 @@ runwisp upgrade --yes --restart=idle
 ```
 
 Upgrades RunWisp to the latest stable release the same way you installed it.
-A Homebrew install runs `brew upgrade runwisp`, and a global npm, bun, pnpm, or
-yarn install runs that package manager. An install from the script or a
+A Homebrew install runs `brew upgrade runwisp`, a `.deb` or `.rpm` install runs
+apt or dnf through `sudo`, and a global npm, bun, pnpm, or yarn install runs
+that package manager. An install from the script or a
 tar.gz downloads the release from GitHub, checks its SHA-256, and replaces the
 binary in place. For Docker, `npx`, and an npm install inside a project, it
 prints how to upgrade instead.
@@ -562,13 +571,17 @@ runwisp password | wl-copy
 
 Prints the generated Web UI password.
 
-| Exit code | Meaning                                      |
-| --------- | -------------------------------------------- |
-| `0`       | Printed.                                     |
-| `1`       | Refused: the daemon uses `RUNWISP_PASSWORD`. |
-| `2`       | The daemon isn't reachable.                  |
-| `5`       | Authentication is off; there's no password.  |
-| `3`, `4`  | Unexpected error.                            |
+| Option     | Description                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `--viewer` | Print the [read-only password](/operations/auth/#read-only-access) instead, making one up on first use. **since**: `1.7` |
+
+| Exit code | Meaning                                                                                  |
+| --------- | ---------------------------------------------------------------------------------------- |
+| `0`       | Printed.                                                                                 |
+| `1`       | Refused: the daemon uses `RUNWISP_PASSWORD` (`RUNWISP_VIEWER_PASSWORD` with `--viewer`). |
+| `2`       | The daemon isn't reachable.                                                              |
+| `5`       | Authentication is off; there's no password.                                              |
+| `3`, `4`  | Unexpected error.                                                                        |
 
 ### `runwisp schema`
 

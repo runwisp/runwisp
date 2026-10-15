@@ -6,6 +6,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -20,6 +21,9 @@ var testSessions, _ = auth.NewService("pw", []byte("test-session-key"), nil)
 
 // freshToken is what the fake daemons hand out on a successful CHAP login.
 var freshToken = testSessions.IssueToken(time.Hour)
+
+// freshViewerToken is a live read-only token. Only its shape matters here.
+var freshViewerToken = strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10) + ".viewer.mac"
 
 // useTempCacheDir points os.UserCacheDir at a temp directory across platforms
 // (XDG_CACHE_HOME on Linux, HOME on macOS).
@@ -37,7 +41,7 @@ func TestTokenCache_RoundTrip(t *testing.T) {
 	assert.Empty(t, loadCachedToken(url), "no token before any store")
 
 	token := testSessions.IssueToken(time.Hour)
-	storeCachedToken(url, token)
+	storeCachedToken(url, "", token)
 
 	assert.Equal(t, token, loadCachedToken(url))
 	// Trailing-slash variants map to the same entry.
@@ -48,7 +52,7 @@ func TestTokenCache_DropsExpired(t *testing.T) {
 	useTempCacheDir(t)
 	const url = "https://runwisp.example.com"
 
-	storeCachedToken(url, testSessions.IssueToken(-time.Minute))
+	storeCachedToken(url, "", testSessions.IssueToken(-time.Minute))
 	assert.Empty(t, loadCachedToken(url), "an expired token must not be returned")
 }
 
@@ -59,7 +63,7 @@ func TestTokenCache_UnreadableExpiryIsTried(t *testing.T) {
 	// A token whose expiry can't be read (an older daemon's JWT) has an
 	// unknown expiry, so it is tried; a 401 falls back to a login. A miss
 	// would redo CHAP on every call and hit the daemon's auth rate limit.
-	storeCachedToken(url, "header.payload.signature")
+	storeCachedToken(url, "", "header.payload.signature")
 	assert.Equal(t, "header.payload.signature", loadCachedToken(url))
 }
 
@@ -74,13 +78,13 @@ func TestTokenCache_CorruptFile(t *testing.T) {
 	// Corrupt cache reads as "no token", and a subsequent store overwrites it.
 	assert.Empty(t, loadCachedToken("https://x"))
 	token := testSessions.IssueToken(time.Hour)
-	storeCachedToken("https://x", token)
+	storeCachedToken("https://x", "", token)
 	assert.Equal(t, token, loadCachedToken("https://x"))
 }
 
 func TestTokenCache_MissingURLInPopulatedCache(t *testing.T) {
 	useTempCacheDir(t)
-	storeCachedToken("https://a.example.com", testSessions.IssueToken(time.Hour))
+	storeCachedToken("https://a.example.com", "", testSessions.IssueToken(time.Hour))
 
 	// A different daemon URL has no entry in the otherwise-valid cache.
 	assert.Empty(t, loadCachedToken("https://b.example.com"))
@@ -97,7 +101,7 @@ func TestTokenCache_NoCacheDir(t *testing.T) {
 	require.Error(t, err, "no cache dir is resolvable")
 
 	assert.Empty(t, loadCachedToken("https://x"))
-	assert.NotPanics(t, func() { storeCachedToken("https://x", "tok") })
+	assert.NotPanics(t, func() { storeCachedToken("https://x", "", "tok") })
 }
 
 // TestTokenCache_UnwritablePath points the cache at a path whose parent is a
@@ -113,7 +117,7 @@ func TestTokenCache_UnwritablePath(t *testing.T) {
 	t.Setenv("HOME", blocker)
 
 	assert.NotPanics(t, func() {
-		storeCachedToken("https://x", testSessions.IssueToken(time.Hour))
+		storeCachedToken("https://x", "", testSessions.IssueToken(time.Hour))
 	})
 	assert.Empty(t, loadCachedToken("https://x"), "nothing was persisted")
 }
@@ -122,8 +126,20 @@ func TestTokenCache_SeparateURLs(t *testing.T) {
 	useTempCacheDir(t)
 	a := testSessions.IssueToken(time.Hour)
 	b := testSessions.IssueToken(time.Hour)
-	storeCachedToken("https://a.example.com", a)
-	storeCachedToken("https://b.example.com", b)
+	storeCachedToken("https://a.example.com", "", a)
+	storeCachedToken("https://b.example.com", "", b)
 	assert.Equal(t, a, loadCachedToken("https://a.example.com"))
 	assert.Equal(t, b, loadCachedToken("https://b.example.com"))
+}
+
+// TestTokenCache_ViewerTokenBoundToPassword: a read-only session is cached so
+// repeated viewer logins don't burn the daemon's auth rate limit, but only a
+// login with the same password reuses it; it never shadows an admin login.
+func TestTokenCache_ViewerTokenBoundToPassword(t *testing.T) {
+	useTempCacheDir(t)
+	storeCachedToken("https://x", "view", freshViewerToken)
+
+	assert.Equal(t, freshViewerToken, loadCachedViewerToken("https://x/", "view"))
+	assert.Empty(t, loadCachedViewerToken("https://x", "admin"), "another password must not get the viewer session")
+	assert.Empty(t, loadCachedToken("https://x"), "the admin slot must stay empty")
 }

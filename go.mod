@@ -16,9 +16,10 @@ require (
 	github.com/compose-spec/compose-go/v2 v2.16.1
 	github.com/creack/pty v1.1.24
 	github.com/danielgtaylor/huma/v2 v2.39.1
-	github.com/go-chi/chi/v5 v5.4.0
+	github.com/go-chi/chi/v5 v5.5.0
 	github.com/go-chi/httprate v0.16.1
 	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
+	github.com/lnquy/cron v1.1.1
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.2
 	github.com/netresearch/go-cron v0.16.1

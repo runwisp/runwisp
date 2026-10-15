@@ -146,6 +146,7 @@ func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, error) {
 		StopTimeout:    opts.StopTimeout,
 		MaskedCronUnit: opts.maskedCronUnit,
 		CronPriorState: opts.cronPriorState,
+		Station:        opts.Station,
 	}
 	if wantsCronFailsafe(opts) {
 		params.CronFailsafeUnit = cronFailsafeUnitName

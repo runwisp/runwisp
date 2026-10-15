@@ -283,6 +283,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/local/viewer-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable and retrieve the read-only password (Unix socket only)
+         * @description Returns the in-memory read-only password, generating one on first call. Sessions opened with it can view everything and change nothing. Always 403 over TCP. Always 404 when the daemon is configured with RUNWISP_VIEWER_PASSWORD.
+         */
+        post: operations["mintViewerPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/notifications": {
         parameters: {
             query?: never;
@@ -817,6 +837,8 @@ export interface components {
              * @example http://localhost:9477/schemas/AuthLoginBody.json
              */
             readonly $schema?: string;
+            /** @description True when the read-only password answered: the session can view but every write is rejected with 403 */
+            readOnly: boolean;
             /** @description Session token, also set as the runwisp_jwt cookie */
             token: string;
         };
@@ -843,6 +865,8 @@ export interface components {
             authRequired: boolean;
             /** @description Whether the current request is already authenticated via cookie */
             authenticated: boolean;
+            /** @description Whether the session was opened with the read-only password: it can view everything and change nothing */
+            readOnly: boolean;
         };
         BulkAffectedBody: {
             /**
@@ -1761,6 +1785,11 @@ export interface components {
             umask?: string;
             /** @description Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root. */
             user?: string;
+            /**
+             * Format: int64
+             * @description For tasks: send a long_running notification once when a run is still going after this long, without stopping it, in nanoseconds; 0 means no warning
+             */
+            warnAfter?: number;
             /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal "~" means the run-as user's home, resolved at run time */
             workingDir?: string;
         };
@@ -1979,6 +2008,11 @@ export interface components {
             usage?: components["schemas"]["ResourceUsage"];
             /** @description Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root. */
             user?: string;
+            /**
+             * Format: int64
+             * @description For tasks: send a long_running notification once when a run is still going after this long, without stopping it, in nanoseconds; 0 means no warning
+             */
+            warnAfter?: number;
             /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal "~" means the run-as user's home, resolved at run time */
             workingDir?: string;
         };
@@ -2822,6 +2856,36 @@ export interface operations {
         };
     };
     getLocalCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalCredentialsBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    mintViewerPassword: {
         parameters: {
             query?: never;
             header?: never;

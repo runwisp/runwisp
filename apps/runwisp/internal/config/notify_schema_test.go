@@ -89,7 +89,7 @@ notify = ["ops"]
 	assert.Equal(t, "slack", cfg.Notify.Notifiers[1].Type)
 	assert.Equal(t, []string{"inapp"}, cfg.Notify.GlobalNotifiers)
 
-	require.Len(t, cfg.Notify.Routes, 3, "explicit route + per-task sugar + default inapp catch-all")
+	require.Len(t, cfg.Notify.Routes, 5, "explicit route + per-task sugar + default inapp catch-all, the last two each with a long_running sibling")
 	explicit := cfg.Notify.Routes[0]
 	assert.Equal(t, []string{"failed"}, explicit.Kinds)
 	assert.Equal(t, "backup-*", explicit.TaskGlob)
@@ -102,11 +102,23 @@ notify = ["ops"]
 	assert.Contains(t, synth.NotifierID, "ops")
 	assert.Contains(t, synth.NotifierID, "inapp", "per-task sugar must imply inapp by default")
 
-	defaultRoute := cfg.Notify.Routes[2]
+	synthLong := cfg.Notify.Routes[2]
+	assert.Equal(t, []string{"long_running"}, synthLong.Kinds)
+	assert.False(t, synthLong.MatchFailure, "long_running is never a failure")
+	assert.Equal(t, synth.TaskGlob, synthLong.TaskGlob)
+	assert.Equal(t, synth.NotifierID, synthLong.NotifierID)
+
+	defaultRoute := cfg.Notify.Routes[3]
 	assert.Empty(t, defaultRoute.Kinds, "the default catch-all matches on the classified is_failure bit")
 	assert.True(t, defaultRoute.MatchFailure)
 	assert.Empty(t, defaultRoute.TaskGlob, "default catch-all matches every task")
 	assert.Equal(t, []string{"inapp"}, defaultRoute.NotifierID)
+
+	defaultLong := cfg.Notify.Routes[4]
+	assert.Equal(t, []string{"long_running"}, defaultLong.Kinds)
+	assert.False(t, defaultLong.MatchFailure)
+	assert.Empty(t, defaultLong.TaskGlob)
+	assert.Equal(t, []string{"inapp"}, defaultLong.NotifierID)
 }
 
 func TestNotifyConfig_DefaultInappRouteWithZeroConfig(t *testing.T) {
@@ -121,8 +133,8 @@ run         = "exit 1"
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
-	require.Len(t, cfg.Notify.Routes, 1,
-		"zero-config TOML must still produce the default in-app catch-all route")
+	require.Len(t, cfg.Notify.Routes, 2,
+		"zero-config TOML must still produce the default in-app catch-all routes (failure + long_running)")
 	r := cfg.Notify.Routes[0]
 	assert.Empty(t, r.Kinds, "the default catch-all matches on the classified is_failure bit")
 	assert.True(t, r.MatchFailure)
@@ -234,13 +246,13 @@ notifiers = ["inapp"]
 
 // TestValidate_RejectsFailureWithNeverFailureKind is the bug-first regression
 // for match.failure = true combined with a match.kinds token whose event can
-// never carry the classified-failure bit ("succeeded", "started"): the AND
+// never carry the classified-failure bit ("succeeded", "started", "long_running"): the AND
 // of the two predicates can never be true, so the route validates but can
 // never fire — the same class of dead-route bug as
 // TestValidate_RejectsDeliveryFailedInRouteKinds, just reached through the
 // cross-field combination rather than a single token.
 func TestValidate_RejectsFailureWithNeverFailureKind(t *testing.T) {
-	for _, kind := range []string{"succeeded", "started"} {
+	for _, kind := range []string{"succeeded", "started", "long_running"} {
 		src := `
 [[route]]
 match = { kinds = ["` + kind + `"], failure = true }
@@ -547,9 +559,11 @@ notify = ["ops"]
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
-	require.Len(t, cfg.Notify.Routes, 1, "no default catch-all when global_notifiers = []")
-	assert.NotContains(t, cfg.Notify.Routes[0].NotifierID, "inapp",
-		"per-task sugar must not implicitly add inapp once the operator has cleared global_notifiers")
+	require.Len(t, cfg.Notify.Routes, 2, "no default catch-all when global_notifiers = []; only the per-task failure + long_running pair")
+	for _, r := range cfg.Notify.Routes {
+		assert.NotContains(t, r.NotifierID, "inapp",
+			"per-task sugar must not implicitly add inapp once the operator has cleared global_notifiers")
+	}
 }
 
 func TestNotifyConfig_GlobalNotifiersWithCustomChannel(t *testing.T) {
@@ -571,10 +585,11 @@ run = "backup.sh"
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
-	require.Len(t, cfg.Notify.Routes, 1, "default catch-all uses operator-chosen channels, not inapp")
-	r := cfg.Notify.Routes[0]
-	assert.Equal(t, []string{"slack-ops"}, r.NotifierID)
-	assert.NotContains(t, r.NotifierID, "inapp")
+	require.Len(t, cfg.Notify.Routes, 2, "default catch-all (failure + long_running) uses operator-chosen channels, not inapp")
+	for _, r := range cfg.Notify.Routes {
+		assert.Equal(t, []string{"slack-ops"}, r.NotifierID)
+		assert.NotContains(t, r.NotifierID, "inapp")
+	}
 }
 
 func TestValidate_RejectsUnknownAppendNotifier(t *testing.T) {

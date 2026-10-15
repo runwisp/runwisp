@@ -166,5 +166,12 @@ func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {
 		// and stranding the execution as "running" on the station.
 		status = protocol.ExecutionStatusFailed
 	}
-	return new(NewExecutionUpdateMessage(executionID, status, new(run.ExitCode), run.StartedAt, run.EndedAt))
+	update := NewExecutionUpdateMessage(executionID, status, new(run.ExitCode), run.StartedAt, run.EndedAt)
+	// The runtime sets IsFailure (run.End) and the resource totals before it
+	// publishes the terminal event or persists the row, so both the live bridge
+	// and the storage re-map paths see them here.
+	update.IsFailure = new(run.IsFailure)
+	update.PeakMemoryBytes = run.PeakMemoryBytes
+	update.CpuTimeMs = run.CPUTimeMs
+	return &update
 }

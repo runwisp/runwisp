@@ -2117,3 +2117,72 @@ func intPtr(n int) *int { return &n }
 // durPtr returns a pointer to d — for building *time.Duration config fields
 // (e.g. restart_delay, healthy_after) in struct literals.
 func durPtr(d time.Duration) *time.Duration { return &d }
+
+func TestWarnAfterRules(t *testing.T) {
+	t.Run("parses on a task and keeps timeout independent", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+warn_after = "45m"
+timeout = "2h"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, 45*time.Minute, cfg.Tasks[0].WarnAfterValue())
+		assert.Equal(t, 2*time.Hour, cfg.Tasks[0].TimeoutValue())
+	})
+
+	t.Run("omitted inherits from defaults, explicit zero opts out", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+warn_after = "10m"
+
+[tasks.inheritor]
+run = "echo hi"
+
+[tasks.quiet]
+warn_after = "0s"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		byName := map[string]time.Duration{}
+		for _, task := range cfg.Tasks {
+			byName[task.Name] = task.WarnAfterValue()
+		}
+		assert.Equal(t, 10*time.Minute, byName["inheritor"])
+		assert.Equal(t, time.Duration(0), byName["quiet"])
+	})
+
+	t.Run("services neither inherit nor accept it", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+warn_after = "10m"
+
+[services.svc]
+run = "exec ./bin/svc"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, time.Duration(0), cfg.Tasks[0].WarnAfterValue())
+
+		path = writeTOML(t, `
+[services.svc]
+run = "exec ./bin/svc"
+warn_after = "10m"
+`)
+		_, err = Load(path)
+		require.Error(t, err, "warn_after is not a [services.*] key")
+	})
+
+	t.Run("negative is rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+warn_after = "-5m"
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "warn_after")
+	})
+}

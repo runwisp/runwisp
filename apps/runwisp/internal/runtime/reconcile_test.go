@@ -197,6 +197,32 @@ func TestReconcile_PromotedServiceIsNotRestarted(t *testing.T) {
 	assert.False(t, registry.Snapshot()["worker"].Source == model.SourceStaged)
 }
 
+// TestReconcile_NoSchedulerAppliesCronTasksWithoutAdvice is station mode: with no
+// local scheduler, added and changed cron tasks still reach the live set, and an
+// autostart = false schedule draws no "run 'runwisp pause'" advice (there is no
+// local schedule to pause).
+func TestReconcile_NoSchedulerAppliesCronTasksWithoutAdvice(t *testing.T) {
+	db, err := storage.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	old := &model.Task{Name: "old", Cron: "0 3 * * *", Run: "old.sh", Autostart: true}
+	changed := *old
+	changed.Autostart = false
+	changed.Run = "old2.sh"
+	added := &model.Task{Name: "added", Cron: "0 4 * * *", Run: "added.sh"}
+
+	oldSet, newSet := taskSet(old), taskSet(&changed, added)
+	mgr := &recordingManager{}
+	registry := NewTaskRegistry(oldSet)
+	r := &Reconciler{registry: registry, manager: mgr, db: db, now: time.Now}
+	warnings := r.apply(config.DiffTasks(oldSet, newSet), oldSet, newSet)
+
+	assert.Empty(t, warnings)
+	assert.ElementsMatch(t, []string{"added", "old"}, mgr.upserted)
+	assert.Equal(t, "old2.sh", registry.Snapshot()["old"].Run)
+}
+
 // TestReconcile_PromotedTaskIsNotRescheduled is the cron-task half: a promoted
 // task keeps its schedule untouched. A nil scheduler would panic if apply tried to
 // reschedule, which is exactly the assertion.

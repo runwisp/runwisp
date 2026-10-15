@@ -36,6 +36,7 @@ shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flig
 timezone:             IANA string =host system zone — TZ for cron eval when a task pins none
 external_url:         string =last signed-in Web UI address — public Web UI base for notification deep-links; absolute http(s) w/ host; unset = detected from the latest browser password sign-in to the Web UI (persisted; `--url` clients and TUI-opened tabs don't count; never with RUNWISP_AUTH=off)
 check_updates:        bool =true  — poll concierge.runwisp.com for a newer release; shows an indicator, never auto-updates; also gates the Web UI feedback prompt; false = fully offline
+log_output:           bool =false — print each run output line to the daemon stdout as `task | line` (stderr lines to stderr; JSON under --log-format=json); RUNWISP_LOG_OUTPUT overrides; headless only (a TUI session ignores it); bounded buffer drops overflow and reports the count; reloadable; the Docker image sets it true. since 1.7
 metrics_enabled:      bool =false — master switch for /metrics
 metrics_listen:       host:port   — dedicated metrics listener; setting it enables metrics on its own
 trusted_proxies:      []string    — CIDR allowlist of reverse proxies whose X-Forwarded-For is trusted; catch-all
@@ -94,6 +95,7 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
 ```
 timeout:             dur          — per-attempt wall-clock cap; unset = no timeout (TASKS only)
 jitter:              dur          — start-spread window inherited by cron tasks; off when unset (TASKS only)
+warn_after:          dur          — one long_running notification when a run is still going this long after it started (queue wait excluded); the run keeps going; off when unset, "0s" turns off an inherited value; since 1.7 (TASKS only)
 shell:               path =/bin/sh — interpreter for run scripts (absolute path); see FAIL-FAST
 stop_signal:         enum =SIGTERM — stop-ladder signal: SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
 failures:            []str        — outcomes classified as a failure (stats/UI/notify, and gates retry/restart); tokens are reason names (failed,timeout,crashed,log_overflow,start_failed,unhealthy,missed,stopped,daemon_stopped,skipped,queue_full,dst_skipped; not succeeded), exit codes ("42","1-23"; 1..255), or output patterns ("output:<RE2>", matched per stdout/stderr line after secret redaction; a match turns an exit-0 run into reason failed and writes a system log line). Default [failed,timeout,crashed,log_overflow,start_failed,unhealthy,missed]. is_failure = reason∈tokens OR (reason==failed AND (exit∈ranges OR output matched)). Bare list replaces; all-+/- tokens ("-missed","+stopped") adjust the inherited set (task adjusts [defaults], [defaults] adjusts built-in); mixing bare & +/- rejected ("-output:X" drops only an identical pattern). exit 0 = success unless an output pattern matched. retry_attempts/restart=on_failure fire only when reason∈{failed,timeout,crashed,log_overflow,start_failed,unhealthy} AND is_failure — narrowing failures narrows retry/restart; promoting stopped/missed never makes them retry
@@ -121,9 +123,10 @@ Required: the table + [`run`](/configuration/tasks/#run) (unless [`compose_file`
 group:             string =Tasks   — UI grouping label
 description:        string          — human description
 sdk:               bool =false      — tasks + services; run the unit in the SDK app connected over the local socket that defines it, instead of run (SDKs set it); rejects run, compose_file, shell, umask, user, env_base, working_dir, stop_signal; fails the run when no app is connected
-cron:              string          — 5- or 6-field cron (optional leading seconds); ranges may wrap (22-2, FRI-MON); also @hourly, @every 1h30m; omit => manual-only
+cron:              string          — 5- or 6-field cron (optional leading seconds); ranges may wrap (22-2, FRI-MON); day of month takes L, L-3, LW, 15W, day of week FRI#3, FRI#L; also @hourly, @every 1h30m; omit => manual-only
 timezone:          IANA string      — per-task TZ override (else [daemon] timezone)
 jitter:            dur              — cap how far this cron task's start may slip; needs cron (inherits [defaults])
+warn_after:        dur              — one long_running notification when a run is still going this long, without stopping it; goes to notify/global_notifiers/[[route]] kinds=["long_running"]; not a failure (inherits [defaults]; "0s" turns off)
 run_on_start:      bool|enum =false — fire once at start, on top of any cron: true|"daemon" = every daemon start; "boot" = once per machine/container boot (@reboot; Linux boot_id + PID 1 start time, macOS kern.bootsessionuuid, else every start); import cron @reboot + systemd oneshot write "boot", supervisord autorestart=false writes true
 manual_trigger:    bool =true       — allow CLI/API/UI trigger; false = cron-only
 autostart:         bool =true       - false: the cron schedule starts paused the first time the task is registered (first boot, reload add, takeover un-hold) until resumed (UI, TUI p, `runwisp resume`); stays resumed across restarts (unlike services, not re-read each boot); needs cron; rejected with manual_trigger=false or run_on_start; setting it on a known task only warns on reload
@@ -153,7 +156,7 @@ keep_runs:         int              — row retention (inherits [defaults]); 0..
 keep_for:          dur              — age retention (inherits [defaults])
 run:               string (req)     — shell command; with compose_file it is the command run in the service (see compose_mode)
 compose_file:      path             — run a compose service instead of run=; runs in the file's own compose project (COMPOSE_PROJECT_NAME > top-level name: > dir name), like `docker compose up` there
-compose_service:   string =taskname — which compose service; requires compose_file
+compose_service:   string =taskname — which compose service; must exist in compose_file (validate rejects unknown). Without compose_file (since 1.7): exec mode only, project read from RunWisp's own container labels (docker socket only); validate warns when not in a container
 compose_mode:      enum             — exec | run. exec = `docker compose exec` into the service's RUNNING container (requires run);
                                       run = `docker compose run --rm` fresh container (runs `run` if set, else the service's own
                                       command). Default: exec when run is set, else run. Command runs as `/bin/sh -e -c` inside the
@@ -171,7 +174,7 @@ params:            []table          — per-run inputs (TASKS only, rejected on 
                                      (needs choices), description string. Scheduled runs (cron/run_on_start/catch_up) use default; a retry uses the
                                      original run's values; values are passed as real args/env, never pasted into the shell string. See
                                      /configuration/tasks/#params
-notify: []string         — sugar → route on any classified failure (see failures); notifier ids, "id:override", or "inapp". Non-failure outcomes use an explicit [[route]].
+notify: []string         — sugar → route on any classified failure (see failures) and, on a task, on long_running (see warn_after); notifier ids, "id:override", or "inapp". Non-failure outcomes use an explicit [[route]].
 ```
 
 ### [services.&lt;name&gt;] (long-running)
@@ -204,7 +207,7 @@ retry_backoff:       enum =constant
 working_dir, shell, umask, env_base, user — unset = the service's value
 env, secrets         — merged key by key over the service's ([defaults] < service < probe; each side's *_file beneath its inline table)
 env_file, secrets_file — the probe's own layer
-compose_file, compose_service, compose_mode — never inherited; set compose_file to exec into a running container (compose_mode "exec" only). A compose probe inherits nothing from the service
+compose_file, compose_service, compose_mode — never inherited; set compose_file (or run inside the same compose project) to exec into a running container (compose_mode "exec" only). A compose probe inherits nothing from the service
 ```
 
 Any other key is rejected. `health_check` on `[tasks.*]` is rejected.
@@ -218,7 +221,7 @@ file:         path =auto-discover  — compose.yaml/.yml/docker-compose.yaml/.ym
 services:     []string             — filter imported services: bare/"+name" keeps only those, "-name" drops those; polarities mutually exclusive; omit to import all
 import:       enum =services       — services (per-service tasks) | stack (one task)
 group:        string =alias        — UI group
-project_name: string =alias        — compose project name
+project_name: string =file own project — compose project name (-p); unset = COMPOSE_PROJECT_NAME > top-level name: > dir name, like `docker compose up`. Block-imported services get --service-ports --use-aliases; task-level compose_mode="run" does not
 profiles:     []string             — compose profiles
 env_file:     []string             — compose env files
 working_dir:  string =dir of file  — CLI working dir
@@ -269,7 +272,7 @@ Secret-bearing values (`webhook_url`, `bot_token`, `password`, …) arrive final
 
 ```
 match.failure: bool     — match any run classified as a failure (same axis as [tasks.*] failures) (optional)
-match.kinds:   []string — outcomes (same vocab as failures): started | succeeded | failed | timeout | crashed | log_overflow | unhealthy | queue_full | stopped | daemon_stopped | missed | service.fatal | log.disk_pressure (notify.delivery_failed rejected)
+match.kinds:   []string — outcomes (same vocab as failures): started | succeeded | failed | timeout | crashed | log_overflow | unhealthy | queue_full | stopped | daemon_stopped | missed | service.fatal | log.disk_pressure | long_running (notify.delivery_failed rejected; long_running + match.failure rejected)
 match.task:    string   — glob over task name (optional)
 notifiers:      []string (req, non-empty) — notifier ids (or "inapp"); "id:#override" inline target (slack #/@, telegram chat_id, smtp/sendmail email)
 ```
@@ -288,15 +291,15 @@ opt out         `set +e` as the script's first line; no TOML key exists for this
 
 Persistent flags: `-c/--config` (=`runwisp.toml`, or `/etc/runwisp/runwisp.toml` at euid 0), `--data` (=`.runwisp`, or `/var/lib/runwisp` at euid 0), `-p/--port` (=`9477`), `--host` (=`127.0.0.1`), `--log-level` (debug|info|warn|error), `--log-format` (auto|text|json). Each has an env fallback the flag wins over: `RUNWISP_CONFIG`, `RUNWISP_DATA`, `RUNWISP_PORT`, `RUNWISP_HOST`, `RUNWISP_LOG_LEVEL`, `RUNWISP_LOG_FORMAT`.
 Precedence for `-c`/`--data`: explicit flag > `RUNWISP_CONFIG`/`RUNWISP_DATA` env var > euid-derived default.
-Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_AUTH` (`off` disables auth, default on; mutually exclusive with RUNWISP_PASSWORD), `RUNWISP_TLS` (auto|off; overrides `[daemon] tls`, default `off`, applied on every load incl. reload), `RUNWISP_TRUSTED_PROXIES` (CIDRs), `RUNWISP_STATION_TOKEN`, `RUNWISP_STATION_URL`.
+Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_VIEWER_PASSWORD` (optional read-only password; off when unset; sessions opened with it get 403 on every non-GET /api request incl. trigger/stop/reload, UI hides those controls; must differ from RUNWISP_PASSWORD; incompatible with RUNWISP_AUTH=off), `RUNWISP_AUTH` (`off` disables auth, default on; mutually exclusive with RUNWISP_PASSWORD), `RUNWISP_TLS` (auto|off; overrides `[daemon] tls`, default `off`, applied on every load incl. reload), `RUNWISP_TRUSTED_PROXIES` (CIDRs), `RUNWISP_LOG_OUTPUT` (true|false; overrides `[daemon] log_output`, the image sets true), `RUNWISP_STATION_TOKEN`, `RUNWISP_STATION_URL`.
 
-Official Docker image: `runwisp/runwisp` (alpine default + `-debian` variant, amd64/arm64). Plain tags carry no Docker CLI; add `-docker` to the tag (e.g. `latest-docker`, `latest-debian-docker`) for a build with a Docker CLI + Compose plugin baked in, needed if `[compose.*]` or a task's `run =` shells out to `docker`/`docker compose` from inside the RunWisp container itself. Binds `0.0.0.0`, plain HTTP (daemon's `[daemon] tls` default of `off`; set `-e RUNWISP_TLS=auto` to opt into self-signed HTTPS), requires `RUNWISP_PASSWORD` or `RUNWISP_AUTH=off` set or the entrypoint refuses to start; mount a config directory at `/etc/runwisp` (the entrypoint writes a starter `runwisp.toml` into it when the file is missing, the directory is a writable mount point, and the data dir has no `runwisp.db` yet) and data at `/var/lib/runwisp`. See https://docs.runwisp.com/getting-started/docker/.
+Official Docker image: `runwisp/runwisp` (alpine default + `-debian` variant, amd64/arm64; runs under tini as PID 1). Plain tags carry no Docker CLI; add `-docker` to the tag (e.g. `latest-docker`, `latest-debian-docker`) for a build with a Docker CLI + Compose plugin baked in, needed if `[compose.*]` or a task's `run =` shells out to `docker`/`docker compose` from inside the RunWisp container itself. Binds `0.0.0.0`, plain HTTP (daemon's `[daemon] tls` default of `off`; set `-e RUNWISP_TLS=auto` to opt into self-signed HTTPS), requires `RUNWISP_PASSWORD` or `RUNWISP_AUTH=off` set or the entrypoint refuses to start; mount a config directory at `/etc/runwisp` (the entrypoint writes a starter `runwisp.toml` into it when the file is missing, the directory is a writable mount point, and the data dir has no `runwisp.db` yet) and data at `/var/lib/runwisp`. See https://docs.runwisp.com/getting-started/docker/.
 
 ```
 runwisp                      — no subcommand: attach TUI to running daemon, else scaffold toml + spawn daemon + attach
                              — scaffold prompt (TTY only) also detects an adjacent compose file and/or a readable
                                crontab (DefaultCronPatterns: root gets /etc/crontab + /etc/cron.d/* + every spool,
-                               others get only their own spool file) and offers to wire either/both into the starter;
+                               others get only their own spool file) and offers to wire either/both into the starter (a compose-only directory defaults to a starter that schedules jobs in the stack's services, with the import-the-services starter as the second choice);
                                a Blocked cron source falls back to the plain starter instead
                              — CRON CUTOVER: when the box also has a live cron unit and the install would be
                                system-scoped root-on-a-TTY, that one prompt does all three (scaffold include_cron,
@@ -305,7 +308,8 @@ runwisp                      — no subcommand: attach TUI to running daemon, el
                                says so and offers the plain scaffold; those jobs are then held (see include_cron)
 runwisp daemon               — start headless daemon (no TUI); --app reads the config as a JSON document on stdin instead of runwisp.toml (what SDKs run)
 runwisp tui                  — attach a TUI to a running daemon
-runwisp validate             — validate runwisp.toml without starting anything; --json for the structured document (see above); --app validates a JSON document on stdin
+runwisp validate             — validate runwisp.toml without starting anything; --json for the structured document (see above); --app validates a JSON document on stdin;
+                               --explain adds each schedule in words + next 3 firings (zone-aware, DST marked; `schedules` in --json)
 runwisp list                 — list configured tasks and schedules; --json for a machine-readable document
 runwisp status               — is the daemon alive?; --json for daemon health + every task's last run (+ pausedAt when its schedule is paused) + externalUrl/externalUrlSource (config|detected); human output lists paused schedules and the Web UI address
 runwisp run <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive
@@ -345,6 +349,7 @@ runwisp import systemd [UNIT...] — convert systemd .service units to runwisp.t
                              — Restart= → [services.*], Type=oneshot → [tasks.*]; name from filename. Reject-as-note:
                                multiple ExecStart/ExecStartPre/Post, Type=notify|forking, sandboxing, socket activation,
                                %i templates. NO `takeover systemd` (disable units yourself: systemctl disable --now)
+runwisp import ofelia [FILE...] — convert Ofelia jobs (INI config, or a .yml/.yaml compose file with ofelia.* labels, or stdin) to tasks: job-exec (compose label -> compose_file+compose_service+run; INI container -> docker exec), job-run (docker run --rm --init), job-local; no-overlap -> on_overlap=skip; job-service-run/job-compose unsupported; since 1.7
                              — -o writes one standalone file; --write installs the two-tier layout
                                (tasks → machine-owned runwisp.d/imported.toml, root runwisp.toml's
                                [daemon].include wired to load it; both written atomically or rolled back;
@@ -400,12 +405,13 @@ runwisp promote [TASK...]    — put a derived task's block in the root runwisp.
                                from held to unheld (HeldBy cron→none): the diff reports it Changed(ReasonSchedule),
                                so that reload has RunWisp take over its schedule. Emptied staging file is deleted.
 runwisp password             — print the daemon's ephemeral password (local socket; exit 5 under RUNWISP_AUTH=off, refuses if RUNWISP_PASSWORD set)
+                             — --viewer: print the read-only password instead, minting a random in-memory one on first call (refuses if RUNWISP_VIEWER_PASSWORD set)
 runwisp openapi              — print the OpenAPI 3.1 spec (JSON) to stdout
 runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-12) to stdout; published at https://docs.runwisp.com/config.schema.json
 runwisp station              — start in station mode; --token --url --env-file(=.env) --no-tui
 runwisp demo                 — boot a throwaway, fully-populated instance; --no-tui --seed-only --station --token --url --env-file
-runwisp upgrade              — upgrade to the latest stable release via the install channel: homebrew → brew upgrade; global npm/bun/pnpm/yarn → that manager; script/tar.gz → download from GitHub, verify SHA-256, atomic in-place swap; docker/npx/project-local npm → refuses with instructions; dev build refuses. -y/--yes (needed without a TTY), --restart now|idle|later (idle = wait until no task runs are pending/running, services ignored; no TTY + no flag = later)
-runwisp service install      — install autostart; -y --print --dry-run --force --local --binary <path>
+runwisp upgrade              — upgrade to the latest stable release via the install channel: homebrew → brew upgrade; deb/rpm package → [sudo] apt-get update + install --only-upgrade / dnf upgrade --refresh; global npm/bun/pnpm/yarn → that manager; script/tar.gz → download from GitHub, verify SHA-256, atomic in-place swap; docker/npx/project-local npm → refuses with instructions; dev build refuses. -y/--yes (needed without a TTY), --restart now|idle|later (idle = wait until no task runs are pending/running, services ignored; no TTY + no flag = later)
+runwisp service install      — install autostart; -y --print --dry-run --force --local --binary <path> --station --token <t> --url <u>
                              — DEFAULT scope is the system-wide singleton /etc/systemd/system/runwisp.service
                                (Linux, root, no fingerprint in the name). Refuses without root, naming
                                `sudo` and `--local`. macOS has no system scope yet: --local is required.

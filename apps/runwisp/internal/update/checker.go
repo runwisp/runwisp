@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"golang.org/x/mod/semver"
+
+	"github.com/runwisp/runwisp/apps/runwisp/internal/version"
 )
 
 // DefaultBaseURL is the concierge stats endpoint. Overridable in tests via the
@@ -53,6 +55,9 @@ type Checker struct {
 	os      string
 	arch    string
 	source  string // install channel, see InstallSource
+	// official is false for builds outside the release workflow, which never
+	// check (version.Official).
+	official bool
 
 	baseURL string
 	client  *http.Client
@@ -71,14 +76,15 @@ type Checker struct {
 // [daemon] check_updates toggle.
 func NewChecker(current, goos, goarch string, enabled bool) *Checker {
 	return &Checker{
-		current: current,
-		os:      goos,
-		arch:    goarch,
-		source:  InstallSource(),
-		enabled: enabled,
-		baseURL: DefaultBaseURL,
-		client:  &http.Client{Timeout: requestTimeout},
-		wake:    make(chan struct{}, 1),
+		current:  current,
+		os:       goos,
+		arch:     goarch,
+		source:   InstallSource(),
+		official: version.IsOfficial(),
+		enabled:  enabled,
+		baseURL:  DefaultBaseURL,
+		client:   &http.Client{Timeout: requestTimeout},
+		wake:     make(chan struct{}, 1),
 	}
 }
 
@@ -165,11 +171,11 @@ func (c *Checker) Status() (available bool, latest string) {
 }
 
 // Run checks once immediately, then reschedules using the ttl each response
-// carries. It returns when ctx is cancelled. A non-release (dev) build returns
-// immediately without ever reaching out; a disabled checker idles until
+// carries. It returns when ctx is cancelled. A dev build, or any build outside
+// the release workflow, returns immediately without ever reaching out; a disabled checker idles until
 // SetEnabled turns it on.
 func (c *Checker) Run(ctx context.Context) {
-	if !IsRelease(c.current) {
+	if !c.official || !IsRelease(c.current) {
 		return
 	}
 	for {

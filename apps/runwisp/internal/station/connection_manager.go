@@ -38,6 +38,20 @@ func (cm *connectionManager) detachSession() {
 	cm.session = nil
 }
 
+// endSession asks the active session to close, reporting whether one was
+// attached.
+func (cm *connectionManager) endSession() bool {
+	cm.mu.Lock()
+	s := cm.session
+	cm.mu.Unlock()
+
+	if s == nil {
+		return false
+	}
+	s.end()
+	return true
+}
+
 // sendIfReady sends a message on the current active session.
 func (cm *connectionManager) sendIfReady(message any) error {
 	cm.mu.Lock()

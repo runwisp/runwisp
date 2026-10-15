@@ -18,6 +18,7 @@ import (
 // end-reason outcomes.
 var renderableKinds = []notify.Kind{
 	notify.KindRunStarted,
+	notify.KindRunLongRunning,
 	notify.KindRunSucceeded,
 	notify.KindRunFailed,
 	notify.KindRunTimeout,
@@ -120,6 +121,8 @@ func TestEventSentence(t *testing.T) {
 		{"missed with reason", &notify.Event{Kind: notify.KindRunMissed, Reason: "3 scheduled runs missed since 2026-06-09 03:00 (daemon was down)"}, "3 scheduled runs missed since 2026-06-09 03:00 (daemon was down)"},
 		{"missed without reason", &notify.Event{Kind: notify.KindRunMissed}, "A scheduled run was missed while the daemon was down."},
 		{"started", &notify.Event{Kind: notify.KindRunStarted}, "Run started."},
+		{"long running with elapsed", &notify.Event{Kind: notify.KindRunLongRunning, Extra: map[string]any{"elapsed_ms": int64(45 * 60 * 1000)}}, "The run is still going after 45m."},
+		{"long running without elapsed", &notify.Event{Kind: notify.KindRunLongRunning}, "The run is still going."},
 		{"log disk pressure", &notify.Event{Kind: notify.KindLogDiskPressure}, "Disk pressure is high; log capture is paused for this task until disk space is recovered."},
 		{"delivery failed with reason", &notify.Event{Kind: notify.KindNotifyDeliveryFailed, Reason: "timeout"}, "A notification could not be delivered: timeout."},
 		{"delivery failed without reason", &notify.Event{Kind: notify.KindNotifyDeliveryFailed}, "A notification could not be delivered."},
@@ -167,6 +170,7 @@ func TestLinkLabel(t *testing.T) {
 		notify.KindRunCrashed:           "View run",
 		notify.KindRunMissed:            "View run",
 		notify.KindRunStarted:           "View run",
+		notify.KindRunLongRunning:       "View run",
 		notify.KindNotifyDeliveryFailed: "View run",
 	}
 	for k, want := range cases {

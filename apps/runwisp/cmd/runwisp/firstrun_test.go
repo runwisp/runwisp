@@ -86,21 +86,45 @@ func TestScaffoldIfMissingNoopWhenFileExists(t *testing.T) {
 	assert.False(t, installed)
 }
 
+// A compose directory's default starter keeps the stack under `docker compose
+// up` and only schedules jobs in it; importing the services (so RunWisp runs
+// them) is the second offer, after declining the first.
 func TestPromptAndScaffoldDetectsAdjacentCompose(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.yml"),
-		[]byte("services:\n  web: {image: nginx}\n"), 0644))
-	path := filepath.Join(dir, "runwisp.toml")
+	for name, tc := range map[string]struct {
+		answers    string
+		wantErr    bool
+		wantBody   string
+		unwantBody string
+	}{
+		"default is jobs in the running stack": {"\n", false, "compose_service", "[compose."},
+		"declining offers the import":          {"n\ny\n", false, "[compose.", "compose_service"},
+		"declining both creates nothing":       {"n\nn\n", true, "", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.yml"),
+				[]byte("services:\n  web: {image: nginx}\n"), 0644))
+			path := filepath.Join(dir, "runwisp.toml")
 
-	var out bytes.Buffer
-	_, err := promptAndScaffold(Flags{CfgFile: path}, strings.NewReader("\n"), &out)
-	require.NoError(t, err)
-
-	body, err := os.ReadFile(path)
-	require.NoError(t, err)
-	assert.Contains(t, string(body), "[compose.")
-	assert.Contains(t, string(body), "file = \"./docker-compose.yml\"")
-	assert.Contains(t, out.String(), "Detected docker-compose.yml")
+			var out bytes.Buffer
+			_, err := promptAndScaffold(Flags{CfgFile: path}, strings.NewReader(tc.answers), &out)
+			assert.Contains(t, out.String(), "Detected docker-compose.yml")
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.NoFileExists(t, path)
+				return
+			}
+			require.NoError(t, err)
+			body, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Contains(t, string(body), tc.wantBody)
+			assert.NotContains(t, string(body), tc.unwantBody)
+			assert.Contains(t, string(body), "docker-compose.yml")
+			// Whatever was written must load.
+			_, err = config.Load(path)
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestComposeAliasFromDir(t *testing.T) {

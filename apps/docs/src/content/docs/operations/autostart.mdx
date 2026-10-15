@@ -128,6 +128,21 @@ Put the variables after `sudo`, or `sudo` drops them. The file is rewritten on
 every install: to change a value or remove one, change your shell and install
 again.
 
+## Running in station mode
+
+To keep a daemon connected to a Station across reboots, install it with
+`--station`:
+
+```bash
+sudo runwisp service install --station --url https://station.example.com --token "$TOKEN"
+```
+
+The unit runs `runwisp station --no-tui` instead of `runwisp daemon`. Without
+the flags, `--station` reads `RUNWISP_STATION_URL` and `RUNWISP_STATION_TOKEN`
+from your shell. The token goes into the `0600` `runwisp-env.conf` described
+above, never into the unit, so `--print` and `--dry-run` don't show it. Station
+mode needs that file, so it isn't available for a macOS LaunchAgent.
+
 ## macOS
 
 A `--local` LaunchAgent starts when you log in and runs as you. launchd has no

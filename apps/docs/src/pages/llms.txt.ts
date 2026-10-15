@@ -77,7 +77,7 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
         ],
     },
     {
-        label: "Migrating from cron, supervisord, systemd, or docker-compose",
+        label: "Migrating from cron, supervisord, systemd, docker-compose, or Ofelia",
         slugs: [
             "coming-from",
             "coming-from/cron",
@@ -85,6 +85,7 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
             "coming-from/systemd",
             "coming-from/docker-compose",
             "coming-from/node-cron",
+            "coming-from/ofelia",
         ],
     },
     {

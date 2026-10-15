@@ -32,6 +32,12 @@ type Config struct {
 	// other advisory check; never fatal to Load.
 	composeWarnings []string
 
+	// scheduleWarnings are the schedule pile-up findings (see
+	// scheduleCollisionWarnings), computed once at load and again when a cron
+	// hold changes: Warnings is answered on every /api/daemon request and must
+	// not walk every schedule each time.
+	scheduleWarnings []string
+
 	// includeFiles are the absolute paths of the TOML files merged in via
 	// [daemon].include at this load. includeGlobs are those patterns resolved
 	// against the root config dir. watchFiles is every additional on-disk input
@@ -260,7 +266,11 @@ type Daemon struct {
 	// CheckUpdates gates the daemon's outbound poll of concierge.runwisp.com for
 	// a newer release (surfaced as a Web UI / TUI indicator, never auto-applied).
 	// Default true; set false to keep the daemon fully offline.
-	CheckUpdates   bool
+	CheckUpdates bool
+	// LogOutput copies every run's output lines to the daemon's own stdout and
+	// stderr, so `docker logs` shows what the jobs printed. Default false; the
+	// RUNWISP_LOG_OUTPUT env var overrides it (the Docker image sets it).
+	LogOutput      bool
 	MetricsEnabled bool
 	MetricsListen  string
 	TLS            string
@@ -285,7 +295,10 @@ type Defaults struct {
 	// don't set their own. Tasks-only: services never inherit it (they start
 	// every instance at boot). The deliberate exception to "don't default
 	// cron-tied keys" — one line in [defaults] spreads the whole task set.
-	Jitter     time.Duration
+	Jitter time.Duration
+	// WarnAfter is the [defaults] long-running warning threshold inherited by
+	// tasks that don't set their own. Tasks-only, like Jitter.
+	WarnAfter  time.Duration
 	Shell      string
 	StopSignal string
 	LogMaxSize int64

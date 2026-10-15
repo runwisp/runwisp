@@ -68,6 +68,8 @@ func (sr *sessionRunner) run(ctx context.Context, session *wsSession) error {
 	select {
 	case <-ctx.Done():
 		firstErr = nil
+	case <-session.ended:
+		firstErr = nil
 	case firstErr = <-errChan:
 	}
 

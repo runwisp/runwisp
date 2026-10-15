@@ -47,6 +47,15 @@ On macOS or Linux with [Homebrew](https://brew.sh):
 brew install runwisp/tap/runwisp
 ```
 
+On Debian or Ubuntu, and Fedora or RHEL, install the package. It adds the RunWisp repository, so `apt upgrade` or `dnf upgrade` keeps it current:
+
+```bash
+curl -fLO https://github.com/runwisp/runwisp/releases/latest/download/runwisp-linux-x64.deb
+sudo apt install ./runwisp-linux-x64.deb
+# or
+sudo dnf install https://github.com/runwisp/runwisp/releases/latest/download/runwisp-linux-x64.rpm
+```
+
 You can also use the npm package, which runs the prebuilt Go binary:
 
 ```bash
@@ -78,7 +87,7 @@ runwisp
 
 If the current directory has no `runwisp.toml`, RunWisp offers to create an example config file. Press `Enter` and it will write an example task, start the daemon, and open the terminal UI. The Home page shows the web dashboard URL and a generated password; press `Enter` on the password row to copy it.
 
-Set `RUNWISP_PASSWORD` env variable if you want to choose the password yourself. For a trusted local setup, [`RUNWISP_AUTH=off`](https://docs.runwisp.com/operations/auth/#running-without-a-password) disables authentication explicitly.
+Set `RUNWISP_PASSWORD` env variable if you want to choose the password yourself. Set `RUNWISP_VIEWER_PASSWORD` too and anyone who signs in with it can [view everything but change nothing](https://docs.runwisp.com/operations/auth/#read-only-access). For a trusted local setup, [`RUNWISP_AUTH=off`](https://docs.runwisp.com/operations/auth/#running-without-a-password) disables authentication explicitly.
 
 > **Running headless?** Use `runwisp daemon` in cron, systemd, Docker, CI, or a piped SSH session. It doesn't prompt, and a missing config exits non-zero. To start RunWisp after a reboot, use `runwisp service install` for systemd or launchd.
 

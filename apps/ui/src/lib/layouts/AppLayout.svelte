@@ -6,6 +6,7 @@
         Activity,
         ArrowLeft,
         RotateCcwClock,
+        Eye,
         Menu,
         PanelLeftClose,
         PanelLeftOpen,
@@ -379,6 +380,17 @@
                     >
                         <ShieldOff size={12} class="shrink-0" />
                         <span class="hidden sm:inline md:@max-5xl:hidden">Auth disabled</span>
+                    </Badge>
+                {/if}
+                {#if authStore.current.readOnly}
+                    <Badge
+                        variant="default"
+                        class="shrink-0"
+                        tooltip="You signed in with the read-only password: you can view everything but not run, stop or change anything."
+                        tooltipPosition="bottom"
+                    >
+                        <Eye size={12} class="shrink-0" />
+                        <span class="hidden sm:inline md:@max-5xl:hidden">Read-only</span>
                     </Badge>
                 {/if}
                 <ThemeToggle />

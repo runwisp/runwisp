@@ -167,14 +167,20 @@ func launchConnectedTUI(ctx context.Context, client *apiclient.Client, mode tuiC
 		}
 	}
 
-	_, tuiErr := tui.StartTUI(tui.TUIConfig{
-		Info:         startupInfo,
-		Client:       client,
-		ShutdownFunc: mode.shutdownFunc,
-		LaunchTicketFunc: func() (string, error) {
+	// A read-only session can't mint a launch ticket (the daemon rejects the
+	// POST), so the TUI hides the Open Web UI field and log download.
+	var launchTicketFunc func() (string, error)
+	if !client.ReadOnly() {
+		launchTicketFunc = func() (string, error) {
 			return client.CreateLaunchTicket(ctx)
-		},
-		Daemon: mode.daemon,
+		}
+	}
+	_, tuiErr := tui.StartTUI(tui.TUIConfig{
+		Info:             startupInfo,
+		Client:           client,
+		ShutdownFunc:     mode.shutdownFunc,
+		LaunchTicketFunc: launchTicketFunc,
+		Daemon:           mode.daemon,
 	}, nil)
 	return tuiErr
 }

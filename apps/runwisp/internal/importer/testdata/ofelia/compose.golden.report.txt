@@ -1,0 +1,7 @@
+changed	app: ofelia.job-exec.report	report	0 0 6 * * *	php artisan report:daily
+	keys-unsupported
+clean	app: ofelia.job-exec.schedule	schedule	@every 1m	php artisan schedule:run
+clean	worker: ofelia.job-run.cleanup	cleanup	@weekly	docker run --rm --init -v /srv/cache:/tmp/cache alpine rm -rf /tmp/cache
+file
+	section-unrecognized
+	section-daemon

@@ -23,6 +23,11 @@ var excludedEndReasons = map[model.EndReason]struct{}{
 // NeverFailureKinds below doesn't duplicate the literal by hand.
 const logDiskPressureKind = "log.disk_pressure"
 
+// LongRunningKind is the token for a run still going after its `warn_after`
+// threshold. Like `started` it is a pre-terminal, non-failure signal: the run
+// keeps going and its eventual outcome is classified on its own.
+const LongRunningKind = "long_running"
+
 // AllKindStrings lists the tokens a [[route]] match.kinds entry may use. They
 // are the outcome vocabulary shared with a task's `failures` list — every
 // model.EndReason except excludedEndReasons — plus the non-run event tokens
@@ -32,14 +37,14 @@ const logDiskPressureKind = "log.disk_pressure"
 // DeliveryFailedKind is separately excluded (see its own doc comment): it
 // bypasses the route engine, straight to the bell.
 var AllKindStrings = func() []string {
-	out := make([]string, 0, len(model.AllEndReasons)+3)
+	out := make([]string, 0, len(model.AllEndReasons)+4)
 	out = append(out, "started")
 	for _, r := range model.AllEndReasons {
 		if _, excluded := excludedEndReasons[r]; !excluded {
 			out = append(out, string(r))
 		}
 	}
-	return append(out, "service.fatal", logDiskPressureKind)
+	return append(out, "service.fatal", logDiskPressureKind, LongRunningKind)
 }()
 
 // DeliveryFailedKind is the synthetic event a permanently-failed delivery
@@ -55,7 +60,8 @@ const DeliveryFailedKind = "notify.delivery_failed"
 // configured: "started" fires before a run has an outcome, "succeeded"
 // is unconditionally excluded from failure classification (model.Task's
 // IsFailureReason short-circuits ReasonSuccess), and "log.disk_pressure"
-// events are hardcoded to IsFailure: false in bridge.go's MapEvent. Combined
+// events are hardcoded to IsFailure: false in bridge.go's MapEvent, as are
+// "long_running" ones (the run is still going). Combined
 // with match.failure = true, any one of these ANDs down to a route that can
 // never fire — see validateRoute.
-var NeverFailureKinds = []string{"started", string(model.ReasonSuccess), logDiskPressureKind}
+var NeverFailureKinds = []string{"started", string(model.ReasonSuccess), logDiskPressureKind, LongRunningKind}

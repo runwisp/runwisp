@@ -32,6 +32,8 @@ func TestComposeBackend_BuildArgs_ServicesMode(t *testing.T) {
 		Profiles:    []string{"prod"},
 		EnvFile:     []string{"./.env"},
 		Pull:        model.ComposePullAlways,
+
+		ServicePorts: true,
 	}
 	task := &model.Task{
 		Name: "boxes.web",
@@ -102,6 +104,22 @@ func TestComposeBackend_BuildArgs_ExecMode(t *testing.T) {
 	for _, forbidden := range []string{"--rm", "--name", "--label", "--pull", "--no-deps", "--service-ports", "--use-aliases", "run"} {
 		assert.NotContains(t, args, forbidden, "exec mode must not pass %q", forbidden)
 	}
+}
+
+// A scheduled job beside a running stack must not publish the service's ports
+// or take its network aliases: it would clash on host ports and answer to the
+// service's name. Only a [compose.*] import, which stands in for `up`, does.
+func TestComposeBackend_BuildArgs_RunModeServicePortsOnlyWhenImported(t *testing.T) {
+	ce := &model.ComposeExecution{File: "./compose.yaml", Service: "backup", Mode: model.ComposeModeRun}
+	args := buildComposeArgs(ce, &model.Task{Name: "backup"}, &model.Run{}, "fp", "backup_0")
+	assert.Contains(t, args, "run")
+	assert.NotContains(t, args, "--service-ports")
+	assert.NotContains(t, args, "--use-aliases")
+
+	ce.ServicePorts = true
+	args = buildComposeArgs(ce, &model.Task{Name: "backup"}, &model.Run{}, "fp", "backup_0")
+	assert.Contains(t, args, "--service-ports")
+	assert.Contains(t, args, "--use-aliases")
 }
 
 // -T is passed explicitly rather than relying on compose's TTY detection: an

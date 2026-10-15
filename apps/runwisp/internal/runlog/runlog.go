@@ -27,6 +27,7 @@ func Subscribe(bus *events.Bus) func() {
 		bus.Subscribe(events.EventRunStarted, logStarted),
 		bus.Subscribe(events.EventRunCompleted, logCompleted),
 		bus.Subscribe(events.EventRunFailed, logFailed),
+		bus.Subscribe(events.EventRunLongRunning, logLongRunning),
 		bus.Subscribe(events.EventLogDiskPressure, logDiskPressure),
 	}
 	return func() {
@@ -100,6 +101,15 @@ func LogEnded(run *model.Run) {
 	}
 }
 
+func logLongRunning(e events.Event) {
+	run, ok := runFrom(e)
+	if !ok {
+		return
+	}
+	slog.Warn("run still running", "task", run.TaskName, "run", run.ID,
+		"elapsed", elapsedSince(run, e.Timestamp))
+}
+
 func logDiskPressure(e events.Event) {
 	dp, ok := e.Data.(events.LogDiskPressureEvent)
 	if !ok {
@@ -124,6 +134,15 @@ func reasonString(run *model.Run) string {
 		return string(model.ReasonFailed)
 	}
 	return string(*run.EndReason)
+}
+
+// elapsedSince is how long a still-running run has been going at now, rounded
+// like runDuration; 0 when it has no start time.
+func elapsedSince(run *model.Run, now time.Time) time.Duration {
+	if run.StartedAt == nil {
+		return 0
+	}
+	return now.Sub(*run.StartedAt).Round(time.Millisecond)
 }
 
 // runDuration returns the wall-clock run duration rounded to a readable

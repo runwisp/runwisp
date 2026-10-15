@@ -55,7 +55,7 @@ run = "true"
 run = "exec /usr/bin/web"
 `)
 	var buf bytes.Buffer
-	require.NoError(t, runValidate(&buf, f, true))
+	require.NoError(t, runValidate(&buf, f, validateOpts{JSON: true}))
 	// The config path is an absolute temp dir that changes every run; pin it to
 	// a stable basename so the golden stays deterministic.
 	got := bytes.ReplaceAll(buf.Bytes(), []byte(f.CfgFile), []byte("runwisp.toml"))
@@ -73,7 +73,7 @@ run = "true"
 schedule = "0 3 * * *"
 `)
 	var buf bytes.Buffer
-	require.Error(t, runValidate(&buf, f, true))
+	require.Error(t, runValidate(&buf, f, validateOpts{JSON: true}))
 	got := bytes.ReplaceAll(buf.Bytes(), []byte(f.CfgFile), []byte("runwisp.toml"))
 	checkGolden(t, "testdata/validate-invalid.golden.json", got)
 }

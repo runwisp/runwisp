@@ -6,15 +6,21 @@ package main
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/spf13/cobra"
 )
 
-var (
-	validateJSON bool
-	validateApp  bool
-)
+// validateOpts are the flags of `validate`. Now is read at the RunE boundary so
+// the schedule preview is a pure function of the config and that instant.
+type validateOpts struct {
+	JSON    bool
+	Explain bool
+	Now     time.Time
+}
+
+var validateJSON, validateExplain, validateApp bool
 
 var validateCmd = &cobra.Command{
 	Use:   "validate",
@@ -22,6 +28,7 @@ var validateCmd = &cobra.Command{
 	Long:  `Parses and validates the configuration file. Prints a summary on success or a structured error on failure. Useful for CI pipelines and pre-commit checks.`,
 	Example: `  runwisp validate
   runwisp validate -c ./deploy/runwisp.toml
+  runwisp validate --explain   # each schedule in words, with its next firings
   runwisp validate --json   # machine-readable; errors carry key/line/column`,
 	// Only reads the config: no data dir to create, unlike the root's pre-run.
 	// An SDK validates on every schedule(), from wherever the app runs.
@@ -31,13 +38,14 @@ var validateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return runValidate(cmd.OutOrStdout(), f, validateJSON)
+		return runValidate(cmd.OutOrStdout(), f, validateOpts{JSON: validateJSON, Explain: validateExplain, Now: time.Now()})
 	},
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
 
 func init() {
+	validateCmd.Flags().BoolVar(&validateExplain, "explain", false, "describe each schedule in words and list its next 3 firings in the scheduler's timezone, with DST effects marked")
 	validateCmd.Flags().BoolVar(&validateJSON, "json", false, "emit a machine-readable JSON document to stdout instead of the human summary")
 	validateCmd.Flags().BoolVar(&validateApp, "app", false, appFlagUsage)
 }
@@ -50,9 +58,9 @@ func init() {
 // double-check after editing the file: task / service counts and the
 // resolved scheduler timezone (config-pinned vs system-detected).
 //
-// With asJSON, w receives a single validateJSONDoc instead (valid=false on
+// With opts.JSON, w receives a single validateJSONDoc instead (valid=false on
 // failure, still returning the error so the exit code stays non-zero).
-func runValidate(w io.Writer, f Flags, asJSON bool) error {
+func runValidate(w io.Writer, f Flags, opts validateOpts) error {
 	var cfg *config.Config
 	var err error
 	if f.ConfigDoc != nil {
@@ -61,7 +69,7 @@ func runValidate(w io.Writer, f Flags, asJSON bool) error {
 		cfg, err = config.Load(f.CfgFile)
 	}
 	if err != nil {
-		if asJSON {
+		if opts.JSON {
 			// Emit the error document to stdout so an agent never has to parse
 			// text to know validation failed; the returned error still drives a
 			// non-zero exit (and its human copy to stderr via main.go).
@@ -90,7 +98,12 @@ func runValidate(w io.Writer, f Flags, asJSON bool) error {
 		}
 	}
 
-	if asJSON {
+	var schedules []scheduleJSON
+	if opts.Explain {
+		schedules = explainSchedules(cfg, opts.Now)
+	}
+
+	if opts.JSON {
 		return writeJSON(w, validateJSONDoc{
 			SchemaVersion:  jsonSchemaVersion,
 			Valid:          true,
@@ -101,6 +114,7 @@ func runValidate(w io.Writer, f Flags, asJSON bool) error {
 			Services:       services,
 			Warnings:       messagesFromStrings(config.Warnings(cfg)),
 			Errors:         []messageJSON{},
+			Schedules:      schedules,
 		})
 	}
 
@@ -113,6 +127,10 @@ func runValidate(w io.Writer, f Flags, asJSON bool) error {
 	fmt.Fprintf(w, "  tasks:    %d\n", tasks)
 	fmt.Fprintf(w, "  services: %d\n", services)
 	fmt.Fprintf(w, "  timezone: %s\n", tz)
+	printSchedules(w, schedules)
+	if len(schedules) > 0 {
+		fmt.Fprintln(w)
+	}
 	// Advisory findings the daemon would log at boot — shown here so a CI
 	// `validate` run surfaces them before deploy. They don't affect exit code.
 	for _, warning := range config.Warnings(cfg) {

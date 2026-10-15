@@ -29,11 +29,16 @@ const (
 
 var passwordCmd = &cobra.Command{
 	Use:   "password",
-	Short: "Print the daemon's ephemeral password",
+	Short: "Print the daemon's ephemeral password (--viewer: the read-only one)",
 	Long: `runwisp password — retrieve the ephemeral daemon password.
 
 Prints the in-memory ephemeral password to stdout. Use this when you need to
 paste the password into a browser on another device.
+
+With --viewer, prints the read-only password instead, generating a random one
+(in memory, gone on restart) if none is set yet. Sessions opened with it can
+view everything and change nothing. Set RUNWISP_VIEWER_PASSWORD on the daemon
+for a stable one.
 
 SECURITY: The password is written to stdout in plaintext. It will land in
 your shell scrollback, in any pipe target, and in journald if your shell's
@@ -43,17 +48,25 @@ stdout is captured. Pipe to a clipboard tool to keep it out of scrollback:
     runwisp password | pbcopy
     runwisp password | xclip -selection clipboard
 
-Fails when the daemon is configured with RUNWISP_PASSWORD — that value is
-never disclosed via this command.`,
+Fails when the daemon is configured with RUNWISP_PASSWORD (or, with --viewer,
+RUNWISP_VIEWER_PASSWORD) — that value is never disclosed via this command.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		socketPath := localAPISocketPath(flags)
 		client := apiclient.NewUnix(socketPath)
-		code := runPassword(cmd.Context(), os.Stdout, os.Stderr, client, socketPath)
+		fetch, envVar := client.GetLocalCredentials, "RUNWISP_PASSWORD"
+		if viewer, _ := cmd.Flags().GetBool("viewer"); viewer {
+			fetch, envVar = client.MintViewerPassword, "RUNWISP_VIEWER_PASSWORD"
+		}
+		code := runPasswordVia(cmd.Context(), os.Stdout, os.Stderr, fetch, socketPath, envVar)
 		if code != passwordExitOK {
 			os.Exit(code)
 		}
 		return nil
 	},
+}
+
+func init() {
+	passwordCmd.Flags().Bool("viewer", false, "print the read-only password instead (generated on first use)")
 }
 
 // credentialsFetcher is the slice of apiclient.Client that cmd_password
@@ -63,7 +76,14 @@ type credentialsFetcher interface {
 }
 
 func runPassword(ctx context.Context, stdout, stderr io.Writer, client credentialsFetcher, socketPath string) int {
-	creds, err := client.GetLocalCredentials(ctx)
+	return runPasswordVia(ctx, stdout, stderr, client.GetLocalCredentials, socketPath, "RUNWISP_PASSWORD")
+}
+
+// runPasswordVia prints the password fetch returns (the admin or the read-only
+// one). envVar names the variable that would have supplied it, for the refusal
+// message.
+func runPasswordVia(ctx context.Context, stdout, stderr io.Writer, fetch func(context.Context) (*server.LocalCredentialsBody, error), socketPath, envVar string) int {
+	creds, err := fetch(ctx)
 	if err == nil {
 		fmt.Fprintln(stdout, creds.Password)
 		return passwordExitOK
@@ -71,7 +91,7 @@ func runPassword(ctx context.Context, stdout, stderr io.Writer, client credentia
 
 	if errors.Is(err, apiclient.ErrLocalCredentialsUnavailable) {
 		renderError(stderr,
-			"this daemon is configured with RUNWISP_PASSWORD; RunWisp will not disclose it",
+			fmt.Sprintf("this daemon is configured with %s; RunWisp will not disclose it", envVar),
 			"Retrieve it from wherever you set it (Docker secret, systemd credential, vault, password manager, …).",
 			"")
 		return passwordExitRefused

@@ -920,3 +920,14 @@ func TestCronCommandControlCharsAreValidTOML(t *testing.T) {
 		t.Fatalf("generated TOML does not parse: %v\n%s", err, out)
 	}
 }
+
+// TestCronExtendedDaySpecialsImportClean: L / W / # are part of RunWisp's cron
+// grammar, so a crontab line using them imports as a plain cron task rather
+// than a TODO.
+func TestCronExtendedDaySpecialsImportClean(t *testing.T) {
+	res := parseCron(t, "0 0 L * * /bin/month-end\n0 9 * * FRI#3 /bin/third-friday\n", CronOptions{})
+	out := res.TOML()
+	mustContain(t, out, `cron = "0 0 L * *"`)
+	mustContain(t, out, `cron = "0 9 * * FRI#3"`)
+	mustNotContain(t, out, "TODO")
+}

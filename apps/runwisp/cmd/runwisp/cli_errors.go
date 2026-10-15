@@ -212,7 +212,7 @@ func remoteAuthFailedError(baseURL string) error {
 	}
 }
 
-// remoteAuthError maps a remote daemon's 401/429 to its user-facing error, or
+// remoteAuthError maps a remote daemon's 401/429/read-only 403 to its user-facing error, or
 // returns nil for any other error — or when baseURL is empty (the local
 // socket) — so the caller can fall through to its own mapping.
 func remoteAuthError(err error, baseURL string) error {
@@ -223,8 +223,20 @@ func remoteAuthError(err error, baseURL string) error {
 		return remoteAuthFailedError(baseURL)
 	case errors.Is(err, apiclient.ErrRateLimited):
 		return remoteRateLimitedError(baseURL)
+	case errors.Is(err, apiclient.ErrReadOnly):
+		return remoteReadOnlyError(baseURL)
 	}
 	return nil
+}
+
+// remoteReadOnlyError is returned when the daemon rejects a write (403) because
+// the session was opened with its read-only password.
+func remoteReadOnlyError(baseURL string) error {
+	return &userFacingError{
+		title: fmt.Sprintf("%s signed you in read-only", baseURL),
+		details: "The password you used is the daemon's read-only password: it can view but not change anything.\n" +
+			"  - Use the full password (--password / RUNWISP_PASSWORD) to run, stop or restart tasks",
+	}
 }
 
 // remoteRateLimitedError is returned when the remote daemon's auth rate

@@ -16,6 +16,8 @@ export interface AuthState {
     required: boolean;
     loaded: boolean;
     authenticated: boolean;
+    /** Signed in with the read-only password: the UI hides every control that changes something. */
+    readOnly: boolean;
 }
 
 // The auth endpoints use raw fetch (see api.ts) so a wrong-password 401 doesn't
@@ -26,8 +28,10 @@ export const authChallengeResponseSchema = z
     .pipe(z.custom<AuthChallengeBody>());
 
 export const authStatusResponseSchema = z
-    .object({ authRequired: z.boolean(), authenticated: z.boolean() })
+    .object({ authRequired: z.boolean(), authenticated: z.boolean(), readOnly: z.boolean() })
     .pipe(z.custom<AuthStatusBody>());
+
+export const authLoginResponseSchema = z.object({ readOnly: z.boolean() });
 
 const runPhaseSchema = z.enum(RUN_PHASES);
 const endReasonSchema = z.enum(END_REASONS);

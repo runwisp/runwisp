@@ -41,11 +41,11 @@ func TestRunValidateAppDocument(t *testing.T) {
 	f, err := withAppDocument(f, strings.NewReader(`{"tasks":{"digest":{"sdk":true,"cron":"@daily"}}}`), true)
 	require.NoError(t, err)
 	var out strings.Builder
-	require.NoError(t, runValidate(&out, f, false))
+	require.NoError(t, runValidate(&out, f, validateOpts{}))
 	assert.Contains(t, out.String(), "tasks:    1")
 
 	f.ConfigDoc = []byte(`{"tasks":{"digest":{"sdk":true,"run":"true"}}}`)
-	err = runValidate(&out, f, false)
+	err = runValidate(&out, f, validateOpts{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "sets both sdk and run")
 }

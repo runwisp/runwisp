@@ -17,11 +17,13 @@ package keys
 
 // Binding is one keyboard action. Keys/Desc render the overlay table row; Bar
 // is the compact help-bar segment (empty when the action never appears in the
-// bar).
+// bar). Writes marks an action a read-only session can't take, so the overlay
+// leaves it out there.
 type Binding struct {
-	Keys string
-	Desc string
-	Bar  string
+	Keys   string
+	Desc   string
+	Bar    string
+	Writes bool
 }
 
 // Section groups bindings under a heading in the help overlay.
@@ -35,7 +37,7 @@ var (
 	Help         = Binding{Keys: "?", Desc: "toggle this help", Bar: "? help"}
 	Quit         = Binding{Keys: "q / ctrl+c", Desc: "quit", Bar: "q/^C quit"}
 	NotifPanel   = Binding{Keys: "n", Desc: "notifications panel (Home)", Bar: "n notifications"}
-	ReloadConfig = Binding{Keys: "R", Desc: "reload runwisp.toml", Bar: "R reload"}
+	ReloadConfig = Binding{Keys: "R", Desc: "reload runwisp.toml", Bar: "R reload", Writes: true}
 	SearchLogs   = Binding{Keys: "/", Desc: "search logs of the focused task"}
 	// FilterTasks shares `/` with SearchLogs; it applies when the sidebar is
 	// focused, SearchLogs applies in an exec view / on the main panel.
@@ -53,16 +55,16 @@ var (
 // Task / run actions. RunNow, Restart and Start are the conditional forms the
 // bar picks between; the overlay shows the combined Run row.
 var (
-	Run      = Binding{Keys: "r", Desc: "run now (task) · restart / start (service)"}
+	Run      = Binding{Keys: "r", Desc: "run now (task) · restart / start (service)", Writes: true}
 	RunNow   = Binding{Bar: "r run now"}
 	Restart  = Binding{Bar: "r restart"}
 	Start    = Binding{Bar: "r start"}
-	Stop     = Binding{Keys: "s", Desc: "stop service · stop run (log view)", Bar: "s stop"}
+	Stop     = Binding{Keys: "s", Desc: "stop service · stop run (log view)", Bar: "s stop", Writes: true}
 	OpenRun  = Binding{Keys: "enter", Desc: "open the selected run"}
 	TaskInfo = Binding{Keys: "i", Desc: "task health, or run details in a log view", Bar: "i details"}
-	Undo     = Binding{Keys: "u", Desc: "undo the last action (while the toast shows)", Bar: "u undo"}
+	Undo     = Binding{Keys: "u", Desc: "undo the last action (while the toast shows)", Bar: "u undo", Writes: true}
 	// Pause and Resume are the two bar forms of `p`, like RunNow and Restart.
-	Pause  = Binding{Keys: "p", Desc: "pause / resume the cron schedule", Bar: "p pause"}
+	Pause  = Binding{Keys: "p", Desc: "pause / resume the cron schedule", Bar: "p pause", Writes: true}
 	Resume = Binding{Bar: "p resume"}
 )
 
@@ -74,18 +76,19 @@ var (
 // Run-list multi-select actions. Select/SelectAll start a selection; the rest
 // act on it and only appear in the bar once one or more runs are selected.
 var (
-	Select      = Binding{Keys: "space", Desc: "select / deselect the run under the cursor", Bar: "space select"}
-	SelectAll   = Binding{Keys: "a", Desc: "select all runs matching the filter", Bar: "a select all"}
-	BulkDelete  = Binding{Keys: "d", Desc: "delete selected runs (undoable)", Bar: "d delete"}
-	BulkCancel  = Binding{Keys: "c", Desc: "cancel selected runs", Bar: "c cancel"}
-	BulkRerun   = Binding{Keys: "e", Desc: "rerun selected runs", Bar: "e rerun"}
-	ClearSelect = Binding{Keys: "esc", Desc: "clear the selection", Bar: "esc clear"}
+	Select      = Binding{Keys: "space", Desc: "select / deselect the run under the cursor", Bar: "space select", Writes: true}
+	SelectAll   = Binding{Keys: "a", Desc: "select all runs matching the filter", Bar: "a select all", Writes: true}
+	BulkDelete  = Binding{Keys: "d", Desc: "delete selected runs (undoable)", Bar: "d delete", Writes: true}
+	BulkCancel  = Binding{Keys: "c", Desc: "cancel selected runs", Bar: "c cancel", Writes: true}
+	BulkRerun   = Binding{Keys: "e", Desc: "rerun selected runs", Bar: "e rerun", Writes: true}
+	ClearSelect = Binding{Keys: "esc", Desc: "clear the selection", Bar: "esc clear", Writes: true}
 )
 
-// Exec-view log actions.
+// Exec-view log actions. DownloadDel counts as a write: the download needs a
+// launch ticket, which a read-only session can't mint.
 var (
-	Retry       = Binding{Keys: "r", Desc: "retry · restart"}
-	DownloadDel = Binding{Keys: "d / D", Desc: "download log / delete run"}
+	Retry       = Binding{Keys: "r", Desc: "retry · restart", Writes: true}
+	DownloadDel = Binding{Keys: "d / D", Desc: "download log / delete run", Writes: true}
 	Fullscreen  = Binding{Keys: "f", Desc: "fullscreen logs", Bar: "f fullscreen"}
 	TopEnd      = Binding{Keys: "g / G", Desc: "jump to top / end"}
 	Page        = Binding{Keys: "pgup/pgdn", Desc: "page through logs", Bar: "pgup/pgdn page"}
@@ -101,18 +104,18 @@ var (
 
 // Run Now parameter dialog actions.
 var (
-	FlagToggle  = Binding{Keys: "space / ←→", Desc: "toggle a flag on/off"}
-	ChooseOpt   = Binding{Keys: "←→ / hl", Desc: "choose an option"}
-	IncludeOmit = Binding{Keys: "ctrl+t", Desc: "include empty / omit value"}
-	RunCancel   = Binding{Keys: "enter", Desc: "run · esc cancel"}
+	FlagToggle  = Binding{Keys: "space / ←→", Desc: "toggle a flag on/off", Writes: true}
+	ChooseOpt   = Binding{Keys: "←→ / hl", Desc: "choose an option", Writes: true}
+	IncludeOmit = Binding{Keys: "ctrl+t", Desc: "include empty / omit value", Writes: true}
+	RunCancel   = Binding{Keys: "enter", Desc: "run · esc cancel", Writes: true}
 )
 
 // Notifications panel actions. Navigation reuses Move; these add the
 // panel-specific actions.
 var (
 	NotifOpen     = Binding{Keys: "enter", Desc: "open the run", Bar: "enter open"}
-	NotifRead     = Binding{Keys: "r", Desc: "mark read", Bar: "r mark read"}
-	NotifReadAll  = Binding{Keys: "a", Desc: "mark all read", Bar: "a all read"}
+	NotifRead     = Binding{Keys: "r", Desc: "mark read", Bar: "r mark read", Writes: true}
+	NotifReadAll  = Binding{Keys: "a", Desc: "mark all read", Bar: "a all read", Writes: true}
 	NotifCollapse = Binding{Keys: "n / esc", Desc: "collapse", Bar: "n/esc collapse"}
 )
 

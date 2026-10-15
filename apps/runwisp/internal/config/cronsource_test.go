@@ -1276,6 +1276,20 @@ func TestWithCronHold(t *testing.T) {
 		assert.Empty(t, got.Tasks[0].HeldBy)
 	})
 
+	t.Run("a hold flip recomputes the pile-up warnings", func(t *testing.T) {
+		tasks := collisionTasks("0 3 * * *", "a", "b")
+		held := cronOwned
+		held.Name, held.Cron = "c", "0 3 * * *"
+		held.HeldBy = model.HeldByCron
+		cfg := &Config{Tasks: append(tasks, held)}
+		cfg.refreshScheduleWarnings(time.Now())
+		require.Empty(t, cfg.scheduleWarnings, "the held task does not count")
+
+		got, _ := WithCronHold(cfg, cronprobe.State{})
+		require.Len(t, got.scheduleWarnings, 1, "released, it makes three")
+		assert.Empty(t, cfg.scheduleWarnings, "and the input config is untouched")
+	})
+
 	// The reconciler hands &cfg.Tasks[i] straight to the TaskRegistry, and the API,
 	// TUI and Web UI read those same values concurrently. Flipping HeldBy in place
 	// would be a data race with every one of them.

@@ -21,7 +21,7 @@
     import TaskStrip from "$lib/components/task/TaskStrip.svelte";
     import TaskDetailsSheet from "$lib/components/task/TaskDetailsSheet.svelte";
     import { HeaderFold } from "$lib/utils/header-fold.svelte";
-    import { headerSearchStore, systemStore } from "$lib/stores";
+    import { authStore, headerSearchStore, systemStore } from "$lib/stores";
     import type { LiveRuns } from "$lib/utils/live-runs.svelte";
     import { createRunSelection } from "$lib/utils/run-selection.svelte";
     import { HistoryRail } from "$lib/utils/history-rail.svelte";
@@ -191,7 +191,10 @@
     // A run can always be *triggered*, at max concurrency it queues (the modal
     // says so), so concurrency must not gate the button, only its warning.
     // Disabled only when the task forbids API triggering or a trigger is mid-flight.
-    const runTriggerable = $derived(!taskIsService && task.manualTrigger && !triggering);
+    const readOnly = $derived(authStore.current.readOnly);
+    const runTriggerable = $derived(
+        !taskIsService && task.manualTrigger && !triggering && !readOnly,
+    );
 
     // In station mode the station owns scheduling/dispatch; triggering here is the
     // operator's "run it here, now" escape hatch against the local runner.
@@ -281,7 +284,7 @@
                     rail.picked();
                 }}
                 showFilters
-                bulkActions
+                bulkActions={!readOnly}
                 taskNameFilter={task.name}
                 onBulkCancel={selection.handleBulkCancel}
                 onBulkDelete={selection.handleBulkDelete}
@@ -306,9 +309,9 @@
                 stopLabel="Stop run"
                 emptyTitle={empty.title}
                 emptyDescription={empty.description}
-                onDelete={selection.deleteSingle}
+                onDelete={readOnly ? undefined : selection.deleteSingle}
                 onRunAgain={runTriggerable && hasParams ? openRunAgain : undefined}
-                onStop={!taskIsService ? () => (stopConfirmOpen = true) : undefined}
+                onStop={!taskIsService && !readOnly ? () => (stopConfirmOpen = true) : undefined}
                 onBack={rail.phone ? rail.back : undefined}
                 {highlightLine}
                 getInstanceCount={() => instanceCount}

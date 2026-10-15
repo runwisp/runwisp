@@ -17,7 +17,7 @@
         toast,
     } from "@runwisp/ui";
     import { tasksApi } from "$lib/api";
-    import { systemStore, taskBarStore, taskStore } from "$lib/stores";
+    import { authStore, systemStore, taskBarStore, taskStore } from "$lib/stores";
     import { FOLD_MS, measuredStripDelta, type HeaderFold } from "$lib/utils/header-fold.svelte";
     import { UNDO_MS } from "$lib/utils/run-actions";
     import { taskInstanceCount } from "$lib/utils/task";
@@ -57,6 +57,7 @@
             running,
             schedulingActive: systemStore.schedulingActive,
             now: clock.now,
+            readOnly: authStore.current.readOnly,
         }),
     );
     const usage = $derived(systemStore.usageFor(task));

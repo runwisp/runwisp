@@ -40,10 +40,11 @@ func (srv *Server) registerAuthRoutes() {
 func (srv *Server) humaAuthStatus(_ context.Context, input *AuthStatusInput) (*AuthStatusOutput, error) {
 	// With RUNWISP_AUTH=off every caller is implicitly authenticated; the UI
 	// reads authRequired=false and skips the login modal.
-	authenticated := srv.noAuth || srv.auth.ValidToken(input.Token)
+	readOnly, ok := srv.auth.VerifyToken(input.Token)
 	return &AuthStatusOutput{Body: AuthStatusBody{
 		AuthRequired:  !srv.noAuth,
-		Authenticated: authenticated,
+		Authenticated: srv.noAuth || ok,
+		ReadOnly:      ok && readOnly,
 	}}, nil
 }
 
@@ -96,7 +97,7 @@ func (srv *Server) humaAuthChallenge(_ context.Context, _ *struct{}) (*AuthChall
 }
 
 func (srv *Server) humaLogin(ctx context.Context, input *AuthLoginInput) (*AuthLoginOutput, error) {
-	token, err := srv.auth.Login(input.Body.Nonce, input.Body.Response)
+	token, readOnly, err := srv.auth.Login(input.Body.Nonce, input.Body.Response)
 	if errors.Is(err, auth.ErrInvalidNonce) {
 		return nil, huma.Error401Unauthorized("Invalid or expired challenge")
 	}
@@ -106,7 +107,7 @@ func (srv *Server) humaLogin(ctx context.Context, input *AuthLoginInput) (*AuthL
 	srv.recordSignIn(ctx)
 	return &AuthLoginOutput{
 		SetCookie: srv.auth.BuildAuthCookie(token, auth.SessionDuration, isSecureCtx(ctx)),
-		Body:      AuthLoginBody{Token: token},
+		Body:      AuthLoginBody{Token: token, ReadOnly: readOnly},
 	}, nil
 }
 

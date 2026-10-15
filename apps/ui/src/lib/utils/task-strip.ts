@@ -62,6 +62,8 @@ export interface TaskStripInput {
     /** False in station mode: the station schedules, this daemon only runs. */
     schedulingActive: boolean;
     now: Date;
+    /** Signed in with the read-only password: the strip shows state but offers no actions. */
+    readOnly?: boolean;
 }
 
 const t = (text: string): StripText => ({ text });
@@ -396,6 +398,11 @@ function serviceStrip({ task, now }: TaskStripInput): TaskStripModel {
 
 /** The task strip: one state word, one sentence, and the task's actions. */
 export function taskStrip(input: TaskStripInput): TaskStripModel {
+    const model = buildStrip(input);
+    return input.readOnly === true ? { ...model, actions: [] } : model;
+}
+
+function buildStrip(input: TaskStripInput): TaskStripModel {
     const { task, running, now } = input;
     if (isService(task.kind)) return serviceStrip(input);
     const model = hasCron(task) ? cronStrip(input) : manualStrip(input);

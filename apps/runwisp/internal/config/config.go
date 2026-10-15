@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
@@ -44,6 +46,9 @@ func load(path string, root *tomlConfig) (*Config, error) {
 	if err := resolveComposePaths(cfg, dirs); err != nil {
 		return nil, err
 	}
+	if err := checkComposeServicesExist(cfg); err != nil {
+		return nil, err
+	}
 	if err := resolveEnvLayers(cfg, dirs); err != nil {
 		return nil, err
 	}
@@ -54,11 +59,31 @@ func load(path string, root *tomlConfig) (*Config, error) {
 	if err := applyTLSEnvOverride(cfg); err != nil {
 		return nil, err
 	}
+	if err := applyLogOutputEnvOverride(cfg); err != nil {
+		return nil, err
+	}
 	if err := Validate(cfg); err != nil {
 		return nil, err
 	}
 	cfg.watchFiles = collectWatchFiles(cfg, dirs)
 	return cfg, nil
+}
+
+// applyLogOutputEnvOverride lets RUNWISP_LOG_OUTPUT override [daemon]
+// log_output, the way RUNWISP_TLS does for tls: the Docker image sets it, so a
+// container mirrors job output without every config repeating the key. Like
+// the TLS override it runs on every Load, so a reload sees it too.
+func applyLogOutputEnvOverride(cfg *Config) error {
+	raw := strings.TrimSpace(os.Getenv("RUNWISP_LOG_OUTPUT"))
+	if raw == "" {
+		return nil
+	}
+	on, err := strconv.ParseBool(raw)
+	if err != nil {
+		return fmt.Errorf("invalid RUNWISP_LOG_OUTPUT %q: must be true or false", raw)
+	}
+	cfg.Daemon.LogOutput = on
+	return nil
 }
 
 // applyTLSEnvOverride lets RUNWISP_TLS override [daemon] tls. It runs on every
@@ -257,8 +282,27 @@ func homeIsTheRunUsers(task *model.Task) bool {
 func Warnings(cfg *Config) []string {
 	w := append(gracefulStopWarnings(cfg), nonPosixShellWarnings(cfg)...)
 	w = append(w, composeExecServiceWarnings(cfg)...)
+	w = append(w, composeOwnProjectWarnings(cfg)...)
 	w = append(w, cfg.composeWarnings...)
+	w = append(w, cfg.scheduleWarnings...)
 	return append(w, cronSourceWarnings(cfg)...)
+}
+
+// refreshScheduleWarnings recomputes cfg.scheduleWarnings from the tasks that
+// are live right now, in the scheduler's zone. Call it after anything that
+// changes which tasks fire (load, a cron hold flipping).
+func (c *Config) refreshScheduleWarnings(now time.Time) {
+	c.scheduleWarnings = scheduleCollisionWarnings(c.Tasks, c.SchedulerLocation(), now)
+}
+
+// SchedulerLocation is the zone cron expressions without their own timezone are
+// evaluated in: the resolved [daemon] timezone, or UTC if it is unset, which is
+// what the scheduler does with no location.
+func (c *Config) SchedulerLocation() *time.Location {
+	if loc, err := time.LoadLocation(c.Scheduler.Timezone); err == nil {
+		return loc
+	}
+	return time.UTC
 }
 
 // composeExecServiceWarnings reports long-running services running in compose
@@ -283,6 +327,25 @@ func composeExecServiceWarnings(cfg *Config) []string {
 			"service %q uses compose_mode = %q; Docker cannot cancel an exec, so stopping or restarting this service kills only the local client and leaves the process running inside %q — a restart then adds a second copy. Bound it inside the container (e.g. `timeout`), or run it as a fresh container with compose_mode = %q",
 			task.Name, model.ComposeModeExec, ce.Service, model.ComposeModeRun,
 		))
+	}
+	return warnings
+}
+
+// composeOwnProjectWarnings reports units that set compose_service without
+// compose_file when RunWisp is not in a container: they exec into the compose
+// project RunWisp's own container belongs to, so on a host every run fails.
+// `runwisp validate` may run elsewhere than the daemon, so it is a warning.
+func composeOwnProjectWarnings(cfg *Config) []string {
+	if runningInContainer() {
+		return nil
+	}
+	var warnings []string
+	for name, unit := range cfg.units() {
+		if ce, ok := unit.ExecutionDef.(*model.ComposeExecution); ok && ce.File == "" && ce.Service != "" {
+			warnings = append(warnings, fmt.Sprintf(
+				"%q sets compose_service without compose_file, which targets the compose project RunWisp's own container belongs to, and RunWisp does not seem to run in a container here; set compose_file to target a stack from the host",
+				name))
+		}
 	}
 	return warnings
 }

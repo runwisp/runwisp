@@ -197,6 +197,12 @@ type ComposeExecution struct {
 	WorkingDir  string   `json:"workingDir,omitempty"`
 	WithDeps    bool     `json:"withDeps,omitempty"`
 	Pull        string   `json:"pull,omitempty"` // "missing" | "always" | "never"
+	// ServicePorts makes a run-mode container publish the service's ports and
+	// take its network aliases, as `docker compose up` would. Only the services
+	// a [compose.*] block imports set it: they stand in for the running stack. A
+	// scheduled job beside a running stack must not, or it would clash on host
+	// ports and answer to the service's name.
+	ServicePorts bool `json:"servicePorts,omitempty"`
 	// Command is the script handed to the container's shell. Required when
 	// Mode == exec (there is nothing to exec otherwise) and unused by the
 	// other modes, which run the service's own compose-declared command.

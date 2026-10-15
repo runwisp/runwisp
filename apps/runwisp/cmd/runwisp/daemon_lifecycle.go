@@ -59,6 +59,7 @@ func startStationClient(
 		RequestRestart: func() error { return requestSelfRestart(cfg.Config.Daemon.AllowStationDispatch, fatalCh) },
 		SystemStats:    srv.SystemStats,
 		InstanceName:   srv.InstanceName,
+		Timezone:       srv.Timezone,
 	})
 	if clientErr != nil {
 		slog.Error("Failed to create station client", "err", clientErr)
@@ -314,6 +315,21 @@ type daemonRuntime struct {
 	logBuffer     *server.DaemonLogBuffer
 	cancelStation context.CancelFunc
 	stationWG     *sync.WaitGroup
+	// output mirrors job output to the daemon's stdout/stderr when
+	// [daemon] log_output is on.
+	output *runlog.OutputMirror
+}
+
+// subscribeRunLogs starts narrating runs on the daemon's own log streams: one
+// line per lifecycle transition, plus the jobs' output when log_output is on.
+// It returns the func that stops both.
+func (rt *daemonRuntime) subscribeRunLogs() func() {
+	stopLifecycle := runlog.Subscribe(rt.svc.EventBus)
+	stopOutput := rt.output.Subscribe(rt.svc.EventBus)
+	return func() {
+		stopOutput()
+		stopLifecycle()
+	}
 }
 
 // runHeadless blocks until SIGINT/SIGTERM, then gracefully shuts down. The
@@ -385,7 +401,7 @@ func readFatal(ch <-chan error) error {
 // handleReloadSignal services a SIGHUP by reconciling runwisp.toml against the
 // live task set. A reload failure (bad config or a restart-only change) is
 // logged and the daemon keeps running on its current set — SIGHUP never tears
-// the process down. nil reconciler (station mode) makes this a logged no-op.
+// the process down. A nil reload func makes this a logged no-op.
 func handleReloadSignal(rt *daemonRuntime) {
 	if rt.reload == nil {
 		slog.Warn("received SIGHUP but reload is not available in this mode")
@@ -468,7 +484,7 @@ func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
 			Output:     io.MultiWriter(os.Stderr, clilog.NewPlainWriter(rt.logBuffer)),
 			DaemonMode: true,
 		})
-		defer runlog.Subscribe(rt.svc.EventBus)()
+		defer rt.subscribeRunLogs()()
 		slog.Info("TUI detached. Daemon running in background. Press Ctrl+C to stop.")
 		return runHeadless(rt)
 	}

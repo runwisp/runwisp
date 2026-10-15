@@ -153,6 +153,7 @@
         "shutdown_timeout": { "$ref": "#/$defs/duration", "description": "SIGTERM→SIGKILL drain budget for in-flight runs on shutdown. Default 10s." },
         "external_url": { "type": "string", "description": "Public Web UI base for notification deep-links; absolute http(s) with host. When unset, the address of the most recent signed-in Web UI visit is used." },
         "check_updates": { "type": "boolean", "default": true, "description": "Poll concierge.runwisp.com for a newer release and show an indicator; also enables the Web UI feedback prompt. Set false to keep the daemon fully offline. Never auto-applies." },
+        "log_output": { "type": "boolean", "default": false, "description": "Copy every run's output lines to the daemon's own stdout and stderr, so `docker logs` shows what the jobs printed. The RUNWISP_LOG_OUTPUT env var overrides it; the Docker image sets it to true." },
         "metrics_enabled": { "type": "boolean", "default": false, "description": "Master switch for /metrics." },
         "metrics_listen": { "type": "string", "description": "Dedicated metrics listener host:port; setting it enables metrics." },
         "tls": { "type": "string", "default": "off", "description": "TLS mode for the HTTP server." },
@@ -183,6 +184,7 @@
       "properties": {
         "timeout": { "$ref": "#/$defs/duration", "description": "Per-attempt wall-clock cap (tasks only). Unset = no timeout." },
         "jitter": { "$ref": "#/$defs/duration", "description": "Start-spread window inherited by cron tasks (tasks only)." },
+        "warn_after": { "$ref": "#/$defs/duration", "description": "Send a long_running notification when a run is still going after this long, without stopping it (tasks only)." },
         "shell": { "type": "string", "default": "/bin/sh", "description": "Interpreter for run scripts (absolute path)." },
         "stop_signal": { "$ref": "#/$defs/stopSignal", "default": "SIGTERM" },
         "failures": { "$ref": "#/$defs/failures", "description": "Which outcomes count as a failure, inherited by every unit. Bare list replaces the built-in default; +/- tokens (\"-missed\", \"+stopped\") adjust it. Built-in default: [\"failed\",\"timeout\",\"crashed\",\"log_overflow\",\"start_failed\",\"unhealthy\",\"missed\"]." },
@@ -209,9 +211,10 @@
       "unevaluatedProperties": false,
       "properties": {
         "group": { "type": "string", "default": "Tasks", "description": "UI grouping label." },
-        "cron": { "type": "string", "description": "5- or 6-field cron (optional leading seconds); also @hourly, @every 1h30m. Omit => manual-only." },
+        "cron": { "type": "string", "description": "5- or 6-field cron (optional leading seconds); also @hourly, @every 1h30m. Day of month takes L, L-3, LW, 15W; day of week takes FRI#3, FRI#L. Omit => manual-only." },
         "timezone": { "type": "string", "description": "Per-task IANA timezone override." },
         "jitter": { "$ref": "#/$defs/duration", "description": "Cap how far this cron task's start may slip; needs cron." },
+        "warn_after": { "$ref": "#/$defs/duration", "description": "Send a long_running notification once when a run is still going after this long, without stopping it (inherits [defaults]). 0s turns it off." },
         "run_on_start": { "anyOf": [{ "type": "boolean" }, { "enum": ["daemon", "boot"] }], "default": false, "description": "Fire once at start, on top of any cron. true or \"daemon\": every daemon start. \"boot\": once per machine or container boot, like cron @reboot." },
         "manual_trigger": { "type": "boolean", "default": true, "description": "Allow CLI/API/UI trigger; false = cron-only." },
         "autostart": { "type": "boolean", "default": true, "description": "false: the cron schedule starts paused the first time the task is registered, until resumed. Needs cron; not with manual_trigger = false or run_on_start." },
@@ -421,7 +424,7 @@
               "description": "Match on fine-grained outcomes — the same vocabulary as [tasks.*] failures.",
               "items": {
                 "type": "string",
-                "enum": ["started", "succeeded", "failed", "timeout", "crashed", "log_overflow", "queue_full", "stopped", "daemon_stopped", "missed", "unhealthy", "service.fatal", "log.disk_pressure"]
+                "enum": ["started", "succeeded", "failed", "timeout", "crashed", "log_overflow", "queue_full", "stopped", "daemon_stopped", "missed", "unhealthy", "service.fatal", "log.disk_pressure", "long_running"]
               }
             },
             "failure": { "type": "boolean", "description": "Match any run classified as a failure (per [tasks.*] failures)." },

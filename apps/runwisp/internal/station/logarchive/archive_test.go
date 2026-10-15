@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -255,7 +256,7 @@ func TestSafeClientRejectsInternalAddress(t *testing.T) {
 	// The hardened client's dialer must refuse to connect to internal
 	// addresses even when the URL passed scheme/host validation — this is the
 	// guard for IP-literal and DNS-rebind SSRF targets.
-	client := SafeClient(false)
+	client := SafeClient(false, "")
 	for _, target := range []string{
 		"https://127.0.0.1:9/key",
 		"https://169.254.169.254/latest/meta-data",
@@ -268,6 +269,53 @@ func TestSafeClientRejectsInternalAddress(t *testing.T) {
 		if _, err := client.Do(req); err == nil {
 			t.Fatalf("expected dial rejection for %q", target)
 		}
+	}
+}
+
+func TestSafeClientTrustedHostBypassesIPGuard(t *testing.T) {
+	// A TLS server on loopback (a private address): the dial guard refuses it
+	// by default, but lets the configured Station host through. The test
+	// server's cert is untrusted, so a trusted dial fails at the TLS
+	// handshake, never at the address check.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	defer srv.Close()
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	put := func(client *http.Client, target string) error {
+		req, err := http.NewRequest(http.MethodPut, target, nil)
+		require.NoError(t, err)
+		_, err = client.Do(req)
+		return err
+	}
+
+	err = put(SafeClient(false, HostPort(u)), srv.URL)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "non-public")
+
+	// Same private IP, but not the trusted host: still rejected.
+	err = put(SafeClient(false, "station.example:443"), srv.URL)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-public")
+
+	// Same host, different port: not trusted.
+	other := *u
+	other.Host = u.Hostname() + ":1"
+	err = put(SafeClient(false, HostPort(&other)), srv.URL)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-public")
+}
+
+func TestHostPortFillsDefaultPort(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://s.example":      "s.example:443",
+		"http://s.example":       "s.example:80",
+		"https://10.0.0.5:8443":  "10.0.0.5:8443",
+		"https://[fd00::1]/path": "[fd00::1]:443",
+	} {
+		u, err := url.Parse(in)
+		require.NoError(t, err)
+		assert.Equal(t, want, HostPort(u), in)
 	}
 }
 

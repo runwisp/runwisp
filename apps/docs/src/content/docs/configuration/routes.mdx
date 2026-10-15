@@ -68,6 +68,7 @@ The outcomes to match. Uses the same names as `failures`:
 - `missed`: a scheduled run was missed while the daemon was down
 - `service.fatal`: a service gave up after [`restart_attempts`](/configuration/services/#restart_attempts)
 - `log.disk_pressure`: free disk fell below [`min_free_space`](/configuration/storage/#min_free_space)
+- `long_running`: a run is still going after [`warn_after`](/configuration/tasks/#warn_after) (not a failure, so it can't be combined with `match.failure`)
 
 `notify.delivery_failed` always goes only to the bell; listing it here is an
 error.

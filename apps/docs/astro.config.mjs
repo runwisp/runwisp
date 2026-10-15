@@ -220,6 +220,7 @@ export default defineConfig({
                         { label: "From systemd", slug: "coming-from/systemd" },
                         { label: "From docker-compose", slug: "coming-from/docker-compose" },
                         { label: "From node-cron", slug: "coming-from/node-cron" },
+                        { label: "From Ofelia", slug: "coming-from/ofelia" },
                     ],
                 },
                 {

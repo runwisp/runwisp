@@ -205,3 +205,41 @@ func TestIsHTTPStatus(t *testing.T) {
 	assert.False(t, IsHTTPStatus(wrapped, http.StatusForbidden))
 	assert.False(t, IsHTTPStatus(errors.New("plain"), http.StatusNotFound))
 }
+
+func TestMintViewerPassword(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/local/viewer-password", r.URL.Path)
+		_ = json.NewEncoder(w).Encode(map[string]any{"password": "view-pw", "ephemeral": true})
+	}))
+	defer srv.Close()
+
+	creds, err := New(srv.URL, "").MintViewerPassword(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "view-pw", creds.Password)
+}
+
+func TestMintViewerPassword_StatusMapping(t *testing.T) {
+	for status, want := range map[int]error{
+		http.StatusNotFound: ErrLocalCredentialsUnavailable,
+		http.StatusConflict: ErrAuthDisabled,
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "x", status)
+		}))
+		_, err := New(srv.URL, "").MintViewerPassword(t.Context())
+		assert.ErrorIs(t, err, want, "status %d", status)
+		srv.Close()
+	}
+}
+
+func TestSend_ReadOnly403MapsToErrReadOnly(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, server.ReadOnlySessionMessage, http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	_, err := New(srv.URL, "").TriggerRun(t.Context(), "t", nil, "cli")
+	assert.ErrorIs(t, err, ErrReadOnly)
+	assert.False(t, IsHTTPStatus(err, http.StatusForbidden))
+}

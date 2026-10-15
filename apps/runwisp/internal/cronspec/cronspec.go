@@ -30,7 +30,9 @@ import (
 // @daily, and @every 1h30m. SecondOptional (not Second) keeps 5-field specs
 // valid: they fire at :00. DowOrDom keeps vixie's rule that a restricted
 // day-of-month and day-of-week are ORed (go-cron ANDs them by default).
-const parseOptions = cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor | cron.DowOrDom
+// Extended adds the Quartz-style day specials: L, L-3, LW and 15W in
+// day-of-month, FRI#3 and FRI#L in day-of-week.
+const parseOptions = cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor | cron.DowOrDom | cron.Extended
 
 // NewParser returns a parser for the RunWisp cron grammar.
 func NewParser() cron.ScheduleParser {
@@ -187,9 +189,18 @@ type dstGapSchedule struct {
 }
 
 func (d dstGapSchedule) Next(from time.Time) time.Time {
+	next, _ := d.next(from)
+	return next
+}
+
+// next is Next plus whether the tick sat inside a spring-forward gap, which
+// Firings surfaces so `validate --explain` can mark it. That includes the
+// one-hour gaps go-cron already recovers itself: recovered then equals naive,
+// and the same instant comes back flagged.
+func (d dstGapSchedule) next(from time.Time) (time.Time, bool) {
 	naive := d.inner.Next(from)
 	if naive.IsZero() {
-		return naive
+		return naive, false
 	}
 
 	// The location the spec is evaluated in: its own (CRON_TZ) when pinned,
@@ -206,14 +217,14 @@ func (d dstGapSchedule) Next(from time.Time) time.Time {
 	_, fromOff := from.In(loc).Zone()
 	_, naiveOff := naive.In(loc).Zone()
 	if naiveOff <= fromOff {
-		return naive
+		return naive, false
 	}
 
 	fixed := *d.inner
 	fixed.Location = time.FixedZone("dstgap", fromOff)
 	recovered := fixed.Next(from.In(fixed.Location))
-	if recovered.IsZero() || !recovered.Before(naive) {
-		return naive
+	if recovered.IsZero() || recovered.After(naive) {
+		return naive, false
 	}
 
 	// Only a wall time that is genuinely missing in loc counts: time.Date
@@ -222,9 +233,9 @@ func (d dstGapSchedule) Next(from time.Time) time.Time {
 	w := recovered.In(fixed.Location)
 	norm := time.Date(w.Year(), w.Month(), w.Day(), w.Hour(), w.Minute(), w.Second(), w.Nanosecond(), loc)
 	if norm.Hour() == w.Hour() && norm.Minute() == w.Minute() && norm.Second() == w.Second() {
-		return naive
+		return naive, false
 	}
-	return recovered.In(loc)
+	return recovered.In(loc), true
 }
 
 // fieldMin is each field's lowest value, in 6-field order.
@@ -262,6 +273,10 @@ func (p specParser) lenientTerm(pos int, term string) string {
 	if n, err := strconv.Atoi(step); !ok || err != nil || n < 1 {
 		return term
 	}
+	// L-3/2 and FRI#3/2 are not oversized steps; leave them for go-cron to reject.
+	if strings.Contains(term, "#") || (pos == 3 && strings.ContainsAny(strings.ToUpper(term), "LW")) {
+		return term
+	}
 	if p.probe(pos, term) == nil || p.probe(pos, base) != nil {
 		return term
 	}
@@ -283,11 +298,12 @@ func (p specParser) probe(pos int, term string) error {
 // daysIn is the longest each month gets, February counting its leap day.
 var daysIn = [13]uint{0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
 
-// neverFires reports a spec like "0 0 30 2 *", which go-cron parses but never
-// matches: the day of month exists in none of the months, and day-of-week
-// can't stand in for it because the two are ANDed (one carries starBit). It
-// reads the fields instead of asking Next, which gives up after five years
-// and so would also reject rare but real dates like "0 9 25 12 */7".
+// neverFires reports a spec like "0 0 30 2 *" or "0 0 L-29 2 *" (also 30W),
+// which go-cron parses but never matches: the day of month exists in none of
+// the months, and day-of-week can't stand in for it because the two are ANDed
+// (one carries starBit). It reads the fields instead of asking Next, which
+// gives up after five years and so would also reject rare but real dates like
+// "0 9 25 12 */7".
 //
 // Replace with cron.StrictDays once netresearch/go-cron#421 lands.
 func neverFires(s *cron.SpecSchedule) bool {
@@ -303,8 +319,26 @@ func neverFires(s *cron.SpecSchedule) bool {
 				return false
 			}
 		}
+		for _, c := range s.DomConstraints {
+			if constraintFits(c, daysIn[month]) {
+				return false
+			}
+		}
 	}
 	return true
+}
+
+// constraintFits reports whether an L / L-n / LW / nW day-of-month constraint
+// can match in a month of the given length.
+func constraintFits(c cron.DomConstraint, monthDays uint) bool {
+	switch c.Type {
+	case cron.DomLastOffset:
+		return uint(c.N) < monthDays
+	case cron.DomNearestWeekday:
+		return uint(c.N) <= monthDays
+	default:
+		return true
+	}
 }
 
 // starBit is go-cron's unexported "field was *" flag (spec.go). Under DowOrDom,

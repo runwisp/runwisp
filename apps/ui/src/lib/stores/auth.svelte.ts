@@ -13,6 +13,7 @@ function createAuthStore() {
         required: true,
         loaded: false,
         authenticated: false,
+        readOnly: false,
     });
 
     async function load(): Promise<void> {
@@ -26,6 +27,7 @@ function createAuthStore() {
                 required: data.authRequired,
                 loaded: true,
                 authenticated: !data.authRequired || data.authenticated,
+                readOnly: data.readOnly,
             };
         } catch (error) {
             logger.error("Failed to load auth status", error);
@@ -33,6 +35,7 @@ function createAuthStore() {
                 required: true,
                 loaded: true,
                 authenticated: false,
+                readOnly: false,
             };
         }
     }
@@ -42,11 +45,11 @@ function createAuthStore() {
             return state;
         },
         load,
-        markAuthenticated() {
-            state = { ...state, authenticated: true };
+        markAuthenticated(readOnly: boolean) {
+            state = { ...state, authenticated: true, readOnly };
         },
         markUnauthenticated() {
-            state = { ...state, authenticated: false };
+            state = { ...state, authenticated: false, readOnly: false };
         },
     };
 }

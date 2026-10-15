@@ -5,7 +5,7 @@
     import { untrack } from "svelte";
     import type { RunsListFilters } from "@runwisp/ui";
     import { RunsList, RunDetailPanel } from "@runwisp/ui";
-    import { headerSearchStore, systemStore, taskStore } from "$lib/stores";
+    import { authStore, headerSearchStore, systemStore, taskStore } from "$lib/stores";
     import type { LiveRuns } from "$lib/utils/live-runs.svelte";
     import { createRunSelection } from "$lib/utils/run-selection.svelte";
     import { HistoryRail } from "$lib/utils/history-rail.svelte";
@@ -73,7 +73,7 @@
             showTaskName
             emptyText="No runs found"
             emptyDescription="Trigger a task manually with Re-run, or wait for a schedule to fire."
-            bulkActions
+            bulkActions={!authStore.current.readOnly}
             onBulkCancel={selection.handleBulkCancel}
             onBulkDelete={selection.handleBulkDelete}
             onBulkRerun={selection.handleBulkRerun}
@@ -89,7 +89,7 @@
             run={selection.selectedRun}
             {...live.logSession}
             showTaskName
-            onDelete={selection.deleteSingle}
+            onDelete={authStore.current.readOnly ? undefined : selection.deleteSingle}
             onBack={rail.phone ? rail.back : undefined}
             {getInstanceCount}
             getLiveUsage={(id) => systemStore.runUsage(id)}

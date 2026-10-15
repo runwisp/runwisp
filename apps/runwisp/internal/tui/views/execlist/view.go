@@ -102,6 +102,9 @@ type ExecView struct {
 	// Usage is the run's live CPU and memory use while it runs; nil when it
 	// isn't running or measured.
 	Usage *model.ResourceUsage
+	// ReadOnly drops the Action and Delete buttons: the session can't change
+	// anything.
+	ReadOnly bool
 }
 
 // execHeaderHeight is the number of header lines drawn above the log in normal mode.
@@ -326,7 +329,7 @@ func (v *ExecView) firstButton(current HeaderFocusItem) HeaderFocusItem {
 }
 
 func (v *ExecView) Action() Action {
-	if v.Run == nil {
+	if v.Run == nil || v.ReadOnly {
 		return ActionNone
 	}
 	if v.TaskIsService {
@@ -355,7 +358,7 @@ func (v *ExecView) Action() Action {
 // (terminal, non-service). Delete has its own header button next to the
 // primary Action, so a failed run offers both Retry and Delete.
 func (v *ExecView) CanDelete() bool {
-	if v.Run == nil || v.TaskIsService {
+	if v.Run == nil || v.TaskIsService || v.ReadOnly {
 		return false
 	}
 	return v.Run.Status != model.PhaseRunning && v.Run.Status != model.PhasePending

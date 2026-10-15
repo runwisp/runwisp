@@ -49,6 +49,9 @@ type SystemdParams struct {
 	// OnFailure= starts once systemd gives up on RunWisp, so a crash-looping
 	// daemon hands the jobs back to the cron it masked.
 	CronFailsafeUnit string
+	// Station runs `runwisp station --no-tui` instead of `runwisp daemon`. The
+	// token and URL never appear in the unit; they ride in the env drop-in.
+	Station bool
 }
 
 // CronFailsafeParams is the data passed to runwisp-cron-failsafe.service.tmpl.

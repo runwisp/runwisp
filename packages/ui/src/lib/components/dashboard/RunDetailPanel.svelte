@@ -62,7 +62,7 @@
         // redraw line so the log console can offer inline rewind. Optional.
         fetchLineHistory?: (runId: string, lineNum: number) => Promise<string[][]>;
         showTaskName?: boolean;
-        onDelete?: (runId: string) => void;
+        onDelete?: ((runId: string) => void) | undefined;
         // Start a new run with default options. When set, the action cluster's
         // primary control is a Run button (the cold-start / re-trigger path).
         onRun?: (() => void) | undefined;

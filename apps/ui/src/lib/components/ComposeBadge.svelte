@@ -13,7 +13,7 @@
     let { file, service, projectName }: Props = $props();
 
     const tooltip = $derived.by(() => {
-        const parts = [file];
+        const parts = file ? [file] : [];
         if (service) {
             parts.push(`service: ${service}`);
         }

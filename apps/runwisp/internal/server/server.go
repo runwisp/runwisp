@@ -54,6 +54,7 @@ type Server struct {
 	appEvents         *appEventLog
 	auth              *auth.Service
 	passwordEphemeral bool
+	viewerFromEnv     bool // read-only password was operator-supplied, so it is never disclosed
 	noAuth            bool
 	onSignedInVisit   func(baseURL string)
 	detectedURL       func() string
@@ -124,6 +125,7 @@ type Options struct {
 	EventBus            *events.Bus
 	Password            string                                // Authentication password (required even with NoAuth — keeps the cookie/launch-ticket machinery alive)
 	PasswordEphemeral   bool                                  // True when the daemon minted Password in memory at boot (no RUNWISP_PASSWORD)
+	ViewerPassword      string                                // Optional read-only password (RUNWISP_VIEWER_PASSWORD); sessions opened with it cannot change anything
 	SessionKey          []byte                                // session-token HMAC key (auth.DeriveSessionKey, in-memory)
 	NoAuth              bool                                  // RUNWISP_AUTH=off: serve all /api/* routes over TCP without CHAP or a session token
 	TrustedProxies      []string                              // [daemon] trusted_proxies as config resolved it (RUNWISP_TRUSTED_PROXIES applied)
@@ -182,6 +184,7 @@ func New(opts Options) (*Server, error) {
 		logDir:            opts.LogDir,
 		eventBus:          opts.EventBus,
 		passwordEphemeral: opts.PasswordEphemeral,
+		viewerFromEnv:     opts.ViewerPassword != "",
 		noAuth:            opts.NoAuth,
 		onSignedInVisit:   opts.OnSignedInVisit,
 		detectedURL:       opts.DetectedExternalURL,
@@ -199,6 +202,7 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init auth service: %w", err)
 	}
+	s.auth.SetViewerPassword(opts.ViewerPassword)
 
 	s.appEvents = newAppEventLog()
 	// Single consumer for the app-event SSE stream: subscribe to exactly the

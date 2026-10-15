@@ -10,7 +10,9 @@ type BackendStatus struct {
 }
 
 // Availability tracks which execution backends the daemon can use.
-// This is determined at startup and transmitted to the control plane.
+// This is determined at startup and transmitted to the control plane; only
+// Config can change later, since a reload can add or remove every TOML task
+// (see ConfigStatus).
 type Availability struct {
 	Shell     BackendStatus `json:"shell"`
 	Container BackendStatus `json:"container"`
@@ -20,7 +22,7 @@ type Availability struct {
 }
 
 // ForType returns the BackendStatus for the given execution type string.
-func (a *Availability) ForType(execType string) BackendStatus {
+func (a Availability) ForType(execType string) BackendStatus {
 	switch execType {
 	case "shell":
 		return a.Shell
@@ -35,4 +37,13 @@ func (a *Availability) ForType(execType string) BackendStatus {
 	default:
 		return BackendStatus{Available: false, Reason: "unknown execution type"}
 	}
+}
+
+// ConfigStatus is the status of config-backed dispatch (triggering a TOML
+// task), which is available exactly when the daemon has local tasks to resolve.
+func ConfigStatus(hasLocalTasks bool) BackendStatus {
+	if hasLocalTasks {
+		return BackendStatus{Available: true}
+	}
+	return BackendStatus{Available: false, Reason: "no local tasks configured"}
 }

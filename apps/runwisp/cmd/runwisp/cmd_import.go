@@ -35,9 +35,9 @@ var importFlags importOpts
 
 var importCmd = &cobra.Command{
 	Use:   "import",
-	Short: "Convert a crontab, supervisord config, or systemd units into runwisp.toml",
-	Long: `Convert an existing crontab, supervisord configuration, or systemd units into an
-annotated runwisp.toml.
+	Short: "Convert a crontab, supervisord config, systemd units, or Ofelia jobs into runwisp.toml",
+	Long: `Convert an existing crontab, supervisord configuration, systemd units, or Ofelia
+jobs into an annotated runwisp.toml.
 
 The generated TOML is printed to stdout by default so you can review it (and
 pipe it). Use -o/--output to save it, or --write to save it to the --config
@@ -97,6 +97,32 @@ followed relative to each file):
 	},
 }
 
+var importOfeliaCmd = &cobra.Command{
+	Use:   "ofelia [FILE...]",
+	Short: "Convert Ofelia jobs into runwisp.toml",
+	Long: `Convert Ofelia (mcuadros/ofelia) jobs into runwisp.toml. Each job becomes a
+task. job-exec runs in your container, job-run starts a container with
+'docker run', and job-local runs on the host.
+
+Pass Ofelia's INI config, a compose file whose services carry ofelia.* labels
+(a .yml or .yaml file), or pipe an INI config in:
+
+  runwisp import ofelia docker-compose.yml
+  runwisp import ofelia config.ini -o runwisp.toml
+  cat config.ini | runwisp import ofelia
+
+A compose job-exec becomes a task with compose_file and compose_service, so it
+runs in the same container Ofelia ran it in. Jobs RunWisp can't run (Swarm
+services) become an inline # TODO and a note. It does not stop Ofelia: do that
+yourself, or each job runs twice.`,
+	Args:          cobra.ArbitraryArgs,
+	SilenceErrors: true,
+	SilenceUsage:  true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runImportOfelia(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, args, flags, importFlags)
+	},
+}
+
 var importSystemdCmd = &cobra.Command{
 	Use:   "systemd [UNIT...]",
 	Short: "Convert systemd service units into runwisp.toml",
@@ -122,7 +148,7 @@ silently dropped. It does not disable the units: run 'systemctl disable --now
 }
 
 func init() {
-	for _, c := range []*cobra.Command{importCronCmd, importSupervisordCmd, importSystemdCmd} {
+	for _, c := range []*cobra.Command{importCronCmd, importSupervisordCmd, importSystemdCmd, importOfeliaCmd} {
 		c.Flags().StringVarP(&importFlags.output, "output", "o", "", "write the generated TOML to this file instead of stdout")
 		c.Flags().BoolVar(&importFlags.write, "write", false, "write to the --config path (default runwisp.toml)")
 		c.Flags().BoolVar(&importFlags.force, "force", false, "overwrite the target file without prompting")
@@ -134,6 +160,7 @@ func init() {
 	importCmd.AddCommand(importCronCmd)
 	importCmd.AddCommand(importSupervisordCmd)
 	importCmd.AddCommand(importSystemdCmd)
+	importCmd.AddCommand(importOfeliaCmd)
 }
 
 func runImportCron(stdout, stderr io.Writer, stdin *os.File, source string, cronOpts importer.CronOptions, f Flags, opts importOpts) error {
@@ -184,6 +211,36 @@ func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []st
 		return &userFacingError{title: "failed to read supervisord config", details: err.Error()}
 	}
 	return emitImport(stdout, stderr, stdin, res, sourceSupervisord, f, opts)
+}
+
+func runImportOfelia(stdout, stderr io.Writer, stdin *os.File, sources []string, f Flags, opts importOpts) error {
+	if err := checkImportFlags(opts); err != nil {
+		return err
+	}
+	ofOpts := importer.OfeliaOptions{Existing: ownedEntries(f, opts)}
+	var res *importer.Result
+	var err error
+	switch {
+	case len(sources) == 0:
+		if term.IsTerminal(int(stdin.Fd())) {
+			return &userFacingError{
+				title:   "no Ofelia config given",
+				details: "Pass a config.ini or a compose file, or pipe an INI config in, e.g. `cat config.ini | runwisp import ofelia`.",
+			}
+		}
+		res, err = importer.ParseOfeliaReader(stdin, ofOpts)
+	case len(sources) == 1 && sources[0] == "-":
+		res, err = importer.ParseOfeliaReader(stdin, ofOpts)
+	default:
+		if slices.Contains(sources, "-") {
+			return &userFacingError{title: "can't mix - (stdin) with file paths for Ofelia import"}
+		}
+		res, err = importer.ParseOfeliaFiles(sources, ofOpts)
+	}
+	if err != nil {
+		return &userFacingError{title: "failed to read Ofelia config", details: err.Error()}
+	}
+	return emitImport(stdout, stderr, stdin, res, sourceOfelia, f, opts)
 }
 
 func runImportSystemd(stdout, stderr io.Writer, stdin *os.File, sources []string, f Flags, opts importOpts) error {

@@ -185,6 +185,11 @@ func (srv *Server) InstanceName() string {
 	return srv.stats.GetDaemonInfo().Name
 }
 
+// Timezone returns the live resolved [daemon] timezone, kept current by reloads.
+func (srv *Server) Timezone() string {
+	return srv.stats.GetDaemonInfo().ResolvedTimezone
+}
+
 func (srv *Server) humaGetMetricsHistory(ctx context.Context, input *struct{}) (*MetricsHistoryOutput, error) {
 	return &MetricsHistoryOutput{Body: MetricsHistoryBody{Items: srv.metrics.History()}}, nil
 }

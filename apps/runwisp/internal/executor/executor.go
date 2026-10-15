@@ -144,11 +144,7 @@ func New(opts Options) *RoutingExecutor {
 	}
 
 	// Always dispatchable: config-backed dispatch when local tasks exist.
-	if opts.HasLocalTasks {
-		avail.Config = BackendStatus{Available: true}
-	} else {
-		avail.Config = BackendStatus{Available: false, Reason: "no local tasks configured"}
-	}
+	avail.Config = ConfigStatus(opts.HasLocalTasks)
 
 	// HTTP and the code-executing types require the dispatch opt-in.
 	if !opts.StationDispatchEnabled {

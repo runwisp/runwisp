@@ -47,6 +47,7 @@ to reload:
 
 ```bash
 runwisp validate --json   # non-zero exit on error; each error has key, line, column
+runwisp validate --json --explain   # adds `schedules`: each cron in words plus its next firings
 runwisp reload            # apply it to the running daemon
 runwisp run backup --json # run a task; the outcome is JSON on stdout, logs on stderr
 ```

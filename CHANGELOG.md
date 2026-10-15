@@ -9,9 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Cron expressions accept `L` (last day of the month), `LW`, `15W` (nearest weekday) and `FRI#3` / `FRI#L` (nth or last weekday).
+- `runwisp validate --explain` describes each schedule in words and lists its next 3 firings in the zone the scheduler uses, marking times a daylight saving change moves or skips.
+- `runwisp validate` and daemon startup warn when three or more tasks without a `jitter` would start at the same second, and suggest setting one.
 - The TUI run list shows each run's CPU time and peak memory, colored by how it compares with the task's usual run, so an unusually heavy run stands out.
 - The TUI task info (`i`) shows the task's timeout, its log limit and retention, its usual CPU time and memory, and opens with the first lines of its `run` command; press `c` to see the whole command. It scrolls when it doesn't fit.
-- `runwisp upgrade` updates RunWisp the way it was installed (Homebrew, npm/bun/pnpm/yarn, or the install script) and can restart the daemon now, once it is idle, or later.
+- `warn_after` on a task sends a notification once when a run is still going after that long, without stopping it. It reaches the same places as a failure alert, or any `[[route]]` that lists `long_running`.
+- `runwisp upgrade` updates RunWisp the way it was installed (Homebrew, apt, dnf, npm/bun/pnpm/yarn, or the install script) and can restart the daemon now, once it is idle, or later.
+- `runwisp import ofelia` converts Ofelia jobs, from an INI config or `ofelia.*` compose labels, into tasks.
+- A task with `compose_service` and `run` can leave out `compose_file` when RunWisp runs in the same compose project; it needs only the Docker socket.
+- `[daemon] log_output` (or `RUNWISP_LOG_OUTPUT`) prints task output to the daemon's stdout as `task | line`. The Docker image turns it on, so `docker compose logs runwisp` shows job output.
+- The Docker image runs RunWisp under `tini`, so processes your tasks leave behind are reaped.
+- `.deb` and `.rpm` packages for x64 and arm64. They add the RunWisp apt or dnf repository, so system updates keep RunWisp current.
+- `runwisp` next to a compose file first offers a starter that schedules jobs in the running stack, then one that imports its services.
+- `RUNWISP_VIEWER_PASSWORD` adds an optional read-only password: a session signed in with it can view tasks, runs and logs, and the daemon rejects trigger, start, stop, pause, delete and reload for it. The Web UI and TUI hide those controls. `runwisp password --viewer` prints it, generating one if none is set. See [Authentication](https://docs.runwisp.com/operations/auth/#read-only-access).
 - `@runwisp/js`: an npm package that runs node-cron tasks under RunWisp, so every run is recorded with its output and exit code and shown in the web UI. Swap the import and keep your `schedule()` calls, or define tasks and services with every `runwisp.toml` key. See [From node-cron](https://docs.runwisp.com/coming-from/node-cron/).
 - `@runwisp/js` integrates with NestJS (replacing `@nestjs/schedule`), Nuxt and Next.js (running Nitro's `scheduledTasks` and Vercel Cron jobs), and Astro.
 - Tasks and services take `sdk = true`, which runs them in an app that defines them through an SDK instead of a shell command, and `runwisp daemon --app` reads its config from such an app.
@@ -24,13 +35,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The **Star** button on the TUI Home screen works from the keyboard: press ↑ from the top row, then Enter.
 - A run that fails because its `compose_service` container isn't running explains why in the run log: it names the compose project RunWisp searched and how to point it at the right one.
 - The TUI, `runwisp --help`, CLI errors, the startup banner and log lines use the teal brand colors of the Web UI, readable on light and dark terminals.
+- `runwisp validate` rejects a task whose `compose_service` is not in its `compose_file`.
+- A scheduled `compose_mode = "run"` job no longer publishes the service's ports or takes its network alias, so it can run beside the stack.
+- A build from source no longer checks for updates or offers `runwisp upgrade`.
 
 ### Fixed
 
-- `@every` rejects an interval that isn't a whole number of seconds, such as `1500ms`, instead of running it every second.
+- A `[compose.<alias>]` block runs in the compose file's own project unless `project_name` is set, so it no longer starts a second copy of a running stack.
 - A task or service with `compose_file` now runs in the compose file's own project, like `docker compose up` in that directory. A fresh container joins the stack's network and named volumes, so a scheduled job can reach `db` and see the stack's data instead of an empty volume of its own.
 - The TUI log search (`/`) and the shutdown spinner use the TUI's colors instead of falling back to the terminal's own.
 - The TUI log search (`/`) now shows its results every time instead of sometimes staying empty.
+- New releases reach npm again. 1.6.0 was never published there.
+- `@every` rejects an interval that isn't a whole number of seconds, such as `1500ms`, instead of running it every second.
 - `runwisp validate` no longer creates the data directory.
 
 ## [1.6.0] - 2026-10-10

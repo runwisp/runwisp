@@ -4,7 +4,7 @@
 <script lang="ts">
     import { Bell } from "@lucide/svelte";
     import { EmptyState, ErrorState, Link, PageHeader, Skeleton } from "@runwisp/ui";
-    import { notificationStore, systemStore } from "$lib/stores";
+    import { authStore, notificationStore, systemStore } from "$lib/stores";
     import NotificationItem from "$lib/components/NotificationItem.svelte";
 
     let items = $derived(notificationStore.items);
@@ -32,7 +32,10 @@
 </svelte:head>
 
 <div class="mx-auto max-w-3xl space-y-4">
-    <PageHeader title="Notifications" actions={unread > 0 ? markAllReadButton : undefined}>
+    <PageHeader
+        title="Notifications"
+        actions={unread > 0 && !authStore.current.readOnly ? markAllReadButton : undefined}
+    >
         {#snippet subtitle()}
             Recent notifications across all tasks
             {#if unread > 0}· <span
