@@ -321,6 +321,20 @@ func TestSpringForwardGapBeyondOneHourStep(t *testing.T) {
 			want: time.Date(2025, 10, 5, 2, 30, 0, 0, lordHowe),
 		},
 		{
+			// The first Sunday of September 2025 is the gap day.
+			name: "nth weekday in a midnight gap",
+			spec: "0 0 * * SUN#1",
+			from: time.Date(2025, 9, 6, 12, 0, 0, 0, santiago),
+			want: time.Date(2025, 9, 7, 1, 0, 0, 0, santiago),
+		},
+		{
+			// L-23 is September 7th, the gap day.
+			name: "last-day offset in a midnight gap",
+			spec: "0 0 L-23 9 *",
+			from: time.Date(2025, 9, 6, 12, 0, 0, 0, santiago),
+			want: time.Date(2025, 9, 7, 1, 0, 0, 0, santiago),
+		},
+		{
 			name: "pinned zone, evaluated from UTC",
 			spec: "CRON_TZ=America/Santiago 0 0 * * *",
 			from: time.Date(2025, 9, 6, 16, 0, 0, 0, time.UTC),

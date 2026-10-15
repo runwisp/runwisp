@@ -270,11 +270,12 @@ func (p specParser) probe(pos int, term string) error {
 // daysIn is the longest each month gets, February counting its leap day.
 var daysIn = [13]uint{0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
 
-// neverFires reports a spec like "0 0 30 2 *", which go-cron parses but never
-// matches: the day of month exists in none of the months, and day-of-week
-// can't stand in for it because the two are ANDed (one carries starBit). It
-// reads the fields instead of asking Next, which gives up after five years
-// and so would also reject rare but real dates like "0 9 25 12 */7".
+// neverFires reports a spec like "0 0 30 2 *" or "0 0 L-29 2 *" (also 30W),
+// which go-cron parses but never matches: the day of month exists in none of
+// the months, and day-of-week can't stand in for it because the two are ANDed
+// (one carries starBit). It reads the fields instead of asking Next, which
+// gives up after five years and so would also reject rare but real dates like
+// "0 9 25 12 */7".
 //
 // Replace with cron.StrictDays once netresearch/go-cron#421 lands.
 func neverFires(s *cron.SpecSchedule) bool {
