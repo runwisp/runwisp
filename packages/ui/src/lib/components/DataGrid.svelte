@@ -229,7 +229,10 @@
                         : ""}
                 >
                     {#if selectable}
-                        <TableCell header {density} class="w-12">
+                        <!-- w-px: in an auto-layout table a width is only a minimum, so a
+                             fixed width still soaks up spare space. 1px shrinks the
+                             column to the checkbox; the next cell's padding is the gap. -->
+                        <TableCell header {density} class="w-px pr-0">
                             <Checkbox
                                 checked={allSelected}
                                 indeterminate={someSelected}
@@ -319,7 +322,7 @@
                                      fire onRowClick (which usually navigates away). -->
                                 <TableCell
                                     {density}
-                                    class="cursor-pointer {hoverable ? railHover : ''}"
+                                    class="cursor-pointer pr-0 {hoverable ? railHover : ''}"
                                     onclick={(e) => {
                                         e.stopPropagation();
                                         if (!(e.target instanceof HTMLInputElement)) toggleRow(row);
