@@ -338,6 +338,14 @@ func TestSpringForwardGapBeyondOneHourStep(t *testing.T) {
 			want: time.Date(2025, 9, 7, 1, 0, 0, 0, santiago),
 		},
 		{
+			// Months from `from` to the tick, in the same UTC offset as it: the
+			// winter in between must not hide the gap.
+			name: "yearly tick in a midnight gap",
+			spec: "0 0 7 9 *",
+			from: time.Date(2025, 1, 1, 0, 0, 0, 0, santiago),
+			want: time.Date(2025, 9, 7, 1, 0, 0, 0, santiago),
+		},
+		{
 			name: "pinned zone, evaluated from UTC",
 			spec: "CRON_TZ=America/Santiago 0 0 * * *",
 			from: time.Date(2025, 9, 6, 16, 0, 0, 0, time.UTC),
@@ -484,10 +492,16 @@ func TestExplain(t *testing.T) {
 		Second:     []int{0},
 		Minute:     []int{0, 20, 40},
 		Hour:       []int{9, 10},
-		DayOfMonth: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
+		DayOfMonth: []any{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
 		Month:      []int{1},
-		DayOfWeek:  []int{0},
+		DayOfWeek:  []any{0},
 	}, fields)
+
+	// The day specials are not bitset days, so they are listed as written.
+	fields, errs = Explain("0 0 1,L,L-2,LW,15W * 5#3,0#L")
+	require.Empty(t, errs)
+	assert.Equal(t, []any{1, "L", "L-2", "LW", "15W"}, fields.DayOfMonth)
+	assert.Equal(t, []any{"5#3", "0#L"}, fields.DayOfWeek)
 
 	fields, errs = Explain("@hourly")
 	require.Empty(t, errs)

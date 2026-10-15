@@ -20,10 +20,12 @@ import (
 // Load parses a docker compose file and returns a minimal Project. profiles
 // filters services to those tagged with the named profiles (compose semantics).
 // envFiles is appended to compose's normal .env discovery for variable
-// interpolation. workingDir defaults to the directory of file when empty.
+// interpolation. The project directory is always the directory of file, as for
+// `docker compose -f file` wherever it runs: it names the project, locates .env
+// and anchors relative bind mounts.
 //
 // No docker daemon is contacted — this is pure parsing, safe to run offline.
-func Load(file string, profiles, envFiles []string, workingDir string) (*Project, error) {
+func Load(file string, profiles, envFiles []string) (*Project, error) {
 	if file == "" {
 		return nil, errors.New("compose file path is required")
 	}
@@ -31,13 +33,10 @@ func Load(file string, profiles, envFiles []string, workingDir string) (*Project
 	if err != nil {
 		return nil, fmt.Errorf("resolve compose file path: %w", err)
 	}
-	if workingDir == "" {
-		workingDir = filepath.Dir(absFile)
-	}
 
 	projectOpts, err := cli.NewProjectOptions(
 		[]string{absFile},
-		cli.WithWorkingDirectory(workingDir),
+		cli.WithWorkingDirectory(filepath.Dir(absFile)),
 		cli.WithProfiles(profiles),
 		cli.WithEnvFiles(envFiles...),
 		cli.WithOsEnv,

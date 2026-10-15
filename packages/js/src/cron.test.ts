@@ -64,6 +64,29 @@ describe("CronAnswers", () => {
         expect(calls()).toEqual(["sdk-cron --json --count 0 -- 1-2 3 * * *"]);
     });
 
+    it("keeps the day specials RunWisp lists after the plain days", () => {
+        const { dir, answers } = setup();
+        writeFileSync(
+            join(dir, "answer.json"),
+            JSON.stringify({
+                valid: true,
+                fields: {
+                    second: [0],
+                    minute: [0],
+                    hour: [0],
+                    dayOfMonth: [1, "L", "15W"],
+                    month: [],
+                    dayOfWeek: ["5#3"],
+                },
+                errors: [],
+                next: [],
+            }),
+        );
+        const fields = answers.explain("0 0 1,L,15W * 5#3").fields;
+        expect(fields?.dayOfMonth).toEqual([1, "L", "15W"]);
+        expect(fields?.dayOfWeek).toEqual(["5#3"]);
+    });
+
     it("answers next firings from one batch until it runs short", () => {
         const { answers, calls } = setup();
         const now = new Date(FIRST - 30_000);

@@ -157,6 +157,16 @@ func TestTaskDetailDialog_View_PlainTaskHasNoCommandOrRetention(t *testing.T) {
 	}
 }
 
+// An explicit timeout of 0 means "no timeout", so the inspector must not show
+// it as a limit of "0s".
+func TestTaskDetailDialog_View_ZeroTimeoutIsNoTimeout(t *testing.T) {
+	zero := time.Duration(0)
+	view := ansi.Strip(NewTaskDetailDialog("test", &model.Task{Name: "test", Cron: "0 3 * * *", Timeout: &zero}).View(80, 30))
+	if strings.Contains(view, "Timeout") {
+		t.Errorf("unexpected Timeout row for timeout = 0 in %q", view)
+	}
+}
+
 func TestRetentionLabel(t *testing.T) {
 	for d, want := range map[time.Duration]string{
 		2880 * time.Hour: "120d",

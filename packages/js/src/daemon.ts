@@ -654,13 +654,21 @@ export interface CronFields {
     second: number[];
     minute: number[];
     hour: number[];
-    dayOfMonth: number[];
+    /** The plain days, then the specials as written: "L", "L-2", "LW", "15W". */
+    dayOfMonth: (number | string)[];
     month: number[];
-    dayOfWeek: number[];
+    /** The plain days, then the specials as written: "5#3", "5#L". */
+    dayOfWeek: (number | string)[];
 }
 
 function numbers(value: unknown): number[] {
     return Array.isArray(value) ? value.filter((n) => typeof n === "number") : [];
+}
+
+function days(value: unknown): (number | string)[] {
+    return Array.isArray(value)
+        ? value.filter((n) => typeof n === "number" || typeof n === "string")
+        : [];
 }
 
 /**
@@ -701,9 +709,9 @@ export function askCron(
             second: numbers(field(fields, "second")),
             minute: numbers(field(fields, "minute")),
             hour: numbers(field(fields, "hour")),
-            dayOfMonth: numbers(field(fields, "dayOfMonth")),
+            dayOfMonth: days(field(fields, "dayOfMonth")),
             month: numbers(field(fields, "month")),
-            dayOfWeek: numbers(field(fields, "dayOfWeek")),
+            dayOfWeek: days(field(fields, "dayOfWeek")),
         };
     }
     return answer;

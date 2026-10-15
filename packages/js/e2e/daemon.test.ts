@@ -242,3 +242,20 @@ describe("RunWisp with the real daemon", () => {
         await expect.poll(() => healthy(socket), { timeout: 5_000 }).toBe(false);
     });
 });
+
+describe("a service that depends on another unit", () => {
+    // Validated as it is added, when the unit it names may not be registered yet.
+    it("is accepted whether the unit is in the config or added after it", () => {
+        const cron = new RunWisp({
+            enabled: false,
+            log: false,
+            binary,
+            config: { services: { db: { sdk: true } } },
+        });
+        expect(() => {
+            cron.service("api", { depends_on: ["db"] }, () => undefined);
+            cron.service("worker", { depends_on: ["queue"] }, () => undefined);
+            cron.service("queue", {}, () => undefined);
+        }).not.toThrow();
+    });
+});

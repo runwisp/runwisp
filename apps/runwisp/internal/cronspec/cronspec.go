@@ -211,31 +211,33 @@ func (d dstGapSchedule) next(from time.Time) (time.Time, bool) {
 		loc = from.Location()
 	}
 
-	// A spring-forward transition lies between from and naive only if the UTC
-	// offset increased across them. A fall-back makes a wall time repeat, not
-	// disappear, and is deduped in the scheduler instead.
-	_, fromOff := from.In(loc).Zone()
-	_, naiveOff := naive.In(loc).Zone()
-	if naiveOff <= fromOff {
-		return naive, false
-	}
+	// Walk the zone transitions between from and naive (a yearly tick spans a
+	// whole DST cycle, so comparing the offsets at both ends would miss a gap in
+	// between). A fall-back makes a wall time repeat, not disappear, and is
+	// deduped in the scheduler instead; only a spring-forward can hide a tick.
+	for t := from.In(loc); ; {
+		_, before := t.Zone()
+		_, transition := t.ZoneBounds()
+		if transition.IsZero() || transition.After(naive) {
+			return naive, false
+		}
+		t = transition.In(loc)
+		_, after := t.Zone()
+		if after <= before {
+			continue
+		}
 
-	fixed := *d.inner
-	fixed.Location = time.FixedZone("dstgap", fromOff)
-	recovered := fixed.Next(from.In(fixed.Location))
-	if recovered.IsZero() || recovered.After(naive) {
-		return naive, false
+		// Evaluate the spec on a gapless clock pinned to the pre-gap offset: a
+		// match in the missing window [transition, transition+shift) is exactly
+		// the instant time.Date yields when it normalizes that non-existent
+		// local time forward.
+		fixed := *d.inner
+		fixed.Location = time.FixedZone("dstgap", before)
+		recovered := fixed.Next(transition.Add(-time.Second).In(fixed.Location))
+		if !recovered.IsZero() && recovered.Before(transition.Add(time.Duration(after-before)*time.Second)) && !recovered.After(naive) {
+			return recovered.In(loc), true
+		}
 	}
-
-	// Only a wall time that is genuinely missing in loc counts: time.Date
-	// normalizes a non-existent local time forward, changing its fields, and
-	// reproduces a real one unchanged.
-	w := recovered.In(fixed.Location)
-	norm := time.Date(w.Year(), w.Month(), w.Day(), w.Hour(), w.Minute(), w.Second(), w.Nanosecond(), loc)
-	if norm.Hour() == w.Hour() && norm.Minute() == w.Minute() && norm.Second() == w.Second() {
-		return naive, false
-	}
-	return recovered.In(loc), true
 }
 
 // fieldMin is each field's lowest value, in 6-field order.
@@ -394,14 +396,16 @@ func Validate(spec, timezone string) error {
 }
 
 // Fields are the values each field of a cron spec matches, ascending. Day of
-// week runs 0-6 with Sunday as 0, however the spec wrote it.
+// week runs 0-6 with Sunday as 0, however the spec wrote it. DayOfMonth and
+// DayOfWeek also list the day specials as the strings they were written as
+// ("L", "L-2", "LW", "15W"; "5#3", "5#L"), after the plain days.
 type Fields struct {
 	Second     []int `json:"second"`
 	Minute     []int `json:"minute"`
 	Hour       []int `json:"hour"`
-	DayOfMonth []int `json:"dayOfMonth"`
+	DayOfMonth []any `json:"dayOfMonth"`
 	Month      []int `json:"month"`
-	DayOfWeek  []int `json:"dayOfWeek"`
+	DayOfWeek  []any `json:"dayOfWeek"`
 }
 
 // FieldError says why one field of a spec doesn't parse. Field is
@@ -433,9 +437,9 @@ func Explain(spec string) (*Fields, []FieldError) {
 		Second:     bitValues(s.Second, 0, 59),
 		Minute:     bitValues(s.Minute, 0, 59),
 		Hour:       bitValues(s.Hour, 0, 23),
-		DayOfMonth: bitValues(s.Dom, 1, 31),
+		DayOfMonth: append(anyValues(bitValues(s.Dom, 1, 31)), domSpecials(s.DomConstraints)...),
 		Month:      bitValues(s.Month, 1, 12),
-		DayOfWeek:  bitValues(s.Dow, 0, 6),
+		DayOfWeek:  append(anyValues(bitValues(s.Dow, 0, 6)), dowSpecials(s.DowConstraints)...),
 	}, nil
 }
 
@@ -475,6 +479,45 @@ func bitValues(bits uint64, lo, hi int) []int {
 		if bits&(1<<v) != 0 {
 			out = append(out, v)
 		}
+	}
+	return out
+}
+
+func anyValues(values []int) []any {
+	out := make([]any, len(values))
+	for i, v := range values {
+		out[i] = v
+	}
+	return out
+}
+
+// domSpecials spells out the L / L-n / LW / nW day-of-month constraints.
+func domSpecials(constraints []cron.DomConstraint) []any {
+	var out []any
+	for _, c := range constraints {
+		switch c.Type {
+		case cron.DomLast:
+			out = append(out, "L")
+		case cron.DomLastOffset:
+			out = append(out, fmt.Sprintf("L-%d", c.N))
+		case cron.DomLastWeekday:
+			out = append(out, "LW")
+		case cron.DomNearestWeekday:
+			out = append(out, fmt.Sprintf("%dW", c.N))
+		}
+	}
+	return out
+}
+
+// dowSpecials spells out the nth-weekday constraints as "5#3" and "5#L".
+func dowSpecials(constraints []cron.DowConstraint) []any {
+	var out []any
+	for _, c := range constraints {
+		n := strconv.Itoa(c.N)
+		if c.N == -1 {
+			n = "L"
+		}
+		out = append(out, fmt.Sprintf("%d#%s", c.Weekday, n))
 	}
 	return out
 }

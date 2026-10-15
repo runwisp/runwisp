@@ -129,6 +129,9 @@ func Describe(spec string) string {
 	if five, ok := descriptors[expr]; ok {
 		expr = five
 	}
+	// The descriptor reads a last weekday as Quartz's "5L"; "5#L" would come out
+	// as "on the Friday of the month".
+	expr = strings.NewReplacer("#L", "L", "#l", "l").Replace(expr)
 	d, err := lnquy.NewDescriptor(lnquy.Use24HourTimeFormat(true))
 	if err != nil {
 		return expr

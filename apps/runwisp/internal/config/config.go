@@ -65,6 +65,8 @@ func load(path string, root *tomlConfig) (*Config, error) {
 	if err := Validate(cfg); err != nil {
 		return nil, err
 	}
+	// After ApplyDefaults: a jitter inherited from [defaults] counts.
+	cfg.refreshScheduleWarnings(time.Now())
 	cfg.watchFiles = collectWatchFiles(cfg, dirs)
 	return cfg, nil
 }

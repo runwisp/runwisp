@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -81,6 +82,22 @@ project_name = "pinned"
 	ce, ok = findTask(t, cfg, "myapp.web").ExecutionDef.(*model.ComposeExecution)
 	require.True(t, ok)
 	assert.Equal(t, "pinned", ce.ProjectName, "an explicit project_name still wins")
+}
+
+// working_dir is where the docker command runs, not the project directory:
+// `docker compose -f FILE` names the project after FILE's directory wherever it
+// runs, so a working_dir elsewhere must not rename the stack the units join.
+func TestComposeExpansion_DefaultProjectIgnoresWorkingDir(t *testing.T) {
+	cfgPath := writeComposeConfig(t, "services:\n  web:\n    image: nginx\n", `[compose.myapp]
+working_dir = "./elsewhere"
+`)
+	dir := filepath.Dir(cfgPath)
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "elsewhere"), 0o755))
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+	ce, ok := findTask(t, cfg, "myapp.web").ExecutionDef.(*model.ComposeExecution)
+	require.True(t, ok)
+	assert.Equal(t, loader.NormalizeProjectName(filepath.Base(dir)), ce.ProjectName)
 }
 
 func TestComposeExpansion_ServicesAllowlistFiltersDown(t *testing.T) {

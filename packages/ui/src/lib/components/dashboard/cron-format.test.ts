@@ -17,6 +17,15 @@ describe("humanizeCron", () => {
         expect(result.isHumanized).toBe(true);
     });
 
+    it("describes the nth and last weekday of the month", () => {
+        expect(humanizeCron("0 3 * * FRI#3").humanized).toBe(
+            "At 03:00 AM, on the third Friday of the month",
+        );
+        const last = humanizeCron("0 3 * * FRI#L");
+        expect(last.humanized).toBe("At 03:00 AM, on the last Friday of the month");
+        expect(last.raw).toBe("0 3 * * FRI#L");
+    });
+
     it("humanizes @hourly via cronstrue", () => {
         const result = humanizeCron("@hourly");
         expect(result.humanized).toBe("Every hour");

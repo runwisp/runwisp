@@ -276,7 +276,7 @@ func (b *ComposeBackend) execNotRunningHint(ce *model.ComposeExecution) string {
 	}
 	project := ce.ProjectName
 	if project == "" {
-		if p, err := composespec.Load(ce.File, ce.Profiles, ce.EnvFile, ce.WorkingDir); err == nil {
+		if p, err := composespec.Load(ce.File, ce.Profiles, ce.EnvFile); err == nil {
 			project = p.Name
 		}
 	}

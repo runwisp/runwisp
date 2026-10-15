@@ -112,6 +112,46 @@ describe("Runner", () => {
         expect(calls).toBe(1);
     });
 
+    it("stops a queued run, which isn't running yet, instead of starting it later", async () => {
+        const { session, exited } = reporter();
+        const stubborn = deferred();
+        let calls = 0;
+        const runner = new Runner(
+            () => (++calls === 1 ? stubborn.promise : Promise.resolve(0)),
+            () => ({ onOverlap: "queue", maxConcurrent: 1 }),
+        );
+        runner.start(session, request("first"));
+        runner.stop("first");
+        runner.start(session, request("queued"));
+        await Promise.resolve();
+
+        runner.stop("queued");
+        expect(await exited("queued")).toBe(143);
+        stubborn.resolve(0);
+        await runner.close();
+        expect(calls).toBe(1);
+    });
+
+    it("stops the queued runs of a session that disconnected", async () => {
+        const { session, exited } = reporter();
+        const stubborn = deferred();
+        let calls = 0;
+        const runner = new Runner(
+            () => (++calls === 1 ? stubborn.promise : Promise.resolve(0)),
+            () => ({ onOverlap: "queue", maxConcurrent: 1 }),
+        );
+        runner.start(session, request("first"));
+        runner.stop("first");
+        runner.start(session, request("queued"));
+        await Promise.resolve();
+
+        runner.disconnected(session);
+        expect(await exited("queued")).toBe(143);
+        stubborn.resolve(0);
+        await runner.close();
+        expect(calls).toBe(1);
+    });
+
     it("writes an app crash into the runs it takes down", async () => {
         const { session, lines, exited } = reporter();
         const doomed = deferred();

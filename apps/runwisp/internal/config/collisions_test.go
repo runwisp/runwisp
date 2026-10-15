@@ -4,6 +4,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -74,4 +75,30 @@ func TestScheduleCollisionWarnings(t *testing.T) {
 		require.Contains(t, got[0], "10 tasks")
 		require.Contains(t, got[0], "h and 2 more;")
 	})
+}
+
+// A jitter inherited from [defaults] spreads the tasks as much as one set on
+// each of them, so it must not be reported as a pile-up.
+func TestLoadNoCollisionWarningWithDefaultsJitter(t *testing.T) {
+	body := `
+[tasks.a]
+run = "echo a"
+cron = "0 3 * * *"
+[tasks.b]
+run = "echo b"
+cron = "0 3 * * *"
+[tasks.c]
+run = "echo c"
+cron = "0 3 * * *"
+`
+	cfg, err := loadTOML(t, "[defaults]\njitter = \"5m\"\n"+body)
+	require.NoError(t, err)
+	for _, w := range Warnings(cfg) {
+		require.NotContains(t, w, "start at the same second")
+	}
+
+	// Without it the same three tasks are a pile-up.
+	cfg, err = loadTOML(t, body)
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(Warnings(cfg), "\n"), "3 tasks start at the same second")
 }

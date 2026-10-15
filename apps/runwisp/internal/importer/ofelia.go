@@ -160,7 +160,7 @@ func (st *ofeliaState) loadCompose(path string) error {
 	if err != nil {
 		return err
 	}
-	project, err := composespec.Load(path, []string{"*"}, nil, "")
+	project, err := composespec.Load(path, []string{"*"}, nil)
 	if err != nil {
 		return err
 	}

@@ -66,7 +66,11 @@ export function humanizeCron(cron: string): HumanizedCron {
     }
 
     try {
-        const humanized = cronstrue.toString(raw, { throwExceptionOnParseError: true });
+        // cronstrue reads a last weekday as Quartz's "5L"; "5#L" would come out as
+        // "on the null Friday of the month".
+        const humanized = cronstrue.toString(raw.replace(/#L/gi, "L"), {
+            throwExceptionOnParseError: true,
+        });
         return { humanized, raw, isHumanized: true };
     } catch {
         return { humanized: raw, raw, isHumanized: false };
