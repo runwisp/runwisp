@@ -31,12 +31,6 @@ import (
 )
 
 const (
-	// MaxAuthAttempts and AuthRateWindow bound login attempts per IP. The
-	// challenge and login share the same limiter so a hostile client can't
-	// flood the nonce store while spreading login probes under the limit.
-	MaxAuthAttempts = 5
-	AuthRateWindow  = 5 * time.Minute
-
 	SessionDuration = 24 * time.Hour
 
 	// MaxRequestBodySize caps the auth login request body. The handler only

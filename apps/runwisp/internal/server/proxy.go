@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"net/http"
 	"slices"
@@ -107,6 +108,15 @@ func (srv *Server) resolveClientIP(next http.Handler) http.Handler {
 				_, port, _ := net.SplitHostPort(r.RemoteAddr)
 				r.RemoteAddr = net.JoinHostPort(ip, port)
 			}
+		} else if hasForwardedHeader(r) {
+			srv.proxyWarn.Do(func() {
+				peer := hostFromAddr(r.RemoteAddr)
+				slog.Warn("Request has proxy headers but its peer is not in trusted_proxies. "+
+					"If RunWisp is behind a reverse proxy, every client shares the proxy's address "+
+					"for login throttling and logs. Add the proxy to [daemon] trusted_proxies.",
+					"peer", peer)
+				srv.announceUntrustedProxy(context.WithoutCancel(r.Context()), peer)
+			})
 		}
 		ctx := context.WithValue(r.Context(), clientIPKey{}, hostFromAddr(r.RemoteAddr))
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -127,8 +137,11 @@ func (srv *Server) resolveClientIP(next http.Handler) http.Handler {
 // one, and the local launcher probe sets none, so it closes the realistic cases
 // without costing the port-conflict UX.
 func isProxiedRequest(r *http.Request, trusted proxySet) bool {
-	return slices.ContainsFunc(forwardedHeaders, func(h string) bool { return r.Header.Get(h) != "" }) ||
-		isFromTrustedProxy(r, trusted)
+	return hasForwardedHeader(r) || isFromTrustedProxy(r, trusted)
+}
+
+func hasForwardedHeader(r *http.Request) bool {
+	return slices.ContainsFunc(forwardedHeaders, func(h string) bool { return r.Header.Get(h) != "" })
 }
 
 // isFromTrustedProxy reports whether the request's TCP peer is within the

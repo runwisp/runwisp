@@ -87,7 +87,9 @@
             // tasks/notifications). No separate success event needed.
         } catch (err) {
             if (err instanceof RateLimitedError) {
-                error = "Too many attempts. Please wait a few minutes and try again.";
+                error = err.retryAfterSeconds
+                    ? `Too many wrong passwords. Try again in ${String(err.retryAfterSeconds)} seconds.`
+                    : "Too many attempts. Please wait a moment and try again.";
             } else {
                 error = "Invalid password. Please try again.";
             }

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -476,4 +477,29 @@ func TestListNotifications_RepoError(t *testing.T) {
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	repo.AssertExpectations(t)
+}
+
+// The untrusted-proxy warning also lands in the bell, once per daemon run, so
+// an operator who never reads the daemon log still sees it.
+func TestUntrustedProxy_AnnouncedInBellOnce(t *testing.T) {
+	repo := new(mockNotificationRepository)
+	hub, updates := newNotificationHub(t)
+	repo.On("UpsertByFingerprint", mock.Anything, mock.MatchedBy(func(n *storage.Notification) bool {
+		return n.Kind == untrustedProxyKind && n.Severity == "warn" && strings.Contains(n.Body, "192.0.2.1") &&
+			strings.Contains(n.Body, untrustedProxyDocsURL)
+	}), 24*time.Hour, inapp.DefaultCoalesceLimit).Return(true, nil).Once()
+	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(1), nil)
+	s := notificationServer(t, repo, hub)
+
+	for range 2 {
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		req.Header.Set("X-Forwarded-For", "198.51.100.1")
+		s.router.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	repo.AssertExpectations(t)
+	u := requireUpdate(t, updates)
+	assert.Equal(t, inapp.UpdateTypeCreated, u.Type)
+	assert.Equal(t, untrustedProxyKind, u.Notification.Kind)
+	assert.Empty(t, updates, "announced once")
 }

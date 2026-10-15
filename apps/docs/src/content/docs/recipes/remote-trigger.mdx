@@ -44,8 +44,7 @@ runwisp run backup --detach                     # print the run ID and exit
 
 - The CLI caches the session token in your user cache directory
   (`~/.cache/runwisp/` on Linux, `~/Library/Caches/runwisp/` on macOS) and
-  reuses it, so frequent triggers don't hit the
-  [login rate limit](/operations/auth/#rate-limiting).
+  reuses it, so frequent triggers skip the login handshake.
 - Prefer `RUNWISP_PASSWORD` to `--password`. It keeps the password out of shell
   history and the process list.
 - `--json` prints the outcome as one JSON document. All flags are in

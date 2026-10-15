@@ -77,6 +77,8 @@ type Server struct {
 	configStaleLast bool
 	metrics         *MetricsCollector
 	streams         *streamLimiter
+	logins          *loginThrottle
+	proxyWarn       sync.Once // resolveClientIP's once-only untrusted-proxy warning
 	httpServer      *http.Server
 	unixServer      *http.Server
 	metricsServer   *http.Server
@@ -234,6 +236,7 @@ func New(opts Options) (*Server, error) {
 	s.metrics = NewMetricsCollector(32) // ~2.5 min at 5s intervals; sampling starts in Start()
 	s.daemonLogBuffer = opts.DaemonLogBuffer
 	s.streams = newStreamLimiter(maxConcurrentStreams, maxStreamsPerIP)
+	s.logins = newLoginThrottle(time.Now)
 	if err := s.setupRoutes(); err != nil {
 		return nil, fmt.Errorf("setup routes: %w", err)
 	}

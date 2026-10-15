@@ -239,14 +239,13 @@ func remoteReadOnlyError(baseURL string) error {
 	}
 }
 
-// remoteRateLimitedError is returned when the remote daemon's auth rate
-// limiter rejects our login (a 429).
+// remoteRateLimitedError is returned when the remote daemon throttles our
+// login (a 429) after repeated wrong passwords from this IP.
 func remoteRateLimitedError(baseURL string) error {
 	return &userFacingError{
 		title: fmt.Sprintf("too many authentication attempts against %s", baseURL),
-		details: "The daemon temporarily blocks further logins from your IP after repeated attempts.\n" +
-			"RunWisp caches the session token between calls, so this usually means the password is wrong.\n" +
-			"  - Wait a few minutes and try again\n" +
+		details: "After several wrong passwords the daemon makes your IP wait before the next try, up to 90 seconds.\n" +
+			"  - Wait a minute and try again\n" +
 			"  - Confirm --password / RUNWISP_PASSWORD is correct",
 	}
 }

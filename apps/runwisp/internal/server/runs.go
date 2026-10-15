@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
@@ -33,9 +32,7 @@ func init() {
 }
 
 func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
-	cfg := huma.DefaultConfig("", "")
-	cfg.OpenAPI = srv.api.OpenAPI()
-	protectedAPI := humachi.New(r, cfg)
+	protectedAPI := srv.subAPI(r)
 
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID: "getDaemonInfo",

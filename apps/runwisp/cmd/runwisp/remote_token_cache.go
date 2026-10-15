@@ -13,10 +13,9 @@ import (
 
 // The CLI caches the session token minted by a remote daemon so repeated `runwisp run
 // --url` invocations reuse one session instead of re-running CHAP each time.
-// Re-handshaking would burn two hits (challenge + login) against the daemon's
-// per-IP auth rate limit on every call; reusing the 24h token keeps a script
-// that triggers often well under that ceiling. The cache is a best-effort
-// optimization: a stale or unreadable entry simply falls through to a fresh
+// Each handshake costs a deliberately slow key derivation on both ends, so
+// reusing the 24h token keeps a script that triggers often cheap. The cache is
+// a best-effort optimization: a stale or unreadable entry simply falls through to a fresh
 // handshake, and the trigger path re-authenticates on a 401 regardless.
 
 // cacheSkew trims a margin off a token's expiry so we re-handshake slightly

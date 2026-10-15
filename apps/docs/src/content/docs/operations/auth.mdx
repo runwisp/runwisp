@@ -199,13 +199,15 @@ token takes effect on [`runwisp reload`](/operations/reload/).
 
 ## Rate limiting
 
-Login requests are limited per client IP: 5 requests in any 5-minute window,
-counting the challenge, the login, and launch-ticket redemptions together. Over
-the limit, the daemon answers `429 Too Many Requests` until the window moves on.
-A restart resets the count. The control socket isn't limited.
+Only wrong passwords count, per client IP. The first 5 cost nothing. After
+that, each one doubles the wait before the next try: 2 seconds, then 4, 8, and
+so on up to 90 seconds. Trying sooner gets `429 Too Many Requests` with a
+`Retry-After` header, even with the right password. A successful login clears
+the count, and so do 15 minutes without a wrong password. A restart also
+clears it.
 
-Scripts should log in once and reuse the session token; `runwisp run --url`
-does this for you.
+Launch tickets and the control socket aren't limited. Challenges are capped at
+60 per minute per IP.
 
 [Hooks](#hooks) are limited by failures only: after 20 rejected tokens from one
 client IP within a minute, that IP gets `429` (even with a valid token) until
@@ -228,8 +230,12 @@ trusted_proxies = ["127.0.0.1/32", "10.0.0.0/8"]
 
 From those addresses only, RunWisp trusts:
 
-- `X-Forwarded-For`, so logs and the rate limit see the real client IP.
+- `X-Forwarded-For`, so logs and the login throttle see the real client IP.
 - `X-Forwarded-Proto: https`, so the session cookie is marked `Secure`.
+
+Without it, every client looks like the proxy, so one client's wrong passwords
+slow down logins for everyone. When proxy headers arrive from an address that
+isn't in the list, RunWisp logs a warning and adds one to the notification bell.
 
 Keep the list tight: an address in it can claim to be any client IP, and so use
 up another client's login limit. The

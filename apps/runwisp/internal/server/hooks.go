@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
@@ -58,11 +57,9 @@ func hookFailureLimiter() func(http.Handler) http.Handler {
 
 // registerHookRoutes wires the token-authenticated control routes onto r, a
 // chi sub-router outside the session (token/CSRF) group, sharing the main
-// OpenAPI document — the pattern of registerRateLimitedAuthRoutes.
+// OpenAPI document (see subAPI).
 func (srv *Server) registerHookRoutes(r chi.Router) {
-	cfg := huma.DefaultConfig("", "")
-	cfg.OpenAPI = srv.api.OpenAPI()
-	hookAPI := humachi.New(r, cfg)
+	hookAPI := srv.subAPI(r)
 
 	huma.Register(hookAPI, hookOperation(runTaskOperation()), srv.humaHookRun)
 	huma.Register(hookAPI, hookOperation(startTaskOperation()), srv.humaHookStart)
