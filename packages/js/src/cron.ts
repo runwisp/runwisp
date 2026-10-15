@@ -16,7 +16,8 @@ export interface CronFieldError {
 
 /**
  * node-cron's ParsedFields: the values each field matches, ascending. Day of
- * week runs 0-6, Sunday 0. Always numbers: RunWisp has no L, W or # tokens.
+ * week runs 0-6, Sunday 0. Numbers, except the day specials, which come last as
+ * written: "L", "L-2", "LW", "15W" in dayOfMonth and "5#3", "5#L" in dayOfWeek.
  */
 export interface ParsedFields {
     second: number[];

@@ -84,7 +84,6 @@ func loadWithIncludes(path string, root *tomlConfig) (*Config, entrySources, err
 		cfg.cronDaemon = cronprobe.Probe()
 	}
 	markCronHold(cfg)
-	cfg.refreshScheduleWarnings(time.Now())
 	// After buildConfig, so the notifier set is known: a crontab's MAILTO stops being
 	// something to report once the config can actually deliver mail.
 	dropAnsweredFindings(cfg)

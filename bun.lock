@@ -151,8 +151,8 @@
         "vitest": "^5.0.3",
       },
       "peerDependencies": {
-        "@nestjs/common": ">=10",
-        "@nestjs/core": ">=10",
+        "@nestjs/common": "^10.0.0 || ^11.0.0 || ^12.0.0",
+        "@nestjs/core": "^10.0.0 || ^11.0.0 || ^12.0.0",
       },
       "optionalPeers": [
         "@nestjs/common",

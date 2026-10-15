@@ -82,6 +82,9 @@ func TestDescribe(t *testing.T) {
 		"@every 90s":                     "Every 1 minute 30 seconds",
 		"@every 500ms":                   "@every 500ms",
 		"@daily":                         "At 00:00",
+		"0 0 * * FRI#3":                  "At 00:00, on the third Friday of the month",
+		"0 0 * * FRI#L":                  "At 00:00, on the last Friday of the month",
+		"0 0 * * 7#L":                    "At 00:00, on the last Sunday of the month",
 		"not a cron":                     "not a cron",
 	} {
 		require.Equal(t, want, Describe(spec), spec)
@@ -99,4 +102,19 @@ func TestResolve(t *testing.T) {
 	require.Equal(t, "Asia/Tokyo", loc.String())
 	_, loc = Resolve("0 3 * * *", "", nil)
 	require.Equal(t, time.Local, loc)
+}
+
+// TestFiringsMarksGapAfterLongSpan: the last Sunday of March 2030 is the
+// spring-forward day, and the previous tick is a year earlier in the same UTC
+// offset, so only the tick itself shows the shift.
+func TestFiringsMarksGapAfterLongSpan(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Bratislava")
+	require.NoError(t, err)
+	sched, err := NewParser().Parse("30 2 L 3 *")
+	require.NoError(t, err)
+	for f := range Firings(sched, loc, time.Date(2029, 4, 1, 0, 0, 0, 0, loc)) {
+		require.Equal(t, time.Date(2030, 3, 31, 3, 30, 0, 0, loc), f.At)
+		require.True(t, f.Shifted)
+		return
+	}
 }

@@ -345,7 +345,12 @@ export class RunWisp {
      */
     service(name: string, options: ServiceConfigOptions, fn: ServiceFn): void {
         this.assertName(name, this.tasks);
-        this.check(this.unitConfig({ services: { [name]: { ...options, sdk: true } } }));
+        // What it depends on may not be registered yet: stand in for it.
+        const needs: Record<string, ServiceConfig> = {};
+        for (const need of options.depends_on ?? []) {
+            if (need !== name && !this.tasks.has(need)) needs[need] = { sdk: true };
+        }
+        this.check(this.unitConfig({ services: { ...needs, [name]: { ...options, sdk: true } } }));
         this.services.set(name, { options, fn });
         this.changed();
     }
@@ -623,7 +628,8 @@ export class RunWisp {
     private document(): string {
         const tasks: Record<string, TaskConfig> = { ...this.config.tasks };
         for (const [name, job] of this.tasks) {
-            const { cron: _cron, ...unscheduled } = job.options;
+            // A stopped task runs from the UI, TUI or CLI only: not on a schedule, not at start.
+            const { cron: _cron, run_on_start: _runOnStart, ...unscheduled } = job.options;
             tasks[name] = { ...(job.paused ? unscheduled : job.options), sdk: true };
         }
         const services: Record<string, ServiceConfig> = { ...this.config.services };

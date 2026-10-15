@@ -232,8 +232,8 @@ func (d *TaskDetailDialog) definitionRows(row func(label, value string, color co
 	}
 
 	d.kindRows(add)
-	if task.Timeout != nil {
-		add("Timeout", textutil.FormatDuration(*task.Timeout))
+	if timeout := task.TimeoutValue(); timeout > 0 {
+		add("Timeout", textutil.FormatDuration(timeout))
 	}
 	add("Group", task.Group)
 	if task.Triggerable() {

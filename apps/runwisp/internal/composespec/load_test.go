@@ -13,7 +13,7 @@ import (
 )
 
 func TestLoad_BasicEnumeratesActiveProfileServices(t *testing.T) {
-	p, err := Load("testdata/basic.yml", nil, nil, "")
+	p, err := Load("testdata/basic.yml", nil, nil)
 	require.NoError(t, err)
 
 	// db is profile-gated and absent without the profile.
@@ -38,18 +38,18 @@ func TestLoad_BasicEnumeratesActiveProfileServices(t *testing.T) {
 }
 
 func TestLoad_ProfileGatedServicesAppearWhenEnabled(t *testing.T) {
-	p, err := Load("testdata/basic.yml", []string{"heavy"}, nil, "")
+	p, err := Load("testdata/basic.yml", []string{"heavy"}, nil)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"web", "worker", "db"}, p.ServiceNames())
 }
 
 func TestLoad_RejectsEmptyPath(t *testing.T) {
-	_, err := Load("", nil, nil, "")
+	_, err := Load("", nil, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "required")
 }
 
 func TestLoad_MissingFileSurfacesError(t *testing.T) {
-	_, err := Load("testdata/does-not-exist.yml", nil, nil, "")
+	_, err := Load("testdata/does-not-exist.yml", nil, nil)
 	require.Error(t, err)
 }

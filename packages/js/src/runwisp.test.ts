@@ -520,6 +520,16 @@ describe("RunWisp with a daemon", () => {
         expect(daemon.received).toContainEqual({ type: "exit", run: "r1", code: 143 });
     });
 
+    it("sends a stopped task without anything that would run it at RunWisp's start", async () => {
+        const { daemon, cron } = setup();
+        await daemon.listen();
+        const task = cron.task("later", { cron: "0 3 * * *", run_on_start: true }, () => undefined);
+        task.stop();
+        await cron.start();
+        const config = daemon.received.find((m) => field(m, "type") === "config");
+        expect(field(field(field(config, "doc"), "tasks"), "later")).toEqual({ sdk: true });
+    });
+
     it("restarts RunWisp for a change only a restart applies, leaving the old connection first", async () => {
         const { daemon, cron, lines } = setup(undefined, [
             '{"type":"config_error","error":"listener changed","restart":true}',

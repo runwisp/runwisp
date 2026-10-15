@@ -221,7 +221,7 @@ func expandComposeAlias(alias string, raw map[string]any, baseDir string, existi
 		return nil, nil, nil, err
 	}
 
-	project, err := composespec.Load(resolvedFile, block.Profiles, block.EnvFile, block.WorkingDir)
+	project, err := composespec.Load(resolvedFile, block.Profiles, block.EnvFile)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -880,7 +880,7 @@ func checkComposeServicesExist(cfg *Config) error {
 		}
 		names, seen := services[ce.File]
 		if !seen {
-			if project, err := composespec.Load(ce.File, []string{"*"}, ce.EnvFile, ce.WorkingDir); err == nil {
+			if project, err := composespec.Load(ce.File, []string{"*"}, ce.EnvFile); err == nil {
 				names = project.ServiceNames()
 			}
 			services[ce.File] = names

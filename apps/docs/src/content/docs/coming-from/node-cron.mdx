@@ -121,13 +121,12 @@ process's.
 The cron syntax is RunWisp's, the one the daemon uses. See
 [cron](/configuration/tasks/#cron). It differs from node-cron's:
 
-- No `L`, `W` or `#`.
 - Month and weekday names are three letters only: `jan`, `mon`.
 - When both day of month and day of week are restricted, either one matching
   is enough, as in crontab. node-cron needs both.
 - `@every 1h30m` and a `TZ=Europe/Bratislava` prefix also work.
 
-`parse()` lists each field's values in ascending order, with no duplicates.
+`parse()` lists each field's values in ascending order, with no duplicates. The day specials come last in `dayOfMonth` and `dayOfWeek` as strings: `"L"`, `"15W"`, `"5#3"`.
 
 ## Go further
 

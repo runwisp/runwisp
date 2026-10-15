@@ -37,6 +37,8 @@ export class Runner {
     private readonly policy: (task: string) => OverlapPolicy;
     /** By task name. */
     private readonly running = new Map<string, Execution[]>();
+    /** Runs waiting for a previous run that ignored its stop signal: they can be stopped too. */
+    private readonly waiting = new Set<Pick<Execution, "session" | "run" | "abort">>();
     private closing = false;
 
     constructor(serve: Serve, policy: (task: string) => OverlapPolicy) {
@@ -66,10 +68,11 @@ export class Runner {
         this.abortWhere((execution) => execution.session === session);
     }
 
-    private abortWhere(match: (execution: Execution) => boolean): void {
+    private abortWhere(match: (execution: Pick<Execution, "session" | "run">) => boolean): void {
         for (const executions of this.running.values()) {
             for (const execution of executions) if (match(execution)) execution.abort.abort();
         }
+        for (const execution of this.waiting) if (match(execution)) execution.abort.abort();
     }
 
     /** Takes no more runs, and resolves once no callback is running. */
@@ -129,11 +132,21 @@ export class Runner {
                     resolve();
                 });
             });
-            while (executions.length >= maxConcurrent && !abort.signal.aborted && !this.closing) {
-                await Promise.race([aborted, ...executions.map((e) => e.done)]);
-                // The last previous run removes the list when it ends, and a
-                // later run may have started a new one meanwhile.
-                executions = this.running.get(task) ?? [];
+            const waiter = { session, run, abort };
+            this.waiting.add(waiter);
+            try {
+                while (
+                    executions.length >= maxConcurrent &&
+                    !abort.signal.aborted &&
+                    !this.closing
+                ) {
+                    await Promise.race([aborted, ...executions.map((e) => e.done)]);
+                    // The last previous run removes the list when it ends, and a
+                    // later run may have started a new one meanwhile.
+                    executions = this.running.get(task) ?? [];
+                }
+            } finally {
+                this.waiting.delete(waiter);
             }
             if (abort.signal.aborted) {
                 exit(143);
