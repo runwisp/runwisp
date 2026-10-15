@@ -215,21 +215,21 @@ func TestResolveAuthMode_ConflictWithPassword(t *testing.T) {
 func TestResolveViewerPassword(t *testing.T) {
 	t.Run("unset leaves read-only access off", func(t *testing.T) {
 		t.Setenv("RUNWISP_VIEWER_PASSWORD", "")
-		pw, err := resolveViewerPassword("admin", false)
+		pw, err := resolveViewerPassword("admin")
 		if err != nil || pw != "" {
 			t.Fatalf("got %q, %v; want empty and no error", pw, err)
 		}
 	})
 	t.Run("set is returned", func(t *testing.T) {
 		t.Setenv("RUNWISP_VIEWER_PASSWORD", "view")
-		pw, err := resolveViewerPassword("admin", false)
+		pw, err := resolveViewerPassword("admin")
 		if err != nil || pw != "view" {
 			t.Fatalf("got %q, %v; want view", pw, err)
 		}
 	})
 	t.Run("same as admin is rejected", func(t *testing.T) {
 		t.Setenv("RUNWISP_VIEWER_PASSWORD", "same")
-		if _, err := resolveViewerPassword("same", false); err == nil {
+		if _, err := resolveViewerPassword("same"); err == nil {
 			t.Fatal("expected error when viewer and admin passwords match")
 		}
 	})

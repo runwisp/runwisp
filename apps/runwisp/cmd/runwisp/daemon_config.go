@@ -65,7 +65,7 @@ func loadDaemonConfig(ctx context.Context, configRepo *storage.SQLiteDatabase, m
 		return nil, err
 	}
 
-	viewerPassword, err := resolveViewerPassword(password, noAuth)
+	viewerPassword, err := resolveViewerPassword(password)
 	if err != nil {
 		return nil, err
 	}
@@ -123,9 +123,9 @@ func resolveAuthMode() (noAuth bool, err error) {
 // RUNWISP_VIEWER_PASSWORD, or "" when read-only access is off (the default).
 // It must differ from the admin password: a login answering both secrets would
 // have no way to say which role the operator meant.
-func resolveViewerPassword(adminPassword string, noAuth bool) (string, error) {
+func resolveViewerPassword(adminPassword string) (string, error) {
 	pw := os.Getenv("RUNWISP_VIEWER_PASSWORD")
-	if pw == "" || noAuth {
+	if pw == "" {
 		return "", nil
 	}
 	if pw == adminPassword {

@@ -49,7 +49,7 @@ function createAuthStore() {
             state = { ...state, authenticated: true, readOnly };
         },
         markUnauthenticated() {
-            state = { ...state, authenticated: false };
+            state = { ...state, authenticated: false, readOnly: false };
         },
     };
 }

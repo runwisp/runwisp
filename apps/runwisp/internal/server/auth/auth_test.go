@@ -173,10 +173,15 @@ func TestLogin_IssuesValidSessionToken(t *testing.T) {
 	token, _, err := svc.Login(nonce, computeChallenge("secret", nonce))
 	require.NoError(t, err)
 
-	assert.True(t, svc.ValidToken(token))
+	assert.True(t, validToken(svc, token))
 	exp, ok := TokenExpiry(token)
 	require.True(t, ok)
 	assert.WithinDuration(t, time.Now().Add(SessionDuration), exp, 5*time.Second)
+}
+
+func validToken(s *Service, token string) bool {
+	_, ok := s.VerifyToken(token)
+	return ok
 }
 
 func TestValidToken(t *testing.T) {
@@ -190,13 +195,13 @@ func TestValidToken(t *testing.T) {
 	// Extending the expiry without re-signing must fail: the MAC covers exp.
 	extended := "9999999999." + mac
 
-	assert.True(t, svc.ValidToken(token))
-	assert.False(t, svc.ValidToken(""), "empty")
-	assert.False(t, svc.ValidToken(exp), "no MAC")
-	assert.False(t, svc.ValidToken(extended), "tampered expiry")
-	assert.False(t, svc.ValidToken(exp+".AAAA"), "wrong MAC")
-	assert.False(t, svc.ValidToken(expired), "expired")
-	assert.False(t, otherKey.ValidToken(token), "signed with a different key (password rotated)")
+	assert.True(t, validToken(svc, token))
+	assert.False(t, validToken(svc, ""), "empty")
+	assert.False(t, validToken(svc, exp), "no MAC")
+	assert.False(t, validToken(svc, extended), "tampered expiry")
+	assert.False(t, validToken(svc, exp+".AAAA"), "wrong MAC")
+	assert.False(t, validToken(svc, expired), "expired")
+	assert.False(t, validToken(otherKey, token), "signed with a different key (password rotated)")
 }
 
 func TestTokenExpiry(t *testing.T) {
@@ -357,7 +362,7 @@ func TestLogin_ViewerPassword(t *testing.T) {
 func TestVerifyToken_Viewer(t *testing.T) {
 	svc := newServiceOrFail(t, "admin-pw", nil)
 	svc.SetViewerPassword("view-pw")
-	viewerToken := svc.issueViewerToken(time.Hour)
+	viewerToken := svc.viewer.Load().issueToken(time.Hour)
 	adminToken := svc.IssueToken(time.Hour)
 	exp, _, _ := strings.Cut(viewerToken, ".")
 	_, adminMAC, _ := strings.Cut(adminToken, ".")
@@ -370,7 +375,7 @@ func TestVerifyToken_Viewer(t *testing.T) {
 	assert.False(t, ok, "viewer MAC presented as an admin token")
 	_, ok = svc.VerifyToken(exp + ".root." + adminMAC)
 	assert.False(t, ok, "unknown role")
-	_, ok = svc.VerifyToken(svc.issueViewerToken(-time.Second))
+	_, ok = svc.VerifyToken(svc.viewer.Load().issueToken(-time.Second))
 	assert.False(t, ok, "expired")
 
 	// Rotating the viewer password revokes viewer sessions but not admin ones.
@@ -388,7 +393,7 @@ func TestVerifyToken_Viewer(t *testing.T) {
 
 func TestMintViewerPassword(t *testing.T) {
 	svc := newServiceOrFail(t, "admin-pw", nil)
-	assert.Empty(t, svc.ViewerPassword())
+	assert.Nil(t, svc.viewer.Load())
 
 	first, err := svc.MintViewerPassword()
 	require.NoError(t, err)
@@ -407,5 +412,5 @@ func TestSetViewerPassword_EmptyLeavesOff(t *testing.T) {
 	svc.SetViewerPassword("")
 	_, _, err := loginAs(t, svc, "")
 	assert.ErrorIs(t, err, ErrInvalidPassword)
-	assert.Empty(t, svc.issueViewerToken(time.Hour))
+	assert.Nil(t, svc.viewer.Load())
 }

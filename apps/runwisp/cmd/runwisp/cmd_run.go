@@ -311,7 +311,7 @@ func authenticateRemote(ctx context.Context, client *apiclient.Client, baseURL, 
 	if err := client.Authenticate(ctx); err != nil {
 		return remoteLoginError(err, baseURL)
 	}
-	storeCachedToken(baseURL, client.Token())
+	storeCachedToken(baseURL, password, client.Token())
 	return nil
 }
 

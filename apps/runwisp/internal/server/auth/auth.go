@@ -152,14 +152,6 @@ func (s *Service) SetViewerPassword(password string) {
 	s.viewer.Store(s.newViewerSecret(password))
 }
 
-// ViewerPassword returns the read-only password, or "" when none is set.
-func (s *Service) ViewerPassword() string {
-	if v := s.viewer.Load(); v != nil {
-		return v.password
-	}
-	return ""
-}
-
 // MintViewerPassword returns the read-only password, generating a random one
 // first when none is set. Concurrent callers all get the same value.
 func (s *Service) MintViewerPassword() (string, error) {
@@ -171,7 +163,7 @@ func (s *Service) MintViewerPassword() (string, error) {
 		return "", err
 	}
 	s.viewer.CompareAndSwap(nil, s.newViewerSecret(pw))
-	return s.ViewerPassword(), nil
+	return s.viewer.Load().password, nil
 }
 
 func (s *Service) newViewerSecret(password string) *viewerSecret {
@@ -211,13 +203,9 @@ func (s *Service) IssueToken(ttl time.Duration) string {
 	return exp + "." + sign(s.sessionKey, exp)
 }
 
-// issueViewerToken mints a read-only token, "<exp>.viewer.<mac>", signed with
-// the viewer key. It returns "" when no viewer password is set.
-func (s *Service) issueViewerToken(ttl time.Duration) string {
-	v := s.viewer.Load()
-	if v == nil {
-		return ""
-	}
+// issueToken mints a read-only token, "<exp>.viewer.<mac>", signed with the
+// viewer key.
+func (v *viewerSecret) issueToken(ttl time.Duration) string {
 	payload := expiryString(ttl) + "." + viewerRole
 	return payload + "." + sign(v.key, payload)
 }
@@ -250,12 +238,6 @@ func (s *Service) VerifyToken(token string) (readOnly, ok bool) {
 		return false, false
 	}
 	return true, hmac.Equal([]byte(mac), []byte(sign(v.key, exp+"."+viewerRole)))
-}
-
-// ValidToken reports whether token is a live session of either role.
-func (s *Service) ValidToken(token string) bool {
-	_, ok := s.VerifyToken(token)
-	return ok
 }
 
 // IsViewerToken reports whether token claims the viewer role. Like TokenExpiry
@@ -328,7 +310,7 @@ func (s *Service) Login(nonce, response string) (token string, readOnly bool, er
 		return s.IssueToken(SessionDuration), false, nil
 	}
 	if v := s.viewer.Load(); v != nil && matchesProof(response, v.password, nonce) {
-		return s.issueViewerToken(SessionDuration), true, nil
+		return v.issueToken(SessionDuration), true, nil
 	}
 	return "", false, ErrInvalidPassword
 }

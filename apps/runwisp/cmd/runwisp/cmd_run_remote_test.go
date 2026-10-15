@@ -122,7 +122,7 @@ func TestRunExecViaRemote_ReauthOnExpiredToken(t *testing.T) {
 	defer srv.Close()
 
 	// Seed a cached (stale) token; the first trigger 401s and we re-handshake.
-	storeCachedToken(srv.URL, stale)
+	storeCachedToken(srv.URL, "", stale)
 
 	code, err := runExecViaRemote(t.Context(), "backup", srv.URL, "pw", false, false, nil)
 	require.NoError(t, err)
