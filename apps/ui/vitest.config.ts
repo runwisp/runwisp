@@ -44,6 +44,10 @@ export default defineConfig({
                 "**/packages/ui/src/lib/utils/theme.svelte.ts",
                 "**/packages/ui/src/lib/log-console/ansi.ts",
                 "**/packages/ui/src/lib/log-console/highlight-scroll.ts",
+                "**/packages/ui/src/lib/log-console/types.ts",
+                "**/packages/ui/src/lib/log-console/LogCache.svelte.ts",
+                "**/packages/ui/src/lib/log-console/LogFetcher.svelte.ts",
+                "**/packages/ui/src/lib/utils/toast.svelte.ts",
                 "**/packages/ui/src/lib/utils/debounce.ts",
                 "**/packages/ui/src/lib/utils/run-motion.ts",
                 "**/packages/ui/src/lib/actions/row-motion.ts",
@@ -64,10 +68,13 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            $lib: path.resolve(__dirname, "./src/lib"),
-            "$app/environment": path.resolve(__dirname, "./test/stubs/app-environment.ts"),
-            "$app/paths": path.resolve(__dirname, "./test/stubs/app-paths.ts"),
-            "$app/navigation": path.resolve(__dirname, "./test/stubs/app-navigation.ts"),
+            $lib: path.resolve(import.meta.dirname, "./src/lib"),
+            "$app/environment": path.resolve(
+                import.meta.dirname,
+                "./test/stubs/app-environment.ts",
+            ),
+            "$app/paths": path.resolve(import.meta.dirname, "./test/stubs/app-paths.ts"),
+            "$app/navigation": path.resolve(import.meta.dirname, "./test/stubs/app-navigation.ts"),
         },
     },
 });
