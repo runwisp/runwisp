@@ -131,6 +131,7 @@ jobs:
             go.mod
             apps/runwisp/scripts/package-all.sh
             packaging/linux
+            .github/actions/linux-packages
           sparse-checkout-cone-mode: false
 
       - name: Extract release notes from CHANGELOG
@@ -158,24 +159,14 @@ jobs:
         run: apps/runwisp/scripts/package-all.sh dist .
 
       # Built here rather than in `build` so the signing key never shares a job
-      # with the npm-driven UI build.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
+      # with the npm-driven UI build. linux-packages-rehearsal.yml runs the same
+      # action.
       - name: Build .deb and .rpm packages
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
-          PACKAGES_GPG_KEY: ${{ secrets.PACKAGES_GPG_KEY }}
-        run: |
-          if [[ -z "${PACKAGES_GPG_KEY}" ]]; then
-            echo "::error::PACKAGES_GPG_KEY is not set or empty; the rpm packages can't be signed."
-            exit 1
-          fi
-          key="${RUNNER_TEMP}/packages.key"
-          printf '%s\n' "${PACKAGES_GPG_KEY}" > "${key}"
-          RPM_SIGNING_KEY="${key}" packaging/linux/packages.sh "${VERSION}" dist .
-          rm -f "${key}"
+        uses: ./.github/actions/linux-packages
+        with:
+          version: ${{ needs.build.outputs.version }}
+          dist: dist
+          signing-key: ${{ secrets.PACKAGES_GPG_KEY }}
       - name: Generate checksums
         run: sha256sum runwisp-*.tar.gz runwisp-*.deb runwisp-*.rpm > checksums-sha256.txt
 
@@ -530,8 +521,10 @@ jobs:
 
   # The apt and dnf repository at pkg.runwisp.com, which the .deb/.rpm packages
   # point at. Rebuilt from scratch with only this release's packages and
-  # deployed as a Cloudflare Pages direct upload. Stable releases only, so
-  # prerelease packages stay on the GitHub release.
+  # deployed as a Cloudflare Pages direct upload, then installed from in
+  # Debian and Fedora. Stable releases only, so prerelease packages stay on the
+  # GitHub release. linux-packages-rehearsal.yml runs the same action against a
+  # preview branch.
   linux-repo:
     if: github.event_name == 'release' && !contains(github.event.release.tag_name, '-')
     name: Publish the apt/dnf repository
@@ -544,32 +537,30 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.release.tag_name }}
-          sparse-checkout: packaging/linux
+          sparse-checkout: |
+            packaging/linux
+            .github/actions/linux-repo
 
       - name: Download and verify the packages
+        id: version
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          echo "VERSION=${TAG#v}" >> "$GITHUB_OUTPUT"
           gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" --dir pkgs \
             --pattern 'runwisp-linux-*.deb' --pattern 'runwisp-linux-*.rpm' --pattern checksums-sha256.txt
           cd pkgs && sha256sum --check --ignore-missing checksums-sha256.txt
 
-      - name: Import the signing key
-        env:
-          PACKAGES_GPG_KEY: ${{ secrets.PACKAGES_GPG_KEY }}
-        run: printf '%s\n' "${PACKAGES_GPG_KEY}" | gpg --batch --import
-
-      - name: Build the repository
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq apt-utils createrepo-c
-          packaging/linux/repo.sh "${TAG#v}" pkgs site
-
-      - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+      - name: Publish the repository
+        uses: ./.github/actions/linux-repo
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy site --project-name=runwisp-packages --branch=main
+          version: ${{ steps.version.outputs.VERSION }}
+          packages: pkgs
+          signing-key: ${{ secrets.PACKAGES_GPG_KEY }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          branch: main
+          url: https://pkg.runwisp.com
 
   docker-publish:
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'

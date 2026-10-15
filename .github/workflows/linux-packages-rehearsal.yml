@@ -1,0 +1,96 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: GPL-3.0-or-later
+
+# Rehearses the release's Linux packaging end to end without touching
+# pkg.runwisp.com: package the latest release's binaries with the real signing
+# key, build and sign the apt/dnf repository, deploy it to the `rehearsal`
+# preview branch of the runwisp-packages Pages project, and install from it
+# over HTTPS in Debian and Fedora. It runs the same actions as release.yml's
+# github-release and linux-repo jobs, so a green rehearsal means those steps
+# work with the real secrets and the real Pages project.
+#
+# Runs on PRs that touch the packaging (not from forks, which get no secrets),
+# and by hand: `gh workflow run linux-packages-rehearsal.yml [-f tag=v1.6.0]`.
+
+name: Linux packages rehearsal
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packaging/linux/**"
+      - ".github/actions/linux-*/**"
+      - ".github/workflows/linux-packages-rehearsal.yml"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release whose binaries to package (default: the latest)"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-packages-rehearsal
+  cancel-in-progress: false
+
+jobs:
+  rehearse:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    name: Package, publish to a preview, install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            go.mod
+            packaging/linux
+            .github/actions/linux-packages
+            .github/actions/linux-repo
+          sparse-checkout-cone-mode: false
+
+      # Stands in for release.yml's `build` artifact: the same dist tree,
+      # binaries without their executable bit as download-artifact leaves them.
+      - name: Fetch a release's binaries
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          tag=${TAG:-$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName --jq .tagName)}
+          echo "VERSION=${tag#v}" >> "$GITHUB_OUTPUT"
+          gh release download "${tag}" --repo "${GITHUB_REPOSITORY}" --dir release \
+            --pattern 'runwisp-linux-*.tar.gz' --pattern checksums-sha256.txt
+          (cd release && sha256sum --check --ignore-missing checksums-sha256.txt)
+          for target in linux-x64 linux-arm64; do
+            mkdir -p "dist/${target}"
+            tar -xzf "release/runwisp-${target}.tar.gz" -C "dist/${target}" runwisp
+            chmod 0644 "dist/${target}/runwisp"
+          done
+
+      - name: Build .deb and .rpm packages
+        uses: ./.github/actions/linux-packages
+        with:
+          version: ${{ steps.release.outputs.VERSION }}
+          dist: dist
+          signing-key: ${{ secrets.PACKAGES_GPG_KEY }}
+
+      # What github-release attaches and linux-repo downloads and verifies.
+      - name: Checksum the packages as the release does
+        run: |
+          mkdir pkgs
+          mv runwisp-linux-*.deb runwisp-linux-*.rpm pkgs/
+          cd pkgs
+          sha256sum runwisp-*.deb runwisp-*.rpm > checksums-sha256.txt
+          sha256sum --check --ignore-missing checksums-sha256.txt
+
+      - name: Publish the repository to the rehearsal preview
+        uses: ./.github/actions/linux-repo
+        with:
+          version: ${{ steps.release.outputs.VERSION }}
+          packages: pkgs
+          signing-key: ${{ secrets.PACKAGES_GPG_KEY }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          branch: rehearsal
+          url: https://rehearsal.runwisp-packages.pages.dev

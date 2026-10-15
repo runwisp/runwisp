@@ -38,4 +38,11 @@ project, served as `pkg.runwisp.com`. It needs these repo secrets:
 packaging/linux/packages.sh 1.2.0 apps/runwisp/dist out   # RPM_SIGNING_KEY=key.asc signs the rpms
 packaging/linux/repo.sh 1.2.0 out site                   # needs apt-ftparchive, createrepo_c, gpg
 packaging/linux/tests/packages_test.sh                   # install + upgrade in Debian and Fedora containers
+packaging/linux/tests/repo_smoke.sh https://pkg.runwisp.com 1.2.0   # install from a deployed repository
 ```
+
+`linux-packages-rehearsal.yml` runs the release's packaging and publishing
+actions with the real key and Cloudflare project, deploying to the
+`rehearsal` preview branch instead of `pkg.runwisp.com`. It runs on PRs that
+touch the packaging, and by hand with
+`gh workflow run linux-packages-rehearsal.yml`.
