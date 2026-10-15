@@ -758,7 +758,7 @@ func TestEnsureServiceEnv_PersistsOperatorSuppliedPasswordViaEnvDropIn(t *testin
 	t.Setenv("RUNWISP_AUTH", "")
 	inst := &autostartfake.Installer{EnvPath: "/etc/systemd/system/runwisp.service.d/runwisp-env.conf", EnvChange: autostart.DropInWritten}
 	var out bytes.Buffer
-	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
+	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{}, capturedServiceEnv())
 
 	require.True(t, inst.EnvCalled)
 	assert.Equal(t, "hunter2", inst.EnvVars["RUNWISP_PASSWORD"])
@@ -777,7 +777,7 @@ func TestEnsureServiceEnv_AuthOffStillCapturedNoPasswordFallback(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "")
 	inst := &autostartfake.Installer{}
 	var out bytes.Buffer
-	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
+	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{}, capturedServiceEnv())
 
 	require.True(t, inst.EnvCalled)
 	assert.Equal(t, "off", inst.EnvVars["RUNWISP_AUTH"])
@@ -799,7 +799,7 @@ func TestEnsureServiceEnv_WarnsLoudlyWhenEnvRemoved(t *testing.T) {
 		EnvChange: autostart.DropInRemoved,
 	}
 	var out bytes.Buffer
-	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
+	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{}, capturedServiceEnv())
 
 	assert.Contains(t, out.String(), "WARNING")
 	assert.Contains(t, out.String(), inst.EnvPath)
@@ -813,7 +813,7 @@ func TestEnsureServiceEnv_GeneratesPasswordPrintsAndRestarts(t *testing.T) {
 	t.Setenv("RUNWISP_AUTH", "")
 	inst := &autostartfake.Installer{EnsurePath: "/etc/systemd/system/runwisp.service.d/password.conf", EnsureWrote: true}
 	var out bytes.Buffer
-	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
+	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{}, capturedServiceEnv())
 
 	require.True(t, inst.EnsureCalled)
 	assert.NotEmpty(t, inst.EnsurePassword, "a fresh password must be generated")
@@ -830,8 +830,70 @@ func TestEnsureServiceEnv_SkipsRestartWhenNothingChanged(t *testing.T) {
 	// matched — neither needs a restart.
 	inst := &autostartfake.Installer{EnsurePath: "/etc/systemd/system/runwisp.service.d/password.conf", EnsureWrote: false}
 	var out bytes.Buffer
-	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
+	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{}, capturedServiceEnv())
 
 	assert.Zero(t, inst.Restarts, "nothing changed — no restart needed")
 	assert.NotContains(t, out.String(), manualPasswordHint, "a working drop-in needs no manual hint")
+}
+
+func TestServiceEnv_StationNeedsTokenAndURL(t *testing.T) {
+	t.Setenv("RUNWISP_STATION_TOKEN", "")
+	t.Setenv("RUNWISP_STATION_URL", "")
+
+	_, err := serviceEnv(installRequest{Station: true, StationURL: "https://station.lan"})
+	require.ErrorContains(t, err, "station token")
+	_, err = serviceEnv(installRequest{Station: true, StationTok: "tok"})
+	require.ErrorContains(t, err, "station url")
+
+	env, err := serviceEnv(installRequest{Station: true, StationTok: " tok ", StationURL: "https://station.lan"})
+	require.NoError(t, err)
+	assert.Equal(t, "tok", env["RUNWISP_STATION_TOKEN"])
+	assert.Equal(t, "https://station.lan", env["RUNWISP_STATION_URL"])
+}
+
+func TestServiceEnv_StationFallsBackToShellEnvAndFlagWins(t *testing.T) {
+	t.Setenv("RUNWISP_STATION_TOKEN", "from-env")
+	t.Setenv("RUNWISP_STATION_URL", "https://env.example")
+
+	env, err := serviceEnv(installRequest{Station: true})
+	require.NoError(t, err)
+	assert.Equal(t, "from-env", env["RUNWISP_STATION_TOKEN"])
+
+	env, err = serviceEnv(installRequest{Station: true, StationTok: "from-flag"})
+	require.NoError(t, err)
+	assert.Equal(t, "from-flag", env["RUNWISP_STATION_TOKEN"])
+	assert.Equal(t, "https://env.example", env["RUNWISP_STATION_URL"])
+}
+
+// Without --station the token/url flags are inert and nothing is demanded.
+func TestServiceEnv_NonStationNeedsNothing(t *testing.T) {
+	t.Setenv("RUNWISP_STATION_TOKEN", "")
+	t.Setenv("RUNWISP_STATION_URL", "")
+	env, err := serviceEnv(installRequest{StationTok: "ignored"})
+	require.NoError(t, err)
+	assert.Empty(t, env["RUNWISP_STATION_TOKEN"])
+}
+
+// The token lands in the 0600 env drop-in and never in anything printed: not the
+// install output, and not the --dry-run plan.
+func TestStationInstall_TokenGoesToDropInOnly(t *testing.T) {
+	t.Setenv("RUNWISP_PASSWORD", "")
+	t.Setenv("RUNWISP_AUTH", "")
+	req := installRequest{Station: true, StationTok: "s3cret-token", StationURL: "https://station.lan"}
+	env, err := serviceEnv(req)
+	require.NoError(t, err)
+
+	inst := &autostartfake.Installer{EnvPath: "/etc/systemd/system/runwisp.service.d/runwisp-env.conf", EnvChange: autostart.DropInWritten}
+	var out bytes.Buffer
+	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{Station: true}, env)
+	assert.Equal(t, "s3cret-token", inst.EnvVars["RUNWISP_STATION_TOKEN"])
+	assert.NotContains(t, out.String(), "s3cret-token")
+
+	dry := &bytes.Buffer{}
+	planner := &autostartfake.Installer{Plan: autostart.Plan{Kind: autostart.PlanInstall, Reason: "no unit yet"}}
+	require.NoError(t, inspectServiceInstall(newInstallTestCmd(dry, &bytes.Buffer{}), planner,
+		autostart.InstallOptions{Station: true}, installRequest{DryRun: true, Station: true, StationTok: "s3cret-token", StationURL: "https://station.lan"},
+		Flags{Host: "127.0.0.1"}))
+	assert.NotContains(t, dry.String(), "s3cret-token")
+	assert.Contains(t, dry.String(), "0600 drop-in")
 }

@@ -219,7 +219,9 @@ func (h *InboundHandler) buildServiceTask(svc *protocol.ServiceApplyPayload) (*m
 		task.RestartBackoff = model.BackoffCurve(svc.RestartBackoff)
 	}
 
-	applyStationTaskConfig(task, svc.TaskConfig)
+	if err := applyStationTaskConfig(task, svc.TaskConfig); err != nil {
+		return nil, err
+	}
 
 	return task, nil
 }
@@ -324,8 +326,7 @@ func (h *InboundHandler) mergeServiceApply(task *model.Task, svc *protocol.Servi
 		return err
 	}
 
-	applyStationTaskConfig(task, svc.TaskConfig)
-	return nil
+	return applyStationTaskConfig(task, svc.TaskConfig)
 }
 
 // checkEnvOverrideAllowed puts a peer-supplied env override on the same
@@ -356,7 +357,7 @@ func (h *InboundHandler) checkEnvOverrideAllowed(task *model.Task, cfg *protocol
 			Message: fmt.Sprintf("env override for service %q not available: it has no resolvable execution definition", task.Name),
 		}
 	}
-	if status := h.availability.ForType(execDef.ExecType()); !status.Available {
+	if status := h.liveAvailability().ForType(execDef.ExecType()); !status.Available {
 		return &StationError{
 			Kind:    StationErrorKindConflict,
 			Message: fmt.Sprintf("env override for service %q not available: %s", task.Name, status.Reason),

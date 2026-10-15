@@ -29,7 +29,8 @@ import (
 //
 // Reload never re-runs boot-only behaviour: added tasks get no catch-up and no
 // run_on_start firing. The reconciler owns one mutex so a CLI reload and a
-// SIGHUP can't interleave.
+// SIGHUP can't interleave. A nil scheduler (station mode, where the Station
+// schedules) reconciles everything except local cron entries.
 type Reconciler struct {
 	configPath string
 	registry   *TaskRegistry
@@ -428,8 +429,8 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 //     so a task RunWisp already knew keeps firing.
 func (r *Reconciler) autostartFlipWarning(oldTask, newTask *model.Task) string {
 	if !newTask.Kind.IsService() {
-		if oldTask.StartsPaused() || !newTask.StartsPaused() ||
-			(r.scheduler != nil && r.scheduler.IsPaused(newTask.Name)) {
+		if r.scheduler == nil || oldTask.StartsPaused() || !newTask.StartsPaused() ||
+			r.scheduler.IsPaused(newTask.Name) {
 			return ""
 		}
 		return fmt.Sprintf("task %q has autostart = false but its schedule is not paused; autostart only applies when a task is first added; run 'runwisp pause %s' to pause it now",

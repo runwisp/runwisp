@@ -409,7 +409,7 @@ runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-
 runwisp station              — start in station mode; --token --url --env-file(=.env) --no-tui
 runwisp demo                 — boot a throwaway, fully-populated instance; --no-tui --seed-only --station --token --url --env-file
 runwisp upgrade              — upgrade to the latest stable release via the install channel: homebrew → brew upgrade; deb/rpm package → [sudo] apt-get update + install --only-upgrade / dnf upgrade --refresh; global npm/bun/pnpm/yarn → that manager; script/tar.gz → download from GitHub, verify SHA-256, atomic in-place swap; docker/npx/project-local npm → refuses with instructions; dev build refuses. -y/--yes (needed without a TTY), --restart now|idle|later (idle = wait until no task runs are pending/running, services ignored; no TTY + no flag = later)
-runwisp service install      — install autostart; -y --print --dry-run --force --local --binary <path>
+runwisp service install      — install autostart; -y --print --dry-run --force --local --binary <path> --station --token <t> --url <u>
                              — DEFAULT scope is the system-wide singleton /etc/systemd/system/runwisp.service
                                (Linux, root, no fingerprint in the name). Refuses without root, naming
                                `sudo` and `--local`. macOS has no system scope yet: --local is required.

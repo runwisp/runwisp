@@ -74,6 +74,9 @@ func (l *launchdInstaller) plistPath() string {
 }
 
 func (l *launchdInstaller) renderPlist(opts InstallOptions) ([]byte, string, error) {
+	if opts.Station {
+		return nil, "", ErrStationUnsupported
+	}
 	binarySHA, _ := fileSHA(opts.Binary)
 	configHash := SettingsHash(opts)
 	body, err := RenderLaunchdPlist(LaunchdParams{

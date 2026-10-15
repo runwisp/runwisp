@@ -50,7 +50,10 @@ func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.ExecutionPayload
 		return cfg.TaskName, nil
 	}
 
-	task := buildDynamicStationTask(dispatch, execDef)
+	task, err := buildDynamicStationTask(dispatch, execDef)
+	if err != nil {
+		return "", err
+	}
 	// sanitizeStationTaskName only prefixes "station-"; the rest of the name is
 	// peer-supplied, so an inline dispatch can land on a locally-defined task
 	// named station-*. Upserting over it would let the peer replace a disk-defined
@@ -77,7 +80,7 @@ func (h *InboundHandler) parseAvailableDef(script json.RawMessage) (model.Execut
 			Message: fmt.Sprintf("failed to parse execution def: %v", err),
 		}
 	}
-	if status := h.availability.ForType(execDef.ExecType()); !status.Available {
+	if status := h.liveAvailability().ForType(execDef.ExecType()); !status.Available {
 		return nil, &StationError{
 			Kind:    StationErrorKindConflict,
 			Message: fmt.Sprintf("execution type %q not available: %s", execDef.ExecType(), status.Reason),
@@ -86,7 +89,7 @@ func (h *InboundHandler) parseAvailableDef(script json.RawMessage) (model.Execut
 	return execDef, nil
 }
 
-func buildDynamicStationTask(dispatch *protocol.ExecutionPayload, execDef model.ExecutionDef) *model.Task {
+func buildDynamicStationTask(dispatch *protocol.ExecutionPayload, execDef model.ExecutionDef) (*model.Task, error) {
 	taskName := sanitizeStationTaskName(dispatch.TaskID)
 	if taskName == "" {
 		taskName = sanitizeStationTaskName(dispatch.TaskName)
@@ -113,7 +116,9 @@ func buildDynamicStationTask(dispatch *protocol.ExecutionPayload, execDef model.
 		task.Timeout = &timeout
 	}
 
-	applyStationTaskConfig(task, dispatch.TaskConfig)
+	if err := applyStationTaskConfig(task, dispatch.TaskConfig); err != nil {
+		return nil, err
+	}
 
 	// An inline dispatch declares no TOML params, so every inputValues key
 	// would otherwise fail ResolveParamValues as "unknown parameter". Declare
@@ -123,17 +128,25 @@ func buildDynamicStationTask(dispatch *protocol.ExecutionPayload, execDef model.
 		task.Parameters = append(task.Parameters, model.TaskParam{Kind: model.ParamEnv, Key: key})
 	}
 
-	return task
+	return task, nil
 }
 
 // applyStationTaskConfig overlays the optional per-run/per-process knobs the
 // control plane carries in taskConfig (execution:dispatch and service:apply)
 // onto task. Each field is honored only when set; an omitted/zero value leaves
 // the daemon default in place. gracefulStop arrives in milliseconds and is
-// stored as a Duration.
-func applyStationTaskConfig(task *model.Task, cfg *protocol.ExecutionTaskConfig) {
+// stored as a Duration. failures uses the TOML `failures` grammar resolved
+// against the built-in default; an invalid list rejects the whole message.
+func applyStationTaskConfig(task *model.Task, cfg *protocol.ExecutionTaskConfig) error {
 	if cfg == nil {
-		return
+		return nil
+	}
+	if len(cfg.Failures) > 0 {
+		spec, err := model.ParseFailures(cfg.Failures)
+		if err != nil {
+			return &StationError{Kind: StationErrorKindValidation, Message: fmt.Sprintf("invalid taskConfig: %v", err)}
+		}
+		task.Failures = spec.Resolve(model.DefaultFailures())
 	}
 	if len(cfg.Env) > 0 {
 		task.Env = cfg.Env
@@ -148,6 +161,7 @@ func applyStationTaskConfig(task *model.Task, cfg *protocol.ExecutionTaskConfig)
 	if cfg.LogOnFull != "" {
 		task.LogOnFull = string(cfg.LogOnFull)
 	}
+	return nil
 }
 
 func sanitizeStationTaskName(raw string) string {

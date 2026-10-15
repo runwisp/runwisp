@@ -83,7 +83,7 @@ func TestBuildOneSyncTask(t *testing.T) {
 			Cron:        "*/5 * * * *",
 		}
 
-		st, ok := buildOneSyncTask(task)
+		st, ok := buildOneSyncTask(task, "UTC")
 		require.True(t, ok)
 		assert.Equal(t, "my-task", st.Name)
 		assert.Equal(t, "does things", st.Description)
@@ -120,7 +120,7 @@ func TestBuildOneSyncTask(t *testing.T) {
 			Cron: "*/5 * * * *",
 		}
 
-		st, ok := buildOneSyncTask(task)
+		st, ok := buildOneSyncTask(task, "UTC")
 		require.True(t, ok)
 		assert.Equal(t, string(model.KindService), st.Kind)
 		assert.Equal(t, string(model.RestartAlways), st.RestartPolicy)
@@ -145,7 +145,7 @@ func TestBuildOneSyncTask(t *testing.T) {
 			Instances: 1,
 			Autostart: false,
 		}
-		st, ok := buildOneSyncTask(task)
+		st, ok := buildOneSyncTask(task, "UTC")
 		require.True(t, ok)
 		require.NotNil(t, st.Autostart)
 		assert.False(t, *st.Autostart)
@@ -165,7 +165,7 @@ func TestBuildOneSyncTask(t *testing.T) {
 			Timeout:       durPtr(30 * time.Second),
 		}
 
-		st, ok := buildOneSyncTask(task)
+		st, ok := buildOneSyncTask(task, "UTC")
 		require.True(t, ok)
 		assert.Equal(t, string(model.RestartOnFailure), st.RestartPolicy)
 		require.NotNil(t, st.MaxRetries)
@@ -187,7 +187,7 @@ func TestBuildOneSyncTask(t *testing.T) {
 			Run:        "echo hi",
 			RetryDelay: durPtr(0),
 		}
-		st, ok := buildOneSyncTask(task)
+		st, ok := buildOneSyncTask(task, "UTC")
 		require.True(t, ok)
 		assert.Nil(t, st.RetryDelay)
 	})
@@ -202,7 +202,7 @@ func TestBuildOneSyncTask(t *testing.T) {
 				{Kind: model.ParamFlag, Key: "--force", Required: true},
 			},
 		}
-		st, ok := buildOneSyncTask(task)
+		st, ok := buildOneSyncTask(task, "UTC")
 		require.True(t, ok)
 		require.Len(t, st.InputDefinition, 2)
 		level := st.InputDefinition["--level"]
@@ -218,7 +218,7 @@ func TestBuildOneSyncTask(t *testing.T) {
 
 	t.Run("no params omits InputDefinition", func(t *testing.T) {
 		task := &model.Task{Name: "no-params", Run: "echo hi"}
-		st, ok := buildOneSyncTask(task)
+		st, ok := buildOneSyncTask(task, "UTC")
 		require.True(t, ok)
 		assert.Nil(t, st.InputDefinition)
 	})
@@ -229,11 +229,111 @@ func TestBuildOneSyncTask(t *testing.T) {
 			Run:  "echo ws",
 			Cron: "  0 * * * *  ",
 		}
-		st, ok := buildOneSyncTask(task)
+		st, ok := buildOneSyncTask(task, "UTC")
 		require.True(t, ok)
 		require.Len(t, st.Schedules, 1)
 		assert.Equal(t, "0 * * * *", st.Schedules[0].Cron)
 	})
+}
+
+func TestBuildOneSyncTask_JitterAndCatchUp(t *testing.T) {
+	ms := func(d time.Duration) *time.Duration { return &d }
+	n := func(i int) *int { return &i }
+	build := func(task model.Task) syncTask {
+		task.Name, task.Run, task.Cron = "t", "echo", "0 3 * * *"
+		st, ok := buildOneSyncTask(&task, "UTC")
+		require.True(t, ok)
+		return st
+	}
+
+	t.Run("unset sends nothing", func(t *testing.T) {
+		st := build(model.Task{})
+		assert.Nil(t, st.Jitter)
+		assert.Empty(t, st.CatchUp)
+		assert.Nil(t, st.MaxCatchUpRuns)
+		raw, err := json.Marshal(st)
+		require.NoError(t, err)
+		for _, key := range []string{"jitter", "catchUp", "maxCatchUpRuns"} {
+			assert.NotContains(t, string(raw), `"`+key+`"`)
+		}
+	})
+
+	t.Run("jitter is milliseconds, explicit zero is sent", func(t *testing.T) {
+		st := build(model.Task{Jitter: ms(30 * time.Minute)})
+		require.NotNil(t, st.Jitter)
+		assert.Equal(t, 1_800_000, *st.Jitter)
+		st = build(model.Task{Jitter: ms(0)})
+		require.NotNil(t, st.Jitter)
+		assert.Zero(t, *st.Jitter)
+	})
+
+	t.Run("catch_up maps to policy and cap", func(t *testing.T) {
+		for _, c := range []struct {
+			in     int
+			policy string
+			cap    *int
+		}{
+			{0, "skip", nil},
+			{1, "latest", nil},
+			{2, "all", n(2)},
+			{24, "all", n(24)},
+		} {
+			st := build(model.Task{CatchUp: n(c.in)})
+			assert.Equal(t, c.policy, st.CatchUp, "catch_up=%d", c.in)
+			assert.Equal(t, c.cap, st.MaxCatchUpRuns, "catch_up=%d", c.in)
+		}
+	})
+
+	t.Run("services carry none of them", func(t *testing.T) {
+		st, ok := buildOneSyncTask(&model.Task{Name: "svc", Kind: model.KindService, Run: "x", Jitter: ms(time.Minute), CatchUp: n(5)}, "UTC")
+		require.True(t, ok)
+		assert.Nil(t, st.Jitter)
+		assert.Empty(t, st.CatchUp)
+	})
+}
+
+// A schedule is evaluated in the zone the standalone scheduler would use: the
+// task's own timezone, else the daemon's.
+func TestBuildOneSyncTask_ScheduleTimezone(t *testing.T) {
+	zone := func(task model.Task, daemonTZ string) string {
+		task.Name, task.Run, task.Cron = "t", "echo", "0 3 * * *"
+		st, ok := buildOneSyncTask(&task, daemonTZ)
+		require.True(t, ok)
+		require.Len(t, st.Schedules, 1)
+		return st.Schedules[0].Timezone
+	}
+	assert.Equal(t, "Asia/Tokyo", zone(model.Task{Timezone: "Asia/Tokyo"}, "Europe/Bratislava"), "task zone wins")
+	assert.Equal(t, "Europe/Bratislava", zone(model.Task{}, "Europe/Bratislava"), "daemon zone is the default")
+}
+
+func TestClientDaemonZone(t *testing.T) {
+	c := &Client{}
+	assert.Equal(t, "UTC", c.daemonZone(), "no source falls back to UTC")
+
+	for name, want := range map[string]string{
+		"Europe/Bratislava": "Europe/Bratislava",
+		"":                  "UTC",
+		"Local":             "UTC", // not an IANA name the Station can load
+		"Not/AZone":         "UTC",
+	} {
+		c = &Client{timezone: func() string { return name }}
+		assert.Equal(t, want, c.daemonZone(), "zone %q", name)
+	}
+}
+
+// autostart = false starts a cron task's schedule paused, so the Station gets it
+// disabled; a task that can't be paused (manual_trigger = false) stays enabled.
+func TestBuildOneSyncTask_AutostartFalseDisablesSchedule(t *testing.T) {
+	enabled := func(task model.Task) bool {
+		task.Name, task.Run, task.Cron = "t", "echo", "0 3 * * *"
+		st, ok := buildOneSyncTask(&task, "UTC")
+		require.True(t, ok)
+		require.Len(t, st.Schedules, 1)
+		return st.Schedules[0].Enabled
+	}
+	assert.True(t, enabled(model.Task{Autostart: true, ManualTrigger: true}))
+	assert.False(t, enabled(model.Task{Autostart: false, ManualTrigger: true}))
+	assert.True(t, enabled(model.Task{Autostart: false, ManualTrigger: false}), "an unpausable schedule can't start paused")
 }
 
 func TestBuildTaskSyncID(t *testing.T) {
@@ -263,7 +363,7 @@ func TestBuildSyncTasks(t *testing.T) {
 			"present": {Name: "present", Run: "echo hi"},
 			"nil-one": nil,
 		}
-		result := buildSyncTasks(tasks)
+		result := buildSyncTasks(tasks, "UTC")
 		assert.Len(t, result, 1)
 		assert.Equal(t, "present", result[0].Name)
 	})
@@ -274,7 +374,7 @@ func TestBuildSyncTasks(t *testing.T) {
 			"apple": {Name: "apple", Run: "echo a"},
 			"mango": {Name: "mango", Run: "echo m"},
 		}
-		result := buildSyncTasks(tasks)
+		result := buildSyncTasks(tasks, "UTC")
 		require.Len(t, result, 3)
 		assert.Equal(t, "apple", result[0].Name)
 		assert.Equal(t, "mango", result[1].Name)
@@ -282,7 +382,7 @@ func TestBuildSyncTasks(t *testing.T) {
 	})
 
 	t.Run("empty map returns empty slice", func(t *testing.T) {
-		result := buildSyncTasks(map[string]*model.Task{})
+		result := buildSyncTasks(map[string]*model.Task{}, "UTC")
 		assert.Empty(t, result)
 	})
 }
@@ -311,7 +411,7 @@ func TestSyncTasksSendsDirectPayload(t *testing.T) {
 	defer server.Close()
 
 	client := NewTaskSyncClient(server.URL, 5*time.Second)
-	result, err := client.SyncTasks(context.Background(), "rt_test", map[string]*model.Task{})
+	result, err := client.SyncTasks(context.Background(), "rt_test", map[string]*model.Task{}, "UTC")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, result.Success)
@@ -325,7 +425,7 @@ func TestSyncTasksHTTPErrorBubblesUpAsStationError(t *testing.T) {
 	defer server.Close()
 
 	client := NewTaskSyncClient(server.URL, 5*time.Second)
-	_, err := client.SyncTasks(context.Background(), "rt_test", map[string]*model.Task{})
+	_, err := client.SyncTasks(context.Background(), "rt_test", map[string]*model.Task{}, "UTC")
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -336,7 +436,7 @@ func TestSyncTasksHTTPErrorBubblesUpAsStationError(t *testing.T) {
 func TestSyncTasksTransportFailureIsTransient(t *testing.T) {
 	// Unreachable URL — net.Dial fails, surfaced as a transient StationError.
 	client := NewTaskSyncClient("http://127.0.0.1:1/invalid", 1*time.Second)
-	_, err := client.SyncTasks(context.Background(), "rt_test", map[string]*model.Task{})
+	_, err := client.SyncTasks(context.Background(), "rt_test", map[string]*model.Task{}, "UTC")
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -351,7 +451,7 @@ func TestSyncTasksInvalidJSONBodyIsValidationError(t *testing.T) {
 	defer server.Close()
 
 	client := NewTaskSyncClient(server.URL, 5*time.Second)
-	_, err := client.SyncTasks(context.Background(), "rt_test", map[string]*model.Task{})
+	_, err := client.SyncTasks(context.Background(), "rt_test", map[string]*model.Task{}, "UTC")
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -365,7 +465,7 @@ func TestSyncTasksParsesCurrentResponseShape(t *testing.T) {
 	defer server.Close()
 
 	client := NewTaskSyncClient(server.URL, 5*time.Second)
-	result, err := client.SyncTasks(context.Background(), "rt_test", map[string]*model.Task{})
+	result, err := client.SyncTasks(context.Background(), "rt_test", map[string]*model.Task{}, "UTC")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, TaskSyncSummary{

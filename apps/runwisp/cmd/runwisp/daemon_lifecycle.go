@@ -59,6 +59,7 @@ func startStationClient(
 		RequestRestart: func() error { return requestSelfRestart(cfg.Config.Daemon.AllowStationDispatch, fatalCh) },
 		SystemStats:    srv.SystemStats,
 		InstanceName:   srv.InstanceName,
+		Timezone:       srv.Timezone,
 	})
 	if clientErr != nil {
 		slog.Error("Failed to create station client", "err", clientErr)
@@ -396,7 +397,7 @@ func readFatal(ch <-chan error) error {
 // handleReloadSignal services a SIGHUP by reconciling runwisp.toml against the
 // live task set. A reload failure (bad config or a restart-only change) is
 // logged and the daemon keeps running on its current set — SIGHUP never tears
-// the process down. nil reconciler (station mode) makes this a logged no-op.
+// the process down. A nil reload func makes this a logged no-op.
 func handleReloadSignal(rt *daemonRuntime) {
 	if rt.reload == nil {
 		slog.Warn("received SIGHUP but reload is not available in this mode")

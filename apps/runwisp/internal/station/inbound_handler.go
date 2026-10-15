@@ -21,10 +21,13 @@ import (
 // InboundHandler processes inbound WebSocket messages, encapsulating
 // domain logic for execution dispatch, stop, and log operations.
 type InboundHandler struct {
-	taskManager     TaskRunner
-	runRepo         ExternalRunGetter
-	logDir          string
-	availability    executor.Availability
+	taskManager  TaskRunner
+	runRepo      ExternalRunGetter
+	logDir       string
+	availability executor.Availability
+	// localTasks, when set, makes Config availability live (see
+	// liveAvailability); nil keeps the boot-time value.
+	localTasks      *runtime.TaskRegistry
 	queueExecUpdate func(protocol.ExecutionUpdateMessage)
 	uploader        *LogUploader
 	tracker         *ExecutionTracker
@@ -46,6 +49,7 @@ type InboundHandlerDeps struct {
 	RunRepo         ExternalRunGetter
 	LogDir          string
 	Availability    executor.Availability
+	LocalTasks      *runtime.TaskRegistry
 	QueueExecUpdate func(protocol.ExecutionUpdateMessage)
 	Uploader        *LogUploader
 	Tracker         *ExecutionTracker
@@ -58,12 +62,24 @@ func NewInboundHandler(deps InboundHandlerDeps) *InboundHandler {
 		runRepo:         deps.RunRepo,
 		logDir:          deps.LogDir,
 		availability:    deps.Availability,
+		localTasks:      deps.LocalTasks,
 		queueExecUpdate: deps.QueueExecUpdate,
 		uploader:        deps.Uploader,
 		tracker:         deps.Tracker,
 		requestRestart:  deps.RequestRestart,
 		logListeners:    make(map[string]struct{}),
 	}
+}
+
+// liveAvailability is the boot-time availability with Config recomputed from
+// the current TOML task set, which a reload can grow from or shrink to empty.
+// The other types stay fixed at boot by allow_station_dispatch.
+func (h *InboundHandler) liveAvailability() executor.Availability {
+	avail := h.availability
+	if h.localTasks != nil {
+		avail.Config = executor.ConfigStatus(h.localTasks.Len() > 0)
+	}
+	return avail
 }
 
 // HandleAgentRestart asks the daemon to restart its own process. It is only

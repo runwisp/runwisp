@@ -483,6 +483,9 @@ Installs a unit so the daemon starts on boot. See [Autostart](/operations/autost
 | `-y`, `--yes` | Don't ask for confirmation.                                                                                  |
 | `--force`     | Overwrite a hand-edited unit.                                                                                |
 | `--binary`    | Binary path to put in the unit (default: this binary).                                                       |
+| `--station`   | Run the service as `runwisp station --no-tui` (systemd only). Needs `--token` and `--url`.                   |
+| `--token`     | With `--station`: the station token (default: `RUNWISP_STATION_TOKEN`).                                      |
+| `--url`       | With `--station`: the Station URL (default: `RUNWISP_STATION_URL`).                                          |
 
 Re-running is safe: an identical unit is left alone, a changed one asks before
 overwriting.

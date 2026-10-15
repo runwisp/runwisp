@@ -99,6 +99,13 @@ type ExecutionTaskConfig struct {
 	LogMaxSize int `json:"logMaxSize,omitzero"`
 	// What the daemon does when log output exceeds logMaxSize.
 	LogOnFull LogOnFull `json:"logOnFull,omitzero"`
+	// The task's `failures` policy, in runwisp.toml `failures` syntax: reason
+	// names, exit codes or ranges, and `output:<regex>` patterns. A bare list
+	// replaces the built-in default set; a list of `+`/`-` tokens adjusts it.
+	// Omitted or empty uses the built-in default. An invalid list rejects the
+	// dispatch. Add-only field; old daemons ignore it and classify with the
+	// default.
+	Failures []string `json:"failures,omitzero"`
 }
 
 type ExecutionStopMessage struct {
@@ -404,6 +411,17 @@ type ExecutionUpdateMessage struct {
 	// Gzipped byte count of the uploaded archive. Set only on terminal
 	// updates after a successful upload.
 	LogSize *int64 `json:"logSize,omitzero"`
+	// Whether the run counts as a failure under the task's `failures`
+	// policy. Set only on terminal updates. A non-zero exit the policy
+	// excludes reports status `failed` with isFailure false. Add-only
+	// field; old daemons omit it.
+	IsFailure *bool `json:"isFailure,omitzero"`
+	// Highest resident memory of the run's process group, in bytes. Set
+	// only on terminal updates of shell runs that were measured.
+	PeakMemoryBytes *int64 `json:"peakMemoryBytes,omitzero"`
+	// User plus system CPU time of the run's processes, in milliseconds.
+	// Set only on terminal updates of shell runs that were measured.
+	CpuTimeMs *int64 `json:"cpuTimeMs,omitzero"`
 }
 
 type Stream string

@@ -126,6 +126,10 @@ type InstallOptions struct {
 	// exit before it SIGKILLs it: the daemon's whole shutdown budget for the
 	// config's [daemon] shutdown_timeout.
 	StopTimeout time.Duration
+	// Station installs the unit as `runwisp station --no-tui` (control-plane
+	// mode) rather than `runwisp daemon`. Needs an environment drop-in for the
+	// station token, so it is systemd-only; launchd refuses it.
+	Station bool
 	// Force overrides PlanConflict on install.
 	Force bool
 	// TakeOverCron requests that ComputePlan/Install also stop and mask
@@ -328,3 +332,9 @@ var ErrConfigMissing = errors.New("autostart: runwisp.toml is missing — run `r
 // the same manual route spelled out), so reaching this error means a caller
 // bypassed the plan.
 var ErrCronTakeoverUnsupported = errors.New("autostart: retiring cron is only supported on Linux with systemd — run `runwisp import cron` then remove the crontab yourself (`crontab -r`)")
+
+// ErrStationUnsupported means InstallOptions.Station was set on a service
+// manager with no way to keep the station token out of the world-readable unit
+// (launchd has no drop-in directory). Run `runwisp station` under your own
+// supervisor there.
+var ErrStationUnsupported = errors.New("autostart: station mode needs an environment drop-in to keep the station token out of the unit, which launchd lacks — run `runwisp station` under your own supervisor instead")

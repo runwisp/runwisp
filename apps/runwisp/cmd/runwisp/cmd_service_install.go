@@ -34,6 +34,11 @@ type installRequest struct {
 	// unit. Useful for Ansible/Nix where the running binary is not
 	// the one that will end up on disk.
 	Binary string
+	// Station installs the unit as `runwisp station --no-tui`. Token and URL are
+	// the --token/--url flags; each falls back to its RUNWISP_STATION_* env var.
+	Station    bool
+	StationTok string
+	StationURL string
 }
 
 // serviceInstallOpts holds the flags `service install` parses. They are wired in
@@ -60,7 +65,13 @@ macOS. Several of those can coexist on one host; the system service cannot.
 macOS has no system-wide install yet, so --local is required there.
 
 Re-running is idempotent: a matching unit is a no-op, a drifted unit
-prompts before overwrite, a hand-edited unit refuses without --force.`,
+prompts before overwrite, a hand-edited unit refuses without --force.
+
+Pass --station to run the service as ` + "`runwisp station --no-tui`" + ` instead of
+` + "`runwisp daemon`" + `, connected to a Station control plane. It needs --token and
+--url (or RUNWISP_STATION_TOKEN and RUNWISP_STATION_URL in the shell); both are
+saved to a 0600 drop-in beside the unit, never into the unit itself. systemd
+only.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runServiceInstall(cmd, flags)
 	},
@@ -73,6 +84,9 @@ func init() {
 	serviceInstallCmd.Flags().BoolVar(&serviceInstallOpts.Force, "force", false, "overwrite a hand-edited unit")
 	serviceInstallCmd.Flags().BoolVar(&serviceInstallOpts.Local, "local", false, localFlagUsage)
 	serviceInstallCmd.Flags().StringVar(&serviceInstallOpts.Binary, "binary", "", "override the binary path baked into the unit (default: auto-detect)")
+	serviceInstallCmd.Flags().BoolVar(&serviceInstallOpts.Station, "station", false, "install station mode (runwisp station --no-tui); needs --token and --url or their RUNWISP_STATION_* env vars")
+	serviceInstallCmd.Flags().StringVar(&serviceInstallOpts.StationTok, "token", "", "with --station: the station token (env: RUNWISP_STATION_TOKEN); stored in a 0600 drop-in, never in the unit")
+	serviceInstallCmd.Flags().StringVar(&serviceInstallOpts.StationURL, "url", "", "with --station: the station URL (env: RUNWISP_STATION_URL)")
 }
 
 func runServiceInstall(cmd *cobra.Command, f Flags) error {
@@ -105,6 +119,11 @@ func installService(cmd *cobra.Command, f Flags, req installRequest) (installed 
 		return false, err
 	}
 	opts.Force = req.Force
+	opts.Station = req.Station
+	env, err := serviceEnv(req)
+	if err != nil {
+		return false, err
+	}
 
 	// A system unit runs as root and executes whatever the config says, so the
 	// path baked into it needs the same ownership guarantee a cron source gets.
@@ -145,7 +164,7 @@ func installService(cmd *cobra.Command, f Flags, req installRequest) (installed 
 	if settingsStale {
 		fmt.Fprintln(cmd.OutOrStdout(), staleSettingsNote)
 	}
-	ensureServiceEnv(cmd, installer, opts)
+	ensureServiceEnv(cmd, installer, opts, env)
 	printCronStillOwnsNote(cmd, f, deps, installer, opts)
 	return true, nil
 }
@@ -175,6 +194,33 @@ func capturedServiceEnv() map[string]string {
 	return vars
 }
 
+// serviceEnv is the RUNWISP_* environment the install saves into the service's
+// drop-in: everything captured from the shell, plus, for --station, the token
+// and URL from their flags (falling back to the shell's RUNWISP_STATION_*). A
+// station service without both could never connect, so their absence is an
+// error before anything is written.
+func serviceEnv(req installRequest) (map[string]string, error) {
+	env := capturedServiceEnv()
+	if !req.Station {
+		return env, nil
+	}
+	for _, kv := range []struct{ name, flag, value string }{
+		{"RUNWISP_STATION_TOKEN", "--token", req.StationTok},
+		{"RUNWISP_STATION_URL", "--url", req.StationURL},
+	} {
+		if v := strings.TrimSpace(kv.value); v != "" {
+			env[kv.name] = v
+		}
+		if env[kv.name] == "" {
+			return nil, &userFacingError{
+				title:   "--station needs a station " + strings.ToLower(strings.TrimPrefix(kv.flag, "--")),
+				details: "Pass " + kv.flag + " or export " + kv.name + " before running 'runwisp service install --station'.",
+			}
+		}
+	}
+	return env, nil
+}
+
 // ensureServiceEnv gives a fresh service install the operator's RUNWISP_*
 // environment and a stable Web UI password — neither survives on its own,
 // since a systemd unit / launchd plist never inherits the install shell's
@@ -191,11 +237,11 @@ func capturedServiceEnv() map[string]string {
 // Best-effort and idempotent: any failure here leaves a working install
 // rather than aborting the command. The daemon is restarted once at the end
 // if either drop-in actually changed, so the new environment takes effect.
-func ensureServiceEnv(cmd *cobra.Command, installer autostart.Installer, opts autostart.InstallOptions) {
+func ensureServiceEnv(cmd *cobra.Command, installer autostart.Installer, opts autostart.InstallOptions, env map[string]string) {
 	out := cmd.OutOrStdout()
 	restartNeeded := false
 
-	envPath, change, err := installer.WriteEnvDropIn(context.Background(), opts, autostart.EnvDropInName, capturedServiceEnv())
+	envPath, change, err := installer.WriteEnvDropIn(context.Background(), opts, autostart.EnvDropInName, env)
 	switch {
 	case err != nil:
 		fmt.Fprintf(out, "\nNote: could not carry your RUNWISP_* environment into the service (%v).\n", err)
@@ -317,6 +363,10 @@ func inspectServiceInstall(cmd *cobra.Command, installer autostart.Installer, op
 		_, err = cmd.OutOrStdout().Write(body)
 		return err
 	}
+	env, err := serviceEnv(req)
+	if err != nil {
+		return err
+	}
 	plan, err := installer.ComputePlan(context.Background(), opts)
 	if err != nil {
 		return err
@@ -334,7 +384,7 @@ func inspectServiceInstall(cmd *cobra.Command, installer autostart.Installer, op
 			fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", manualPasswordHint)
 		}
 	}
-	if installer.SupportsPasswordDropIn() && len(capturedServiceEnv()) > 0 {
+	if installer.SupportsPasswordDropIn() && len(env) > 0 {
 		fmt.Fprintln(cmd.OutOrStdout(),
 			"  - Save your RUNWISP_* environment into a 0600 drop-in beside the unit (refreshed every install)")
 	}

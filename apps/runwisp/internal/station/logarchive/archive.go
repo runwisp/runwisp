@@ -31,7 +31,7 @@ const MaxAttempts = 3
 // also accepts http:// upload URLs; pair it with SafeClient(true).
 func Archive(ctx context.Context, client *http.Client, uploadURL, logFilePath string, allowInsecure bool) (int64, error) {
 	if client == nil {
-		client = SafeClient(allowInsecure)
+		client = SafeClient(allowInsecure, "")
 	}
 	if uploadURL == "" {
 		return 0, errors.New("logarchive: empty upload URL")
@@ -209,41 +209,75 @@ func rejectInternalIP(ip net.IP) error {
 // host is a red flag) and re-validates every resolved IP at connect time to
 // defeat DNS rebinding. allowInsecure (RUNWISP_STATION_ALLOW_INSECURE, local
 // testing only) drops the IP check so a dev stack's private object storage is
-// reachable; redirects stay refused.
-func SafeClient(allowInsecure bool) *http.Client {
+// reachable; redirects stay refused. trustedHost ("host:port", see HostPort),
+// when non-empty, is exempt from the IP check: it is the configured Station,
+// which the daemon already trusts with a bearer-authenticated WebSocket, so a
+// self-hosted Station on a LAN or Tailscale address can still receive
+// archives. Every other host keeps the full guard.
+func SafeClient(allowInsecure bool, trustedHost string) *http.Client {
 	noRedirect := func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
 	if allowInsecure {
 		return &http.Client{CheckRedirect: noRedirect}
 	}
-	base := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 	return &http.Client{
 		CheckRedirect: noRedirect,
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				host, port, err := net.SplitHostPort(addr)
-				if err != nil {
-					return nil, err
-				}
-				ips, err := net.DefaultResolver.LookupHost(ctx, host)
-				if err != nil {
-					return nil, err
-				}
-				if len(ips) == 0 {
-					return nil, fmt.Errorf("logarchive: no addresses for host %q", host)
-				}
-				for _, ipStr := range ips {
-					ip := net.ParseIP(ipStr)
-					if ip == nil {
-						return nil, fmt.Errorf("logarchive: unparseable address %q", ipStr)
-					}
-					if err := rejectInternalIP(ip); err != nil {
-						return nil, err
-					}
-				}
-				return base.DialContext(ctx, network, net.JoinHostPort(ips[0], port))
-			},
-		},
+		Transport:     &http.Transport{DialContext: guardedDial(trustedHost)},
 	}
+}
+
+// guardedDial resolves the target and refuses to connect unless every address
+// is public (or the target is the trusted host), so a rebinding DNS answer
+// can't slip an internal address past the URL-level checks.
+func guardedDial(trustedHost string) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	base := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		ips, err := net.DefaultResolver.LookupHost(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		if len(ips) == 0 {
+			return nil, fmt.Errorf("logarchive: no addresses for host %q", host)
+		}
+		trusted := trustedHost != "" && strings.EqualFold(net.JoinHostPort(host, port), trustedHost)
+		if err := checkResolved(ips, trusted); err != nil {
+			return nil, err
+		}
+		return base.DialContext(ctx, network, net.JoinHostPort(ips[0], port))
+	}
+}
+
+// checkResolved rejects any non-public address among ips unless the target is
+// the trusted Station host (whose addresses still have to parse).
+func checkResolved(ips []string, trusted bool) error {
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			return fmt.Errorf("logarchive: unparseable address %q", ipStr)
+		}
+		if !trusted {
+			if err := rejectInternalIP(ip); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// HostPort returns u's "host:port" with the scheme's default port filled in,
+// the form SafeClient's trustedHost compares against the dialed address.
+func HostPort(u *url.URL) string {
+	port := u.Port()
+	if port == "" {
+		port = "443"
+		if strings.EqualFold(u.Scheme, "http") {
+			port = "80"
+		}
+	}
+	return net.JoinHostPort(u.Hostname(), port)
 }

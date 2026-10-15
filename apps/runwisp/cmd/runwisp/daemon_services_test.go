@@ -329,3 +329,34 @@ func TestBuildDaemonInfo_SchedulingActiveReflectsScheduler(t *testing.T) {
 	svc.Scheduler = runtime.NewScheduler(tm, tasksMap, time.UTC, nil)
 	assert.True(t, buildDaemonInfo(dc, svc, time.Time{}, f.Port).SchedulingActive)
 }
+
+// A daemon that boots with no TOML tasks reports config dispatch unavailable; a
+// reload that adds one must flip it (and list the task) without a restart.
+func TestLiveTaskInfo_FollowsRegistry(t *testing.T) {
+	f, _ := daemonServicesTestEnv(t)
+	cfg := &config.Config{}
+	config.ApplyDefaults(cfg)
+	bus := events.NewEventBus()
+	exec := initExecutor(cfg, bus, f.LogDir(), "", nil)
+	reg := runtime.NewTaskRegistry(map[string]*model.Task{})
+	svc := &daemonServices{Executor: exec, Tasks: reg}
+
+	configCap := func(caps []model.CapInfo) bool {
+		for _, c := range caps {
+			if c.Name == "config" {
+				return c.Available
+			}
+		}
+		t.Fatal("no config capability")
+		return false
+	}
+	tasks, caps := liveTaskInfo(svc)
+	assert.Empty(t, tasks)
+	assert.False(t, configCap(caps))
+
+	reg.Set(&model.Task{Name: "alpha", Run: "echo a"})
+	tasks, caps = liveTaskInfo(svc)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "alpha", tasks[0].Name)
+	assert.True(t, configCap(caps))
+}
