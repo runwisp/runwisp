@@ -16,6 +16,8 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/execlist"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestUpdateHandlers_EarlyReturns covers the no-op branches of Update msg
@@ -386,15 +388,6 @@ func TestHandleSSEEvent_SystemSampleUpdatesLiveUsage(t *testing.T) {
 	}
 }
 
-func TestHandleSSEEventMsg_DispatchesViaHandleSSEEvent(t *testing.T) {
-	m := newTestModel(nil)
-	evt := apiclient.RunStreamEvent{Type: "run.created", Data: json.RawMessage(`{"run":{"id":"r-x","taskName":"t","status":"running"}}`)}
-	_, cmd := m.handleSSEEventMsg(uikit.SSEEventMsg{Event: evt})
-	// tea.Batch with all-nil children is itself nil, which is what we get
-	// because there's no sseCh wired and StartLogStream needs a client.
-	_ = cmd // we don't assert non-nil — coverage is what matters here.
-}
-
 // ─── handleLogStreamConnected ────────────────────────────────────────────────
 
 func TestHandleLogStreamConnected_NotViewingReturnsNil(t *testing.T) {
@@ -418,6 +411,15 @@ func TestHandleLogStreamConnected_ViewingWiresUpChannel(t *testing.T) {
 	}
 }
 
+// lastDebugLine is the newest line in m's debug view, or "" when it is empty.
+func lastDebugLine(m Model) string {
+	lines := m.debugView.pane.Lines
+	if len(lines) == 0 {
+		return ""
+	}
+	return lines[len(lines)-1].Text
+}
+
 // ─── handleNotificationUnreadCount / handleNotificationsLoaded error paths ──
 
 func TestHandleNotificationUnreadCount_ErrAppendsDebug(t *testing.T) {
@@ -425,6 +427,7 @@ func TestHandleNotificationUnreadCount_ErrAppendsDebug(t *testing.T) {
 	m.handleNotificationUnreadCount(uikit.NotificationUnreadCountMsg{
 		Err: errors.New("fetch failed"),
 	})
+	assert.Equal(t, "Failed to load unread count: fetch failed", lastDebugLine(m))
 }
 
 func TestHandleNotificationsLoaded_ErrAppendsDebug(t *testing.T) {
@@ -432,6 +435,7 @@ func TestHandleNotificationsLoaded_ErrAppendsDebug(t *testing.T) {
 	m.handleNotificationsLoaded(uikit.NotificationsLoadedMsg{
 		Err: errors.New("fetch failed"),
 	})
+	assert.Equal(t, "Failed to load notifications: fetch failed", lastDebugLine(m))
 }
 
 // ─── handleReconnectLog viewing+running path ─────────────────────────────────
@@ -854,26 +858,18 @@ func TestHandleLogTailLoaded_PendingHighlightAppliedToMatchingRun(t *testing.T) 
 
 // ─── handleLogLine ───────────────────────────────────────────────────────────
 
-func TestHandleLogLine_NotViewingRunIgnoresButContinuesListening(t *testing.T) {
-	m := newTestModel(nil)
-	// No execView set → not viewing the run.
-	_, cmd := m.handleLogLine(uikit.LogLineMsg{
-		RunID: "r-1",
-		Line:  server.LogLineEntry{N: 1, Text: "hello", Stream: "stdout"},
-	})
-	// streams.ContinueListeningLog returns nil when no channel is active.
-	_ = cmd
-}
-
 func TestHandleLogLine_ViewingRunAppends(t *testing.T) {
 	m := newTestModel(nil)
 	run := &model.Run{ID: "r-1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
-	_, _ = m.handleLogLine(uikit.LogLineMsg{
+	updated, _ := m.handleLogLine(uikit.LogLineMsg{
 		RunID: "r-1",
 		Line:  server.LogLineEntry{N: 1, Text: "hello", Stream: "stdout"},
 	})
+	lines := updated.(Model).execView.Pane.Lines
+	require.NotEmpty(t, lines)
+	assert.Equal(t, "hello", lines[len(lines)-1].Text)
 }
 
 // TestHandleLogLine_PendingHighlightNotAppliedToDifferentRun is the
@@ -935,24 +931,27 @@ func TestHandleLogLine_PendingHighlightAppliedToMatchingRun(t *testing.T) {
 
 // ─── handleLogRotated ────────────────────────────────────────────────────────
 
-func TestHandleLogRotated_NotViewingNoop(t *testing.T) {
-	m := newTestModel(nil)
-	_, _ = m.handleLogRotated(uikit.LogRotatedMsg{RunID: "r-1", FirstAvailable: 5})
-}
-
 func TestHandleLogRotated_ViewingRunEvictsBelow(t *testing.T) {
 	m := newTestModel(nil)
 	run := &model.Run{ID: "r-1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
+	for n := range int64(8) {
+		ev.Pane.AppendLine(n, "stdout", fmt.Sprint("line ", n))
+	}
 	m.execView = &ev
-	_, _ = m.handleLogRotated(uikit.LogRotatedMsg{RunID: "r-1", FirstAvailable: 5})
+	updated, _ := m.handleLogRotated(uikit.LogRotatedMsg{RunID: "r-1", FirstAvailable: 5})
+	pane := updated.(Model).execView.Pane
+	assert.Equal(t, 5, pane.FirstLoadedLine)
+	require.Len(t, pane.Lines, 3)
+	assert.Equal(t, "line 5", pane.Lines[0].Text)
 }
 
 // ─── handleLogDropped ────────────────────────────────────────────────────────
 
 func TestHandleLogDropped_NotViewingNoop(t *testing.T) {
 	m := newTestModel(nil)
-	_, _ = m.handleLogDropped(uikit.LogDroppedMsg{RunID: "r-1", After: 2, Count: 3})
+	updated, _ := m.handleLogDropped(uikit.LogDroppedMsg{RunID: "r-1", After: 2, Count: 3})
+	assert.Empty(t, lastDebugLine(updated.(Model)), "a drop on a run not on screen is not reported")
 }
 
 func TestHandleLogDropped_ViewingRunAppendsDebugLine(t *testing.T) {
@@ -960,7 +959,8 @@ func TestHandleLogDropped_ViewingRunAppendsDebugLine(t *testing.T) {
 	run := &model.Run{ID: "r-1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
-	_, _ = m.handleLogDropped(uikit.LogDroppedMsg{RunID: "r-1", After: 2, Count: 3})
+	updated, _ := m.handleLogDropped(uikit.LogDroppedMsg{RunID: "r-1", After: 2, Count: 3})
+	assert.Contains(t, lastDebugLine(updated.(Model)), "dropped 3 line(s) after #2")
 }
 
 // ─── handleDebugLog ──────────────────────────────────────────────────────────
@@ -968,19 +968,21 @@ func TestHandleLogDropped_ViewingRunAppendsDebugLine(t *testing.T) {
 func TestHandleDebugLog_AppendsAndReturnsNil(t *testing.T) {
 	m := newTestModel(nil)
 	m.handleDebugLog(uikit.DebugLogMsg{Message: "info line"})
+	assert.Equal(t, "info line", lastDebugLine(m))
 }
 
 // ─── handleDaemonLogLine / Connected / Disconnected ──────────────────────────
 
 func TestHandleDaemonLogLine_AppendsToDebugView(t *testing.T) {
 	m := newTestModel(nil)
-	_, _ = m.handleDaemonLogLine(uikit.DaemonLogLineMsg{Line: "daemon line"})
+	updated, _ := m.handleDaemonLogLine(uikit.DaemonLogLineMsg{Line: "daemon line"})
+	assert.Equal(t, "daemon line", lastDebugLine(updated.(Model)))
 }
 
 func TestHandleDaemonLogDisconnected_AppendsAndResubscribes(t *testing.T) {
 	m := newTestModel(nil)
-	// No client → SubscribeDaemonLogs returns nil; ensure no panic.
-	_, _ = m.handleDaemonLogDisconnected()
+	updated, _ := m.handleDaemonLogDisconnected()
+	assert.Contains(t, lastDebugLine(updated.(Model)), "Daemon log stream disconnected")
 }
 
 // ─── handleTriggerRun ────────────────────────────────────────────────────────
@@ -1023,11 +1025,16 @@ func TestHandleTriggerRun_ErrorWithExecViewClosesIt(t *testing.T) {
 func TestHandleTriggerRun_RetrySuccessUsesRetryAction(t *testing.T) {
 	m := newTestModel(nil)
 	run := &model.Run{ID: "r-retry", TaskName: "task-x", Status: model.PhaseRunning}
-	_, _ = m.handleTriggerRun(uikit.TriggerRunMsg{
+	updated, _ := m.handleTriggerRun(uikit.TriggerRunMsg{
 		TaskName: "task-x",
 		Run:      run,
 		Retry:    true,
 	})
+	got := updated.(Model)
+	assert.Equal(t, "Retried run for task-x", lastDebugLine(got))
+	flash, ok := got.dialogs.FlashActive()
+	assert.True(t, ok)
+	assert.Equal(t, "Retried run for task-x", flash)
 }
 
 // TestHandleTriggerRun_FlashesNoUndo verifies a successful trigger flashes a
@@ -1144,6 +1151,7 @@ func TestHandleReloadResult_SuccessRebuildsSidebar(t *testing.T) {
 func TestHandleStopRun_LogsActionResult(t *testing.T) {
 	m := newTestModel(nil)
 	m.handleStopRun(uikit.StopRunMsg{TaskName: "t1"})
+	assert.Equal(t, "Stopped run for t1", lastDebugLine(m))
 }
 
 // TestHandleRestartService_LeavesDeadInstance is the regression for restarting
@@ -1299,8 +1307,9 @@ func TestMaybeLoadOlderLogs_NotNeededReturnsNil(t *testing.T) {
 	run := &model.Run{ID: "r-1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
-	// Pane.NeedsOlder is false on a fresh view (no scroll back). Cmd should be nil.
-	_ = m.maybeLoadOlderLogs()
+	// Pane.NeedsOlder is false on a fresh view (no scroll back).
+	assert.Nil(t, m.maybeLoadOlderLogs())
+	assert.False(t, m.execView.LoadingOlder)
 }
 
 // ─── handleTick ──────────────────────────────────────────────────────────────
@@ -1313,37 +1322,14 @@ func TestHandleTick_ProducesBatchedCmd(t *testing.T) {
 	}
 }
 
-// ─── handleFlashExpired ──────────────────────────────────────────────────────
-
-func TestHandleFlashExpired_ClearsAndReturnsNil(t *testing.T) {
-	m := newTestModel(nil)
-	m.handleFlashExpired()
-}
-
-// ─── handleSystemStats / handleMetricsHistory / handleRunSummary ─────────────
-
-func TestHandleSystemStats_NilStatsNoop(t *testing.T) {
-	m := newTestModel(nil)
-	m.handleSystemStats(uikit.SystemStatsMsg{})
-}
-
-func TestHandleMetricsHistory_NilSamplesNoop(t *testing.T) {
-	m := newTestModel(nil)
-	m.handleMetricsHistory(uikit.MetricsHistoryMsg{})
-}
-
-func TestHandleRunSummary_NilSummaryNoop(t *testing.T) {
-	m := newTestModel(nil)
-	m.handleRunSummary(uikit.RunSummaryMsg{})
-}
-
 // ─── handleOpenBrowser branches ──────────────────────────────────────────────
 
 func TestHandleOpenBrowser_ErrorAppendsDebug(t *testing.T) {
 	m := newTestModel(nil)
-	_, _ = m.handleOpenBrowser(uikit.OpenBrowserMsg{
+	updated, _ := m.handleOpenBrowser(uikit.OpenBrowserMsg{
 		URL: "http://x", Err: errors.New("open failed"),
 	})
+	assert.Equal(t, "Failed to open browser: open failed", lastDebugLine(updated.(Model)))
 }
 
 func TestHandleOpenBrowser_URLNoBrowserOpensCopyDialog(t *testing.T) {

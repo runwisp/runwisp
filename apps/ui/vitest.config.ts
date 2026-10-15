@@ -36,6 +36,9 @@ export default defineConfig({
                 "**/packages/ui/src/lib/utils/error.ts",
                 "**/packages/ui/src/lib/utils/id.ts",
                 "**/packages/ui/src/lib/components/dashboard/run-helpers.ts",
+                "**/packages/ui/src/lib/components/dashboard/run-filters.ts",
+                "**/packages/ui/src/lib/components/dashboard/status-config.ts",
+                "**/packages/ui/src/lib/components/button-styles.ts",
                 "**/packages/ui/src/lib/utils/ticking-now.svelte.ts",
                 "**/packages/ui/src/lib/utils/clipboard.svelte.ts",
                 "**/packages/ui/src/lib/utils/theme.svelte.ts",
@@ -45,6 +48,8 @@ export default defineConfig({
                 "**/packages/ui/src/lib/utils/run-motion.ts",
                 "**/packages/ui/src/lib/actions/row-motion.ts",
                 "**/packages/common/src/utils/ulid.ts",
+                "**/packages/common/src/utils/logger.ts",
+                "**/packages/common/src/types.ts",
                 "**/packages/js/src/**/*.ts",
             ],
             exclude: [

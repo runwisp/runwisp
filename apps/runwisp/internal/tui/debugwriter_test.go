@@ -112,35 +112,3 @@ func TestDebugLogWriter_SetProgram_FlushesBufferAndForwardsLater(t *testing.T) {
 	w.SetProgram(f2)
 	assert.Empty(t, f2.snapshot(), "no messages should remain buffered after first flush")
 }
-
-// --- DebugView ---
-
-func TestDebugView_Update_NonKeyMsg(t *testing.T) {
-	dv := NewDebugView()
-	dv.SetSize(80, 20)
-	assert.NotPanics(t, func() {
-		dv.Update("notakeymsg")
-	})
-}
-
-func TestDebugView_Update_KeyMsg(t *testing.T) {
-	dv := NewDebugView()
-	dv.SetSize(80, 20)
-	dv.AppendLine("line1")
-	assert.NotPanics(t, func() {
-		dv.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-	})
-}
-
-func TestDebugView_View_Empty(t *testing.T) {
-	dv := NewDebugView()
-	dv.SetSize(80, 20)
-	assert.NotEmpty(t, dv.View())
-}
-
-func TestDebugView_View_WithLines(t *testing.T) {
-	dv := NewDebugView()
-	dv.SetSize(80, 20)
-	dv.AppendLine("hello debug")
-	assert.Contains(t, dv.View(), "Debug Log")
-}

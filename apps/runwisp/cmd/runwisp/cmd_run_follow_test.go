@@ -72,6 +72,10 @@ func captureStdout(t *testing.T, fn func()) string {
 	return <-done
 }
 
+// testFollowPace keeps the stall budget and its backoff small so the tests
+// that walk it don't wait out the production pacing.
+var testFollowPace = followPace{maxStalls: 5, stallBackoff: time.Millisecond, quietAfter: time.Second}
+
 // TestFollowRun_RetriesEmptyStreamUntilRunIsStreamable reproduces the flaky-exec
 // bug: a just-triggered run is handed back before its row is durably persisted
 // (persistence is async), so the log-stream SSE handler can't resolve it yet and
@@ -113,7 +117,7 @@ func TestFollowRun_RetriesEmptyStreamUntilRunIsStreamable(t *testing.T) {
 	var code int
 	var err error
 	out := captureStdout(t, func() {
-		code, _, err = followRun(t.Context(), client, "alpha", "run-1", os.Stdout)
+		code, _, err = followRun(t.Context(), client, "alpha", "run-1", testFollowPace, os.Stdout)
 	})
 
 	require.NoError(t, err)
@@ -157,7 +161,7 @@ func TestFollowRun_RetriesNotFoundUntilRunIsStreamable(t *testing.T) {
 	var code int
 	var err error
 	out := captureStdout(t, func() {
-		code, _, err = followRun(t.Context(), client, "alpha", "run-1", os.Stdout)
+		code, _, err = followRun(t.Context(), client, "alpha", "run-1", testFollowPace, os.Stdout)
 	})
 
 	require.NoError(t, err)
@@ -177,7 +181,7 @@ func TestFollowRun_StreamRefusalSurfaces(t *testing.T) {
 	client := apiclient.New(srv.URL, "")
 	var err error
 	captureStdout(t, func() {
-		_, _, err = followRun(t.Context(), client, "alpha", "run-1", os.Stdout)
+		_, _, err = followRun(t.Context(), client, "alpha", "run-1", testFollowPace, os.Stdout)
 	})
 
 	var status *apiclient.HTTPStatusError
@@ -218,7 +222,7 @@ func TestFollowRun_RereadsNonTerminalRowAfterDone(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	code, final, err := followRun(t.Context(), apiclient.New(srv.URL, ""), "alpha", "run-1", os.Stdout)
+	code, final, err := followRun(t.Context(), apiclient.New(srv.URL, ""), "alpha", "run-1", testFollowPace, os.Stdout)
 	require.NoError(t, err)
 	require.NotNil(t, final)
 	assert.Equal(t, model.PhaseEnded, final.Status, "a non-terminal row after done must be re-read")
@@ -229,19 +233,20 @@ func TestFollowRun_RereadsNonTerminalRowAfterDone(t *testing.T) {
 // for giving up on a quiet run: the server closes every log stream after
 // LogStreamTimeout, so a run that prints nothing for that long yields an empty
 // stream too. Counting those as stalls made `runwisp run` abandon a run silent
-// for followMaxStalls × LogStreamTimeout (~8h), read the still-running row, and
+// for maxStalls × LogStreamTimeout (~8h), read the still-running row, and
 // exit 0. A stream that stayed open past quietAfter was live and must just be
 // re-opened.
 func TestFollowRunLog_QuietStreamDoesNotSpendStallBudget(t *testing.T) {
-	const quietAfter = 5 * time.Millisecond
+	pace := testFollowPace
+	pace.quietAfter = 5 * time.Millisecond
 	var streamHits atomic.Int32
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		if streamHits.Add(1) <= followMaxStalls+5 {
+		if int(streamHits.Add(1)) <= pace.maxStalls+5 {
 			w.(http.Flusher).Flush()
-			time.Sleep(2 * quietAfter) // a live connection with nothing to say
+			time.Sleep(2 * pace.quietAfter) // a live connection with nothing to say
 			return
 		}
 		fmt.Fprint(w, "event: line\ndata: {\"n\":0,\"stream\":\"stdout\",\"text\":\"finally\"}\n\n")
@@ -250,7 +255,7 @@ func TestFollowRunLog_QuietStreamDoesNotSpendStallBudget(t *testing.T) {
 	defer srv.Close()
 
 	var got []string
-	done, err := followRunLog(t.Context(), apiclient.New(srv.URL, ""), "task", "run-1", 0, quietAfter, func(l server.LogLineEntry) {
+	done, err := followRunLog(t.Context(), apiclient.New(srv.URL, ""), "task", "run-1", 0, pace, func(l server.LogLineEntry) {
 		got = append(got, l.Text)
 	})
 	require.NoError(t, err)
@@ -281,7 +286,7 @@ func TestFollowRunLog_ReopensAfterConnectionCutMidStream(t *testing.T) {
 	defer srv.Close()
 
 	var got []string
-	done, err := followRunLog(t.Context(), apiclient.New(srv.URL, ""), "task", "run-1", 0, time.Second, func(l server.LogLineEntry) {
+	done, err := followRunLog(t.Context(), apiclient.New(srv.URL, ""), "task", "run-1", 0, testFollowPace, func(l server.LogLineEntry) {
 		got = append(got, l.Text)
 	})
 	require.NoError(t, err)

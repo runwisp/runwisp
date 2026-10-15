@@ -886,8 +886,10 @@ func TestSendProtocolError_DropsOnFullBuffer(t *testing.T) {
 	session := &wsSession{outbound: make(chan []byte, 1)}
 	session.outbound <- []byte("filler")
 
-	// Must not panic — the function logs and returns on send failure.
+	// Must not block: the function logs and returns on send failure.
 	env.client.sessions.sendProtocolError(session, StationErrorKindValidation, "boom", "req-1", "")
+	require.Len(t, session.outbound, 1)
+	assert.Equal(t, "filler", string(<-session.outbound))
 }
 
 func TestHeartbeatLoop_ContextCancelExitsCleanly(t *testing.T) {

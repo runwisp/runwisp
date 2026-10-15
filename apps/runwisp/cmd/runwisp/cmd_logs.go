@@ -518,7 +518,7 @@ func backlogStart(ctx context.Context, client *apiclient.Client, run *model.Run,
 // followOneRun streams run's log to sink from line `from` and, once it ends,
 // reports its outcome. It returns nil when ctx is cancelled.
 func followOneRun(ctx context.Context, client *apiclient.Client, sink *logSink, run *model.Run, from int64) error {
-	done, err := followRunLog(ctx, client, run.TaskName, run.ID, from, followQuietAfter, func(l server.LogLineEntry) {
+	done, err := followRunLog(ctx, client, run.TaskName, run.ID, from, defaultFollowPace, func(l server.LogLineEntry) {
 		sink.line(run, l)
 	})
 	switch {

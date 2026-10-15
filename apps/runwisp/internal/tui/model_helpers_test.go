@@ -698,19 +698,25 @@ func TestApplySidebarSelectionChange_WithExecViewClosesIt(t *testing.T) {
 // PageInfo entry branch that appends the three info-page fetch commands.
 func TestApplySidebarSelectionChange_ToPageInfoQueuesMetricsFetch(t *testing.T) {
 	tasks := []model.Task{{Name: "backup"}}
-	m := newTestModel(tasks)
-	prevPage := m.sidebar.ActivePage()
-	prevTask := m.sidebar.ActiveTask()
-	// Items: [Home(0), backup(1), Info(2), Debug(3)] → select Info.
-	selectSidebarItem(&m, 2)
-
-	if m.sidebar.ActivePage() != uikit.PageInfo {
-		t.Fatalf("precondition: expected PageInfo after navigation, got %v", m.sidebar.ActivePage())
+	// batchSize navigates from Home to the sidebar item at index and counts
+	// the commands the selection change queues.
+	batchSize := func(index int) int {
+		m := newTestModel(tasks)
+		prevPage, prevTask := m.sidebar.ActivePage(), m.sidebar.ActiveTask()
+		selectSidebarItem(&m, index)
+		cmd := m.applySidebarSelectionChange(prevPage, prevTask)
+		if cmd == nil {
+			return 0
+		}
+		if batch, ok := cmd().(tea.BatchMsg); ok {
+			return len(batch)
+		}
+		return 1 // tea.Batch unwraps a lone command
 	}
-
-	// The fetch commands are never run here, but exercising
-	// the branch still counts toward coverage. Just call and ensure no panic.
-	m.applySidebarSelectionChange(prevPage, prevTask)
+	// Items: [Home(0), backup(1), Info(2), Debug(3)].
+	if got, base := batchSize(2), batchSize(3); got != base+3 {
+		t.Fatalf("entering Info queued %d commands, want the %d of any page plus its 3 fetches", got, base)
+	}
 }
 
 // TestApplySidebarSelectionChange_NonServiceTaskNoAutoOpen verifies that the
@@ -842,24 +848,6 @@ func TestRecalcExecListHeight_WithActiveTask(t *testing.T) {
 }
 
 // ─── tickCmd actually fires ──────────────────────────────────────────────────
-
-// TestTickCmd_ProducesTickMsg invokes the tick cmd and confirms it returns a
-// uikit.TickMsg payload. This is a slow tick (1s) — keep test time bounded by
-// reading the channel via the returned cmd.
-func TestTickCmd_ProducesTickMsg(t *testing.T) {
-	if testing.Short() {
-		t.Skip("tick fires every 1s; skip in short mode")
-	}
-	m := newTestModel(nil)
-	cmd := m.tickCmd()
-	if cmd == nil {
-		t.Fatal("expected non-nil tick cmd")
-	}
-	// We cannot block on tea.Tick (1s) in unit tests cheaply; just confirm
-	// the cmd is producible. The branch coverage we want is the constructor
-	// being executed, which already happened.
-	_ = cmd
-}
 
 // ─── toggleSelectedNotificationRead (read → unread) ──────────────────────────
 

@@ -77,7 +77,7 @@ func TestModelUpdate_RoutesAndFallsThrough(t *testing.T) {
 	}
 }
 
-// ─── handleSystemStats / handleMetricsHistory / handleRunSummary ─────────────
+// ─── handleSystemStats ───────────────────────────────────────────────────────
 
 func TestHandleSystemStats_NilStatsOrErrIsNoop(t *testing.T) {
 	m := newTestModel(nil)
@@ -85,18 +85,6 @@ func TestHandleSystemStats_NilStatsOrErrIsNoop(t *testing.T) {
 	// Nil stats — handler must not panic.
 	m.handleSystemStats(uikit.SystemStatsMsg{Err: errors.New("boom")})
 	m.handleSystemStats(uikit.SystemStatsMsg{Stats: &model.SystemStats{Name: "test"}})
-}
-
-func TestHandleMetricsHistory_ErrAndSuccess(t *testing.T) {
-	m := newTestModel(nil)
-	m.handleMetricsHistory(uikit.MetricsHistoryMsg{Err: errors.New("x")})
-	m.handleMetricsHistory(uikit.MetricsHistoryMsg{Samples: []model.MetricsSample{{Timestamp: 1}}})
-}
-
-func TestHandleRunSummary_ErrAndSuccess(t *testing.T) {
-	m := newTestModel(nil)
-	m.handleRunSummary(uikit.RunSummaryMsg{Err: errors.New("x")})
-	m.handleRunSummary(uikit.RunSummaryMsg{Summary: &model.RunSummary{Total: 1}})
 }
 
 func TestHandleWindowSize_AppliesDimensions(t *testing.T) {

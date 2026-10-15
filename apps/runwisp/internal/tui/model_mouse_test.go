@@ -132,18 +132,6 @@ func TestScrollWheelDown_OnDebugPageScrollsDebugView(t *testing.T) {
 	}
 }
 
-func TestScrollWheelUp_OnHomePageScrollsExecList(t *testing.T) {
-	m := newTestModel(nil)
-	// Default: PageHome, no execView. Falls through to execList.ScrollBy(-3).
-	// Returns nil because the client is nil → fetchExecWindow yields nil.
-	_ = m.scrollWheelUp(uikit.SidebarWidth + 5)
-}
-
-func TestScrollWheelDown_OnHomePageScrollsExecList(t *testing.T) {
-	m := newTestModel(nil)
-	_ = m.scrollWheelDown(uikit.SidebarWidth + 5)
-}
-
 // ─── handleHomePageClick ─────────────────────────────────────────────────────
 
 // clickTaskButton clicks the task header button whose label contains label,
@@ -215,20 +203,19 @@ func TestHandleHomePageClick_HeaderButtonsActOnHeaderTask(t *testing.T) {
 
 func TestHandleHomePageClick_ClickOnHomeFieldFocusesField(t *testing.T) {
 	m := newTestModel(nil)
+	m.info.Port = 8181 // gives the header its Web UI field
 	m.layout.homeFieldsY = 5
-	// Try to click at y == homeFieldsY (field 0).
 	newM, _ := m.handleHomePageClick(uikit.SidebarWidth, 5)
-	if nm, ok := newM.(Model); ok {
-		// Could be either home field or pass-through to exec list, depending on
-		// whether fields are present. Either way, no panic + return is enough.
-		_ = nm
-	}
+	got := newM.(Model)
+	assert.Equal(t, 0, got.homeCursor)
+	assert.Equal(t, uikit.PanelMain, got.panelFocus)
 }
 
 func TestHandleHomePageClick_NoTaskAndOutsideFieldsDelegatesToExecList(t *testing.T) {
 	m := newTestModel(nil)
-	m.layout.homeFieldsY = 100 // ensure y < fieldsStartY → fieldIdx negative
-	_, _ = m.handleHomePageClick(uikit.SidebarWidth, 0)
+	m.layout.homeFieldsY = 100 // y < fieldsStartY → no field under the click
+	newM, _ := m.handleHomePageClick(uikit.SidebarWidth, 0)
+	assert.Equal(t, -1, newM.(Model).homeCursor, "no home field takes focus")
 }
 
 func TestHandleHomePageClick_StarButtonOpensRepo(t *testing.T) {
@@ -676,8 +663,10 @@ func TestHandleHomePageClick_DoubleClickActivatesField(t *testing.T) {
 	m := newTestModel(nil)
 	m.info.Port = 8181
 	m.layout.homeFieldsY = 5
-	// First click primes detectDoubleClick.
-	m.handleHomePageClick(uikit.SidebarWidth, 5)
-	// Second click at same Y within threshold → double click → activate.
-	_, _ = m.handleHomePageClick(uikit.SidebarWidth, 5)
+	// The first click only focuses the field and primes detectDoubleClick.
+	first, cmd := m.handleHomePageClick(uikit.SidebarWidth, 5)
+	require.Nil(t, cmd)
+	// A second click on the same row within the threshold activates it.
+	_, cmd = first.(Model).handleHomePageClick(uikit.SidebarWidth, 5)
+	assert.NotNil(t, cmd, "activating the Web UI field copies its URL")
 }

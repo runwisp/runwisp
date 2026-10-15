@@ -392,11 +392,9 @@ func TestResolveConfigPath_ExplicitDefaultIgnored(t *testing.T) {
 	assert.Equal(t, "/home/alice/.config/runwisp/runwisp.toml", p)
 }
 
-func TestDetectWSLFromEnv_NoSignals(t *testing.T) {
-	t.Setenv("WSL_DISTRO_NAME", "")
-	// We can't unset /proc/sys/kernel/osrelease, but DetectWSL is the
-	// pure logic — this just exercises the env-reading wrapper.
-	_ = DetectWSLFromEnv()
+func TestDetectWSLFromEnv_ReadsDistroName(t *testing.T) {
+	t.Setenv("WSL_DISTRO_NAME", "Ubuntu")
+	assert.True(t, DetectWSLFromEnv())
 }
 
 func TestDetectWSL(t *testing.T) {

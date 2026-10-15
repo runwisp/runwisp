@@ -321,12 +321,16 @@ func TestDialogManager_UpdateSpinner_WithDialog(t *testing.T) {
 	dm.Show(dlgConfirm, d)
 	dm.StartShutdown() //nolint:errcheck
 
-	// Produce a real spinner tick message via wrapSpinnerCmd.
-	tickCmd := dm.confirm().spinnerTick()
-	tickMsg := tickCmd()
+	// Produce a real spinner tick; the model unwraps it before forwarding.
+	tick, ok := dm.confirm().spinnerTick()().(uikit.SpinnerTickMsg)
+	if !ok {
+		t.Fatal("spinnerTick must produce a SpinnerTickMsg")
+	}
 
-	// Forward to UpdateSpinner; must not panic.
-	_ = dm.UpdateSpinner(tickMsg)
+	// Forwarded to the shutting-down dialog, the tick schedules the next one.
+	if dm.UpdateSpinner(tick.Inner) == nil {
+		t.Fatal("expected the next spinner tick")
+	}
 }
 
 func TestHelpDialog_ClosesOnCloseKeys(t *testing.T) {

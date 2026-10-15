@@ -349,32 +349,27 @@ func TestSidebar_View_WithFingerprint(t *testing.T) {
 	assert.Contains(t, out, "fp-abc")
 }
 
-// TestSidebar_View_GroupHeaderAndStylesFire iterates focus/hover combinations
-// so renderItem walks each style-switch arm.
-func TestSidebar_View_GroupHeaderAndStylesFire(t *testing.T) {
+// TestSidebar_View_FocusCursorAndHoverRenderDistinctly walks the row-style
+// states and checks each one changes what the operator sees.
+func TestSidebar_View_FocusCursorAndHoverRenderDistinctly(t *testing.T) {
 	s := NewSidebar("RunWisp", "0.1.0", "", makeGroupedTasks())
 	s.SetSize(40, 30)
-	// focused + cursor + selected match same row
-	s.cursor = 1
-	s.selected = 1
-	s.focused = true
-	_ = s.View()
-	// focused + cursor different from selected
-	s.cursor = 2
-	s.selected = 1
-	_ = s.View()
-	// focused + selected only (cursor elsewhere)
-	s.cursor = 4
-	s.selected = 1
-	_ = s.View()
-	// blurred + selected (no focus)
-	s.focused = false
-	s.selected = 1
-	_ = s.View()
-	// blurred + hovered branch
-	s.selected = 0
-	s.SetHovered(1)
-	_ = s.View()
+	s.cursor, s.selected, s.focused = 1, 1, true
+	prev := s.View() // focused, cursor on the selected row
+	for _, step := range []struct {
+		name  string
+		apply func()
+	}{
+		{"cursor moves off the selected row", func() { s.cursor = 2 }},
+		{"cursor moves further", func() { s.cursor = 4 }},
+		{"sidebar loses focus", func() { s.focused = false }},
+		{"selection clears and a row is hovered", func() { s.selected = 0; s.SetHovered(1) }},
+	} {
+		step.apply()
+		view := s.View()
+		assert.NotEqual(t, prev, view, step.name)
+		prev = view
+	}
 }
 
 // TestSidebar_SkipGroupHeaders covers both directions and the clamp branches.

@@ -200,7 +200,7 @@ func runExecViaDaemon(ctx context.Context, taskName string, f Flags, params map[
 	}
 
 	slog.Info("Task triggered", "name", taskName, "run", run.ID)
-	exitCode, final, err := followRun(ctx, client, taskName, run.ID, runLineOut(asJSON))
+	exitCode, final, err := followRun(ctx, client, taskName, run.ID, defaultFollowPace, runLineOut(asJSON))
 	if err != nil {
 		return exitCode, err
 	}
@@ -292,7 +292,7 @@ func runExecViaRemote(ctx context.Context, taskName, baseURL, password string, d
 		fmt.Println(run.ID)
 		return 0, nil
 	}
-	exitCode, final, err := followRun(ctx, client, taskName, run.ID, runLineOut(asJSON))
+	exitCode, final, err := followRun(ctx, client, taskName, run.ID, defaultFollowPace, runLineOut(asJSON))
 	if err != nil {
 		return exitCode, err
 	}
@@ -365,13 +365,13 @@ func triggerRemote(ctx context.Context, client *apiclient.Client, taskName, base
 // returning the exit code and — when it fetched one — the terminal run so a
 // caller can render --json without re-fetching. final may be nil only alongside
 // a non-nil error (or an interrupt), never on a clean terminal outcome.
-func followRun(ctx context.Context, client *apiclient.Client, taskName, runID string, lineOut io.Writer) (int, *model.Run, error) {
+func followRun(ctx context.Context, client *apiclient.Client, taskName, runID string, pace followPace, lineOut io.Writer) (int, *model.Run, error) {
 	// An interrupt/SIGTERM cancels ctx so Ctrl+C stops the stream.
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	// Line numbers are zero-indexed; from=0 replays every line of a fresh run.
-	done, err := followRunLog(ctx, client, taskName, runID, 0, followQuietAfter, func(l server.LogLineEntry) {
+	done, err := followRunLog(ctx, client, taskName, runID, 0, pace, func(l server.LogLineEntry) {
 		writeLogLine(lineOut, os.Stderr, l.Stream, l.Text, "")
 	})
 	if err != nil && !errors.Is(err, errLogStreamStalled) {
