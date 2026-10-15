@@ -21,7 +21,7 @@ func TestRunValidate_JSONInvalidEmitsErrorDoc(t *testing.T) {
 	f := writeValidateConfig(t, "[tasks.t]\nrun = \"echo hi\"\ncron = \"61 * * * *\"\n")
 
 	var buf bytes.Buffer
-	err := runValidate(&buf, f, true)
+	err := runValidate(&buf, f, validateOpts{JSON: true})
 	require.Error(t, err, "invalid config must still exit non-zero")
 
 	var doc validateJSONDoc

@@ -307,7 +307,8 @@ runwisp                      — no subcommand: attach TUI to running daemon, el
                                says so and offers the plain scaffold; those jobs are then held (see include_cron)
 runwisp daemon               — start headless daemon (no TUI)
 runwisp tui                  — attach a TUI to a running daemon
-runwisp validate             — validate runwisp.toml without starting anything; --json for the structured document (see above)
+runwisp validate             — validate runwisp.toml without starting anything; --json for the structured document (see above);
+                               --explain adds each schedule in words + next 3 firings (zone-aware, DST marked; `schedules` in --json)
 runwisp list                 — list configured tasks and schedules; --json for a machine-readable document
 runwisp status               — is the daemon alive?; --json for daemon health + every task's last run (+ pausedAt when its schedule is paused) + externalUrl/externalUrlSource (config|detected); human output lists paused schedules and the Web UI address
 runwisp run <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive

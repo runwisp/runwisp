@@ -105,10 +105,10 @@ func RunMissedTickCatchUp(tasks map[string]*model.Task, runner RunTrigger, now t
 
 // catchupSchedule builds a task's schedule and the location its ticks are
 // evaluated in, via the same resolution the live scheduler uses
-// (resolveTaskSchedule). Counting missed ticks in the wrong zone would
+// (cronspec.Resolve). Counting missed ticks in the wrong zone would
 // mis-detect the downtime gap for any task not on the host's local time.
 func catchupSchedule(parser cron.ScheduleParser, task *model.Task, defaultLoc *time.Location) (cron.Schedule, *time.Location, error) {
-	spec, loc := resolveTaskSchedule(task, defaultLoc)
+	spec, loc := cronspec.Resolve(task.Cron, task.Timezone, defaultLoc)
 	schedule, err := parser.Parse(spec)
 	if err != nil {
 		return nil, nil, err
@@ -250,9 +250,9 @@ const catchupCountDisplayFloor = 1000
 // replays every tick in it (02:00 CEST, 02:30 CEST, 02:00 CET, 02:30 CET), so a
 // duplicate is not necessarily adjacent. This mirrors fireOnce's firedHour
 // exactly so catch-up and the live scheduler agree. Fixed-interval (@every)
-// schedules are exempt, as in fireOnce (see isFixedInterval).
+// schedules are exempt, as in fireOnce (see cronspec.IsFixedInterval).
 func countMissedTicks(schedule cron.Schedule, lastRunTime, now time.Time, maxCount int) (count int, lastTick time.Time, truncated bool) {
-	fixedInterval := isFixedInterval(schedule)
+	fixedInterval := cronspec.IsFixedInterval(schedule)
 	var curHour wallHour
 	var seen map[wallSecond]struct{}
 	// A zero or non-advancing Next (a schedule that never fires, or one past its

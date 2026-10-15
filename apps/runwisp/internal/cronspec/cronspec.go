@@ -170,9 +170,18 @@ type dstGapSchedule struct {
 }
 
 func (d dstGapSchedule) Next(from time.Time) time.Time {
+	next, _ := d.next(from)
+	return next
+}
+
+// next is Next plus whether the tick sat inside a spring-forward gap, which
+// Firings surfaces so `validate --explain` can mark it. That includes the
+// one-hour gaps go-cron already recovers itself: recovered then equals naive,
+// and the same instant comes back flagged.
+func (d dstGapSchedule) next(from time.Time) (time.Time, bool) {
 	naive := d.inner.Next(from)
 	if naive.IsZero() {
-		return naive
+		return naive, false
 	}
 
 	// The location the spec is evaluated in: its own (CRON_TZ) when pinned,
@@ -189,14 +198,14 @@ func (d dstGapSchedule) Next(from time.Time) time.Time {
 	_, fromOff := from.In(loc).Zone()
 	_, naiveOff := naive.In(loc).Zone()
 	if naiveOff <= fromOff {
-		return naive
+		return naive, false
 	}
 
 	fixed := *d.inner
 	fixed.Location = time.FixedZone("dstgap", fromOff)
 	recovered := fixed.Next(from.In(fixed.Location))
-	if recovered.IsZero() || !recovered.Before(naive) {
-		return naive
+	if recovered.IsZero() || recovered.After(naive) {
+		return naive, false
 	}
 
 	// Only a wall time that is genuinely missing in loc counts: time.Date
@@ -205,9 +214,9 @@ func (d dstGapSchedule) Next(from time.Time) time.Time {
 	w := recovered.In(fixed.Location)
 	norm := time.Date(w.Year(), w.Month(), w.Day(), w.Hour(), w.Minute(), w.Second(), w.Nanosecond(), loc)
 	if norm.Hour() == w.Hour() && norm.Minute() == w.Minute() && norm.Second() == w.Second() {
-		return naive
+		return naive, false
 	}
-	return recovered.In(loc)
+	return recovered.In(loc), true
 }
 
 // fieldMin is each field's lowest value, in 6-field order.
