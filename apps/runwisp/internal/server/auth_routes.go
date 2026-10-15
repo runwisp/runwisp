@@ -6,13 +6,16 @@ package server
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/httprate"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 )
 
@@ -23,10 +26,11 @@ import (
 // (launch-redirect sanitization). Loopback/local-peer detection lives in
 // peercred.go alongside the context keys it reads.
 
-// registerAuthRoutes registers GET /api/auth/status directly onto the
-// server's public huma API. It carries no rate limit (there's nothing to
-// flood — it only reads a cookie) and sits outside the protected group (the
-// UI calls it before it knows whether the caller is authenticated).
+// registerAuthRoutes registers the auth routes that need no limiter directly
+// onto the server's public huma API, outside the protected group (callers use
+// them before they are authenticated). GET /api/auth/status only reads a
+// cookie. Launch-ticket redemption can't be brute-forced: a ticket carries
+// about 256 bits and only an authenticated session can mint one.
 func (srv *Server) registerAuthRoutes() {
 	huma.Register(srv.api, huma.Operation{
 		OperationID: "getAuthStatus",
@@ -35,6 +39,17 @@ func (srv *Server) registerAuthRoutes() {
 		Summary:     "Check whether the caller is authenticated",
 		Tags:        []string{"Auth"},
 	}, srv.humaAuthStatus)
+
+	huma.Register(srv.api, huma.Operation{
+		OperationID: "redeemLaunchTicket",
+		Method:      http.MethodGet,
+		Path:        "/api/auth/launch-ticket",
+		Summary:     "Redeem a single-use launch ticket and start a browser session",
+		Description: "Consumes the ticket, sets the session cookie, and redirects (303) to the " +
+			"`redirect` query parameter (a same-origin path; defaults to \"/\", and falls back to " +
+			"\"/\" if the value is unsafe).",
+		Tags: []string{"Auth"},
+	}, srv.humaRedeemLaunchTicket)
 }
 
 func (srv *Server) humaAuthStatus(_ context.Context, input *AuthStatusInput) (*AuthStatusOutput, error) {
@@ -48,10 +63,9 @@ func (srv *Server) humaAuthStatus(_ context.Context, input *AuthStatusInput) (*A
 	}}, nil
 }
 
-// authSubAPI returns a huma API on r, a chi sub-router carrying one of the auth
-// limiters, sharing the same OpenAPI document as the rest of the API — the
-// pattern established by registerProtectedHumaRoutes.
-func (srv *Server) authSubAPI(r chi.Router) huma.API {
+// subAPI returns a huma API on r, a chi sub-router carrying its own
+// middleware, sharing the same OpenAPI document as the rest of the API.
+func (srv *Server) subAPI(r chi.Router) huma.API {
 	cfg := huma.DefaultConfig("", "")
 	cfg.OpenAPI = srv.api.OpenAPI()
 	return humachi.New(r, cfg)
@@ -60,7 +74,7 @@ func (srv *Server) authSubAPI(r chi.Router) huma.API {
 // registerAuthChallengeRoute wires the challenge endpoint onto r, which carries
 // a plain per-IP request cap.
 func (srv *Server) registerAuthChallengeRoute(r chi.Router) {
-	huma.Register(srv.authSubAPI(r), huma.Operation{
+	huma.Register(srv.subAPI(r), huma.Operation{
 		OperationID: "getAuthChallenge",
 		Method:      http.MethodGet,
 		Path:        "/api/auth/challenge",
@@ -69,30 +83,21 @@ func (srv *Server) registerAuthChallengeRoute(r chi.Router) {
 	}, srv.humaAuthChallenge)
 }
 
-// registerAuthLoginRoutes wires login and launch-ticket redeem onto r, which
-// carries the failure lockout.
-func (srv *Server) registerAuthLoginRoutes(r chi.Router) {
-	loginAPI := srv.authSubAPI(r)
-
-	huma.Register(loginAPI, huma.Operation{
-		OperationID:  "login",
-		Method:       http.MethodPost,
-		Path:         "/api/auth/login",
-		Summary:      "Exchange a signed CHAP challenge response for a session",
+// registerLoginRoute wires the login endpoint onto r, which carries
+// stashSignInBase.
+func (srv *Server) registerLoginRoute(r chi.Router) {
+	huma.Register(srv.subAPI(r), huma.Operation{
+		OperationID: "login",
+		Method:      http.MethodPost,
+		Path:        "/api/auth/login",
+		Summary:     "Exchange a signed CHAP challenge response for a session",
+		Description: "The first few wrong passwords from a client IP cost nothing; after that " +
+			"each one doubles the wait before the next try, up to 90 seconds. Trying too soon " +
+			"gets 429 with `Retry-After`. A successful login clears the count.",
 		Tags:         []string{"Auth"},
 		MaxBodyBytes: auth.MaxRequestBodySize,
+		Errors:       []int{http.StatusTooManyRequests},
 	}, srv.humaLogin)
-
-	huma.Register(loginAPI, huma.Operation{
-		OperationID: "redeemLaunchTicket",
-		Method:      http.MethodGet,
-		Path:        "/api/auth/launch-ticket",
-		Summary:     "Redeem a single-use launch ticket and start a browser session",
-		Description: "Consumes the ticket, sets the session cookie, and redirects (303) to the " +
-			"`redirect` query parameter (a same-origin path; defaults to \"/\", and falls back to " +
-			"\"/\" if the value is unsafe).",
-		Tags: []string{"Auth"},
-	}, srv.humaRedeemLaunchTicket)
 }
 
 // humaAuthChallenge mints a single-use nonce. Its route carries a per-IP
@@ -106,13 +111,24 @@ func (srv *Server) humaAuthChallenge(_ context.Context, _ *struct{}) (*AuthChall
 }
 
 func (srv *Server) humaLogin(ctx context.Context, input *AuthLoginInput) (*AuthLoginOutput, error) {
+	done, retryAfter := srv.logins.acquire(httprate.CanonicalizeIP(clientIPFromCtx(ctx)))
+	if done == nil {
+		secs := strconv.Itoa(int(math.Ceil(retryAfter.Seconds())))
+		return nil, huma.ErrorWithHeaders(
+			huma.NewError(http.StatusTooManyRequests, "Too many wrong passwords, try again in "+secs+"s"),
+			http.Header{"Retry-After": {secs}},
+		)
+	}
 	token, readOnly, err := srv.auth.Login(input.Body.Nonce, input.Body.Response)
 	if errors.Is(err, auth.ErrInvalidNonce) {
+		done(loginUnchecked)
 		return nil, huma.Error401Unauthorized("Invalid or expired challenge")
 	}
 	if err != nil {
+		done(loginWrongPassword)
 		return nil, huma.Error401Unauthorized("Invalid password")
 	}
+	done(loginSucceeded)
 	srv.recordSignIn(ctx)
 	return &AuthLoginOutput{
 		SetCookie: srv.auth.BuildAuthCookie(token, auth.SessionDuration, isSecureCtx(ctx)),
@@ -155,7 +171,7 @@ func (srv *Server) humaCreateLaunchTicket(_ context.Context, _ *struct{}) (*Laun
 // operator's browser can redeem a ticket minted by an authenticated remote
 // TUI; the protection is the ticket itself — single-use, short TTL, and only
 // mintable by an already-authenticated (or local-trusted) session via
-// humaCreateLaunchTicket. Failed redemptions share login's lockout.
+// humaCreateLaunchTicket.
 //
 // The optional `redirect` query parameter targets a same-origin path (must
 // start with `/` and not `//`) — used by the TUI's "download log" action so

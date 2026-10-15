@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `@runwisp/js` integrates with NestJS (replacing `@nestjs/schedule`), Nuxt and Next.js (running Nitro's `scheduledTasks` and Vercel Cron jobs), and Astro.
 - Tasks and services take `sdk = true`, which runs them in an app that defines them through an SDK instead of a shell command, and `runwisp daemon --app` reads its config from such an app.
 - `runwisp import cron` names the jobs that Bun's `Bun.cron()` wrote into a crontab after their title.
+- When requests arrive through a reverse proxy that isn't in `[daemon] trusted_proxies`, RunWisp warns in its log and in the notification bell, with a link to the setup docs.
 
 ### Changed
 
@@ -38,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp validate` rejects a task whose `compose_service` is not in its `compose_file`.
 - A scheduled `compose_mode = "run"` job no longer publishes the service's ports or takes its network alias, so it can run beside the stack.
 - A build from source no longer checks for updates or offers `runwisp upgrade`.
-- The login rate limit counts only failed attempts (10 per 15 minutes per IP), so signing in again, opening the Web UI from the TUI, and remote CLI calls no longer get locked out.
+- The login rate limit counts only wrong passwords. The first 5 are free, then the wait before the next try grows to at most 90 seconds, so signing in again, opening the Web UI from the TUI and remote CLI calls never get locked out.
 
 ### Fixed
 

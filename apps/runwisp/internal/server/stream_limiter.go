@@ -51,7 +51,7 @@ func newStreamLimiter(maxGlobal, maxPerIP int) *streamLimiter {
 // It returns release (always non-nil when ok) which the caller must invoke
 // when the stream finishes.
 func (l *streamLimiter) acquire(ctx context.Context) (release func(), ok bool) {
-	ip := streamClientIPFromCtx(ctx)
+	ip := clientIPFromCtx(ctx)
 	exempt := IsLocalTrustedCtx(ctx)
 
 	l.mu.Lock()
@@ -84,11 +84,11 @@ func (l *streamLimiter) acquire(ctx context.Context) (release func(), ok bool) {
 	}, true
 }
 
-// streamClientIPFromCtx returns the client IP resolved by resolveClientIP: the
+// clientIPFromCtx returns the client IP resolved by resolveClientIP: the
 // TCP peer, or behind a trusted proxy the rightmost untrusted X-Forwarded-For
-// hop, which a client cannot rotate to dodge the cap. It reads from context
-// because huma SSE handlers do not receive the *http.Request directly.
-func streamClientIPFromCtx(ctx context.Context) string {
+// hop, which a client cannot rotate to dodge a per-IP limit. It reads from
+// context because huma handlers do not receive the *http.Request directly.
+func clientIPFromCtx(ctx context.Context) string {
 	ip, _ := ctx.Value(clientIPKey{}).(string)
 	return ip
 }

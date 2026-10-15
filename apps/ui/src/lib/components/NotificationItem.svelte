@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { resolve } from "$app/paths";
-    import { formatShortId, TickingNow, Heading } from "@runwisp/ui";
+    import { formatShortId, TickingNow, Heading, Link } from "@runwisp/ui";
     import { phrase } from "$lib/utils/notification-rhythm";
     import NotificationSparkline from "./NotificationSparkline.svelte";
     import type { Notification } from "$lib/stores/notifications.svelte";
@@ -15,6 +15,13 @@
     }
 
     let { notification, compact = false, onclick }: Props = $props();
+
+    // Daemon-level warnings about the operator's setup open the docs page that
+    // explains the fix. Keys are notification kinds the daemon emits.
+    const DOCS_BY_KIND: Record<string, string> = {
+        "daemon.untrusted_proxy": "https://docs.runwisp.com/operations/auth/#reverse-proxies",
+    };
+    let docsUrl = $derived(DOCS_BY_KIND[notification.kind]);
 
     // Tick once every 30s so relative-time labels and the sparkline window
     // advance without waiting for an SSE event.
@@ -60,6 +67,14 @@
             <p class="line-clamp-2 text-xs text-on-surface-muted">{notification.body}</p>
         {/if}
 
+        {#if docsUrl}
+            <span
+                class="inline-flex items-center gap-1 rounded-[3px] border border-primary-soft-border bg-primary-soft px-1.5 py-0.5 font-mono text-2xs font-medium text-primary-soft-text"
+            >
+                Read the docs <span aria-hidden="true">↗</span>
+            </span>
+        {/if}
+
         {#if notification.runId}
             <span
                 class="inline-flex items-center gap-1 rounded-[3px] border border-primary-soft-border bg-primary-soft px-1.5 py-0.5 font-mono text-2xs font-medium text-primary-soft-text"
@@ -97,6 +112,18 @@
     >
         {@render body()}
     </a>
+{:else if docsUrl}
+    <Link
+        href={docsUrl}
+        external
+        variant="unstyled"
+        {onclick}
+        data-testid="notification-item"
+        class="flex gap-3 rounded-[4px] border border-outline-faint bg-surface-raised p-3 no-underline hover:border-outline-hover hover:bg-surface-sunken"
+        aria-label={notification.title || notification.kind}
+    >
+        {@render body()}
+    </Link>
 {:else}
     <article
         data-testid="notification-item"

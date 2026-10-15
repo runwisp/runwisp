@@ -50,9 +50,9 @@ test.describe("authentication", () => {
         await page.getByLabel("Password").fill("wrong-password-12345");
         await page.getByRole("button", { name: "Login" }).click();
 
-        // Access is denied and the modal stays open with an error. Only failed
-        // logins count toward the lockout, so the run's earlier successful
-        // logins can't turn this into the rate-limit notice.
+        // Access is denied and the modal stays open with an error. Only wrong
+        // passwords count toward the throttle, and the first few are free, so
+        // the run's earlier logins can't turn this into the rate-limit notice.
         await expect(page.getByText("Invalid password. Please try again.")).toBeVisible();
         await expect(page.getByRole("dialog", { name: "RunWisp" })).toBeVisible();
 

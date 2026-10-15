@@ -427,17 +427,14 @@ func (srv *Server) setupRoutes() error {
 
 	// Challenge: a plain per-IP request cap against nonce-store flooding.
 	srv.router.Group(func(r chi.Router) {
-		r.Use(httprate.LimitByIP(auth.MaxChallengesPerMinute, time.Minute))
+		r.Use(httprate.LimitByIP(maxChallengesPerMinute, time.Minute))
 		srv.registerAuthChallengeRoute(r)
 	})
 
-	// Login and launch-ticket redeem: only failures count toward the lockout,
-	// and serializePerIP keeps one IP from racing guesses past the check.
+	// Login: wrong passwords are throttled per IP by the handler (srv.logins).
 	srv.router.Group(func(r chi.Router) {
-		r.Use(serializePerIP)
-		r.Use(failureLimiter(auth.MaxAuthFailures, auth.AuthFailureWindow, "Too many failed login attempts"))
 		r.Use(srv.stashSignInBase)
-		srv.registerAuthLoginRoutes(r)
+		srv.registerLoginRoute(r)
 	})
 
 	// Hooks: /api/hooks/<session route>, authenticated by the unit's
@@ -447,7 +444,7 @@ func (srv *Server) setupRoutes() error {
 	// never successful calls.
 	srv.router.Group(func(r chi.Router) {
 		r.Use(maxBodySize(maxProtectedBodySize))
-		r.Use(failureLimiter(hookMaxFailures, hookFailureWindow, "Too many failed hook token attempts"))
+		r.Use(hookFailureLimiter())
 		srv.registerHookRoutes(r)
 	})
 

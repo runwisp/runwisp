@@ -152,7 +152,7 @@ func TestRemoteRateLimitedError(t *testing.T) {
 	var ufe *userFacingError
 	require.True(t, errors.As(err, &ufe))
 	assert.Contains(t, ufe.title, "too many authentication attempts")
-	assert.Contains(t, ufe.details, "Wait a few minutes")
+	assert.Contains(t, ufe.details, "Wait a minute")
 }
 
 func TestRemoteUnreachableError(t *testing.T) {

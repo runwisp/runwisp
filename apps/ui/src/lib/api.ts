@@ -22,13 +22,18 @@ export class AuthRequiredError extends Error {
     }
 }
 
-// Raised when /challenge or /login returns 429 (a flood cap or the lockout
-// after repeated failed logins). Distinct from a bad password so the UI can tell the operator to
-// wait rather than mislabel a throttled-but-correct password as "invalid".
+// Raised when /challenge or /login returns 429 (a flood cap, or the wait the
+// daemon adds after repeated wrong passwords). Distinct from a bad password so
+// the UI can tell the operator how long to wait rather than mislabel a
+// throttled-but-correct password as "invalid".
 export class RateLimitedError extends Error {
-    constructor() {
+    readonly retryAfterSeconds: number | undefined;
+
+    constructor(res: Response) {
         super("Too many attempts");
         this.name = "RateLimitedError";
+        const secs = Number(res.headers.get("Retry-After"));
+        this.retryAfterSeconds = secs > 0 ? secs : undefined;
     }
 }
 
@@ -98,7 +103,8 @@ async function postTaskAction(path: TaskActionPath, taskName: string): Promise<v
 export const authApi = {
     login: async (password: string): Promise<{ readOnly: boolean }> => {
         const challengeRes = await fetch("/api/auth/challenge");
-        if (challengeRes.status === HTTP_STATUS.TOO_MANY_REQUESTS) throw new RateLimitedError();
+        if (challengeRes.status === HTTP_STATUS.TOO_MANY_REQUESTS)
+            throw new RateLimitedError(challengeRes);
         if (!challengeRes.ok) throw new Error("Failed to get auth challenge");
         const { nonce } = authChallengeResponseSchema.parse(await challengeRes.json());
 
@@ -109,7 +115,7 @@ export const authApi = {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ nonce, response }),
         });
-        if (res.status === HTTP_STATUS.TOO_MANY_REQUESTS) throw new RateLimitedError();
+        if (res.status === HTTP_STATUS.TOO_MANY_REQUESTS) throw new RateLimitedError(res);
         // The response sets the HttpOnly session cookie; the body only says which
         // role the password granted.
         if (!res.ok) throw new Error("Authentication failed");

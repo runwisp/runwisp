@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	neturl "net/url"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/httprate"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -373,7 +373,7 @@ func TestHandleLaunchTicket_InvalidTicket(t *testing.T) {
 // TestAuthRateLimit_NotBypassableViaForwardedHeader is a regression test for a
 // brute-force-protection bypass. chi's middleware.RealIP rewrites r.RemoteAddr
 // from client-controlled X-Forwarded-For / X-Real-IP / True-Client-IP headers,
-// and the login lockout keys off r.RemoteAddr. If RealIP is
+// and the login throttle keys off the resolved client IP. If RealIP is
 // in the chain, a single attacker can rotate those headers to land every login
 // probe in its own per-IP bucket and never trip the limiter — defeating the
 // only online brute-force protection on the CHAP endpoint. With no trusted
@@ -381,22 +381,15 @@ func TestHandleLaunchTicket_InvalidTicket(t *testing.T) {
 // headers, so a burst from one peer trips the limit regardless of header value.
 func TestAuthRateLimit_NotBypassableViaForwardedHeader(t *testing.T) {
 	s, _, _, _ := setupServer(t)
+	seedWrongPasswords(s, "203.0.113.9", 2*freeLoginFailures)
 
-	const peer = "203.0.113.9:44444" // one attacker, one TCP connection
-	var lastCode int
-	for i := 0; i < auth.MaxAuthFailures+1; i++ {
-		req := badLoginRequest(peer)
-		spoof := "10.0.0." + strconv.Itoa(i)
-		req.Header.Set("X-Forwarded-For", spoof)
-		req.Header.Set("X-Real-IP", spoof)
-		req.Header.Set("True-Client-IP", spoof)
-		w := httptest.NewRecorder()
-		s.router.ServeHTTP(w, req)
-		lastCode = w.Code
-	}
+	req := badLoginRequest("203.0.113.9:44444") // the throttled attacker's own TCP connection
+	req.Header.Set("X-Forwarded-For", "10.0.0.1")
+	req.Header.Set("X-Real-IP", "10.0.0.1")
+	req.Header.Set("True-Client-IP", "10.0.0.1")
 
-	assert.Equal(t, http.StatusTooManyRequests, lastCode,
-		"rotating X-Forwarded-For/X-Real-IP must not mint fresh rate-limit buckets and bypass the auth limiter")
+	assert.Equal(t, http.StatusTooManyRequests, serveReq(s, req).Code,
+		"X-Forwarded-For/X-Real-IP must not mint a fresh throttle bucket")
 }
 
 // --- Auth status endpoint tests ---
@@ -456,20 +449,15 @@ func TestAuthStatus_AuthenticatedViaCookie(t *testing.T) {
 func TestAuthRateLimit_NotBypassableViaSpoofedXFFBehindTrustedProxy(t *testing.T) {
 	s, _, _, _ := setupServerWithOpts(t, func(o *Options) { o.TrustedProxies = []string{"10.0.0.0/8"} })
 
-	var lastCode int
-	for i := 0; i < auth.MaxAuthFailures+1; i++ {
-		req := badLoginRequest("10.0.0.1:44444")
-		req.Header.Set("X-Forwarded-For", "198.51.100."+strconv.Itoa(i+1)+", 203.0.113.9")
-		w := httptest.NewRecorder()
-		s.router.ServeHTTP(w, req)
-		lastCode = w.Code
-	}
+	seedWrongPasswords(s, "203.0.113.9", 2*freeLoginFailures)
 
-	assert.Equal(t, http.StatusTooManyRequests, lastCode)
+	req := badLoginRequest("10.0.0.1:44444")
+	req.Header.Set("X-Forwarded-For", "198.51.100.1, 203.0.113.9")
+	assert.Equal(t, http.StatusTooManyRequests, serveReq(s, req).Code)
 }
 
-// badLoginRequest is a login from addr with an unknown nonce: a 401 that counts
-// toward the lockout without paying for the CHAP key derivation.
+// badLoginRequest is a login from addr with an unknown nonce, which never
+// tests the password and so never counts toward the throttle.
 func badLoginRequest(addr string) *http.Request {
 	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(`{"nonce":"bogus","response":"bogus"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -477,52 +465,84 @@ func badLoginRequest(addr string) *http.Request {
 	return req
 }
 
-func serve(s *Server, req *http.Request) *httptest.ResponseRecorder {
+func serveReq(s *Server, req *http.Request) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
 	return w
 }
 
+// seedWrongPasswords records n wrong passwords for ip, the last one just now,
+// straight into the throttle, skipping the deliberately slow CHAP key derivation.
+func seedWrongPasswords(s *Server, ip string, n int) {
+	s.logins.ips[httprate.CanonicalizeIP(ip)] = &loginState{failures: n, lastFail: s.logins.now()}
+}
+
+// httptest's default RemoteAddr, which chapAttempt uses.
+const defaultTestIP = "192.0.2.1"
+
 // Regression: the limiter used to count every challenge, login and ticket
 // redemption, so a third sign-in or a sixth "open in browser" within five
-// minutes got 429. Successful auth must never count.
-func TestAuthRateLimit_SuccessNeverCounts(t *testing.T) {
+// minutes got 429. Successful logins and redemptions must never be throttled,
+// and neither must bad tickets or nonces, which never test the password.
+func TestAuthRateLimit_OnlyWrongPasswordsCount(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
-	for range 3 * auth.MaxAuthFailures {
+	for range 3 * freeLoginFailures {
 		ticket, err := s.auth.CreateLaunchTicket()
 		require.NoError(t, err)
-		require.Equal(t, http.StatusSeeOther, serve(s, httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket="+ticket, nil)).Code)
+		require.Equal(t, http.StatusSeeOther, serveReq(s, httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket="+ticket, nil)).Code)
+		require.Equal(t, http.StatusUnauthorized, serveReq(s, httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket=bogus", nil)).Code)
+		require.Equal(t, http.StatusUnauthorized, serveReq(s, badLoginRequest(defaultTestIP+":1234")).Code)
 	}
 	for range 3 {
 		require.Equal(t, http.StatusOK, chapAttempt(t, s, "secret").Code)
 	}
+
+	require.Equal(t, http.StatusUnauthorized, chapAttempt(t, s, "wrong").Code)
+	assert.Equal(t, 1, s.logins.ips[defaultTestIP].failures, "a wrong password counts")
 }
 
-// Failed logins and failed ticket redemptions share one per-IP lockout, which
-// then refuses even the right password; other IPs are unaffected.
-func TestAuthRateLimit_LocksOutAfterFailures(t *testing.T) {
+// Past the free failures the right password is refused too until the delay
+// passes (otherwise a guesser would learn when it hit), the 429 says how long
+// to wait, other IPs are unaffected, and a later success forgets the failures.
+func TestAuthRateLimit_ThrottlesAfterFreeFailures(t *testing.T) {
 	s, _, _, _ := setupServer(t)
-	const ip = "192.0.2.1:1234" // httptest's default RemoteAddr, which chapAttempt uses
-
-	for i := range auth.MaxAuthFailures {
-		req := badLoginRequest(ip)
-		if i%2 == 0 {
-			req = httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket=bogus", nil)
-		}
-		require.Equal(t, http.StatusUnauthorized, serve(s, req).Code)
-	}
+	now := time.Now()
+	s.logins.now = func() time.Time { return now }
+	seedWrongPasswords(s, defaultTestIP, freeLoginFailures)
 
 	w := chapAttempt(t, s, "secret")
-	assert.Equal(t, http.StatusTooManyRequests, w.Code, "a locked-out IP is refused even with the right password")
-	assert.Equal(t, strconv.Itoa(int(auth.AuthFailureWindow.Seconds())), w.Header().Get("Retry-After"))
-	assert.Equal(t, http.StatusUnauthorized, serve(s, badLoginRequest("198.51.100.7:1")).Code, "the lockout is per IP")
+	assert.Equal(t, http.StatusTooManyRequests, w.Code)
+	assert.Equal(t, "2", w.Header().Get("Retry-After"))
+	assert.Equal(t, http.StatusUnauthorized, serveReq(s, badLoginRequest("198.51.100.7:1")).Code, "the throttle is per IP")
+
+	now = now.Add(2 * time.Second)
+	require.Equal(t, http.StatusOK, chapAttempt(t, s, "secret").Code)
+	assert.NotContains(t, s.logins.ips, defaultTestIP, "a success forgets the failures")
 }
 
 func TestAuthChallenge_FloodCapped(t *testing.T) {
 	s, _, _, _ := setupServer(t)
-	for range auth.MaxChallengesPerMinute {
+	for range maxChallengesPerMinute {
 		chapChallenge(t, s)
 	}
-	assert.Equal(t, http.StatusTooManyRequests, serve(s, httptest.NewRequest("GET", "/api/auth/challenge", nil)).Code)
+	assert.Equal(t, http.StatusTooManyRequests, serveReq(s, httptest.NewRequest("GET", "/api/auth/challenge", nil)).Code)
+}
+
+// Proxy headers from a peer outside trusted_proxies usually mean a proxy that
+// isn't configured, which makes every client share one throttle bucket.
+func TestResolveClientIP_WarnsOnceAboutUntrustedProxy(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+	logs := captureSlog(t)
+
+	plain := httptest.NewRequest("GET", "/health", nil)
+	serveReq(s, plain)
+	assert.NotContains(t, logs.String(), "trusted_proxies")
+
+	for range 2 {
+		req := httptest.NewRequest("GET", "/health", nil)
+		req.Header.Set("X-Forwarded-For", "198.51.100.1")
+		serveReq(s, req)
+	}
+	assert.Equal(t, 1, strings.Count(logs.String(), "Request has proxy headers"))
 }

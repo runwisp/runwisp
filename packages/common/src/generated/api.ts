@@ -53,7 +53,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Exchange a signed CHAP challenge response for a session */
+        /**
+         * Exchange a signed CHAP challenge response for a session
+         * @description The first few wrong passwords from a client IP cost nothing; after that each one doubles the wait before the next try, up to 90 seconds. Trying too soon gets 429 with `Retry-After`. A successful login clears the count.
+         */
         post: operations["login"];
         delete?: never;
         options?: never;
@@ -2167,8 +2170,26 @@ export interface operations {
                     "application/json": components["schemas"]["AuthLoginBody"];
                 };
             };
-            /** @description Error */
-            default: {
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

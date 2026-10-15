@@ -5,10 +5,13 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/oklog/ulid/v2"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/inapp"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
@@ -224,6 +227,10 @@ func (srv *Server) humaUnreadNotificationCount(ctx context.Context, _ *struct{})
 // The post-mutation unread count is queried once and shipped on the event so
 // clients never have to delta-track.
 func (srv *Server) publishNotificationUpdate(ctx context.Context, n *storage.Notification) {
+	srv.publishNotification(ctx, inapp.UpdateTypeUpdated, n)
+}
+
+func (srv *Server) publishNotification(ctx context.Context, typ string, n *storage.Notification) {
 	if srv.notifyHub == nil || n == nil {
 		return
 	}
@@ -233,7 +240,48 @@ func (srv *Server) publishNotificationUpdate(ctx context.Context, n *storage.Not
 		// client to ignore the count field rather than trust a stale value.
 		count = -1
 	}
-	srv.notifyHub.Publish(inapp.Update{Type: inapp.UpdateTypeUpdated, Notification: *n, UnreadCount: count})
+	srv.notifyHub.Publish(inapp.Update{Type: typ, Notification: *n, UnreadCount: count})
+}
+
+// untrustedProxyKind is the kind of the bell notification raised when proxy
+// headers arrive from a peer outside trusted_proxies. The Web UI links it to
+// the reverse-proxy docs.
+const untrustedProxyKind = "daemon.untrusted_proxy"
+
+const untrustedProxyDocsURL = "https://docs.runwisp.com/operations/auth/#reverse-proxies"
+
+// announceUntrustedProxy puts the untrusted-proxy warning in the bell. It
+// writes to storage directly rather than through the notify routes, so it shows
+// whatever [[route]]s say. A repeat within a day (a restart that is still
+// misconfigured) folds into the same row and marks it unread again.
+func (srv *Server) announceUntrustedProxy(ctx context.Context, peer string) {
+	if srv.notifyRepo == nil {
+		return
+	}
+	now := time.Now()
+	n := &storage.Notification{
+		ID:          ulid.Make().String(),
+		Fingerprint: untrustedProxyKind,
+		Kind:        untrustedProxyKind,
+		Severity:    string(notify.SevWarn),
+		Title:       "Reverse proxy not in trusted_proxies",
+		Body: "Requests from " + peer + " carry proxy headers, but it isn't in [daemon] trusted_proxies, " +
+			"so every client behind it shares one address for login throttling and logs. " + untrustedProxyDocsURL,
+		Count:          1,
+		Occurrences:    []time.Time{now},
+		CreatedAt:      now,
+		LastOccurredAt: now,
+	}
+	created, err := srv.notifyRepo.UpsertByFingerprint(ctx, n, 24*time.Hour, inapp.DefaultCoalesceLimit)
+	if err != nil {
+		slog.Error("Failed to store the untrusted proxy notification", "err", err)
+		return
+	}
+	typ := inapp.UpdateTypeUpdated
+	if created {
+		typ = inapp.UpdateTypeCreated
+	}
+	srv.publishNotification(ctx, typ, n)
 }
 
 // publishUnreadCountChanged fans a count-only update (e.g. mark-all-read) so
