@@ -46,11 +46,21 @@
                 padding: 4rem 1.25rem;
             }
             h1 {
+                display: flex;
+                align-items: center;
+                gap: 0.6rem;
                 font-size: 1.75rem;
                 margin: 0 0 0.25rem;
             }
             h1 span {
                 color: var(--accent);
+            }
+            .logo {
+                flex: none;
+                width: 2.25rem;
+                height: 2.25rem;
+                background: var(--accent);
+                mask: url(/logo.svg) center / contain no-repeat;
             }
             h2 {
                 font-size: 1.1rem;
@@ -95,7 +105,10 @@
     </head>
     <body>
         <main>
-            <h1><span>RunWisp</span> packages</h1>
+            <h1>
+                <i class="logo" role="img" aria-label="RunWisp logo"></i>
+                <span>RunWisp</span> packages
+            </h1>
             <p class="lead">
                 The apt and dnf repository for
                 <a href="https://runwisp.com">RunWisp</a>, signed and updated on
