@@ -29,7 +29,7 @@ func TestScheduleCollisionWarnings(t *testing.T) {
 	t.Run("three at one instant warn", func(t *testing.T) {
 		got := scheduleCollisionWarnings(collisionTasks("0 3 * * *", "a", "b", "c"), loc, now)
 		require.Len(t, got, 1)
-		require.Contains(t, got[0], "3 tasks fire at the same instant (next: Thu 2026-10-15 03:00 CEST): a, b, c")
+		require.Contains(t, got[0], "3 tasks start at the same second: a, b, c")
 		require.Contains(t, got[0], "jitter")
 	})
 
@@ -56,12 +56,16 @@ func TestScheduleCollisionWarnings(t *testing.T) {
 		require.Empty(t, scheduleCollisionWarnings(tasks, loc, now))
 	})
 
+	t.Run("@every tasks are left out, their phase is not in the config", func(t *testing.T) {
+		require.Empty(t, scheduleCollisionWarnings(collisionTasks("@every 5m", "a", "b", "c"), loc, now))
+	})
+
 	t.Run("a group inside a bigger one is reported once", func(t *testing.T) {
 		tasks := collisionTasks("0 3 * * *", "a", "b", "c")
 		tasks = append(tasks, collisionTasks("0 3 * * 1", "d", "e")...) // Mondays
 		got := scheduleCollisionWarnings(tasks, loc, now)
 		require.Len(t, got, 1)
-		require.Contains(t, got[0], "5 tasks fire at the same instant (next: Mon 2026-10-19 03:00 CEST): a, b, c, d, e")
+		require.Contains(t, got[0], "5 tasks start at the same second: a, b, c, d, e")
 	})
 
 	t.Run("a long list is cut", func(t *testing.T) {

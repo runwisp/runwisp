@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	cron "github.com/netresearch/go-cron"
+
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
@@ -35,13 +37,9 @@ const (
 // have no jitter to spread them. Pure: the clock is passed in so the same
 // config and instant always give the same answer.
 //
-// Each distinct group is reported once, at its earliest shared instant; a
-// group wholly contained in a larger one is dropped, since the larger warning
-// already names it.
+// Each distinct group is reported once; a group wholly contained in a larger
+// one is dropped, since the larger warning already names it.
 func scheduleCollisionWarnings(tasks []model.Task, defaultLoc *time.Location, now time.Time) []string {
-	if defaultLoc == nil {
-		defaultLoc = time.Local
-	}
 	names, at := firingInstants(tasks, defaultLoc, now)
 	var warnings []string
 	for _, g := range collisionGroups(at) {
@@ -55,8 +53,8 @@ func scheduleCollisionWarnings(tasks []model.Task, defaultLoc *time.Location, no
 			listed = listed[:collisionNamesShown]
 		}
 		warnings = append(warnings, fmt.Sprintf(
-			"%d tasks fire at the same instant (next: %s): %s%s; set jitter on them (e.g. jitter = \"5m\") so they take turns instead of starting together",
-			len(g.who), cronspec.FormatInstant(time.Unix(g.first, 0).In(defaultLoc)), strings.Join(listed, ", "), more))
+			"%d tasks start at the same second: %s%s; set jitter on them (e.g. jitter = \"5m\") so they take turns instead of starting together",
+			len(g.who), strings.Join(listed, ", "), more))
 	}
 	return warnings
 }
@@ -75,20 +73,31 @@ func firingInstants(tasks []model.Task, defaultLoc *time.Location, now time.Time
 		if err != nil {
 			continue // Load already rejected it.
 		}
+		if cronspec.IsFixedInterval(sched) {
+			continue // @every is phased by when the task is registered, not by the config.
+		}
 		idx := len(names)
 		names = append(names, task.Name)
-		n := 0
-		for f := range cronspec.Firings(sched, loc, now) {
-			if f.At.After(now.Add(collisionHorizon)) || n == collisionMaxFirings {
-				break
-			}
-			n++
-			if !f.Skipped {
-				at[f.At.Unix()] = append(at[f.At.Unix()], idx)
-			}
+		for _, sec := range firingSeconds(sched, loc, now) {
+			at[sec] = append(at[sec], idx)
 		}
 	}
 	return names, at
+}
+
+// firingSeconds lists, as unix seconds, the ticks of sched within the horizon
+// that the scheduler would actually run (DST fall-back repeats are dropped).
+func firingSeconds(sched cron.Schedule, loc *time.Location, now time.Time) []int64 {
+	var secs []int64
+	for f := range cronspec.Firings(sched, loc, now) {
+		if f.At.After(now.Add(collisionHorizon)) || len(secs) == collisionMaxFirings {
+			break
+		}
+		if !f.Skipped {
+			secs = append(secs, f.At.Unix())
+		}
+	}
+	return secs
 }
 
 // collisionGroup is a set of tasks (indexes, ascending) and the earliest

@@ -109,10 +109,10 @@ Loads and checks `runwisp.toml` exactly like daemon startup, then prints a
 summary (task and service counts, the timezone) and any warnings. Starts
 nothing. Exits non-zero on an invalid config.
 
-| Flag        | Description                                                                                                                                                                                                   |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--explain` | Since 1.7. Describe each schedule in words and list its next 3 firings in the zone the scheduler uses, with [daylight saving](/concepts/scheduling/) effects marked. With `--json`, adds a `schedules` array. |
-| `--json`    | Print one JSON document instead of the summary.                                                                                                                                                               |
+| Flag        | Description                                                                                                                                                                                                                                                                                                     |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--explain` | Since 1.7. Describe each schedule in words and list its next 3 firings in the zone the scheduler uses, with [daylight saving](/concepts/scheduling/) effects marked. `@every` schedules are described but not previewed, since they count from when the daemon starts. With `--json`, adds a `schedules` array. |
+| `--json`    | Print one JSON document instead of the summary.                                                                                                                                                                                                                                                                 |
 
 Parse errors in JSON carry the exact location:
 

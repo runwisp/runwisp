@@ -295,7 +295,7 @@ func (scheduler *Scheduler) SetLocation(location *time.Location, tasks map[strin
 	for _, name := range slices.Sorted(maps.Keys(scheduler.entryIDs)) {
 		entryID, task := scheduler.entryIDs[name], tasks[name]
 		zoned, ok := schedules[entryID].(zonedSchedule)
-		if task == nil || task.Timezone != "" || !ok || isFixedInterval(zoned.Schedule) {
+		if task == nil || task.Timezone != "" || !ok || cronspec.IsFixedInterval(zoned.Schedule) {
 			continue
 		}
 		scheduler.cron.Remove(entryID)
@@ -369,7 +369,7 @@ func (scheduler *Scheduler) addTask(task *model.Task) error {
 	if err != nil {
 		return err
 	}
-	fixedInterval := isFixedInterval(schedule)
+	fixedInterval := cronspec.IsFixedInterval(schedule)
 	scheduler.entryIDs[taskName] = scheduler.cron.Schedule(zonedSchedule{schedule, loc}, cron.FuncJob(func() {
 		scheduler.fireOnce(taskName, loc, fixedInterval)
 	}))
@@ -388,24 +388,11 @@ type zonedSchedule struct {
 
 func (z zonedSchedule) Next(t time.Time) time.Time { return z.Schedule.Next(t.In(z.loc)) }
 
-// isFixedInterval reports whether a schedule fires on a fixed duration
-// (@every) instead of matching wall-clock fields. Such a schedule has no
-// wall-clock time it can repeat: on a fall-back day every one of its firings
-// in the rewound hour is a genuine tick of real elapsed time, even though an
-// interval dividing an hour evenly ("@every 30m") lands each of them on a
-// local time already seen an hour earlier. The wall-clock dedup must therefore
-// skip them, mirroring the spring-forward exemption cronspec already makes for
-// the same schedules.
-func isFixedInterval(schedule cron.Schedule) bool {
-	_, ok := schedule.(cron.ConstantDelaySchedule)
-	return ok
-}
-
 // fireOnce is the cron callback for a scheduled task. It dedupes wall-clock
 // duplicates (DST fall-back) by tracking every wall-clock second already
 // fired within the task's current wall hour (see firedHour); a duplicate is
 // recorded as ReasonDSTSkipped and never reaches the executor. fixedInterval
-// tasks (@every) are exempt — see isFixedInterval.
+// tasks (@every) are exempt — see cronspec.IsFixedInterval.
 func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location, fixedInterval bool) {
 	// Runs in go-cron's own goroutine, which has no panic recovery: an
 	// unguarded panic here would crash the process and (with a TUI attached)

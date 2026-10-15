@@ -38,6 +38,20 @@ func Resolve(cronExpr, taskTZ string, defaultLoc *time.Location) (spec string, l
 	return spec, loc
 }
 
+// IsFixedInterval reports whether a schedule fires on a fixed duration
+// (@every) instead of matching wall-clock fields. Such a schedule has no
+// wall-clock time it can repeat: on a fall-back day every one of its firings
+// in the rewound hour is a genuine tick of real elapsed time, even though an
+// interval dividing an hour evenly ("@every 30m") lands each of them on a
+// local time already seen an hour earlier. The wall-clock dedup must therefore
+// skip them, mirroring the spring-forward exemption dstGapSchedule already
+// makes. Its phase is also set by when the task is registered, not by the
+// config, so its firing times cannot be previewed.
+func IsFixedInterval(schedule cron.Schedule) bool {
+	_, ok := schedule.(cron.ConstantDelaySchedule)
+	return ok
+}
+
 // Firing is one scheduled tick as the scheduler will treat it.
 type Firing struct {
 	At time.Time
@@ -65,7 +79,7 @@ type wall struct {
 // `validate --explain` prints is what the daemon will do.
 func Firings(sched cron.Schedule, loc *time.Location, from time.Time) iter.Seq[Firing] {
 	return func(yield func(Firing) bool) {
-		_, fixed := sched.(cron.ConstantDelaySchedule)
+		fixed := IsFixedInterval(sched)
 		gap, hasGap := sched.(dstGapSchedule)
 		seen := map[wall]struct{}{}
 		var seenHour wall

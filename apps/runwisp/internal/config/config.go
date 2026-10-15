@@ -280,12 +280,13 @@ func (c *Config) refreshScheduleWarnings(now time.Time) {
 }
 
 // SchedulerLocation is the zone cron expressions without their own timezone are
-// evaluated in: the resolved [daemon] timezone, or time.Local if it is unset.
+// evaluated in: the resolved [daemon] timezone, or UTC if it is unset, which is
+// what the scheduler does with no location.
 func (c *Config) SchedulerLocation() *time.Location {
-	if loc, err := time.LoadLocation(c.Scheduler.Timezone); err == nil && c.Scheduler.Timezone != "" {
+	if loc, err := time.LoadLocation(c.Scheduler.Timezone); err == nil {
 		return loc
 	}
-	return time.Local
+	return time.UTC
 }
 
 // composeExecServiceWarnings reports long-running services running in compose

@@ -250,9 +250,9 @@ const catchupCountDisplayFloor = 1000
 // replays every tick in it (02:00 CEST, 02:30 CEST, 02:00 CET, 02:30 CET), so a
 // duplicate is not necessarily adjacent. This mirrors fireOnce's firedHour
 // exactly so catch-up and the live scheduler agree. Fixed-interval (@every)
-// schedules are exempt, as in fireOnce (see isFixedInterval).
+// schedules are exempt, as in fireOnce (see cronspec.IsFixedInterval).
 func countMissedTicks(schedule cron.Schedule, lastRunTime, now time.Time, maxCount int) (count int, lastTick time.Time, truncated bool) {
-	fixedInterval := isFixedInterval(schedule)
+	fixedInterval := cronspec.IsFixedInterval(schedule)
 	var curHour wallHour
 	var seen map[wallSecond]struct{}
 	// A zero or non-advancing Next (a schedule that never fires, or one past its

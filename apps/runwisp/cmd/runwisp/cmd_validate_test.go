@@ -172,8 +172,8 @@ func TestRunValidateExplainText(t *testing.T) {
 	assert.Contains(t, got, "starts up to 5m late when other tasks are running")
 	assert.Contains(t, got, "Sun 2027-03-28 03:30 CEST  DST: the scheduled time does not exist")
 	assert.Contains(t, got, "Mon 2027-03-29 02:30 CEST\n")
-	assert.Contains(t, got, "report  @every 90m  (Europe/Bratislava)\n  Every 1 hour 30 minutes\n")
-	assert.Len(t, regexp.MustCompile(`(?m)^  \w{3} 2027-`).FindAllString(got, -1), 6, "three firings per task")
+	assert.Contains(t, got, "report  @every 90m  (Europe/Bratislava)\n  Every 1 hour 30 minutes\n  counted from when the daemon starts\n")
+	assert.Len(t, regexp.MustCompile(`(?m)^  \w{3} 2027-`).FindAllString(got, -1), 3, "three firings for the cron task, none for @every")
 }
 
 func TestRunValidateExplainJSON(t *testing.T) {
@@ -184,6 +184,7 @@ func TestRunValidateExplainJSON(t *testing.T) {
 	var doc struct {
 		Schedules []struct {
 			Task, Description string
+			FromStart         bool
 			Next              []struct {
 				At         string
 				DSTShifted bool
@@ -197,6 +198,8 @@ func TestRunValidateExplainJSON(t *testing.T) {
 	require.Len(t, doc.Schedules[0].Next, 3)
 	assert.True(t, doc.Schedules[0].Next[0].DSTShifted)
 	assert.Equal(t, "2027-03-28T03:30:00+02:00", doc.Schedules[0].Next[0].At)
+	assert.Empty(t, doc.Schedules[1].Next, "@every has no previewable times")
+	assert.True(t, doc.Schedules[1].FromStart)
 }
 
 func TestRunValidateWithoutExplainHasNoSchedules(t *testing.T) {
@@ -225,6 +228,6 @@ cron = "0 3 * * *"
 `)
 	var out strings.Builder
 	require.NoError(t, runValidate(&out, f, validateOpts{}))
-	assert.Contains(t, out.String(), "! 3 tasks fire at the same instant")
+	assert.Contains(t, out.String(), "! 3 tasks start at the same second")
 	assert.Contains(t, out.String(), "jitter")
 }

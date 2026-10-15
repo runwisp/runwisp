@@ -10,6 +10,7 @@ import (
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
@@ -24,38 +25,49 @@ const explainFirings = 3
 func explainSchedules(cfg *config.Config, now time.Time) []scheduleJSON {
 	var out []scheduleJSON
 	for i := range cfg.Tasks {
-		task := &cfg.Tasks[i]
-		if !task.Schedulable() {
-			continue
+		if s, ok := explainTask(&cfg.Tasks[i], cfg.SchedulerLocation(), now); ok {
+			out = append(out, s)
 		}
-		spec, loc := cronspec.Resolve(task.Cron, task.Timezone, cfg.SchedulerLocation())
-		sched, err := cronspec.NewParser().Parse(spec)
-		if err != nil {
-			continue // Load already rejected it.
-		}
-		s := scheduleJSON{
-			Task:        task.Name,
-			Cron:        task.Cron,
-			Timezone:    loc.String(),
-			Description: cronspec.Describe(task.Cron),
-			Next:        []firingJSON{},
-		}
-		if j := task.JitterValue(); j > 0 {
-			s.Jitter = textutil.FormatDuration(j)
-		}
-		listed := 0
-		for f := range cronspec.Firings(sched, loc, now) {
-			s.Next = append(s.Next, firingJSON{At: f.At.Format(time.RFC3339), Display: cronspec.FormatInstant(f.At), DSTShifted: f.Shifted, DSTSkipped: f.Skipped})
-			if !f.Skipped {
-				listed++
-			}
-			if listed == explainFirings {
-				break
-			}
-		}
-		out = append(out, s)
 	}
 	return out
+}
+
+func explainTask(task *model.Task, defaultLoc *time.Location, now time.Time) (scheduleJSON, bool) {
+	if !task.Schedulable() {
+		return scheduleJSON{}, false
+	}
+	spec, loc := cronspec.Resolve(task.Cron, task.Timezone, defaultLoc)
+	sched, err := cronspec.NewParser().Parse(spec)
+	if err != nil {
+		return scheduleJSON{}, false // Load already rejected it.
+	}
+	s := scheduleJSON{
+		Task:        task.Name,
+		Cron:        task.Cron,
+		Timezone:    loc.String(),
+		Description: cronspec.Describe(task.Cron),
+		Next:        []firingJSON{},
+	}
+	if j := task.JitterValue(); j > 0 {
+		s.Jitter = textutil.FormatDuration(j)
+	}
+	if cronspec.IsFixedInterval(sched) {
+		// The phase comes from when the daemon registers the task, so there
+		// are no times to preview.
+		s.FromStart = true
+		return s, true
+	}
+	listed := 0
+	for f := range cronspec.Firings(sched, loc, now) {
+		s.Next = append(s.Next, firingJSON{At: f.At.Format(time.RFC3339), DSTShifted: f.Shifted, DSTSkipped: f.Skipped})
+		if !f.Skipped {
+			listed++
+		}
+		if listed == explainFirings {
+			break
+		}
+	}
+	return s, true
 }
 
 func printSchedules(w io.Writer, schedules []scheduleJSON) {
@@ -64,7 +76,15 @@ func printSchedules(w io.Writer, schedules []scheduleJSON) {
 		if s.Jitter != "" {
 			fmt.Fprintf(w, "  starts up to %s late when other tasks are running\n", s.Jitter)
 		}
+		if s.FromStart {
+			fmt.Fprintln(w, "  counted from when the daemon starts")
+		}
+		loc, err := time.LoadLocation(s.Timezone)
+		if err != nil {
+			loc = time.UTC
+		}
 		for _, f := range s.Next {
+			at, _ := time.Parse(time.RFC3339, f.At)
 			note := ""
 			switch {
 			case f.DSTSkipped:
@@ -72,7 +92,7 @@ func printSchedules(w io.Writer, schedules []scheduleJSON) {
 			case f.DSTShifted:
 				note = "  DST: the scheduled time does not exist that day, runs at this time instead"
 			}
-			fmt.Fprintf(w, "  %s%s\n", f.Display, note)
+			fmt.Fprintf(w, "  %s%s\n", cronspec.FormatInstant(at.In(loc)), note)
 		}
 	}
 }

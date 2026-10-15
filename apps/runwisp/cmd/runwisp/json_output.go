@@ -312,20 +312,22 @@ type validateJSONDoc struct {
 // scheduleJSON is one task's `validate --explain` entry: the cron in words and
 // its next firings in the zone the scheduler evaluates it in.
 type scheduleJSON struct {
-	Task        string       `json:"task"`
-	Cron        string       `json:"cron"`
-	Timezone    string       `json:"timezone"`
-	Description string       `json:"description"`
-	Jitter      string       `json:"jitter,omitempty"`
-	Next        []firingJSON `json:"next"`
+	Task        string `json:"task"`
+	Cron        string `json:"cron"`
+	Timezone    string `json:"timezone"`
+	Description string `json:"description"`
+	Jitter      string `json:"jitter,omitempty"`
+	// FromStart: an @every schedule, whose firings are counted from when the
+	// daemon registers the task, so Next is empty.
+	FromStart bool         `json:"fromStart,omitempty"`
+	Next      []firingJSON `json:"next"`
 }
 
 // firingJSON is one upcoming tick. DSTShifted: the wall time does not exist
 // that day and the run lands at the first valid instant after it. DSTSkipped:
-// a fall-back repeat the scheduler drops. Display is for the text rendering.
+// a fall-back repeat the scheduler drops.
 type firingJSON struct {
 	At         string `json:"at"`
-	Display    string `json:"-"`
 	DSTShifted bool   `json:"dstShifted,omitempty"`
 	DSTSkipped bool   `json:"dstSkipped,omitempty"`
 }
