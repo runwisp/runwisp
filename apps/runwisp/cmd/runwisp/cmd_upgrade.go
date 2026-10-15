@@ -87,7 +87,7 @@ func runUpgrade(cmd *cobra.Command, f Flags, yesFlag bool, restartFlag string) e
 		return fmt.Errorf("--restart must be now, idle, or later, not %q", restartFlag)
 	}
 	current := version.Version
-	if !update.IsRelease(current) {
+	if !isReleaseBuild(current) {
 		return &userFacingError{
 			title:   "this runwisp was built from source",
 			details: "Pull the latest source and rebuild it.",
@@ -97,7 +97,7 @@ func runUpgrade(cmd *cobra.Command, f Flags, yesFlag bool, restartFlag string) e
 	if err != nil {
 		return err
 	}
-	argv, refusal := update.Method(update.InstallSource(), exe)
+	argv, refusal := update.Method(update.InstallSource(), exe, os.Geteuid() == 0)
 	if refusal != "" {
 		return &userFacingError{title: "runwisp upgrade can't update this install", details: refusal}
 	}
@@ -142,6 +142,12 @@ func runUpgrade(cmd *cobra.Command, f Flags, yesFlag bool, restartFlag string) e
 		return err
 	}
 	return restartAfterUpgrade(cmd, f, choice, latest)
+}
+
+// isReleaseBuild reports whether this binary is a published release, the only
+// kind `runwisp upgrade` replaces.
+func isReleaseBuild(current string) bool {
+	return version.IsOfficial() && update.IsRelease(current)
 }
 
 // upgradeBinary runs the package manager's upgrade (argv), or replaces exe

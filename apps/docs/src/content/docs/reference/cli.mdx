@@ -532,8 +532,9 @@ runwisp upgrade --yes --restart=idle
 ```
 
 Upgrades RunWisp to the latest stable release the same way you installed it.
-A Homebrew install runs `brew upgrade runwisp`, and a global npm, bun, pnpm, or
-yarn install runs that package manager. An install from the script or a
+A Homebrew install runs `brew upgrade runwisp`, a `.deb` or `.rpm` install runs
+apt or dnf through `sudo`, and a global npm, bun, pnpm, or yarn install runs
+that package manager. An install from the script or a
 tar.gz downloads the release from GitHub, checks its SHA-256, and replaces the
 binary in place. For Docker, `npx`, and an npm install inside a project, it
 prints how to upgrade instead.

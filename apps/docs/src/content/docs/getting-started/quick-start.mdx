@@ -32,6 +32,22 @@ of every run. It runs on Linux, macOS, and WSL, on `x86_64` or `arm64`.
 
         `brew upgrade runwisp` picks up new releases.
     </TabItem>
+    <TabItem label="apt / dnf" icon="linux">
+        On Debian, Ubuntu, Fedora, or RHEL, install the package for your CPU
+        (`x64` or `arm64`):
+
+        ```bash
+        # Debian, Ubuntu
+        curl -fLO https://github.com/runwisp/runwisp/releases/latest/download/runwisp-linux-x64.deb
+        sudo apt install ./runwisp-linux-x64.deb
+
+        # Fedora, RHEL
+        sudo dnf install https://github.com/runwisp/runwisp/releases/latest/download/runwisp-linux-x64.rpm
+        ```
+
+        The package adds the RunWisp repository at `pkg.runwisp.com`, so
+        `apt upgrade` or `dnf upgrade` picks up new releases.
+    </TabItem>
     <TabItem label="npm" icon="seti:javascript">
         The npm package pulls in the matching native binary as an optional
         dependency when it's installed.

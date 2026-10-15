@@ -47,6 +47,15 @@ On macOS or Linux with [Homebrew](https://brew.sh):
 brew install runwisp/tap/runwisp
 ```
 
+On Debian or Ubuntu, and Fedora or RHEL, install the package. It adds the RunWisp repository, so `apt upgrade` or `dnf upgrade` keeps it current:
+
+```bash
+curl -fLO https://github.com/runwisp/runwisp/releases/latest/download/runwisp-linux-x64.deb
+sudo apt install ./runwisp-linux-x64.deb
+# or
+sudo dnf install https://github.com/runwisp/runwisp/releases/latest/download/runwisp-linux-x64.rpm
+```
+
 You can also use the npm package, which runs the prebuilt Go binary:
 
 ```bash

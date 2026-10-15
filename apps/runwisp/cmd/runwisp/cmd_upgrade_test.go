@@ -174,10 +174,10 @@ func upgradeCmdWithCtx() *cobra.Command {
 
 func upgradeScenario(t *testing.T, source, latest string) (brewLog string) {
 	t.Helper()
-	old, oldHTTP := version.Version, upgradeHTTP
-	version.Version = "1.5.0"
+	old, oldOfficial, oldHTTP := version.Version, version.Official, upgradeHTTP
+	version.Version, version.Official = "1.5.0", "1"
 	upgradeHTTP = &http.Client{Transport: latestRT(latest)}
-	t.Cleanup(func() { version.Version, upgradeHTTP = old, oldHTTP })
+	t.Cleanup(func() { version.Version, version.Official, upgradeHTTP = old, oldOfficial, oldHTTP })
 
 	bin := t.TempDir()
 	brewLog = filepath.Join(bin, "brew.log")

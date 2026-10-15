@@ -1,0 +1,53 @@
+# nfpm config for the .deb and .rpm packages; packages.sh sets VERSION, ARCH and
+# RPM_SIGNING_KEY and stages the binary as ./runwisp. The package ships the binary plus the RunWisp apt/dnf repository
+# entry, so apt/dnf upgrades (and `runwisp upgrade`) keep it current.
+name: runwisp
+version: ${VERSION}
+arch: ${ARCH}
+platform: linux
+maintainer: RunWisp <runwisp@poppycake.eu>
+description: |-
+  Cron and process supervisor in one binary, with a web UI and TUI.
+homepage: https://runwisp.com
+license: GPL-3.0-or-later
+section: admin
+
+# dnf checks package signatures (gpgcheck=1 in runwisp.repo); apt relies on the
+# signed repository metadata instead. Unset RPM_SIGNING_KEY leaves rpms unsigned.
+rpm:
+  signature:
+    key_file: ${RPM_SIGNING_KEY}
+
+contents:
+  # The binary sits in /usr/lib/runwisp beside the .runwisp-source marker that
+  # `runwisp upgrade` reads; /usr/bin only gets a symlink, so the dotfile never
+  # lands in a shared bin dir.
+  - src: ./runwisp
+    dst: /usr/lib/runwisp/runwisp
+    file_info:
+      mode: 0755
+  - src: /usr/lib/runwisp/runwisp
+    dst: /usr/bin/runwisp
+    type: symlink
+  - src: ./deb.runwisp-source
+    dst: /usr/lib/runwisp/.runwisp-source
+    packager: deb
+  - src: ./rpm.runwisp-source
+    dst: /usr/lib/runwisp/.runwisp-source
+    packager: rpm
+
+  - src: ./runwisp.sources
+    dst: /etc/apt/sources.list.d/runwisp.sources
+    type: config|noreplace
+    packager: deb
+  - src: ./runwisp.asc
+    dst: /usr/share/keyrings/runwisp.asc
+    packager: deb
+
+  - src: ./runwisp.repo
+    dst: /etc/yum.repos.d/runwisp.repo
+    type: config|noreplace
+    packager: rpm
+  - src: ./runwisp.asc
+    dst: /etc/pki/rpm-gpg/RPM-GPG-KEY-runwisp
+    packager: rpm

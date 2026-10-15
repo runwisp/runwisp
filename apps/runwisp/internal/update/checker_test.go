@@ -34,6 +34,7 @@ func (s stubRT) RoundTrip(*http.Request) (*http.Response, error) {
 
 func newTestChecker(current string, rt http.RoundTripper) *Checker {
 	c := NewChecker(current, "linux", "amd64", true)
+	c.official = true
 	c.baseURL = "http://concierge.test"
 	c.client = &http.Client{Transport: rt}
 	return c
@@ -114,6 +115,16 @@ func TestIsRelease(t *testing.T) {
 			t.Errorf("IsRelease(%q) = %v, want %v", in, got, want)
 		}
 	}
+}
+
+func TestRunSkipsUnofficialBuild(t *testing.T) {
+	// A local/CI build of a real version must not count as an install.
+	c := newTestChecker("1.6.0", roundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("a build outside the release workflow must not perform an update check")
+		return nil, nil
+	}))
+	c.official = false
+	c.Run(context.Background())
 }
 
 func TestRunSkipsDevBuild(t *testing.T) {
