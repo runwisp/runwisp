@@ -244,8 +244,7 @@ func remoteReadOnlyError(baseURL string) error {
 func remoteRateLimitedError(baseURL string) error {
 	return &userFacingError{
 		title: fmt.Sprintf("too many authentication attempts against %s", baseURL),
-		details: "The daemon temporarily blocks further logins from your IP after repeated attempts.\n" +
-			"RunWisp caches the session token between calls, so this usually means the password is wrong.\n" +
+		details: "The daemon temporarily blocks logins from your IP after repeated failed attempts.\n" +
 			"  - Wait a few minutes and try again\n" +
 			"  - Confirm --password / RUNWISP_PASSWORD is correct",
 	}

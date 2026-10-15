@@ -199,13 +199,11 @@ token takes effect on [`runwisp reload`](/operations/reload/).
 
 ## Rate limiting
 
-Login requests are limited per client IP: 5 requests in any 5-minute window,
-counting the challenge, the login, and launch-ticket redemptions together. Over
-the limit, the daemon answers `429 Too Many Requests` until the window moves on.
-A restart resets the count. The control socket isn't limited.
-
-Scripts should log in once and reuse the session token; `runwisp run --url`
-does this for you.
+Only failed logins count. After 10 failed logins or launch-ticket redemptions
+from one client IP within 15 minutes, that IP gets `429 Too Many Requests`
+(even with the right password) until the window moves on. Successful logins
+never count. Challenges are capped separately at 60 per minute per IP. A
+restart resets the counts. The control socket isn't limited.
 
 [Hooks](#hooks) are limited by failures only: after 20 rejected tokens from one
 client IP within a minute, that IP gets `429` (even with a valid token) until

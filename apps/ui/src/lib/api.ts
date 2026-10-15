@@ -22,8 +22,8 @@ export class AuthRequiredError extends Error {
     }
 }
 
-// Raised when the daemon's login rate limiter (shared by /challenge and /auth)
-// returns 429. Distinct from a bad password so the UI can tell the operator to
+// Raised when /challenge or /login returns 429 (a flood cap or the lockout
+// after repeated failed logins). Distinct from a bad password so the UI can tell the operator to
 // wait rather than mislabel a throttled-but-correct password as "invalid".
 export class RateLimitedError extends Error {
     constructor() {

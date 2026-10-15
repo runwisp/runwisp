@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -369,7 +370,7 @@ func (srv *Server) setupRoutes() error {
 	// X-Forwarded-For / X-Real-IP / True-Client-IP from *any* client, which
 	// would let a remote attacker rotate those headers to mint a fresh
 	// per-IP bucket on every request and bypass the auth rate limiter
-	// (httprate.LimitByIP below keys off r.RemoteAddr). resolveClientIP above
+	// (the auth limiters below key off r.RemoteAddr). resolveClientIP above
 	// rewrites r.RemoteAddr from XFF only when the immediate peer is in the
 	// operator's trusted-proxy set, and then takes the rightmost hop that is not
 	// itself a trusted proxy, so a client cannot choose its own bucket. Do not
@@ -424,12 +425,19 @@ func (srv *Server) setupRoutes() error {
 	// loopback gate keeps its datadir/config/socket paths local-only.
 	srv.registerInstanceRoute()
 
-	// Rate-limited auth endpoints: challenge, login, and launch-ticket redeem
-	// share one limit to prevent nonce-store flooding (DoS on the auth flow).
+	// Challenge: a plain per-IP request cap against nonce-store flooding.
 	srv.router.Group(func(r chi.Router) {
-		r.Use(httprate.LimitByIP(auth.MaxAuthAttempts, auth.AuthRateWindow))
+		r.Use(httprate.LimitByIP(auth.MaxChallengesPerMinute, time.Minute))
+		srv.registerAuthChallengeRoute(r)
+	})
+
+	// Login and launch-ticket redeem: only failures count toward the lockout,
+	// and serializePerIP keeps one IP from racing guesses past the check.
+	srv.router.Group(func(r chi.Router) {
+		r.Use(serializePerIP)
+		r.Use(failureLimiter(auth.MaxAuthFailures, auth.AuthFailureWindow, "Too many failed login attempts"))
 		r.Use(srv.stashSignInBase)
-		srv.registerRateLimitedAuthRoutes(r)
+		srv.registerAuthLoginRoutes(r)
 	})
 
 	// Hooks: /api/hooks/<session route>, authenticated by the unit's
@@ -439,7 +447,7 @@ func (srv *Server) setupRoutes() error {
 	// never successful calls.
 	srv.router.Group(func(r chi.Router) {
 		r.Use(maxBodySize(maxProtectedBodySize))
-		r.Use(hookFailureLimiter())
+		r.Use(failureLimiter(hookMaxFailures, hookFailureWindow, "Too many failed hook token attempts"))
 		srv.registerHookRoutes(r)
 	})
 

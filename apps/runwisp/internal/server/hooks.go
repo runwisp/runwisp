@@ -9,15 +9,12 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/httprate"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 )
@@ -31,34 +28,9 @@ const (
 	hookFailureWindow = time.Minute
 )
 
-// hookFailureLimiter answers 429 to a client IP that has burned through
-// hookMaxFailures bad tokens in the sliding window, and records every 401 the
-// wrapped handler returns. A locked-out IP is refused even with a valid token,
-// otherwise the lockout wouldn't stop guessing.
-func hookFailureLimiter() func(http.Handler) http.Handler {
-	rl := httprate.NewRateLimiter(hookMaxFailures, hookFailureWindow)
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			key := httprate.CanonicalizeIP(hostFromAddr(r.RemoteAddr))
-			if _, rate, err := rl.Status(key); err == nil && rate >= hookMaxFailures {
-				w.Header().Set("Retry-After", strconv.Itoa(int(hookFailureWindow.Seconds())))
-				http.Error(w, "Too many failed hook token attempts", http.StatusTooManyRequests)
-				return
-			}
-			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-			next.ServeHTTP(ww, r)
-			if ww.Status() == http.StatusUnauthorized {
-				// OnLimit is the counter's only public increment; the response is
-				// already written, so the headers it sets are moot.
-				rl.OnLimit(ww, r, key)
-			}
-		})
-	}
-}
-
 // registerHookRoutes wires the token-authenticated control routes onto r, a
 // chi sub-router outside the session (token/CSRF) group, sharing the main
-// OpenAPI document — the pattern of registerRateLimitedAuthRoutes.
+// OpenAPI document — the pattern of authSubAPI.
 func (srv *Server) registerHookRoutes(r chi.Router) {
 	cfg := huma.DefaultConfig("", "")
 	cfg.OpenAPI = srv.api.OpenAPI()

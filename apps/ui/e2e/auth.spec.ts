@@ -50,13 +50,10 @@ test.describe("authentication", () => {
         await page.getByLabel("Password").fill("wrong-password-12345");
         await page.getByRole("button", { name: "Login" }).click();
 
-        // Access is denied and the modal stays open with an error. The per-IP
-        // login limiter (5 / 5 min) is shared by every login in this run, so by
-        // now it may be exhausted — the message is then the rate-limit notice
-        // rather than the wrong-password one. Both keep the operator out, and
-        // crucially the two are now distinguished (a throttled login is no
-        // longer mislabeled as "Invalid password"), which is what we assert.
-        await expect(page.getByText(/Invalid password|Too many attempts/)).toBeVisible();
+        // Access is denied and the modal stays open with an error. Only failed
+        // logins count toward the lockout, so the run's earlier successful
+        // logins can't turn this into the rate-limit notice.
+        await expect(page.getByText("Invalid password. Please try again.")).toBeVisible();
         await expect(page.getByRole("dialog", { name: "RunWisp" })).toBeVisible();
 
         await context.close();

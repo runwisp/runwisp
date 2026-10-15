@@ -48,24 +48,33 @@ func (srv *Server) humaAuthStatus(_ context.Context, input *AuthStatusInput) (*A
 	}}, nil
 }
 
-// registerRateLimitedAuthRoutes wires the challenge/login/launch-ticket-redeem
-// endpoints onto r, a chi sub-router that already carries the httprate
-// limiter, sharing the same OpenAPI document as the rest of the API — the
+// authSubAPI returns a huma API on r, a chi sub-router carrying one of the auth
+// limiters, sharing the same OpenAPI document as the rest of the API — the
 // pattern established by registerProtectedHumaRoutes.
-func (srv *Server) registerRateLimitedAuthRoutes(r chi.Router) {
+func (srv *Server) authSubAPI(r chi.Router) huma.API {
 	cfg := huma.DefaultConfig("", "")
 	cfg.OpenAPI = srv.api.OpenAPI()
-	rateLimitedAPI := humachi.New(r, cfg)
+	return humachi.New(r, cfg)
+}
 
-	huma.Register(rateLimitedAPI, huma.Operation{
+// registerAuthChallengeRoute wires the challenge endpoint onto r, which carries
+// a plain per-IP request cap.
+func (srv *Server) registerAuthChallengeRoute(r chi.Router) {
+	huma.Register(srv.authSubAPI(r), huma.Operation{
 		OperationID: "getAuthChallenge",
 		Method:      http.MethodGet,
 		Path:        "/api/auth/challenge",
 		Summary:     "Mint a single-use CHAP challenge nonce",
 		Tags:        []string{"Auth"},
 	}, srv.humaAuthChallenge)
+}
 
-	huma.Register(rateLimitedAPI, huma.Operation{
+// registerAuthLoginRoutes wires login and launch-ticket redeem onto r, which
+// carries the failure lockout.
+func (srv *Server) registerAuthLoginRoutes(r chi.Router) {
+	loginAPI := srv.authSubAPI(r)
+
+	huma.Register(loginAPI, huma.Operation{
 		OperationID:  "login",
 		Method:       http.MethodPost,
 		Path:         "/api/auth/login",
@@ -74,7 +83,7 @@ func (srv *Server) registerRateLimitedAuthRoutes(r chi.Router) {
 		MaxBodyBytes: auth.MaxRequestBodySize,
 	}, srv.humaLogin)
 
-	huma.Register(rateLimitedAPI, huma.Operation{
+	huma.Register(loginAPI, huma.Operation{
 		OperationID: "redeemLaunchTicket",
 		Method:      http.MethodGet,
 		Path:        "/api/auth/launch-ticket",
@@ -86,8 +95,8 @@ func (srv *Server) registerRateLimitedAuthRoutes(r chi.Router) {
 	}, srv.humaRedeemLaunchTicket)
 }
 
-// humaAuthChallenge mints a single-use nonce. It sits behind the same
-// httprate limiter as login, preventing nonce-store flooding.
+// humaAuthChallenge mints a single-use nonce. Its route carries a per-IP
+// request cap, preventing nonce-store flooding.
 func (srv *Server) humaAuthChallenge(_ context.Context, _ *struct{}) (*AuthChallengeOutput, error) {
 	nonce, err := srv.auth.IssueChallenge()
 	if err != nil {
@@ -146,7 +155,7 @@ func (srv *Server) humaCreateLaunchTicket(_ context.Context, _ *struct{}) (*Laun
 // operator's browser can redeem a ticket minted by an authenticated remote
 // TUI; the protection is the ticket itself — single-use, short TTL, and only
 // mintable by an already-authenticated (or local-trusted) session via
-// humaCreateLaunchTicket. The route is rate-limited to bound guessing.
+// humaCreateLaunchTicket. Failed redemptions share login's lockout.
 //
 // The optional `redirect` query parameter targets a same-origin path (must
 // start with `/` and not `//`) — used by the TUI's "download log" action so

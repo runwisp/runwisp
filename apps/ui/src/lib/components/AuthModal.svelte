@@ -87,7 +87,7 @@
             // tasks/notifications). No separate success event needed.
         } catch (err) {
             if (err instanceof RateLimitedError) {
-                error = "Too many attempts. Please wait a few minutes and try again.";
+                error = "Too many failed attempts. Please wait a few minutes and try again.";
             } else {
                 error = "Invalid password. Please try again.";
             }

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	neturl "net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -372,7 +373,7 @@ func TestHandleLaunchTicket_InvalidTicket(t *testing.T) {
 // TestAuthRateLimit_NotBypassableViaForwardedHeader is a regression test for a
 // brute-force-protection bypass. chi's middleware.RealIP rewrites r.RemoteAddr
 // from client-controlled X-Forwarded-For / X-Real-IP / True-Client-IP headers,
-// and the auth limiter (httprate.LimitByIP) keys off r.RemoteAddr. If RealIP is
+// and the login lockout keys off r.RemoteAddr. If RealIP is
 // in the chain, a single attacker can rotate those headers to land every login
 // probe in its own per-IP bucket and never trip the limiter — defeating the
 // only online brute-force protection on the CHAP endpoint. With no trusted
@@ -383,9 +384,8 @@ func TestAuthRateLimit_NotBypassableViaForwardedHeader(t *testing.T) {
 
 	const peer = "203.0.113.9:44444" // one attacker, one TCP connection
 	var lastCode int
-	for i := 0; i < auth.MaxAuthAttempts+3; i++ {
-		req := httptest.NewRequest("GET", "/api/auth/challenge", nil)
-		req.RemoteAddr = peer
+	for i := 0; i < auth.MaxAuthFailures+1; i++ {
+		req := badLoginRequest(peer)
 		spoof := "10.0.0." + strconv.Itoa(i)
 		req.Header.Set("X-Forwarded-For", spoof)
 		req.Header.Set("X-Real-IP", spoof)
@@ -457,9 +457,8 @@ func TestAuthRateLimit_NotBypassableViaSpoofedXFFBehindTrustedProxy(t *testing.T
 	s, _, _, _ := setupServerWithOpts(t, func(o *Options) { o.TrustedProxies = []string{"10.0.0.0/8"} })
 
 	var lastCode int
-	for i := 0; i < auth.MaxAuthAttempts+3; i++ {
-		req := httptest.NewRequest("GET", "/api/auth/challenge", nil)
-		req.RemoteAddr = "10.0.0.1:44444"
+	for i := 0; i < auth.MaxAuthFailures+1; i++ {
+		req := badLoginRequest("10.0.0.1:44444")
 		req.Header.Set("X-Forwarded-For", "198.51.100."+strconv.Itoa(i+1)+", 203.0.113.9")
 		w := httptest.NewRecorder()
 		s.router.ServeHTTP(w, req)
@@ -467,4 +466,63 @@ func TestAuthRateLimit_NotBypassableViaSpoofedXFFBehindTrustedProxy(t *testing.T
 	}
 
 	assert.Equal(t, http.StatusTooManyRequests, lastCode)
+}
+
+// badLoginRequest is a login from addr with an unknown nonce: a 401 that counts
+// toward the lockout without paying for the CHAP key derivation.
+func badLoginRequest(addr string) *http.Request {
+	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(`{"nonce":"bogus","response":"bogus"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = addr
+	return req
+}
+
+func serve(s *Server, req *http.Request) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+	return w
+}
+
+// Regression: the limiter used to count every challenge, login and ticket
+// redemption, so a third sign-in or a sixth "open in browser" within five
+// minutes got 429. Successful auth must never count.
+func TestAuthRateLimit_SuccessNeverCounts(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	for range 3 * auth.MaxAuthFailures {
+		ticket, err := s.auth.CreateLaunchTicket()
+		require.NoError(t, err)
+		require.Equal(t, http.StatusSeeOther, serve(s, httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket="+ticket, nil)).Code)
+	}
+	for range 3 {
+		require.Equal(t, http.StatusOK, chapAttempt(t, s, "secret").Code)
+	}
+}
+
+// Failed logins and failed ticket redemptions share one per-IP lockout, which
+// then refuses even the right password; other IPs are unaffected.
+func TestAuthRateLimit_LocksOutAfterFailures(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+	const ip = "192.0.2.1:1234" // httptest's default RemoteAddr, which chapAttempt uses
+
+	for i := range auth.MaxAuthFailures {
+		req := badLoginRequest(ip)
+		if i%2 == 0 {
+			req = httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket=bogus", nil)
+		}
+		require.Equal(t, http.StatusUnauthorized, serve(s, req).Code)
+	}
+
+	w := chapAttempt(t, s, "secret")
+	assert.Equal(t, http.StatusTooManyRequests, w.Code, "a locked-out IP is refused even with the right password")
+	assert.Equal(t, strconv.Itoa(int(auth.AuthFailureWindow.Seconds())), w.Header().Get("Retry-After"))
+	assert.Equal(t, http.StatusUnauthorized, serve(s, badLoginRequest("198.51.100.7:1")).Code, "the lockout is per IP")
+}
+
+func TestAuthChallenge_FloodCapped(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+	for range auth.MaxChallengesPerMinute {
+		chapChallenge(t, s)
+	}
+	assert.Equal(t, http.StatusTooManyRequests, serve(s, httptest.NewRequest("GET", "/api/auth/challenge", nil)).Code)
 }

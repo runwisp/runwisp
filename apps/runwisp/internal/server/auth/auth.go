@@ -31,11 +31,16 @@ import (
 )
 
 const (
-	// MaxAuthAttempts and AuthRateWindow bound login attempts per IP. The
-	// challenge and login share the same limiter so a hostile client can't
-	// flood the nonce store while spreading login probes under the limit.
-	MaxAuthAttempts = 5
-	AuthRateWindow  = 5 * time.Minute
+	// MaxAuthFailures failed logins or launch-ticket redemptions per IP within
+	// AuthFailureWindow lock that IP out of both until the window slides.
+	// Successful ones never count, so normal use can't trip the lockout.
+	MaxAuthFailures   = 10
+	AuthFailureWindow = 15 * time.Minute
+
+	// MaxChallengesPerMinute caps challenge nonces minted per IP, so one client
+	// can't churn the bounded nonce store. Every login needs one, so the cap
+	// sits far above what a person or a script logging in would ever use.
+	MaxChallengesPerMinute = 60
 
 	SessionDuration = 24 * time.Hour
 

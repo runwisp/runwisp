@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp validate` rejects a task whose `compose_service` is not in its `compose_file`.
 - A scheduled `compose_mode = "run"` job no longer publishes the service's ports or takes its network alias, so it can run beside the stack.
 - A build from source no longer checks for updates or offers `runwisp upgrade`.
+- The login rate limit counts only failed attempts (10 per 15 minutes per IP), so signing in again, opening the Web UI from the TUI, and remote CLI calls no longer get locked out.
 
 ### Fixed
 
