@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10-15
+
 ### Added
 
 - Cron expressions accept `L` (last day of the month), `LW`, `15W` (nearest weekday) and `FRI#3` / `FRI#L` (nth or last weekday).
@@ -1054,7 +1056,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.6.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.7.0...main
+[1.7.0]: https://github.com/runwisp/runwisp/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/runwisp/runwisp/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/runwisp/runwisp/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/runwisp/runwisp/compare/v1.4.0...v1.5.0
