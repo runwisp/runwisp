@@ -63,6 +63,23 @@ func TestValidate(t *testing.T) {
 		{name: "wrapped minute out of range", spec: "70-2 * * * *", wantErr: true},
 		{name: "wrapped month out of range", spec: "0 0 1 13-2 *", wantErr: true},
 		{name: "wrapped hour", spec: "0 22-2 * * *"},
+		{name: "last day", spec: "0 0 L * *"},
+		{name: "last day of february", spec: "0 0 L 2 *"},
+		{name: "last day offset", spec: "0 0 L-3 * *"},
+		{name: "last weekday", spec: "0 0 LW * *"},
+		{name: "nearest weekday", spec: "0 0 15W * *"},
+		{name: "nearest weekday to the leap day", spec: "0 0 29W 2 *"},
+		{name: "last day in a list", spec: "0 0 1,L * *"},
+		{name: "nth weekday", spec: "0 0 * * FRI#3"},
+		{name: "last weekday of the month", spec: "0 0 * * 5#L"},
+		{name: "last day with seconds", spec: "0 0 0 L * *"},
+		{name: "nearest weekday never fires in february", spec: "0 0 30W 2 *", wantErr: true},
+		{name: "last day offset never fires in february", spec: "0 0 L-29 2 *", wantErr: true},
+		{name: "last day with a step", spec: "0 0 L/2 * *", wantErr: true},
+		{name: "last day offset with a step", spec: "0 0 L-3/2 * *", wantErr: true},
+		{name: "nearest weekday with a step", spec: "0 0 15W/2 * *", wantErr: true},
+		{name: "nth weekday out of range", spec: "0 0 * * FRI#6", wantErr: true},
+		{name: "nth weekday with a step", spec: "0 0 * * FRI#3/2", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -304,6 +321,20 @@ func TestSpringForwardGapBeyondOneHourStep(t *testing.T) {
 			want: time.Date(2025, 10, 5, 2, 30, 0, 0, lordHowe),
 		},
 		{
+			// The first Sunday of September 2025 is the gap day.
+			name: "nth weekday in a midnight gap",
+			spec: "0 0 * * SUN#1",
+			from: time.Date(2025, 9, 6, 12, 0, 0, 0, santiago),
+			want: time.Date(2025, 9, 7, 1, 0, 0, 0, santiago),
+		},
+		{
+			// L-23 is September 7th, the gap day.
+			name: "last-day offset in a midnight gap",
+			spec: "0 0 L-23 9 *",
+			from: time.Date(2025, 9, 6, 12, 0, 0, 0, santiago),
+			want: time.Date(2025, 9, 7, 1, 0, 0, 0, santiago),
+		},
+		{
 			name: "pinned zone, evaluated from UTC",
 			spec: "CRON_TZ=America/Santiago 0 0 * * *",
 			from: time.Date(2025, 9, 6, 16, 0, 0, 0, time.UTC),
@@ -438,5 +469,43 @@ func TestOversizedStepsSelectRangeStart(t *testing.T) {
 	for _, spec := range []string{"*/0 * * * *", "*/x * * * *", "61/60 * * * *"} {
 		_, err := NewParser().Parse(spec)
 		assert.Error(t, err, spec)
+	}
+}
+
+// TestExtendedDaySpecials pins the Quartz-style L / W / # forms to calendar
+// dates: month ends, weekend-adjusted weekdays and nth weekdays.
+func TestExtendedDaySpecials(t *testing.T) {
+	day := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
+	aug1 := day(2026, 8, 1) // a Saturday
+
+	tests := []struct {
+		name string
+		spec string
+		from time.Time
+		want []time.Time
+	}{
+		{"last day", "0 0 L * *", aug1, []time.Time{day(2026, 8, 31), day(2026, 9, 30), day(2026, 10, 31)}},
+		{"last day of february", "0 0 L 2 *", day(2027, 1, 1), []time.Time{day(2027, 2, 28), day(2028, 2, 29)}},
+		{"last day offset", "0 0 L-2 * *", aug1, []time.Time{day(2026, 8, 29), day(2026, 9, 28), day(2026, 10, 29)}},
+		{"last weekday", "0 0 LW * *", aug1, []time.Time{day(2026, 8, 31), day(2026, 9, 30), day(2026, 10, 30)}},
+		{"last weekday backs off a sunday", "0 0 LW * *", day(2026, 12, 1), []time.Time{day(2026, 12, 31), day(2027, 1, 29), day(2027, 2, 26)}},
+		{"nearest weekday", "0 0 15W * *", aug1, []time.Time{day(2026, 8, 14), day(2026, 9, 15), day(2026, 10, 15), day(2026, 11, 16)}},
+		{"nearest weekday stays in the month", "0 0 1W * *", aug1, []time.Time{day(2026, 8, 3), day(2026, 9, 1), day(2026, 10, 1), day(2026, 11, 2)}},
+		{"nth weekday", "0 0 * * FRI#3", aug1, []time.Time{day(2026, 8, 21), day(2026, 9, 18), day(2026, 10, 16)}},
+		{"last weekday of the month", "0 0 * * 5#L", aug1, []time.Time{day(2026, 8, 28), day(2026, 9, 25), day(2026, 10, 30)}},
+		{"list with a plain day", "0 0 1,L * *", aug1, []time.Time{day(2026, 8, 31), day(2026, 9, 1), day(2026, 9, 30), day(2026, 10, 1)}},
+		{"behind a CRON_TZ prefix", "CRON_TZ=UTC 0 0 L * *", aug1, []time.Time{day(2026, 8, 31), day(2026, 9, 30)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sched, err := NewParser().Parse(tt.spec)
+			require.NoError(t, err)
+			var got []time.Time
+			for next := tt.from; len(got) < len(tt.want); {
+				next = sched.Next(next)
+				got = append(got, next.UTC())
+			}
+			assert.Equal(t, tt.want, got)
+		})
 	}
 }
