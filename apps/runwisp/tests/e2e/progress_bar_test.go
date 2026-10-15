@@ -117,27 +117,13 @@ func TestProgressBarExposesFrameHistory(t *testing.T) {
 	require.True(t, earlier, "history should include an earlier (non-final) frame of the bar")
 
 	// The sidecar container (holding the frame history) exists on disk while the
-	// run is retained.
+	// run is retained. Its removal with the run is covered by the purger and
+	// logutil.RemoveRunLogs unit tests.
 	logDir := filepath.Join(daemon.dataDir, "logs")
 	logPath := logutil.ResolveRunLogPath(logDir, run.TaskName, run.ID, run.CreatedAt)
 	containerPath := logutil.MetaPath(logPath)
 	_, statErr := os.Stat(containerPath)
 	require.NoError(t, statErr, "expected a sidecar container at %s", containerPath)
-
-	// The bar settling on disk does not guarantee the run has reached a
-	// terminal status yet (the trailing `echo done` and exit reaping lag the
-	// final frame, especially on slower runners). Wait for it to end before
-	// deleting, since the API rejects deleting a still-running run.
-	waitForRunEnded(t, client, run.ID, 10*time.Second)
-
-	// Deleting the run removes the container along with the rest of the log
-	// files. Deletion is soft: the purger reclaims on-disk files after its
-	// TTL + sweep (≈9s), so allow generous slack here.
-	require.NoError(t, client.DeleteRun(t.Context(), run.ID))
-	require.Eventually(t, func() bool {
-		_, err := os.Stat(containerPath)
-		return os.IsNotExist(err)
-	}, 20*time.Second, 200*time.Millisecond, "the sidecar container should be removed when the run is deleted")
 }
 
 // waitForAnchorLine polls the log page until a committed line whose text

@@ -5,11 +5,13 @@ package main
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
@@ -37,6 +39,27 @@ func bootTestService(name string, healthyAfter time.Duration, dependsOn ...strin
 		RestartBackoff:  model.BackoffConstant,
 		DependsOn:       dependsOn,
 	}
+}
+
+// stopOrderExecutor records the task of each run whose Execute returned.
+type stopOrderExecutor struct {
+	*testutil.GateExecutor
+	mu    sync.Mutex
+	order []string
+}
+
+func (e *stopOrderExecutor) Execute(ctx context.Context, task *model.Task, run *model.Run) *executor.ExecuteResult {
+	res := e.GateExecutor.Execute(ctx, task, run)
+	e.mu.Lock()
+	e.order = append(e.order, task.Name)
+	e.mu.Unlock()
+	return res
+}
+
+func (e *stopOrderExecutor) stopped() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return slices.Clone(e.order)
 }
 
 func activeCount(tm runtime.TaskManager, name string) int {
@@ -111,32 +134,12 @@ func TestStartServiceInstances_GatesDependentOnDependencyHealth(t *testing.T) {
 // teardown: web (the dependent) is fully drained before db (its dependency) is
 // stopped.
 func TestPreStopServices_StopsDependentBeforeDependency(t *testing.T) {
-	exec := testutil.NewGateExecutor()
-	bus := events.NewEventBus()
-	tm := runtime.NewTaskManager(exec, bus, time.Now)
+	// Record the order in which the services' runs actually stop. Terminal
+	// events can't show it: each is published after its own async storage
+	// flush, so db's can land before web's.
+	exec := &stopOrderExecutor{GateExecutor: testutil.NewGateExecutor()}
+	tm := runtime.NewTaskManager(exec, events.NewEventBus(), time.Now)
 	t.Cleanup(tm.Shutdown)
-
-	// Record the order in which services report a terminal (stopped) run.
-	var (
-		mu          sync.Mutex
-		stoppedSeq  []string
-		stoppedSeen = make(map[string]bool)
-	)
-	bus.SubscribeAll(func(e events.Event) {
-		re, ok := e.Data.(events.RunEvent)
-		if !ok || re.Run == nil {
-			return
-		}
-		if e.Type != events.EventRunCompleted && e.Type != events.EventRunFailed {
-			return
-		}
-		mu.Lock()
-		if !stoppedSeen[re.Run.TaskName] {
-			stoppedSeen[re.Run.TaskName] = true
-			stoppedSeq = append(stoppedSeq, re.Run.TaskName)
-		}
-		mu.Unlock()
-	})
 
 	db := bootTestService("db", time.Nanosecond)
 	web := bootTestService("web", time.Nanosecond, "db")
@@ -165,16 +168,6 @@ func TestPreStopServices_StopsDependentBeforeDependency(t *testing.T) {
 	assert.Equal(t, 0, activeCount(tm, "web"), "web should be drained")
 	assert.Equal(t, 0, activeCount(tm, "db"), "db should be drained")
 
-	// A run leaves the active set (retireRun) before its terminal event is
-	// published (publishTerminal flushes storage first), so preStopServices can
-	// return before db's event lands. Wait for both before checking the order.
-	require.Eventually(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(stoppedSeq) == 2
-	}, 2*time.Second, 5*time.Millisecond, "both services should report a terminal run")
-	mu.Lock()
-	defer mu.Unlock()
-	require.Equal(t, []string{"web", "db"}, stoppedSeq,
+	require.Equal(t, []string{"web", "db"}, exec.stopped(),
 		"the dependent must stop before the dependency")
 }

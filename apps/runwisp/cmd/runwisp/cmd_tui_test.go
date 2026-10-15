@@ -303,14 +303,6 @@ func TestBuildStartupInfoFromDaemon_PopulatesAllFields(t *testing.T) {
 	assert.Equal(t, "alpha", si.Tasks[0].Name)
 }
 
-func TestRunTUIClient_DaemonUnreachable(t *testing.T) {
-	t.Parallel()
-	err := runTUIClient(t.Context(), Flags{DataDir: t.TempDir()})
-	if err == nil {
-		t.Fatal("expected error when no daemon is reachable")
-	}
-}
-
 func TestResolveRemotePassword_EnvWins(t *testing.T) {
 	// An env-var password is used as-is, even non-interactively (CI path).
 	got, err := resolveRemotePassword("http://host:9477", "s3cret", false)

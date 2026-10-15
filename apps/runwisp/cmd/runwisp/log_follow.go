@@ -18,29 +18,32 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server/logstream"
 )
 
-// followMaxStalls bounds consecutive log-stream opens that find nothing to
-// stream: a 404 or a stream that closes at once with no line and no Done event.
-// A just-triggered run is handed back to the caller before its row is durably
-// persisted (persistence is async), so the first stream(s) can find no run yet.
-// We retry until the run becomes streamable; the bound only guards against a run
-// ID that never materializes at all.
-// followStallBackoff paces those retries so the not-yet-persisted row has time
-// to land without busy-looping.
+// followPace paces followRunLog's re-opens of a run's log stream.
 //
-// followQuietAfter separates a stall from a quiet run: the server closes every
-// log stream after server.LogStreamTimeout, so a run that prints nothing for
-// that long also yields an empty stream. One that stayed open this long was a
-// live connection, not a refusal, and must not spend the stall budget — or a
-// run silent for followMaxStalls × LogStreamTimeout would be given up on while
-// still running.
-const (
-	followMaxStalls    = 50
-	followStallBackoff = 100 * time.Millisecond
-	followQuietAfter   = time.Second
-)
+// maxStalls bounds consecutive opens that find nothing to stream: a 404 or a
+// stream that closes at once with no line and no Done event. A just-triggered
+// run is handed back to the caller before its row is durably persisted
+// (persistence is async), so the first stream(s) can find no run yet. We retry
+// until the run becomes streamable; the bound only guards against a run ID that
+// never materializes at all. stallBackoff paces those retries so the
+// not-yet-persisted row has time to land without busy-looping.
+//
+// quietAfter separates a stall from a quiet run: the server closes every log
+// stream after server.LogStreamTimeout, so a run that prints nothing for that
+// long also yields an empty stream. One that stayed open this long was a live
+// connection, not a refusal, and must not spend the stall budget; otherwise a
+// run silent for maxStalls × LogStreamTimeout would be given up on while still
+// running.
+type followPace struct {
+	maxStalls    int
+	stallBackoff time.Duration
+	quietAfter   time.Duration
+}
+
+var defaultFollowPace = followPace{maxStalls: 50, stallBackoff: 100 * time.Millisecond, quietAfter: time.Second}
 
 // errLogStreamStalled reports that the run's log stream kept closing empty
-// until followMaxStalls ran out.
+// until the stall budget ran out.
 var errLogStreamStalled = errors.New("log stream never became available")
 
 // followRunLog streams runID's log from line `from` (negative counts from the
@@ -49,7 +52,7 @@ var errLogStreamStalled = errors.New("log stream never became available")
 // line. Lines the daemon dropped are warned about under taskName. It returns
 // done=true once the stream reports the run ended, and done=false with a nil
 // error when ctx is cancelled.
-func followRunLog(ctx context.Context, client *apiclient.Client, taskName, runID string, from int64, quietAfter time.Duration, onLine func(server.LogLineEntry)) (bool, error) {
+func followRunLog(ctx context.Context, client *apiclient.Client, taskName, runID string, from int64, pace followPace, onLine func(server.LogLineEntry)) (bool, error) {
 	stalls := 0
 	for {
 		opened := time.Now()
@@ -70,7 +73,7 @@ func followRunLog(ctx context.Context, client *apiclient.Client, taskName, runID
 			from = highest + 1
 			stalls = 0
 			continue
-		case time.Since(opened) >= quietAfter:
+		case time.Since(opened) >= pace.quietAfter:
 			// A quiet run: the connection was live, it just had nothing to say.
 			stalls = 0
 			continue
@@ -81,13 +84,13 @@ func followRunLog(ctx context.Context, client *apiclient.Client, taskName, runID
 		// the trigger response — so back off and retry until the row lands.
 		// Bailing on the first one would swallow the run's output silently.
 		stalls++
-		if stalls > followMaxStalls {
+		if stalls > pace.maxStalls {
 			return false, errLogStreamStalled
 		}
 		select {
 		case <-ctx.Done():
 			return false, nil
-		case <-time.After(followStallBackoff):
+		case <-time.After(pace.stallBackoff):
 		}
 	}
 }
@@ -109,7 +112,7 @@ func followOnce(ctx context.Context, client *apiclient.Client, taskName, runID s
 }
 
 // runNotPersistedYet reports whether a stream-open error is the daemon's 404
-// for a run whose row has not landed yet (see followMaxStalls).
+// for a run whose row has not landed yet (see followPace).
 func runNotPersistedYet(err error) bool {
 	var status *apiclient.HTTPStatusError
 	return errors.As(err, &status) && status.StatusCode == http.StatusNotFound

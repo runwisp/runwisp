@@ -11,22 +11,7 @@ vi.mock("$lib/api", () => ({
 
 import { runsApi } from "$lib/api";
 import { createRunsSource, type RunsSource } from "./runs-source.svelte";
-
-function makeRun(id: string, overrides: Partial<Run> = {}): Run {
-    return {
-        id,
-        taskName: "backup-db",
-        createdAt: "2026-06-22T12:00:00.000Z",
-        status: "ended",
-        endReason: "succeeded",
-        triggeredBy: "api",
-        exitCode: 0,
-        instanceIndex: 0,
-        retryAttempt: 0,
-        isFailure: false,
-        ...overrides,
-    };
-}
+import { makeRun } from "../../../test/fixtures";
 
 const baseFilters = (overrides: Partial<RunsListFilters> = {}): RunsListFilters => ({
     search: "",

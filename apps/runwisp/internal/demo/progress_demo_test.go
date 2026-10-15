@@ -17,6 +17,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 )
 
 // sgrEscape matches a colour-only SGR sequence ("\x1b[…m"). The terminal-aware
@@ -34,6 +35,9 @@ var sgrEscape = regexp.MustCompile("\x1b\\[[0-9;]*m")
 // of terminal-aware capture, not just believable screenshot filler.
 func TestDemoProgressTasksCommitCleanFinalFrames(t *testing.T) {
 	cfg := loadDemoConfig(t)
+	// The scripts pace their redraws for a human; the committed frame does not
+	// depend on that pacing.
+	testutil.StubSleep(t)
 
 	t.Run("backup-postgres \\r bar collapses to a single final line", func(t *testing.T) {
 		body := runDemoTask(t, cfg, "backup-postgres")

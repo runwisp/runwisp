@@ -150,14 +150,16 @@ func TestCoalescer_DistinctFingerprintsAllPersist(t *testing.T) {
 	assert.Len(t, rows, 5, "each distinct fingerprint persists as its own row")
 }
 
-func TestIngestSynthetic_NoPanic(t *testing.T) {
+func TestIngestSynthetic_PersistsTheEvent(t *testing.T) {
 	db := newDB(t)
 	hub := NewHub(8)
 	clk := fakeclock.New(time.Now().UTC())
 	coalescer := NewCoalescer(db, hub, clk.Now, CoalescerConfig{Window: time.Hour, CoalesceLimit: 5}, nil)
 	ch := New("inapp", &fakeRenderer{}, coalescer)
-	ev := makeEvent("task1")
-	ch.IngestSynthetic(ev) // must not panic
+	ch.IngestSynthetic(makeEvent("task1"))
+	rows, err := db.ListNotifications(context.Background(), 50, "")
+	require.NoError(t, err)
+	assert.Len(t, rows, 1)
 }
 
 type fakeRenderer struct{}

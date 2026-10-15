@@ -584,8 +584,9 @@ func TestNotificationsPanel_ToggleCollapsesAndExpands(t *testing.T) {
 func TestNotificationsPanel_SetWidthClampsNegativeToZero(t *testing.T) {
 	p := NewPanel()
 	p.SetWidth(-5)
-	// Re-set to a real width afterwards to make sure the panel stays usable.
-	p.SetWidth(80)
+	if p.width != 0 {
+		t.Fatalf("width = %d, want 0", p.width)
+	}
 }
 
 // TestNotificationsPanel_SelectedNilWhenCollapsedOrOutOfRange ensures Selected

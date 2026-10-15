@@ -63,7 +63,7 @@ func (a *appConn) next() map[string]any {
 // An app-supplied config end to end: the daemon boots from the document on
 // stdin, the app replaces it live, serves a run whose output and exit
 // code land on the run like a shell run's, and the daemon exits once the app
-// is gone.
+// leaves.
 func TestAppDaemon(t *testing.T) {
 	t.Parallel()
 	projectDir := runwispProjectDir(t)
@@ -107,8 +107,11 @@ func TestAppDaemon(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, joinLogLines(page.Lines), "sent 3 emails")
 
+	// Leaving skips the idle window (unit-tested in apphost), so the exit is
+	// immediate instead of appIdleExit later.
+	app.send(map[string]any{"type": "leave"})
 	require.NoError(t, app.conn.Close())
-	require.True(t, daemon.waitForExit(20*time.Second), "daemon should exit once no app is connected:\n%s", daemon.output.Tail(4000))
+	require.True(t, daemon.waitForExit(5*time.Second), "daemon should exit once the app leaves:\n%s", daemon.output.Tail(4000))
 }
 
 // A firing missed while the daemon was down reaches the app that connects

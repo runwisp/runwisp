@@ -96,14 +96,11 @@ func TestIsDaemonRunning_LockedEmptyPidFile(t *testing.T) {
 }
 
 func TestExecLogLineHandler_FiltersByTaskName(t *testing.T) {
-	// Wrong-task events route nowhere; verify the handler is a no-op
-	// (it does not panic and produces no observable output for the wrong
-	// task). Cross-type assertion failure is unreachable because EventData
-	// is a sealed interface.
-	h := runLogLineHandler("target", os.Stdout)
-	h(events.Event{Data: events.LogLineEvent{TaskName: "other", Text: "x"}})
-	// RunEvent reaches the wrong-type branch (LogLineEvent type assertion fails).
+	var out bytes.Buffer
+	h := runLogLineHandler("target", &out)
+	h(events.Event{Data: events.LogLineEvent{TaskName: "other", Stream: logutil.StreamStdout, Text: "x"}})
 	h(events.Event{Data: events.RunEvent{}})
+	assert.Empty(t, out.String(), "another task's lines and non-line events print nothing")
 }
 
 func TestExecLogLineHandler_WritesToStdoutAndStderr(t *testing.T) {

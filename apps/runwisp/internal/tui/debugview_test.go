@@ -11,11 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestDebugView_NewIsEmpty(t *testing.T) {
-	v := NewDebugView()
-	assert.Equal(t, int64(0), v.lineSeq)
-}
-
 func TestDebugView_AppendLineIncrementsSeq(t *testing.T) {
 	v := NewDebugView()
 	v.SetSize(80, 24)
@@ -24,39 +19,21 @@ func TestDebugView_AppendLineIncrementsSeq(t *testing.T) {
 	assert.Equal(t, int64(2), v.lineSeq)
 }
 
-func TestDebugView_SetSizeNoPanic(t *testing.T) {
-	v := NewDebugView()
-	v.SetSize(120, 40)
-	v.SetSize(0, 0)
-}
-
-func TestDebugView_UpdateKeyMsgScrolls(t *testing.T) {
+func TestDebugView_KeysAndWheelScroll(t *testing.T) {
 	v := NewDebugView()
 	v.SetSize(80, 24)
-	for i := 0; i < 20; i++ {
-		v.AppendLine("filler")
-	}
-	v.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-	v.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	v.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
-	v.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
-}
-
-func TestDebugView_UpdateNonKeyMsgIsNoop(t *testing.T) {
-	v := NewDebugView()
-	v.SetSize(80, 24)
-	v.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	v.Update(tea.MouseClickMsg{})
-}
-
-func TestDebugView_ScrollUpDownDoesNotPanic(t *testing.T) {
-	v := NewDebugView()
-	v.SetSize(80, 24)
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		v.AppendLine("line")
 	}
+	bottom := v.pane.Scroll
+	v.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	assert.Equal(t, bottom-1, v.pane.Scroll)
+	v.Update(tea.WindowSizeMsg{Width: 80, Height: 24}) // not a key: ignored
+	assert.Equal(t, bottom-1, v.pane.Scroll)
 	v.ScrollUp(5)
+	assert.Equal(t, bottom-6, v.pane.Scroll)
 	v.ScrollDown(5)
+	assert.Equal(t, bottom-1, v.pane.Scroll)
 }
 
 func TestDebugView_ViewContainsHeader(t *testing.T) {

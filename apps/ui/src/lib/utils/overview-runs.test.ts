@@ -4,22 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { Run } from "@runwisp/common";
 import { mergeRuns } from "./overview-runs";
-
-function makeRun(id: string, overrides: Partial<Run> = {}): Run {
-    return {
-        id,
-        taskName: "backup-db",
-        createdAt: "2026-06-22T12:00:00.000Z",
-        status: "ended",
-        endReason: "succeeded",
-        triggeredBy: "api",
-        exitCode: 0,
-        instanceIndex: 0,
-        retryAttempt: 0,
-        isFailure: false,
-        ...overrides,
-    };
-}
+import { makeRun } from "../../../test/fixtures";
 
 const isRunning = (run: Run) => run.status === "running";
 

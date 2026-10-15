@@ -10,6 +10,7 @@ import (
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,6 +70,7 @@ func setSeedOnly(t *testing.T, station bool) {
 
 func TestRunDemoSeedOnlyWritesConfigAndSeeds(t *testing.T) {
 	setSeedOnly(t, false)
+	testutil.StubSleep(t) // seeding runs every demo script; their pacing is for show
 
 	dir := t.TempDir()
 	f := Flags{

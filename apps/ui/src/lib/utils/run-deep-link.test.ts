@@ -4,6 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Run } from "@runwisp/common";
 import { RunDeepLink } from "./run-deep-link.svelte";
+import { makeRun } from "../../../test/fixtures";
 
 function deferred() {
     let settle: { resolve: (r: Run) => void; reject: (e: Error) => void } = {
@@ -12,21 +13,6 @@ function deferred() {
     };
     const promise = new Promise<Run>((resolve, reject) => (settle = { resolve, reject }));
     return { promise, ...settle };
-}
-
-function makeRun(id: string): Run {
-    return {
-        id,
-        taskName: "backup-db",
-        createdAt: "2026-06-22T12:00:00.000Z",
-        status: "ended",
-        endReason: "succeeded",
-        triggeredBy: "api",
-        exitCode: 0,
-        instanceIndex: 0,
-        retryAttempt: 0,
-        isFailure: false,
-    };
 }
 
 const loaded = [makeRun("LOADED")];

@@ -355,22 +355,6 @@ func TestNeedsFetch_EmptyItems(t *testing.T) {
 	}
 }
 
-func TestNeedsFetch_NearBottom(t *testing.T) {
-	// Create a window with a real-looking scenario but nil client — result is
-	// always false because there's no client to fetch from.
-	w := NewExecWindow(nil)
-	// Even without a client the function must not panic.
-	_ = w.NeedsFetch(170, 20)
-}
-
-func TestNeedsFetch_NearTop(t *testing.T) {
-	w := NewExecWindow(nil)
-	// No panic even with a non-zero window start.
-	items := makeItems(model.Run{ID: "r1", TaskName: "t"})
-	w.ApplyFetch(items, 50, 100)
-	_ = w.NeedsFetch(50, 10)
-}
-
 func TestUpsertRun_NewRunPrepended(t *testing.T) {
 	w := NewExecWindow(nil)
 	// Window starts at 0 so new runs should be prepended.

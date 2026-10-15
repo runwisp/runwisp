@@ -392,7 +392,3 @@ func TestPrintStartupTo_Minimal(t *testing.T) {
 	})
 	assert.Contains(t, buf.String(), "RunWisp")
 }
-
-func TestPrintShutdownComplete_DoesNotPanic(t *testing.T) {
-	assert.NotPanics(t, func() { PrintShutdownComplete() })
-}
