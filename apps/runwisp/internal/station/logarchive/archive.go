@@ -130,11 +130,11 @@ func putOnce(ctx context.Context, client *http.Client, uploadURL string, compres
 		return fmt.Errorf("build PUT request: %w", err)
 	}
 	// The body is gzip-compressed, but advertise it as gzip-encoded text rather
-	// than an application/gzip blob: S3/MinIO stores and replays these headers,
-	// so a browser fetching the signed GET URL transparently decompresses the
-	// archive and renders the log as plain text. (The presigned PUT signs only
-	// host — Content-Type/Content-Encoding are unsigned, so setting them here
-	// does not break the signature.)
+	// than an application/gzip blob: the upload target stores and replays these
+	// headers, so a browser fetching the archive back transparently decompresses
+	// it and renders the log as plain text. (Content-Type/Content-Encoding are
+	// not part of the upload URL's signature, so setting them here does not
+	// break it.)
 	req.Header.Set("Content-Encoding", "gzip")
 	req.Header.Set("Content-Type", "text/plain; charset=utf-8")
 	req.Header.Set("Content-Length", fmt.Sprintf("%d", size))
@@ -144,7 +144,7 @@ func putOnce(ctx context.Context, client *http.Client, uploadURL string, compres
 	if err != nil {
 		var urlErr *url.Error
 		if errors.As(err, &urlErr) {
-			// A presigned upload URL is a bearer credential. net/http includes the
+			// A signed upload URL is a bearer credential. net/http includes the
 			// complete URL in url.Error, so unwrap only the transport cause before
 			// the error reaches daemon logs.
 			return fmt.Errorf("logarchive: PUT request failed: %w", urlErr.Err)
@@ -205,15 +205,15 @@ func rejectInternalIP(ip net.IP) error {
 }
 
 // SafeClient returns the hardened http.Client used for peer-supplied uploads:
-// it refuses to follow redirects (a signed-S3 URL that 302s to an internal
+// it refuses to follow redirects (a signed upload URL that 302s to an internal
 // host is a red flag) and re-validates every resolved IP at connect time to
 // defeat DNS rebinding. allowInsecure (RUNWISP_STATION_ALLOW_INSECURE, local
-// testing only) drops the IP check so a dev stack's private object storage is
+// testing only) drops the IP check so a dev stack's private upload target is
 // reachable; redirects stay refused. trustedHost ("host:port", see HostPort),
 // when non-empty, is exempt from the IP check: it is the configured Station,
 // which the daemon already trusts with a bearer-authenticated WebSocket, so a
-// self-hosted Station on a LAN or Tailscale address can still receive
-// archives. Every other host keeps the full guard.
+// Station on a LAN or Tailscale address can still receive archives. Every
+// other host keeps the full guard.
 func SafeClient(allowInsecure bool, trustedHost string) *http.Client {
 	noRedirect := func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse

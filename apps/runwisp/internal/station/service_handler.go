@@ -202,6 +202,9 @@ func (h *InboundHandler) buildServiceTask(svc *protocol.ServiceApplyPayload) (*m
 		// explicit: the zero value is false, which would lock the station out of
 		// controlling the very service it just declared.
 		ManualTrigger: true,
+		// The runtime creates the supervisor parked unless Autostart is set,
+		// and StartServiceInstances is a no-op on a parked service.
+		Autostart: svc.Autostart,
 	}
 
 	if svc.RestartDelay > 0 {

@@ -27,7 +27,7 @@ type Config struct {
 	Fingerprint  string
 	// AllowInsecure mirrors RUNWISP_STATION_ALLOW_INSECURE=true: besides an
 	// http:// station URL it lets log archives go to http:// and private-IP
-	// upload URLs (a local dev stack's MinIO). Local testing only.
+	// upload URLs (a Station on a local dev stack). Local testing only.
 	AllowInsecure bool
 }
 

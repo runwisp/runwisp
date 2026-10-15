@@ -172,10 +172,10 @@ func TestValidateUploadURL(t *testing.T) {
 		url     string
 		wantErr bool
 	}{
-		{"https public host", "https://bucket.s3.amazonaws.com/key?sig=abc", false},
-		{"https public host with port", "https://s3.example.com:443/key", false},
-		{"http rejected", "http://bucket.s3.amazonaws.com/key", true},
-		{"empty scheme rejected", "bucket.s3.amazonaws.com/key", true},
+		{"https public host", "https://uploads.example.com/key?sig=abc", false},
+		{"https public host with port", "https://uploads.example.com:443/key", false},
+		{"http rejected", "http://uploads.example.com/key", true},
+		{"empty scheme rejected", "uploads.example.com/key", true},
 		{"no host rejected", "https:///key", true},
 		{"empty rejected", "", true},
 	}

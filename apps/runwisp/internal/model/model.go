@@ -388,7 +388,7 @@ func (t *Task) Pausable() bool { return !t.Kind.IsService() && t.Cron != "" && t
 func (t *Task) StartsPaused() bool { return !t.Autostart && t.Pausable() }
 
 // TriggerBlockReason identifies which of Triggerable's two conditions fails,
-// so a manual-trigger surface (REST, cloud dispatch, standalone CLI run) can
+// so a manual-trigger surface (REST, station dispatch, standalone CLI run) can
 // report a precise error without re-deriving the rule itself. CheckTrigger is
 // the one place that decides the order the two conditions are checked in.
 type TriggerBlockReason int
