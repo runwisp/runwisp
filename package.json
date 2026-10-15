@@ -38,6 +38,7 @@
   "devDependencies": {
     "@moonrepo/cli": "^2.6.2",
     "ajv": "^8.20.0",
+    "pkg-pr-new": "^0.0.91",
     "prettier": "^3.9.6",
     "prettier-plugin-svelte": "^4.1.1",
     "prettier-plugin-tailwindcss": "^0.8.1",
