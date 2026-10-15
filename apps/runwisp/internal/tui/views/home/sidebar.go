@@ -41,7 +41,9 @@ type Sidebar struct {
 	version string
 	// label identifies the instance under the brand: [daemon] name, else the
 	// fingerprint. Kept fresh by SetLabel from the /api/daemon poll.
-	label    string
+	label string
+	// ReadOnly tags the brand row: the session can view but not change anything.
+	ReadOnly bool
 	allItems []sidebarItem
 	items    []sidebarItem
 
@@ -506,7 +508,11 @@ func (s *Sidebar) View() string {
 
 	writeSidebarLine(&b, "", w)
 	rendered++
-	writeSidebarLine(&b, uikit.SidebarMarkStyle.Render(" ⟡ ")+uikit.SidebarBrandStyle.Render(s.name), w)
+	brand := uikit.SidebarMarkStyle.Render(" ⟡ ") + uikit.SidebarBrandStyle.Render(s.name)
+	if s.ReadOnly {
+		brand += uikit.SidebarVersionStyle.Render(" · read-only")
+	}
+	writeSidebarLine(&b, brand, w)
 	rendered++
 	writeSidebarLine(&b, s.renderVersionLine(), w)
 	rendered++

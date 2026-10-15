@@ -382,8 +382,8 @@ func TestHelpDialog_WrappedDescriptionsKeepHangingIndent(t *testing.T) {
 	// A narrow screen forces long descriptions to wrap. Each continuation row
 	// must stay under the description column, never fall back under the keys,
 	// and every row of the dialog must stay the same width.
-	keyColWidth := helpKeyColWidth()
-	for _, section := range helpSections() {
+	keyColWidth := helpKeyColWidth(false)
+	for _, section := range helpSections(false) {
 		for _, b := range section.Bindings {
 			lines := helpEntryLines(b, keyColWidth, 40)
 			for i, line := range lines {

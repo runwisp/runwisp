@@ -241,7 +241,7 @@ func (s *Service) VerifyToken(token string) (readOnly, ok bool) {
 }
 
 // IsViewerToken reports whether token claims the viewer role. Like TokenExpiry
-// it does not check the MAC; clients use it to avoid caching a read-only token.
+// it does not check the MAC; clients use it to tell a read-only session apart.
 func IsViewerToken(token string) bool {
 	_, rest, _ := strings.Cut(token, ".")
 	role, _, ok := strings.Cut(rest, ".")

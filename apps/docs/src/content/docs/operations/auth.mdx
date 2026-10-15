@@ -94,7 +94,8 @@ Someone who signs in with it can see tasks, runs, logs and notifications. The
 daemon rejects everything that changes state with a `403`: triggering, starting,
 stopping or restarting a task, pausing, deleting runs, reloading the config and
 marking notifications read. The Web UI hides those controls and shows a
-**Read-only** badge in the top bar. A remote `runwisp run --url` signed in this
+**Read-only** badge in the top bar. A remote `runwisp tui --url` hides them too
+and marks the sidebar **read-only**. A remote `runwisp run --url` signed in this
 way fails with a message saying so.
 
 - The two passwords must differ. The daemon refuses to start if they match.

@@ -40,6 +40,9 @@ const (
 // one row at a time inside a bubble's viewport. Read state is per-item
 // (carried on server.NotificationDTO.ReadAt).
 type Panel struct {
+	// ReadOnly drops the mark-read hints: the session can't change read state.
+	ReadOnly bool
+
 	items   map[string]server.NotificationDTO
 	ordered []string // ULIDs DESC
 
@@ -394,9 +397,11 @@ func (p *Panel) renderExpanded() string {
 	headerL := panelPrefixStyle.Render("  " + p.countLabel())
 	// Same notification keybindings as the help bar and overlay (keys package),
 	// joined with the panel's own separator so the three never drift.
-	hint := strings.Join([]string{
-		keys.NotifCollapse.Bar, keys.Move.Bar, keys.NotifRead.Bar, keys.NotifReadAll.Bar, keys.NotifOpen.Bar,
-	}, " · ") + "  "
+	hints := []string{keys.NotifCollapse.Bar, keys.Move.Bar}
+	if !p.ReadOnly {
+		hints = append(hints, keys.NotifRead.Bar, keys.NotifReadAll.Bar)
+	}
+	hint := strings.Join(append(hints, keys.NotifOpen.Bar), " · ") + "  "
 	headerR := panelHintStyle.Render(hint)
 	header := joinHeaderLine(headerL, headerR, p.width)
 

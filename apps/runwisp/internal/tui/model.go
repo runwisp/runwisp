@@ -99,6 +99,9 @@ type Model struct {
 	// instead of the TUI closing as if the daemon had stopped.
 	shutdownErr      error
 	launchTicketFunc func() (string, error)
+	// readOnly: the session was opened with the read-only password, so every
+	// write (run, stop, pause, delete, reload, mark read) is hidden.
+	readOnly bool
 
 	mouse mouseState
 
@@ -178,7 +181,10 @@ func NewModel(cfg TUIConfig) Model {
 		daemon:           cfg.Daemon,
 		shutdownFunc:     cfg.ShutdownFunc,
 		launchTicketFunc: cfg.LaunchTicketFunc,
+		readOnly:         cfg.Client != nil && cfg.Client.ReadOnly(),
 	}
+	m.notifications.ReadOnly = m.readOnly
+	m.sidebar.ReadOnly = m.readOnly
 	// serviceInstances reads only the immutable info.Tasks snapshot, so this
 	// closure stays correct across the value-copied model.
 	m.execList.SetInstanceCountLookup(m.serviceInstances)
@@ -226,6 +232,7 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 	ev := execlist.NewExecView(run)
 	ev.Loc = m.loc
 	ev.TaskIsService = m.isService(run.TaskName)
+	ev.ReadOnly = m.readOnly
 	ev.InstanceCount = m.serviceInstances(run.TaskName)
 	ev.SetServiceStopped(m.info.StoppedServices[run.TaskName])
 	ev.Usage = m.runUsage(run.ID)
@@ -250,6 +257,9 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 // known notification tied to runID and fires per-row API calls. Returns nil
 // when nothing matches so the caller doesn't pay for an empty batch.
 func (m *Model) markRunNotificationsRead(runID string) tea.Cmd {
+	if m.readOnly {
+		return nil
+	}
 	ids := m.notifications.UnreadIDsForRun(runID)
 	if len(ids) == 0 {
 		return nil
@@ -401,12 +411,13 @@ func (m *Model) taskLoc(task *model.Task) *time.Location {
 func (m *Model) taskHeader(name string) home.TaskHeader {
 	task := m.taskDisplayByName(name)
 	return home.TaskHeader{
-		Name:    name,
-		Task:    task,
-		Paused:  m.isPaused(name),
-		Stopped: m.info.StoppedServices[name],
-		Usage:   m.taskUsage(name),
-		Loc:     m.taskLoc(task),
+		Name:     name,
+		Task:     task,
+		Paused:   m.isPaused(name),
+		Stopped:  m.info.StoppedServices[name],
+		Usage:    m.taskUsage(name),
+		Loc:      m.taskLoc(task),
+		ReadOnly: m.readOnly,
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/chap"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 )
 
 // Client communicates with the RunWisp daemon HTTP API.
@@ -133,6 +134,13 @@ func (c *Client) SetToken(token string) {
 // clients, which never hold one). Callers persist it to reuse the session.
 func (c *Client) Token() string {
 	return c.token
+}
+
+// ReadOnly reports whether the session was opened with the read-only password,
+// so the daemon rejects every write. Unix-socket clients hold no token and are
+// never read-only.
+func (c *Client) ReadOnly() bool {
+	return auth.IsViewerToken(c.token)
 }
 
 // doJSON performs a JSON request. reqBody is marshalled if non-nil.
