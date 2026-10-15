@@ -14,6 +14,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/spf13/cobra"
 )
 
@@ -97,6 +98,12 @@ func restartDaemon(cmd *cobra.Command, f Flags, local bool) error {
 	}
 
 	if isDaemonRunning(f) {
+		info, err := apiclient.NewUnix(localAPISocketPath(f)).GetInstanceInfo(cmd.Context())
+		if err == nil {
+			if err := appDaemonRestartError(info); err != nil {
+				return err
+			}
+		}
 		if err := shutdownDaemonWait(stopWaitTimeout(f.CfgFile), f); err != nil {
 			return err
 		}
@@ -113,6 +120,25 @@ func restartDaemon(cmd *cobra.Command, f Flags, local bool) error {
 	}
 	printRestarted(out, f)
 	return nil
+}
+
+// appDaemonRestartError refuses to restart a daemon an app started: it would
+// come back reading runwisp.toml instead of the app's config. nil for any
+// other daemon.
+func appDaemonRestartError(info *model.InstanceInfo) error {
+	if !isAppDaemon(info) {
+		return nil
+	}
+	return &userFacingError{
+		title:   "this daemon runs an app's tasks, so `runwisp restart` can't bring it back",
+		details: "Restart the app instead: it starts RunWisp with its config. `runwisp stop` stops the daemon.",
+	}
+}
+
+// isAppDaemon reports whether an SDK app started the daemon, with its own
+// config: only the app can restart it.
+func isAppDaemon(info *model.InstanceInfo) bool {
+	return info != nil && info.ConfigSource == "app"
 }
 
 // restartViaService delegates the restart to systemd/launchd, then waits for

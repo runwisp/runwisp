@@ -832,3 +832,69 @@ func TestSchedulerSetLocationRebasesOnlyDaemonZoneTasks(t *testing.T) {
 	assert.True(t, pinned.Equal(next("pinned")), "a pinned-zone task keeps its tick")
 	assert.True(t, every.Equal(next("every")), "an @every interval keeps its tick")
 }
+
+// TestNextFirings pins NextFirings to what the scheduler fires: the task's own
+// zone over the default, spring-forward gap ticks recovered, and fall-back
+// repeats dropped even when the first of the pair falls before from.
+func TestNextFirings(t *testing.T) {
+	bratislava, err := time.LoadLocation("Europe/Bratislava")
+	require.NoError(t, err)
+	utc := func(s string) time.Time {
+		v, err := time.Parse(time.RFC3339, s)
+		require.NoError(t, err)
+		return v
+	}
+	tests := []struct {
+		name     string
+		task     model.Task
+		from     string
+		n        int
+		want     []string
+		wantZone *time.Location
+	}{
+		{
+			name: "default zone", task: model.Task{Cron: "0 3 * * *"},
+			from: "2026-10-10T12:00:00Z", n: 2,
+			want: []string{"2026-10-11T01:00:00Z", "2026-10-12T01:00:00Z"}, wantZone: bratislava,
+		},
+		{
+			name: "task zone wins", task: model.Task{Cron: "0 3 * * *", Timezone: "UTC"},
+			from: "2026-10-10T12:00:00Z", n: 1,
+			want: []string{"2026-10-11T03:00:00Z"}, wantZone: time.UTC,
+		},
+		{
+			name: "fall-back repeats dropped", task: model.Task{Cron: "*/30 * * * *"},
+			from: "2026-10-25T00:15:00Z", n: 2,
+			want: []string{"2026-10-25T00:30:00Z", "2026-10-25T02:00:00Z"}, wantZone: bratislava,
+		},
+		{
+			name: "repeat of a tick before from dropped", task: model.Task{Cron: "*/30 * * * *"},
+			from: "2026-10-25T01:10:00Z", n: 1,
+			want: []string{"2026-10-25T02:00:00Z"}, wantZone: bratislava,
+		},
+		{
+			name: "spring-forward gap tick recovered", task: model.Task{Cron: "30 2 * * *"},
+			from: "2027-03-27T12:00:00Z", n: 2,
+			want: []string{"2027-03-28T01:30:00Z", "2027-03-29T00:30:00Z"}, wantZone: bratislava,
+		},
+		{
+			name: "every counts from from", task: model.Task{Cron: "@every 90s"},
+			from: "2026-10-10T12:00:00Z", n: 2,
+			want: []string{"2026-10-10T12:01:30Z", "2026-10-10T12:03:00Z"}, wantZone: bratislava,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NextFirings(&tc.task, bratislava, utc(tc.from), tc.n)
+			require.NoError(t, err)
+			require.Len(t, got, len(tc.want))
+			for i, want := range tc.want {
+				assert.True(t, utc(want).Equal(got[i]), "firing %d: want %s, got %s", i, want, got[i])
+				assert.Equal(t, tc.wantZone, got[i].Location())
+			}
+		})
+	}
+
+	_, err = NextFirings(&model.Task{Cron: "61 * * * *"}, bratislava, time.Now(), 1)
+	assert.Error(t, err)
+}

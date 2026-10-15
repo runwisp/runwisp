@@ -499,12 +499,15 @@ func runExecStandalone(taskName string, f Flags, params map[string]*string, asJS
 	case model.TriggerBlockedManualDisabled:
 		return 0, standaloneManualTriggerDisabledError(taskName)
 	}
+	if _, ok := target.ExecutionDef.(*model.SDKExecution); ok {
+		return 0, standaloneSDKTaskError(taskName)
+	}
 
 	eventBus := events.NewEventBus()
 	// One-shot CLI run carries no daemon fingerprint; an empty one keeps its
 	// managed-container labels distinct from any running daemon's, so the CLI run
 	// never reclaims a live daemon's container for the same slot.
-	exec := initExecutor(cfg, eventBus, f.LogDir(), "", nil)
+	exec := initExecutor(cfg, eventBus, f.LogDir(), "", nil, nil)
 
 	taskManager := runtime.NewTaskManager(exec, eventBus, time.Now)
 	defer taskManager.Shutdown()

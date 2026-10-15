@@ -6,6 +6,7 @@ description: "Every key accepted by a [tasks.<name>] table: cron, run, on_overla
 ---
 
 import Run from "./shared/_run.mdx";
+import Sdk from "./shared/_sdk.mdx";
 import Description from "./shared/_description.mdx";
 import Group from "./shared/_group.mdx";
 import ManualTrigger from "./shared/_manual_trigger.mdx";
@@ -68,6 +69,10 @@ run = "..."
 
 <Run />
 
+### sdk
+
+<Sdk />
+
 ### description
 
 <Description />
@@ -110,7 +115,8 @@ Possible values:
 - `0 0 L * *`: midnight on the last day of every month
 - `*/30 * * * * *`: every 30 seconds (6-field, leading seconds)
 - `@hourly`, `@daily`: shorthand forms
-- `@every 1h30m`: fixed interval, ignores wall-clock alignment
+- `@every 1h30m`: fixed interval, ignores wall-clock alignment. The interval
+  is a whole number of seconds, at least `1s`.
 
 [How scheduling works](/concepts/scheduling/) has the full cron grammar, DST
 rules, and catch-up details. `runwisp validate` runs the same checks as daemon
@@ -707,4 +713,4 @@ The config fails to load with any of these:
   [`depends_on`](/configuration/services/#depends_on). A task uses
   [`retry_attempts`](#retry_attempts) instead of restarts.
 - A name already used by a `[services.*]` entry.
-- An empty or missing [`run`](#run) (unless [`compose_file`](#compose_file) is set).
+- An empty or missing [`run`](#run) (unless [`compose_file`](#compose_file) or [`sdk`](#sdk) is set).

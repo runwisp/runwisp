@@ -25,10 +25,10 @@ const daemonEnvPrefix = "RUNWISP_"
 // instanceIndexEnvKey names the variable holding a run's instance slot.
 const instanceIndexEnvKey = "RUNWISP_INSTANCE_INDEX"
 
-// instanceIndexEnv is the layer that tells a run which instance slot it holds
+// InstanceIndexEnv is the layer that tells a run which instance slot it holds
 // (0 for tasks and single-instance services). Every backend layers it beneath
 // task.Env, so a task can still override it.
-func instanceIndexEnv(run *model.Run) map[string]string {
+func InstanceIndexEnv(run *model.Run) map[string]string {
 	idx := 0
 	if run != nil {
 		idx = run.InstanceIndex

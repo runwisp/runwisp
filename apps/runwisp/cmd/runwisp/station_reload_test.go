@@ -53,7 +53,7 @@ func TestReload_StationMode(t *testing.T) {
 	baseURL, err := url.Parse(stationSrv.URL)
 	require.NoError(t, err)
 
-	cfg, err := loadConfigFile(f.CfgFile, true)
+	cfg, err := loadConfig(config.FileSource(f.CfgFile), true)
 	require.NoError(t, err)
 	dc := &daemonConfig{
 		Config:        cfg,
@@ -85,7 +85,7 @@ func TestReload_StationMode(t *testing.T) {
 	defer func() { cancel(); <-done }()
 
 	settings := &settingsApplier{svc: svc}
-	_, reloadFn := newReconciler(dc, svc, f, config.NewSnapshot(f.CfgFile, cfg, time.Now()), settings)
+	_, reloadFn := newReconciler(dc, svc, config.FileSource(f.CfgFile), config.NewSnapshot(f.CfgFile, cfg, time.Now()), settings)
 
 	write("echo after")
 	// Run subscribes asynchronously; retry the (idempotent) reload until the

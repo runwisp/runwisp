@@ -194,6 +194,24 @@ export default defineConfig({
                     ],
                 },
                 {
+                    label: "SDKs",
+                    items: [
+                        { label: "Overview", slug: "sdk" },
+                        {
+                            label: "JavaScript",
+                            items: [
+                                { label: "Overview", slug: "sdk/javascript" },
+                                { label: "Bun", slug: "sdk/javascript/bun" },
+                                { label: "Next.js", slug: "sdk/javascript/nextjs" },
+                                { label: "Nuxt", slug: "sdk/javascript/nuxt" },
+                                { label: "SvelteKit", slug: "sdk/javascript/sveltekit" },
+                                { label: "Astro", slug: "sdk/javascript/astro" },
+                                { label: "NestJS", slug: "sdk/javascript/nestjs" },
+                            ],
+                        },
+                    ],
+                },
+                {
                     label: "Migrating",
                     items: [
                         { label: "Overview", slug: "coming-from" },
@@ -201,6 +219,7 @@ export default defineConfig({
                         { label: "From supervisord", slug: "coming-from/supervisord" },
                         { label: "From systemd", slug: "coming-from/systemd" },
                         { label: "From docker-compose", slug: "coming-from/docker-compose" },
+                        { label: "From node-cron", slug: "coming-from/node-cron" },
                         { label: "From Ofelia", slug: "coming-from/ofelia" },
                     ],
                 },

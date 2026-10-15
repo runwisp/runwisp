@@ -101,8 +101,10 @@ type Options struct {
 	// reclaim in the compose backend.
 	Fingerprint string
 	// Docker and Compose override the real backends (tests); nil uses them.
-	Docker      Backend
-	Compose     Backend
+	Docker  Backend
+	Compose Backend
+	// SDK serves sdk units (apps on the local socket); nil outside the daemon.
+	SDK         Backend
 	MinFreeDisk int64 // minimum free disk space in bytes; 0 = disabled
 	// Clock is the wall-clock source for captured-output timestamps (system
 	// lines and the per-line timestamp index). nil defaults to time.Now;
@@ -137,6 +139,9 @@ func New(opts Options) *RoutingExecutor {
 	backends["shell"] = &ShellBackend{}
 	backends["container"] = cmp.Or(opts.Docker, Backend(NewLazyContainerBackend()))
 	backends["compose"] = cmp.Or(opts.Compose, Backend(NewComposeBackend(opts.Fingerprint)))
+	if opts.SDK != nil {
+		backends["sdk"] = opts.SDK
+	}
 
 	// Always dispatchable: config-backed dispatch when local tasks exist.
 	avail.Config = ConfigStatus(opts.HasLocalTasks)

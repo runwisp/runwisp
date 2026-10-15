@@ -419,6 +419,16 @@ func TestCronMails(t *testing.T) {
 	}
 }
 
+// Bun.cron(path, schedule, title) writes its jobs under a "# bun-cron: <title>" marker.
+func TestCronBunCronTitleNamesTheTask(t *testing.T) {
+	res := parseCron(t, "# bun-cron: weekly-report\n"+
+		"30 2 * * 1 '/usr/local/bin/bun' run --cron-title=weekly-report --cron-period='30 2 * * 1' '/srv/app/worker.ts'\n",
+		CronOptions{})
+	out := res.TOML()
+	mustContain(t, out, "[tasks.weekly-report]")
+	mustNotContain(t, out, "description")
+}
+
 func TestCronCommentBecomesDescription(t *testing.T) {
 	in := "# Rotate the nginx logs\n0 0 * * * /usr/sbin/logrotate\n"
 	res := parseCron(t, in, CronOptions{})

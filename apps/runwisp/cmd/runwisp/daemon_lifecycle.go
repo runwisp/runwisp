@@ -169,6 +169,10 @@ func gracefulShutdown(cancelStation context.CancelFunc, stationWG *sync.WaitGrou
 	waitInput(inputCtx, stationWG, srv)
 
 	waitDrain(svc, effectiveTaskTimeout(time.Duration(svc.TaskShutdownTimeout.Load())))
+	// After the drain, so a handler run being stopped can still report its exit.
+	if svc.Apps != nil {
+		svc.Apps.Close()
+	}
 }
 
 // waitInput waits for the request-accepting layer to quiesce: HTTP server

@@ -144,6 +144,17 @@ anotherbogus = 2
 	assert.NotEqual(t, doc.Errors[0].Line, doc.Errors[1].Line, "each error must carry its own source location")
 }
 
+// TestValidateCreatesNoDataDir guards the SDK, which validates on every
+// schedule() from the app's working directory: that may be read-only.
+func TestValidateCreatesNoDataDir(t *testing.T) {
+	saved := flags
+	t.Cleanup(func() { flags = saved })
+	flags.DataDir = filepath.Join(t.TempDir(), "data")
+
+	require.NoError(t, validateCmd.PersistentPreRunE(validateCmd, nil))
+	assert.NoDirExists(t, flags.DataDir)
+}
+
 const explainConfig = `
 [daemon]
 timezone = "Europe/Bratislava"

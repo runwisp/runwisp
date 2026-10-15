@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Migrating to RunWisp
-description: Move to RunWisp from cron, supervisord, systemd, docker-compose, or Ofelia. RunWisp reads or converts your existing config.
+description: Move to RunWisp from cron, supervisord, systemd, docker-compose, Ofelia, or node-cron. RunWisp reads or converts your existing config.
 head:
     - tag: title
-      content: "Migrate to RunWisp from cron, supervisord, systemd, or docker-compose"
+      content: "Migrate to RunWisp from cron, supervisord, systemd, docker-compose, Ofelia, or node-cron"
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -38,6 +38,11 @@ coming from:
         title="From Ofelia"
         description="Convert job-exec, job-run and job-local jobs, from labels or an INI file."
         href="/coming-from/ofelia/"
+    />
+    <LinkCard
+        title="From node-cron"
+        description="Keep your schedule() calls and see every run in the web UI."
+        href="/coming-from/node-cron/"
     />
 </CardGrid>
 

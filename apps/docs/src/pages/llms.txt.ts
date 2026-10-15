@@ -64,6 +64,19 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
     },
     { label: "Examples", slugs: ["recipes/backup", "recipes/healthcheck"] },
     {
+        label: "SDKs",
+        slugs: [
+            "sdk",
+            "sdk/javascript",
+            "sdk/javascript/bun",
+            "sdk/javascript/nextjs",
+            "sdk/javascript/nuxt",
+            "sdk/javascript/sveltekit",
+            "sdk/javascript/astro",
+            "sdk/javascript/nestjs",
+        ],
+    },
+    {
         label: "Migrating from cron, supervisord, systemd, docker-compose, or Ofelia",
         slugs: [
             "coming-from",
@@ -71,6 +84,7 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
             "coming-from/supervisord",
             "coming-from/systemd",
             "coming-from/docker-compose",
+            "coming-from/node-cron",
             "coming-from/ofelia",
         ],
     },

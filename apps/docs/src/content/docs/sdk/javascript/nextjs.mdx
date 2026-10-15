@@ -1,0 +1,134 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Next.js
+description: Schedule tasks in a self-hosted Next.js app with @runwisp/js, and replace Vercel Cron. Every run is recorded with its output, exit code and duration.
+head:
+    - tag: title
+      content: "Cron jobs in Next.js with RunWisp: scheduled tasks you can see"
+---
+
+**since**: `1.7`
+
+`@runwisp/js` runs scheduled tasks inside a self-hosted Next.js app: `next
+start`, `output: "standalone"` or Docker. It needs a process that keeps running,
+so it does not work on Vercel or other serverless hosts. `withRunWisp()` fails
+the build on Vercel. The `.env.local` that `vercel env pull` writes doesn't
+count, so `next dev` still works with it.
+
+It works with Next.js 15 or later, on Node.js or on [Bun](#bun).
+
+## Set up
+
+```bash
+npm install @runwisp/js
+```
+
+Wrap your Next config with `withRunWisp()`. It keeps the package out of Next's
+server bundle, so it finds the `runwisp` binary, and copies the binary into
+`output: "standalone"` builds:
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+import { withRunWisp } from "@runwisp/js/next";
+
+const nextConfig: NextConfig = {};
+
+export default withRunWisp(nextConfig);
+```
+
+## Define tasks
+
+Put the tasks in their own module:
+
+```ts
+// lib/tasks.ts
+import { RunWisp } from "@runwisp/js";
+import { cleanupSessions } from "./sessions";
+
+const runwisp = new RunWisp({ exitOnSignal: Boolean(process.env.NEXT_MANUAL_SIG_HANDLE) });
+
+runwisp.task("cleanup-sessions", { cron: "0 * * * *" }, async () => {
+    const removed = await cleanupSessions();
+    console.log(`removed ${removed} expired sessions`);
+});
+```
+
+Load it from `instrumentation.ts`, which Next runs once when the server starts:
+
+```ts
+// instrumentation.ts
+export async function register() {
+    if (process.env.NEXT_RUNTIME === "nodejs") await import("./lib/tasks");
+}
+```
+
+`next dev` and `next start` print the dashboard address on startup. See the
+[JavaScript SDK](/sdk/javascript/#task-options) for every task option.
+
+Import `lib/tasks.ts` only from `instrumentation.ts`, not from pages or route
+handlers. Next loads separate copies of your modules for instrumentation and
+for requests, so a database client or cache the tasks use is not the one your
+routes use. Keep shared clients on `globalThis` if that matters.
+
+`next dev` does not reload `instrumentation.ts` or what it imports. Restart the
+dev server after you change a task.
+
+## Vercel Cron
+
+`scheduleVercelCrons()` runs the `crons` from `vercel.json` under RunWisp. Keep
+the file and your cron routes as they are:
+
+```ts
+// lib/tasks.ts
+import { scheduleVercelCrons } from "@runwisp/js/next";
+import vercel from "../vercel.json";
+
+scheduleVercelCrons(runwisp, vercel);
+```
+
+Each cron becomes a task named after its path, so `/api/cron/cleanup` is
+`api-cron-cleanup`. On schedule, RunWisp requests the path on
+`http://localhost:$PORT` like Vercel does, with `Authorization: Bearer
+$CRON_SECRET` when `CRON_SECRET` is set. The response goes to the run's log, and
+a status other than 2xx fails the run. Schedules are in UTC, as on Vercel. Pass
+`{ baseUrl }` as the third argument if the app listens elsewhere.
+
+As on Vercel, times missed while the app was down are not run late, and a run
+that comes while the last one is still going starts anyway. The tasks get
+[`catch_up = 0`](/configuration/tasks/#catch_up) and
+[`max_concurrent = 1024`](/configuration/tasks/#max_concurrent).
+
+## Shut down cleanly
+
+On `SIGTERM` and Ctrl-C, `next start` exits right away. A run in progress then
+fails with `the app disconnected`, and RunWisp stops 10 seconds later. To let
+runs finish first, set `NEXT_MANUAL_SIG_HANDLE`, which turns on
+[`exitOnSignal`](/sdk/javascript/#exitonsignal) in the example above. Like
+Next, the example treats any value as set, `false` included:
+
+```json
+// package.json
+{ "scripts": { "start": "NEXT_MANUAL_SIG_HANDLE=true next start" } }
+```
+
+## Standalone output
+
+Build on the platform you deploy to, for example inside your Docker image. The
+binary is installed for the machine that runs `npm install`.
+
+In Docker, set `HOSTNAME=0.0.0.0`. Docker sets `HOSTNAME` to the container ID,
+so a standalone server listens on that address only, and
+[`scheduleVercelCrons()`](#vercel-cron) cannot reach it on `localhost`.
+
+## Bun
+
+Run Next with Bun's runtime:
+
+```bash
+bun --bun next dev
+bun --bun next start
+```
+
+A standalone build starts with `bun .next/standalone/server.js`.

@@ -1,0 +1,93 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Astro
+description: Schedule tasks in an Astro app with @runwisp/js and the Node adapter. Every run is recorded with its output, exit code and duration.
+head:
+    - tag: title
+      content: "Cron jobs in Astro with RunWisp: scheduled tasks you can see"
+---
+
+**since**: `1.7`
+
+`@runwisp/js` runs scheduled tasks inside your Astro server, in `astro dev`
+and with the [Node adapter](https://docs.astro.build/en/guides/integrations-guide/node/).
+It needs a process that keeps running, so `astro build` fails with any other
+adapter, or with none.
+
+It works with Astro 5 or later and `@astrojs/node` 9 or later, on Node.js or
+on Bun.
+
+## Set up
+
+```bash
+npm install @runwisp/js
+```
+
+## Define tasks
+
+Put the tasks in their own module:
+
+```ts
+// src/tasks.ts
+import { RunWisp } from "@runwisp/js";
+import { cleanupSessions } from "./lib/sessions";
+
+// Standalone mode has no shutdown hook: let running tasks finish, then exit.
+export const runwisp = new RunWisp({ exitOnSignal: import.meta.env.PROD });
+
+runwisp.task("cleanup-sessions", { cron: "0 * * * *" }, async () => {
+    const removed = await cleanupSessions();
+    console.log(`removed ${removed} expired sessions`);
+});
+```
+
+Add the integration. It starts the tasks when `astro dev` or the built server
+starts:
+
+```js
+// astro.config.mjs
+import { defineConfig } from "astro/config";
+import node from "@astrojs/node";
+import runwisp from "@runwisp/js/astro";
+
+export default defineConfig({
+    adapter: node({ mode: "standalone" }),
+    integrations: [runwisp({ tasks: "./src/tasks.ts" })],
+});
+```
+
+The server prints the dashboard address when the tasks start. See the
+[JavaScript SDK](/sdk/javascript/#task-options) for every task option.
+
+`astro dev` does not reload `src/tasks.ts` or what it imports. Restart the dev
+server after you change a task.
+
+Don't import the tasks from `src/middleware.ts`: Astro loads middleware on the
+first request, so nothing would run until someone visits the site.
+
+The built server starts the tasks with `node dist/server/entry.mjs`, or
+`bun dist/server/entry.mjs` on Bun.
+
+## Middleware mode
+
+In [middleware mode](https://docs.astro.build/en/guides/integrations-guide/node/#middleware),
+the tasks start when your server imports `handler` from `dist/server/entry.mjs`.
+Your server handles the shutdown, so leave out `exitOnSignal`, and close
+RunWisp in your shutdown code. Running tasks finish first:
+
+```js
+// server.mjs
+import { RunWisp } from "@runwisp/js";
+
+process.once("SIGTERM", async () => {
+    server.close();
+    await RunWisp.closeAll();
+});
+```
+
+## Coming from node-cron
+
+`@runwisp/js` has node-cron's API, so `cron.schedule()` calls keep working
+with `const cron = new RunWisp()`. Give every task a `name`. See
+[From node-cron](/coming-from/node-cron/).

@@ -305,6 +305,16 @@ func standaloneManualTriggerDisabledError(taskName string) error {
 	}
 }
 
+// standaloneSDKTaskError is returned for an sdk task with no daemon running:
+// its callback lives in the app, which only a daemon can hand the run to.
+func standaloneSDKTaskError(taskName string) error {
+	return &userFacingError{
+		title: fmt.Sprintf("task %q runs in your app (sdk = true)", taskName),
+		details: "An sdk task only runs in a RunWisp daemon that its app is connected to.\n" +
+			"  - Start the app, then run the task from the web UI, or with `runwisp run` against the app's data directory",
+	}
+}
+
 // noConfigError is returned when the daemon can't find runwisp.toml and isn't
 // running under `runwisp station` (which tolerates an absent config and relies
 // on ad-hoc dispatch instead). It never substitutes a fallback config — a

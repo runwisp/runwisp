@@ -20,7 +20,7 @@ type validateOpts struct {
 	Now     time.Time
 }
 
-var validateJSON, validateExplain bool
+var validateJSON, validateExplain, validateApp bool
 
 var validateCmd = &cobra.Command{
 	Use:   "validate",
@@ -30,8 +30,15 @@ var validateCmd = &cobra.Command{
   runwisp validate -c ./deploy/runwisp.toml
   runwisp validate --explain   # each schedule in words, with its next firings
   runwisp validate --json   # machine-readable; errors carry key/line/column`,
+	// Only reads the config: no data dir to create, unlike the root's pre-run.
+	// An SDK validates on every schedule(), from wherever the app runs.
+	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error { return resolveFlags(cmd) },
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runValidate(cmd.OutOrStdout(), flags, validateOpts{JSON: validateJSON, Explain: validateExplain, Now: time.Now()})
+		f, err := withAppDocument(flags, cmd.InOrStdin(), validateApp)
+		if err != nil {
+			return err
+		}
+		return runValidate(cmd.OutOrStdout(), f, validateOpts{JSON: validateJSON, Explain: validateExplain, Now: time.Now()})
 	},
 	SilenceErrors: true,
 	SilenceUsage:  true,
@@ -40,9 +47,20 @@ var validateCmd = &cobra.Command{
 func init() {
 	validateCmd.Flags().BoolVar(&validateExplain, "explain", false, "describe each schedule in words and list its next 3 firings in the scheduler's timezone, with DST effects marked")
 	validateCmd.Flags().BoolVar(&validateJSON, "json", false, "emit a machine-readable JSON document to stdout instead of the human summary")
+	validateCmd.Flags().BoolVar(&validateApp, "app", false, appFlagUsage)
 }
 
-// runValidate loads and validates f.CfgFile. On success it prints a
+// loadValidateConfig loads f.CfgFile, or the document standing in for it under
+// `--app`.
+func loadValidateConfig(f Flags) (*config.Config, error) {
+	if f.ConfigDoc != nil {
+		return config.LoadDocument(f.CfgFile, f.ConfigDoc)
+	}
+	return config.Load(f.CfgFile)
+}
+
+// runValidate loads and validates f.CfgFile, or the document standing in for
+// it under `--app`. On success it prints a
 // short ✓ summary to w and returns nil; on failure it returns a userFacing
 // error so main.go renders the message in the same style as other CLI
 // errors. The summary covers the values an operator most often wants to
@@ -52,7 +70,7 @@ func init() {
 // With opts.JSON, w receives a single validateJSONDoc instead (valid=false on
 // failure, still returning the error so the exit code stays non-zero).
 func runValidate(w io.Writer, f Flags, opts validateOpts) error {
-	cfg, err := config.Load(f.CfgFile)
+	cfg, err := loadValidateConfig(f)
 	if err != nil {
 		if opts.JSON {
 			// Emit the error document to stdout so an agent never has to parse

@@ -26,10 +26,13 @@ import (
 // individual subcommand files don't each declare their own globals.
 type Flags struct {
 	CfgFile string
-	DataDir string
-	Socket  string
-	Host    string
-	Port    int
+	// ConfigDoc is the config an app supplied as JSON on stdin (`--app`),
+	// standing in for CfgFile; nil means CfgFile on disk is the config.
+	ConfigDoc []byte
+	DataDir   string
+	Socket    string
+	Host      string
+	Port      int
 
 	// logLevelRaw and logFormatRaw hold the raw CLI flag values; PersistentPreRunE
 	// resolves them (with RUNWISP_LOG_LEVEL / RUNWISP_LOG_FORMAT env fallbacks)
@@ -72,15 +75,25 @@ Machine-readable reference for agents: https://docs.runwisp.com/llms.txt`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if err := resolveLogConfig(); err != nil {
+		if err := resolveFlags(cmd); err != nil {
 			return err
 		}
-		if err := resolvePortConfig(cmd); err != nil {
-			return err
-		}
-		resolvePathDefaults(os.Geteuid())
 		return datadir.EnsureDir(flags.DataDir)
 	},
+}
+
+// resolveFlags finalizes the global flags from the command line and the
+// environment. The root's pre-run then creates the data dir; a command that
+// never touches it calls this alone.
+func resolveFlags(cmd *cobra.Command) error {
+	if err := resolveLogConfig(); err != nil {
+		return err
+	}
+	if err := resolvePortConfig(cmd); err != nil {
+		return err
+	}
+	resolvePathDefaults(os.Geteuid())
+	return nil
 }
 
 func init() {
@@ -105,6 +118,7 @@ func init() {
 	rootCmd.AddCommand(stationCmd)
 	rootCmd.AddCommand(tuiCmd)
 	rootCmd.AddCommand(validateCmd)
+	rootCmd.AddCommand(sdkCronCmd)
 	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(promoteCmd)
 	rootCmd.AddCommand(listCmd)

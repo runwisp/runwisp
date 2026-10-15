@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.deb` and `.rpm` packages for x64 and arm64. They add the RunWisp apt or dnf repository, so system updates keep RunWisp current.
 - `runwisp` next to a compose file first offers a starter that schedules jobs in the running stack, then one that imports its services.
 - `RUNWISP_VIEWER_PASSWORD` adds an optional read-only password: a session signed in with it can view tasks, runs and logs, and the daemon rejects trigger, start, stop, pause, delete and reload for it. The Web UI and TUI hide those controls. `runwisp password --viewer` prints it, generating one if none is set. See [Authentication](https://docs.runwisp.com/operations/auth/#read-only-access).
+- `@runwisp/js`: an npm package that runs node-cron tasks under RunWisp, so every run is recorded with its output and exit code and shown in the web UI. Swap the import and keep your `schedule()` calls, or define tasks and services with every `runwisp.toml` key. See [From node-cron](https://docs.runwisp.com/coming-from/node-cron/).
+- `@runwisp/js` integrates with NestJS (replacing `@nestjs/schedule`), Nuxt and Next.js (running Nitro's `scheduledTasks` and Vercel Cron jobs), and Astro.
+- Tasks and services take `sdk = true`, which runs them in an app that defines them through an SDK instead of a shell command, and `runwisp daemon --app` reads its config from such an app.
+- `runwisp import cron` names the jobs that Bun's `Bun.cron()` wrote into a crontab after their title.
 
 ### Changed
 
@@ -42,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The TUI log search (`/`) and the shutdown spinner use the TUI's colors instead of falling back to the terminal's own.
 - The TUI log search (`/`) now shows its results every time instead of sometimes staying empty.
 - New releases reach npm again. 1.6.0 was never published there.
+- `@every` rejects an interval that isn't a whole number of seconds, such as `1500ms`, instead of running it every second.
+- `runwisp validate` no longer creates the data directory.
 
 ## [1.6.0] - 2026-10-10
 

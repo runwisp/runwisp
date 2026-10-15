@@ -253,22 +253,12 @@ const catchupCountDisplayFloor = 1000
 // schedules are exempt, as in fireOnce (see cronspec.IsFixedInterval).
 func countMissedTicks(schedule cron.Schedule, lastRunTime, now time.Time, maxCount int) (count int, lastTick time.Time, truncated bool) {
 	fixedInterval := cronspec.IsFixedInterval(schedule)
-	var curHour wallHour
-	var seen map[wallSecond]struct{}
+	var fired firedHour
 	// A zero or non-advancing Next (a schedule that never fires, or one past its
 	// search horizon) ends the walk instead of spinning on the same tick.
 	for prev, next := lastRunTime, schedule.Next(lastRunTime); next.After(prev) && !next.After(now); prev, next = next, schedule.Next(next) {
-		if !fixedInterval {
-			wall := newWallSecond(next)
-			hour := wall.inHour()
-			if seen == nil || hour != curHour {
-				curHour = hour
-				seen = make(map[wallSecond]struct{})
-			}
-			if _, duplicate := seen[wall]; duplicate {
-				continue
-			}
-			seen[wall] = struct{}{}
+		if !fixedInterval && fired.repeat(newWallSecond(next)) {
+			continue
 		}
 
 		count++
