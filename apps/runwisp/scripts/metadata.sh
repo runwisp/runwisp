@@ -30,6 +30,12 @@ runner_ldflags() {
   pkg=$(go list -f '{{.ImportPath}}' "${metadata_script_dir}/../internal/version")
   version=$(runner_version)
   flags="-X ${pkg}.Version=${version}"
+  # Only release.yml's build is official (see version.Official). Every other
+  # build (local, CI, e2e, demos) would otherwise report to the update check as
+  # an unknown install.
+  if [[ "${RUNWISP_RELEASE_BUILD:-}" == "1" ]]; then
+    flags="${flags} -X ${pkg}.Official=1"
+  fi
   if [[ "${RELEASE:-}" == "1" ]]; then
     flags="-s -w ${flags}"
   fi

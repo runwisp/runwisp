@@ -128,15 +128,20 @@ func TestMethod(t *testing.T) {
 		{"docker", "/usr/local/bin/runwisp", nil, true},
 		{"script", "/usr/local/bin/runwisp", nil, false},
 		{"other", "/home/u/.local/bin/runwisp", nil, false},
+		{"deb", "/usr/lib/runwisp/runwisp", []string{"sudo", "sh", "-c", "apt-get update && apt-get install --only-upgrade -y runwisp"}, false},
+		{"rpm", "/usr/lib/runwisp/runwisp", []string{"sudo", "dnf", "upgrade", "-y", "--refresh", "runwisp"}, false},
 	}
 	for _, c := range cases {
-		argv, refusal := Method(c.source, c.exe)
+		argv, refusal := Method(c.source, c.exe, false)
 		if !slices.Equal(argv, c.argv) || (refusal != "") != c.refuses {
 			t.Errorf("Method(%q, %q) = %v, %q; want %v, refuses=%v", c.source, c.exe, argv, refusal, c.argv, c.refuses)
 		}
 	}
-	if _, refusal := Method("npm", "/srv/app/node_modules/@runwisp/linux-x64/runwisp"); !strings.Contains(refusal, "/srv/app") {
+	if _, refusal := Method("npm", "/srv/app/node_modules/@runwisp/linux-x64/runwisp", false); !strings.Contains(refusal, "/srv/app") {
 		t.Errorf("project-local refusal %q should name the project", refusal)
+	}
+	if argv, _ := Method("rpm", "/usr/lib/runwisp/runwisp", true); argv[0] != "dnf" {
+		t.Errorf("as root, Method should run dnf directly, got %v", argv)
 	}
 }
 

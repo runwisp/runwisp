@@ -3,8 +3,9 @@
 # Two-stage release pipeline:
 #
 #   1. Push a `v*` tag → build cross-platform binaries and create a GitHub Release
-#      **draft** containing the tarballs, sha256 checksums, and the matching
-#      CHANGELOG.md section as the body. Nothing is published to npm at this stage.
+#      **draft** containing the tarballs, .deb/.rpm packages, sha256 checksums,
+#      and the matching CHANGELOG.md section as the body. Nothing is published
+#      to npm at this stage.
 #
 #   2. Publish the GitHub Release (human clicks "Publish release" on the draft)
 #      → publish every npm package at the release's tag version:
@@ -14,7 +15,10 @@
 #      → build and push the runwisp/runwisp Docker image (alpine + debian,
 #        linux/amd64 + linux/arm64) to Docker Hub, from the same release tarballs.
 #      → regenerate the Homebrew formula in runwisp/homebrew-tap (stable only).
+#      → rebuild the apt/dnf repository at pkg.runwisp.com (stable only).
 #
+# PACKAGES_GPG_KEY (armored private key) signs the rpms and the repository;
+# CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID deploy the repository.
 # Auth is OIDC Trusted Publisher (per-package, configured on npmjs.com) for npm,
 # and a Docker Hub access token (DOCKERHUB_USERNAME / DOCKERHUB_TOKEN repo
 # secrets) for the image push.
@@ -101,6 +105,7 @@ jobs:
         working-directory: apps/runwisp
         env:
           RELEASE: "1"
+          RUNWISP_RELEASE_BUILD: "1"
         run: ./scripts/build-all.sh
 
       - name: Upload dist artifacts
@@ -123,7 +128,10 @@ jobs:
         with:
           sparse-checkout: |
             CHANGELOG.md
+            go.mod
             apps/runwisp/scripts/package-all.sh
+            packaging/linux
+            .github/actions/linux-packages
           sparse-checkout-cone-mode: false
 
       - name: Extract release notes from CHANGELOG
@@ -150,8 +158,17 @@ jobs:
       - name: Package and verify archives
         run: apps/runwisp/scripts/package-all.sh dist .
 
+      # Built here rather than in `build` so the signing key never shares a job
+      # with the npm-driven UI build. linux-packages-rehearsal.yml runs the same
+      # action.
+      - name: Build .deb and .rpm packages
+        uses: ./.github/actions/linux-packages
+        with:
+          version: ${{ needs.build.outputs.version }}
+          dist: dist
+          signing-key: ${{ secrets.PACKAGES_GPG_KEY }}
       - name: Generate checksums
-        run: sha256sum runwisp-*.tar.gz > checksums-sha256.txt
+        run: sha256sum runwisp-*.tar.gz runwisp-*.deb runwisp-*.rpm > checksums-sha256.txt
 
       # Signed build provenance: `gh attestation verify <file> --repo runwisp/runwisp`.
       - name: Attest build provenance
@@ -160,6 +177,8 @@ jobs:
         with:
           subject-path: |
             runwisp-*.tar.gz
+            runwisp-*.deb
+            runwisp-*.rpm
             checksums-sha256.txt
 
       # The same signed bundle as a release asset, which is where OpenSSF
@@ -175,6 +194,8 @@ jobs:
           body: ${{ steps.notes.outputs.BODY }}
           files: |
             runwisp-*.tar.gz
+            runwisp-*.deb
+            runwisp-*.rpm
             checksums-sha256.txt
             runwisp.intoto.jsonl
 
@@ -272,12 +293,14 @@ jobs:
             fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n');
           "
 
+      # Publish from inside the package: run from the repo root, npm checks the
+      # root package.json's devEngines (bun) and refuses to publish.
       - name: Publish
         if: steps.changes.outputs.skip != 'true'
         env:
           NPM_TAG: ${{ steps.version.outputs.NPM_TAG }}
-          PKG_DIR: ${{ matrix.package }}
-        run: npm publish "./${PKG_DIR}" --access public --tag "${NPM_TAG}" --provenance
+        working-directory: ${{ matrix.package }}
+        run: npm publish --access public --tag "${NPM_TAG}" --provenance
 
   npm-publish-platform:
     if: github.event_name == 'release'
@@ -345,11 +368,12 @@ jobs:
             fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n');
           "
 
+      # From inside the package, as in npm-publish-workspace.
       - name: Publish
         env:
           NPM_TAG: ${{ steps.version.outputs.NPM_TAG }}
-          PKG_DIR: npm/${{ matrix.platform }}
-        run: npm publish "./${PKG_DIR}" --access public --tag "${NPM_TAG}" --provenance
+        working-directory: npm/${{ matrix.platform }}
+        run: npm publish --access public --tag "${NPM_TAG}" --provenance
 
   npm-publish-runwisp:
     if: github.event_name == 'release'
@@ -494,6 +518,49 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "runwisp ${TAG#v}"
           git push
+
+  # The apt and dnf repository at pkg.runwisp.com, which the .deb/.rpm packages
+  # point at. Rebuilt from scratch with only this release's packages and
+  # deployed as a Cloudflare Pages direct upload, then installed from in
+  # Debian and Fedora. Stable releases only, so prerelease packages stay on the
+  # GitHub release. linux-packages-rehearsal.yml runs the same action against a
+  # preview branch.
+  linux-repo:
+    if: github.event_name == 'release' && !contains(github.event.release.tag_name, '-')
+    name: Publish the apt/dnf repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          sparse-checkout: |
+            packaging/linux
+            .github/actions/linux-repo
+
+      - name: Download and verify the packages
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "VERSION=${TAG#v}" >> "$GITHUB_OUTPUT"
+          gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" --dir pkgs \
+            --pattern 'runwisp-linux-*.deb' --pattern 'runwisp-linux-*.rpm' --pattern checksums-sha256.txt
+          cd pkgs && sha256sum --check --ignore-missing checksums-sha256.txt
+
+      - name: Publish the repository
+        uses: ./.github/actions/linux-repo
+        with:
+          version: ${{ steps.version.outputs.VERSION }}
+          packages: pkgs
+          signing-key: ${{ secrets.PACKAGES_GPG_KEY }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          branch: main
+          url: https://pkg.runwisp.com
 
   docker-publish:
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'

@@ -34,16 +34,21 @@ const maxArchiveSize = 256 << 20
 // Method decides how to upgrade a binary installed via source (InstallSource)
 // that lives at exe (Executable). A non-nil argv is the package-manager command
 // that upgrades it; a non-empty refusal explains why `runwisp upgrade` can't;
-// both empty means the binary is ours to replace in place (SelfReplace).
+// both empty means the binary is ours to replace in place (SelfReplace). root
+// says whether we already run as root; the system package managers need it.
 //
 // npm-family installs are told apart by path rather than recorded at install
 // time: bun and pnpm skip lifecycle scripts by default, so the npm wrapper has
 // no install hook, but each manager's global tree has a fixed shape.
-func Method(source, exe string) (argv []string, refusal string) {
+func Method(source, exe string, root bool) (argv []string, refusal string) {
 	p := filepath.ToSlash(exe)
 	switch source {
 	case "homebrew":
 		return []string{"brew", "upgrade", "runwisp"}, ""
+	case "deb":
+		return asRoot(root, "sh", "-c", "apt-get update && apt-get install --only-upgrade -y runwisp"), ""
+	case "rpm":
+		return asRoot(root, "dnf", "upgrade", "-y", "--refresh", "runwisp"), ""
 	case "docker":
 		return nil, "This RunWisp runs from the Docker image. Pull the new image and recreate the container:\n\n  docker compose pull && docker compose up -d"
 	case "npx":
@@ -63,6 +68,14 @@ func Method(source, exe string) (argv []string, refusal string) {
 		return nil, fmt.Sprintf("RunWisp is a dependency of the project in %s. Update it there with your package manager, e.g.:\n\n  npm install runwisp@latest", project)
 	}
 	return nil, ""
+}
+
+// asRoot prefixes argv with sudo unless we already run as root.
+func asRoot(root bool, argv ...string) []string {
+	if root {
+		return argv
+	}
+	return append([]string{"sudo"}, argv...)
 }
 
 // LatestVersion returns the tag of the newest stable release (e.g. "v1.6.0").

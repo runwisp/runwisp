@@ -1,0 +1,42 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: GPL-3.0-or-later
+
+name: Build the Linux packages
+description: >-
+  Build runwisp-linux-{x64,arm64}.{deb,rpm} into the working directory from a
+  build-all.sh dist tree, signing the rpms. Shared by release.yml and the
+  packaging rehearsal so both run the same steps. Needs go.mod and
+  packaging/linux checked out.
+
+inputs:
+  version:
+    description: Package version, without a leading v.
+    required: true
+  dist:
+    description: The dist tree, <dist>/<target>/runwisp.
+    required: true
+  signing-key:
+    description: Armored private key that signs the rpms (PACKAGES_GPG_KEY).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: false
+    - name: Build .deb and .rpm packages
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        DIST: ${{ inputs.dist }}
+        PACKAGES_GPG_KEY: ${{ inputs.signing-key }}
+      run: |
+        if [[ -z "${PACKAGES_GPG_KEY}" ]]; then
+          echo "::error::PACKAGES_GPG_KEY is not set or empty; the rpm packages can't be signed."
+          exit 1
+        fi
+        key="${RUNNER_TEMP}/packages.key"
+        printf '%s\n' "${PACKAGES_GPG_KEY}" > "${key}"
+        RPM_SIGNING_KEY="${key}" packaging/linux/packages.sh "${VERSION}" "${DIST}" .
+        rm -f "${key}"

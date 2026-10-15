@@ -1,0 +1,5 @@
+Types: deb
+URIs: https://pkg.runwisp.com/deb
+Suites: stable
+Components: main
+Signed-By: /usr/share/keyrings/runwisp.asc

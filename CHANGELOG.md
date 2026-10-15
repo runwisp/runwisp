@@ -12,11 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The TUI run list shows each run's CPU time and peak memory, colored by how it compares with the task's usual run, so an unusually heavy run stands out.
 - The TUI task info (`i`) shows the task's timeout, its log limit and retention, its usual CPU time and memory, and opens with the first lines of its `run` command; press `c` to see the whole command. It scrolls when it doesn't fit.
 - `warn_after` on a task sends a notification once when a run is still going after that long, without stopping it. It reaches the same places as a failure alert, or any `[[route]]` that lists `long_running`.
-- `runwisp upgrade` updates RunWisp the way it was installed (Homebrew, npm/bun/pnpm/yarn, or the install script) and can restart the daemon now, once it is idle, or later.
+- `runwisp upgrade` updates RunWisp the way it was installed (Homebrew, apt, dnf, npm/bun/pnpm/yarn, or the install script) and can restart the daemon now, once it is idle, or later.
 - `runwisp import ofelia` converts Ofelia jobs, from an INI config or `ofelia.*` compose labels, into tasks.
 - A task with `compose_service` and `run` can leave out `compose_file` when RunWisp runs in the same compose project; it needs only the Docker socket.
 - `[daemon] log_output` (or `RUNWISP_LOG_OUTPUT`) prints task output to the daemon's stdout as `task | line`. The Docker image turns it on, so `docker compose logs runwisp` shows job output.
 - The Docker image runs RunWisp under `tini`, so processes your tasks leave behind are reaped.
+- `.deb` and `.rpm` packages for x64 and arm64. They add the RunWisp apt or dnf repository, so system updates keep RunWisp current.
 - `runwisp` next to a compose file first offers a starter that schedules jobs in the running stack, then one that imports its services.
 
 ### Changed
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The TUI, `runwisp --help`, CLI errors, the startup banner and log lines use the teal brand colors of the Web UI, readable on light and dark terminals.
 - `runwisp validate` rejects a task whose `compose_service` is not in its `compose_file`.
 - A scheduled `compose_mode = "run"` job no longer publishes the service's ports or takes its network alias, so it can run beside the stack.
+- A build from source no longer checks for updates or offers `runwisp upgrade`.
 
 ### Fixed
 
@@ -35,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A task or service with `compose_file` now runs in the compose file's own project, like `docker compose up` in that directory. A fresh container joins the stack's network and named volumes, so a scheduled job can reach `db` and see the stack's data instead of an empty volume of its own.
 - The TUI log search (`/`) and the shutdown spinner use the TUI's colors instead of falling back to the terminal's own.
 - The TUI log search (`/`) now shows its results every time instead of sometimes staying empty.
+- New releases reach npm again. 1.6.0 was never published there.
 
 ## [1.6.0] - 2026-10-10
 

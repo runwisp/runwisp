@@ -1,0 +1,62 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: GPL-3.0-or-later
+
+name: Publish the apt/dnf repository
+description: >-
+  Build the signed apt/dnf repository from one release's packages, deploy it
+  to the runwisp-packages Cloudflare Pages project, then install from the
+  deployed site in Debian and Fedora. Shared by release.yml (branch main,
+  served as pkg.runwisp.com) and the packaging rehearsal (a preview branch).
+  Needs packaging/linux checked out.
+
+inputs:
+  version:
+    description: Release version, without a leading v.
+    required: true
+  packages:
+    description: Directory holding runwisp-linux-{x64,arm64}.{deb,rpm}.
+    required: true
+  signing-key:
+    description: Armored private key that signs the metadata (PACKAGES_GPG_KEY).
+    required: true
+  cloudflare-api-token:
+    required: true
+  cloudflare-account-id:
+    required: true
+  branch:
+    description: Pages branch to deploy; main is production.
+    required: true
+  url:
+    description: Where that branch is served, for the smoke test.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Import the signing key
+      shell: bash
+      env:
+        PACKAGES_GPG_KEY: ${{ inputs.signing-key }}
+      run: printf '%s\n' "${PACKAGES_GPG_KEY}" | gpg --batch --import
+
+    - name: Build the repository
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        sudo apt-get update -qq && sudo apt-get install -y -qq apt-utils createrepo-c
+        packaging/linux/repo.sh "${VERSION}" "${PACKAGES}" site
+
+    - name: Deploy to Cloudflare Pages
+      uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+      with:
+        apiToken: ${{ inputs.cloudflare-api-token }}
+        accountId: ${{ inputs.cloudflare-account-id }}
+        command: pages deploy site --project-name=runwisp-packages --branch=${{ inputs.branch }}
+
+    - name: Install from the deployed repository
+      shell: bash
+      env:
+        URL: ${{ inputs.url }}
+        VERSION: ${{ inputs.version }}
+      run: packaging/linux/tests/repo_smoke.sh "${URL}" "${VERSION}"

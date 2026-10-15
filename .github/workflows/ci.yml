@@ -182,6 +182,7 @@ jobs:
           shellcheck -s sh docker/docker-entrypoint.sh docker/tests/entrypoint_test.sh
           shellcheck docker/build-local.sh docker/tests/smoke.sh
           shellcheck apps/runwisp/scripts/package-all.sh apps/runwisp/scripts/tests/package-all_test.sh
+          shellcheck packaging/linux/*.sh packaging/linux/tests/*.sh
 
       - name: Entrypoint unit tests (dash and bash)
         run: |
@@ -196,6 +197,15 @@ jobs:
         run: apps/runwisp/scripts/tests/package-all_test.sh
 
       - uses: ./.github/actions/setup
+
+      # Installs the .deb/.rpm in Debian and Fedora containers and upgrades
+      # them from a freshly built, signed apt/dnf repository.
+      - name: Linux package tests
+        run: |
+          # The repository tools release.yml's linux-repo job installs, so the
+          # test builds the repository the same way the release does.
+          sudo apt-get install -y -qq apt-utils createrepo-c
+          packaging/linux/tests/packages_test.sh
 
       - name: Build web UI and sync into Go embed directory
         run: ./node_modules/.bin/moon run runwisp:sync-ui-dist
