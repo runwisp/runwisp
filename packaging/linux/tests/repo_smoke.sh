@@ -51,8 +51,11 @@ run debian:trixie-slim '
   cp /linux/runwisp.asc /usr/share/keyrings/runwisp.asc
   sed "s|https://pkg.runwisp.com|${BASE}|" /linux/runwisp.sources >/etc/apt/sources.list.d/smoke.sources
   # The edge can still serve a stale Packages.gz after Packages is fresh.
-  for attempt in 1 2 3 4 5 6; do apt-get update && break; [ "${attempt}" -lt 6 ]; sleep 10; done
-  apt-get install -y -o Dpkg::Options::=--force-confold runwisp
+  # The pool .deb can lag the same way, so retry the install along with the index.
+  for attempt in 1 2 3 4 5 6; do
+    apt-get update && apt-get install -y -o Dpkg::Options::=--force-confold runwisp && break
+    [ "${attempt}" -lt 6 ]; sleep 10
+  done
   test "$(cat /usr/lib/runwisp/.runwisp-source)" = deb
   runwisp --version | grep -F "${VERSION}"
 '
