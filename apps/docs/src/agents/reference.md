@@ -94,6 +94,7 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
 ```
 timeout:             dur          — per-attempt wall-clock cap; unset = no timeout (TASKS only)
 jitter:              dur          — start-spread window inherited by cron tasks; off when unset (TASKS only)
+warn_after:          dur          — one long_running notification when a run is still going this long after it started (queue wait excluded); the run keeps going; off when unset, "0s" turns off an inherited value; since 1.7 (TASKS only)
 shell:               path =/bin/sh — interpreter for run scripts (absolute path); see FAIL-FAST
 stop_signal:         enum =SIGTERM — stop-ladder signal: SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
 failures:            []str        — outcomes classified as a failure (stats/UI/notify, and gates retry/restart); tokens are reason names (failed,timeout,crashed,log_overflow,start_failed,unhealthy,missed,stopped,daemon_stopped,skipped,queue_full,dst_skipped; not succeeded), exit codes ("42","1-23"; 1..255), or output patterns ("output:<RE2>", matched per stdout/stderr line after secret redaction; a match turns an exit-0 run into reason failed and writes a system log line). Default [failed,timeout,crashed,log_overflow,start_failed,unhealthy,missed]. is_failure = reason∈tokens OR (reason==failed AND (exit∈ranges OR output matched)). Bare list replaces; all-+/- tokens ("-missed","+stopped") adjust the inherited set (task adjusts [defaults], [defaults] adjusts built-in); mixing bare & +/- rejected ("-output:X" drops only an identical pattern). exit 0 = success unless an output pattern matched. retry_attempts/restart=on_failure fire only when reason∈{failed,timeout,crashed,log_overflow,start_failed,unhealthy} AND is_failure — narrowing failures narrows retry/restart; promoting stopped/missed never makes them retry
@@ -123,6 +124,7 @@ description:        string          — human description
 cron:              string          — 5- or 6-field cron (optional leading seconds); ranges may wrap (22-2, FRI-MON); also @hourly, @every 1h30m; omit => manual-only
 timezone:          IANA string      — per-task TZ override (else [daemon] timezone)
 jitter:            dur              — cap how far this cron task's start may slip; needs cron (inherits [defaults])
+warn_after:        dur              — one long_running notification when a run is still going this long, without stopping it; goes to notify/global_notifiers/[[route]] kinds=["long_running"]; not a failure (inherits [defaults]; "0s" turns off)
 run_on_start:      bool|enum =false — fire once at start, on top of any cron: true|"daemon" = every daemon start; "boot" = once per machine/container boot (@reboot; Linux boot_id + PID 1 start time, macOS kern.bootsessionuuid, else every start); import cron @reboot + systemd oneshot write "boot", supervisord autorestart=false writes true
 manual_trigger:    bool =true       — allow CLI/API/UI trigger; false = cron-only
 autostart:         bool =true       - false: the cron schedule starts paused the first time the task is registered (first boot, reload add, takeover un-hold) until resumed (UI, TUI p, `runwisp resume`); stays resumed across restarts (unlike services, not re-read each boot); needs cron; rejected with manual_trigger=false or run_on_start; setting it on a known task only warns on reload
@@ -170,7 +172,7 @@ params:            []table          — per-run inputs (TASKS only, rejected on 
                                      (needs choices), description string. Scheduled runs (cron/run_on_start/catch_up) use default; a retry uses the
                                      original run's values; values are passed as real args/env, never pasted into the shell string. See
                                      /configuration/tasks/#params
-notify: []string         — sugar → route on any classified failure (see failures); notifier ids, "id:override", or "inapp". Non-failure outcomes use an explicit [[route]].
+notify: []string         — sugar → route on any classified failure (see failures) and, on a task, on long_running (see warn_after); notifier ids, "id:override", or "inapp". Non-failure outcomes use an explicit [[route]].
 ```
 
 ### [services.&lt;name&gt;] (long-running)
@@ -268,7 +270,7 @@ Secret-bearing values (`webhook_url`, `bot_token`, `password`, …) arrive final
 
 ```
 match.failure: bool     — match any run classified as a failure (same axis as [tasks.*] failures) (optional)
-match.kinds:   []string — outcomes (same vocab as failures): started | succeeded | failed | timeout | crashed | log_overflow | unhealthy | queue_full | stopped | daemon_stopped | missed | service.fatal | log.disk_pressure (notify.delivery_failed rejected)
+match.kinds:   []string — outcomes (same vocab as failures): started | succeeded | failed | timeout | crashed | log_overflow | unhealthy | queue_full | stopped | daemon_stopped | missed | service.fatal | log.disk_pressure | long_running (notify.delivery_failed rejected; long_running + match.failure rejected)
 match.task:    string   — glob over task name (optional)
 notifiers:      []string (req, non-empty) — notifier ids (or "inapp"); "id:#override" inline target (slack #/@, telegram chat_id, smtp/sendmail email)
 ```

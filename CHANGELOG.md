@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The TUI run list shows each run's CPU time and peak memory, colored by how it compares with the task's usual run, so an unusually heavy run stands out.
 - The TUI task info (`i`) shows the task's timeout, its log limit and retention, its usual CPU time and memory, and opens with the first lines of its `run` command; press `c` to see the whole command. It scrolls when it doesn't fit.
+- `warn_after` on a task sends a notification once when a run is still going after that long, without stopping it. It reaches the same places as a failure alert, or any `[[route]]` that lists `long_running`.
 - `runwisp upgrade` updates RunWisp the way it was installed (Homebrew, npm/bun/pnpm/yarn, or the install script) and can restart the daemon now, once it is idle, or later.
 
 ### Changed

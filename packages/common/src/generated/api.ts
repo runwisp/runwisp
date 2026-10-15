@@ -1755,6 +1755,11 @@ export interface components {
             umask?: string;
             /** @description Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root. */
             user?: string;
+            /**
+             * Format: int64
+             * @description For tasks: send a long_running notification once when a run is still going after this long, without stopping it, in nanoseconds; 0 means no warning
+             */
+            warnAfter?: number;
             /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal "~" means the run-as user's home, resolved at run time */
             workingDir?: string;
         };
@@ -1973,6 +1978,11 @@ export interface components {
             usage?: components["schemas"]["ResourceUsage"];
             /** @description Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root. */
             user?: string;
+            /**
+             * Format: int64
+             * @description For tasks: send a long_running notification once when a run is still going after this long, without stopping it, in nanoseconds; 0 means no warning
+             */
+            warnAfter?: number;
             /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal "~" means the run-as user's home, resolved at run time */
             workingDir?: string;
         };

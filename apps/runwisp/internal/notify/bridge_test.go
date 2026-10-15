@@ -265,3 +265,22 @@ func TestRunReasonString_WithDuration(t *testing.T) {
 	assert.Contains(t, result, "failed")
 	assert.Contains(t, result, "5s")
 }
+
+// TestMapEvent_LongRunning: a run still going past warn_after is a warn-level,
+// non-failure event routed by the long_running token, carrying how long it has run.
+func TestMapEvent_LongRunning(t *testing.T) {
+	start := time.Unix(1700000000, 0)
+	now := start.Add(45 * time.Minute)
+	run := &model.Run{ID: "01HLONG", TaskName: "backup", Status: model.PhaseRunning, StartedAt: &start}
+
+	ev := MapEvent(events.Event{Type: events.EventRunLongRunning, Timestamp: now, Data: events.RunEvent{Run: run}})
+
+	require.NotNil(t, ev)
+	assert.Equal(t, KindRunLongRunning, ev.Kind)
+	assert.Equal(t, "long_running", ev.Outcome())
+	assert.Equal(t, SevWarn, ev.Severity)
+	assert.False(t, ev.IsFailure, "a run that is still going has not failed")
+	assert.Equal(t, "still running after 45m0s", ev.Reason)
+	assert.Equal(t, int64(45*60*1000), ev.Extra["elapsed_ms"])
+	assert.Equal(t, "backup still running", ev.Kind.Title(ev))
+}

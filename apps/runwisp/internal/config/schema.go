@@ -281,7 +281,10 @@ type Defaults struct {
 	// don't set their own. Tasks-only: services never inherit it (they start
 	// every instance at boot). The deliberate exception to "don't default
 	// cron-tied keys" — one line in [defaults] spreads the whole task set.
-	Jitter     time.Duration
+	Jitter time.Duration
+	// WarnAfter is the [defaults] long-running warning threshold inherited by
+	// tasks that don't set their own. Tasks-only, like Jitter.
+	WarnAfter  time.Duration
 	Shell      string
 	StopSignal string
 	LogMaxSize int64

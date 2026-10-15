@@ -26,6 +26,9 @@ func TestMatchOutcomes(t *testing.T) {
 	if !notify.MatchOutcomes("service.fatal")(&notify.Event{Kind: notify.KindServiceFatal}) {
 		t.Fatal("MatchOutcomes must match a non-run event by its kind token")
 	}
+	if !notify.MatchOutcomes("long_running")(&notify.Event{Kind: notify.KindRunLongRunning}) {
+		t.Fatal("MatchOutcomes must match a long-running event by the long_running token")
+	}
 }
 
 // TestMatchFailure gates the built-in failure route on the classified bit: a

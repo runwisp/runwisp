@@ -61,9 +61,10 @@ type unitOverrideWire struct {
 	SecretsFile string            `toml:"secrets_file,omitempty"`
 
 	// Notify lists the notifier IDs to page when this unit's `failures` policy
-	// classifies a run as a failure. Each entry is a notifier id, optionally with
-	// an inline target override ("slack:#ops"). Non-failure outcomes (a success
-	// ping, a timeout-only escalation) are routed with an explicit [[route]].
+	// classifies a run as a failure, or a task's run outlasts `warn_after`. Each
+	// entry is a notifier id, optionally with an inline target override
+	// ("slack:#ops"). Other non-failure outcomes (a success ping, a
+	// timeout-only escalation) are routed with an explicit [[route]].
 	Notify []string `toml:"notify,omitempty"`
 }
 
@@ -463,6 +464,8 @@ type taskWire struct {
 	Cron     string `toml:"cron,omitempty"`
 	Timezone string `toml:"timezone,omitempty"`
 	Jitter   string `toml:"jitter,omitempty"`
+	// WarnAfter is task-only: a service has no end to run long past.
+	WarnAfter string `toml:"warn_after,omitempty"`
 	// CatchUp is *int so an explicit `catch_up = 0` (skip) is distinguishable from
 	// an omitted key (nil, inherits the default).
 	CatchUp *int `toml:"catch_up,omitempty"`
@@ -495,6 +498,10 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid jitter for task %q: %w", name, err)
 	}
+	warnAfter, err := parseDurationPtr(w.WarnAfter)
+	if err != nil {
+		return model.Task{}, fmt.Errorf("invalid warn_after for task %q: %w", name, err)
+	}
 	params, err := toTaskParams(w.Params, name)
 	if err != nil {
 		return model.Task{}, err
@@ -508,6 +515,7 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	task.Cron = w.Cron
 	task.Timezone = w.Timezone
 	task.Jitter = jitter
+	task.WarnAfter = warnAfter
 	task.CatchUp = w.CatchUp
 	task.RunOnStart = runOnStart != ""
 	task.RunOnStartMode = runOnStart
@@ -713,6 +721,7 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 type defaultsWire struct {
 	Timeout      string `toml:"timeout,omitempty"`
 	Jitter       string `toml:"jitter,omitempty"`
+	WarnAfter    string `toml:"warn_after,omitempty"`
 	Shell        string `toml:"shell,omitempty"`
 	StopSignal   string `toml:"stop_signal,omitempty"`
 	LogMaxSize   string `toml:"log_max_size,omitempty"`
@@ -747,6 +756,10 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 	jitter, err := parseDuration(w.Jitter)
 	if err != nil {
 		return Defaults{}, fmt.Errorf("invalid defaults.jitter: %w", err)
+	}
+	warnAfter, err := parseDuration(w.WarnAfter)
+	if err != nil {
+		return Defaults{}, fmt.Errorf("invalid defaults.warn_after: %w", err)
 	}
 	keepFor, err := parseKeepFor(w.KeepFor)
 	if err != nil {
@@ -786,6 +799,7 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 	return Defaults{
 		Timeout:         timeout,
 		Jitter:          jitter,
+		WarnAfter:       warnAfter,
 		Shell:           w.Shell,
 		StopSignal:      w.StopSignal,
 		LogMaxSize:      logMaxSize,

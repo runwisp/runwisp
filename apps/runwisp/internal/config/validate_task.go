@@ -172,6 +172,9 @@ func validateTaskDurations(task *model.Task) error {
 	if task.Timeout != nil && *task.Timeout < 0 {
 		return fmt.Errorf("invalid timeout for task %s: must be zero or a positive duration", task.Name)
 	}
+	if task.WarnAfter != nil && *task.WarnAfter < 0 {
+		return fmt.Errorf("invalid warn_after for task %s: must be zero or a positive duration", task.Name)
+	}
 	if task.RetryDelay != nil && *task.RetryDelay < 0 {
 		return fmt.Errorf("invalid retry_delay for task %s: must be zero or a positive duration", task.Name)
 	}

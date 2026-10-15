@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
@@ -65,7 +66,9 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	m.persistence.Flush()
 	m.publishRun(events.EventRunStarted, run, "")
 
+	stopWarn := m.armLongRunningWarning(task, run)
 	result := m.executor.Execute(ctx, task, run)
+	stopWarn()
 
 	nextRestartAttempt, giveUp := m.recordRunOutcome(task, run, active, result)
 	// Advance the jitter gate now the run is retired from active and the
@@ -75,6 +78,41 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	m.gate.onComplete(run.ID)
 	if !giveUp {
 		m.scheduleFollowup(task, run, nextRestartAttempt)
+	}
+}
+
+// armLongRunningWarning schedules the one-shot long_running event for a task
+// with `warn_after` set and returns the func that disarms it. Call the returned
+// func once the executor returns: it blocks out an in-flight firing and bars a
+// late one, so the event is published before the run's terminal event or not at
+// all. Measured from the moment the run starts running (queue wait excluded);
+// a retry is a separate run with its own timer. Tasks without `warn_after` get
+// a no-op.
+func (m *defaultTaskManager) armLongRunningWarning(task *model.Task, run *model.Run) (stop func()) {
+	d := task.WarnAfterValue()
+	if d <= 0 {
+		return func() {}
+	}
+	var mu sync.Mutex
+	done := false
+	timer := time.AfterFunc(d, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if done {
+			return
+		}
+		// execute's own writes to run happen before Execute and in
+		// recordRunOutcome, both under m.mu, so a read lock makes this copy safe.
+		m.mu.RLock()
+		snapshot := run.Copy()
+		m.mu.RUnlock()
+		m.eventBus.Publish(events.EventRunLongRunning, events.RunEvent{Run: snapshot})
+	})
+	return func() {
+		timer.Stop()
+		mu.Lock()
+		done = true
+		mu.Unlock()
 	}
 }
 
