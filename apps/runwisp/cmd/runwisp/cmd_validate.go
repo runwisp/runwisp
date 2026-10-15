@@ -50,6 +50,15 @@ func init() {
 	validateCmd.Flags().BoolVar(&validateApp, "app", false, appFlagUsage)
 }
 
+// loadValidateConfig loads f.CfgFile, or the document standing in for it under
+// `--app`.
+func loadValidateConfig(f Flags) (*config.Config, error) {
+	if f.ConfigDoc != nil {
+		return config.LoadDocument(f.CfgFile, f.ConfigDoc)
+	}
+	return config.Load(f.CfgFile)
+}
+
 // runValidate loads and validates f.CfgFile, or the document standing in for
 // it under `--app`. On success it prints a
 // short ✓ summary to w and returns nil; on failure it returns a userFacing
@@ -61,13 +70,7 @@ func init() {
 // With opts.JSON, w receives a single validateJSONDoc instead (valid=false on
 // failure, still returning the error so the exit code stays non-zero).
 func runValidate(w io.Writer, f Flags, opts validateOpts) error {
-	var cfg *config.Config
-	var err error
-	if f.ConfigDoc != nil {
-		cfg, err = config.LoadDocument(f.CfgFile, f.ConfigDoc)
-	} else {
-		cfg, err = config.Load(f.CfgFile)
-	}
+	cfg, err := loadValidateConfig(f)
 	if err != nil {
 		if opts.JSON {
 			// Emit the error document to stdout so an agent never has to parse
