@@ -36,6 +36,8 @@ for attempt in $(seq 1 30); do
 done
 curl -fsS "${base}/runwisp.asc" | cmp -s - "${linux}/runwisp.asc" ||
   { echo "${base}/runwisp.asc is not packaging/linux/runwisp.asc" >&2; exit 1; }
+curl -fsS "${base}/" | grep -qF ">${version}<" ||
+  { echo "${base}/ does not show version ${version}" >&2; exit 1; }
 
 run() {
   local image=$1 script=$2
@@ -48,7 +50,12 @@ run debian:trixie-slim '
   apt-get update -qq && apt-get install -y -qq ca-certificates >/dev/null
   cp /linux/runwisp.asc /usr/share/keyrings/runwisp.asc
   sed "s|https://pkg.runwisp.com|${BASE}|" /linux/runwisp.sources >/etc/apt/sources.list.d/smoke.sources
-  apt-get update && apt-get install -y -o Dpkg::Options::=--force-confold runwisp
+  # The edge can still serve a stale Packages.gz after Packages is fresh.
+  # The pool .deb can lag the same way, so retry the install along with the index.
+  for attempt in 1 2 3 4 5 6; do
+    apt-get update && apt-get install -y -o Dpkg::Options::=--force-confold runwisp && break
+    [ "${attempt}" -lt 6 ]; sleep 10
+  done
   test "$(cat /usr/lib/runwisp/.runwisp-source)" = deb
   runwisp --version | grep -F "${VERSION}"
 '

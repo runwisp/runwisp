@@ -28,7 +28,10 @@
 #
 # docker-publish can also be re-run manually (workflow_dispatch, given an
 # existing release tag) without touching the npm jobs — for retrying a failed
-# Docker Hub push, or a dry run against an already-published release.
+# Docker Hub push, or a dry run against an already-published release. With
+# `publish: linux-repo` the dispatch re-publishes the apt/dnf repository
+# instead; it rebuilds the repository from that tag's packages alone, so only
+# dispatch it for the latest release.
 
 name: Release
 
@@ -41,8 +44,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing release tag to (re-)publish the Docker image for"
+        description: "Existing release tag to (re-)publish"
         required: true
+      publish:
+        description: "What to (re-)publish for that tag"
+        type: choice
+        options: [docker, linux-repo]
+        default: docker
 
 permissions:
   contents: read
@@ -595,17 +603,21 @@ jobs:
   # GitHub release. linux-packages-rehearsal.yml runs the same action against a
   # preview branch.
   linux-repo:
-    if: github.event_name == 'release' && !contains(github.event.release.tag_name, '-')
+    if: >-
+      (github.event_name == 'release' && !contains(github.event.release.tag_name, '-'))
+      || (github.event_name == 'workflow_dispatch' && inputs.publish == 'linux-repo' && !contains(inputs.tag, '-'))
     name: Publish the apt/dnf repository
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
-      TAG: ${{ github.event.release.tag_name }}
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
+      # Like docker-publish, a manual dispatch keeps the ref it was dispatched
+      # from, so a fix to the publishing steps applies to an existing release.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
           sparse-checkout: |
             packaging/linux
             .github/actions/linux-repo
@@ -620,6 +632,12 @@ jobs:
             --pattern 'runwisp-linux-*.deb' --pattern 'runwisp-linux-*.rpm' --pattern checksums-sha256.txt
           cd pkgs && sha256sum --check --ignore-missing checksums-sha256.txt
 
+      # The cone-mode checkout includes the root bun.lock, which makes
+      # wrangler-action install wrangler with bun.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+
       - name: Publish the repository
         uses: ./.github/actions/linux-repo
         with:
@@ -632,7 +650,7 @@ jobs:
           url: https://pkg.runwisp.com
 
   docker-publish:
-    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish == 'docker')
     name: Publish Docker image (${{ matrix.base }}${{ matrix.variant == 'docker' && '-docker' || '' }})
     runs-on: ubuntu-latest
     permissions:

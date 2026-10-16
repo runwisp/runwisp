@@ -28,7 +28,12 @@ here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 rm -rf "${site}"
 mkdir -p "${site}/deb/pool" "${site}/rpm"
-cp "${here}/runwisp.asc" "${site}/runwisp.asc"
+# The landing page, plus the files the package installs, so adding the
+# repository by hand writes the same files to the same paths.
+for file in runwisp.asc runwisp.sources runwisp.repo logo.svg; do
+  cp "${here}/${file}" "${site}/${file}"
+done
+sed "s/@VERSION@/${version}/" "${here}/index.html" >"${site}/index.html"
 
 for target in linux-x64 linux-arm64; do
   case "${target}" in
