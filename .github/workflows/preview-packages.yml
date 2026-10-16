@@ -1,7 +1,7 @@
 # Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: GPL-3.0-or-later
 
 # Publishes installable preview builds of the workspace UI packages for every
-# push to `station`, so a downstream app can depend on the branch before a
+# push to `main` or `station`, so a downstream app can depend on the branch before a
 # release. Install URL:
 #   https://pkg.pr.new/runwisp/runwisp/@runwisp/ui@<commit>
 # Needs the pkg.pr.new GitHub App installed on this repository.
@@ -10,7 +10,7 @@ name: Preview packages
 
 on:
   push:
-    branches: [station]
+    branches: [main, station]
     paths:
       - packages/ui/**
       - packages/common/**
