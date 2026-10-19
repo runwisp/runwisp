@@ -179,6 +179,12 @@ func TestRenderLingerLine(t *testing.T) {
 		assert.False(t, degraded)
 		assert.Empty(t, buf.String())
 	})
+	t.Run("system unit skips entirely", func(t *testing.T) {
+		var buf bytes.Buffer
+		degraded := renderLingerLine(&buf, autostart.Status{OS: "linux", System: true})
+		assert.False(t, degraded, "a system unit has no session to linger")
+		assert.Empty(t, buf.String())
+	})
 	t.Run("linux linger on", func(t *testing.T) {
 		var buf bytes.Buffer
 		degraded := renderLingerLine(&buf, autostart.Status{OS: "linux", Linger: true})
