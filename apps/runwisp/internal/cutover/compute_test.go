@@ -4,6 +4,7 @@
 package cutover
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -116,6 +117,34 @@ func TestCompute_OperatorsOwnIncludeCronIsNeverRewritten(t *testing.T) {
 	assert.Contains(t, b.Details, "crontabs")
 }
 
+// TestCompute_ItsOwnScaffoldGainsANewSource is the re-run take-over after an
+// upgrade taught RunWisp a new cron source (/etc/anacrontab). The include_cron
+// an older take-over wrote is RunWisp's, not the operator's, so the plan adds
+// the new source to it instead of refusing with a paste.
+func TestCompute_ItsOwnScaffoldGainsANewSource(t *testing.T) {
+	c, _, cfgPath := fixture{
+		crontabs:   map[string]string{"a": oneJob, "b": "5 4 * * * /usr/bin/other\n"},
+		cronUnit:   "cron.service",
+		cronActive: true,
+	}.build(t)
+	a := filepath.Join(filepath.Dir(cfgPath), "crontabs", "a")
+	b := filepath.Join(filepath.Dir(cfgPath), "crontabs", "b")
+	c.deps.Scan = func(_ []string, path string) config.CronScan {
+		return config.ScanCronSources([]string{a, b}, path)
+	}
+	require.NoError(t, os.WriteFile(cfgPath, []byte(config.CronStarterConfig([]string{a})), 0o644))
+
+	p, err := c.Compute(context.Background())
+	require.NoError(t, err)
+
+	require.False(t, p.Blocked(), "%v", blockerKinds(p))
+	wire, ok := p.step(StepWireIncludeCron)
+	require.True(t, ok)
+	assert.False(t, wire.Satisfied)
+	assert.Equal(t, []string{b}, p.Evidence.CronIncludeAdds)
+	assert.Contains(t, wire.Detail, "Add "+b+" to include_cron")
+}
+
 func TestCompute_NoCronJobsAnywhereIsTheOnlyNothingToReadRefusal(t *testing.T) {
 	c, _, _ := fixture{cronUnit: "cron.service", cronActive: true}.build(t)
 
@@ -160,6 +189,31 @@ func TestCompute_NonRootIsBlockedEvenWithJobsToTakeOver(t *testing.T) {
 	p, err := c.Compute(context.Background())
 	require.NoError(t, err)
 	assert.True(t, hasBlocker(p, BlockerNeedsRoot), "%v", blockerKinds(p))
+}
+
+// Without root the scan sees only the caller's own crontab, so it used to
+// report "no cron jobs on this box" (and a step writing ./runwisp.toml) on a box
+// with seven of them in /etc/cron.d. Root is now the only thing it says, and it
+// says it without asking the machine anything.
+func TestCompute_NonRootSaysOnlyThatItNeedsRoot(t *testing.T) {
+	c, inst, _ := fixture{euid: 1000, username: "someone"}.build(t)
+	c.deps.RootCommand = "sudo /home/someone/.local/bin/runwisp takeover"
+	c.deps.Scan = func([]string, string) config.CronScan {
+		t.Fatal("a non-root plan must not scan: what it finds is not what root would")
+		return config.CronScan{}
+	}
+
+	p, err := c.Compute(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, []BlockerKind{BlockerNeedsRoot}, blockerKinds(p))
+	assert.Empty(t, p.Steps)
+	assert.Empty(t, inst.Calls, "no unit probes either")
+	b, _ := p.FirstBlocker()
+	assert.Contains(t, b.Details, "sudo /home/someone/.local/bin/runwisp takeover")
+
+	var out bytes.Buffer
+	Render(&out, p)
+	assert.Empty(t, out.String())
 }
 
 // TestCompute_DarwinRefusesUpFrontWithTheManualRoute runs on whatever platform
@@ -405,8 +459,7 @@ func TestCompute_StoppedServiceWithCronMaskedIsNotSatisfied(t *testing.T) {
 // after each attempt.
 func TestCompute_CollectsEveryBlockerRatherThanTheFirst(t *testing.T) {
 	c, _, _ := fixture{
-		euid:        1000,
-		username:    "someone",
+		config:      "this is not toml",
 		scanBlocked: []string{"/etc/cron.d/web: not owned by root"},
 		crontabs:    map[string]string{"backup": oneJob},
 		cronUnit:    "cron.service",
@@ -415,5 +468,5 @@ func TestCompute_CollectsEveryBlockerRatherThanTheFirst(t *testing.T) {
 
 	p, err := c.Compute(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, []BlockerKind{BlockerNeedsRoot, BlockerCronSourcesFailed}, blockerKinds(p))
+	assert.Equal(t, []BlockerKind{BlockerConfigUnloadable, BlockerCronSourcesFailed}, blockerKinds(p))
 }

@@ -103,21 +103,21 @@ func TestRender_NoCronUnitSaysThereIsNothingToMask(t *testing.T) {
 	assert.NotContains(t, text, "Nothing is destructive until")
 }
 
-// TestRender_BlockedPlanStillReportsWhatWasFound: someone told "this needs root"
-// still wants to know twelve jobs are waiting for them.
+// TestRender_BlockedPlanStillReportsWhatWasFound: someone told their config does
+// not load still wants to know twelve jobs are waiting for them.
 func TestRender_BlockedPlanStillReportsWhatWasFound(t *testing.T) {
 	c, _, _ := fixture{
+		config:     "this is not toml",
 		crontabs:   map[string]string{"backup": oneJob},
 		cronUnit:   "cron.service",
 		cronActive: true,
-		euid:       1000,
 	}.build(t)
 
 	p, text := render(t, c)
 	require.True(t, p.Blocked())
 
 	assert.Contains(t, text, "Found 1 cron job on this box:")
-	assert.Contains(t, blockerText(p), "root")
+	assert.Contains(t, blockerText(p), "does not load")
 }
 
 // TestRender_IncludeCronMismatchPrintsThePasteableArray. RunWisp will not rewrite
@@ -283,4 +283,29 @@ func TestRender_NamesCrontabsWhoseCronTZIsIgnored(t *testing.T) {
 	out.Reset()
 	Render(&out, Plan{Evidence: Evidence{Scan: config.CronScan{Jobs: 1, Live: 1}}})
 	assert.NotContains(t, out.String(), "CRON_TZ")
+}
+
+// TestRender_ListsJobsLeftOutAndEveryRetiredUnit is the desktop take-over: the
+// guard-skipped Debian lines are named as left out (not as jobs needing a
+// fix), and the plan names anacron alongside cron.
+func TestRender_ListsJobsLeftOutAndEveryRetiredUnit(t *testing.T) {
+	p := Plan{MasksCron: true, Evidence: Evidence{
+		Scan: config.CronScan{
+			Files: []string{"/etc/crontab", "/etc/anacrontab"}, Jobs: 5, Live: 5,
+			Noop: []string{
+				"/etc/crontab:21: /usr/sbin/anacron is executable, so its guard makes it do nothing on this box",
+				"/etc/cron.d/e2scrub_all:3: /run/systemd/system exists, so its guard makes it do nothing on this box",
+			},
+		},
+		Sources:    []string{"/etc/crontab", "/etc/anacrontab"},
+		CronUnit:   "cron.service anacron.timer anacron.service",
+		CronActive: true,
+	}}
+	var out bytes.Buffer
+	Render(&out, p)
+	assert.Contains(t, out.String(), "RunWisp is taking over from cron.service, anacron.timer and anacron.service.")
+	assert.Contains(t, out.String(), "Left out 2 jobs that do nothing on this box:\n"+
+		"  /etc/crontab:21: /usr/sbin/anacron is executable")
+	assert.NotContains(t, out.String(), "need a fix first")
+	assert.Equal(t, "Take over from cron.service, anacron.timer and anacron.service?", PromptQuestion(p))
 }

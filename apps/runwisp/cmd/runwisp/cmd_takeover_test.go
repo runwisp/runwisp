@@ -141,6 +141,9 @@ func TestRunTakeover_WorksFromNothing(t *testing.T) {
 	assert.Contains(t, out, "Write "+h.cfgPath)
 	assert.Contains(t, out, "write /etc/systemd/system/runwisp.service",
 		"autostart's own steps are shown, not a restatement of them")
+	assert.Contains(t, out, "Dashboard:  http://127.0.0.1:9477")
+	assert.Contains(t, out, "Password:   "+sudoRunwisp("password"),
+		"the system daemon's socket is root's, so the way in has to be spelled out")
 	assert.FileExists(t, h.cfgPath)
 	assert.Equal(t, 1, h.inst.Installs())
 }
@@ -217,19 +220,19 @@ func TestRunTakeover_DeclinedWritesNothing(t *testing.T) {
 }
 
 // TestRunTakeover_BlockedPlanPrintsFindingsThenExitsNonZero: the plan block still
-// prints — someone told "this needs root" wants to know jobs are waiting — and
-// every blocker is reported, not just the first.
+// prints (someone told their config does not load wants to know what was found),
+// and every blocker is reported, not just the first.
 func TestRunTakeover_BlockedPlanPrintsFindingsThenExitsNonZero(t *testing.T) {
 	h := newTakeoverHarness(t)
-	h.euid = 1000
 	h.noCrontabs = true
+	h.configBody = "this is not toml"
 
 	err := h.run(t, h.flags())
 	require.Error(t, err)
 
 	assert.Contains(t, h.out.String(), "No cron jobs found on this box.")
 	assert.Contains(t, err.Error(), "2 things stop RunWisp taking over cron")
-	assert.Contains(t, err.Error(), "root")
+	assert.Contains(t, err.Error(), "does not load")
 	assert.Contains(t, err.Error(), "no cron jobs on this box")
 	assert.Zero(t, h.inst.Installs())
 
@@ -245,8 +248,9 @@ func TestRunTakeover_SingleBlockerKeepsItsOwnTitle(t *testing.T) {
 	err := h.run(t, h.flags())
 	require.Error(t, err)
 
-	assert.Contains(t, err.Error(), "taking over cron requires root")
+	assert.Contains(t, err.Error(), "taking over cron needs root")
 	assert.NotContains(t, err.Error(), "things stop")
+	assert.Empty(t, h.out.String(), "a non-root run saw nothing worth printing")
 }
 
 // Re-running a finished take-over must be a no-op, so it is safe in a

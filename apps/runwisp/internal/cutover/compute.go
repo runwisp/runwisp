@@ -27,6 +27,14 @@ import (
 // Blockers accumulate rather than short-circuit: reporting one at a time turns a
 // migration into a guessing game.
 func (c *Cutover) Compute(ctx context.Context) (Plan, error) {
+	// Without root, this process sees only its own crontab and its own
+	// cwd-relative config, so any finding it made would describe a box root
+	// never looks at ("no cron jobs" next to seven of them in /etc/cron.d).
+	// Root is the one thing worth saying.
+	if c.deps.GOOS == "linux" && c.deps.Euid != 0 {
+		return Plan{Opts: c.deps.Opts, Blockers: []Blocker{c.needsRootBlocker()}}, nil
+	}
+
 	ev, err := c.gatherEvidence(ctx)
 	if err != nil {
 		return Plan{}, err
@@ -98,11 +106,11 @@ func (c *Cutover) readConfig(ev *Evidence, path string) {
 	}
 	ev.ConfigExists = true
 
-	// Whether the key is declared at all is EnsureCronInclude's dry refusal —
-	// one implementation of that probe, in the package that owns the edit.
-	if _, err := configedit.EnsureCronInclude(raw, ev.Patterns); errors.Is(err, configedit.ErrCronIncludeAlreadySet) {
-		ev.CronIncludeDeclared = true
-	}
+	// Whether the operator owns the key is EnsureCronInclude's dry refusal, one
+	// implementation of that probe, in the package that owns the edit.
+	_, adds, err := configedit.EnsureCronInclude(raw, ev.Patterns)
+	ev.CronIncludeDeclared = errors.Is(err, configedit.ErrCronIncludeAlreadySet)
+	ev.CronIncludeAdds = adds
 
 	cfg, err := config.Load(path)
 	if err != nil {
@@ -143,21 +151,13 @@ func (c *Cutover) probeUnits(ctx context.Context, ev *Evidence) error {
 
 // blockers is every reason this cutover cannot proceed, in the order an operator
 // would want them explained: the machine first (cheapest and most absolute),
-// then the config, then its contents.
+// then the config, then its contents. Root is settled before this runs.
 func (c *Cutover) blockers(ev Evidence) []Blocker {
 	var out []Blocker
 
-	switch {
-	case c.deps.GOOS != "linux":
+	if c.deps.GOOS != "linux" {
 		// Nothing below can matter on a host where masking cron is impossible.
 		return []Blocker{unsupportedOSBlocker(c.deps.GOOS)}
-	case c.deps.Euid != 0:
-		out = append(out, Blocker{
-			Kind:  BlockerNeedsRoot,
-			Title: "taking over cron requires root and the system service",
-			Details: "A user-scoped daemon cannot execute another account's cron jobs, and " +
-				"`systemctl --user` has no bus for root under sudo.\n\n  sudo runwisp takeover",
-		})
 	}
 
 	if ev.Scan.Jobs == 0 && len(ev.ReadFiles) == 0 {
@@ -166,6 +166,21 @@ func (c *Cutover) blockers(ev Evidence) []Blocker {
 	out = append(out, c.configBlockers(ev)...)
 	out = append(out, c.cronSourceBlockers(ev)...)
 	return out
+}
+
+// needsRootBlocker is the answer for anyone but root: only root can read every
+// crontab, run another account's jobs, and mask cron.
+func (c *Cutover) needsRootBlocker() Blocker {
+	cmd := c.deps.RootCommand
+	if cmd == "" {
+		cmd = "sudo runwisp takeover"
+	}
+	return Blocker{
+		Kind:  BlockerNeedsRoot,
+		Title: "taking over cron needs root",
+		Details: "Only root can read every crontab on this box, run each job as its owner, " +
+			"and retire cron.\n\n  " + cmd,
+	}
 }
 
 // unsupportedOSBlocker is the answer on a host where RunWisp cannot retire cron
@@ -320,9 +335,13 @@ func (c *Cutover) configSteps(ev Evidence) []Step {
 			"Write %s\n       reads %s live via [daemon] include_cron — nothing is converted or\n"+
 				"       rewritten, and crontab -e keeps working",
 			c.deps.Opts.Config, sources)}}
-	case len(ev.ReadFiles) > 0:
+	case len(ev.ReadFiles) > 0 && (len(ev.Uncovered) == 0 || ev.CronIncludeDeclared):
 		return []Step{{Kind: StepWireIncludeCron, Satisfied: true, Detail: fmt.Sprintf(
 			"%s already reads %s", c.deps.Opts.Config, sources)}}
+	case len(ev.ReadFiles) > 0:
+		return []Step{{Kind: StepWireIncludeCron, Detail: fmt.Sprintf(
+			"Add %s to include_cron in %s\n       so it reads %s too",
+			strings.Join(ev.CronIncludeAdds, ", "), c.deps.Opts.Config, strings.Join(ev.Uncovered, ", "))}}
 	default:
 		return []Step{{Kind: StepWireIncludeCron, Detail: fmt.Sprintf(
 			"Add include_cron to %s\n       so it reads %s — your comments, key order and\n"+
@@ -350,7 +369,7 @@ func (c *Cutover) installStep(ctx context.Context, p Plan) ([]Step, error) {
 
 	detail := "Install RunWisp as a system service, so it starts on boot"
 	if p.MasksCron {
-		detail = fmt.Sprintf("Install RunWisp as a system service and retire %s", p.Evidence.CronUnit)
+		detail = fmt.Sprintf("Install RunWisp as a system service and retire %s", unitNames(p.Evidence.CronUnit))
 	}
 	// A stopped service is not "done" either: with cron masked, nothing runs the
 	// jobs until RunWisp is back, so a re-run has to start it.
@@ -358,7 +377,7 @@ func (c *Cutover) installStep(ctx context.Context, p Plan) ([]Step, error) {
 	satisfied := noop && (p.Evidence.ServiceRunning || !p.MasksCron)
 	if noop && !satisfied {
 		detail = fmt.Sprintf("Start RunWisp: it is installed but not running, and with %s masked\n"+
-			"       nothing is running your jobs", p.Evidence.CronUnit)
+			"       nothing is running your jobs", unitNames(p.Evidence.CronUnit))
 	}
 
 	steps := append(c.configSteps(p.Evidence), Step{

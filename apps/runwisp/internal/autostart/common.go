@@ -93,6 +93,49 @@ func fileSHA(path string) (sha string, ok bool) {
 	return hashContent(data), true
 }
 
+// binaryCopyNeeded reports whether opts asks for a binary copy that has not
+// already happened: a re-run against an identical target copies nothing.
+func binaryCopyNeeded(opts InstallOptions) bool {
+	if opts.CopyBinaryFrom == "" {
+		return false
+	}
+	src, _ := fileSHA(opts.CopyBinaryFrom)
+	dst, ok := fileSHA(opts.Binary)
+	return !ok || src != dst
+}
+
+// copyBinary installs src at dst, mode 0755, owned by whoever runs this (root,
+// for the system unit that asks for it). It writes a temp file beside dst and
+// renames it into place: dst may be the binary the running service executes,
+// which cannot be opened for writing ("text file busy"), and a reader must
+// never see half a file.
+func copyBinary(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(dst), "."+filepath.Base(dst)+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // a no-op once the rename succeeded
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0o755); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), dst)
+}
+
 func (st *Status) fillBinary(path string) {
 	if sha, ok := fileSHA(path); ok {
 		st.BinaryExists = true

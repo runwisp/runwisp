@@ -418,12 +418,12 @@ or stdin. Anything that doesn't map cleanly becomes a `# TODO` comment. Import
 never disables the source, so turn the old job off before starting RunWisp or it
 runs twice.
 
-| Subcommand            | Converts                                                                 |
-| --------------------- | ------------------------------------------------------------------------ |
-| `cron [FILE]`         | A crontab. `/etc/crontab` and `/etc/cron.d/*` user columns are detected. |
-| `supervisord [FILE…]` | `[program:*]` sections, following `[include]`.                           |
-| `systemd [UNIT…]`     | `.service` units. `Restart=` → service, `Type=oneshot` → task.           |
-| `ofelia [FILE…]`      | Ofelia jobs, from an INI config or `ofelia.*` compose labels. Since 1.7. |
+| Subcommand            | Converts                                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| `cron [FILE]`         | A crontab or an anacrontab. `/etc/crontab` and `/etc/cron.d/*` user columns are detected. |
+| `supervisord [FILE…]` | `[program:*]` sections, following `[include]`.                                            |
+| `systemd [UNIT…]`     | `.service` units. `Restart=` → service, `Type=oneshot` → task.                            |
+| `ofelia [FILE…]`      | Ofelia jobs, from an INI config or `ofelia.*` compose labels. Since 1.7.                  |
 
 | Flag             | Description                                                                                                                                 |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -461,8 +461,9 @@ sudo runwisp takeover
 ```
 
 Replaces the system cron in one step: writes a config that reads your crontabs,
-installs RunWisp as a system service, masks cron, and starts RunWisp. Needs root
-and systemd. See [From cron](/coming-from/cron/).
+installs RunWisp as a system service, masks cron (and anacron), and starts RunWisp. Needs root
+and systemd. Run without root, it re-runs itself with sudo. See
+[From cron](/coming-from/cron/).
 
 | Flag                        | Description                                               |
 | --------------------------- | --------------------------------------------------------- |

@@ -171,7 +171,7 @@
         },
         "include_cron": {
           "type": "array",
-          "description": "Glob(s) of real crontabs read as live task sources at every load and reload. Root config only. A job RunWisp can't reproduce is skipped and reported; the rest of the file still runs.",
+          "description": "Glob(s) of real crontabs, or anacrontabs (a file named anacrontab), read as live task sources at every load and reload. Root config only. A job RunWisp can't reproduce is skipped and reported; the rest of the file still runs.",
           "items": { "type": "string" }
         },
         "timezone": { "type": "string", "description": "IANA timezone for cron evaluation when a task pins none. Default: host system zone." }

@@ -77,6 +77,9 @@ password. It exits `1` when `RUNWISP_PASSWORD` is set (RunWisp never hands out a
 password you chose) and `5` when authentication is off. Piping it into a
 clipboard tool keeps it out of your scrollback.
 
+The system service's socket belongs to root, so ask it with
+`sudo runwisp password`.
+
 ## Read-only access
 
 **since**: `1.7`

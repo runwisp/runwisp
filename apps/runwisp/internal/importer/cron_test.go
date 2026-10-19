@@ -589,17 +589,25 @@ func TestCronStockDebianNamesAndLegend(t *testing.T) {
 		"# *  *  *  *  * user-name command to be executed\n" +
 		"17 *	* * *	root    cd / && run-parts --report /etc/cron.hourly\n" +
 		"30 3 * * 0 root test -e /run/systemd/system || SERVICE_MODE=1 /sbin/e2scrub_all -A -r\n" +
-		"5-55/10 * * * * root command -v debian-sa1 > /dev/null && debian-sa1 1 1\n"
+		"5-55/10 * * * * root command -v debian-sa1 > /dev/null && debian-sa1 1 1\n" +
+		"25 6	* * *	root	test -x /usr/sbin/anacron || { cd / && run-parts --report /etc/cron.daily; }\n" +
+		"30 7-23 * * *   root	if [ -x /etc/init.d/anacron ] && ! [ -d /run/systemd/system ]; then exec /usr/sbin/invoke-rc.d anacron start >/dev/null; fi\n"
 	res := parseCron(t, in, CronOptions{System: true})
 	out := res.TOML()
 
-	mustContain(t, out, "[tasks.run-parts]")
+	// run-parts is named after the directory it runs.
+	mustContain(t, out, "[tasks.cron-hourly]")
+	mustContain(t, out, "[tasks.cron-daily]")
+	// `if`/`!`/`then` are keywords, and invoke-rc.d is named after the service.
+	mustContain(t, out, "[tasks.anacron]")
+	mustNotContain(t, out, "[tasks.if]")
 	mustContain(t, out, "[tasks.e2scrub_all]")
 	mustContain(t, out, "[tasks.debian-sa1]")
 	// None of the garbage identities the old heuristic produced.
 	mustNotContain(t, out, "[tasks.job]")
 	mustNotContain(t, out, "[tasks.null]")
 	mustNotContain(t, out, "[tasks.system]")
+	mustNotContain(t, out, "[tasks.run-parts")
 	// The column legend never becomes a job's description.
 	mustNotContain(t, out, "user-name command to be executed")
 }

@@ -342,8 +342,8 @@ func printCronStillOwnsNote(cmd *cobra.Command, f Flags, deps autostart.Deps, in
 	}
 	fmt.Fprintf(cmd.OutOrStdout(),
 		"\nNote: %s is still running, and owns %d cron job(s) on this box.\n"+
-			"      Run 'sudo runwisp takeover' to hand them to RunWisp.\n",
-		plan.Evidence.CronUnit, plan.Evidence.Scan.Jobs)
+			"      Run '%s' to hand them to RunWisp.\n",
+		plan.Evidence.CronUnit, plan.Evidence.Scan.Jobs, sudoRunwisp("takeover"))
 }
 
 // inspectServiceInstall serves --print and --dry-run: both answer "what
@@ -425,7 +425,7 @@ func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags, sys
 		return autostart.InstallOptions{}, err
 	}
 
-	return autostart.InstallOptions{
+	opts := autostart.InstallOptions{
 		Binary:      binary,
 		Config:      configPath,
 		DataDir:     dataDir,
@@ -433,7 +433,28 @@ func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags, sys
 		Port:        f.Port,
 		System:      systemWide,
 		StopTimeout: stopWaitTimeout(configPath),
-	}, nil
+	}
+	// An explicit --binary is the operator's call, and often a path that only
+	// exists on the deploy target.
+	if systemWide && binaryOverride == "" {
+		useRootOwnedBinary(&opts)
+	}
+	return opts, nil
+}
+
+// systemBinaryPath is where a system install keeps its root-owned copy of the
+// binary. It is on sudo's secure_path, so `sudo runwisp upgrade` finds it.
+const systemBinaryPath = "/usr/local/bin/runwisp"
+
+// useRootOwnedBinary points a system unit at a root-owned copy of the binary
+// when the binary itself is not root's. A root service runs whatever file
+// ExecStart names, so pointing it at ~/.local/bin/runwisp would hand that
+// file's owner root at the next restart.
+func useRootOwnedBinary(opts *autostart.InstallOptions) {
+	if config.AssertFileTrusted(opts.Binary, "the runwisp binary") == nil {
+		return
+	}
+	opts.CopyBinaryFrom, opts.Binary = opts.Binary, systemBinaryPath
 }
 
 // resolveUnitBinary resolves the durable binary path to bake into the unit —

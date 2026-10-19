@@ -53,7 +53,7 @@ func runTUIClient(ctx context.Context, f Flags) error {
 	client := apiclient.NewUnix(localAPISocketPath(f))
 
 	if err := pollHealth(client, 5*time.Second); err != nil {
-		return fmt.Errorf("cannot reach daemon at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
+		return fmt.Errorf("cannot reach daemon at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint(f))
 	}
 
 	return runTUIConnect(ctx, client, f, tui.DaemonAttached)

@@ -6,6 +6,7 @@ package cronprobe
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -75,7 +76,7 @@ func TestProbe(t *testing.T) {
 	stubServiceProbe := func(t *testing.T, active, enabled, ok bool) {
 		t.Helper()
 		prev := ServiceProbe
-		ServiceProbe = func() (bool, bool, bool) { return active, enabled, ok }
+		ServiceProbe = func([]string) (bool, bool, bool) { return active, enabled, ok }
 		t.Cleanup(func() { ServiceProbe = prev })
 	}
 	stubPidFiles := func(t *testing.T, paths ...string) {
@@ -119,6 +120,26 @@ func TestProbe(t *testing.T) {
 		got := Probe()
 		assert.True(t, got.Live)
 		assert.Contains(t, got.State, "live pidfile")
+	})
+
+	// anacron owns /etc/anacrontab whether or not cron runs, so a box that retired
+	// cron but not anacron must still hold the anacrontab jobs, and only those.
+	t.Run("anacron is asked about on its own", func(t *testing.T) {
+		prev := ServiceProbe
+		ServiceProbe = func(units []string) (bool, bool, bool) {
+			return slices.Contains(units, "anacron.timer"), false, true
+		}
+		t.Cleanup(func() { ServiceProbe = prev })
+		got := Probe()
+		assert.False(t, got.Live)
+		assert.True(t, got.AnacronLive)
+		assert.Equal(t, "(anacron) is running", got.AnacronState)
+	})
+
+	t.Run("without systemd anacron lives and dies with cron", func(t *testing.T) {
+		stubServiceProbe(t, false, false, false)
+		stubPidFiles(t, livePid)
+		assert.True(t, Probe().AnacronLive)
 	})
 
 	// Checking existence alone made a crond that crashed without cleaning up its

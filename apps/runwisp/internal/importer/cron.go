@@ -6,6 +6,7 @@ package importer
 import (
 	"bufio"
 	"io"
+	"io/fs"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -59,6 +60,11 @@ type CronOptions struct {
 	// known. It decides what CRON_TZ means; see CronFlavor. Leave it unknown for a
 	// crontab that isn't this machine's.
 	Flavor CronFlavor
+	// HostStat answers the file tests in a distro guard (`test -x
+	// /usr/sbin/anacron || …`) so a job that does nothing on this host is left out
+	// with a note instead of imported (see noopGuard). Set it to os.Stat for this
+	// machine's own crontabs; nil imports every guarded job as written.
+	HostStat func(string) (fs.FileInfo, error)
 }
 
 // cronWrappers are leading command tokens that don't name the real program, so
@@ -152,6 +158,14 @@ type crontabParser struct {
 	// mailto is the MAILTO in force for the next job, "" when unset or set to
 	// cron's "mail nobody".
 	mailto string
+
+	// anacron is set for an anacrontab (see ParseAnacrontab): its jobs catch up a
+	// missed run instead of skipping it.
+	anacron bool
+	// jobName names the job being fed after its anacrontab job-id instead of its
+	// command; approxPeriod says its period was only approximated.
+	jobName      string
+	approxPeriod bool
 }
 
 // addItem opens a report row for the line currently being fed, stamped with its
@@ -347,6 +361,13 @@ func (cp *crontabParser) importJob(line string) bool {
 	command := cc.run
 
 	base := deriveCronName(command)
+	if why, noop := noopGuard(command, cp.opts.HostStat); noop {
+		cp.addItem(base).note(NoteNoopHere, why+", so its guard makes it do nothing on this box")
+		return true
+	}
+	if cp.jobName != "" {
+		base = finalizeTaskName(strings.ReplaceAll(cp.jobName, ".", "-"), base)
+	}
 	description := cp.pendingComment
 	// Bun.cron() marks each job it writes with "# bun-cron: <title>"; the title names it.
 	if title, ok := strings.CutPrefix(description, "bun-cron: "); ok {
@@ -373,6 +394,11 @@ func (cp *crontabParser) importJob(line string) bool {
 	}
 
 	cp.applySchedule(&b, ref, j.schedule, j.runOnStart)
+	if cp.approxPeriod {
+		ref.note(NoteAnacronPeriod,
+			"anacron runs this every so many days; cron can only say every so many days of the "+
+				"month, so the count restarts on the 1st.")
+	}
 
 	if owner != "" {
 		b.set("user", tomlString(owner))
@@ -578,14 +604,19 @@ func (cp *crontabParser) applyOwner(j cronJobLine) string {
 // catch_up: crond has no concept of a missed tick. RunWisp defaults to 1, so a
 // daemon started at 15:00 would re-fire the 02:00 backup. catch_up = 0 restores
 // crond's rule; the missed row is still recorded (see
-// runtime.computeCatchupTriggers).
+// runtime.computeCatchupTriggers). An anacrontab job is the opposite case:
+// running a missed job once is anacron's rule, so it gets catch_up = 1.
 //
 // on_overlap: emitted at its default value on purpose. crond runs overlapping
 // copies of a job that outlives its interval; RunWisp queues them. We keep
 // queueing but write the key so an operator whose job relied on parallel
 // firing can see the knob.
 func (cp *crontabParser) applyFiringPolicies(b *block, scheduled bool) {
-	if scheduled {
+	switch {
+	case cp.anacron:
+		b.setComment("catch_up", "1",
+			"like anacron, run a missed job once when the machine is back")
+	case scheduled:
 		// Gated on having a schedule: a @reboot job has no ticks to miss, and a key
 		// that cannot affect anything is noise in a file the operator has to read.
 		b.setComment("catch_up", "0",

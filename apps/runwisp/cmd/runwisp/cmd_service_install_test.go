@@ -697,6 +697,9 @@ func TestRunServiceUninstall_NoUnitExists(t *testing.T) {
 	origOpts := serviceUninstallOpts
 	t.Cleanup(func() { serviceUninstallOpts = origOpts })
 	serviceUninstallOpts.Yes = true
+	// Pin the user scope: on a box with a real system install, scope detection
+	// would otherwise pick /etc/systemd/system/runwisp.service and try to stop it.
+	serviceUninstallOpts.Local = true
 
 	dir := durableTempDir(t)
 	f := Flags{DataDir: dir}

@@ -6,6 +6,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -242,6 +243,10 @@ func splitCronLines(data []byte) []string {
 // trustworthy to take daemon-privileged shell from.
 func parseCronSource(path string, owned importer.Owned) (*importer.Result, error) {
 	opts := cronOptionsFor(path, owned)
+	parse := importer.ParseCrontab
+	if importer.IsAnacrontab(path) {
+		parse = importer.ParseAnacrontab
+	}
 	if err := assertSpoolRunnable(path, opts.User); err != nil {
 		return nil, fmt.Errorf("daemon.include_cron: %w", err)
 	}
@@ -252,7 +257,7 @@ func parseCronSource(path string, owned importer.Owned) (*importer.Result, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to read cron source %s: %w", path, err)
 	}
-	return importer.ParseCrontab(strings.NewReader(string(data)), opts)
+	return parse(strings.NewReader(string(data)), opts)
 }
 
 // assertSpoolRunnable refuses a spool crontab the daemon could read but not honour.
@@ -305,12 +310,22 @@ func assertSpoolRunnable(path, runAs string) error {
 // reads (/opt/myapp/jobs.cron) was never fired by it.
 func cronOptionsFor(path string, owned importer.Owned) importer.CronOptions {
 	spoolOwner, _ := importer.UserSpoolOwner(path)
+	if importer.AnacronOwnsPath(path) {
+		// The system anacron runs every job as root; a root-owned file is what
+		// assertCronFileTrusted then requires, the same pairing as a spool crontab.
+		spoolOwner = "root"
+	}
 	flavor := importer.CronFlavorUnknown
+	var hostStat func(string) (fs.FileInfo, error)
 	if importer.CronOwnsPath(path) {
 		flavor = cronFlavor()
+		// Only a crontab crond reads off this box is guarded by this box's files;
+		// see CronOptions.HostStat.
+		hostStat = cronHostStat
 	}
 	return importer.CronOptions{
 		Flavor:   flavor,
+		HostStat: hostStat,
 		System:   importer.IsSystemCrontabPath(path),
 		User:     spoolOwner,
 		Existing: owned,
@@ -333,6 +348,10 @@ func cronOptionsFor(path string, owned importer.Owned) importer.CronOptions {
 // the real answer comes from the machine, and a test needs to ask the question about
 // a machine it can describe. Never assigned outside tests.
 var cronUserExists = importer.SystemUserExists
+
+// cronHostStat answers the file tests in a crontab's distro guards. A package var
+// for the same reason cronUserExists is one. Never assigned outside tests.
+var cronHostStat = os.Stat
 
 // cronFlavor detects which cron this box runs. A package var
 // for the same reason cronUserExists is one. Never assigned outside tests.
@@ -615,8 +634,11 @@ func partitionCrondEligible(hits []string, ignored []ignoredSource) ([]string, [
 			// that follows reports a real error against a real path, which beats
 			// this function inventing a reason for a file it couldn't look at.
 			kept = append(kept, h)
-		case info.IsDir():
-			ignored = append(ignored, ignoredSource{Path: h, Reason: "it is a directory"})
+		case info.IsDir() || strings.HasPrefix(filepath.Base(h), "."):
+			// Never a crontab and never something the operator dropped in by
+			// mistake: `/var/spool/cron/*` matches Debian's crontabs/ directory, and
+			// Debian ships /etc/cron.d/.placeholder. Reporting them is a warning on
+			// every boot that nobody can act on.
 		case info.Mode()&os.ModeSymlink != 0 && isRegularFile(h):
 			// Debian's crond runs a root-owned symlink in /etc/cron.d, but
 			// assertPathTrusted refuses symlinks, because one can be repointed after
@@ -782,7 +804,7 @@ func (h HeldSummary) Any() bool { return len(h.Tasks) > 0 }
 // the same markers the scheduler consults, so it can never disagree with what is
 // actually running.
 func Held(cfg *Config) HeldSummary {
-	if cfg == nil || !cfg.cronDaemon.Live {
+	if cfg == nil || !cfg.cronDaemon.Live && !cfg.cronDaemon.AnacronLive {
 		return HeldSummary{}
 	}
 	var names []string
@@ -794,7 +816,11 @@ func Held(cfg *Config) HeldSummary {
 	if len(names) == 0 {
 		return HeldSummary{}
 	}
-	return HeldSummary{Tasks: names, CronState: cfg.cronDaemon.State}
+	state := cfg.cronDaemon.State
+	if !cfg.cronDaemon.Live {
+		state = cfg.cronDaemon.AnacronState
+	}
+	return HeldSummary{Tasks: names, CronState: state}
 }
 
 // unownedCronFilesWarning covers the one live-crond case a hold cannot: a

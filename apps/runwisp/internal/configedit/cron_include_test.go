@@ -22,7 +22,7 @@ var cronPatterns = []string{"/etc/crontab", "/etc/cron.d/*"}
 
 func TestEnsureCronInclude_AppendsWhenNoDaemonTable(t *testing.T) {
 	root := "[tasks.web]\nrun = \"echo hi\"\n"
-	out, err := EnsureCronInclude([]byte(root), cronPatterns)
+	out, _, err := EnsureCronInclude([]byte(root), cronPatterns)
 	require.NoError(t, err)
 	s := string(out)
 	assert.Contains(t, s, "[tasks.web]")
@@ -32,7 +32,7 @@ func TestEnsureCronInclude_AppendsWhenNoDaemonTable(t *testing.T) {
 
 func TestEnsureCronInclude_InsertsAfterExistingDaemonHeader(t *testing.T) {
 	root := "[daemon]\nshutdown_timeout = \"10s\"\n\n[tasks.web]\nrun = \"echo hi\"\n"
-	out, err := EnsureCronInclude([]byte(root), cronPatterns)
+	out, _, err := EnsureCronInclude([]byte(root), cronPatterns)
 	require.NoError(t, err)
 	s := string(out)
 	// The key lands right after the [daemon] header, before the existing key, and
@@ -57,21 +57,49 @@ func TestEnsureCronInclude_RefusesWhenAlreadySet(t *testing.T) {
 		`include_cron = []`, // "read no crontabs" is an answer too
 	} {
 		root := "[daemon]\n" + existing + "\n"
-		_, err := EnsureCronInclude([]byte(root), cronPatterns)
+		_, _, err := EnsureCronInclude([]byte(root), cronPatterns)
 		assert.ErrorIs(t, err, ErrCronIncludeAlreadySet, existing)
+	}
+}
+
+// TestEnsureCronInclude_ExtendsItsOwnScaffold is the re-run take-over on a box
+// an older RunWisp scaffolded: its include_cron lacks /etc/anacrontab, and since
+// the array is still exactly what RunWisp wrote, the missing pattern is added
+// rather than blocking the take-over on a paste. The same list reformatted, or
+// with a path RunWisp never offers, is the operator's.
+func TestEnsureCronInclude_ExtendsItsOwnScaffold(t *testing.T) {
+	now := []string{"/etc/crontab", "/etc/cron.d/*", "/etc/anacrontab"}
+	root := config.CronStarterConfig(cronPatterns)
+
+	out, added, err := EnsureCronInclude([]byte(root), now)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"/etc/anacrontab"}, added)
+	assert.Equal(t, config.CronStarterConfig(now), string(out))
+
+	out, added, err = EnsureCronInclude(out, now)
+	require.NoError(t, err)
+	assert.Empty(t, added, "a second run has nothing to add")
+	assert.Equal(t, config.CronStarterConfig(now), string(out))
+
+	for _, theirs := range []string{
+		strings.Replace(root, `  "/etc/cron.d/*",`, `  "/etc/cron.d/*", # mine`, 1),
+		config.CronStarterConfig([]string{"/etc/crontab", "/opt/jobs.cron"}),
+	} {
+		_, _, err := EnsureCronInclude([]byte(theirs), append(now, "/opt/x"))
+		assert.ErrorIs(t, err, ErrCronIncludeAlreadySet, theirs)
 	}
 }
 
 func TestEnsureCronInclude_HandlesHeaderWithTrailingComment(t *testing.T) {
 	root := "[daemon] # my daemon settings\nshutdown_timeout = \"10s\"\n"
-	out, err := EnsureCronInclude([]byte(root), cronPatterns)
+	out, _, err := EnsureCronInclude([]byte(root), cronPatterns)
 	require.NoError(t, err)
 	assert.Contains(t, string(out), "include_cron = [")
 }
 
 func TestEnsureCronInclude_AppendsWhenNoTrailingNewline(t *testing.T) {
 	root := "[tasks.web]\nrun = \"echo hi\"" // no trailing newline
-	out, err := EnsureCronInclude([]byte(root), cronPatterns)
+	out, _, err := EnsureCronInclude([]byte(root), cronPatterns)
 	require.NoError(t, err)
 	assert.NotContains(t, string(out), `hi"[daemon]`, "insertion must not fuse onto the last line")
 	assert.Contains(t, string(out), "[daemon]")
@@ -91,7 +119,7 @@ func TestEnsureCronInclude_IgnoresHeaderInsideMultilineString(t *testing.T) {
 		"\"\"\"\n\n" +
 		"[daemon]\nshutdown_timeout = \"10s\"\n"
 
-	out, err := EnsureCronInclude([]byte(root), cronPatterns)
+	out, _, err := EnsureCronInclude([]byte(root), cronPatterns)
 	require.NoError(t, err)
 	s := string(out)
 
@@ -115,7 +143,7 @@ func TestEnsureCronInclude_WiredConfigLoadsAndReadsTheCrontab(t *testing.T) {
 
 	orig, err := os.ReadFile(rootPath)
 	require.NoError(t, err)
-	wired, err := EnsureCronInclude(orig, []string{"jobs.cron"})
+	wired, _, err := EnsureCronInclude(orig, []string{"jobs.cron"})
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(rootPath, wired, 0o600))
 
@@ -135,13 +163,13 @@ func TestEnsureCronInclude_WiredConfigLoadsAndReadsTheCrontab(t *testing.T) {
 }
 
 func TestEnsureCronInclude_InvalidTOMLErrors(t *testing.T) {
-	_, err := EnsureCronInclude([]byte("[daemon\nbroken"), cronPatterns)
+	_, _, err := EnsureCronInclude([]byte("[daemon\nbroken"), cronPatterns)
 	require.Error(t, err)
 	assert.False(t, errors.Is(err, ErrCronIncludeAlreadySet))
 }
 
 func TestEnsureCronInclude_RefusesEmptyPatterns(t *testing.T) {
-	_, err := EnsureCronInclude([]byte("[daemon]\n"), nil)
+	_, _, err := EnsureCronInclude([]byte("[daemon]\n"), nil)
 	require.Error(t, err)
 	assert.False(t, errors.Is(err, ErrCronIncludeAlreadySet))
 }

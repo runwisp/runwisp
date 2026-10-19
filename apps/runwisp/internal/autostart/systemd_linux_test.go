@@ -705,14 +705,16 @@ func TestSystemdApplyUninstall_SystemWide(t *testing.T) {
 	assert.Zero(t, cmd.Remaining())
 }
 
+// The probes run as the calling user, without sudo: `takeover` run without
+// root used to ask for a password just to look at the units.
 func TestSystemdStatus_SystemWide_NoLingerRowAndSudoJournalHint(t *testing.T) {
 	inst, _, cmd, _, binary := newFakeInstaller(t, false)
 	opts := defaultInstallOpts(binary)
 	opts.System = true
 
-	cmd.Expect("sudo", []string{"systemctl", "is-enabled", "runwisp.service"}, nil, nil, assertErrFake("no unit"))
-	cmd.Expect("sudo", []string{"systemctl", "is-active", "runwisp.service"}, nil, nil, assertErrFake("no unit"))
-	cmd.Expect("sudo", []string{"systemctl", "show", "-p", "ActiveEnterTimestamp", "--value", "runwisp.service"}, []byte("n/a\n"), nil, nil)
+	cmd.Expect("systemctl", []string{"is-enabled", "runwisp.service"}, nil, nil, assertErrFake("no unit"))
+	cmd.Expect("systemctl", []string{"is-active", "runwisp.service"}, nil, nil, assertErrFake("no unit"))
+	cmd.Expect("systemctl", []string{"show", "-p", "ActiveEnterTimestamp", "--value", "runwisp.service"}, []byte("n/a\n"), nil, nil)
 
 	st, err := inst.Status(context.Background(), opts)
 	require.NoError(t, err)
@@ -852,4 +854,39 @@ func TestSystemdWriteEnvDropIn_RejectsControlCharacterInValue(t *testing.T) {
 	_, _, err := inst.WriteEnvDropIn(context.Background(), opts, EnvDropInName,
 		map[string]string{"RUNWISP_AUTH": "off\n[Service]\nExecStart=evil"})
 	require.Error(t, err)
+}
+
+// A system unit pointed at a user-owned binary hands that user root. With
+// CopyBinaryFrom the plan says so first, and the copy lands before the unit is
+// written, so ExecStart never names a file that isn't there yet.
+func TestSystemdInstall_CopiesTheBinaryBeforeWritingTheUnit(t *testing.T) {
+	inst, fs, cmd, _, src := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(filepath.Join(t.TempDir(), "bin", "runwisp"))
+	opts.CopyBinaryFrom = src
+	opts.PreConfirmed = true
+	require.NoError(t, fs.WriteFile(opts.Config, []byte("[scheduler]\n"), 0644))
+
+	plan, err := inst.ComputePlan(context.Background(), opts)
+	require.NoError(t, err)
+	require.NotEmpty(t, plan.Steps)
+	assert.Contains(t, plan.Steps[0].Description, src+" → "+opts.Binary)
+
+	cmd.Expect("systemctl", []string{"daemon-reload"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"enable", "--now", "runwisp.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"is-active", "runwisp.service"}, []byte("active\n"), nil, nil)
+	out := &bytes.Buffer{}
+	require.NoError(t, inst.Install(context.Background(), opts, out))
+
+	copied, err := os.ReadFile(opts.Binary)
+	require.NoError(t, err)
+	assert.Equal(t, "fake-binary-content", string(copied))
+	info, err := os.Stat(opts.Binary)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm())
+	assert.Contains(t, out.String(), "Copied "+src)
+
+	assert.False(t, binaryCopyNeeded(opts), "the same bytes are in place: a re-run copies nothing")
+	require.NoError(t, os.WriteFile(src, []byte("a newer build"), 0o755))
+	assert.True(t, binaryCopyNeeded(opts))
 }
