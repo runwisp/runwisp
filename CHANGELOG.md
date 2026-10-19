@@ -7,17 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- `include_cron` reads `/etc/anacrontab`, so the `cron.daily`, `cron.weekly` and `cron.monthly` jobs anacron runs show up as tasks that catch up once after the machine was off. `runwisp takeover` reads it and retires anacron along with cron, and re-running it adds `/etc/anacrontab` to the `include_cron` an earlier take-over wrote.
-
-### Changed
-
-- `runwisp takeover` run without root re-runs itself with sudo, and ends by printing the dashboard address and how to get the password.
-- Crontab jobs get clearer task names: `run-parts /etc/cron.hourly` becomes `cron-hourly`, and `if …; then …` lines are named after the program they run instead of `if`. Tasks already read from a crontab may change name, starting a new run history.
+## [1.7.1] - 2026-10-19
 
 ### Fixed
 
+- `include_cron` reads `/etc/anacrontab`, so the `cron.daily`, `cron.weekly` and `cron.monthly` jobs anacron runs show up as tasks that catch up once after the machine was off. `runwisp takeover` reads it and retires anacron along with cron, and re-running it adds `/etc/anacrontab` to the `include_cron` an earlier take-over wrote.
+- `runwisp takeover` run without root re-runs itself with sudo, and ends by printing the dashboard address and how to get the password.
+- Crontab jobs get clearer task names: `run-parts /etc/cron.hourly` becomes `cron-hourly`, and `if …; then …` lines are named after the program they run instead of `if`. Tasks already read from a crontab may change name, starting a new run history.
 - `runwisp takeover` without root no longer asks for a sudo password just to look around, and no longer reports "no cron jobs" on a box that has them.
 - Hints to run `sudo runwisp …` name the full binary path when sudo can't find `runwisp` on its own (for example in `~/.local/bin`).
 - `runwisp password` and other commands that can't reach a daemon say when RunWisp runs as the system service, and `runwisp password` no longer creates a `.runwisp` folder in the current directory.
@@ -1077,7 +1073,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.7.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.7.1...main
+[1.7.1]: https://github.com/runwisp/runwisp/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/runwisp/runwisp/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/runwisp/runwisp/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/runwisp/runwisp/compare/v1.5.0...v1.5.1
