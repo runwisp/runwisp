@@ -23,21 +23,26 @@ here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 linux="${here}/.."
 engine=${CONTAINER_ENGINE:-$(command -v docker || command -v podman)}
 
-# A fresh deploy can take a moment to reach every edge.
-for attempt in $(seq 1 30); do
-  if curl -fsS "${base}/deb/dists/stable/main/binary-amd64/Packages" | grep -qx "Version: ${version//-/\~}"; then
-    break
-  fi
-  if [[ ${attempt} == 30 ]]; then
-    echo "${base} never served version ${version}" >&2
-    exit 1
-  fi
-  sleep 10
-done
-curl -fsS "${base}/runwisp.asc" | cmp -s - "${linux}/runwisp.asc" ||
-  { echo "${base}/runwisp.asc is not packaging/linux/runwisp.asc" >&2; exit 1; }
-curl -fsS "${base}/" | grep -qF ">${version}<" ||
-  { echo "${base}/ does not show version ${version}" >&2; exit 1; }
+# A fresh deploy can take a moment to reach every edge, and each file can
+# arrive at a different time, so every check polls instead of failing once.
+wait_for() {
+  local what=$1
+  shift
+  for attempt in $(seq 1 30); do
+    "$@" && return 0
+    sleep 10
+  done
+  echo "${base} never served ${what}" >&2
+  exit 1
+}
+# Read each body in full before matching: `curl | grep -q` under pipefail
+# fails with "Failed writing body" when grep exits before curl is done.
+served_version() { local body; body=$(curl -fsS "${base}/deb/dists/stable/main/binary-amd64/Packages") && grep -qx "Version: ${version//-/\~}" <<<"${body}"; }
+served_key() { local body; body=$(curl -fsS "${base}/runwisp.asc") && [[ ${body} == "$(<"${linux}/runwisp.asc")" ]]; }
+served_landing() { local body; body=$(curl -fsS "${base}/") && grep -qF ">${version}<" <<<"${body}"; }
+wait_for "version ${version}" served_version
+wait_for "packaging/linux/runwisp.asc" served_key
+wait_for "a landing page showing ${version}" served_landing
 
 run() {
   local image=$1 script=$2
@@ -65,7 +70,11 @@ run fedora:latest '
   install -D -m 0644 /linux/runwisp.asc /etc/pki/rpm-gpg/RPM-GPG-KEY-runwisp
   sed -e "s|https://pkg.runwisp.com|${BASE}|" -e "s|^\[runwisp\]|[runwisp-smoke]|" /linux/runwisp.repo \
     >/etc/yum.repos.d/smoke.repo
-  dnf install -y --repo runwisp-smoke runwisp
+  # repomd.xml and the rpm can lag at the edge the same way.
+  for attempt in 1 2 3 4 5 6; do
+    dnf clean all && dnf install -y --repo runwisp-smoke runwisp && break
+    [ "${attempt}" -lt 6 ]; sleep 10
+  done
   test "$(cat /usr/lib/runwisp/.runwisp-source)" = rpm
   runwisp --version | grep -F "${VERSION}"
 '
