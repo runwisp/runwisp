@@ -115,11 +115,16 @@ type Plan struct {
 
 // InstallOptions is the input to ComputePlan / Install.
 type InstallOptions struct {
-	Binary  string
-	Config  string
-	DataDir string
-	Port    int
-	Host    string
+	// Binary is the path ExecStart runs.
+	Binary string
+	// CopyBinaryFrom, when set, is copied to Binary before the unit is
+	// written. cmd/runwisp sets it for a system unit whose own binary is not
+	// root-owned: a root service must not run a file a normal user can replace.
+	CopyBinaryFrom string
+	Config         string
+	DataDir        string
+	Port           int
+	Host           string
 	// System requests a system-wide unit (Linux only, advanced).
 	System bool
 	// StopTimeout is how long the service manager waits for the daemon to

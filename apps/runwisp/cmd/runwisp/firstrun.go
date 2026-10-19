@@ -135,10 +135,10 @@ func firstRunQuestion(out io.Writer, scan config.CronScan, offer *firstRunCutove
 		case offer != nil:
 			return cutover.DescribeOffer(offer.plan)
 		case hasCompose:
-			fmt.Fprint(out, heldNote)
+			fmt.Fprint(out, heldNote())
 			return "Create a starter that imports the compose services and reads these live?"
 		default:
-			fmt.Fprint(out, heldNote)
+			fmt.Fprint(out, heldNote())
 			return "Read them as RunWisp tasks?"
 		}
 	case hasCompose:
@@ -151,8 +151,10 @@ func firstRunQuestion(out io.Writer, scan config.CronScan, offer *firstRunCutove
 // heldNote is the offer for a host that cannot retire cron itself (non-root,
 // no systemd, macOS's SIP-protected cron, or any other cutover blocker): RunWisp
 // reads the jobs but cron keeps running them, so the prompt has to say so.
-const heldNote = "cron keeps running them for now, so RunWisp holds those jobs — nothing fires twice.\n" +
-	"Run 'sudo runwisp takeover' when you want RunWisp to own them (needs root and systemd).\n"
+func heldNote() string {
+	return "cron keeps running them for now, so RunWisp holds those jobs — nothing fires twice.\n" +
+		"Run '" + sudoRunwisp("takeover") + "' when you want RunWisp to own them (needs root and systemd).\n"
+}
 
 // firstRunCutover is a cron take-over this host can actually perform, paired with
 // the plan the operator is being shown. Both halves are built before the prompt:
@@ -201,7 +203,7 @@ func probeFirstRunCutover(f Flags, out io.Writer, writeConfig func(path string, 
 	// default, and first run has no command to ask. It does not need to — root's
 	// path defaults (/etc/runwisp/runwisp.toml, /var/lib/runwisp, resolvePathDefaults
 	// in root.go) are already exactly what a system install would pick.
-	c := newCutover(f, deps, installer, autostart.InstallOptions{
+	opts := autostart.InstallOptions{
 		Binary:      binary,
 		Config:      f.CfgFile,
 		DataDir:     f.DataDir,
@@ -209,7 +211,9 @@ func probeFirstRunCutover(f Flags, out io.Writer, writeConfig func(path string, 
 		Port:        f.Port,
 		System:      true,
 		StopTimeout: stopWaitTimeout(f.CfgFile),
-	}, func(d *cutover.Deps) { d.WriteConfig = writeConfig })
+	}
+	useRootOwnedBinary(&opts)
+	c := newCutover(f, deps, installer, opts, func(d *cutover.Deps) { d.WriteConfig = writeConfig })
 
 	// This re-scans the crontabs scanForCron just looked at. Cheap (a glob and a
 	// few small files), and worth it: the plan owns its own evidence, so what the
@@ -238,7 +242,7 @@ func (o *firstRunCutover) perform(out io.Writer) (installed bool, err error) {
 	if err != nil {
 		if res.ConfigWritten != "" {
 			fmt.Fprintf(out, "\n%s was created and cron is untouched — fix the above, then run "+
-				"'sudo runwisp takeover'.\n", res.ConfigWritten)
+				"'%s'.\n", res.ConfigWritten, sudoRunwisp("takeover"))
 		}
 		return false, asUserFacing(err)
 	}

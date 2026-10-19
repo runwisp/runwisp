@@ -4,6 +4,7 @@
 package config
 
 import (
+	"fmt"
 	"path/filepath"
 	"slices"
 
@@ -31,7 +32,7 @@ import (
 // account lookup failed) yields no patterns at all rather than guessing.
 func DefaultCronPatterns(euid int, username string) []string {
 	if euid == 0 {
-		patterns := []string{importer.SystemCrontabPath, importer.SystemCronDirGlob()}
+		patterns := []string{importer.SystemCrontabPath, importer.SystemCronDirGlob(), importer.AnacrontabPath}
 		for _, dir := range importer.UserSpoolDirs() {
 			patterns = append(patterns, dir+"/*")
 		}
@@ -86,6 +87,10 @@ type CronScan struct {
 	// Their jobs still run; a take-over plan names them so the operator isn't
 	// surprised that a zone written in the file has no effect.
 	CronTZIgnored []string
+	// Noop lists one `file:line: why` per job left out because its own distro
+	// guard makes it do nothing on this host (importer.Item.NoopHere). They are
+	// in neither Jobs nor Skipped: nothing that ran is lost by leaving them out.
+	Noop []string
 }
 
 // ScanCronSources globs patterns exactly like `[daemon] include_cron` would
@@ -129,6 +134,10 @@ func ScanCronSources(patterns []string, cfgPath string) CronScan {
 		}
 		scan.Mails = scan.Mails || res.CronMails()
 		for _, it := range res.Items() {
+			if why := it.NoopHere(); why != "" {
+				scan.Noop = append(scan.Noop, fmt.Sprintf("%s:%d: %s", path, it.Line, why))
+				continue
+			}
 			scan.Jobs++
 			if it.LiveEligible() {
 				scan.Live++

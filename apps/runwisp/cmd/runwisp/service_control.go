@@ -270,7 +270,7 @@ func controlClient(ctx context.Context, f Flags, baseURL, password string) (*api
 		return connectRemote(ctx, baseURL, password)
 	}
 	if !isDaemonRunning(f) {
-		return nil, fmt.Errorf("no daemon is running on data dir %q — %s", f.DataDir, daemonNotRunningHint)
+		return nil, fmt.Errorf("no daemon is running on data dir %q — %s", f.DataDir, daemonNotRunningHint(f))
 	}
 	return connectLocal(ctx, f)
 }
@@ -286,7 +286,7 @@ func connectLocal(ctx context.Context, f Flags) (*apiclient.Client, error) {
 }
 
 func localUnreachableError(f Flags, err error) error {
-	return fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
+	return fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint(f))
 }
 
 // controlError maps one target's dispatch error to a user-facing one.
@@ -350,7 +350,9 @@ func serviceState(cmd *cobra.Command, f Flags, local bool) (autostart.Installer,
 	if err != nil {
 		return nil, autostart.InstallOptions{}, autostart.Status{}, false
 	}
-	systemWide, err := resolveManagedScope(deps, local)
+	// A non-root command against its own data dir means its own daemon, so it
+	// looks only at the user unit, even when a system unit also exists.
+	systemWide, err := resolveManagedScope(deps, local || !ownsSystemDaemon(f, os.Geteuid()))
 	if err != nil {
 		return nil, autostart.InstallOptions{}, autostart.Status{}, false
 	}
@@ -367,6 +369,14 @@ func serviceState(cmd *cobra.Command, f Flags, local bool) (autostart.Installer,
 		return nil, autostart.InstallOptions{}, autostart.Status{}, false
 	}
 	return installer, opts, st, true
+}
+
+// ownsSystemDaemon reports whether a command could mean the system service's
+// daemon. A non-root `runwisp restart` against its own ./.runwisp is talking to
+// its own daemon, and must not restart the system one (through sudo) because a
+// system unit happens to exist on the box.
+func ownsSystemDaemon(f Flags, euid int) bool {
+	return euid == 0 || f.DataDir == defaultDataDir(0, "")
 }
 
 // stopWaitTimeout returns how long to wait for the daemon to exit after

@@ -321,6 +321,7 @@ include_cron = ["crontabs/*"]
 		"crontabs/held.disabled": "0 5 * * * /usr/local/bin/switched-off.sh\n",
 		"crontabs/README":        "notes for whoever maintains this directory\n",
 		"crontabs/nested/deep":   "0 6 * * * /usr/local/bin/nested.sh\n",
+		"crontabs/.placeholder":  "# Debian ships one of these in every cron directory\n",
 	})
 
 	cfg := loadTree(t, dir)
@@ -335,8 +336,7 @@ include_cron = ["crontabs/*"]
 		filepath.Join(dir, "crontabs", "live"),
 	}, cfg.CronFiles())
 
-	// The name rule accounts for the two dotted files; the directory for the nested
-	// one.
+	// The name rule accounts for the two dotted files.
 	byBase := map[string]CronFinding{}
 	for _, f := range cfg.CronFindings {
 		byBase[filepath.Base(f.File)] = f
@@ -344,13 +344,19 @@ include_cron = ["crontabs/*"]
 	for base, want := range map[string]string{
 		"old.dpkg-old":  "crond ignores this name",
 		"held.disabled": "crond ignores this name",
-		"nested":        "it is a directory",
 	} {
 		finding, ok := byBase[base]
 		require.True(t, ok, "no finding for %s — it was passed over silently", base)
 		assert.Contains(t, finding.Reason, want)
 		assert.False(t, finding.Skipped,
 			"nothing stopped running: crond wasn't running this either")
+	}
+
+	// A directory or a dotfile is never a crontab anyone dropped in, so reporting
+	// it is only a warning on every boot (Debian's crontabs/ dir under
+	// /var/spool/cron/*, its /etc/cron.d/.placeholder).
+	for _, quiet := range []string{"nested", ".placeholder"} {
+		assert.NotContains(t, byBase, quiet, "%s must not be reported", quiet)
 	}
 
 	// The operator who dropped in `held.disabled` and can't find its tasks has to be
@@ -1060,7 +1066,7 @@ include_cron = ["crontabs/*"]
 func stubCronServiceProbe(t *testing.T, active, enabled, ok bool) {
 	t.Helper()
 	prev := cronprobe.ServiceProbe
-	cronprobe.ServiceProbe = func() (bool, bool, bool) { return active, enabled, ok }
+	cronprobe.ServiceProbe = func([]string) (bool, bool, bool) { return active, enabled, ok }
 	t.Cleanup(func() { cronprobe.ServiceProbe = prev })
 }
 
@@ -1387,4 +1393,38 @@ func TestIncludeCron_CronTZFollowsHostFlavor(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestIncludeCron_ReadsAnAnacrontab: on Debian, Ubuntu and Fedora anacron, not
+// cron, runs cron.daily/weekly/monthly. A takeover that never read the
+// anacrontab left those jobs out of RunWisp while anacron kept running them
+// unseen. A user anacrontab (`anacron -t`) runs as the daemon's own account.
+func TestIncludeCron_ReadsAnAnacrontab(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["anacrontab"]
+`,
+		"anacrontab": "SHELL=/bin/sh\n1	5	cron.daily	run-parts --report /etc/cron.daily\n",
+	})
+	cfg := loadTree(t, dir)
+	require.Equal(t, []string{"cron-daily"}, taskNames(cfg))
+	task := cfg.Tasks[0]
+	assert.Equal(t, "5 7 * * *", task.Cron)
+	assert.Equal(t, 1, task.CatchUpValue(), "anacron runs a missed job once")
+	assert.Equal(t, "", task.RunUser)
+	assert.Equal(t, model.SourceCron, task.Source)
+}
+
+// TestCronHold_AnacrontabFollowsAnacron: /etc/anacrontab jobs are held while
+// anacron is live and released once it is retired, independently of cron.
+func TestCronHold_AnacrontabFollowsAnacron(t *testing.T) {
+	anacronOnly := cronprobe.State{AnacronLive: true, AnacronState: "(anacron) is running"}
+	cronOnly := cronprobe.State{Live: true, State: "is running"}
+	assert.True(t, heldByLiveCron(anacronOnly, "/etc/anacrontab"))
+	assert.False(t, heldByLiveCron(anacronOnly, "/etc/crontab"))
+	assert.False(t, heldByLiveCron(cronOnly, "/etc/anacrontab"))
+	assert.True(t, heldByLiveCron(cronOnly, "/etc/crontab"))
+	assert.False(t, heldByLiveCron(anacronOnly, "/opt/app/anacrontab"),
+		"anacron never reads a file outside /etc/anacrontab")
 }

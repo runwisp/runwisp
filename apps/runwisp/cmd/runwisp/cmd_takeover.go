@@ -5,7 +5,11 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"runtime"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cutover"
 	"github.com/spf13/cobra"
 )
@@ -50,10 +54,11 @@ RunWisp fails to start, cron is unmasked and restarted rather than leaving the
 box with no scheduler at all. ` + "`runwisp service uninstall`" + ` hands cron back.
 
 ` + "`--dry-run`" + ` prints the plan and stops, always — including the cases that cannot
-proceed, so you can see what would need fixing. Re-running a finished take-over
-is a no-op, so it is safe in a provisioning script.
+proceed, so you can see what would need fixing. Re-running a finished
+take-over is a no-op, so it is safe in a provisioning script.
 
-Needs root and systemd. macOS's cron lives under SIP-protected
+Needs root and systemd. Run as anyone else, it re-runs itself with sudo
+(--dry-run too: reading every crontab needs root). macOS's cron lives under SIP-protected
 /System/Library/LaunchDaemons and cannot be masked by anything running as you —
 there, use ` + "`runwisp import cron`" + ` and remove the crontab by hand.`,
 	Args: cobra.NoArgs,
@@ -64,7 +69,18 @@ there, use ` + "`runwisp import cron`" + ` and remove the crontab by hand.`,
 	// into a unit rather than one it writes to now, so it replaces the root hook
 	// instead of inheriting its EnsureDir. resolvePathDefaults still has to run
 	// or an unset --config/--data bakes an empty path into the unit.
-	PersistentPreRunE: servicePathPreRun,
+	//
+	// Only root can take over cron, so anyone else is re-run through sudo first,
+	// before resolvePathDefaults picks the non-root defaults. A dry run too: it
+	// only reads, but without root it cannot read the crontabs it would report.
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if runtime.GOOS == "linux" && os.Geteuid() != 0 {
+			if err := reexecAsRoot(cmd.ErrOrStderr(), "Taking over cron needs root."); err != nil {
+				return err
+			}
+		}
+		return servicePathPreRun(cmd, args)
+	},
 }
 
 func init() {
@@ -99,8 +115,8 @@ func runTakeover(cmd *cobra.Command, f Flags) error {
 	}
 	cutover.Render(out, plan)
 
-	// A blocked plan is still printed above — someone told "this needs root"
-	// wants to know twelve jobs are waiting — and then exits non-zero, so a
+	// A blocked plan is still printed above (someone told their config does
+	// not load wants to know twelve jobs are waiting) and then exits non-zero, so a
 	// provisioning script cannot mistake it for a take-over that happened.
 	if plan.Blocked() {
 		return blockedCutoverError(plan)
@@ -132,5 +148,20 @@ func runTakeover(cmd *cobra.Command, f Flags) error {
 	if res.SettingsStale {
 		fmt.Fprintln(out, staleSettingsNote)
 	}
+	if !res.Aborted {
+		printTakeoverDone(out, f)
+	}
 	return nil
+}
+
+// printTakeoverDone answers what everyone asks next: where the dashboard is and
+// how to get in. The system daemon's socket is root's, so a plain
+// `runwisp password` from the operator's own shell cannot reach it.
+func printTakeoverDone(out io.Writer, f Flags) {
+	url := localBindURL("http", f.Host, f.Port)
+	if cfg, err := config.Load(f.CfgFile); err == nil {
+		url = daemonListenURL(cfg, f)
+	}
+	fmt.Fprintf(out, "\nDashboard:  %s\nPassword:   %s\nUpgrade:    %s\n",
+		url, sudoRunwisp("password"), sudoRunwisp("upgrade"))
 }

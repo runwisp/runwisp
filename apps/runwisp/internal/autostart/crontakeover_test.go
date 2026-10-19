@@ -29,19 +29,19 @@ func systemInstallOpts(binary string) InstallOptions {
 	return opts
 }
 
-func TestDiscoverCronUnit_FirstCandidateFound(t *testing.T) {
+func TestDiscoverCronUnits_FirstCandidateFound(t *testing.T) {
 	inst, _, cmd, _, _ := newFakeInstaller(t, false)
 	inst.deps.Euid = 0
 	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
 		[]byte("loaded\nactive\nenabled\n"), nil, nil)
 
-	unit, _, _, err := inst.discoverCronUnit(context.Background())
+	unit, _, _, err := inst.discoverCronUnits(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "cron.service", unit)
 	assert.Zero(t, cmd.Remaining())
 }
 
-func TestDiscoverCronUnit_FallsThroughToCrond(t *testing.T) {
+func TestDiscoverCronUnits_FallsThroughToCrond(t *testing.T) {
 	inst, _, cmd, _, _ := newFakeInstaller(t, false)
 	inst.deps.Euid = 0
 	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
@@ -49,14 +49,14 @@ func TestDiscoverCronUnit_FallsThroughToCrond(t *testing.T) {
 	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "crond.service"},
 		[]byte("loaded\nactive\nenabled\n"), nil, nil)
 
-	unit, _, _, err := inst.discoverCronUnit(context.Background())
+	unit, _, _, err := inst.discoverCronUnits(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "crond.service", unit)
 }
 
 // CronStatus is what the install prompt consults before asking whether to
 // retire cron, so "no cron on this host" has to be a plain answer rather
-// than the error discoverCronUnit returns to a caller who asked for a
+// than the error discoverCronUnits returns to a caller who asked for a
 // take-over outright.
 func TestCronStatus_NoCronUnitIsNotAnError(t *testing.T) {
 	inst, _, cmd, _, _ := newFakeInstaller(t, false)
@@ -98,7 +98,7 @@ func TestCronStatus_ReportsStoppedUnit(t *testing.T) {
 	assert.False(t, active, "a stopped cron is nothing to take over")
 }
 
-func TestDiscoverCronUnit_NoneFound(t *testing.T) {
+func TestDiscoverCronUnits_NoneFound(t *testing.T) {
 	inst, _, cmd, _, _ := newFakeInstaller(t, false)
 	inst.deps.Euid = 0
 	for _, name := range importer.CronUnits() {
@@ -106,7 +106,7 @@ func TestDiscoverCronUnit_NoneFound(t *testing.T) {
 			[]byte("not-found\n\n\n"), nil, nil)
 	}
 
-	_, _, _, err := inst.discoverCronUnit(context.Background())
+	_, _, _, err := inst.discoverCronUnits(context.Background())
 	assert.ErrorIs(t, err, ErrNoCronUnit)
 }
 
@@ -883,4 +883,76 @@ func TestCronFailsafe_OnlyHandsBackAfterRestartsGiveUp(t *testing.T) {
 	} {
 		assert.Equal(t, probes, runFailsafe(t, failsafe, stillTrying[0], stillTrying[1]), stillTrying)
 	}
+}
+
+// Looking at cron needs no privilege. A normal user's `takeover` used to probe
+// through sudo, and so asked for a password before it said anything.
+func TestCronStatus_NonRootProbesWithoutSudo(t *testing.T) {
+	inst, _, cmd, _, _ := newFakeInstaller(t, false)
+	inst.deps.Euid = 1000
+	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+		[]byte("loaded\nactive\nenabled\n"), nil, nil)
+
+	unit, active, err := inst.CronStatus(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "cron.service", unit)
+	assert.True(t, active)
+	assert.Zero(t, cmd.Remaining())
+}
+
+// expectUnitProbe scripts one `systemctl show` probe of unit.
+func expectUnitProbe(cmd *FakeRunner, unit, answer string) {
+	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", unit},
+		[]byte(answer), nil, nil)
+}
+
+// On Debian, Ubuntu and Fedora anacron, not cron, runs cron.daily/weekly/
+// monthly. A take-over that masked only cron.service left anacron running those
+// jobs out of RunWisp's sight; now that RunWisp reads /etc/anacrontab, leaving
+// anacron up would run them twice. Both of its units go in the one stop and
+// mask, each recorded with the state it was in.
+func TestComputePlan_TakeOverCronRetiresAnacronToo(t *testing.T) {
+	inst, _, cmd, _, binary := newFakeInstaller(t, false)
+	opts := systemInstallOpts(binary)
+	opts.TakeOverCron = true
+	inst.deps.Euid = 0
+
+	expectUnitProbe(cmd, "cron.service", "loaded\nactive\nenabled\n")
+	expectUnitProbe(cmd, "anacron.timer", "loaded\nactive\nenabled\n")
+	expectUnitProbe(cmd, "anacron.service", "loaded\ninactive\nenabled\n")
+
+	plan, err := inst.ComputePlan(context.Background(), opts)
+	require.NoError(t, err)
+	assert.Equal(t, "cron.service anacron.timer anacron.service", plan.CronUnit)
+	assert.Contains(t, plan.UnitContent, "# runwisp-masked-cron: cron.service anacron.timer anacron.service\n")
+	assert.Contains(t, plan.UnitContent, "# runwisp-cron-prior-state: active active inactive\n")
+	steps := stepDescriptions(plan.Steps)
+	assert.Contains(t, steps, "stop cron.service anacron.timer anacron.service")
+	assert.Contains(t, steps, "mask cron.service anacron.timer anacron.service")
+	assert.Contains(t, plan.CronFailsafe, "systemctl unmask cron.service anacron.timer anacron.service")
+	assert.Zero(t, cmd.Remaining())
+}
+
+// A box taken over before anacron was retired records cron.service alone, and
+// cron is masked by RunWisp now. Re-running the take-over adds anacron without
+// recording "masked" as cron's prior state, which would strand it on uninstall.
+func TestKeepRecordedPriorsAcrossAddedUnits(t *testing.T) {
+	got := keepRecordedPriors("cron.service anacron.timer anacron.service", "masked active inactive",
+		"cron.service", "active")
+	assert.Equal(t, "active active inactive", got)
+	got = keepRecordedPriors("cron.service anacron.timer", "masked active", "cron.service", "")
+	assert.Equal(t, "active active", got, "a unit recorded without a state restarts, as before")
+}
+
+func TestRestoreCron_EachUnitBackToItsOwnState(t *testing.T) {
+	inst, _, cmd, _, _ := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	cmd.Expect("systemctl", []string{"unmask", "cron.service", "anacron.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"start", "cron.service"}, nil, nil, nil)
+
+	out := &bytes.Buffer{}
+	require.NoError(t, inst.restoreCron(context.Background(),
+		"cron.service anacron.timer anacron.service", "active masked inactive", out))
+	assert.Zero(t, cmd.Remaining())
+	assert.Contains(t, out.String(), "Leaving anacron.timer masked")
 }

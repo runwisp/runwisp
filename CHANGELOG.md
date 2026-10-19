@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `include_cron` reads `/etc/anacrontab`, so the `cron.daily`, `cron.weekly` and `cron.monthly` jobs anacron runs show up as tasks that catch up once after the machine was off. `runwisp takeover` reads it and retires anacron along with cron, and re-running it adds `/etc/anacrontab` to the `include_cron` an earlier take-over wrote.
+
+### Changed
+
+- `runwisp takeover` run without root re-runs itself with sudo, and ends by printing the dashboard address and how to get the password.
+- Crontab jobs get clearer task names: `run-parts /etc/cron.hourly` becomes `cron-hourly`, and `if …; then …` lines are named after the program they run instead of `if`. Tasks already read from a crontab may change name, starting a new run history.
+
+### Fixed
+
+- `runwisp takeover` without root no longer asks for a sudo password just to look around, and no longer reports "no cron jobs" on a box that has them.
+- Hints to run `sudo runwisp …` name the full binary path when sudo can't find `runwisp` on its own (for example in `~/.local/bin`).
+- `runwisp password` and other commands that can't reach a daemon say when RunWisp runs as the system service, and `runwisp password` no longer creates a `.runwisp` folder in the current directory.
+- Distro cron lines that do nothing on the machine, like `test -x /usr/sbin/anacron || …` on a box with anacron, are no longer imported as tasks. `runwisp import cron` and `runwisp takeover` list them as left out.
+- The daemon no longer warns on every start about Debian's `/etc/cron.d/.placeholder` or the `crontabs` directory under `/var/spool/cron`.
+
+### Security
+
+- A system service never runs a binary a normal user can replace: `takeover` and `service install` copy such a binary to `/usr/local/bin/runwisp` and run the copy.
+
 ## [1.7.0] - 2026-10-15
 
 ### Added

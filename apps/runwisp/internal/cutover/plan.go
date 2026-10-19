@@ -94,8 +94,13 @@ type Evidence struct {
 	// re-deriving its own phrasing.
 	loadErr error
 	// CronIncludeDeclared is true when the raw TOML has a [daemon] include_cron
-	// key at all, however non-covering. RunWisp will not rewrite one.
+	// key the operator maintains, however non-covering. RunWisp will not rewrite
+	// one. The array RunWisp itself scaffolded doesn't count: see CronIncludeAdds.
 	CronIncludeDeclared bool
+	// CronIncludeAdds are the patterns StepWireIncludeCron would add: all of
+	// them to a config with no include_cron, or the ones a RunWisp-scaffolded
+	// array is missing (a newer RunWisp reads a source an older one didn't).
+	CronIncludeAdds []string
 	// ReadFiles are the crontabs the config reads today (cfg.CronFiles()).
 	ReadFiles []string
 	// Uncovered are crontabs on this box that this config would not read.

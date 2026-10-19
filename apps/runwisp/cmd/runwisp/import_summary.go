@@ -63,6 +63,14 @@ var (
 			"file out of /etc/cron.d) before starting RunWisp, or each one runs twice.",
 		},
 	}
+	sourceAnacrontab = importSource{
+		label: "anacrontab",
+		stillRuns: []string{
+			"anacron still runs these jobs. Retire it (`sudo runwisp takeover` does, or",
+			"`systemctl mask --now anacron.timer anacron.service`) before starting",
+			"RunWisp, or each one runs twice.",
+		},
+	}
 	sourceSupervisord = importSource{
 		label: "supervisord config",
 		stillRuns: []string{

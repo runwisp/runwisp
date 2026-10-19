@@ -31,6 +31,8 @@ const (
 	NotePercentStdin
 	NoteUserColumnSuspect
 	NoteCronTZIgnored
+	NoteNoopHere
+	NoteAnacronPeriod
 
 	// Naming and identity, shared by both parsers.
 	NoteAlreadyDefined
@@ -149,6 +151,12 @@ var noteKindInfo = map[NoteKind]noteSeverity{
 		// is one the operator wrote.
 		slug: "user-column-suspect", blocking: true, unsafeLive: true,
 	},
+	NoteNoopHere: {
+		// The job's own guard skips it on this host, so leaving it out changes
+		// nothing that ran. Not blocking: there is nothing for anyone to fix.
+		slug: "noop-here", blocking: false, unsafeLive: false,
+	},
+	NoteAnacronPeriod:         {slug: "anacron-period", blocking: false, unsafeLive: false},
 	NoteAlreadyDefined:        {slug: "already-defined", blocking: false, unsafeLive: false},
 	NoteRenamedOwned:          {slug: "renamed-owned", blocking: false, unsafeLive: false},
 	NoteRenamedCollision:      {slug: "renamed-collision", blocking: false, unsafeLive: false},
@@ -321,6 +329,17 @@ func (i Item) LiveEligible() bool {
 // this whole report exists to remove. A derived status cannot be stale and cannot
 // disagree with the notes printed under it.
 func (i Item) Status() ItemStatus { return deriveStatus(i) }
+
+// NoopHere returns why this job was left out for doing nothing on this host
+// (see noopGuard), or "" when it wasn't.
+func (i Item) NoopHere() string {
+	for _, n := range i.Notes {
+		if n.Kind == NoteNoopHere {
+			return n.Message
+		}
+	}
+	return ""
+}
 
 // SkipReason is the one-clause "why" for a skipped row, or "" for any other
 // status. Total by construction, so a formatter never has to index Notes.

@@ -45,6 +45,10 @@ type Deps struct {
 	// Username is the account running the process, for the unprivileged
 	// default cron patterns. "" offers no per-user spool pattern.
 	Username string
+	// RootCommand is the command line that re-runs this as root, for the
+	// needs-root blocker. cmd/runwisp knows whether sudo's PATH finds the
+	// binary; "" falls back to "sudo runwisp takeover".
+	RootCommand string
 
 	// Scan reports the crontabs on this machine with no config involved — the
 	// unlock that lets a cutover start from nothing. Defaults to

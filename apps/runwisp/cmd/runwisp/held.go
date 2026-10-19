@@ -52,7 +52,7 @@ func printHeldBlock(w io.Writer, names []string, cronState string) {
 	fmt.Fprintf(w, "\n⏸ %s held — %s still owns %s, so RunWisp is not running %s:\n",
 		heldTaskCount(len(names)), daemon, them, them)
 	fmt.Fprintf(w, "    %s\n", heldNameList(names))
-	fmt.Fprintf(w, "  Run 'sudo runwisp takeover' to hand %s over, or stop cron and disable it at boot\n", them)
+	fmt.Fprintf(w, "  Run '%s' to hand %s over, or stop cron and disable it at boot\n", sudoRunwisp("takeover"), them)
 	fmt.Fprintf(w, "  (for example '%s') and RunWisp picks %s up.\n", disableCronExample, them)
 }
 
@@ -118,7 +118,7 @@ func printHeldBanner(w io.Writer, names []string, cronState string) {
 	b.WriteString("  RunWisp is standing down so nothing fires twice — cron keeps running these\n")
 	b.WriteString("  jobs, and RunWisp records no history or output for them.\n")
 	fmt.Fprintf(&b, "    %s\n", heldNameList(names))
-	b.WriteString("  Run 'sudo runwisp takeover' to hand them over. Or stop cron and disable it at\n")
+	fmt.Fprintf(&b, "  Run '%s' to hand them over. Or stop cron and disable it at\n", sudoRunwisp("takeover"))
 	fmt.Fprintf(&b, "  boot (for example '%s'): RunWisp notices within a\n", disableCronExample)
 	b.WriteString("  minute and takes them on, no reload needed. A stopped cron that is still\n")
 	b.WriteString("  enabled keeps them held.\n")

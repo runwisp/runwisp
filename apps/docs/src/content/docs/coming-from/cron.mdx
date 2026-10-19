@@ -29,23 +29,37 @@ plan, and asks once. Nothing is written until you say yes.
 
 :::caution[Linux with systemd, as root]
 `takeover` retires cron by masking its systemd unit, so systemd won't start it
-again. This needs root and systemd. On macOS or without systemd,
-[convert by hand](#convert-by-hand).
+again. This needs root and systemd. Run it as yourself and it re-runs itself
+with sudo. On macOS or without systemd, [convert by hand](#convert-by-hand).
 :::
 
 ### What it does
 
-1. **Writes the config**: a `runwisp.toml` that reads your crontabs with
-   [`include_cron`](/configuration/daemon/#include_cron). In an existing config
-   it adds the key and leaves comments and formatting alone.
+1. **Writes the config**: a `runwisp.toml` that reads your crontabs and
+   `/etc/anacrontab` with [`include_cron`](/configuration/daemon/#include_cron).
+   In an existing config it adds the key and leaves comments and formatting
+   alone. An `include_cron` you wrote is never edited: if it misses a crontab,
+   the take-over stops and prints the list to paste. The one RunWisp wrote
+   itself gets any source a newer RunWisp reads, such as `/etc/anacrontab`.
 2. **Installs the service**: `/etc/systemd/system/runwisp.service`, then
-   `systemctl daemon-reload`.
-3. **Stops and masks cron**: stopped first, so nothing runs in between.
+   `systemctl daemon-reload`. If the binary you ran isn't owned by root, it is
+   [copied to `/usr/local/bin`](/operations/autostart/) first.
+3. **Stops and masks cron**: stopped first, so nothing runs in between. If
+   anacron is installed (it runs `cron.daily`, `cron.weekly` and `cron.monthly`
+   on Debian, Ubuntu and Fedora), `anacron.timer` and `anacron.service` are
+   stopped and masked with it.
 4. **Starts RunWisp**: `systemctl enable --now runwisp.service`.
+
+When it's done, it prints the dashboard address, and the commands for the
+password (`sudo runwisp password`) and for upgrades (`sudo runwisp upgrade`).
 
 Cron isn't touched until the config and unit are on disk. If RunWisp fails to
 start, cron is unmasked (and restarted if it was running), and you see the
 error.
+
+Distro lines that do nothing on this machine, such as
+`test -x /usr/sbin/anacron || run-parts …`, are listed as left out instead of
+imported. See [`include_cron`](/configuration/daemon/#include_cron).
 
 If a crontab sets `MAILTO`, the plan warns that cron mail stops. Set up
 [notifications](/notifications/) to hear about failures; see
@@ -100,6 +114,8 @@ nothing runs twice. At boot, a `HELD:` banner names them.
   starts running the jobs, no reload needed. A stopped cron that is still
   enabled keeps the jobs held, because it starts again on the next boot.
 
+Jobs from `/etc/anacrontab` are held the same way while anacron runs.
+
 You never set a hold yourself. RunWisp checks for a running cron daemon on
 every load.
 
@@ -109,8 +125,9 @@ every load.
 runwisp service uninstall
 ```
 
-This unmasks and restarts cron, but only if this RunWisp's unit recorded the
-take-over (a `# runwisp-masked-cron:` line in the unit). If something starts
+This unmasks cron (and anacron) and restarts what was running, but only if this
+RunWisp's unit recorded the take-over (a `# runwisp-masked-cron:` line in the
+unit). If something starts
 cron again later, `runwisp service status` reports it and RunWisp holds the
 jobs again within a minute. `sudo runwisp takeover` fixes the cron side.
 

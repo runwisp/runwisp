@@ -6,6 +6,7 @@
 package autostart
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -16,6 +17,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 const (
@@ -97,9 +100,9 @@ func ScopeCandidates(deps Deps) (systemPath, userPath string) {
 }
 
 // systemctlInvocation is the one place that decides how a systemctl call is
-// scoped and privileged (sudo vs `--user`) for install, uninstall,
-// stop/restart, and Status's probes. Element 0 of the result is the program to
-// run.
+// scoped and privileged (sudo vs `--user`) for install, uninstall and
+// stop/restart. Read-only probes go through querySystemctl instead, which
+// never asks for sudo. Element 0 of the result is the program to run.
 //
 // euid is a parameter rather than an inline os.Geteuid() call so a test can
 // describe a root-image machine (where "sudo" may not even be installed)
@@ -128,9 +131,21 @@ func (s *systemdInstaller) runSystemctl(ctx context.Context, systemWide bool, ar
 	return s.deps.Cmd.Run(ctx, argv[0], argv[1:]...)
 }
 
+// querySystemctl runs a read-only systemctl call (show, is-active,
+// is-enabled). Any user may query the system manager, so it never takes the
+// sudo prefix: a password prompt just to look at a unit is a prompt for
+// nothing, and `takeover` run as a normal user used to ask for one.
+func (s *systemdInstaller) querySystemctl(ctx context.Context, systemWide bool, args ...string) ([]byte, []byte, error) {
+	const unprivileged = 0 // euid 0 is the one input for which systemctlInvocation adds no sudo
+	argv := systemctlInvocation(systemWide, unprivileged, args...)
+	return s.deps.Cmd.Run(ctx, argv[0], argv[1:]...)
+}
+
 // renderUnit assembles the SystemdParams + renders the template.
 func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, error) {
-	binarySHA, _ := fileSHA(opts.Binary)
+	// The copy's source: at plan time the target may not exist yet, or may
+	// still hold the previous version.
+	binarySHA, _ := fileSHA(cmp.Or(opts.CopyBinaryFrom, opts.Binary))
 	configHash := SettingsHash(opts)
 	params := SystemdParams{
 		Binary:         opts.Binary,
@@ -206,7 +221,7 @@ func (s *systemdInstaller) ComputePlan(ctx context.Context, opts InstallOptions)
 	plan.LingerOn = lingerOn
 	plan.CronUnit = maskedUnit
 	if wantsCronFailsafe(resolved) {
-		failsafe, err := RenderCronFailsafeUnit(CronFailsafeParams{Service: s.serviceName(true), CronUnit: maskedUnit})
+		failsafe, err := RenderCronFailsafeUnit(CronFailsafeParams{Service: s.serviceName(true), CronUnit: handBackUnits(maskedUnit, prior)})
 		if err != nil {
 			return Plan{}, err
 		}
@@ -221,15 +236,20 @@ func (s *systemdInstaller) planSteps(plan Plan, opts InstallOptions) []Step {
 	if plan.Kind == PlanNoop || plan.Kind == PlanConflict {
 		return nil
 	}
-	steps := []Step{
-		{
-			Description: "Write unit file\n       " + plan.UnitPath,
-		},
+	var steps []Step
+	if binaryCopyNeeded(opts) {
+		steps = append(steps, Step{
+			Description: fmt.Sprintf("Copy the binary to a root-owned path, so only root can change what the service runs\n       %s → %s",
+				opts.CopyBinaryFrom, opts.Binary),
+		})
 	}
+	steps = append(steps, Step{
+		Description: "Write unit file\n       " + plan.UnitPath,
+	})
 	if plan.CronFailsafe != "" {
 		steps = append(steps, Step{
 			Description: fmt.Sprintf("Write failsafe unit (starts %s again if RunWisp keeps failing)\n       %s",
-				plan.CronUnit, cronFailsafePath()),
+				textutil.JoinAnd(strings.Fields(plan.CronUnit)), cronFailsafePath()),
 		})
 	}
 	steps = append(steps, Step{
@@ -307,6 +327,12 @@ func (s *systemdInstaller) preflight(_ context.Context, opts InstallOptions) err
 
 // applyInstall executes the steps after confirmation.
 func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts InstallOptions, out io.Writer) error {
+	if binaryCopyNeeded(opts) {
+		if err := copyBinary(opts.CopyBinaryFrom, opts.Binary); err != nil {
+			return fmt.Errorf("copy binary: %w", err)
+		}
+		fmt.Fprintf(out, "Copied %s to %s\n", opts.CopyBinaryFrom, opts.Binary)
+	}
 	if err := s.deps.FS.WriteFile(plan.UnitPath, []byte(plan.UnitContent), 0644); err != nil {
 		return fmt.Errorf("write unit: %w", err)
 	}
@@ -456,7 +482,7 @@ const (
 // cancellation between polls.
 func (s *systemdInstaller) awaitActiveAfterInstall(ctx context.Context, systemWide bool, name string) bool {
 	for attempt := 0; ; attempt++ {
-		if stdout, _, err := s.runSystemctl(ctx, systemWide, "is-active", name); err == nil &&
+		if stdout, _, err := s.querySystemctl(ctx, systemWide, "is-active", name); err == nil &&
 			strings.TrimSpace(string(stdout)) == "active" {
 			return true
 		}
@@ -654,10 +680,10 @@ func (s *systemdInstaller) computeUninstallPlan(_ context.Context, opts Uninstal
 		// (by hand, by a different instance, or by the operator before
 		// the take-over) is not ours to touch.
 		unit, prior := s.cronMarkerFromUnitFile(unitPath)
-		if unit != "" && prior != cronPriorMasked {
+		if handBack := handBackUnits(unit, prior); handBack != "" {
 			plan.CronUnit, plan.cronPrior = unit, prior
-			desc := "Run:  " + systemctlCommandLine(true, s.deps.Euid, "unmask", unit)
-			if prior != cronPriorInactive {
+			desc := "Run:  " + systemctlCommandLine(true, s.deps.Euid, "unmask", handBack)
+			if restartsAny(prior) {
 				desc += " (and restart it)"
 			}
 			plan.Steps = append(plan.Steps, Step{Description: desc})
@@ -784,22 +810,28 @@ func (s *systemdInstaller) populateUnitStatus(ctx context.Context, opts InstallO
 		return
 	}
 	st.CronUnit = parsed.maskedCron
-	if _, activeState, unitFileState, err := s.probeCronUnit(ctx, parsed.maskedCron); err == nil {
-		st.CronMasked = unitFileState == "masked"
-		st.CronActive = activeState == "active"
+	st.CronMasked = true
+	for _, unit := range strings.Fields(parsed.maskedCron) {
+		_, activeState, unitFileState, err := s.probeCronUnit(ctx, unit)
+		if err != nil {
+			st.CronMasked = false
+			continue
+		}
+		st.CronMasked = st.CronMasked && unitFileState == "masked"
+		st.CronActive = st.CronActive || activeState == "active"
 	}
 }
 
 // populateRuntimeStatus fills in the fields that come from live
 // systemctl/loginctl queries against the running unit.
 func (s *systemdInstaller) populateRuntimeStatus(ctx context.Context, opts InstallOptions, name string, st *Status) {
-	if stdout, _, err := s.runSystemctl(ctx, opts.System, "is-enabled", name); err == nil {
+	if stdout, _, err := s.querySystemctl(ctx, opts.System, "is-enabled", name); err == nil {
 		st.Autostart = strings.TrimSpace(string(stdout)) == "enabled"
 	}
-	if stdout, _, err := s.runSystemctl(ctx, opts.System, "is-active", name); err == nil {
+	if stdout, _, err := s.querySystemctl(ctx, opts.System, "is-active", name); err == nil {
 		st.Running = strings.TrimSpace(string(stdout)) == "active"
 	}
-	if stdout, _, err := s.runSystemctl(ctx, opts.System, "show", "-p", "ActiveEnterTimestamp", "--value", name); err == nil {
+	if stdout, _, err := s.querySystemctl(ctx, opts.System, "show", "-p", "ActiveEnterTimestamp", "--value", name); err == nil {
 		st.LastStart = parseSystemdTimestamp(strings.TrimSpace(string(stdout)))
 	}
 	// loginctl linger is a per-user-session concept; a system-wide unit

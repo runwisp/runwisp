@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/configedit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // Result is what Execute actually did, so a caller can report accurately instead
@@ -128,7 +130,11 @@ func (c *Cutover) applyConfig(p Plan, res *Result, out io.Writer) error {
 		if err := c.deps.WireCron(path, patterns); err != nil {
 			return wireError(path, err)
 		}
-		fmt.Fprintf(out, "Added include_cron to %s\n", path)
+		if len(p.Evidence.ReadFiles) > 0 {
+			fmt.Fprintf(out, "Added %s to include_cron in %s\n", strings.Join(p.Evidence.CronIncludeAdds, ", "), path)
+		} else {
+			fmt.Fprintf(out, "Added include_cron to %s\n", path)
+		}
 		res.IncludeWired = true
 	}
 	return nil
@@ -177,7 +183,8 @@ func cronUntouched(p Plan) string {
 	if p.Evidence.CronUnit == "" {
 		return ""
 	}
-	return fmt.Sprintf(" %s is untouched, and RunWisp holds the jobs it owns.", p.Evidence.CronUnit)
+	return fmt.Sprintf(" %s %s untouched, and RunWisp holds the jobs it owns.",
+		unitNames(p.Evidence.CronUnit), textutil.Pluralize(len(strings.Fields(p.Evidence.CronUnit)), "is", "are"))
 }
 
 // wireError phrases a failed include_cron insertion. Every case here left the

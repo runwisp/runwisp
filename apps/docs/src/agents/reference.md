@@ -68,14 +68,27 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     Emitted per job for crond parity: env_base="clean", working_dir="~",
                                     catch_up=0 (crond never re-fires a missed tick; the missed row is still
                                     recorded), on_overlap="queue" (deliberately NOT crond's unbounded overlap).
-                                    No ${...} expansion on cron text. /etc/anacrontab is not read.
+                                    No ${...} expansion on cron text. A file named `anacrontab` is ANACRONTAB
+                                    format: each `period delay job-id command` -> task named after job-id (dots
+                                    -> '-'), cron at START_HOURS_RANGE start hour (default 7) + delay minutes
+                                    (1=daily, 7=Mondays, @monthly=1st, @yearly=Jan 1, N=*/N dom), catch_up=1,
+                                    RANDOM_DELAY ignored; /etc/anacrontab jobs run as root.
+                                    Guard lines whose own `test -x|-e|-d|-f /abs ||` or `if [ … ] && …; then`
+                                    test says they skip on THIS host (e.g. `test -x /usr/sbin/anacron || …`,
+                                    `test -e /run/systemd/system || …`) are left out, not skipped-as-error:
+                                    note kind noop-here, listed by import/takeover, no boot warning.
+                                    Names: `run-parts DIR` -> basename of DIR with dots as '-' (cron-daily);
+                                    `invoke-rc.d X` / `service X` -> X; shell keywords (if/then/!/…) skipped.
+                                    Glob hits that are directories or dotfiles are dropped without a finding.
                                     Tasks report "source": "cron" + "source_file" in list/status --json;
                                     `runwisp promote` graduates them.
                                     HELD GATE: while a system cron daemon is live (systemctl is-active OR
                                     is-enabled on cron.service/crond.service/cronie.service, else a live pidfile
                                     naming a process that is actually alive), every task
                                     whose source_file is a path cron itself reads (/etc/crontab, **/cron.d/*,
-                                    /var/spool/cron[/crontabs]/*) is HELD: loaded, listed, schedule shown, but
+                                    /var/spool/cron[/crontabs]/*) is HELD (so are /etc/anacrontab tasks
+                                    while anacron.timer/anacron.service is active or enabled; without systemd,
+                                    while cron is live). HELD means: loaded, listed, schedule shown, but
                                     NOT registered with the scheduler — no cron firing, no jitter plan, no
                                     catch-up, no run_on_start/@reboot, no missed-run rows, no FirstSeenAt anchor.
                                     Reported as "held_by": "cron" on each task in list/status --json and
@@ -298,7 +311,7 @@ Official Docker image: `runwisp/runwisp` (alpine default + `-debian` variant, am
 ```
 runwisp                      — no subcommand: attach TUI to running daemon, else scaffold toml + spawn daemon + attach
                              — scaffold prompt (TTY only) also detects an adjacent compose file and/or a readable
-                               crontab (DefaultCronPatterns: root gets /etc/crontab + /etc/cron.d/* + every spool,
+                               crontab (DefaultCronPatterns: root gets /etc/crontab + /etc/cron.d/* + /etc/anacrontab + every spool,
                                others get only their own spool file) and offers to wire either/both into the starter (a compose-only directory defaults to a starter that schedules jobs in the stack's services, with the import-the-services starter as the second choice);
                                a Blocked cron source falls back to the plain starter instead
                              — CRON CUTOVER: when the box also has a live cron unit and the install would be
@@ -420,6 +433,9 @@ runwisp service install      — install autostart; -y --print --dry-run --force
                                Refused as root on Linux (systemctl --user has no bus for root under sudo).
                              — --data/--config override paths but never the scope; a system install also
                                requires the resolved config to be root-owned and not group/world-writable.
+                               An auto-detected binary that isn't root-trusted (e.g. ~/.local/bin/runwisp) is
+                               copied to /usr/local/bin/runwisp first and the unit runs the copy (--binary is
+                               never copied). Read-only systemctl probes never use sudo.
                              — unit lifecycle ONLY: it never touches cron. When a `takeover` would do something,
                                a successful install prints a note naming the live cron unit, its job count, and
                                `sudo runwisp takeover`. There is no --take-over-cron flag.
@@ -430,10 +446,18 @@ runwisp service install      — install autostart; -y --print --dry-run --force
 runwisp takeover             — retire cron in one step; --dry-run --force -y --allow-skipped-cron-jobs --binary
                              — works from NOTHING: no runwisp.toml needed. Computes one plan (internal/cutover),
                                prints it, asks once, executes. Steps: write runwisp.toml reading the crontabs it
-                               found (or insert [daemon] include_cron into an existing config, surgically) ->
-                               install the system service -> stop+mask cron -> start RunWisp -> reload a daemon
+                               found (or insert [daemon] include_cron into an existing config, surgically; an
+                               include_cron still byte-identical to RunWisp's own scaffold that lists only default
+                               patterns gets the missing defaults added, any other declared one blocks with a paste) ->
+                               install the system service -> stop+mask cron (+ anacron.timer anacron.service when
+                               loaded; one space-separated list in the runwisp-masked-cron / -prior-state markers,
+                               priors paired by position) -> start RunWisp -> reload a daemon
                                that was already running (so tasks the cron gate held go live immediately;
-                               `enable --now` on an already-active unit is a no-op). Needs root + systemd.
+                               `enable --now` on an already-active unit is a no-op). Needs root + systemd; run as
+                               non-root (--dry-run included: reading every crontab needs root) it re-execs
+                               `sudo <abs binary> takeover <args>`, forwarding non-secret RUNWISP_* settings.
+                               Without sudo on PATH it only reports "needs root". Ends by printing the dashboard
+                               URL, `sudo runwisp password` and `sudo runwisp upgrade`.
                              — a failed start restores cron to its pre-take-over state rather than leaving no
                                scheduler. Later crash loops: unit has StartLimitBurst=5/300s + OnFailure=
                                runwisp-cron-failsafe.service, which unmasks+starts cron only when runwisp.service

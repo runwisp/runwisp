@@ -55,7 +55,7 @@ func resolveInstallScope(local bool, euid int) (systemWide bool, err error) {
 		return false, &userFacingError{
 			title: "installing the system service requires root",
 			details: "Re-run as root:\n" +
-				"  sudo runwisp service install\n\n" +
+				"  " + sudoRunwisp("service", "install") + "\n\n" +
 				"Or install a user-scoped unit under your own account instead:\n" +
 				"  runwisp service install --local",
 		}

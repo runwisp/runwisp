@@ -175,11 +175,15 @@ func runImportCron(stdout, stderr io.Writer, stdin *os.File, source string, cron
 	}
 	defer closeFn()
 
-	res, err := importer.ParseCrontab(r, cronOpts)
-	if err != nil {
-		return &userFacingError{title: "failed to read crontab", details: err.Error()}
+	parse, kind := importer.ParseCrontab, sourceCrontab
+	if importer.IsAnacrontab(source) {
+		parse, kind = importer.ParseAnacrontab, sourceAnacrontab
 	}
-	return emitImport(stdout, stderr, stdin, res, sourceCrontab, f, opts)
+	res, err := parse(r, cronOpts)
+	if err != nil {
+		return &userFacingError{title: "failed to read " + kind.label, details: err.Error()}
+	}
+	return emitImport(stdout, stderr, stdin, res, kind, f, opts)
 }
 
 func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []string, f Flags, opts importOpts) error {
@@ -333,9 +337,14 @@ func resolveCronOptions(source string, systemFlag, systemSet bool) importer.Cron
 		opts.UserExists = importer.SystemUserExists
 	}
 	// Only a file this host's cron reads has been firing on this host's
-	// cron's schedule, so only that one takes its CRON_TZ semantics.
+	// cron's schedule, so only that one takes its CRON_TZ semantics, and only its
+	// distro guards are answered by this host's files.
 	if importer.CronOwnsPath(source) {
 		opts.Flavor = hostCronFlavor()
+		opts.HostStat = os.Stat
+	}
+	if importer.AnacronOwnsPath(source) {
+		opts.User = "root" // the system anacron runs every job as root
 	}
 	switch {
 	case systemSet:

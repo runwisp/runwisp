@@ -83,6 +83,7 @@ func resolveCutover(cmd *cobra.Command, f Flags, req takeoverRequest) (*cutover.
 
 	return newCutover(f, deps, installer, opts, func(d *cutover.Deps) {
 		d.AllowSkippedCronJobs = req.AllowSkippedCronJobs
+		d.RootCommand = sudoRunwisp(os.Args[1:]...)
 	}), nil
 }
 

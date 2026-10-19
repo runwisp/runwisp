@@ -36,7 +36,7 @@ func (s *systemdInstaller) runSystemctlSystem(ctx context.Context, args ...strin
 // unit in one call. LoadState "not-found" (or empty, on older systemd) means
 // the unit doesn't exist on this machine at all.
 func (s *systemdInstaller) probeCronUnit(ctx context.Context, unit string) (loadState, activeState, unitFileState string, err error) {
-	stdout, _, err := s.runSystemctlSystem(ctx, "show", "-p", "LoadState,ActiveState,UnitFileState", "--value", unit)
+	stdout, _, err := s.querySystemctl(ctx, true, "show", "-p", "LoadState,ActiveState,UnitFileState", "--value", unit)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -47,40 +47,58 @@ func (s *systemdInstaller) probeCronUnit(ctx context.Context, unit string) (load
 	return strings.TrimSpace(lines[0]), strings.TrimSpace(lines[1]), strings.TrimSpace(lines[2]), nil
 }
 
-// discoverCronUnit finds which of the known cron unit names systemd
-// actually knows about on this host, stopping at the first match so a
-// caller that never asks for take-over never pays for more than zero
-// probes — this must only be called when InstallOptions.TakeOverCron is
-// set, or every existing ComputePlan test would see an unexpected call.
-// It returns the matching probe's states too, so no caller re-probes.
-func (s *systemdInstaller) discoverCronUnit(ctx context.Context) (unit, activeState, unitFileState string, err error) {
-	for _, name := range importer.CronUnits() {
-		loadState, activeState, unitFileState, err := s.probeCronUnit(ctx, name)
-		if err != nil {
-			continue
-		}
-		if loadState != "" && loadState != "not-found" {
-			return name, activeState, unitFileState, nil
+// discoverCronUnits finds the units a take-over retires: the first of the known
+// cron unit names systemd actually knows about on this host, plus anacron's
+// units when it has them (anacron, not cron, runs cron.daily/weekly/monthly on
+// Debian, Ubuntu and Fedora, and RunWisp now reads /etc/anacrontab itself).
+//
+// units is the space-separated list the runwisp-masked-cron marker records, and
+// priors the matching runwisp-cron-prior-state values, paired by position;
+// systemctl takes the same list in one call. active reports whether the cron
+// unit itself is running.
+//
+// This must only be called when InstallOptions.TakeOverCron is set (or by
+// CronStatus), so an install that never asks for a take-over pays for no
+// probes at all.
+func (s *systemdInstaller) discoverCronUnits(ctx context.Context) (units, priors string, active bool, err error) {
+	var names, states []string
+	probe := func(candidates []string, firstOnly bool) {
+		for _, name := range candidates {
+			loadState, activeState, unitFileState, err := s.probeCronUnit(ctx, name)
+			if err != nil || loadState == "" || loadState == "not-found" {
+				continue
+			}
+			names = append(names, name)
+			states = append(states, cronPriorState(activeState, unitFileState))
+			if firstOnly {
+				active = activeState == "active"
+				return
+			}
 		}
 	}
-	return "", "", "", ErrNoCronUnit
+	probe(importer.CronUnits(), true)
+	if len(names) == 0 {
+		return "", "", false, ErrNoCronUnit
+	}
+	probe(importer.AnacronUnits(), false)
+	return strings.Join(names, " "), strings.Join(states, " "), active, nil
 }
 
-// CronStatus implements Installer: it reports which cron unit this host has
-// and whether it is running right now. It exists so the CLI can decide
-// whether asking about a take-over is even meaningful — offering to retire
-// cron on a box with no cron, or with cron already down, is noise, and
-// going ahead anyway would fail later on ErrNoCronUnit.
+// CronStatus implements Installer: it reports which cron units this host has
+// (see discoverCronUnits) and whether cron is running right now. It exists so
+// the CLI can decide whether asking about a take-over is even meaningful —
+// offering to retire cron on a box with no cron, or with cron already down, is
+// noise, and going ahead anyway would fail later on ErrNoCronUnit.
 //
-// A host with no cron unit is not an error here (unlike discoverCronUnit,
+// A host with no cron unit is not an error here (unlike discoverCronUnits,
 // whose caller explicitly asked for a take-over); it just answers "nothing
 // to take over".
 func (s *systemdInstaller) CronStatus(ctx context.Context) (unit string, active bool, err error) {
-	unit, activeState, _, err := s.discoverCronUnit(ctx)
+	units, _, active, err := s.discoverCronUnits(ctx)
 	if errors.Is(err, ErrNoCronUnit) {
 		return "", false, nil
 	}
-	return unit, activeState == "active", err
+	return units, active, err
 }
 
 // The runwisp-cron-prior-state values: what the cron unit looked like before
@@ -123,71 +141,142 @@ func (s *systemdInstaller) resolveMaskedCronUnit(ctx context.Context, opts Insta
 	if !opts.TakeOverCron {
 		return recorded.maskedCron, recorded.cronPrior, nil
 	}
-	unit, activeState, unitFileState, err := s.discoverCronUnit(ctx)
+	unit, prior, _, err = s.discoverCronUnits(ctx)
 	if err != nil {
 		return "", "", err
 	}
 	// A re-run finds cron masked because RunWisp masked it. Recording that as
 	// the prior state would make uninstall leave cron masked forever, so the
-	// state recorded by the first take-over stands.
-	if recorded.maskedCron == unit {
-		return unit, recorded.cronPrior, nil
-	}
-	return unit, cronPriorState(activeState, unitFileState), nil
+	// state recorded by the first take-over stands for every unit it recorded.
+	return unit, keepRecordedPriors(unit, prior, recorded.maskedCron, recorded.cronPrior), nil
 }
 
-// stopAndMaskCron stops the cron unit, then masks it — in that order, since
+// keepRecordedPriors replaces each unit's freshly probed prior state with the
+// one an earlier take-over recorded for it. A recorded unit with no recorded
+// state (a unit file that predates the prior-state marker) counts as active,
+// which is what restoreCron assumed of it before.
+func keepRecordedPriors(units, priors, recordedUnits, recordedPriors string) string {
+	if units == recordedUnits {
+		return recordedPriors // verbatim, so an unchanged take-over re-renders byte for byte
+	}
+	recorded := map[string]string{}
+	recPriors := strings.Fields(recordedPriors)
+	for i, u := range strings.Fields(recordedUnits) {
+		recorded[u] = cronPriorActive
+		if i < len(recPriors) {
+			recorded[u] = recPriors[i]
+		}
+	}
+	out := strings.Fields(priors)
+	for i, u := range strings.Fields(units) {
+		if p, ok := recorded[u]; ok && i < len(out) {
+			out[i] = p
+		}
+	}
+	return strings.Join(out, " ")
+}
+
+// stopAndMaskCron stops the cron units, then masks them — in that order, since
 // masking first would leave a window where a running cron could still fire
 // a job on the old schedule before the stop takes effect. It reports the
-// state cron was in beforehand (a cronPrior* value) so a failed RunWisp
-// start can roll back to exactly that state, and separately whether
-// `systemctl stop` itself succeeded: a probe or stop failure means cron was
-// never actually stopped, so the caller must not roll back a take-over that
-// never took — unmasking a unit that was never masked, or starting one that
-// was never stopped, would just poke cron for no reason.
-func (s *systemdInstaller) stopAndMaskCron(ctx context.Context, unit string, out io.Writer) (prior string, stopped bool, err error) {
-	_, activeState, unitFileState, err := s.probeCronUnit(ctx, unit)
-	if err != nil {
-		return "", false, fmt.Errorf("systemctl show %s: %w", unit, err)
+// state each unit was in beforehand (cronPrior* values, paired with units by
+// position) so a failed RunWisp start can roll back to exactly that state, and
+// separately whether `systemctl stop` itself succeeded: a probe or stop failure
+// means cron was never actually stopped, so the caller must not roll back a
+// take-over that never took — unmasking a unit that was never masked, or
+// starting one that was never stopped, would just poke cron for no reason.
+func (s *systemdInstaller) stopAndMaskCron(ctx context.Context, units string, out io.Writer) (priors string, stopped bool, err error) {
+	names := strings.Fields(units)
+	states := make([]string, 0, len(names))
+	for _, unit := range names {
+		_, activeState, unitFileState, err := s.probeCronUnit(ctx, unit)
+		if err != nil {
+			return "", false, fmt.Errorf("systemctl show %s: %w", unit, err)
+		}
+		states = append(states, cronPriorState(activeState, unitFileState))
 	}
-	prior = cronPriorState(activeState, unitFileState)
+	priors = strings.Join(states, " ")
 
-	fmt.Fprintf(out, "Stopping %s\n", unit)
-	if _, stderr, err := s.runSystemctlSystem(ctx, "stop", unit); err != nil {
-		return prior, false, fmt.Errorf("systemctl stop %s: %w: %s", unit, err, string(stderr))
+	fmt.Fprintf(out, "Stopping %s\n", units)
+	if _, stderr, err := s.runSystemctlSystem(ctx, append([]string{"stop"}, names...)...); err != nil {
+		return priors, false, fmt.Errorf("systemctl stop %s: %w: %s", units, err, string(stderr))
 	}
 	stopped = true
 
-	fmt.Fprintf(out, "Masking %s\n", unit)
-	if _, stderr, err := s.runSystemctlSystem(ctx, "mask", unit); err != nil {
-		return prior, stopped, fmt.Errorf("systemctl mask %s: %w: %s", unit, err, string(stderr))
+	fmt.Fprintf(out, "Masking %s\n", units)
+	if _, stderr, err := s.runSystemctlSystem(ctx, append([]string{"mask"}, names...)...); err != nil {
+		return priors, stopped, fmt.Errorf("systemctl mask %s: %w: %s", units, err, string(stderr))
 	}
-	return prior, stopped, nil
+	return priors, stopped, nil
 }
 
-// restoreCron reverses stopAndMaskCron back to prior. mask is self-inverting
+// restoreCron reverses stopAndMaskCron back to priors. mask is self-inverting
 // — it writes a /dev/null symlink without touching multi-user.target.wants,
-// so unmask alone restores whatever enablement state cron had before — but it
-// does not restart a unit that was stopped-then-masked, so prior decides
-// whether to also start it. An empty prior (a unit without the prior-state
-// marker) unmasks and starts.
-func (s *systemdInstaller) restoreCron(ctx context.Context, unit, prior string, out io.Writer) error {
-	if prior == cronPriorMasked {
-		fmt.Fprintf(out, "Leaving %s masked, as it was before the take-over\n", unit)
+// so unmask alone restores whatever enablement state a unit had before — but it
+// does not restart a unit that was stopped-then-masked, so each unit's prior
+// decides whether to also start it. A unit with no recorded prior (a unit file
+// that predates the marker) is unmasked and started.
+func (s *systemdInstaller) restoreCron(ctx context.Context, units, priors string, out io.Writer) error {
+	states := strings.Fields(priors)
+	var unmask, start []string
+	for i, unit := range strings.Fields(units) {
+		prior := ""
+		if i < len(states) {
+			prior = states[i]
+		}
+		switch prior {
+		case cronPriorMasked:
+			fmt.Fprintf(out, "Leaving %s masked, as it was before the take-over\n", unit)
+			continue
+		case cronPriorInactive:
+		default:
+			start = append(start, unit)
+		}
+		unmask = append(unmask, unit)
+	}
+	if len(unmask) == 0 {
 		return nil
 	}
-	fmt.Fprintf(out, "Unmasking %s\n", unit)
-	if _, stderr, err := s.runSystemctlSystem(ctx, "unmask", unit); err != nil {
-		return fmt.Errorf("systemctl unmask %s: %w: %s", unit, err, string(stderr))
+	fmt.Fprintf(out, "Unmasking %s\n", strings.Join(unmask, " "))
+	if _, stderr, err := s.runSystemctlSystem(ctx, append([]string{"unmask"}, unmask...)...); err != nil {
+		return fmt.Errorf("systemctl unmask %s: %w: %s", strings.Join(unmask, " "), err, string(stderr))
 	}
-	if prior == cronPriorInactive {
+	if len(start) == 0 {
 		return nil
 	}
-	fmt.Fprintf(out, "Starting %s\n", unit)
-	if _, stderr, err := s.runSystemctlSystem(ctx, "start", unit); err != nil {
-		return fmt.Errorf("systemctl start %s: %w: %s", unit, err, string(stderr))
+	fmt.Fprintf(out, "Starting %s\n", strings.Join(start, " "))
+	if _, stderr, err := s.runSystemctlSystem(ctx, append([]string{"start"}, start...)...); err != nil {
+		return fmt.Errorf("systemctl start %s: %w: %s", strings.Join(start, " "), err, string(stderr))
 	}
 	return nil
+}
+
+// restartsAny reports whether restoreCron would start any unit back up: one that
+// was running before, or one with no recorded state.
+func restartsAny(priors string) bool {
+	if priors == "" {
+		return true
+	}
+	for _, p := range strings.Fields(priors) {
+		if p != cronPriorInactive && p != cronPriorMasked {
+			return true
+		}
+	}
+	return false
+}
+
+// handBackUnits is the part of a take-over RunWisp may undo: the units it
+// masked, minus any the operator had already masked themselves.
+func handBackUnits(units, priors string) string {
+	states := strings.Fields(priors)
+	var out []string
+	for i, unit := range strings.Fields(units) {
+		if i < len(states) && states[i] == cronPriorMasked {
+			continue
+		}
+		out = append(out, unit)
+	}
+	return strings.Join(out, " ")
 }
 
 // reassertCronTakeover re-runs the take-over on an install that had nothing to
@@ -209,11 +298,15 @@ func (s *systemdInstaller) reassertCronTakeover(ctx context.Context, opts Instal
 	if !opts.TakeOverCron || plan.CronUnit == "" {
 		return nil
 	}
-	_, activeState, unitFileState, err := s.probeCronUnit(ctx, plan.CronUnit)
-	if err != nil {
-		return fmt.Errorf("systemctl show %s: %w", plan.CronUnit, err)
+	retired := true
+	for _, unit := range strings.Fields(plan.CronUnit) {
+		_, activeState, unitFileState, err := s.probeCronUnit(ctx, unit)
+		if err != nil {
+			return fmt.Errorf("systemctl show %s: %w", unit, err)
+		}
+		retired = retired && activeState != "active" && unitFileState == "masked"
 	}
-	if activeState != "active" && unitFileState == "masked" {
+	if retired {
 		// Cron is retired, so RunWisp is the only scheduler left. The unit may
 		// still be stopped (`runwisp stop`), which leaves nothing running the
 		// jobs; `enable --now` brings it back and is a no-op when it is up.
@@ -265,5 +358,5 @@ func cronFailsafePath() string {
 // the system manager that owns cron. And only when there is a cron to hand
 // back to, not one the operator had masked themselves.
 func wantsCronFailsafe(opts InstallOptions) bool {
-	return opts.System && opts.maskedCronUnit != "" && opts.cronPriorState != cronPriorMasked
+	return opts.System && handBackUnits(opts.maskedCronUnit, opts.cronPriorState) != ""
 }

@@ -29,6 +29,11 @@ import (
 type State struct {
 	Live  bool
 	State string
+	// AnacronLive and AnacronState are the same answer for anacron, which owns
+	// the jobs in /etc/anacrontab the way cron owns the crontabs. AnacronState is
+	// worded to follow "a system cron daemon", like State.
+	AnacronLive  bool
+	AnacronState string
 }
 
 // PidFiles are where the common cron implementations write their pid. A package
@@ -41,7 +46,7 @@ var PidFiles = []string{"/run/crond.pid", "/run/cron.pid", "/var/run/crond.pid",
 // Never assigned outside tests.
 var SystemdBootedDir = "/run/systemd/system"
 
-// ServiceProbe asks the init system whether a cron service is active or enabled.
+// ServiceProbe asks the init system whether any of units is active or enabled.
 // A package var for the same reason PidFiles is one: the real answer comes from
 // systemd, and a test needs to ask the question about an init system it can
 // describe. ok is false when the probe itself couldn't run (no systemctl on this
@@ -55,36 +60,51 @@ var ServiceProbe = systemctlState
 // stopped-but-enabled service carries the same double-fire risk with nothing
 // running yet to find in a pidfile.
 func Probe() State {
-	if active, enabled, ok := ServiceProbe(); ok {
-		switch {
-		case active:
-			return State{Live: true, State: "is running"}
-		case enabled:
-			return State{Live: true, State: "is enabled and will start on the next boot"}
-		default:
-			return State{}
+	cron, ok := serviceState(importer.CronUnits())
+	if !ok {
+		if pidRunning() {
+			cron = State{Live: true, State: "looks like it's running (a live pidfile was found)"}
 		}
+		// Without systemd, anacron only ever runs from cron's own schedule
+		// (/etc/cron.d/anacron), so it is live exactly when cron is.
+		cron.AnacronLive, cron.AnacronState = cron.Live, cron.State
+		return cron
 	}
-	if pidRunning() {
-		return State{Live: true, State: "looks like it's running (a live pidfile was found)"}
+	if anacron, _ := serviceState(importer.AnacronUnits()); anacron.Live {
+		cron.AnacronLive, cron.AnacronState = true, "(anacron) "+anacron.State
 	}
-	return State{}
+	return cron
 }
 
-// systemctlState checks importer.CronUnits() with `systemctl is-active` and
+// serviceState asks the init system about one set of units. ok is false when it
+// couldn't answer at all.
+func serviceState(units []string) (state State, ok bool) {
+	active, enabled, ok := ServiceProbe(units)
+	switch {
+	case !ok:
+		return State{}, false
+	case active:
+		return State{Live: true, State: "is running"}, true
+	case enabled:
+		return State{Live: true, State: "is enabled and will start on the next boot"}, true
+	}
+	return State{}, true
+}
+
+// systemctlState checks units with `systemctl is-active` and
 // `is-enabled`. Both matter: active covers a daemon running right now, enabled
 // covers "stopped for this boot but will start on the next one", which carries
 // the same double-fire risk with no process to see today.
 //
-// Both units and both questions go in one exec each rather than one exec per
+// Every unit in the set goes in one exec per question rather than one exec per
 // pair: systemctl prints one state per line in the order it was asked, and this
-// runs on a timer, where six short-lived processes a minute would be wasteful.
+// runs on a timer, where one process per unit and question would be wasteful.
 //
 // The binary existing is not enough: WSL and most container images ship
 // systemctl without systemd running, and there it answers "inactive"/"offline"
 // for a crond that is running right now, so the probe would release the hold and
 // both schedulers would fire every job. Only trust it when systemd is PID 1.
-func systemctlState() (active, enabled, ok bool) {
+func systemctlState(units []string) (active, enabled, ok bool) {
 	if fi, err := os.Stat(SystemdBootedDir); err != nil || !fi.IsDir() {
 		return false, false, false
 	}
@@ -92,7 +112,6 @@ func systemctlState() (active, enabled, ok bool) {
 	if err != nil {
 		return false, false, false
 	}
-	units := importer.CronUnits()
 	return anyStateIs(systemctlPath, "is-active", units, "active"),
 		anyStateIs(systemctlPath, "is-enabled", units, "enabled"),
 		true

@@ -206,7 +206,7 @@ func TestPromptAndScaffoldOffersDetectedCron(t *testing.T) {
 	assert.Contains(t, string(body), `"/etc/crontab"`)
 	assert.Contains(t, out.String(), "Found 3 cron job(s)")
 	assert.Contains(t, out.String(), "cron keeps running them for now")
-	assert.Contains(t, out.String(), "sudo runwisp takeover")
+	assert.Contains(t, out.String(), sudoRunwisp("takeover"))
 	assert.Contains(t, out.String(), "Read them as RunWisp tasks?")
 }
 

@@ -20,6 +20,10 @@ import (
 // the same strings autostart builds from the systemctl argv it will actually run.
 // Nothing here re-derives a systemctl command.
 func Render(w io.Writer, p Plan) {
+	// A non-root plan looked at nothing (see Compute), so it has nothing to show.
+	if b, ok := p.FirstBlocker(); ok && b.Kind == BlockerNeedsRoot {
+		return
+	}
 	renderFindings(w, p)
 
 	if len(p.Steps) > 0 {
@@ -32,9 +36,9 @@ func Render(w io.Writer, p Plan) {
 	renderSettings(w, p)
 
 	if p.MasksCron && p.pending(StepInstallService) {
-		fmt.Fprintf(w, "\nNothing is destructive until RunWisp is in place: %s is stopped and masked only\n"+
-			"after the unit exists, and if RunWisp then fails to start, cron is unmasked and\n"+
-			"restarted rather than leaving this box with no scheduler.\n", p.Evidence.CronUnit)
+		fmt.Fprintf(w, "\nNothing is destructive until RunWisp is in place: RunWisp stops and masks %s\n"+
+			"only after the unit exists, and if RunWisp then fails to start, cron is unmasked and\n"+
+			"restarted rather than leaving this box with no scheduler.\n", unitNames(p.Evidence.CronUnit))
 	}
 	if !p.MasksCron && !p.Blocked() {
 		fmt.Fprintln(w, "\nNothing to mask — this host has no cron systemd unit, so RunWisp owns these\n"+
@@ -54,12 +58,12 @@ const notificationsDocs = "https://docs.runwisp.com/notifications/"
 
 // renderFindings opens with what the machine sweep found, which is the part an
 // operator wants confirmed before anything else. It prints even on a blocked
-// plan: someone told "this needs root" still wants to know twelve jobs are
-// waiting.
+// plan: someone told their config does not load still wants to know twelve
+// jobs are waiting.
 func renderFindings(w io.Writer, p Plan) {
 	ev := p.Evidence
 	if ev.CronUnit != "" && ev.CronActive {
-		fmt.Fprintf(w, "RunWisp is taking over from %s.\n\n", ev.CronUnit)
+		fmt.Fprintf(w, "RunWisp is taking over from %s.\n\n", unitNames(ev.CronUnit))
 	}
 
 	switch {
@@ -78,6 +82,18 @@ func renderFindings(w io.Writer, p Plan) {
 	default:
 		fmt.Fprintln(w, "No cron jobs found on this box.")
 	}
+	if noop := ev.Scan.Noop; len(noop) > 0 {
+		fmt.Fprintf(w, "Left out %s that %s nothing on this box:\n  %s\n",
+			textutil.Count(len(noop), "job", "jobs"), textutil.Pluralize(len(noop), "does", "do"),
+			strings.Join(noop, "\n  "))
+	}
+}
+
+// unitNames renders the space-separated units a take-over retires (see
+// autostart's discoverCronUnits) as prose: "cron.service, anacron.timer and
+// anacron.service".
+func unitNames(units string) string {
+	return textutil.JoinAnd(strings.Fields(units))
 }
 
 // renderStep writes one numbered step, with autostart's own sub-steps nested
@@ -118,7 +134,7 @@ func renderSettings(w io.Writer, p Plan) {
 // before cron stops.
 func PromptQuestion(p Plan) string {
 	if p.MasksCron {
-		return fmt.Sprintf("Take over from %s?", p.Evidence.CronUnit)
+		return fmt.Sprintf("Take over from %s?", unitNames(p.Evidence.CronUnit))
 	}
 	return "Install RunWisp as a system service and read these crontabs?"
 }
@@ -141,7 +157,7 @@ RunWisp can take over from cron. It will:
   · install itself as a system service, so it starts on boot
   · stop and mask %s, so nothing fires twice
 %s
-Take over from cron?`, JoinSources(p.Evidence.Sources), p.Evidence.CronUnit, mail)
+Take over from cron?`, JoinSources(p.Evidence.Sources), unitNames(p.Evidence.CronUnit), mail)
 }
 
 // DescribeSources renders matched cron files as a short, friendly list: every

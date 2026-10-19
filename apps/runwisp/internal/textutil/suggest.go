@@ -25,6 +25,14 @@ func Count(n int, singular, plural string) string {
 	return fmt.Sprintf("%d %s", n, Pluralize(n, singular, plural))
 }
 
+// JoinAnd lists items the way a sentence does: "a", "a and b", "a, b and c".
+func JoinAnd(items []string) string {
+	if len(items) < 2 {
+		return strings.Join(items, "")
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+}
+
 // Closest returns the candidate closest to target by levenshtein distance,
 // or "" when nothing is within the typo threshold of max(2, len/3).
 // Case-insensitive, so SCHEDLUE still suggests schedule.

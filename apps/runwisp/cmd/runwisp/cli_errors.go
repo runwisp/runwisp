@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/fang"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
@@ -71,7 +72,49 @@ func isUsageError(err error) bool {
 // daemonNotRunningHint is appended to "daemon not reachable" errors so a
 // failed connection never dead-ends — the operator learns the next command
 // without a docs lookup.
-const daemonNotRunningHint = "start it with 'runwisp' (interactive) or 'runwisp daemon' (headless)"
+//
+// On a box where RunWisp runs as the system service (what `takeover` leaves
+// behind), the daemon is up; it is just root's, and a normal user's command
+// looked in ./.runwisp. Then the next command is this one again, under sudo.
+// A local setup in this directory may be what the operator meant instead, so
+// then both ways are named, the local one first.
+func daemonNotRunningHint(f Flags) string {
+	if !systemDaemonElsewhere(f) {
+		return startDaemonHint
+	}
+	sudo := sudoRunwisp(os.Args[1:]...)
+	if hasLocalSetup(f) {
+		return startDaemonHint + ". For the system service instead, whose socket is root's: " + sudo
+	}
+	return "RunWisp runs here as the system service, and its socket is root's: " + sudo
+}
+
+// hasLocalSetup reports a RunWisp setup of this directory's own: a config, or a
+// data dir some daemon has already run in.
+func hasLocalSetup(f Flags) bool {
+	for _, p := range []string{f.CfgFile, datadir.DBPath(f.DataDir)} {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+const startDaemonHint = "start it with 'runwisp' (interactive) or 'runwisp daemon' (headless)"
+
+// systemUnitFile is the unit a system install writes. A var so a test can
+// describe a box that has one.
+var systemUnitFile = "/etc/systemd/system/runwisp.service"
+
+// systemDaemonElsewhere reports that a non-root command took the default data
+// dir on a box with a system install, so it missed the system daemon.
+func systemDaemonElsewhere(f Flags) bool {
+	if os.Geteuid() == 0 || f.Socket != "" || f.DataDir != defaultDataDir(os.Geteuid(), "") {
+		return false
+	}
+	_, err := os.Stat(systemUnitFile)
+	return err == nil
+}
 
 // userFacingError carries an already-formatted, human-readable message that
 // the top-level error renderer should print verbatim instead of through slog.

@@ -35,7 +35,7 @@ func TestResolveInstallScope_NonRootDefaultRefuses(t *testing.T) {
 	var ufe *userFacingError
 	require.ErrorAs(t, err, &ufe)
 	assert.Contains(t, ufe.title, "requires root")
-	assert.Contains(t, ufe.details, "sudo runwisp service install")
+	assert.Contains(t, ufe.details, sudoRunwisp("service", "install"))
 	assert.Contains(t, ufe.details, "--local")
 }
 

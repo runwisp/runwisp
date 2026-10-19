@@ -28,8 +28,11 @@ const (
 )
 
 var passwordCmd = &cobra.Command{
-	Use:   "password",
-	Short: "Print the daemon's ephemeral password (--viewer: the read-only one)",
+	Use: "password",
+	// Only reads from a daemon, so it must not create ./.runwisp the way the
+	// root hook does for commands that write there.
+	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error { return resolveFlags(cmd) },
+	Short:             "Print the daemon's ephemeral password (--viewer: the read-only one)",
 	Long: `runwisp password — retrieve the ephemeral daemon password.
 
 Prints the in-memory ephemeral password to stdout. Use this when you need to
@@ -57,7 +60,7 @@ RUNWISP_VIEWER_PASSWORD) — that value is never disclosed via this command.`,
 		if viewer, _ := cmd.Flags().GetBool("viewer"); viewer {
 			fetch, envVar = client.MintViewerPassword, "RUNWISP_VIEWER_PASSWORD"
 		}
-		code := runPasswordVia(cmd.Context(), os.Stdout, os.Stderr, fetch, socketPath, envVar)
+		code := runPasswordVia(cmd.Context(), os.Stdout, os.Stderr, fetch, socketPath, envVar, daemonNotRunningHint(flags))
 		if code != passwordExitOK {
 			os.Exit(code)
 		}
@@ -76,13 +79,13 @@ type credentialsFetcher interface {
 }
 
 func runPassword(ctx context.Context, stdout, stderr io.Writer, client credentialsFetcher, socketPath string) int {
-	return runPasswordVia(ctx, stdout, stderr, client.GetLocalCredentials, socketPath, "RUNWISP_PASSWORD")
+	return runPasswordVia(ctx, stdout, stderr, client.GetLocalCredentials, socketPath, "RUNWISP_PASSWORD", startDaemonHint)
 }
 
 // runPasswordVia prints the password fetch returns (the admin or the read-only
 // one). envVar names the variable that would have supplied it, for the refusal
-// message.
-func runPasswordVia(ctx context.Context, stdout, stderr io.Writer, fetch func(context.Context) (*server.LocalCredentialsBody, error), socketPath, envVar string) int {
+// message; notRunningHint is the next step when no daemon answers.
+func runPasswordVia(ctx context.Context, stdout, stderr io.Writer, fetch func(context.Context) (*server.LocalCredentialsBody, error), socketPath, envVar, notRunningHint string) int {
 	creds, err := fetch(ctx)
 	if err == nil {
 		fmt.Fprintln(stdout, creds.Password)
@@ -109,7 +112,7 @@ func runPasswordVia(ctx context.Context, stdout, stderr io.Writer, fetch func(co
 	if isTransportError(err) {
 		renderError(stderr,
 			fmt.Sprintf("daemon not running at %s: %v", socketPath, err),
-			fmt.Sprintf("The ephemeral password only exists while a daemon is up — %s.", daemonNotRunningHint),
+			fmt.Sprintf("The ephemeral password only exists while a daemon is up — %s.", notRunningHint),
 			"")
 		return passwordExitUnreachable
 	}

@@ -135,8 +135,7 @@ func markCronHold(cfg *Config) (changed []string) {
 	for i := range cfg.Tasks {
 		task := &cfg.Tasks[i]
 		want := model.HeldByNothing
-		if cfg.cronDaemon.Live && task.Source == model.SourceCron &&
-			importer.CronOwnsPath(task.SourceFile) {
+		if task.Source == model.SourceCron && heldByLiveCron(cfg.cronDaemon, task.SourceFile) {
 			want = model.HeldByCron
 		}
 		if task.HeldBy != want {
@@ -145,6 +144,13 @@ func markCronHold(cfg *Config) (changed []string) {
 		}
 	}
 	return changed
+}
+
+// heldByLiveCron reports whether the scheduler that reads this file itself is
+// live: cron for its own crontabs, anacron for /etc/anacrontab.
+func heldByLiveCron(state cronprobe.State, file string) bool {
+	return state.Live && importer.CronOwnsPath(file) ||
+		state.AnacronLive && importer.AnacronOwnsPath(file)
 }
 
 // WithCronHold re-derives the cron holds against a fresh liveness answer and

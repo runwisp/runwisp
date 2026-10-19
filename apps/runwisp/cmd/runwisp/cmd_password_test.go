@@ -103,7 +103,7 @@ func TestRunPasswordVia_ViewerRefusalNamesViewerEnvVar(t *testing.T) {
 	}
 	var stdout, stderr bytes.Buffer
 
-	code := runPasswordVia(t.Context(), &stdout, &stderr, fetch, "/tmp/runwisp.sock", "RUNWISP_VIEWER_PASSWORD")
+	code := runPasswordVia(t.Context(), &stdout, &stderr, fetch, "/tmp/runwisp.sock", "RUNWISP_VIEWER_PASSWORD", startDaemonHint)
 	assert.Equal(t, passwordExitRefused, code)
 	assert.Empty(t, stdout.String())
 	assert.Contains(t, stderr.String(), "RUNWISP_VIEWER_PASSWORD")

@@ -291,6 +291,7 @@ Every job becomes a task with captured output, run history, and a page in the UI
 include_cron = [
   "/etc/crontab",
   "/etc/cron.d/*",
+  "/etc/anacrontab",            # cron.daily/weekly/monthly on Debian, Ubuntu, Fedora
   "/var/spool/cron/crontabs/*", # per-user crontabs (needs a root daemon)
 ]
 ```
@@ -318,6 +319,8 @@ The path decides the format:
 | `/etc/crontab`, any `cron.d/*`    | system crontab    | the user in the line's 6th field |
 | `/var/spool/cron/crontabs/<user>` | per-user spool    | `<user>`, from the file name     |
 | `/var/spool/cron/<user>`          | per-user spool    | `<user>` (RHEL/SUSE layout)      |
+| `/etc/anacrontab`                 | anacrontab        | `root`                           |
+| any other file named `anacrontab` | anacrontab        | the daemon's user                |
 | anything else                     | `crontab -l` dump | the daemon's user                |
 
 - Running a job as another user needs a **root daemon**. Without root, RunWisp
@@ -335,6 +338,8 @@ A glob picks only the files cron would read:
   skipped.
 - **Spool directories:** any name that could be a user (`john.doe` is fine),
   except `tmp.*` (the temporary file `crontab -e` writes).
+- Directories and dotfiles (Debian's `.placeholder`) are passed over without a
+  warning.
 - A path you name exactly is always read, whatever its name.
 - A symlink is not followed, even though cron may run it. It is reported as a
   job that is not running, and `runwisp takeover` stops until you replace it
@@ -363,19 +368,32 @@ A glob picks only the files cron would read:
   path is reported too.
 - **Missed jobs are not run later.** A job missed while the daemon was down is
   recorded as missed, but not started. `promote` the task to get
-  [`catch_up`](/configuration/tasks/#catch_up).
+  [`catch_up`](/configuration/tasks/#catch_up). anacrontab jobs are the
+  exception, see below.
 - **Overlapping runs queue.** Cron starts a second copy of a slow job; RunWisp
   waits for the first. `promote` the task and set
   [`max_concurrent`](/configuration/tasks/#max_concurrent) to change this.
-- **Task names come from the command.** If two crontabs give the same name, the
-  second becomes `backup-<crontab name>`, and the rename is reported.
+- **Task names come from the command.** `run-parts /etc/cron.daily` becomes
+  `cron-daily`. If two crontabs give the same name, the second becomes
+  `backup-<crontab name>`, and the rename is reported.
+- **Guard lines that do nothing on this machine are left out.** Since 1.8,
+  distro lines such as `test -x /usr/sbin/anacron || run-parts …` or
+  `test -e /run/systemd/system || …` are not imported when their own test
+  shows they would skip. `runwisp import cron` and `runwisp takeover` list
+  them. `runwisp reload` imports them again once that changes.
 - **Files anyone could edit are refused.** A group- or world-writable crontab,
   or one with an unrelated owner, fails the whole load. Spool directories are
   the exception: they are group-writable and sticky by design.
 - **No `${...}` substitution** in cron files.
   `0 3 * * * dump.sh ${DB}` reaches the shell as written.
 - **A file can't match both `include` and `include_cron`.** That is an error.
-- **anacron is not read.** `/etc/anacrontab` jobs keep running under anacron.
+- **anacrontab jobs catch up.** Since 1.8, an anacrontab is read too. Each job
+  becomes a task named after its job id (`cron.daily` becomes `cron-daily`).
+  It runs at the first hour of `START_HOURS_RANGE` (07:00 without one) plus
+  its delay in minutes: daily, on Mondays for a 7-day period, on the 1st for
+  `@monthly`. It gets `catch_up = 1`, so a machine that was off runs it once
+  when it is back, like anacron. `RANDOM_DELAY` is not used. The jobs are held
+  while anacron runs.
 
 Otherwise a cron task is a normal task: `[defaults]` applies, notifications
 fire, `runwisp run` starts it, and reload treats it like any other task.
