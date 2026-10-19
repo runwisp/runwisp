@@ -28,7 +28,7 @@ engine=${CONTAINER_ENGINE:-$(command -v docker || command -v podman)}
 wait_for() {
   local what=$1
   shift
-  for attempt in $(seq 1 30); do
+  for _ in $(seq 1 30); do
     "$@" && return 0
     sleep 10
   done
