@@ -84,9 +84,19 @@ func applyLongRunning(ev *Event) {
 	ev.Extra = map[string]any{"elapsed_ms": elapsed.Milliseconds()}
 }
 
+// serviceFatalReason numbers the instance from 1, as the UI and TUI do.
 func serviceFatalReason(d events.ServiceFatalEvent) string {
-	return fmt.Sprintf("instance %d failed to start %d times in a row (last exit %d); supervisor gave up",
-		d.InstanceIndex, d.Attempts, d.LastExitCode)
+	return fmt.Sprintf("instance #%d failed to start %d times in a row%s; supervisor gave up",
+		d.InstanceIndex+1, d.Attempts, lastExitSuffix(d.LastExitCode))
+}
+
+// lastExitSuffix is " (last exit N)", or nothing for -1: a process killed by
+// a signal never returned a code.
+func lastExitSuffix(code int) string {
+	if code < 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (last exit %d)", code)
 }
 
 func diskPressureReason(d events.LogDiskPressureEvent) string {
@@ -178,12 +188,21 @@ func runReasonString(run *model.Run, errMsg string) string {
 	if run.EndReason != nil && *run.EndReason != model.ReasonSuccess {
 		duration := ""
 		if d, ok := run.Duration(); ok {
-			duration = fmt.Sprintf(" after %s", d.Round(time.Second))
+			duration = " after " + roundDuration(d).String()
 		}
-		if run.ExitCode != 0 {
+		// -1 means the daemon killed it (timeout, stop): there is no code to report.
+		if run.ExitCode > 0 {
 			return fmt.Sprintf("%s exit %d%s", *run.EndReason, run.ExitCode, duration)
 		}
 		return fmt.Sprintf("%s%s", *run.EndReason, duration)
 	}
 	return ""
+}
+
+// roundDuration keeps a sub-second run readable ("12ms", not "0s").
+func roundDuration(d time.Duration) time.Duration {
+	if d < time.Second {
+		return d.Round(time.Millisecond)
+	}
+	return d.Round(time.Second)
 }

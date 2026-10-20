@@ -87,6 +87,13 @@ export function taskTriggerIsHumanizedCron(task: TaskOverview): boolean {
     return humanizeCron(task.task.cron).isHumanized;
 }
 
+// failureExitCode is the exit code worth showing for a failed run. A run the
+// daemon killed (timeout, stop) never returned a code and reports -1, so it
+// gets none: its status already says what happened.
+export function failureExitCode(run: Run | undefined): number | undefined {
+    return run?.isFailure === true && run.exitCode > 0 ? run.exitCode : undefined;
+}
+
 export function formatRunDurationLabel(run: Run): string {
     return runDuration(run) ?? "Starting";
 }

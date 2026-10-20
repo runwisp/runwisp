@@ -63,12 +63,14 @@ function dateFormatter(options: Intl.DateTimeFormatOptions): (date: string | Dat
     return (date) => format.format(new Date(date));
 }
 
+/** Date and time, 24-hour like every other clock in the UI, e.g. "Oct 20, 2026, 21:05". */
 export const formatDateTime = dateFormatter({
     year: "numeric",
     month: "short",
     day: "numeric",
-    hour: "numeric",
+    hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
 });
 
 /** Wall-clock time of day, seconds included, 24-hour, e.g. "17:15:02". */
@@ -110,7 +112,13 @@ export function formatRelativeTimeWithAbsolute(
 ): string {
     const date = new Date(dateStr);
     const diffDays = Math.abs(now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
-    const absolute = diffDays < 1 ? formatShortTime(date) : formatDayMonth(date);
+    // The year only when it differs, so "in 1 year (Feb 29)" can't hide which Feb 29.
+    const absolute =
+        diffDays < 1
+            ? formatShortTime(date)
+            : date.getFullYear() === now.getFullYear()
+              ? formatDayMonth(date)
+              : formatCalendarDate(date);
     return `${formatRelativeTime(date, now)} (${absolute})`;
 }
 

@@ -266,6 +266,23 @@ func TestRunReasonString_WithDuration(t *testing.T) {
 	assert.Contains(t, result, "5s")
 }
 
+// A killed run reports exit -1, which is not a code the command returned, and
+// a sub-second run keeps its milliseconds instead of reading "after 0s".
+func TestRunReasonString_KilledRunHasNoExitCode(t *testing.T) {
+	r := model.ReasonTimeout
+	now := time.Now()
+	end := now.Add(12 * time.Millisecond)
+	run := &model.Run{EndReason: &r, ExitCode: -1, StartedAt: &now, EndedAt: &end}
+	assert.Equal(t, "timeout after 12ms", runReasonString(run, ""))
+}
+
+func TestServiceFatalReason(t *testing.T) {
+	assert.Equal(t, "instance #1 failed to start 4 times in a row (last exit 7); supervisor gave up",
+		serviceFatalReason(events.ServiceFatalEvent{InstanceIndex: 0, Attempts: 4, LastExitCode: 7}))
+	assert.Equal(t, "instance #2 failed to start 3 times in a row; supervisor gave up",
+		serviceFatalReason(events.ServiceFatalEvent{InstanceIndex: 1, Attempts: 3, LastExitCode: -1}))
+}
+
 // TestMapEvent_LongRunning: a run still going past warn_after is a warn-level,
 // non-failure event routed by the long_running token, carrying how long it has run.
 func TestMapEvent_LongRunning(t *testing.T) {

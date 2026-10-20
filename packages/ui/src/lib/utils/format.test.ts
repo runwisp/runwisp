@@ -103,6 +103,11 @@ describe("formatRelativeTimeWithAbsolute", () => {
         expect(r).toMatch(/\([^)]*\d[^)]*\)$/);
         expect(r).not.toMatch(/\(\d{1,2}:\d{2}\)$/);
     });
+    it("adds the year when the date falls in another year", () => {
+        const now = new Date(2026, 9, 20, 12);
+        expect(formatRelativeTimeWithAbsolute(new Date(2028, 1, 29), now)).toMatch(/2028\)$/);
+        expect(formatRelativeTimeWithAbsolute(new Date(2026, 11, 1), now)).not.toMatch(/2026/);
+    });
     it("computes the relative part against the supplied now", () => {
         const date = new Date("2024-01-01T12:00:00Z");
         const twoHoursBefore = formatRelativeTimeWithAbsolute(

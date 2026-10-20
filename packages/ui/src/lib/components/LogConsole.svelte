@@ -495,18 +495,25 @@
             {/if}
 
             {#if cache.finished && cache.totalLines > 0}
+                <!-- Pinned to the visible width, not the scroll surface: one very
+                     long line would otherwise centre the marker far off-screen. -->
                 <div
-                    class="sentinel absolute right-4 left-4 flex justify-center select-none"
+                    class="sentinel absolute right-0 left-0 select-none"
                     style="top: {lineTop(cache.totalLines)}px; height: {lineHeight * 2}px;"
                 >
-                    <span
-                        class="mt-[14px] border-t border-dashed pt-3 text-center text-[11px] tracking-wide {endTone ===
-                        'warn'
-                            ? 'sentinel--warn'
-                            : 'sentinel--muted'}"
+                    <div
+                        class="sticky left-0 flex justify-center px-4"
+                        style:width={containerWidth ? `${String(containerWidth)}px` : "100%"}
                     >
-                        ── {endLabel} ──
-                    </span>
+                        <span
+                            class="mt-[14px] border-t border-dashed pt-3 text-center text-[11px] tracking-wide {endTone ===
+                            'warn'
+                                ? 'sentinel--warn'
+                                : 'sentinel--muted'}"
+                        >
+                            ── {endLabel} ──
+                        </span>
+                    </div>
                 </div>
             {/if}
 
@@ -538,8 +545,17 @@
                     class="absolute inset-0 flex items-center justify-center text-[var(--rw-con-dim)]"
                 >
                     <div class="text-center">
-                        <div class="mb-1 text-lg">No output yet</div>
-                        <div class="text-sm text-[var(--rw-con-gutter)]">Waiting for logs...</div>
+                        {#if cache.finished}
+                            <div class="mb-1 text-lg">No output</div>
+                            <div class="text-sm text-[var(--rw-con-gutter)]">
+                                The run ended without printing anything.
+                            </div>
+                        {:else}
+                            <div class="mb-1 text-lg">No output yet</div>
+                            <div class="text-sm text-[var(--rw-con-gutter)]">
+                                Waiting for logs...
+                            </div>
+                        {/if}
                     </div>
                 </div>
             {/if}

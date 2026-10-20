@@ -24,7 +24,12 @@
     import RunRow from "./RunRow.svelte";
     import type { RunOutputMatch } from "./types.js";
     import type { Run, RunSelector } from "@runwisp/common";
-    import { runFilterParams, type RunsListFilters } from "./run-filters.js";
+    import {
+        activeFilterCount,
+        emptyRunFilters,
+        runFilterParams,
+        type RunsListFilters,
+    } from "./run-filters.js";
     import { instanceSuffix, runUsageScale } from "./run-helpers.js";
     import { formatDateTime } from "../../utils/format.js";
 
@@ -75,7 +80,7 @@
         showTaskName?: boolean;
         taskNameFilter?: string;
         emptyText?: string;
-        emptyDescription?: string;
+        emptyDescription?: string | undefined;
         bulkActions?: boolean;
         onBulkCancel?: BulkHandler;
         onBulkDelete?: BulkHandler;
@@ -244,6 +249,12 @@
             ...filters,
             sortDirection: filters.sortDirection === "asc" ? "desc" : "asc",
         };
+    }
+
+    // An empty list under filters says so, rather than claiming no runs exist.
+    const filtered = $derived(activeFilterCount(filters) > 0 || filters.search !== "");
+    function clearFilters() {
+        filters = { ...emptyRunFilters(), sortDirection: filters.sortDirection };
     }
 
     // The count stands in for a title: "12 runs", or matches while searching.
@@ -420,7 +431,21 @@
                 {/if}
             {:else if items.length === 0 && loading}
                 <RunListSkeleton label="Loading runs" {showTaskName} />
-            {:else if items.length === 0}
+            {:else if items.length === 0 && filtered}
+                <EmptyState
+                    title="No matching runs"
+                    description="No run matches the current filters."
+                    icon={Clock}
+                    iconSize={32}
+                    class="py-8"
+                >
+                    {#snippet actions()}
+                        <Button variant="secondary" size="sm" onclick={clearFilters}>
+                            Clear filters
+                        </Button>
+                    {/snippet}
+                </EmptyState>
+            {:else if items.length === 0 && emptyText}
                 <EmptyState
                     title={emptyText}
                     description={emptyDescription}

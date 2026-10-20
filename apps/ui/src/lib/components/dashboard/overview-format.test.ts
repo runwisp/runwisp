@@ -6,6 +6,7 @@ import type { Run, Task } from "@runwisp/common";
 import { formatTriggeredByLabel } from "@runwisp/ui";
 import type { TaskOverview } from "./overview.js";
 import {
+    failureExitCode,
     formatCompactCount,
     formatRunDurationLabel,
     formatTaskLastResultLabel,
@@ -225,5 +226,22 @@ describe("formatCompactCount", () => {
         expect(formatCompactCount(1000)).toBe("1k");
         expect(formatCompactCount(2_500_000)).toBe("2.5m");
         expect(formatCompactCount(3_000_000_000)).toBe("3b");
+    });
+});
+
+describe("failureExitCode", () => {
+    it("shows the code a failed command returned", () => {
+        expect(failureExitCode(makeRun({ isFailure: true, exitCode: 3 }))).toBe(3);
+    });
+
+    it("hides the -1 of a run the daemon killed", () => {
+        expect(
+            failureExitCode(makeRun({ isFailure: true, exitCode: -1, endReason: "timeout" })),
+        ).toBeUndefined();
+    });
+
+    it("hides codes on successful or missing runs", () => {
+        expect(failureExitCode(makeRun({ isFailure: false, exitCode: 0 }))).toBeUndefined();
+        expect(failureExitCode(undefined)).toBeUndefined();
     });
 });

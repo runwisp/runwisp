@@ -13,16 +13,16 @@ describe("humanizeCron", () => {
 
     it("humanizes a daily expression", () => {
         const result = humanizeCron("0 3 * * *");
-        expect(result.humanized).toBe("At 03:00 AM");
+        expect(result.humanized).toBe("At 03:00");
         expect(result.isHumanized).toBe(true);
     });
 
     it("describes the nth and last weekday of the month", () => {
         expect(humanizeCron("0 3 * * FRI#3").humanized).toBe(
-            "At 03:00 AM, on the third Friday of the month",
+            "At 03:00, on the third Friday of the month",
         );
         const last = humanizeCron("0 3 * * FRI#L");
-        expect(last.humanized).toBe("At 03:00 AM, on the last Friday of the month");
+        expect(last.humanized).toBe("At 03:00, on the last Friday of the month");
         expect(last.raw).toBe("0 3 * * FRI#L");
     });
 
