@@ -288,7 +288,9 @@
                 </TableHead>
             {/if}
             <TableBody>
-                {#if pagedData.length === 0 && !loading}
+                {#if pagedData.length === 0}
+                    <!-- Kept while loading (blank) so the loading overlay has a body to
+                         cover instead of squeezing into the header row. -->
                     <TableRow border="none">
                         <TableCell
                             colspan={columns.length + (selectable ? 1 : 0) + (rowAction ? 1 : 0)}
@@ -296,7 +298,9 @@
                             align="center"
                             class="px-4 py-12 text-on-surface-muted"
                         >
-                            {#if emptyState}
+                            {#if loading}
+                                &nbsp;
+                            {:else if emptyState}
                                 {@render emptyState()}
                             {:else}
                                 {emptyMessage}
