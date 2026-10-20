@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { constants } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { setImmediate as nextTurn } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
-import { forkedTask, solvePath } from "./background.ts";
-import { ownStack, runCaptured } from "./capture.ts";
+import { forkedTask, KILL, solvePath } from "./background.ts";
+import { describeError, runCaptured } from "./capture.ts";
 import { CronAnswers, type DetailedValidation, type ParsedFields } from "./cron.ts";
 import {
     binaryVersion,
@@ -145,6 +147,39 @@ const UNIT_NAME = /^[a-zA-Z0-9._:-]{1,100}$/;
 const RECONNECT_MS = 1000;
 const MAX_RECONNECT_MS = 30_000;
 
+// How long after a run the next run times are asked for: runs ending
+// meanwhile share one ask, since each costs RunWisp a query per task.
+const REFRESH_MS = 1000;
+
+// How long close() waits on running callbacks before saying so.
+const CLOSE_NOTICE_MS = 1000;
+
+/** Marks the unhandledRejection listeners of every copy of this package. */
+const RETHROWS = Symbol.for("runwisp.rethrowsRejection.v1");
+
+function rethrows(listener: unknown): boolean {
+    return typeof listener === "function" && Reflect.get(listener, RETHROWS) === true;
+}
+
+/**
+ * Bun tells uncaughtExceptionMonitor about an uncaught exception, but not
+ * about an unhandled rejection; rethrown, the rejection is one. Only the first
+ * such listener rethrows, and only while nothing else listens: an app's own
+ * listener keeps the app alive, and so must this one then.
+ */
+function rejectionRethrower(): (reason: unknown) => void {
+    const listener = (reason: unknown): void => {
+        const all = process.listeners("unhandledRejection");
+        if (all[0] === listener && all.every(rethrows)) throw reason;
+    };
+    Object.defineProperty(listener, RETHROWS, { value: true });
+    return listener;
+}
+
+function plural(count: number, noun: string): string {
+    return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
+}
+
 const EXIT_SIGNALS = ["SIGTERM", "SIGINT"] as const;
 
 // What adapter-node (SvelteKit) emits once its server has stopped on SIGTERM.
@@ -211,6 +246,11 @@ export class RunWisp {
     private standby = false;
     private retries = 0;
     private retryTimer: NodeJS.Timeout | undefined;
+    private refreshTimer: NodeJS.Timeout | undefined;
+    /** On Bun only: see rejectionRethrower. */
+    private readonly rethrowRejection = process.versions.bun ? rejectionRethrower() : undefined;
+    /** The signal exitOnSignal is closing for. */
+    private exitSignal: (typeof EXIT_SIGNALS)[number] | undefined;
     /** The config the daemon has from this copy. */
     private pushed: string | undefined;
     private booted: Promise<void> | undefined;
@@ -306,6 +346,9 @@ export class RunWisp {
         }
         // A path: its URL names the task, as the code of a callback does.
         const source = typeof fn === "string" ? solvePath(fn) : fn.toString();
+        if (typeof fn === "string" && !existsSync(fileURLToPath(source))) {
+            throw new Error(`task file not found: ${fileURLToPath(source)}`);
+        }
         const run = typeof fn === "string" ? forkedTask(source) : fn;
         this.warnIgnored(options);
         const derived = options.name === undefined;
@@ -333,6 +376,7 @@ export class RunWisp {
      * the task only runs from the web UI, TUI or CLI.
      */
     task(name: string, options: TaskConfigOptions, fn: TaskFn): ScheduledTask {
+        if (typeof fn !== "function") throw new TypeError(`task "${name}" needs a function`);
         const task = this.addTask(name, name, fn, options, {});
         task.start();
         return task;
@@ -344,6 +388,8 @@ export class RunWisp {
      * through `ctx.signal`.
      */
     service(name: string, options: ServiceConfigOptions, fn: ServiceFn): void {
+        if (typeof fn !== "function") throw new TypeError(`service "${name}" needs a function`);
+        this.assertOpen();
         this.assertName(name, this.tasks);
         // What it depends on may not be registered yet: stand in for it.
         const needs: Record<string, ServiceConfig> = {};
@@ -429,6 +475,7 @@ export class RunWisp {
     async close(): Promise<void> {
         this.closed = true;
         clearTimeout(this.retryTimer);
+        clearTimeout(this.refreshTimer);
         if (instances().get(this.settings.data) === this) instances().delete(this.settings.data);
         process.off(SVELTEKIT_SHUTDOWN, this.closeOnShutdown);
         // A second signal while closing gets Node's default: exit now.
@@ -441,11 +488,31 @@ export class RunWisp {
         this.tasks.clear();
         // RunWisp stops the services on leave, so they end as stopped, not
         // failed, and the next copy, if any, runs them now.
-        await this.runner.close();
+        await this.waitForRuns();
         process.off("uncaughtExceptionMonitor", this.runner.reportCrash);
+        if (this.rethrowRejection) process.off("unhandledRejection", this.rethrowRejection);
         const session = this.session;
         this.session = undefined;
         await session?.close();
+    }
+
+    /** runner.close(), saying what it waits for when that takes a while: a callback may ignore its stop signal. */
+    private async waitForRuns(): Promise<void> {
+        const notice = setTimeout(() => {
+            const again =
+                this.exitSignal === undefined
+                    ? "; shutdown(timeout) waits at most timeout ms"
+                    : `; send ${this.exitSignal} again to exit now`;
+            this.log?.info(
+                `runwisp: waiting for ${plural(this.runner.size, "running callback")} to return before closing${again}`,
+            );
+        }, CLOSE_NOTICE_MS);
+        notice.unref();
+        try {
+            await this.runner.close();
+        } finally {
+            clearTimeout(notice);
+        }
     }
 
     private exitOnSignal(): void {
@@ -459,6 +526,7 @@ export class RunWisp {
         EXIT_SIGNALS.map((signal) => [
             signal,
             (): void => {
+                this.exitSignal = signal;
                 void this.close().finally(() => process.exit(128 + constants.signals[signal]));
             },
         ]),
@@ -480,6 +548,15 @@ export class RunWisp {
         if (config) {
             throw new Error(
                 `a RunWisp for ${settings.data} already exists in this process; pass config to the first one only`,
+            );
+        }
+    }
+
+    /** A task registered after close() would never run. */
+    private assertOpen(): void {
+        if (this.closed) {
+            throw new Error(
+                "this RunWisp is closed; create a new RunWisp() to schedule tasks again",
             );
         }
     }
@@ -510,6 +587,7 @@ export class RunWisp {
         options: TaskConfigOptions,
         nodeCron: Pick<TaskOptions, "maxExecutions" | "logger" | "suppressMissedWarning" | "unref">,
     ): ScheduledTask {
+        this.assertOpen();
         this.assertName(id, this.services);
         this.check(this.unitConfig({ tasks: { [id]: { ...options, sdk: true } } }));
         this.claim(id, name);
@@ -760,6 +838,9 @@ export class RunWisp {
             stop: (run) => {
                 this.runner.stop(run);
             },
+            kill: (run) => {
+                this.runner.kill(run);
+            },
             overlap: (task, at) => {
                 this.tasks.get(task)?.internals.overlap(at);
             },
@@ -790,6 +871,10 @@ export class RunWisp {
         }
         process.off("uncaughtExceptionMonitor", this.runner.reportCrash);
         process.on("uncaughtExceptionMonitor", this.runner.reportCrash);
+        if (this.rethrowRejection) {
+            process.off("unhandledRejection", this.rethrowRejection);
+            process.on("unhandledRejection", this.rethrowRejection);
+        }
         this.announce();
     }
 
@@ -873,6 +958,18 @@ export class RunWisp {
         this.changed();
     }
 
+    /** Refreshes the next run times soon, once for every run that ends meanwhile. */
+    private refreshSoon(): void {
+        if (this.refreshTimer || this.closed) return;
+        this.refreshTimer = setTimeout(() => {
+            this.refreshTimer = undefined;
+            this.refreshNextRuns().catch(() => {
+                // Best effort: getNextRun() keeps the previous value.
+            });
+        }, REFRESH_MS);
+        this.refreshTimer.unref();
+    }
+
     private async refreshNextRuns(): Promise<void> {
         const next = await nextRuns(this.paths.socket);
         this.next.clear();
@@ -891,13 +988,14 @@ export class RunWisp {
         return { onOverlap: "queue", maxConcurrent: service?.instances ?? 1 };
     };
 
-    private readonly serve: Serve = (request, signal, sink) =>
+    private readonly serve: Serve = (request, signal, sink, kill) =>
         runCaptured(sink, async () => {
-            const run: RunContext = {
+            const run: RunContext & { [KILL]: AbortSignal } = {
                 signal,
                 env: request.env,
                 params: request.params,
                 runId: request.run,
+                [KILL]: kill,
             };
             const task = this.tasks.get(request.task)?.internals;
             const service = this.services.get(request.task)?.fn;
@@ -910,14 +1008,11 @@ export class RunWisp {
                 else await service?.(run);
                 return 0;
             } catch (err) {
-                console.error(ownStack(err));
+                console.error(describeError(err));
                 return 1;
             } finally {
                 // Services have no next run to refresh.
-                if (task)
-                    this.refreshNextRuns().catch(() => {
-                        // Best effort: getNextRun() keeps the previous value.
-                    });
+                if (task) this.refreshSoon();
             }
         });
 }

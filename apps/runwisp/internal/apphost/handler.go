@@ -25,11 +25,15 @@ type handlerRun struct {
 	done           chan struct{}
 	once           sync.Once
 	code           int
+	// reason is the end reason the app reported with its exit: "" or
+	// skipped.
+	reason model.EndReason
 }
 
-func (r *handlerRun) finish(code int) {
+func (r *handlerRun) finish(code int, reason model.EndReason) {
 	r.once.Do(func() {
 		r.code = code
+		r.reason = reason
 		_ = r.stdout.Close()
 		_ = r.stderr.Close()
 		close(r.done)
@@ -86,9 +90,17 @@ func (h *Host) Start(ctx context.Context, task *model.Task, run *model.Run, def 
 		Wait: func() (int, error) {
 			<-r.done
 			s.forget(run.ID)
+			if r.reason == model.ReasonSkipped {
+				return -1, nil
+			}
 			return r.code, nil
 		},
-		ForceKill: func() { r.finish(-1) },
+		EndReason: func() model.EndReason { return r.reason },
+		ForceKill: func() {
+			// The shutdown coordinator must not wait out a slow app's write.
+			go s.kill(run.ID)
+			r.finish(-1, "")
+		},
 	}, nil
 }
 
@@ -102,7 +114,8 @@ func runEnv(task *model.Task, run *model.Run) map[string]string {
 
 // stopOnCancel asks the app to stop the run once its context ends (a stop,
 // timeout, overlap kill, or shutdown), then gives up on it after
-// graceful_stop.
+// graceful_stop, telling the app to kill what it can of it (a task file's
+// process).
 func (h *Host) stopOnCancel(ctx context.Context, s *session, id string, r *handlerRun, task *model.Task) {
 	select {
 	case <-r.done:
@@ -110,13 +123,14 @@ func (h *Host) stopOnCancel(ctx context.Context, s *session, id string, r *handl
 	case <-ctx.Done():
 	}
 	if err := s.send(message{Type: "stop", Run: id}); err != nil {
-		r.finish(-1)
+		r.finish(-1, "")
 		return
 	}
 	select {
 	case <-r.done:
 	case <-h.after(task.GracefulStopValue()):
 		_, _ = io.WriteString(r.stderr, "runwisp: the run did not stop within graceful_stop\n")
-		r.finish(-1)
+		s.kill(id)
+		r.finish(-1, "")
 	}
 }

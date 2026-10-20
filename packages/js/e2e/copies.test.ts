@@ -21,9 +21,12 @@ describe("copies of the app, crashes and stops", () => {
     let port: number;
     const copies: ChildProcess[] = [];
 
-    /** Starts a copy of the app and resolves once it is ready. */
-    function startCopy(env: NodeJS.ProcessEnv = {}): Promise<ChildProcess> {
-        const child = spawn(process.execPath, [APP, data, String(port), binary], {
+    /** Starts a copy of the app (in runtime: node, else bun) and resolves once it is ready. */
+    function startCopy(
+        env: NodeJS.ProcessEnv = {},
+        runtime = process.execPath,
+    ): Promise<ChildProcess> {
+        const child = spawn(runtime, [APP, data, String(port), binary], {
             stdio: ["pipe", "pipe", "pipe"],
             env: { ...process.env, ...env },
         });
@@ -186,8 +189,32 @@ describe("copies of the app, crashes and stops", () => {
         expect(stopped.log).toContain("did not stop within graceful_stop");
 
         const skipped = await trigger(socket, "stubborn");
-        expect(skipped.exitCode).toBe(1);
+        expect(skipped.endReason).toBe("skipped");
+        expect(skipped.exitCode).toBe(-1);
         expect(skipped.log).toContain("skipped: the previous run is still running");
+    });
+
+    it("kills a task file's process, and what it started, once graceful_stop runs out", async () => {
+        await startCopy();
+        const run = await trigger(socket, "stubborn-file");
+        expect(run.endReason).toBe("timeout");
+        expect(run.log).toContain("ignoring SIGTERM");
+        expect(run.log).toContain("did not stop within graceful_stop");
+        const sleeper = Number(/sleeper (\d+)/.exec(String(run.log))?.[1]);
+        expect(sleeper).toBeGreaterThan(0);
+        await expect
+            .poll(
+                () => {
+                    try {
+                        process.kill(sleeper, 0);
+                        return "running";
+                    } catch {
+                        return "gone";
+                    }
+                },
+                { timeout: 5000 },
+            )
+            .toBe("gone");
     });
 
     it("writes an app crash into the run that was in progress", async () => {
@@ -196,5 +223,23 @@ describe("copies of the app, crashes and stops", () => {
         expect(run.exitCode).not.toBe(0);
         expect(run.log).toContain("the app crashed while this run was in progress:");
         expect(run.log).toContain("Error: kaboom");
+    });
+
+    it("keeps what a task printed right before it called process.exit()", async () => {
+        await startCopy();
+        const run = await trigger(socket, "exits");
+        expect(run.exitCode).not.toBe(0);
+        expect(run.log).toContain("last words");
+    });
+
+    it.each([
+        ["Node", process.execPath],
+        ["Bun", "bun"],
+    ])("writes a crash from an unhandled rejection into the run on %s", async (_, runtime) => {
+        await startCopy({}, runtime);
+        const run = await trigger(socket, "rejects");
+        expect(run.exitCode).not.toBe(0);
+        expect(run.log).toContain("the app crashed while this run was in progress:");
+        expect(run.log).toContain("rejected kaboom");
     });
 });

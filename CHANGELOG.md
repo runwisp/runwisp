@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `@runwisp/js` apps with many fast tasks no longer slow the daemon down: the app asks for next run times at most once a second instead of after every run.
+- A task that throws a value that can't be printed (its `stack` or `message` getter throws) fails its run instead of crashing the app.
+- A task that prints in a tight loop no longer takes down every run in the app. Output is sent in batches, and past 256 MB waiting to be sent, that task's lines are dropped with a note in its log.
+- A task file's process (`schedule(cron, "./job.js")`) gets `SIGKILL` once `graceful_stop` runs out, stop signals reach the processes it started, and they all exit when the app dies.
+- A run the app skips because the previous callback ignored its stop signal is recorded as `skipped`, not `failed`.
+- Under Bun, an app crash from an unhandled promise rejection writes its stack trace into the logs of the runs in progress, as under Node.js.
+- `task()` and `service()` reject a missing callback, `schedule()` rejects a task file that doesn't exist, and registering a task after `close()` throws instead of being silently ignored.
+- `close()` logs what it is waiting for when a callback keeps running.
+
 ## [1.7.1] - 2026-10-19
 
 ### Fixed

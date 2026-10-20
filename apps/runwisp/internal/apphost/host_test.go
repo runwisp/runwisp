@@ -213,10 +213,48 @@ func TestStopGivesUpAfterGracefulStop(t *testing.T) {
 	p := <-started
 
 	cancel()
-	go func() { app.next() }() // the stop the handler ignores
+	got := make(chan []message, 1)
+	go func() { got <- []message{app.next(), app.next()} }() // the stop the handler ignores, then the kill
 	_, stderr, exit := output(t, p)
 	assert.Contains(t, stderr, "did not stop within graceful_stop")
 	assert.Equal(t, -1, exit)
+	assert.Equal(t, []message{{Type: "stop", Run: "r1"}, {Type: "kill", Run: "r1"}}, <-got)
+}
+
+func TestForceKillTellsTheApp(t *testing.T) {
+	h := New()
+	app := connect(t, h)
+	app.role()
+	p := startRun(t, h, app, "r1")
+
+	p.ForceKill()
+	assert.Equal(t, message{Type: "kill", Run: "r1"}, app.next())
+	_, _, exit := output(t, p)
+	assert.Equal(t, -1, exit)
+}
+
+func TestAppSkippedRunEndsSkipped(t *testing.T) {
+	h := New()
+	app := connect(t, h)
+	app.role()
+	p := startRun(t, h, app, "r1")
+
+	go app.send(message{Type: "exit", Run: "r1", Code: code(1), Reason: "skipped"})
+	_, _, exit := output(t, p)
+	assert.Equal(t, -1, exit)
+	assert.Equal(t, model.ReasonSkipped, p.EndReason())
+}
+
+func TestAppExitReasonOtherThanSkippedIsIgnored(t *testing.T) {
+	h := New()
+	app := connect(t, h)
+	app.role()
+	p := startRun(t, h, app, "r1")
+
+	go app.send(message{Type: "exit", Run: "r1", Code: code(1), Reason: "succeeded"})
+	_, _, exit := output(t, p)
+	assert.Equal(t, 1, exit)
+	assert.Equal(t, model.EndReason(""), p.EndReason())
 }
 
 func TestDisconnectEndsRuns(t *testing.T) {

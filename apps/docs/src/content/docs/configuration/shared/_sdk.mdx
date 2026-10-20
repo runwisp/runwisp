@@ -8,4 +8,5 @@ log.
 
 A unit with `sdk` can't also set `run`, `compose_file`, `shell`, `umask`,
 `user`, `env_base`, `working_dir` or `stop_signal`. If no app is connected when
-the unit fires, the run fails.
+the unit fires, the run waits up to 10 seconds for one, then fails. See
+[When the app stops](/sdk/javascript/#when-the-app-stops).

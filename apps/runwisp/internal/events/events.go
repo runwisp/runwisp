@@ -155,8 +155,9 @@ type LogDiskPressureEvent struct {
 // disk-format prefix (e.g. "[ERR] " for stderr). Subscribers that need the
 // on-disk byte representation rebuild it via logutil.FormatLine(Text, Stream).
 //
-// Continued marks segments 2..N of a logical line that LineBuffer split when
-// it exceeded MaxLineBufferSize. Each segment still gets its own LineNum.
+// Continued marks segments 2..N of a logical line that the terminal renderer
+// split when it exceeded MaxLineBufferSize characters. Each segment still gets
+// its own LineNum.
 //
 // FrameCount is non-zero only on the anchor line of a settled progress bar or
 // multi-line redraw: it reports how many prior whole-region frames were recorded

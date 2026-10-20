@@ -48,7 +48,8 @@ type ExecuteResult struct {
 	TimedOut bool
 	Stopped  bool
 	// KillReason is why a policy stopped the run (log_on_full = "kill" →
-	// log_overflow, a failing health check → unhealthy); empty when none did.
+	// log_overflow, a failing health check → unhealthy), or the reason the
+	// backend ended it for (Process.EndReason); empty when neither did.
 	KillReason    model.EndReason
 	OutputMatched bool // an output line matched a `failures` output pattern
 	// PeakMemoryBytes and CPUTimeMs are the run's resource totals; nil when
@@ -264,7 +265,7 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	}
 	// Seal before stopping the watcher: from here the process has exited on
 	// its own terms, and no late kill may relabel how it ended.
-	killReason := killer.seal()
+	killReason := sealEndReason(killer, proc)
 	stopWatcher()
 
 	result := classifyExecuteResult(killer.ctx, killReason, exitCode, waitErr)
@@ -412,6 +413,17 @@ func (r *RoutingExecutor) streamOne(wg *sync.WaitGroup, reader io.ReadCloser, wr
 		}()
 		r.streamToFile(reader, writer, task, run, matcher, stream)
 	}()
+}
+
+// sealEndReason seals the run's killer and returns the policy kill it
+// recorded, else the backend's own reason (Process.EndReason) when no
+// timeout or stop explains how the run ended.
+func sealEndReason(killer *runKiller, proc *Process) model.EndReason {
+	reason := killer.seal()
+	if reason != "" || killer.ctx.Err() != nil || proc.EndReason == nil {
+		return reason
+	}
+	return proc.EndReason()
 }
 
 // classifyExecuteResult translates wait state + cancellation cause into the

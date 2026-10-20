@@ -135,7 +135,7 @@ Required: the table + [`run`](/configuration/tasks/#run) (unless [`compose_file`
 ```
 group:             string =Tasks   — UI grouping label
 description:        string          — human description
-sdk:               bool =false      — tasks + services; run the unit in the SDK app connected over the local socket that defines it, instead of run (SDKs set it); rejects run, compose_file, shell, umask, user, env_base, working_dir, stop_signal; fails the run when no app is connected
+sdk:               bool =false      — tasks + services; run the unit in the SDK app connected over the local socket that defines it, instead of run (SDKs set it); rejects run, compose_file, shell, umask, user, env_base, working_dir, stop_signal; waits up to 10s for an app, then fails the run (runs queued behind it run late once the app is back)
 cron:              string          — 5- or 6-field cron (optional leading seconds); ranges may wrap (22-2, FRI-MON); day of month takes L, L-3, LW, 15W, day of week FRI#3, FRI#L; also @hourly, @every 1h30m; omit => manual-only
 timezone:          IANA string      — per-task TZ override (else [daemon] timezone)
 jitter:            dur              — cap how far this cron task's start may slip; needs cron (inherits [defaults])

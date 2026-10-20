@@ -417,6 +417,22 @@ func TestExecuteExitHint(t *testing.T) {
 	}
 }
 
+// A backend's EndReason names how the run ended, unless a timeout or stop
+// already explains it.
+func TestExecuteBackendEndReason(t *testing.T) {
+	skipped := func() model.EndReason { return model.ReasonSkipped }
+
+	r, _ := newScriptedExecutor(t, &scriptedBackend{exitCode: -1, endReason: skipped})
+	result := r.Execute(context.Background(), &model.Task{Name: "t", Run: "x"}, newRun())
+	assert.Equal(t, model.ReasonSkipped, result.EndReason())
+
+	r, _ = newScriptedExecutor(t, &scriptedBackend{hang: true, endReason: skipped})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result = r.Execute(ctx, &model.Task{Name: "t", Run: "x"}, newRun())
+	assert.Equal(t, model.ReasonStopped, result.EndReason())
+}
+
 func TestExecuteCommandStartFailure(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "executor-test")
 	require.NoError(t, err)
