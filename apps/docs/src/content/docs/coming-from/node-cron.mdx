@@ -86,7 +86,9 @@ export async function task(ctx) {
 
 A relative path resolves against the file that calls `schedule`. The process's
 output goes to the run's log, and a thrown error or a crash fails the run.
-Stopping the run sends the process `SIGTERM`. The run's
+Stopping the run sends `SIGTERM` to the process and to the processes it
+started, then `SIGKILL` once [`graceful_stop`](/configuration/tasks/#graceful_stop)
+runs out. They are also killed if the app dies. The run's
 [environment](/sdk/javascript/#environment-and-parameters) is added to the
 process's.
 

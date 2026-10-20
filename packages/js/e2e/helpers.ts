@@ -21,13 +21,17 @@ export function freePort(): Promise<number> {
     });
 }
 
-/** Runs a task through the daemon, waits for it, and returns its exit code and log. */
+/** Runs a task through the daemon, waits for it, and returns its exit code, end reason and log. */
 export async function trigger(
     socket: string,
     task: string,
-): Promise<{ exitCode: unknown; log: unknown }> {
+): Promise<{ exitCode: unknown; endReason: unknown; log: unknown }> {
     const run = await call(socket, "POST", `/api/tasks/${task}/run?wait=true`);
     const id = String(field(run.body, "id"));
     const raw = await call(socket, "GET", `/api/runs/${id}/log/raw`);
-    return { exitCode: field(run.body, "exitCode"), log: raw.body };
+    return {
+        exitCode: field(run.body, "exitCode"),
+        endReason: field(run.body, "endReason"),
+        log: raw.body,
+    };
 }

@@ -1,14 +1,15 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { forkedTask, solvePath } from "./background.ts";
+import { forkedTask, KILL, solvePath } from "./background.ts";
 import { runCaptured } from "./capture.ts";
 import type { Stream } from "./session.ts";
 import type { TaskContext } from "./scheduled-task.ts";
@@ -36,6 +37,33 @@ function context(signal = new AbortController().signal): Omit<TaskContext, "task
         execution: { id: "01JRUN", reason: "scheduled", startedAt: date },
         runId: "01JRUN",
     };
+}
+
+/** Whether a process is gone, waiting up to 3 s for it to go. */
+async function gone(pid: number): Promise<boolean> {
+    for (let i = 0; i < 60; i++) {
+        try {
+            process.kill(pid, 0);
+        } catch {
+            return true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return false;
+}
+
+/** The pid a job wrote to path, once it did. */
+async function pidIn(path: string): Promise<number> {
+    for (let i = 0; i < 100; i++) {
+        try {
+            const pid = Number(readFileSync(path, "utf8"));
+            if (pid > 0) return pid;
+        } catch {
+            // Not written yet.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error(`no pid in ${path}`);
 }
 
 async function captured(url: string, ctx = context()) {
@@ -118,5 +146,83 @@ describe("forkedTask", () => {
         }, 300);
         const { error } = await pending;
         expect(error?.message).toContain("exited with SIGTERM");
+    });
+
+    it("stops the processes the task started too", async () => {
+        const pidFile = join(dir, "grandchild.pid");
+        const url = job(
+            "starts.mjs",
+            `import { spawn } from "node:child_process";
+            import { writeFileSync } from "node:fs";
+            export function task() {
+                const sleeper = spawn("sleep", ["30"], { stdio: "ignore" });
+                writeFileSync(${JSON.stringify(pidFile)}, String(sleeper.pid));
+                return new Promise(() => {});
+            }`,
+        );
+        const abort = new AbortController();
+        const pending = captured(url, context(abort.signal));
+        const grandchild = await pidIn(pidFile);
+        abort.abort();
+        await pending;
+        expect(await gone(grandchild)).toBe(true);
+    });
+
+    it("kills a process that ignores SIGTERM once the run's kill signal aborts", async () => {
+        const url = job(
+            "stubborn.mjs",
+            `export function task() {
+                process.on("SIGTERM", () => console.log("ignoring SIGTERM"));
+                return new Promise(() => setInterval(() => {}, 1000));
+            }`,
+        );
+        const abort = new AbortController();
+        const kill = new AbortController();
+        const ctx = { ...context(abort.signal), [KILL]: kill.signal };
+        const pending = captured(url, ctx);
+        setTimeout(() => {
+            abort.abort();
+        }, 300);
+        setTimeout(() => {
+            kill.abort();
+        }, 600);
+        const { lines, error } = await pending;
+        expect(lines).toContainEqual(["stdout", "ignoring SIGTERM"]);
+        expect(error?.message).toContain("exited with SIGKILL");
+    });
+
+    it("ends the process and what it started when the app dies", async () => {
+        const pidFile = join(dir, "orphan.pid");
+        const sleeperFile = join(dir, "orphan-sleeper.pid");
+        const url = job(
+            "orphan.mjs",
+            `import { spawn } from "node:child_process";
+            import { writeFileSync } from "node:fs";
+            export function task() {
+                writeFileSync(${JSON.stringify(sleeperFile)}, String(spawn("sleep", ["30"], { stdio: "ignore" }).pid));
+                writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+                return new Promise(() => {});
+            }`,
+        );
+        const background = pathToFileURL(
+            join(dirname(fileURLToPath(import.meta.url)), "background.ts"),
+        ).href;
+        // The app: runs the task file, then is killed with SIGKILL.
+        const app = spawn(
+            process.execPath,
+            [
+                "--input-type=module",
+                "-e",
+                `const { forkedTask } = await import(${JSON.stringify(background)});
+                const context = { ...${JSON.stringify(context())}, signal: new AbortController().signal };
+                forkedTask(${JSON.stringify(url)})(context);`,
+            ],
+            { stdio: "ignore" },
+        );
+        const child = await pidIn(pidFile);
+        const sleeper = await pidIn(sleeperFile);
+        app.kill("SIGKILL");
+        expect(await gone(child)).toBe(true);
+        expect(await gone(sleeper)).toBe(true);
     });
 });

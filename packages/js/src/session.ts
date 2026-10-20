@@ -13,6 +13,23 @@ import { field, sdkVersion, type Identity } from "./daemon.ts";
 /** The Upgrade token: the app protocol and its version, as in apps/runwisp/internal/apphost. */
 export const PROTOCOL = "runwisp-app/1";
 
+/**
+ * How many bytes may wait for the socket before output is dropped: a task
+ * printing in a loop that never yields would otherwise grow the app's memory
+ * until the connection fails, and every run with it. Wrapped in messages,
+ * output about doubles, so this holds about a default log_max_size (100mb).
+ */
+export const MAX_QUEUED_OUTPUT = 256 * 1024 * 1024;
+
+/**
+ * Messages are batched into writes of about this size, each one buffer: one
+ * string per line costs several times the line while it waits for the socket.
+ */
+const BATCH_SIZE = 64 * 1024;
+
+/** How a run ended other than by its exit code: the app skipped it. */
+export type EndReason = "skipped";
+
 /** Who connects: copies of one app share a daemon, a different app is refused. */
 export interface AppIdentity {
     app: string;
@@ -43,6 +60,8 @@ export interface SessionEvents {
     alone(session: Session): void;
     run(session: Session, request: RunRequest): void;
     stop(run: string): void;
+    /** RunWisp gave up on a stopped run after its graceful_stop. */
+    kill(run: string): void;
     /** RunWisp skipped a firing of task (on_overlap: "skip") scheduled for at. */
     overlap(task: string, at: Date): void;
     /** Firings of task were missed while RunWisp was down, the latest at at. */
@@ -96,14 +115,24 @@ export class Session {
     private readonly events: SessionEvents;
     private readonly replies: ((reply: ConfigReply) => void)[] = [];
     private readonly gone: Promise<void>;
+    private readonly maxQueuedOutput: number;
+    /** Messages not yet written: see BATCH_SIZE. */
+    private batch = "";
+    private flushScheduled = false;
+    /** Output lines dropped per run while the socket was backed up, not yet reported. */
+    private readonly dropped = new Map<string, number>();
 
-    private constructor(socket: Socket, events: SessionEvents) {
+    private constructor(socket: Socket, events: SessionEvents, maxQueuedOutput: number) {
         this.socket = socket;
         this.events = events;
+        this.maxQueuedOutput = maxQueuedOutput;
+        // A task calling process.exit() still gets the output it wrote just before.
+        process.on("exit", this.flush);
         // A daemon going away must never crash the app: closed() handles it.
         socket.on("error", () => undefined);
         this.gone = new Promise((resolve) => {
             socket.once("close", () => {
+                process.off("exit", this.flush);
                 for (const reply of this.replies.splice(0)) {
                     reply({
                         ok: false,
@@ -132,6 +161,7 @@ export class Session {
         events: SessionEvents,
         who: AppIdentity,
         running?: Pick<Identity, "pid" | "version">,
+        maxQueuedOutput = MAX_QUEUED_OUTPUT,
     ): Promise<Session> {
         return new Promise((resolve, reject) => {
             const socket = connect(socketPath);
@@ -161,17 +191,21 @@ export class Session {
                 socket.pause();
                 const rest = head.subarray(end + 4);
                 if (rest.length > 0) socket.unshift(rest);
-                new Session(socket, {
-                    ...events,
-                    role: (session, active) => {
-                        resolve(session);
-                        events.role(session, active);
+                new Session(
+                    socket,
+                    {
+                        ...events,
+                        role: (session, active) => {
+                            resolve(session);
+                            events.role(session, active);
+                        },
+                        closed: (session) => {
+                            reject(new Error("RunWisp closed the app connection"));
+                            events.closed(session);
+                        },
                     },
-                    closed: (session) => {
-                        reject(new Error("RunWisp closed the app connection"));
-                        events.closed(session);
-                    },
-                });
+                    maxQueuedOutput,
+                );
             };
             socket.on("data", onData);
             socket.once("error", reject);
@@ -186,11 +220,38 @@ export class Session {
     }
 
     private send(message: Record<string, unknown>): void {
-        if (this.socket.writable) this.socket.write(JSON.stringify(message) + "\n");
+        this.batch += JSON.stringify(message) + "\n";
+        if (this.batch.length >= BATCH_SIZE) this.flush();
+        else if (!this.flushScheduled) {
+            this.flushScheduled = true;
+            setImmediate(this.flush);
+        }
     }
 
-    /** With partial, line is a piece of a line that the next output continues. */
+    /** Writes what is batched now, as the app crashing or exiting must. */
+    readonly flush = (): void => {
+        this.flushScheduled = false;
+        if (this.batch === "") return;
+        const batch = this.batch;
+        this.batch = "";
+        if (this.socket.writable) this.socket.write(Buffer.from(batch));
+    };
+
+    /**
+     * With partial, line is a piece of a line that the next output continues.
+     * Dropped, and counted for the run's log, while too much is waiting to be
+     * written.
+     */
     output(run: string, stream: Stream, line: string, partial = false): void {
+        if (this.socket.writableLength + this.batch.length > this.maxQueuedOutput) {
+            if (this.dropped.size === 0) {
+                this.socket.once("drain", () => {
+                    this.reportDropped();
+                });
+            }
+            this.dropped.set(run, (this.dropped.get(run) ?? 0) + 1);
+            return;
+        }
         this.send(
             partial
                 ? { type: "output", run, stream, line, partial }
@@ -198,8 +259,23 @@ export class Session {
         );
     }
 
-    exit(run: string, code: number): void {
-        this.send({ type: "exit", run, code });
+    exit(run: string, code: number, reason?: EndReason): void {
+        this.reportDropped(run);
+        this.send(reason ? { type: "exit", run, code, reason } : { type: "exit", run, code });
+    }
+
+    /** Says in each run's log (or run's only) how many lines it lost. */
+    private reportDropped(only?: string): void {
+        for (const [run, count] of this.dropped) {
+            if (only !== undefined && run !== only) continue;
+            this.dropped.delete(run);
+            this.send({
+                type: "output",
+                run,
+                stream: "stderr",
+                line: `runwisp: dropped ${String(count)} line${count === 1 ? "" : "s"} of output: the app wrote faster than RunWisp could take it`,
+            });
+        }
     }
 
     /** Whether the connection keeps the process alive. */
@@ -221,6 +297,7 @@ export class Session {
                 return;
             }
             this.replies.push(resolve);
+            this.flush();
             this.socket.write(`{"type":"config","doc":${doc}}\n`);
         });
     }
@@ -235,6 +312,7 @@ export class Session {
     }
 
     close(): Promise<void> {
+        this.flush();
         this.socket.end();
         return this.gone;
     }
@@ -266,11 +344,10 @@ export class Session {
             case "run":
                 this.receiveRun(message);
                 break;
-            case "stop": {
-                const run = field(message, "run");
-                if (typeof run === "string") this.events.stop(run);
+            case "stop":
+            case "kill":
+                this.receiveStop(message);
                 break;
-            }
             case "config_ok": {
                 const warnings = field(field(message, "result"), "warnings");
                 this.replies.shift()?.({
@@ -293,6 +370,14 @@ export class Session {
             default:
             // Unknown types are ignored, so the daemon can be newer than the app.
         }
+    }
+
+    /** RunWisp stopping a run, or giving up on it after graceful_stop (kill). */
+    private receiveStop(message: unknown): void {
+        const run = field(message, "run");
+        if (typeof run !== "string") return;
+        if (field(message, "type") === "stop") this.events.stop(run);
+        else this.events.kill(run);
     }
 
     /** A firing RunWisp skipped (overlap) or missed while it was down. */

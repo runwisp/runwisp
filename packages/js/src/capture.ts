@@ -177,9 +177,31 @@ export async function runCaptured<T>(sink: LineSink, fn: () => Promise<T>): Prom
 const PACKAGE_DIR = `${dirname(fileURLToPath(import.meta.url))}/`;
 
 /** The error's stack cut at the first frame of this package: everything below is plumbing. */
-export function ownStack(err: unknown): unknown {
+function ownStack(err: unknown): unknown {
     if (!(err instanceof Error) || err.stack === undefined) return err;
     const lines = err.stack.split("\n");
     const cut = lines.findIndex((line) => line.includes(PACKAGE_DIR));
     return (cut === -1 ? lines : lines.slice(0, cut)).join("\n");
+}
+
+/**
+ * A thrown value as text for a run's log: its stack, else whatever of it can
+ * be printed. Never throws, even for a value whose getters or inspect throw.
+ */
+export function describeError(err: unknown): string {
+    try {
+        return format(ownStack(err));
+    } catch {
+        // Its stack or inspect threw: try its name and message, then its type.
+    }
+    try {
+        if (err instanceof Error) return `${err.name}: ${err.message}`;
+    } catch {
+        // Those threw too.
+    }
+    try {
+        return `runwisp: can't print the thrown value (${Object.prototype.toString.call(err)})`;
+    } catch {
+        return "runwisp: can't print the thrown value";
+    }
 }

@@ -34,10 +34,11 @@ const (
 	ReasonTimeout EndReason = "timeout"
 	ReasonCrashed EndReason = "crashed"
 	// ReasonSkipped marks runs that the concurrency policy rejected before
-	// they ever executed (PolicySkip). Distinct from ReasonFailed so chronic
-	// overlap on a `* * * * *` health probe doesn't pose as a real failure
-	// to retries, notifications, or dashboards. Exit code is conventionally
-	// recorded as -1.
+	// they ever executed (PolicySkip): in the daemon, or in the SDK app when
+	// an sdk unit's previous callback ignored its stop and still runs.
+	// Distinct from ReasonFailed so chronic overlap on a `* * * * *` health
+	// probe doesn't pose as a real failure to retries, notifications, or
+	// dashboards. Exit code is conventionally recorded as -1.
 	ReasonSkipped EndReason = "skipped"
 	// ReasonLogOverflow marks runs that log_on_full = "kill" cancelled
 	// because output exceeded log_max_size. Treated as a failure for retry,

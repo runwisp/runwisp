@@ -150,6 +150,10 @@ writes to `process.stderr` to its stderr. That includes `console.log`,
 app's console too. Loggers that write to the file descriptor directly, such as
 pino, are not captured.
 
+A task that prints faster than RunWisp can take the output, in a loop that
+never waits, has up to 256 MB of it held in the app. Past that, its lines are
+dropped, and its log says how many.
+
 A thrown error or rejected promise fails the run with exit code 1 and the stack
 trace in its log. When the callback returns, the run succeeds with exit code 0.
 If a task crashes the app, the stack trace also goes to the log of every run
@@ -170,8 +174,9 @@ runwisp.task("sync", { cron: "*/15 * * * *", timeout: "10m" }, async ({ signal }
 What the callback prints while it stops still goes to the run's log. A callback
 that ignores `signal` keeps running in the app after RunWisp gives up on it
 ([`graceful_stop`](/configuration/tasks/#graceful_stop) later). The next run then
-waits for it to finish, or is skipped with `on_overlap: "skip"`, so the task
-never runs twice at once.
+waits for it to finish, or is recorded as `skipped` with `on_overlap: "skip"`,
+so the task never runs twice at once. A waiting run that is stopped or times
+out says in its log that it never started.
 
 ## Pause and remove a task
 
@@ -225,15 +230,21 @@ the first can pass `config`.
 
 `await runwisp.close()` waits for running tasks and stops the services. If
 another copy of the app is running, it takes over. Otherwise RunWisp stops.
+`close()` waits as long as a callback runs, so one that ignores its `signal`
+holds it; after a second, the app logs what it is waiting for. `shutdown(timeout)`
+waits at most `timeout` milliseconds.
 
 For a server with no shutdown hook, pass [`exitOnSignal`](#exitonsignal) to
-close RunWisp on `SIGTERM` and Ctrl-C, then exit. With SvelteKit's
-adapter-node, RunWisp closes on its own when the server stops.
+close RunWisp on `SIGTERM` and Ctrl-C, then exit. A second signal exits at
+once. With SvelteKit's adapter-node, RunWisp closes on its own when the server
+stops.
 
 When the last copy exits without `close()`, Ctrl-C included, RunWisp stops 10
 seconds later, so an app that restarts finds it still running. Runs that were in
 progress fail with `the app disconnected`. A run that fires while no copy is
-running fails with `no app is connected`.
+running waits up to 10 seconds for one, then fails with `no app is connected`.
+Runs queued behind it (`on_overlap: "queue"`) stay queued: they run, late, once
+the app starts RunWisp again.
 
 ## Unit tests
 

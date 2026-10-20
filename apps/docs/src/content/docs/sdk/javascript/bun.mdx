@@ -38,6 +38,25 @@ Everything in the [JavaScript SDK](/sdk/javascript/) guide applies.
 [`exitOnSignal`](/sdk/javascript/#exitonsignal) lets running tasks finish when
 you stop the script with Ctrl-C.
 
+One difference: what a `worker_threads` worker prints reaches the app's console
+but not the run's log. To log it, create the worker with `stdout` and `stderr`,
+and forward them:
+
+```ts
+import { AsyncResource } from "node:async_hooks";
+import { Worker } from "node:worker_threads";
+
+const worker = new Worker("./resize.ts", { stdout: true, stderr: true });
+worker.stdout.on(
+    "data",
+    AsyncResource.bind((chunk) => process.stdout.write(chunk)),
+);
+worker.stderr.on(
+    "data",
+    AsyncResource.bind((chunk) => process.stderr.write(chunk)),
+);
+```
+
 ## Replace Bun.cron in your app
 
 `Bun.cron(schedule, handler)` runs a callback in your process. Give the task a

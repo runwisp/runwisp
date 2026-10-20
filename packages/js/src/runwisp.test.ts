@@ -232,6 +232,36 @@ describe("RunWisp (enabled: false)", () => {
         }
     });
 
+    it("rejects a task file that doesn't exist", () => {
+        const { cron } = offline();
+        expect(() => cron.schedule("* * * * *", "/nonexistent/job.mjs")).toThrow(
+            "task file not found: /nonexistent/job.mjs",
+        );
+    });
+
+    it("rejects a task or service without a function", () => {
+        const { cron } = offline();
+        // What plain JavaScript can pass: typed a function, undefined at run time.
+        const missing = { fn: () => undefined };
+        Object.defineProperty(missing, "fn", { value: undefined });
+        expect(() => cron.task("x", {}, missing.fn)).toThrow('task "x" needs a function');
+        expect(() => {
+            cron.service("y", {}, missing.fn);
+        }).toThrow('service "y" needs a function');
+        expect(cron.getTask("x")).toBeUndefined();
+    });
+
+    it("rejects tasks registered after close(), which would never run", async () => {
+        const { cron } = offline();
+        await cron.close();
+        const closed = "this RunWisp is closed";
+        expect(() => cron.task("a", {}, () => undefined)).toThrow(closed);
+        expect(() => cron.schedule("* * * * *", () => undefined, { name: "b" })).toThrow(closed);
+        expect(() => {
+            cron.service("c", {}, () => undefined);
+        }).toThrow(closed);
+    });
+
     it("works without the runwisp binary", () => {
         const cron = new RunWisp({ enabled: false, log: false, binary: "/nonexistent/runwisp" });
         expect(cron.schedule("* * * * *", () => undefined, { name: "a" }).id).toBe("a");
@@ -366,7 +396,9 @@ function fakeDaemon(
 ) {
     const received: unknown[] = [];
     const apps: Socket[] = [];
+    const asked = { tasks: 0 };
     const server: Server = createServer((req, res) => {
+        if (req.url === "/api/tasks") asked.tasks++;
         const body: Record<string, unknown> = {
             "/health": "ok",
             // A pid nothing has, should a test ever stop this daemon.
@@ -400,6 +432,7 @@ function fakeDaemon(
     return {
         received,
         apps,
+        asked,
         listen,
         send: (message: object) => {
             for (const socket of apps) socket.write(`${JSON.stringify(message)}\n`);
@@ -710,6 +743,117 @@ describe("RunWisp with a daemon", () => {
         await task.execute();
         expect(seen[1]?.[0]).toBeUndefined();
         expect(seen[1]?.[1]).toMatch(/^[0-9a-f-]{36}$/);
+    });
+
+    it("asks RunWisp for the next run times once for a burst of runs, not after each", async () => {
+        const { daemon, cron } = setup();
+        await daemon.listen();
+        cron.task("tick", { cron: "* * * * *" }, () => undefined);
+        await cron.start();
+        const before = daemon.asked.tasks;
+        for (let i = 0; i < 30; i++)
+            daemon.send({ type: "run", run: `r${String(i)}`, task: "tick" });
+        await vi.waitFor(() => {
+            expect(daemon.received.filter((m) => field(m, "type") === "exit")).toHaveLength(30);
+        });
+        await vi.waitFor(
+            () => {
+                expect(daemon.asked.tasks).toBe(before + 1);
+            },
+            { timeout: 3000 },
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        expect(daemon.asked.tasks).toBe(before + 1);
+    });
+
+    it("fails the run, and keeps the app up, when the thrown value can't be printed", async () => {
+        const { daemon, cron } = setup();
+        await daemon.listen();
+        const hostile = new Error("hidden");
+        Object.defineProperty(hostile, "stack", {
+            get() {
+                throw new Error("no stack for you");
+            },
+        });
+        cron.task("hostile", {}, () => {
+            throw hostile;
+        });
+        await cron.start();
+        daemon.send({ type: "run", run: "r1", task: "hostile" });
+        await vi.waitFor(() => {
+            expect(daemon.received).toContainEqual({ type: "exit", run: "r1", code: 1 });
+        });
+        expect(daemon.received).toContainEqual(
+            expect.objectContaining({ run: "r1", stream: "stderr", line: "Error: hidden" }),
+        );
+    });
+
+    it("kills a task file's process when RunWisp gives up on its stop", async () => {
+        const { data, daemon, cron } = setup();
+        await daemon.listen();
+        const file = join(data, "stubborn.mjs");
+        writeFileSync(
+            file,
+            `export function task() {
+                process.on("SIGTERM", () => console.log("ignoring SIGTERM"));
+                console.log("started");
+                return new Promise(() => setInterval(() => {}, 1000));
+            }`,
+        );
+        cron.schedule("0 3 * * *", file, { name: "stubborn" });
+        await cron.start();
+        daemon.send({ type: "run", run: "r1", task: "stubborn" });
+        await vi.waitFor(() => {
+            expect(daemon.received).toContainEqual(
+                expect.objectContaining({ run: "r1", line: "started" }),
+            );
+        });
+        daemon.send({ type: "stop", run: "r1" });
+        await vi.waitFor(() => {
+            expect(daemon.received).toContainEqual(
+                expect.objectContaining({ run: "r1", line: "ignoring SIGTERM" }),
+            );
+        });
+        daemon.send({ type: "kill", run: "r1" });
+        await vi.waitFor(() => {
+            expect(daemon.received).toContainEqual({ type: "exit", run: "r1", code: 143 });
+        });
+        const lines = daemon.received.map((m) => field(m, "line"));
+        expect(lines.some((line) => typeof line === "string" && line.includes("SIGKILL"))).toBe(
+            true,
+        );
+    });
+
+    it("says what close() waits for when a callback doesn't return", async () => {
+        const { daemon, cron, lines } = setup();
+        await daemon.listen();
+        let release: (() => void) | undefined;
+        cron.task(
+            "stuck",
+            {},
+            () =>
+                new Promise((resolve) => {
+                    release = () => {
+                        resolve(undefined);
+                    };
+                }),
+        );
+        await cron.start();
+        daemon.send({ type: "run", run: "r1", task: "stuck" });
+        await vi.waitFor(() => {
+            expect(release).toBeDefined();
+        });
+        const closed = cron.close();
+        await vi.waitFor(
+            () => {
+                expect(lines).toContain(
+                    "runwisp: waiting for 1 running callback to return before closing; shutdown(timeout) waits at most timeout ms",
+                );
+            },
+            { timeout: 3000 },
+        );
+        release?.();
+        await closed;
     });
 
     it("shuts down within the timeout, destroying every task", async () => {
