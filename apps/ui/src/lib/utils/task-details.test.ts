@@ -38,7 +38,7 @@ describe("taskDetailSections", () => {
             retryDelay: 0.5 * MINUTE_NS,
         });
         expect(section(task, "Schedule")?.rows).toEqual([
-            { key: "cron", value: '"15 3 * * *"', note: "At 03:15 AM" },
+            { key: "cron", value: '"15 3 * * *"', note: "At 03:15" },
             { key: "timezone", value: '"Europe/Bratislava"' },
         ]);
         expect(section(task, "Execution")?.rows).toEqual([

@@ -12,6 +12,7 @@
     import { isTypingTarget } from "../../utils/typing-target.js";
     import { displayStatus, type Run } from "@runwisp/common";
     import { RUN_STATUS_CONFIG } from "./status-config.js";
+    import { humanizeStatus } from "./run-filters.js";
     import { runEndMarker } from "./run-helpers.js";
 
     let {
@@ -220,7 +221,7 @@
                         {run.taskName}{suffix}
                     </span>
                     <span class="text-[var(--rw-con-gutter)]">·</span>
-                    <span class="font-semibold capitalize {config.color}">{status}</span>
+                    <span class="font-semibold {config.color}">{humanizeStatus(status)}</span>
                 </span>
             {:else}
                 <span

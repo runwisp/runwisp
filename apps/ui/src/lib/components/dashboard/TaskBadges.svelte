@@ -12,7 +12,10 @@
 </script>
 
 {#if task.group}
-    <Badge variant="default" size="sm">{task.group}</Badge>
+    <!-- A long group name truncates rather than pushing out of a narrow card. -->
+    <Badge variant="default" size="sm" class="max-w-full min-w-0"
+        ><span class="truncate" title={task.group}>{task.group}</span></Badge
+    >
 {/if}
 {#if task.compose}
     <ComposeBadge

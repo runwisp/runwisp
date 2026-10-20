@@ -100,8 +100,10 @@ function runningBadge(run: Run, now: Date): TaskStripModel["badge"] {
 function failedBadge(task: Task): TaskStripModel["badge"] | undefined {
     const last = task.lastRun;
     if (last?.status !== "ended" || !last.isFailure) return undefined;
+    // Name the way it failed when "failed" would contradict the run's own verdict.
+    const how = last.endReason === "timeout" ? "timed out" : "failed";
     return {
-        text: "Last run failed",
+        text: `Last run ${how}`,
         kind: "failed",
         runId: last.id,
         title: "Open the failed run",

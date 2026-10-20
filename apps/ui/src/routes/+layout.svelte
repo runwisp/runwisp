@@ -62,6 +62,7 @@
         const path = $page.url.pathname;
         if (path === "/") return "overview";
         if (path.startsWith("/runs")) return "runs";
+        if (path.startsWith("/notifications")) return "notifications";
         return "";
     });
 

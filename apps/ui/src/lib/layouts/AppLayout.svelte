@@ -160,11 +160,11 @@
         <!-- eslint-enable svelte/no-navigation-without-resolve -->
         <Icon
             size={18}
-            class={active
-                ? "text-primary"
-                : "text-on-surface-faint group-hover:text-on-surface-muted"}
+            class="shrink-0 {active
+                ? 'text-primary'
+                : 'text-on-surface-faint group-hover:text-on-surface-muted'}"
         />
-        {label}
+        <span class="min-w-0 wrap-break-word">{label}</span>
     </a>
 {/snippet}
 
@@ -323,11 +323,11 @@
                  Empty space when the active page registers no search. On phones
                  it is hidden until the search button opens it over the bar. -->
             <div
-                class="{searchOpen
+                class="@container {searchOpen
                     ? 'absolute inset-0 z-10 flex items-center gap-2 bg-surface-raised px-4'
                     : 'hidden'} {taskRow
                     ? ''
-                    : 'md:static md:z-auto md:flex md:min-w-24 md:flex-1 md:justify-center md:bg-transparent md:px-4 lg:px-8'}"
+                    : 'md:static md:z-auto md:flex md:min-w-48 md:flex-1 md:justify-center md:bg-transparent md:px-4 lg:px-8'}"
                 onfocusout={onSearchFocusOut}
             >
                 {#if searchOpen}

@@ -4,6 +4,7 @@
 <script lang="ts">
     import { displayStatus, type Run } from "@runwisp/common";
     import { RUN_STATUS_CONFIG } from "./status-config.js";
+    import { humanizeStatus } from "./run-filters.js";
     import {
         formatTriggeredByLabel,
         runRetryLabel,
@@ -91,9 +92,8 @@
                             >{/if}
                     </span>
                     <span class="shrink-0 text-on-surface-faint">·</span>
-                    <span
-                        class="shrink-0 font-mono text-[12px] font-semibold capitalize {config.color}"
-                        >{dstatus}</span
+                    <span class="shrink-0 font-mono text-[12px] font-semibold {config.color}"
+                        >{humanizeStatus(dstatus)}</span
                     >
                 </span>
                 <span
@@ -134,9 +134,8 @@
                 <!-- With usage bars a tight rail drops the status word; the dot
                      keeps its colour. -->
                 <span class="text-on-surface-faint {tight}">·</span>
-                <span
-                    class="font-mono text-[12.5px] font-semibold capitalize {config.color} {tight}"
-                    >{dstatus}</span
+                <span class="font-mono text-[12.5px] font-semibold {config.color} {tight}"
+                    >{humanizeStatus(dstatus)}</span
                 >
                 {#if suffix}
                     <span class="font-mono text-2xs text-on-surface-faint">{suffix}</span>

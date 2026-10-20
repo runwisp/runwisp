@@ -14,11 +14,12 @@
         formatRelativeTime,
         formatTriggeredByLabel,
         Heading,
+        humanizeStatus,
     } from "@runwisp/ui";
     import type { RunMotion } from "@runwisp/ui";
     import { displayStatus, type Run } from "@runwisp/common";
     import RunStatusBadge from "./RunStatusBadge.svelte";
-    import { formatRunDurationLabel } from "./overview-format.js";
+    import { failureExitCode, formatRunDurationLabel } from "./overview-format.js";
 
     let {
         recentActivity,
@@ -65,6 +66,7 @@
             {#each recentActivity as run (run.id)}
                 {@const status = displayStatus(run.status, run.endReason)}
                 {@const statusConfig = RUN_STATUS_CONFIG[status]}
+                {@const exitCode = failureExitCode(run)}
                 {@const StatusIcon = statusConfig.icon}
                 {@const suffix = instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}
 
@@ -101,7 +103,7 @@
                                     tone={statusConfig.badge}
                                     class="shrink-0 uppercase"
                                 >
-                                    {status}
+                                    {humanizeStatus(status)}
                                 </RunStatusBadge>
                             </div>
                             <ArrowRight
@@ -114,8 +116,8 @@
                             {formatRelativeTime(run.startedAt ?? run.createdAt, now)} &middot;
                             {formatRunDurationLabel(run)}
                             &middot; {formatTriggeredByLabel(run.triggeredBy)}
-                            {#if run.isFailure}
-                                <span class="text-danger-soft-text">· Exit {run.exitCode}</span>
+                            {#if exitCode !== undefined}
+                                <span class="text-danger-soft-text">· Exit {exitCode}</span>
                             {/if}
                         </p>
                     </div>

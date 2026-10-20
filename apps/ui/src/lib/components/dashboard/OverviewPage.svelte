@@ -134,7 +134,7 @@
     <!-- One grid so the left column (stat panes → attention/running/up-next)
          flows straight into the panels with no gap under the short stat row,
          while the 320px rail (resources → recent activity) tracks alongside. -->
-    <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+    <div class="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div class="flex flex-col gap-5">
             <OverviewHero
                 {stats}

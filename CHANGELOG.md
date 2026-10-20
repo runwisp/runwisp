@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The Web UI shows times in 24-hour format everywhere, including cron schedules ("At 03:15") and run list dates.
+
 ### Fixed
 
 - `@runwisp/js` apps with many fast tasks no longer slow the daemon down: the app asks for next run times at most once a second instead of after every run.
@@ -17,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Under Bun, an app crash from an unhandled promise rejection writes its stack trace into the logs of the runs in progress, as under Node.js.
 - `task()` and `service()` reject a missing callback, `schedule()` rejects a task file that doesn't exist, and registering a task after `close()` throws instead of being silently ignored.
 - `close()` logs what it is waiting for when a callback keeps running.
+- The Overview no longer overflows the screen on phones when a task has a long name, and a long group name no longer spills out of its card.
+- A long task name no longer squeezes the header search box until its shortcut hint overlaps the badges beside it.
+- A timed-out run no longer shows "Exit -1" on the Overview, and its task reads "Last run timed out" instead of "Last run failed".
+- Run lists show statuses like "Start failed" instead of "Start_failed".
+- A filtered run list that matches nothing says so and offers to clear the filters, instead of "No runs yet".
+- The "end of output" marker stays visible after a very long line, and a run that printed nothing says so instead of "Waiting for logs...".
+- Dates in another year include the year, so a next run "in 1 year (Feb 29)" names which February.
+- The Notifications page shows its name in the header.
+- Notifications no longer say "exit -1" for a killed run or "after 0s" for a run under a second, and number service instances from #1.
 
 ## [1.7.1] - 2026-10-19
 

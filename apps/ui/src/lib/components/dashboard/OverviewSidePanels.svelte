@@ -23,6 +23,7 @@
         formatRunDurationLabel,
         formatTaskLastRunLabel,
         formatTaskNextRunLabel,
+        failureExitCode,
     } from "./overview-format.js";
 
     let {
@@ -78,7 +79,10 @@
      1fr track then stretches each card to the full height so their ends line up
      with the taller Recent activity rail beside them. -->
 <div
-    class={["grid flex-1 gap-4 md:grid-rows-1", showUpcoming ? "md:grid-cols-3" : "md:grid-cols-2"]}
+    class={[
+        "grid flex-1 grid-cols-1 gap-4 md:grid-rows-1",
+        showUpcoming ? "md:grid-cols-3" : "md:grid-cols-2",
+    ]}
 >
     <Card>
         {@render cardHeader(
@@ -93,6 +97,8 @@
             <div class="mt-4 space-y-2">
                 {#each attentionTasks as task (task.task.name)}
                     {@const statusConfig = task.lastStatus && RUN_STATUS_CONFIG[task.lastStatus]}
+                    {@const exitCode = failureExitCode(task.lastRun)}
+                    {@const nextLabel = formatTaskNextRunLabel(task, now)}
 
                     <TaskCard accent="danger" onclick={() => onTaskClick(task.task.name)}>
                         <div class="flex items-start justify-between gap-2">
@@ -119,10 +125,15 @@
                         <div
                             class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-on-surface-muted"
                         >
-                            <span>Next {formatTaskNextRunLabel(task, now)}</span>
-                            {#if task.lastRun?.isFailure}
+                            <!-- "Next" only reads right before a time, not "Always on"/"Manual only". -->
+                            <span
+                                >{task.nextRunMs === undefined || task.task.pausedAt
+                                    ? nextLabel
+                                    : `Next ${nextLabel}`}</span
+                            >
+                            {#if exitCode !== undefined}
                                 <span class="font-mono text-danger-soft-text tabular-nums">
-                                    Exit {task.lastRun.exitCode}
+                                    Exit {exitCode}
                                 </span>
                             {/if}
                         </div>

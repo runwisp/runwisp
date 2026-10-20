@@ -25,6 +25,7 @@
         TaskOverview,
     } from "./overview.js";
     import {
+        failureExitCode,
         formatTaskLastResultLabel,
         formatTaskNextRunLabel,
         formatTaskTriggerLabel,
@@ -225,6 +226,7 @@
                     ? RUN_STATUS_CONFIG[task.lastStatus]
                     : undefined}
                 {@const TaskIcon = taskIcon(task.task)}
+                {@const exitCode = failureExitCode(task.lastRun)}
 
                 <button
                     class="group w-full rounded-[4px] border border-l-4 border-outline bg-surface-raised px-4 py-3 text-left hover:border-outline-hover hover:shadow-sm {taskState.accentClass}"
@@ -335,12 +337,12 @@
                         />
                     </div>
 
-                    {#if task.lastRun?.isFailure}
+                    {#if exitCode !== undefined}
                         <div
                             class="mt-2 rounded-[3px] border border-danger-soft-border bg-danger-soft/80 px-3 py-2 text-xs text-danger-soft-text"
                         >
                             Last run exited with code <span class="font-mono tabular-nums"
-                                >{task.lastRun.exitCode}</span
+                                >{exitCode}</span
                             >
                         </div>
                     {/if}
