@@ -13,7 +13,7 @@ require (
 	github.com/charmbracelet/fang v1.0.0
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/coder/websocket v1.8.15
-	github.com/compose-spec/compose-go/v2 v2.16.1
+	github.com/compose-spec/compose-go/v2 v2.16.2
 	github.com/creack/pty v1.1.24
 	github.com/danielgtaylor/huma/v2 v2.39.1
 	github.com/go-chi/chi/v5 v5.5.0
