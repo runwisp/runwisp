@@ -364,3 +364,22 @@ func TestCommentOutCronLines_FinalLineWithoutTrailingNewline(t *testing.T) {
 		string(commentFirst),
 		"commenting an earlier line must not manufacture a trailing newline on the final one")
 }
+
+// `service uninstall` left promoted jobs commented out, so a nightly backup
+// never ran again once RunWisp was gone. Restoring undoes promote exactly.
+func TestPlanPromotedCronRestores_UndoesPromote(t *testing.T) {
+	original := "MAILTO=\"\"\n0 1 * * * one.sh\n# 2am, keep\n0 2 * * * two.sh\r\n0 3 * * * three.sh"
+	promoted := commentOutCronLines(splitCronLinesKeepEnds([]byte(original)), map[int]bool{2: true, 4: true, 5: true}, "/etc/runwisp.toml")
+	file := filepath.Join(t.TempDir(), "root")
+	require.NoError(t, os.WriteFile(file, promoted, 0o600))
+
+	restores, edits := PlanPromotedCronRestores([]string{file, filepath.Join(t.TempDir(), "missing")})
+
+	assert.Equal(t, original, string(edits[file]))
+	assert.Equal(t, []CronRestore{
+		{File: file, Line: 2, Text: "0 1 * * * one.sh"},
+		{File: file, Line: 4, Text: "0 2 * * * two.sh"},
+		{File: file, Line: 5, Text: "0 3 * * * three.sh"},
+	}, restores)
+	assert.Len(t, edits, 1, "an unpromoted or unreadable file is left alone")
+}

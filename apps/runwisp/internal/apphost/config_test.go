@@ -205,6 +205,7 @@ func TestConfigFromACopyThatHandedOverIsRefused(t *testing.T) {
 	h := New()
 	src := config.NewDocumentSource("/srv/app/runwisp.toml", []byte(`{}`))
 	gate := make(chan struct{})
+	applying := make(chan struct{})
 	var calls sync.Mutex
 	reloads := 0
 	h.AcceptConfig(src, func() (model.ReloadResult, error) {
@@ -213,6 +214,7 @@ func TestConfigFromACopyThatHandedOverIsRefused(t *testing.T) {
 		first := reloads == 1
 		calls.Unlock()
 		if first {
+			close(applying)
 			<-gate // the first push is still applying
 		}
 		return model.ReloadResult{}, nil
@@ -223,6 +225,7 @@ func TestConfigFromACopyThatHandedOverIsRefused(t *testing.T) {
 	next.role()
 
 	old.send(message{Type: "config", Doc: json.RawMessage(`{"tasks":{"a":{"sdk":true}}}`)})
+	<-applying
 	old.send(message{Type: "config", Doc: json.RawMessage(`{"tasks":{"b":{"sdk":true}}}`)})
 	old.send(message{Type: "leave"})
 	// The close hands over while the first push still applies.

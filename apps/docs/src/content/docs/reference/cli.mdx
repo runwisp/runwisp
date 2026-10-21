@@ -414,7 +414,8 @@ runwisp import ofelia compose.yaml -o runwisp.toml
 ```
 
 Converts existing config into RunWisp TOML and prints it to stdout. Reads files
-or stdin. Anything that doesn't map cleanly becomes a `# TODO` comment. Import
+or stdin. With neither, `import supervisord` reads
+`/etc/supervisor/supervisord.conf` or `/etc/supervisord.conf`. Anything that doesn't map cleanly becomes a `# TODO` comment. Import
 never disables the source, so turn the old job off before starting RunWisp or it
 runs twice.
 
@@ -506,7 +507,9 @@ sudo runwisp service uninstall
 ```
 
 Stops the daemon, disables autostart, and removes the unit. Keeps the data
-directory. If `takeover` retired cron, this gives cron back.
+directory. If `takeover` retired cron, this gives cron back. Before it asks, it
+lists the tasks and services in `runwisp.toml` that stop running. Crontab lines
+that `promote` commented out are uncommented, so cron runs those jobs again.
 
 | Flag          | Description                                                                   |
 | ------------- | ----------------------------------------------------------------------------- |

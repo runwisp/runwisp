@@ -183,7 +183,8 @@ sudo runwisp service uninstall --purge   # delete it too
 
 Uninstall stops the daemon, turns off autostart, and removes the unit. Your data
 directory (run history and logs) stays. If `takeover` retired cron, uninstall
-gives it back.
+gives it back, along with the jobs `promote` moved out of your crontabs. It
+lists the tasks and services that stop running before it asks.
 
 `--purge` also deletes the data directory. It asks you to type `delete`, even
 with `--yes`.

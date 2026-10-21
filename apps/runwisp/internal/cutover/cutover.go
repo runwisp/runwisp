@@ -19,6 +19,7 @@ package cutover
 
 import (
 	"context"
+	"io"
 	"os/user"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
@@ -76,6 +77,9 @@ type Deps struct {
 	DaemonRunning func() bool
 	// Reload hands the held jobs to a daemon that was already running.
 	Reload func(ctx context.Context) error
+	// AfterInstall (optional) runs last, once the unit is installed and started: the
+	// service's stable Web UI password lives in a drop-in cmd/runwisp writes.
+	AfterInstall func(ctx context.Context, out io.Writer)
 
 	// AllowSkippedCronJobs proceeds even though some cron sources won't load.
 	// Those jobs stay stopped.

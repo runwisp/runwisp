@@ -33,6 +33,7 @@ const (
 	NoteCronTZIgnored
 	NoteNoopHere
 	NoteAnacronPeriod
+	NoteOutputRedirected
 
 	// Naming and identity, shared by both parsers.
 	NoteAlreadyDefined
@@ -157,6 +158,7 @@ var noteKindInfo = map[NoteKind]noteSeverity{
 		slug: "noop-here", blocking: false, unsafeLive: false,
 	},
 	NoteAnacronPeriod:         {slug: "anacron-period", blocking: false, unsafeLive: false},
+	NoteOutputRedirected:      {slug: "output-redirected", blocking: false, unsafeLive: false},
 	NoteAlreadyDefined:        {slug: "already-defined", blocking: false, unsafeLive: false},
 	NoteRenamedOwned:          {slug: "renamed-owned", blocking: false, unsafeLive: false},
 	NoteRenamedCollision:      {slug: "renamed-collision", blocking: false, unsafeLive: false},

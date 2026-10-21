@@ -632,7 +632,7 @@ func TestCronSpoolHeaderIsNotADescription(t *testing.T) {
 func TestCronDetectAmbiguousUserColumnWarns(t *testing.T) {
 	// No header legend, but the sixth token looks like a username. We must not
 	// silently fold it into run; instead flag it (inline banner + note).
-	res := parseCron(t, "0 5 * * * deploy /usr/bin/cleanup\n", CronOptions{Detect: true})
+	res := parseCron(t, "0 5 * * * deploy /usr/bin/cleanup\n", detectOpts("deploy"))
 	out := res.TOML()
 	mustContain(t, out, "TODO")
 	mustContain(t, out, "--system")
@@ -641,6 +641,61 @@ func TestCronDetectAmbiguousUserColumnWarns(t *testing.T) {
 	mustNotContain(t, out, `user =`)
 	if !hasBlockingNote(res, "system crontab") {
 		t.Fatalf("expected system-crontab note, got %+v", allNotes(res))
+	}
+}
+
+// detectOpts sniffs per-user lines against a fake host whose only account is the
+// given one and whose PATH holds common programs, so no test reads the real
+// /etc/passwd or PATH.
+func detectOpts(account string) CronOptions {
+	progs := map[string]bool{"find": true, "date": true, "rsync": true, "tar": true, "certbot": true}
+	return CronOptions{
+		Detect:     true,
+		UserExists: func(n string) bool { return n == account || progs[n] },
+		OnPath:     func(n string) bool { return progs[n] },
+	}
+}
+
+// TestCronDetectDoesNotWarnOnProgramCommands: the sixth token of an ordinary
+// per-user job is often a program, and programs are valid login names by shape
+// (and sometimes real accounts). None of these is a user column.
+func TestCronDetectDoesNotWarnOnProgramCommands(t *testing.T) {
+	for _, in := range []string{
+		"0 5 * * * find /tmp -mtime +7 -delete\n",
+		"0 5 * * * date >> /tmp/d\n",
+		"0 5 * * * rsync -a /a /b\n",
+		"0 5 * * * tar czf /b.tgz /a\n",
+		"0 5 * * * certbot renew\n",
+		"0 5 * * * pg_dump db\n", // not an account here at all
+	} {
+		res := parseCron(t, in, detectOpts("deploy"))
+		mustNotContain(t, res.TOML(), "TODO")
+		if hasBlockingNote(res, "system crontab") {
+			t.Errorf("%q: did not expect a system-crontab note, got %+v", in, allNotes(res))
+		}
+	}
+}
+
+// TestCronCommentedOutJobIsNotADescription: a disabled job above a live one
+// (and promote's own marker) used to ride onto the live job as its description.
+func TestCronCommentedOutJobIsNotADescription(t *testing.T) {
+	const in = "# nightly backup\n" +
+		"# runwisp: this job was promoted to /etc/runwisp/runwisp.toml\n" +
+		"#15 3 * * * /srv/app/backup.sh >> /var/log/app/backup.log 2>&1\n" +
+		"*/5 * * * * curl -fsS http://127.0.0.1:8080/health\n" +
+		"#@daily /srv/app/old.sh\n" +
+		"0 6 * * * /usr/bin/rotate\n" +
+		"# 5 minutes after boot\n" +
+		"0 7 * * * /usr/bin/prose\n"
+	out := parseCron(t, in, CronOptions{}).TOML()
+	mustNotContain(t, out, "backup.sh")
+	mustNotContain(t, out, "runwisp:")
+	mustNotContain(t, out, "old.sh\"")
+	mustNotContain(t, out, "nightly backup")
+	// Prose that merely starts with a number still describes its job.
+	mustContain(t, out, `description = "5 minutes after boot"`)
+	if strings.Count(out, "description =") != 1 {
+		t.Errorf("expected exactly one description, got:\n%s", out)
 	}
 }
 
@@ -955,4 +1010,31 @@ func TestCronExtendedDaySpecialsImportClean(t *testing.T) {
 	mustContain(t, out, `cron = "0 0 L * *"`)
 	mustContain(t, out, `cron = "0 9 * * FRI#3"`)
 	mustNotContain(t, out, "TODO")
+}
+
+// A job that writes its output to a file imported as-is, so a failing run
+// showed an exit code and an empty log. The import now says where it went.
+func TestCronOutputRedirectIsNoted(t *testing.T) {
+	res := parseCron(t, "15 3 * * * /srv/app/backup.sh >> /var/log/app/backup.log 2>&1\n", CronOptions{})
+	n := findNote(t, res, NoteOutputRedirected)
+	mustContain(t, n.Message, "/var/log/app/backup.log")
+	if n.Blocking() {
+		t.Error("the job still runs; the note is advice")
+	}
+
+	for cmd, want := range map[string]string{
+		"/bin/job 2>/tmp/err":       "/tmp/err",
+		"/bin/job &>out.log":        "out.log",
+		"/bin/job > /dev/null 2>&1": "/dev/null",
+		"/bin/job 2>&1":             "",
+		"/bin/job < input.txt":      "",
+		"/bin/job --level 2":        "",
+	} {
+		if got := outputRedirect(cmd); got != want {
+			t.Errorf("outputRedirect(%q) = %q, want %q", cmd, got, want)
+		}
+	}
+	if hasNoteKind(parseCron(t, "15 3 * * * /srv/app/backup.sh 2>&1\n", CronOptions{}), NoteOutputRedirected) {
+		t.Error("2>&1 alone keeps the output in the run log")
+	}
 }

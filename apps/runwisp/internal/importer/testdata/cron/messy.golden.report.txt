@@ -4,6 +4,7 @@ changed	job	job-2	0 2 * * *	/bin/job
 blocked	mail	mail	0 3 * * *	/usr/bin/mail -s report ops
 	percent-stdin
 changed	date	date	0 4 * * *	/bin/date +%Y-%m-%d >> /var/log/stamp
+	output-redirected
 	percent-translated
 blocked	0 1 2			
 	line-unparseable

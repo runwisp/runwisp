@@ -4,6 +4,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"sort"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 const (
@@ -41,22 +43,30 @@ const (
 // one is dropped, since the larger warning already names it.
 func scheduleCollisionWarnings(tasks []model.Task, defaultLoc *time.Location, now time.Time) []string {
 	names, at := firingInstants(tasks, defaultLoc, now)
-	var warnings []string
-	for _, g := range collisionGroups(at) {
-		listed := make([]string, 0, len(g.who))
-		for _, idx := range g.who {
-			listed = append(listed, names[idx])
-		}
-		more := ""
-		if len(listed) > collisionNamesShown {
-			more = fmt.Sprintf(" and %d more", len(listed)-collisionNamesShown)
-			listed = listed[:collisionNamesShown]
-		}
-		warnings = append(warnings, fmt.Sprintf(
-			"%d tasks start at the same second: %s%s; set jitter on them (e.g. jitter = \"5m\") so they take turns instead of starting together",
-			len(g.who), strings.Join(listed, ", "), more))
+	groups := collisionGroups(at)
+	if len(groups) == 0 {
+		return nil
 	}
-	return warnings
+	// One line however many groups there are: a few */5 and hourly tasks make
+	// several, and a line per group on every validate, reload and boot is noise
+	// nobody reads. The biggest group (the earliest on a tie) names the worst.
+	g := slices.MaxFunc(groups, func(a, b *collisionGroup) int { return cmp.Compare(len(a.who), len(b.who)) })
+	listed := make([]string, 0, len(g.who))
+	for _, idx := range g.who {
+		listed = append(listed, names[idx])
+	}
+	more := ""
+	if len(listed) > collisionNamesShown {
+		more = fmt.Sprintf(" and %d more", len(listed)-collisionNamesShown)
+		listed = listed[:collisionNamesShown]
+	}
+	others := ""
+	if n := len(groups) - 1; n > 0 {
+		others = fmt.Sprintf(" (plus %d other %s of tasks that start together)", n, textutil.Pluralize(n, "group", "groups"))
+	}
+	return []string{fmt.Sprintf(
+		"%d tasks start at the same second: %s%s%s; set jitter on them (e.g. jitter = \"5m\") so they take turns instead of starting together",
+		len(g.who), strings.Join(listed, ", "), more, others)}
 }
 
 // firingInstants lists the un-jittered schedulable tasks (names, in config

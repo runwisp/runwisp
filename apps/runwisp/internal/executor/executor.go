@@ -25,6 +25,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/procstat"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -250,6 +251,7 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	if errResult != nil {
 		return errResult
 	}
+	startedAt := r.clock()
 	if r.onProcessStarted != nil {
 		r.onProcessStarted(run.ID, proc.ForceKill)
 	}
@@ -269,14 +271,7 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	stopWatcher()
 
 	result := classifyExecuteResult(killer.ctx, killReason, exitCode, waitErr)
-	if msg := abnormalExitMessage(result.Error); msg != "" {
-		r.systemLine(writer, task, run, msg)
-	}
-	if proc.ExitHint != nil && exitCode != 0 && !result.TimedOut && !result.Stopped && result.KillReason == "" {
-		if msg := proc.ExitHint(); msg != "" {
-			r.systemLine(writer, task, run, msg)
-		}
-	}
+	r.explainExit(writer, task, run, proc, result, r.clock().Sub(startedAt))
 	result.OutputMatched = matcher.pattern() != ""
 	peak, sampled := stopSampling()
 	var ru *syscall.Rusage
@@ -296,10 +291,42 @@ func (r *RoutingExecutor) track(task *model.Task, run *model.Run, proc *Process)
 	return r.sampler.Track(task.Name, run.ID, proc.Pid)
 }
 
+// explainExit writes the system lines that say why a run ended the way it
+// did, where its exit code alone doesn't.
+func (r *RoutingExecutor) explainExit(writer *LogWriter, task *model.Task, run *model.Run, proc *Process, result *ExecuteResult, uptime time.Duration) {
+	if msg := abnormalExitMessage(result.Error); msg != "" {
+		r.systemLine(writer, task, run, msg)
+	}
+	if proc.ExitHint != nil && result.ExitCode != 0 && !result.TimedOut && !result.Stopped && result.KillReason == "" {
+		if msg := proc.ExitHint(); msg != "" {
+			r.systemLine(writer, task, run, msg)
+		}
+	}
+	if msg := daemonizeHint(task, result, uptime); msg != "" {
+		r.systemLine(writer, task, run, msg)
+	}
+}
+
+// daemonizeHint explains a service that exited 0 before healthy_after. The
+// usual cause is a command that forks into the background and exits, which
+// RunWisp counts as a failed start.
+func daemonizeHint(task *model.Task, result *ExecuteResult, uptime time.Duration) string {
+	if !task.Kind.IsService() || result.ExitCode != 0 || result.Error != nil || result.TimedOut || result.Stopped || result.KillReason != "" {
+		return ""
+	}
+	if uptime >= model.OrDefault(task.HealthyAfter, config.DefaultHealthyAfter) {
+		return ""
+	}
+	return fmt.Sprintf("Exited 0 after %s, before healthy_after. A service must stay in the foreground: "+
+		"if this command daemonizes (a --daemonize or -D flag, or a trailing &), run it in foreground mode.",
+		uptime.Round(time.Millisecond))
+}
+
 // abnormalExitMessage describes a wait error that the exit code alone does not
-// explain: death by signal (exit -1, "signal: killed"), or a backend failing to
-// wait at all (a lost Docker connection). A plain non-zero exit is already
-// shown as the exit code, so it returns "".
+// explain: death by signal (exit -1), or a backend failing to wait at all (a
+// lost Docker connection). A plain non-zero exit is already shown as the exit
+// code, so it returns "". It only sees deaths RunWisp did not cause: a
+// timeout, stop or policy kill never surfaces its wait error.
 func abnormalExitMessage(err error) string {
 	if err == nil {
 		return ""
@@ -311,7 +338,15 @@ func abnormalExitMessage(err error) string {
 	if exitErr.ExitCode() >= 0 {
 		return ""
 	}
-	return "Process terminated abnormally: " + err.Error()
+	ws, ok := exitErr.Sys().(syscall.WaitStatus)
+	if !ok || !ws.Signaled() {
+		return "Process terminated abnormally: " + err.Error()
+	}
+	sig := ws.Signal()
+	if sig == syscall.SIGKILL {
+		return "Killed by SIGKILL from outside RunWisp. The kernel's out-of-memory killer is the usual cause: check `journalctl -k | grep -i oom` or `dmesg`."
+	}
+	return fmt.Sprintf("Process died from signal %s (%s).", unix.SignalName(sig), sig)
 }
 
 // outputMatcher checks output lines against a task's `failures` output

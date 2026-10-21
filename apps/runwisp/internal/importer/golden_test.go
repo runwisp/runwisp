@@ -45,7 +45,7 @@ var cronGoldenCases = []struct {
 	// unparseable line) that must surface but still leave a valid config.
 	{name: "messy", file: "testdata/cron/messy.crontab", expectNotes: []NoteKind{
 		NoteMailto, NoteShellNotAbsolute, NotePercentStdin, NotePercentTranslated,
-		NoteLineUnparseable, NoteRenamedCollision,
+		NoteLineUnparseable, NoteRenamedCollision, NoteOutputRedirected,
 	}},
 	// An invalid cron expression becomes a `# TODO` and a non-loadable config —
 	// the import still succeeds and tells the operator exactly what to fix.

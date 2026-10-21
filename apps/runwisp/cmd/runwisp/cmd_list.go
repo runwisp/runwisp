@@ -43,7 +43,7 @@ func runList(out io.Writer, f Flags, asJSON bool) error {
 				return werr
 			}
 		}
-		return fmt.Errorf("failed to load %s: %w", f.CfgFile, err)
+		return configLoadError(f, err)
 	}
 
 	if asJSON {

@@ -4,12 +4,14 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
@@ -84,7 +86,8 @@ var importSupervisordCmd = &cobra.Command{
 becomes a RunWisp service.
 
 Pipe a config in, or pass one or more files (any [include] directives are
-followed relative to each file):
+followed relative to each file). With neither, it reads
+/etc/supervisor/supervisord.conf or /etc/supervisord.conf:
 
   runwisp import supervisord /etc/supervisor/supervisord.conf
   cat /etc/supervisor/supervisord.conf | runwisp import supervisord
@@ -195,14 +198,27 @@ func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []st
 	var err error
 	switch {
 	case len(sources) == 0:
-		// Read from stdin or guide the operator.
-		if term.IsTerminal(int(stdin.Fd())) {
-			return &userFacingError{
-				title:   "no supervisord config given",
-				details: "Pass a config file, or pipe one in — e.g. `cat supervisord.conf | runwisp import supervisord`.",
+		// Piped input wins; with none, read the distro's own config.
+		var data []byte
+		if !term.IsTerminal(int(stdin.Fd())) {
+			if data, err = readPiped(stdin); err != nil {
+				return err
 			}
 		}
-		res, err = importer.ParseSupervisordReader(stdin, svOpts)
+		if len(bytes.TrimSpace(data)) > 0 {
+			res, err = importer.ParseSupervisordReader(bytes.NewReader(data), svOpts)
+			break
+		}
+		path, ok := firstExisting(supervisordConfigPaths)
+		if !ok {
+			return &userFacingError{
+				title: "no supervisord config given",
+				details: "Looked in " + strings.Join(supervisordConfigPaths, " and ") + ". Pass a config file, " +
+					"or pipe one in, e.g. `runwisp import supervisord /path/to/supervisord.conf`.",
+			}
+		}
+		fmt.Fprintf(stderr, "Reading %s\n", path)
+		res, err = importer.ParseSupervisordFiles([]string{path}, svOpts)
 	case len(sources) == 1 && sources[0] == "-":
 		res, err = importer.ParseSupervisordReader(stdin, svOpts)
 	default:
@@ -215,6 +231,31 @@ func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []st
 		return &userFacingError{title: "failed to read supervisord config", details: err.Error()}
 	}
 	return emitImport(stdout, stderr, stdin, res, sourceSupervisord, f, opts)
+}
+
+// supervisordConfigPaths is where supervisord's own config lives when none is
+// given: Debian and Ubuntu first, then RHEL, Fedora and pip installs. A var so a
+// test can describe a box. Its [include] pulls in conf.d.
+var supervisordConfigPaths = []string{"/etc/supervisor/supervisord.conf", "/etc/supervisord.conf"}
+
+// firstExisting returns the first path that exists.
+func firstExisting(paths []string) (string, bool) {
+	for _, p := range paths {
+		if fileExists(p) {
+			return p, true
+		}
+	}
+	return "", false
+}
+
+// readPiped reads all of a piped stdin, so an empty pipe (a non-interactive SSH
+// session, a `crontab -l` with no crontab) is told apart from a real one.
+func readPiped(stdin *os.File) ([]byte, error) {
+	data, err := io.ReadAll(stdin)
+	if err != nil {
+		return nil, &userFacingError{title: "can't read stdin", details: err.Error()}
+	}
+	return data, nil
 }
 
 func runImportOfelia(stdout, stderr io.Writer, stdin *os.File, sources []string, f Flags, opts importOpts) error {
@@ -365,7 +406,17 @@ var hostCronFlavor = importer.HostCronFlavor
 // "-" (or empty). The returned close function is always safe to call.
 func openImportSource(source string, stdin *os.File) (io.Reader, func(), error) {
 	if source == "-" || source == "" {
-		return stdin, func() {}, nil
+		data, err := readPiped(stdin)
+		if err != nil {
+			return nil, func() {}, err
+		}
+		if len(bytes.TrimSpace(data)) == 0 {
+			return nil, func() {}, &userFacingError{
+				title:   "nothing came in on stdin",
+				details: "Pipe a crontab in, e.g. `crontab -l | runwisp import cron`, or pass a file: `runwisp import cron /etc/crontab`.",
+			}
+		}
+		return bytes.NewReader(data), func() {}, nil
 	}
 	file, err := os.Open(source)
 	if err != nil {

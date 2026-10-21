@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import createClient, { type Middleware } from "openapi-fetch";
-import { z } from "zod";
+import { z } from "./zod";
 import type { APIPaths, APIOperations, AuthStatusBody, RunSelector } from "@runwisp/common";
 import { chapResponse } from "./chap";
 import { HTTP_STATUS } from "./config/constants";

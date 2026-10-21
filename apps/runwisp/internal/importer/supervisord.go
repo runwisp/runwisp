@@ -181,7 +181,7 @@ func (sd *supervisordState) finish() *Result {
 		case "supervisord", "supervisorctl", "unix_http_server", "inet_http_server", "rpcinterface":
 			sd.res.fileNote(NoteSectionDaemon,
 				"["+s.name+"] is supervisord daemon config with no RunWisp equivalent. "+
-					"Skipped — RunWisp's daemon is configured in [daemon]/[server].")
+					"Skipped: RunWisp's daemon is configured in [daemon] and the --host/--port flags.")
 		default:
 			sd.res.fileNote(NoteSectionUnrecognized,
 				"["+s.name+"] wasn't recognized and was skipped.")

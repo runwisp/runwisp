@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"slices"
 	"strings"
@@ -114,6 +115,20 @@ func systemDaemonElsewhere(f Flags) bool {
 	}
 	_, err := os.Stat(systemUnitFile)
 	return err == nil
+}
+
+// configLoadError wraps a failure to load f.CfgFile. A missing file on a box
+// with the system service is the operator's own shell missing root's config, so
+// it names the command that reaches it.
+func configLoadError(f Flags, err error) error {
+	if errors.Is(err, fs.ErrNotExist) && systemDaemonElsewhere(f) {
+		return &userFacingError{
+			title: fmt.Sprintf("there is no %s here", f.CfgFile),
+			details: "RunWisp runs here as the system service, with its config in " +
+				defaultConfigPath(0, "") + ": " + sudoRunwisp(os.Args[1:]...),
+		}
+	}
+	return fmt.Errorf("failed to load %s: %w", f.CfgFile, err)
 }
 
 // userFacingError carries an already-formatted, human-readable message that

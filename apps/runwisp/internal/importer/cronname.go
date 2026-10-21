@@ -182,6 +182,28 @@ func isRedirect(t string) bool {
 	return i < len(t) && (t[i] == '>' || t[i] == '<')
 }
 
+// outputRedirect returns the first file a command sends its stdout or stderr
+// to (`>> /var/log/x.log`, `2>/tmp/err`, `&>out`), or "". A duplication like
+// `2>&1` names no file, and input (`<`) is not output.
+// ponytail: splits on whitespace like the naming does, so a quoted "a > b"
+// reads as a redirect too; the note it feeds is only advice.
+func outputRedirect(command string) string {
+	tokens := strings.Fields(command)
+	for i, t := range tokens {
+		if !isRedirect(t) || strings.Contains(t, "<") {
+			continue
+		}
+		target := strings.TrimLeft(strings.TrimLeft(t, "0123456789&"), ">")
+		if target == "" && i+1 < len(tokens) {
+			target = tokens[i+1]
+		}
+		if target = strings.TrimSuffix(target, ";"); target != "" && !strings.HasPrefix(target, "&") {
+			return target
+		}
+	}
+	return ""
+}
+
 // isAllDigits reports whether s is non-empty and entirely ASCII digits.
 func isAllDigits(s string) bool {
 	if s == "" {

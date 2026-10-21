@@ -245,6 +245,41 @@ up another client's login limit. The
 `RUNWISP_TRUSTED_PROXIES` environment variable (comma-separated) overrides the
 key. See [`trusted_proxies`](/configuration/daemon/#trusted_proxies).
 
+Serve RunWisp at the root of its own host name, such as
+`runwisp.example.com`. A path prefix like `example.com/runwisp/` doesn't work,
+because the Web UI loads its files from `/`.
+
+A minimal nginx site:
+
+```nginx title="/etc/nginx/sites-available/runwisp"
+server {
+    listen 443 ssl;
+    server_name runwisp.example.com;
+    # ssl_certificate and ssl_certificate_key go here
+
+    location / {
+        proxy_pass http://127.0.0.1:9477;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+The same with Caddy, which gets the certificate for you:
+
+```text title="Caddyfile"
+runwisp.example.com {
+    reverse_proxy 127.0.0.1:9477
+}
+```
+
+Live logs and Web UI updates use long-lived streams. RunWisp tells nginx not to
+buffer them and sends a keepalive every 30 seconds, so the default
+`proxy_read_timeout` of 60 seconds is enough. If your proxy times out idle
+connections sooner, raise that limit.
+
 For a LAN or a tailnet, you don't need a proxy:
 [`tls = "auto"`](/configuration/daemon/#tls-tls_cert-tls_key) serves HTTPS with
 a self-signed certificate.

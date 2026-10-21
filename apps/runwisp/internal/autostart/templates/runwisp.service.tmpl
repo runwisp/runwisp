@@ -21,6 +21,9 @@ ExecStart={{.Binary | sysexe}} {{if .Station}}station --no-tui{{else}}daemon{{en
 Restart=on-failure
 RestartSec=5s
 KillMode=mixed
+# A task the kernel OOM-kills must not stop RunWisp and every other task with
+# it. No OOMScoreAdjust: tasks inherit it, so it would shield them too.
+OOMPolicy=continue
 TimeoutStopSec={{secs .StopTimeout}}s
 Environment="HOME={{.Home | sysesc}}"
 Environment="PATH={{.Path | sysesc}}"

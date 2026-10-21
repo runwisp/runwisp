@@ -9,7 +9,7 @@ import "testing"
 // sibling (TestCronDetectAmbiguousUserColumnWarns) instead of importing "root"
 // as the command.
 func TestCronDetectAmbiguousUserColumnOnRebootLine(t *testing.T) {
-	res := parseCron(t, "@reboot root /usr/bin/warmup\n", CronOptions{Detect: true})
+	res := parseCron(t, "@reboot root /usr/bin/warmup\n", detectOpts("root"))
 	out := res.TOML()
 
 	mustContain(t, out, "TODO")
