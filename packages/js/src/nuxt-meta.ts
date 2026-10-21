@@ -21,7 +21,9 @@ export interface NitroConfig {
 /** The Nuxt hooks this module uses. */
 export interface NuxtHooks {
     "nitro:config": (config: NitroConfig) => void;
-    "nitro:init": (nitro: { options: { preset: string; entry?: string | undefined } }) => void;
+    "nitro:init": (nitro: {
+        options: { preset: string; entry?: string | undefined; output?: { dir: string } };
+    }) => void;
     "nitro:prepare:types": (types: { references: { path: string }[] }) => void;
 }
 

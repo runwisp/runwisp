@@ -13,7 +13,7 @@ head:
 `@runwisp/js` runs scheduled tasks inside a self-hosted Next.js app: `next
 start`, `output: "standalone"` or Docker. It needs a process that keeps running,
 so it does not work on Vercel or other serverless hosts. `withRunWisp()` fails
-the build on Vercel. The `.env.local` that `vercel env pull` writes doesn't
+the build on Vercel and with `output: "export"`. The `.env.local` that `vercel env pull` writes doesn't
 count, so `next dev` still works with it.
 
 It works with Next.js 15 or later, on Node.js or on [Bun](#bun).

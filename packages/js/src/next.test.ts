@@ -45,6 +45,11 @@ describe("withRunWisp on Vercel", () => {
         expect(() => withRunWisp({})).toThrow(/Vercel/);
     });
 
+    it("fails the build of a static export, where no server runs the tasks", () => {
+        expect(() => withRunWisp({ output: "export" })).toThrow(/output: "export"/);
+        expect(() => withRunWisp({ output: "standalone" })).not.toThrow();
+    });
+
     // `vercel env pull` writes these into .env.local, which `next dev` loads.
     it("works with the env from vercel env pull", () => {
         vi.stubEnv("VERCEL", "1");
