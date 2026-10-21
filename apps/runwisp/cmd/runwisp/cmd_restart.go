@@ -92,18 +92,31 @@ func runRestart(cmd *cobra.Command, args []string, f Flags, attach bool) error {
 func restartDaemon(cmd *cobra.Command, f Flags, local bool) error {
 	out := cmd.OutOrStdout()
 
+	running := isDaemonRunning(f)
+	var info *model.InstanceInfo
+	if running {
+		if got, err := apiclient.NewUnix(localAPISocketPath(f)).GetInstanceInfo(cmd.Context()); err == nil {
+			info = got
+		}
+		if err := appDaemonRestartError(info); err != nil {
+			return err
+		}
+	}
+
 	installer, opts, st, ok := serviceState(cmd, f, local)
 	if ok && shouldDelegateRestart(st) {
+		// The unit starts the daemon with its own --config, which the running
+		// daemon reports.
+		if err := validateRestartConfig(runningConfigPath(info, f)); err != nil {
+			return err
+		}
 		return restartViaService(out, installer, opts, st, f)
 	}
 
-	if isDaemonRunning(f) {
-		info, err := apiclient.NewUnix(localAPISocketPath(f)).GetInstanceInfo(cmd.Context())
-		if err == nil {
-			if err := appDaemonRestartError(info); err != nil {
-				return err
-			}
-		}
+	if err := validateRestartConfig(f.CfgFile); err != nil {
+		return err
+	}
+	if running {
 		if err := shutdownDaemonWait(stopWaitTimeout(f.CfgFile), f); err != nil {
 			return err
 		}
@@ -119,6 +132,29 @@ func restartDaemon(cmd *cobra.Command, f Flags, local bool) error {
 		return err
 	}
 	printRestarted(out, f)
+	return nil
+}
+
+// runningConfigPath is the config the running daemon reported, or f.CfgFile
+// when none answered.
+func runningConfigPath(info *model.InstanceInfo, f Flags) string {
+	if info != nil && info.ConfigPath != "" {
+		return info.ConfigPath
+	}
+	return f.CfgFile
+}
+
+// validateRestartConfig loads the config the restarted daemon will read, so a
+// broken file is reported while the old daemon is still up. Reload is
+// validate-first; restart has to be too, or the fresh daemon exits on the same
+// error and takes every task and service down with it.
+func validateRestartConfig(path string) error {
+	if _, err := config.Load(path); err != nil {
+		return &userFacingError{
+			title:   "the config is invalid, so the daemon was left running",
+			details: err.Error() + "\n\nFix it, check it with `runwisp validate`, then restart again.",
+		}
+	}
 	return nil
 }
 

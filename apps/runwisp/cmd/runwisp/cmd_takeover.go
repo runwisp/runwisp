@@ -156,12 +156,18 @@ func runTakeover(cmd *cobra.Command, f Flags) error {
 
 // printTakeoverDone answers what everyone asks next: where the dashboard is and
 // how to get in. The system daemon's socket is root's, so a plain
-// `runwisp password` from the operator's own shell cannot reach it.
+// `runwisp password` from the operator's own shell cannot reach it. A password
+// saved in the unit's drop-in is one `runwisp password` won't disclose, so that
+// case points at the file.
 func printTakeoverDone(out io.Writer, f Flags) {
 	url := localBindURL("http", f.Host, f.Port)
 	if cfg, err := config.Load(f.CfgFile); err == nil {
 		url = daemonListenURL(cfg, f)
 	}
+	password := sudoRunwisp("password")
+	if dropIn := systemUnitFile + ".d/password.conf"; fileExists(dropIn) {
+		password = "sudo cat " + dropIn
+	}
 	fmt.Fprintf(out, "\nDashboard:  %s\nPassword:   %s\nUpgrade:    %s\n",
-		url, sudoRunwisp("password"), sudoRunwisp("upgrade"))
+		url, password, sudoRunwisp("upgrade"))
 }

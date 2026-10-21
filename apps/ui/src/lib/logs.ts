@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { LogEvent } from "@runwisp/ui";
-import { z } from "zod";
+import { z } from "./zod";
 import { browserAuthEventSourceFactory } from "$lib/adapters/browser";
 import { getMessageEventData } from "$lib/utils/event-source";
 import { safeParseJSON } from "$lib/utils/parse";

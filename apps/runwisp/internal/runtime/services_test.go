@@ -641,3 +641,32 @@ func TestRecycleServiceInstances_CancelsRunningInstances(t *testing.T) {
 	// proves the refills happened.
 	started.waitFor(t, 6)
 }
+
+// TestServiceCleanExitBeforeHealthyGoesFatal: a service that daemonizes exits 0
+// at once, and restart = "always" used to bring it back forever with nothing to
+// say why. An exit 0 before healthy_after is a failed start, like a crash.
+func TestServiceCleanExitBeforeHealthyGoesFatal(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	jm := NewTaskManager(exec, events.NewEventBus(), time.Now)
+	defer jm.Shutdown()
+
+	task := serviceTask("daemonizer", 1)
+	task.RestartAttempts = intPtr(2)
+	task.HealthyAfter = durPtr(2 * time.Second)
+	jm.UpsertTask(task)
+
+	var execCalls atomic.Int64
+	exec.On("Execute", mock.Anything, task, mock.Anything).
+		Run(func(mock.Arguments) { execCalls.Add(1) }).
+		Return(&executor.ExecuteResult{ExitCode: 0}, 5*time.Millisecond)
+
+	require.NoError(t, jm.StartServiceInstances("daemonizer", model.TriggeredByService))
+
+	djm := jm.(*defaultTaskManager)
+	require.Eventually(t, func() bool {
+		djm.mu.RLock()
+		defer djm.mu.RUnlock()
+		return djm.tasks["daemonizer"].supervisor.IsFatal(0)
+	}, 2*time.Second, 5*time.Millisecond, "a service that keeps exiting 0 at once must reach FATAL")
+	assert.Equal(t, int64(3), execCalls.Load())
+}

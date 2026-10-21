@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { z } from "zod";
+import { z } from "../zod";
 
 export const FEEDBACK_URL = "https://concierge.runwisp.com/v1/feedback";
 export const REPO_URL = "https://github.com/runwisp/runwisp";

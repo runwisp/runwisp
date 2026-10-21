@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -302,8 +303,8 @@ func TestOpenImportSourceStdin(t *testing.T) {
 		t.Fatalf("openImportSource(-): %v", err)
 	}
 	defer closeFn()
-	if r != stdin {
-		t.Error("openImportSource(-) should return stdin verbatim")
+	if got, _ := io.ReadAll(r); string(got) != "hello" {
+		t.Errorf("openImportSource(-) should read stdin, got %q", got)
 	}
 }
 
@@ -332,5 +333,38 @@ func TestPluralizeCounts(t *testing.T) {
 		if got := pluralizeCounts(c.tasks, c.services); got != c.want {
 			t.Errorf("pluralizeCounts(%d, %d) = %q, want %q", c.tasks, c.services, got, c.want)
 		}
+	}
+}
+
+// An empty pipe (no crontab, a non-interactive SSH session) used to import
+// "nothing" with no hint. It now says nothing came in and what to run.
+func TestRunImportCronEmptyStdinSaysWhatToRun(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runImportCron(&stdout, &stderr, openTempFile(t, "\n"), "-", importer.CronOptions{}, Flags{}, importOpts{})
+	if err == nil || !strings.Contains(err.Error(), "nothing came in on stdin") || !strings.Contains(err.Error(), "crontab -l |") {
+		t.Fatalf("want the empty-stdin hint, got %v", err)
+	}
+}
+
+// With no file and nothing piped, `import supervisord` reads the distro's own
+// config instead of importing "nothing", and says where it looked otherwise.
+func TestRunImportSupervisordFindsTheDefaultConfig(t *testing.T) {
+	conf := tempFile(t, "supervisord.conf", "[program:web]\ncommand=/usr/bin/web\n")
+	prev := supervisordConfigPaths
+	t.Cleanup(func() { supervisordConfigPaths = prev })
+
+	supervisordConfigPaths = []string{filepath.Join(t.TempDir(), "missing.conf"), conf}
+	var stdout, stderr bytes.Buffer
+	if err := runImportSupervisord(&stdout, &stderr, openTempFile(t, ""), nil, Flags{}, importOpts{}); err != nil {
+		t.Fatalf("runImportSupervisord: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "[services.web]") || !strings.Contains(stderr.String(), "Reading "+conf) {
+		t.Errorf("want the default config imported\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+	}
+
+	supervisordConfigPaths = []string{filepath.Join(t.TempDir(), "missing.conf")}
+	err := runImportSupervisord(&stdout, &stderr, openTempFile(t, ""), nil, Flags{}, importOpts{})
+	if err == nil || !strings.Contains(err.Error(), "Looked in "+supervisordConfigPaths[0]) {
+		t.Fatalf("want the searched paths named, got %v", err)
 	}
 }

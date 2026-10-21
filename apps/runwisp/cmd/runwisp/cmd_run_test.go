@@ -6,12 +6,14 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
@@ -447,4 +449,23 @@ func TestExecRunTerminalHandler_ConcurrentSafe(t *testing.T) {
 	}
 	wg.Wait()
 	assert.Len(t, done, 5)
+}
+
+// `runwisp run` used to stop after the output, so a quiet run that timed out
+// looked the same as one that succeeded. It now ends with how the run ended.
+func TestRunOutcomeLogSaysHowTheRunEnded(t *testing.T) {
+	start := time.Unix(100, 0)
+	end := start.Add(6 * time.Second)
+	reason := model.ReasonTimeout
+	level, msg, args := runOutcomeLog("backup", &model.Run{EndReason: &reason, IsFailure: true, ExitCode: -1, StartedAt: &start, EndedAt: &end})
+	assert.Equal(t, slog.LevelError, level)
+	assert.Equal(t, "Task failed", msg)
+	assert.Equal(t, []any{"name", "backup", "reason", "timeout", "duration", "6s", "exit", 1}, args)
+
+	ok := model.ReasonSuccess
+	_, msg, _ = runOutcomeLog("backup", &model.Run{EndReason: &ok})
+	assert.Equal(t, "Task completed", msg)
+
+	_, msg, _ = runOutcomeLog("backup", nil)
+	assert.Empty(t, msg, "no outcome to report")
 }

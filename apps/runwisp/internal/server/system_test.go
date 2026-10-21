@@ -250,3 +250,17 @@ func TestSseDaemonLogHandler_ReplaysBufferedLines(t *testing.T) {
 	require.NotEmpty(t, seen, "expected at least one replayed line")
 	assert.Contains(t, seen[0], "hello")
 }
+
+// Live logs behind nginx arrived in one burst at the end of a run: a proxy
+// buffers the SSE streams unless the response says not to.
+func TestStreamHeaders_DisableProxyBuffering(t *testing.T) {
+	for _, path := range []string{"/api/events/stream", "/api/runs/01J/log/stream", "/api/daemon/log/stream"} {
+		rec := httptest.NewRecorder()
+		streamHeaders(http.NotFoundHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		assert.Equal(t, "no", rec.Header().Get("X-Accel-Buffering"), path)
+		assert.Equal(t, "no-cache", rec.Header().Get("Cache-Control"), path)
+	}
+	rec := httptest.NewRecorder()
+	streamHeaders(http.NotFoundHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/runs", nil))
+	assert.Empty(t, rec.Header().Get("X-Accel-Buffering"))
+}

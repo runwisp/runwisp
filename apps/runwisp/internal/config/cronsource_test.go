@@ -393,16 +393,18 @@ include_cron = ["crontabs/*"]
 	assert.Contains(t, warnings, "MAILTO")
 }
 
-// TestIncludeCron_MailtoIsSilentOnceMailWorks: the finding names an unmet need, so
+// TestIncludeCron_MailtoIsSilentOnceANotifierExists: the finding names an unmet need, so
 // it has to stop once the need is met. A warning that keeps firing after it's been
 // dealt with is how an operator learns to stop reading warnings.
-func TestIncludeCron_MailtoIsSilentOnceMailWorks(t *testing.T) {
-	for _, notifierType := range []string{"sendmail", "smtp"} {
+func TestIncludeCron_MailtoIsSilentOnceANotifierExists(t *testing.T) {
+	mail := "from = \"runwisp@example.com\"\nto = [\"ops@example.com\"]\n"
+	for notifierType, body := range map[string]string{
+		"sendmail": mail,
+		"smtp":     mail + "host = \"mail.example.com\"\nport = 587\n",
+		// Any notifier answers it: the operator hears about failures.
+		"webhook": "url = \"https://hooks.example.com/x\"\n",
+	} {
 		t.Run(notifierType, func(t *testing.T) {
-			extra := ""
-			if notifierType == "smtp" {
-				extra = "host = \"mail.example.com\"\nport = 587\n"
-			}
 			dir := writeFileTree(t, map[string]string{
 				"runwisp.toml": `
 [daemon]
@@ -410,15 +412,13 @@ include_cron = ["crontabs/*"]
 
 [notifiers.mail]
 type = "` + notifierType + `"
-from = "runwisp@example.com"
-to = ["ops@example.com"]
-` + extra,
+` + body,
 				"crontabs/nightly": "MAILTO=ops@example.com\n0 3 * * * /usr/local/bin/backup.sh\n",
 			})
 
 			cfg := loadTree(t, dir)
 			assert.Empty(t, cfg.CronFindings,
-				"mail is configured, so the crontab's MAILTO is no longer an open question")
+				"a notifier is configured, so the crontab's MAILTO is no longer an open question")
 		})
 	}
 }

@@ -88,6 +88,10 @@ func (c *Cutover) Execute(ctx context.Context, p Plan, out io.Writer) (Result, e
 		}
 		res.Reloaded = true
 	}
+	// Last, since it may restart the daemon the reload above just talked to.
+	if res.ServiceInstalled && c.deps.AfterInstall != nil {
+		c.deps.AfterInstall(ctx, out)
+	}
 	return res, nil
 }
 

@@ -69,6 +69,15 @@ func TestScheduleCollisionWarnings(t *testing.T) {
 		require.Contains(t, got[0], "5 tasks start at the same second: a, b, c, d, e")
 	})
 
+	t.Run("several groups make one line", func(t *testing.T) {
+		tasks := collisionTasks("0 3 * * *", "a", "b", "c")
+		tasks = append(tasks, collisionTasks("30 4 * * *", "d", "e", "f", "g")...)
+		tasks = append(tasks, collisionTasks("0 5 * * *", "h", "i", "j")...)
+		got := scheduleCollisionWarnings(tasks, loc, now)
+		require.Len(t, got, 1)
+		require.Contains(t, got[0], "4 tasks start at the same second: d, e, f, g (plus 2 other groups")
+	})
+
 	t.Run("a long list is cut", func(t *testing.T) {
 		got := scheduleCollisionWarnings(collisionTasks("@hourly", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j"), loc, now)
 		require.Len(t, got, 1)

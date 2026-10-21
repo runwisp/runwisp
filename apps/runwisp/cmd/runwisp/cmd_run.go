@@ -207,6 +207,7 @@ func runExecViaDaemon(ctx context.Context, taskName string, f Flags, params map[
 	if asJSON {
 		return exitCode, finishExecJSON(ctx, os.Stdout, client, taskName, run.ID, final)
 	}
+	logRunOutcome(taskName, final)
 	return exitCode, nil
 }
 
@@ -299,6 +300,7 @@ func runExecViaRemote(ctx context.Context, taskName, baseURL, password string, d
 	if asJSON {
 		return exitCode, finishExecJSON(ctx, os.Stdout, client, taskName, run.ID, final)
 	}
+	logRunOutcome(taskName, final)
 	return exitCode, nil
 }
 
@@ -475,7 +477,7 @@ func exitCodeFromRun(run *model.Run) int {
 func runExecStandalone(taskName string, f Flags, params map[string]*string, asJSON bool) (int, error) {
 	cfg, err := config.Load(f.CfgFile)
 	if err != nil {
-		return 0, fmt.Errorf("failed to load %s: %w", f.CfgFile, err)
+		return 0, configLoadError(f, err)
 	}
 
 	var target *model.Task
@@ -542,14 +544,37 @@ func runExecStandalone(taskName string, f Flags, params map[string]*string, asJS
 		}
 	}
 
-	if code := exitCodeFromRun(result.Run); code != 0 {
-		return code, nil
-	}
-
 	if !asJSON {
-		slog.Info("Task completed", "name", taskName, "status", result.Run.Status)
+		logRunOutcome(taskName, result.Run)
 	}
-	return 0, nil
+	return exitCodeFromRun(result.Run), nil
+}
+
+// logRunOutcome closes a run's output with how it ended: the output alone
+// doesn't say whether a quiet run timed out, failed or succeeded.
+func logRunOutcome(taskName string, run *model.Run) {
+	level, msg, args := runOutcomeLog(taskName, run)
+	if msg != "" {
+		slog.Log(context.Background(), level, msg, args...)
+	}
+}
+
+func runOutcomeLog(taskName string, run *model.Run) (slog.Level, string, []any) {
+	if run == nil || run.EndReason == nil {
+		return slog.LevelInfo, "", nil
+	}
+	args := []any{"name", taskName, "reason", string(*run.EndReason)}
+	if d, ok := run.Duration(); ok {
+		args = append(args, "duration", d.Round(time.Millisecond).String())
+	}
+	switch {
+	case *run.EndReason == model.ReasonSuccess:
+		return slog.LevelInfo, "Task completed", args
+	case run.IsFailure:
+		return slog.LevelError, "Task failed", append(args, "exit", exitCodeFromRun(run))
+	default:
+		return slog.LevelWarn, "Task did not complete", append(args, "exit", exitCodeFromRun(run))
+	}
 }
 
 func runLogLineHandler(taskName string, lineOut io.Writer) func(events.Event) {

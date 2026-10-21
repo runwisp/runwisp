@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"io"
 	"io/fs"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -48,8 +49,15 @@ type CronOptions struct {
 	//
 	// Nil means shape-only, for a crontab that isn't this machine's (a file piped in
 	// from another host): the accounts it names are not ours to look up, and
-	// refusing every job on a foreign crontab would make the report useless.
+	// refusing every job on a foreign crontab would make the report useless. The
+	// Detect sniff still asks this machine (SystemUserExists): it only warns.
 	UserExists func(string) bool
+	// OnPath reports whether a name is an executable on PATH. With Detect on, the
+	// sixth token of a per-user line is only flagged as a user column when it is a
+	// real account (UserExists) and not also a program (`date`, `rsync` and
+	// `certbot` are accounts on some hosts and commands on all of them). Nil means
+	// exec.LookPath.
+	OnPath func(string) bool
 	// NameSuffix is the stable tie-breaker appended when a derived name collides,
 	// in place of the positional -2/-3. Set it to something derived from the source
 	// file (its basename, say) when parsing several crontabs whose set can change
@@ -194,7 +202,7 @@ func (cp *crontabParser) feedLine(raw string) {
 	}
 	// In per-user mode, flag a line that looks like it smuggles a user column
 	// rather than silently folding the username into the command.
-	cp.lineAmbiguous = cp.opts.Detect && !cp.system && looksLikeUserColumn(line)
+	cp.lineAmbiguous = cp.opts.Detect && !cp.system && cp.looksLikeUserColumn(line)
 	cp.ambiguous = cp.ambiguous || cp.lineAmbiguous
 	cp.handleJob(line)
 }
@@ -214,11 +222,28 @@ func (cp *crontabParser) handleComment(line string) {
 		cp.pendingComment = ""
 		return
 	}
-	if isCrontabSpoolHeader(comment) {
+	if isCrontabSpoolHeader(comment) || isCommentedOutJob(comment) || isRunwispMarker(comment) {
 		cp.pendingComment = ""
 		return
 	}
 	cp.pendingComment = comment
+}
+
+// isCommentedOutJob reports whether a comment body is a disabled job line
+// (`#15 3 * * * /srv/backup.sh`). Real crontabs are full of them, and one sitting
+// above a live job must not describe it.
+func isCommentedOutJob(comment string) bool {
+	j, ok := splitCronJobLine(comment, false)
+	if !ok {
+		return false
+	}
+	return j.runOnStart || cronspec.Validate(j.schedule, "") == nil
+}
+
+// isRunwispMarker reports whether a comment is the `# runwisp: …` note promote
+// leaves above a job it moved out of this crontab.
+func isRunwispMarker(comment string) bool {
+	return strings.HasPrefix(comment, "runwisp:")
 }
 
 func (cp *crontabParser) handleEnv(name, value string) {
@@ -391,6 +416,11 @@ func (cp *crontabParser) importJob(line string) bool {
 			"the sixth field on this line looks like a username, so this may be a system "+
 				"crontab line whose user column has been read as part of the command. "+
 				"Re-run with --system to split it out, or --system=false to accept it as written.")
+	}
+	if target := outputRedirect(command); target != "" {
+		ref.note(NoteOutputRedirected,
+			"its output goes to "+target+", so RunWisp can't show it in the run's log. "+
+				"Remove the redirect to capture it.")
 	}
 	b := block{header: "tasks." + name}
 	if description != "" {
@@ -805,9 +835,10 @@ func startsWithFiveStars(fields []string) bool {
 // looksLikeUserColumn reports whether a per-user-parsed line actually looks like
 // a system crontab line (schedule + user + command). It is deliberately
 // conservative: the first five fields must be a valid cron schedule and the
-// sixth token must look like a username rather than a command, so an ordinary
-// per-user job (`* * * * * python /app/x.py`) never trips it.
-func looksLikeUserColumn(line string) bool {
+// sixth token must be a real account on this machine that is not also a program
+// on PATH, so an ordinary per-user job (`find / -name x`, `rsync -a a b`) never
+// trips it.
+func (cp *crontabParser) looksLikeUserColumn(line string) bool {
 	// Descriptor lines (`@reboot root cmd`) carry the same user column in a
 	// system crontab, so they go through the same sniff.
 	j, ok := splitCronJobLine(line, true)
@@ -820,7 +851,17 @@ func looksLikeUserColumn(line string) bool {
 	if !j.runOnStart && cronspec.Validate(j.schedule, "") != nil {
 		return false
 	}
-	return isLikelyUsername(j.user)
+	if !isLikelyUsername(j.user) {
+		return false
+	}
+	exists, onPath := cp.opts.UserExists, cp.opts.OnPath
+	if exists == nil {
+		exists = SystemUserExists
+	}
+	if onPath == nil {
+		onPath = func(name string) bool { _, err := exec.LookPath(name); return err == nil }
+	}
+	return exists(j.user) && !onPath(j.user)
 }
 
 // isLikelyUsername reports whether a token looks like a POSIX login name and is

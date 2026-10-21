@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import type { z } from "zod";
+import type { z } from "../zod";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && Boolean(value);

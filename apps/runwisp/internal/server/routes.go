@@ -245,6 +245,19 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// streamHeaders stops a reverse proxy from buffering the SSE streams (every
+// one ends in /stream). nginx holds a proxied response until its buffer fills
+// unless told otherwise, so live logs would arrive in one late burst.
+func streamHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/stream") {
+			w.Header().Set("X-Accel-Buffering", "no")
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // csrfGuard blocks cross-origin state-changing browser requests. SameSite=Strict
 // already stops classic cross-*site* requests, but not cross-*origin* ones from
 // the same site — another port on localhost, or a compromised sibling subdomain
@@ -363,6 +376,7 @@ func (srv *Server) setupRoutes() error {
 	srv.router.Use(srv.savePeerAddr)
 	srv.router.Use(srv.resolveClientIP)
 	srv.router.Use(securityHeaders)
+	srv.router.Use(streamHeaders)
 	srv.router.Use(middleware.RequestLogger(slogAccessLogger{}))
 	srv.router.Use(middleware.Recoverer)
 	srv.router.Use(middleware.RequestID)

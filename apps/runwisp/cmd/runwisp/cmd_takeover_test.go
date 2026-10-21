@@ -269,3 +269,29 @@ func TestRunTakeover_NothingToDoIsANoop(t *testing.T) {
 	assert.Zero(t, h.inst.Installs())
 	assert.Zero(t, h.reloads)
 }
+
+// A take-over left the daemon on a random password that changed on every
+// restart. It now gets the same saved password as `service install`, and the
+// closing summary points at where it is saved.
+func TestTakeoverSavesAStablePassword(t *testing.T) {
+	t.Setenv("RUNWISP_AUTH", "")
+	t.Setenv("RUNWISP_PASSWORD", "")
+	unit := filepath.Join(t.TempDir(), "runwisp.service")
+	prev := systemUnitFile
+	t.Cleanup(func() { systemUnitFile = prev })
+	systemUnitFile = unit
+	dropIn := unit + ".d/password.conf"
+
+	inst := &autostartfake.Installer{EnsurePath: dropIn, EnsureWrote: true}
+	var out bytes.Buffer
+	ensureCutoverPassword(inst, autostart.InstallOptions{System: true})(context.Background(), &out)
+	assert.True(t, inst.EnsureCalled)
+	assert.Equal(t, 1, inst.Restarts, "the daemon restarts to pick the saved password up")
+	assert.Contains(t, out.String(), inst.EnsurePassword)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(dropIn), 0o755))
+	require.NoError(t, os.WriteFile(dropIn, []byte("x"), 0o600))
+	out.Reset()
+	printTakeoverDone(&out, Flags{CfgFile: filepath.Join(t.TempDir(), "none.toml")})
+	assert.Contains(t, out.String(), "Password:   sudo cat "+dropIn)
+}
