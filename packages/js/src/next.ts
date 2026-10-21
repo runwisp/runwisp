@@ -12,6 +12,7 @@ import type { RunWisp } from "./runwisp.ts";
 
 /** The part of Next's config withRunWisp() changes. */
 interface NextConfig {
+    output?: string;
     serverExternalPackages?: string[];
     outputFileTracingIncludes?: Record<string, string[]>;
 }
@@ -28,6 +29,11 @@ export function withRunWisp<T extends NextConfig>(config: T): T {
     if (process.env["VERCEL"] && process.env["VERCEL_ENV"] !== "development") {
         throw new Error(
             "@runwisp/js/next: tasks need a server that keeps running, and Vercel doesn't run one. Self-host the app, or remove withRunWisp().",
+        );
+    }
+    if (config.output === "export") {
+        throw new Error(
+            '@runwisp/js/next: tasks need a server that keeps running, and output: "export" builds static files with no server. Remove output: "export", or remove withRunWisp().',
         );
     }
     const tracing = config.outputFileTracingIncludes ?? {};

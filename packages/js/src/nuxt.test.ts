@@ -18,6 +18,7 @@ interface Build {
     dev?: boolean;
     preset?: string;
     entry?: string | undefined;
+    output?: string;
     /** The `runwisp` key of the Nuxt config. */
     options?: RunWispNuxtOptions | false;
     inline?: RunWispNuxtOptions;
@@ -25,18 +26,26 @@ interface Build {
 
 /** Runs the module's hooks as Nuxt would, and the virtual modules as Nitro reads them. */
 function nitroConfig(config: NitroConfig, build: Build = {}) {
-    const { dev = false, preset = "node-server", options, inline = {} } = build;
+    const { dev = false, preset = "node-server", options, inline = {}, output } = build;
     const entry = "entry" in build ? build.entry : NODE_SERVER;
     const hooks: Partial<NuxtHooks> = {};
     const templates: { filename: string; getContents: () => string }[] = [];
     runwispNuxt(inline, {
-        options: { dev, buildDir: "/app/.nuxt", build: { templates }, runwisp: options },
+        options: {
+            dev,
+            buildDir: "/app/.nuxt",
+            rootDir: "/app",
+            build: { templates },
+            runwisp: options,
+        },
         hook: (name, fn) => {
             hooks[name] = fn;
         },
     });
     hooks["nitro:config"]?.(config);
-    hooks["nitro:init"]?.({ options: { preset, entry } });
+    hooks["nitro:init"]?.({
+        options: { preset, entry, ...(output === undefined ? {} : { output: { dir: output } }) },
+    });
     const references: { path: string }[] = [];
     hooks["nitro:prepare:types"]?.({ references });
     const read = (id: string) => {
@@ -71,8 +80,11 @@ describe("@runwisp/js/nuxt", () => {
             [
                 "export const dev = false;",
                 "export const exitOnSignal = false;",
+                "export const clustered = false;",
                 'export const scheduled = [["0 * * * *","db:cleanup"],["0 * * * *","cache:warm"],["@daily","db:cleanup"]];',
                 "export const config = undefined;",
+                "export const output = undefined;",
+                'export const rootDir = "/app";',
             ].join("\n"),
         );
         expect(config.externals?.inline).toEqual([
@@ -154,6 +166,19 @@ describe("@runwisp/js/nuxt", () => {
                 },
             ).settings,
         ).toContain("export const exitOnSignal = true;");
+    });
+
+    it("has the close plugin coordinate the workers with the node-cluster entry", () => {
+        const entry = "/app/node_modules/nitropack/dist/presets/node/runtime/node-cluster.mjs";
+        expect(nitroConfig({}, { preset: "node-cluster", entry }).settings).toContain(
+            "export const clustered = true;",
+        );
+        expect(nitroConfig({}).settings).toContain("export const clustered = false;");
+    });
+
+    it("tells the close plugin where Nitro writes the build", () => {
+        const { settings } = nitroConfig({}, { output: "/app/.output" });
+        expect(settings).toContain('export const output = "/app/.output";');
     });
 
     it("builds for presets that run Nitro's Node or Bun server", () => {

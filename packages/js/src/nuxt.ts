@@ -24,6 +24,7 @@ interface NuxtLike {
     options: {
         dev: boolean;
         buildDir: string;
+        rootDir: string;
         build: { templates: { filename: string; getContents: () => string }[] };
         runwisp?: RunWispNuxtOptions | false | undefined;
     };
@@ -44,9 +45,15 @@ export default function runwispNuxt(inlineOptions: RunWispNuxtOptions, nuxt: Nux
     // The bun preset's server exits on SIGTERM without closing Nitro, so the
     // close hook never runs: the plugin handles the signal itself there.
     let exitOnSignal = false;
+    // The node-cluster entry's primary runs the app too, but never Nitro's
+    // close hook, and its workers only stop when the primary says so.
+    let clustered = false;
+    let output: string | undefined;
     nuxt.hook("nitro:init", (nitro) => {
         const { preset, entry } = nitro.options;
         exitOnSignal = preset === "bun";
+        clustered = entry !== undefined && parse(entry).name === "node-cluster";
+        output = nitro.options.output?.dir;
         if (nuxt.options.dev || (entry !== undefined && SERVER_ENTRIES.has(parse(entry).name))) {
             return;
         }
@@ -77,8 +84,11 @@ export default function runwispNuxt(inlineOptions: RunWispNuxtOptions, nuxt: Nux
                 moduleSource({
                     dev: nuxt.options.dev,
                     exitOnSignal,
+                    clustered,
                     scheduled,
                     config: runwispConfig,
+                    output,
+                    rootDir: nuxt.options.rootDir,
                 }),
         };
         config.plugins = [

@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `@runwisp/js` in an Astro app under pnpm finds the runwisp binary in the built server instead of failing at startup with "could not run runwisp".
+- `@runwisp/js` in a Nuxt app on the `node-cluster` preset stops its tasks on SIGTERM and lets running ones finish, instead of hanging for 30 seconds and killing them.
+- `withRunWisp()` fails the build with `output: "export"`, where the tasks would never run.
+- The "could not run runwisp" error says when `@runwisp/js` was bundled into the app and that it belongs under `dependencies`.
+- `nuxi preview` keeps the data of a Nuxt app using `@runwisp/js` in the project's `.runwisp`, not in `.output`, which the next build deletes.
 - `@runwisp/js` apps with many fast tasks no longer slow the daemon down: the app asks for next run times at most once a second instead of after every run.
 - A task that throws a value that can't be printed (its `stack` or `message` getter throws) fails its run instead of crashing the app.
 - A task that prints in a tight loop no longer takes down every run in the app. Output is sent in batches, and past 256 MB waiting to be sent, that task's lines are dropped with a note in its log.

@@ -29,6 +29,9 @@ interface VitePlugin {
 interface RunWispAstroIntegration {
     name: string;
     hooks: {
+        "astro:config:setup": (options: {
+            updateConfig: (config: { vite: { ssr: { external: string[] } } }) => unknown;
+        }) => void;
         "astro:config:done": (options: {
             config: { adapter?: { name: string } | undefined };
         }) => void;
@@ -59,6 +62,12 @@ export default function runwisp(options: RunWispAstroOptions): RunWispAstroInteg
     return {
         name: "@runwisp/js",
         hooks: {
+            // Vite would bundle this package into the server build, where the
+            // runwisp binary can't be found unless the installer hoists it
+            // (pnpm doesn't).
+            "astro:config:setup": ({ updateConfig }) => {
+                updateConfig({ vite: { ssr: { external: ["@runwisp/js"] } } });
+            },
             "astro:config:done": ({ config }) => {
                 adapter = config.adapter?.name;
             },
