@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `runwisp import systemd` reads `.timer` units and turns each timer and the service it starts into one scheduled task.
+
 ### Changed
 
 - The Web UI shows times in 24-hour format everywhere, including cron schedules ("At 03:15") and run list dates.

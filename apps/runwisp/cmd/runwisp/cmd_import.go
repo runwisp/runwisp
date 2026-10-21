@@ -125,13 +125,15 @@ yourself, or each job runs twice.`,
 
 var importSystemdCmd = &cobra.Command{
 	Use:   "systemd [UNIT...]",
-	Short: "Convert systemd service units into runwisp.toml",
-	Long: `Convert one or more systemd .service units into runwisp.toml. A unit with
-Restart= becomes a RunWisp service; a Type=oneshot unit becomes a run-once task.
+	Short: "Convert systemd service and timer units into runwisp.toml",
+	Long: `Convert one or more systemd .service and .timer units into runwisp.toml. A
+Type=oneshot unit becomes a run-once task; any other service becomes a RunWisp
+service. A .timer and the service it starts become one scheduled task.
 
 Pass unit files, or pipe one in:
 
   runwisp import systemd /etc/systemd/system/myapp.service
+  runwisp import systemd /etc/systemd/system/backup.timer
   cat myapp.service | runwisp import systemd
   runwisp import systemd /etc/systemd/system/*.service -o runwisp.toml
 
@@ -259,7 +261,7 @@ func runImportSystemd(stdout, stderr io.Writer, stdin *os.File, sources []string
 		if term.IsTerminal(int(stdin.Fd())) {
 			return &userFacingError{
 				title:   "no systemd unit given",
-				details: "Pass a .service file, or pipe one in — e.g. `cat myapp.service | runwisp import systemd`.",
+				details: "Pass a .service or .timer file, or pipe one in — e.g. `cat myapp.service | runwisp import systemd`.",
 			}
 		}
 		res, err = importer.ParseSystemdReader(stdin, sdOpts)

@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly backup timer
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
