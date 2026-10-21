@@ -201,7 +201,7 @@ func dataDirNote(st autostart.Status) (string, bool) {
 }
 
 func renderLingerLine(w io.Writer, st autostart.Status) bool {
-	if st.OS != "linux" {
+	if st.OS != "linux" || st.System {
 		return false
 	}
 	if st.Linger {

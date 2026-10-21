@@ -777,6 +777,7 @@ func (s *systemdInstaller) Status(ctx context.Context, opts InstallOptions) (Sta
 	name := s.serviceName(opts.System)
 	st := Status{
 		OS:       "linux",
+		System:   opts.System,
 		UnitPath: unitPath,
 		Binary:   opts.Binary,
 		DataDir:  opts.DataDir,
