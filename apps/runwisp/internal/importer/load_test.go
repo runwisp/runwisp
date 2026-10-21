@@ -30,9 +30,10 @@ import (
 // the import command's central promise. Inverted, a new fixture is checked by
 // default and a genuinely-unloadable one has to be written down here.
 var goldensThatMustNotLoad = map[string]string{
-	"testdata/cron/invalid.golden.toml":  "an unparseable cron expression becomes a # TODO",
-	"testdata/cron/badtz.golden.toml":    "CRON_TZ names a zone RunWisp cannot load",
-	"testdata/ofelia/broken.golden.toml": "an unparseable schedule and a missing command become # TODOs",
+	"testdata/cron/invalid.golden.toml":   "an unparseable cron expression becomes a # TODO",
+	"testdata/cron/badtz.golden.toml":     "CRON_TZ names a zone RunWisp cannot load",
+	"testdata/ofelia/broken.golden.toml":  "an unparseable schedule and a missing command become # TODOs",
+	"testdata/systemd/orphan.golden.toml": "a timer whose service is missing has no command",
 	"testdata/systemd/messy.golden.toml": "references EnvironmentFile paths that exist only on the " +
 		"source host — the operator's own box has them, a sandbox doesn't",
 }

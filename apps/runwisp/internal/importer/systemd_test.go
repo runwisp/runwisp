@@ -136,6 +136,20 @@ var systemdGoldenCases = []struct {
 		NoteSystemdEnvFileMulti, NoteSystemdSandbox, NoteSystemdSocketActivation,
 		NoteSystemdRestartBehavior, NoteKeysUnsupported,
 	}},
+	// A timer and the service it starts become one scheduled task. Persistent
+	// keeps the default catch_up; RandomizedDelaySec lands on jitter.
+	{name: "timer", file: "testdata/systemd/backup.timer", expectNotes: []NoteKind{
+		NoteSystemdTimerApprox,
+	}},
+	// A monotonic timer: OnUnitActiveSec is an @every interval, OnBootSec a
+	// run once per boot. Unit= names a service that isn't called after the timer.
+	{name: "monotonic-timer", file: "testdata/systemd/poll.timer", expectNotes: []NoteKind{
+		NoteSystemdTimerApprox,
+	}},
+	// A timer whose service file is missing, with two OnCalendar= lines.
+	{name: "orphan-timer", file: "testdata/systemd/orphan.timer", expectNotes: []NoteKind{
+		NoteSystemdTimerNoService, NoteSystemdTimerMultiCalendar,
+	}},
 }
 
 func TestSystemdGolden(t *testing.T) {

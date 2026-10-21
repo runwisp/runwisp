@@ -410,6 +410,7 @@ crontab -l | runwisp import cron
 runwisp import cron /etc/crontab --write
 runwisp import supervisord /etc/supervisor/conf.d/*.conf -o runwisp.toml
 runwisp import systemd /etc/systemd/system/myapp.service
+runwisp import systemd /etc/systemd/system/backup.timer
 runwisp import ofelia compose.yaml -o runwisp.toml
 ```
 
@@ -423,7 +424,7 @@ runs twice.
 | --------------------- | ----------------------------------------------------------------------------------------- |
 | `cron [FILE]`         | A crontab or an anacrontab. `/etc/crontab` and `/etc/cron.d/*` user columns are detected. |
 | `supervisord [FILE…]` | `[program:*]` sections, following `[include]`.                                            |
-| `systemd [UNIT…]`     | `.service` units. `Restart=` → service, `Type=oneshot` → task.                            |
+| `systemd [UNIT…]`     | `.service` and `.timer` units. `Type=oneshot` → task, a timer → scheduled task.           |
 | `ofelia [FILE…]`      | Ofelia jobs, from an INI config or `ofelia.*` compose labels. Since 1.7.                  |
 
 | Flag             | Description                                                                                                                                 |

@@ -358,7 +358,7 @@ runwisp start/restart/stop/pause/resume — a target locked with manual_trigger=
 runwisp start/restart/stop --attach <target...> — then follow, like `logs -f`, only the targets that succeeded (a glob's skipped/locked entries and failed targets excluded; exit non-zero if any failed): live runs from their last 10 lines, every run the action starts from line 0 (subscribed before dispatch, so fast runs aren't missed), no earlier finished runs; Ctrl+C ends it, run IDs only → exits when they end; rejected without a target
 runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --dry-run --quiet --system
 runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --dry-run --quiet
-runwisp import systemd [UNIT...] — convert systemd .service units to runwisp.toml; -o/--output --write --force --dry-run --quiet
+runwisp import systemd [UNIT...] — convert systemd .service and .timer units to runwisp.toml; -o/--output --write --force --dry-run --quiet
                              — Restart= → [services.*], Type=oneshot → [tasks.*]; name from filename. Reject-as-note:
                                multiple ExecStart/ExecStartPre/Post, Type=notify|forking, sandboxing, socket activation,
                                %i templates. NO `takeover systemd` (disable units yourself: systemctl disable --now)
