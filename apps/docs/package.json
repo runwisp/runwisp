@@ -9,16 +9,16 @@
     },
     "dependencies": {
         "@astrojs/starlight": "^0.42.6",
-        "@astrojs/svelte": "^9.1.0",
+        "@astrojs/svelte": "^9.1.1",
         "@runwisp/ui": "workspace:*",
-        "astro": "^7.4.1",
+        "astro": "^7.4.2",
         "js-yaml": "^4.3.2",
         "sharp": "^0.35.5",
         "starlight-openapi": "^0.27.0",
         "svelte": "^5.57.2"
     },
     "devDependencies": {
-        "@astrojs/check": "^0.9.11",
+        "@astrojs/check": "^0.9.12",
         "@runwisp/eslint-config": "workspace:*",
         "cookie": "^2.0.1",
         "eslint": "^10.13.0",
