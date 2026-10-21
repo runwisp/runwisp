@@ -127,7 +127,7 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 	// Persist the signed PUT URL + key BEFORE we trigger the run. A crash
 	// after trigger but before persistence would lose the upload metadata
 	// and orphan the local log file with no way to archive it.
-	if err := h.uploader.RegisterDispatch(ctx, executionID, message.Execution.LogUploadURL, message.Execution.LogPath); err != nil {
+	if err := h.uploader.RegisterDispatch(ctx, executionID, message.Execution.LogUploadURL, message.Execution.LogPath, message.Execution.LogStream); err != nil {
 		slog.Warn("failed to register dispatch for log archival", "executionId", executionID, "err", err)
 	}
 

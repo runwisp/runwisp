@@ -103,6 +103,19 @@ func NewLogLinesMessage(executionID string, lines []protocol.LogLineEntry) proto
 	}
 }
 
+// NewLogChunkUrlsRequestMessage asks the station for signed PUT URLs for an
+// execution's incremental log chunks, starting at fromSeq.
+func NewLogChunkUrlsRequestMessage(executionID string, fromSeq int) protocol.LogChunkUrlsRequestMessage {
+	v, s := newEnvelopeFields()
+	return protocol.LogChunkUrlsRequestMessage{
+		Type:            "log:chunkUrlsRequest",
+		ProtocolVersion: v,
+		SentAt:          s,
+		ExecutionID:     executionID,
+		FromSeq:         fromSeq,
+	}
+}
+
 // NewLogReplayChunkMessage builds one page of historical lines for a
 // log:replayRequest reply. final=true marks the last chunk in the reply set.
 func NewLogReplayChunkMessage(requestID, executionID string, lines []protocol.LogLineEntry, final bool) protocol.LogReplayChunkMessage {
@@ -211,6 +224,7 @@ var inboundDecoders = map[string]func([]byte) (any, error){
 	"log:searchRequest":  decodeAs[protocol.LogSearchRequestMessage],
 	"log:listen":         decodeAs[protocol.LogListenMessage],
 	"log:stop":           decodeAs[protocol.LogStopMessage],
+	"log:chunkUrls":      decodeAs[protocol.LogChunkUrlsMessage],
 	"agent:restart":      decodeAs[protocol.AgentRestartMessage],
 	"service:apply":      decodeAs[protocol.ServiceApplyMessage],
 	"service:control":    decodeAs[protocol.ServiceControlMessage],

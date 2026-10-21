@@ -7,6 +7,7 @@
 package logarchive
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -81,6 +82,37 @@ func archive(ctx context.Context, client *http.Client, uploadURL, logFilePath st
 	}
 }
 
+// PutChunk gzips data as one member and PUTs it to uploadURL once, returning
+// the gzipped byte count. No retries: the incremental log streamer retries the
+// same chunk on its next tick, by which time it may have grown. A 4xx comes
+// back as *PermanentError.
+func PutChunk(ctx context.Context, client *http.Client, uploadURL string, data []byte, allowInsecure bool) (int64, error) {
+	if client == nil {
+		client = SafeClient(allowInsecure, "")
+	}
+	if err := validateUploadURL(uploadURL, allowInsecure); err != nil {
+		return 0, &PermanentError{StatusCode: 0, Status: err.Error()}
+	}
+	return putChunk(ctx, client, uploadURL, data)
+}
+
+// putChunk is PutChunk without URL validation, for loopback transport tests.
+func putChunk(ctx context.Context, client *http.Client, uploadURL string, data []byte) (int64, error) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(data); err != nil {
+		return 0, fmt.Errorf("logarchive: gzip chunk: %w", err)
+	}
+	if err := gz.Close(); err != nil {
+		return 0, fmt.Errorf("logarchive: close gzip writer: %w", err)
+	}
+	size := int64(buf.Len())
+	if err := putOnce(ctx, client, uploadURL, bytes.NewReader(buf.Bytes()), size); err != nil {
+		return 0, err
+	}
+	return size, nil
+}
+
 func gzipFile(path string) (*os.File, int64, error) {
 	src, err := os.Open(path)
 	if err != nil {
@@ -123,7 +155,7 @@ func gzipFile(path string) (*os.File, int64, error) {
 	return tmp, info.Size(), nil
 }
 
-func putOnce(ctx context.Context, client *http.Client, uploadURL string, compressed *os.File, size int64) error {
+func putOnce(ctx context.Context, client *http.Client, uploadURL string, compressed io.ReaderAt, size int64) error {
 	body := io.NopCloser(io.NewSectionReader(compressed, 0, size))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, body)
 	if err != nil {

@@ -46,11 +46,15 @@ type LogUploader struct {
 
 	mu      sync.Mutex
 	pending map[string]uploadEntry
+	streams map[string]*chunkStream
 }
 
 type uploadEntry struct {
 	uploadURL string
 	logPath   string
+	// stream is the dispatch's logStream flag. It is not persisted: a run a
+	// daemon restart interrupted has nothing left to stream.
+	stream bool
 }
 
 // NewLogUploader returns a coordinator. logDir must match the executor's
@@ -65,6 +69,7 @@ func NewLogUploader(repo storage.PendingLogUploadRepository, runRepo ExternalRun
 		httpClient: logarchive.SafeClient(false, ""),
 		now:        func() time.Time { return now().UTC() },
 		pending:    make(map[string]uploadEntry),
+		streams:    make(map[string]*chunkStream),
 	}
 }
 
@@ -84,8 +89,9 @@ func (u *LogUploader) TrustHost(hostPort string) {
 
 // RegisterDispatch persists the upload coordinates the station handed us. An
 // empty uploadURL means "skip archival for this dispatch" — we drop the
-// entry on the floor and return without error.
-func (u *LogUploader) RegisterDispatch(ctx context.Context, executionID, uploadURL, logPath string) error {
+// entry on the floor and return without error. stream asks for incremental
+// chunk uploads while the run is going (see StartStream).
+func (u *LogUploader) RegisterDispatch(ctx context.Context, executionID, uploadURL, logPath string, stream bool) error {
 	if executionID == "" {
 		return nil
 	}
@@ -105,7 +111,7 @@ func (u *LogUploader) RegisterDispatch(ctx context.Context, executionID, uploadU
 		}
 	}
 	u.mu.Lock()
-	u.pending[executionID] = uploadEntry{uploadURL: uploadURL, logPath: logPath}
+	u.pending[executionID] = uploadEntry{uploadURL: uploadURL, logPath: logPath, stream: stream}
 	u.mu.Unlock()
 	return nil
 }

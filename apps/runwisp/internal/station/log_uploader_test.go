@@ -113,7 +113,7 @@ func TestRegisterDispatchPersistsAndCachesEntry(t *testing.T) {
 	repo := newFakePendingRepo()
 	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
 
-	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz", false); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
@@ -134,7 +134,7 @@ func TestRegisterDispatchUsesInjectedClock(t *testing.T) {
 	fixed := time.Date(2026, 5, 14, 9, 30, 0, 0, time.UTC)
 	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), func() time.Time { return fixed })
 
-	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz", false); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
@@ -154,7 +154,7 @@ func TestRegisterDispatchEmptyURLIsNoop(t *testing.T) {
 	repo := newFakePendingRepo()
 	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
 
-	if err := u.RegisterDispatch(context.Background(), "exec-1", "", "key/x.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "exec-1", "", "key/x.log.gz", false); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
@@ -170,7 +170,7 @@ func TestForgetRemovesRowAndCachedEntry(t *testing.T) {
 	repo := newFakePendingRepo()
 	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
 
-	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz", false); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
@@ -201,7 +201,7 @@ func TestArchiveSuccessRemovesRowAndLogFile(t *testing.T) {
 	u := NewLogUploader(repo, runs, logDir, fixedClock())
 	u.httpClient = srv.Client()
 
-	if err := u.RegisterDispatch(context.Background(), "exec-1", srv.URL, "key/exec-1.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "exec-1", srv.URL, "key/exec-1.log.gz", false); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
@@ -259,7 +259,7 @@ func TestArchiveEmptyExecutionIDIsNoop(t *testing.T) {
 func TestArchiveEmptyLogPathErrors(t *testing.T) {
 	repo := newFakePendingRepo()
 	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
-	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz", false); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 	_, err := u.Archive(context.Background(), "exec-1", "")
@@ -284,7 +284,7 @@ func TestArchiveUploadFailureKeepsRow(t *testing.T) {
 	u := NewLogUploader(repo, &fakeRunRepo{}, logDir, fixedClock())
 	u.httpClient = srv.Client()
 
-	if err := u.RegisterDispatch(context.Background(), "exec-archive-err", srv.URL, "key/x.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "exec-archive-err", srv.URL, "key/x.log.gz", false); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
@@ -302,7 +302,7 @@ func TestArchiveMissingLogFileForgetsEntry(t *testing.T) {
 	repo := newFakePendingRepo()
 	u := NewLogUploader(repo, &fakeRunRepo{}, logDir, fixedClock())
 
-	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz", false); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
@@ -460,7 +460,7 @@ func TestRecoverOrphansKeepsRowOnTransientLookupError(t *testing.T) {
 func TestRegisterDispatchEmptyExecutionIDIsNoop(t *testing.T) {
 	repo := newFakePendingRepo()
 	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
-	if err := u.RegisterDispatch(context.Background(), "", "https://upload/x", "key/x.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "", "https://upload/x", "key/x.log.gz", false); err != nil {
 		t.Fatalf("RegisterDispatch with empty id returned err: %v", err)
 	}
 	if got := repo.count(); got != 0 {
@@ -577,7 +577,7 @@ func TestRegisterDispatchPropagatesUpsertError(t *testing.T) {
 	repo := &failingPendingRepo{upsertErr: want}
 
 	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
-	err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz")
+	err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz", false)
 	if !errors.Is(err, want) {
 		t.Fatalf("RegisterDispatch err = %v, want %v", err, want)
 	}

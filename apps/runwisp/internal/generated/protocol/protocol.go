@@ -67,6 +67,14 @@ type ExecutionPayload struct {
 	// Format `{orgId}/{yyyy-mm}/{executionId}.log.gz`. Optional: omitted
 	// (or empty) whenever `logUploadUrl` is.
 	LogPath string `json:"logPath,omitzero"`
+	// Ask the daemon to also upload the log incrementally while the run
+	// is going, so a run whose daemon dies mid-way still leaves its log
+	// behind. The daemon fetches upload URLs with log:chunkUrlsRequest and
+	// PUTs each new slice of the log file as one gzip member. Honoured
+	// only together with `logUploadUrl`; the terminal archive is uploaded
+	// as usual. The station sends it only to daemons that advertise
+	// `log:chunkUrls`.
+	LogStream bool `json:"logStream,omitzero"`
 }
 
 // What the daemon does when log output exceeds logMaxSize.
@@ -306,6 +314,30 @@ type LogListenMessage struct {
 	ExecutionID     string `json:"executionId"`
 }
 
+// Daemon → station. Asks for signed PUT URLs for the incremental log
+// chunks of a running `logStream` execution, starting at sequence number
+// fromSeq. The station answers with log:chunkUrls.
+type LogChunkUrlsRequestMessage struct {
+	Type            string `json:"type"`
+	ProtocolVersion int    `json:"protocolVersion,omitzero"`
+	SentAt          string `json:"sentAt,omitzero"`
+	ExecutionID     string `json:"executionId"`
+	FromSeq         int    `json:"fromSeq"`
+}
+
+// Station → daemon. Signed PUT URLs for log chunks fromSeq,
+// fromSeq+1, ... of a running `logStream` execution. Fewer URLs than
+// usual (or none) means the station reached its per-execution chunk cap:
+// stop streaming and rely on the terminal archive.
+type LogChunkUrlsMessage struct {
+	Type            string   `json:"type"`
+	ProtocolVersion int      `json:"protocolVersion,omitzero"`
+	SentAt          string   `json:"sentAt,omitzero"`
+	ExecutionID     string   `json:"executionId"`
+	FromSeq         int      `json:"fromSeq"`
+	Urls            []string `json:"urls"`
+}
+
 type LogStopMessage struct {
 	Type            string `json:"type"`
 	ProtocolVersion int    `json:"protocolVersion,omitzero"`
@@ -411,6 +443,13 @@ type ExecutionUpdateMessage struct {
 	// Gzipped byte count of the uploaded archive. Set only on terminal
 	// updates after a successful upload.
 	LogSize *int64 `json:"logSize,omitzero"`
+	// Number of incremental log chunks uploaded for a `logStream`
+	// dispatch (sequence numbers 0..logChunks-1), so the station can drop
+	// them once the archive is in. Set (zero included) only on the
+	// terminal update that carries `logPath` of a `logStream` dispatch;
+	// absent means the daemon doesn't know (e.g. an archive recovered
+	// after a restart).
+	LogChunks *int `json:"logChunks,omitzero"`
 	// Whether the run counts as a failure under the task's `failures`
 	// policy. Set only on terminal updates. A non-zero exit the policy
 	// excludes reports status `failed` with isFailure false. Add-only

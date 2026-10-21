@@ -339,7 +339,7 @@ func TestEventBridge_FinalizeRun_TerminalBeforeArchiveThenAttach(t *testing.T) {
 
 	uploader := NewLogUploader(newFakePendingRepo(), &fakeRunRepo{}, logDir, fixedClock())
 	uploader.httpClient = srv.Client()
-	if err := uploader.RegisterDispatch(context.Background(), execID, srv.URL, "logs/org/key.gz"); err != nil {
+	if err := uploader.RegisterDispatch(context.Background(), execID, srv.URL, "logs/org/key.gz", false); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
@@ -414,7 +414,7 @@ func TestEventBridge_FinalizeRun_ArchiveFailureSendsSingleUpdate(t *testing.T) {
 
 	uploader := NewLogUploader(newFakePendingRepo(), &fakeRunRepo{}, logDir, fixedClock())
 	uploader.httpClient = srv.Client()
-	if err := uploader.RegisterDispatch(context.Background(), execID, srv.URL, "logs/org/key.gz"); err != nil {
+	if err := uploader.RegisterDispatch(context.Background(), execID, srv.URL, "logs/org/key.gz", false); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 

@@ -127,6 +127,8 @@ func (b *EventBridge) handleRunEvent(ctx context.Context, event events.Event) {
 
 	if run.Status == model.PhaseRunning {
 		b.tracker.TrackRunning(executionID, run.StartedAt)
+		logFilePath := logutil.ResolveRunLogPath(b.handler.logDir, run.TaskName, run.ID, run.CreatedAt)
+		b.handler.uploader.StartStream(ctx, executionID, logFilePath, b.sendReady)
 	}
 	if terminal {
 		b.tracker.Remove(executionID)
@@ -156,6 +158,8 @@ func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run, update pr
 	b.flushLogBatch(executionID)
 	b.tracker.QueueUpdate(update, b.sendReady)
 
+	// Stop streaming before the archive removes the log file it tails.
+	chunks, streamed := b.handler.uploader.StopStream(ctx, executionID)
 	logFilePath := logutil.ResolveRunLogPath(b.handler.logDir, run.TaskName, run.ID, run.CreatedAt)
 	result, err := b.handler.uploader.Archive(ctx, executionID, logFilePath)
 	switch {
@@ -164,6 +168,11 @@ func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run, update pr
 	case result != nil:
 		update.LogPath = &result.LogPath
 		update.LogSize = &result.LogSize
+		if streamed {
+			// Sent even when zero: it tells the station there is nothing to
+			// clean up rather than leaving it to look.
+			update.LogChunks = &chunks
+		}
 		b.tracker.QueueUpdate(update, b.sendReady)
 	}
 

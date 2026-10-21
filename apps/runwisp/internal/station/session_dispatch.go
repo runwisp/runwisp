@@ -250,6 +250,9 @@ func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSe
 	case protocol.LogStopMessage:
 		sr.handler.HandleLogStop(message)
 		return nil
+	case protocol.LogChunkUrlsMessage:
+		sr.handler.uploader.OnChunkUrls(message)
+		return nil
 	case protocol.AgentRestartMessage:
 		sr.reportIfErr(session, sr.handler.HandleAgentRestart(), "")
 	case protocol.ServiceApplyMessage:
