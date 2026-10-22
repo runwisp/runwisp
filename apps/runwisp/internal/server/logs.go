@@ -107,6 +107,34 @@ func (srv *Server) resolveLogPath(ctx context.Context, runIDStr string) (string,
 	return logutil.ResolveRunLogPath(srv.logDir, run.TaskName, run.ID, run.CreatedAt), run, nil
 }
 
+// logLineEntries maps on-disk log records to the wire shape, annotating each
+// with its frame-history count (nil frameCounts leaves them all 0).
+func logLineEntries(lines []logutil.LogLineRecord, frameCounts map[int64]int) []LogLineEntry {
+	entries := make([]LogLineEntry, len(lines))
+	for i, l := range lines {
+		entries[i] = LogLineEntry{
+			N:          l.LineNum,
+			Stream:     l.Stream,
+			Text:       l.Text,
+			FrameCount: frameCounts[l.LineNum],
+		}
+	}
+	return entries
+}
+
+// runLogTail returns the last n lines of run's log. It backs a convenience
+// field on an already-successful response, so a read error is logged and
+// yields nil rather than failing the request.
+func (srv *Server) runLogTail(run *model.Run, n int) []LogLineEntry {
+	logPath := logutil.ResolveRunLogPath(srv.logDir, run.TaskName, run.ID, run.CreatedAt)
+	lines, _, _, err := logutil.ReadLineRange(logPath, -int64(n), int64(n))
+	if err != nil {
+		slog.Warn("Failed to read log tail", "path", logPath, "err", err)
+		return nil
+	}
+	return logLineEntries(lines, nil)
+}
+
 func (srv *Server) humaGetLogPage(ctx context.Context, input *LogPageInput) (*LogPageOutput, error) {
 	logPath, run, err := srv.resolveLogPath(ctx, input.RunID)
 	if err != nil {
@@ -130,19 +158,8 @@ func (srv *Server) humaGetLogPage(ctx context.Context, input *LogPageInput) (*Lo
 
 	// Annotate anchor lines so a viewer paging a finished run from disk (not just
 	// the live SSE path) can tell which lines have rewindable frame history.
-	frameCounts := logutil.ReadFrameHistoryCounts(logPath)
-	entries := make([]LogLineEntry, len(lines))
-	for i, l := range lines {
-		entries[i] = LogLineEntry{
-			N:          l.LineNum,
-			Stream:     l.Stream,
-			Text:       l.Text,
-			FrameCount: frameCounts[l.LineNum],
-		}
-	}
-
 	return &LogPageOutput{Body: LogPageBody{
-		Lines:          entries,
+		Lines:          logLineEntries(lines, logutil.ReadFrameHistoryCounts(logPath)),
 		FirstAvailable: firstAvailable,
 		TotalLines:     totalLines,
 		Truncated:      firstAvailable > 0,

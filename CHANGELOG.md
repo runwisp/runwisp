@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `runwisp import systemd` reads `.timer` units and turns each timer and the service it starts into one scheduled task.
+- A hook `run` takes `tail=N` and returns the last N lines of the run's log with the run, so a CI job holding only a hook token can show why a run failed.
+- `runwisp start`, `stop` and `restart` take `--token` (or `RUNWISP_HOOK_TOKEN`) with `--url`, so a task that runs as another user can restart a service through its hook token.
 
 ### Changed
 

@@ -32,6 +32,9 @@ import (
 type remoteFlags struct {
 	URL      string
 	Password string
+	// Token is a unit's hook token (--token on start/stop/restart): it acts
+	// through the hook routes instead of a password session.
+	Token string
 }
 
 // controlRemote backs --url/--password on the control verbs. Only one command
@@ -43,6 +46,12 @@ var controlRemote remoteFlags
 func addRemoteFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&controlRemote.URL, "url", "", "act on a remote daemon at this base URL (env: RUNWISP_URL)")
 	cmd.Flags().StringVar(&controlRemote.Password, "password", "", "remote daemon password for --url (env: RUNWISP_PASSWORD)")
+}
+
+// addTokenFlag registers --token on start/stop/restart, the verbs a hook
+// token can perform.
+func addTokenFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&controlRemote.Token, "token", "", "act with one of the unit's hook_tokens instead of a password; needs --url (env: RUNWISP_HOOK_TOKEN)")
 }
 
 // controlAttach backs --attach on start/stop/restart; like controlRemote, it
@@ -62,6 +71,11 @@ func (rf remoteFlags) resolve() (url, password string) {
 	return cmp.Or(rf.URL, os.Getenv("RUNWISP_URL")), cmp.Or(rf.Password, os.Getenv("RUNWISP_PASSWORD"))
 }
 
+// hookToken applies the RUNWISP_HOOK_TOKEN environment fallback to --token.
+func (rf remoteFlags) hookToken() string {
+	return cmp.Or(rf.Token, os.Getenv("RUNWISP_HOOK_TOKEN"))
+}
+
 // controlFunc dispatches one control action for a task/service name or run ID.
 // Its shape matches method expressions like (*apiclient.Client).StopTask.
 type controlFunc func(c *apiclient.Client, ctx context.Context, name string) error
@@ -77,22 +91,24 @@ type targetFilter struct {
 // messages ("stop"/"stopped"), how to dispatch it for a task or service name
 // and, when it takes run IDs, for a run, and what a glob may match. replaces
 // marks a verb that ends the targets' active runs to start new ones: --attach
-// follows only the new ones.
+// follows only the new ones. hook is the hook action that performs the verb
+// with --token, empty when no hook route does.
 type controlVerb struct {
 	verb, done   string
 	act, stopRun controlFunc
 	filter       targetFilter
 	replaces     bool
+	hook         model.HookAction
 }
 
 var (
-	startVerb = controlVerb{verb: "start", done: "started", filter: controllableTargets,
+	startVerb = controlVerb{verb: "start", done: "started", filter: controllableTargets, hook: model.HookStart,
 		act: func(c *apiclient.Client, ctx context.Context, name string) error {
 			return c.StartTask(ctx, name, "cli")
 		}}
-	stopVerb = controlVerb{verb: "stop", done: "stopped", filter: controllableTargets,
+	stopVerb = controlVerb{verb: "stop", done: "stopped", filter: controllableTargets, hook: model.HookStop,
 		act: (*apiclient.Client).StopTask, stopRun: (*apiclient.Client).StopRun}
-	restartVerb = controlVerb{verb: "restart", done: "restarted", filter: controllableTargets, replaces: true,
+	restartVerb = controlVerb{verb: "restart", done: "restarted", filter: controllableTargets, replaces: true, hook: model.HookRestart,
 		act: func(c *apiclient.Client, ctx context.Context, name string) error {
 			return c.RestartTask(ctx, name, "cli")
 		}}
@@ -185,6 +201,9 @@ func matchTasks(arg string, tasks []model.TaskResponse, filter targetFilter) ([]
 // from its first line, however quickly it ends.
 func controlTargets(cmd *cobra.Command, f Flags, rf remoteFlags, args []string, v controlVerb, attach bool) error {
 	ctx := cmd.Context()
+	if token := rf.hookToken(); token != "" && v.hook != "" {
+		return controlWithToken(ctx, cmd.OutOrStdout(), rf, token, args, v, attach)
+	}
 	if attach {
 		var stop context.CancelFunc
 		ctx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
@@ -270,9 +289,71 @@ func controlClient(ctx context.Context, f Flags, baseURL, password string) (*api
 		return connectRemote(ctx, baseURL, password)
 	}
 	if !isDaemonRunning(f) {
-		return nil, fmt.Errorf("no daemon is running on data dir %q — %s", f.DataDir, daemonNotRunningHint(f))
+		return nil, fmt.Errorf("no daemon is running on data dir %q — %s", f.DataDir, controlNotRunningHint(f))
 	}
 	return connectLocal(ctx, f)
+}
+
+// controlNotRunningHint is daemonNotRunningHint, except inside a RunWisp run
+// (which always has RUNWISP_INSTANCE_INDEX). A task that runs as another user
+// can't open the daemon's socket, and sudo is the wrong advice there: a hook
+// token is the way back in.
+func controlNotRunningHint(f Flags) string {
+	if os.Getenv("RUNWISP_INSTANCE_INDEX") == "" {
+		return daemonNotRunningHint(f)
+	}
+	return "this runs inside a RunWisp task, which can't reach the daemon's socket when it runs as another user. " +
+		"Give the unit hook_tokens in runwisp.toml and pass one with --url <daemon URL> --token <token> (or RUNWISP_URL and RUNWISP_HOOK_TOKEN)"
+}
+
+// controlWithToken applies v to each literal name through the hook routes,
+// authenticated by a hook token instead of a session. A hook token can't list
+// tasks or read logs, so globs, run IDs and --attach are refused up front.
+func controlWithToken(ctx context.Context, out io.Writer, rf remoteFlags, token string, args []string, v controlVerb, attach bool) error {
+	baseURL, _ := rf.resolve()
+	switch {
+	case baseURL == "":
+		return errors.New("--token needs --url (or RUNWISP_URL): hook tokens work over the daemon's HTTP address, not its local socket")
+	case attach:
+		return errors.New("--attach can't be used with --token: a hook token can't read logs")
+	}
+	for _, arg := range args {
+		if strings.ContainsAny(arg, "*?[") {
+			return fmt.Errorf("--token takes literal task or service names, not the pattern %q: a hook token can't list tasks", arg)
+		}
+		if _, err := ulid.ParseStrict(arg); err == nil {
+			return fmt.Errorf("--token takes task or service names, not the run ID %s", arg)
+		}
+	}
+	client, err := dialRemote(ctx, baseURL, "")
+	if err != nil {
+		return err
+	}
+	client.SetToken(token)
+	var errs []error
+	for _, name := range args {
+		if err := client.HookAction(ctx, v.hook, name); err != nil {
+			errs = append(errs, hookControlError(err, baseURL, v.verb, name))
+			continue
+		}
+		fmt.Fprintf(out, "%q %s.\n", name, v.done)
+	}
+	return errors.Join(errs...)
+}
+
+// hookControlError maps a hook route's rejections, which mean something
+// different from a session's: a 401 is a token the unit doesn't have, a 403 a
+// token whose allow list leaves the verb out.
+func hookControlError(err error, baseURL, verb, name string) error {
+	switch {
+	case errors.Is(err, apiclient.ErrUnauthorized):
+		return fmt.Errorf("%s rejected the hook token for %q: it must be one of that unit's hook_tokens in runwisp.toml", baseURL, name)
+	case errors.Is(err, apiclient.ErrRateLimited):
+		return fmt.Errorf("%s is refusing hook tokens from this IP after too many wrong ones: wait a minute and try again", baseURL)
+	case apiclient.IsHTTPStatus(err, http.StatusForbidden):
+		return fmt.Errorf("cannot %s %q: the hook token's allow list in runwisp.toml does not include %q", verb, name, verb)
+	}
+	return controlError(err, "", verb, name, false)
 }
 
 // connectLocal returns a client for the local daemon socket after a health

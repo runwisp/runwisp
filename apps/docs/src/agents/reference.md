@@ -355,6 +355,7 @@ runwisp logs <target...>     — print run output via the local socket (or --url
                              — --json: NDJSON on stdout; {"type":"line",task,runId,n,ts,stream,text,continued?} per line, {"type":"end", ...same fields as run --json} when a run ends
 runwisp start/restart/stop/pause/resume — a target locked with manual_trigger=false 403s when named directly; a glob silently skips it (pause's glob also skips services, cron-less and held tasks). --url (env RUNWISP_URL) + --password (env RUNWISP_PASSWORD) dispatch to a remote daemon,
                                 same CHAP login/session cache as `run --url`. An unknown name or empty glob fails before anything runs; otherwise each target is attempted and failures print per-target, exit non-zero
+runwisp start/restart/stop --token <t> <name...> — (since 1.8; env RUNWISP_HOOK_TOKEN) act through POST /api/hooks/tasks/{name}/{action} with a unit's hook token instead of a session; needs --url/RUNWISP_URL; literal names only (glob, run ID, --attach and the daemon-wide no-target form rejected); 401 = token not one of the unit's hook_tokens, 403 = allow list omits the verb. For a task with user= that must restart a service (it can't open the root socket). Inside a task, the no-daemon error points at --token instead of sudo
 runwisp start/restart/stop --attach <target...> — then follow, like `logs -f`, only the targets that succeeded (a glob's skipped/locked entries and failed targets excluded; exit non-zero if any failed): live runs from their last 10 lines, every run the action starts from line 0 (subscribed before dispatch, so fast runs aren't missed), no earlier finished runs; Ctrl+C ends it, run IDs only → exits when they end; rejected without a target
 runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --dry-run --quiet --system
 runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --dry-run --quiet
@@ -518,7 +519,7 @@ POST   /api/tasks/{task}/restart                 service: restart all instances;
 POST   /api/tasks/{task}/pause                   pause the cron schedule (204, idempotent, keeps first pausedAt); 403 manual_trigger=false; 409 service / no cron / held / station mode. Task gains pausedAt, loses nextRunAt
 POST   /api/tasks/{task}/resume                  lift a pause (204, idempotent); skipped ticks not caught up
          ?wait=true&waitTimeout=N (1..240, default 120) on run/start/restart: task returns the finished run (start follows an already-active run); service start/restart → 400. On stop: returns once drained, 409 on timeout
-POST   /api/hooks/tasks/{task}/{run,start,stop,restart}  same as the session routes above, authed by a hook token instead of a session (triggeredBy=hook)
+POST   /api/hooks/tasks/{task}/{run,start,stop,restart}  same as the session routes above, authed by a hook token instead of a session (triggeredBy=hook); run also takes ?tail=N (0..1000, since 1.8): the response adds log=[{n,stream,text}] with the run's last N log lines (a hook token can't read /api/runs/{id}/log)
 POST   /api/runs/{runId}/stop                   stop a running task
 DELETE /api/runs/{runId}                        delete a run
 POST   /api/runs/bulk/stop                       stop runs by selector

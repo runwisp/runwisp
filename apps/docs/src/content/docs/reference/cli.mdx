@@ -42,6 +42,7 @@ Besides the `RUNWISP_*` twins of the global options above:
 | `RUNWISP_VIEWER_PASSWORD` | Optional second password that signs in read-only. Unset: no read-only access. See [Read-only access](/operations/auth/#read-only-access).     |
 | `RUNWISP_AUTH`            | `off` disables authentication. Can't be combined with `RUNWISP_PASSWORD`. See [Authentication](/operations/auth/#running-without-a-password). |
 | `RUNWISP_URL`             | Remote daemon URL for `run`, `logs`, `start`, `stop`, `restart`, and `tui`, same as `--url`.                                                  |
+| `RUNWISP_HOOK_TOKEN`      | Hook token for `start`, `stop`, and `restart`, same as `--token`. Since 1.8.                                                                  |
 | `RUNWISP_TLS`             | Overrides [`[daemon] tls`](/configuration/daemon/#tls-tls_cert-tls_key) (`auto` or `off`).                                                    |
 | `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDRs. Overrides [`[daemon] trusted_proxies`](/configuration/daemon/#trusted_proxies).                                        |
 | `RUNWISP_STATION_TOKEN`   | Token for `runwisp station`.                                                                                                                  |
@@ -305,11 +306,12 @@ alone. For a task, this triggers a run, unless one is already active or
 queued, in which case it's a no-op. It never prints a run ID; use
 `runwisp run --detach` when you need one.
 
-| Flag         | Description                                                                                                                                           |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--attach`   | Then follow the logs of the targets it acted on, like [`runwisp logs -f`](#runwisp-logs). Each run it starts is shown from its first line. Since 1.5. |
-| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.                                                                                               |
-| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                                                        |
+| Flag         | Description                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--attach`   | Then follow the logs of the targets it acted on, like [`runwisp logs -f`](#runwisp-logs). Each run it starts is shown from its first line. Since 1.5.                                                                                                                                                                                                                         |
+| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.                                                                                                                                                                                                                                                                                                                       |
+| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                                                                                                                                                                                                                                                                                |
+| `--token`    | One of the target's [`hook_tokens`](/configuration/tasks/#hook_tokens), used instead of a password so a task running as another user can control a service. Needs `--url`. Takes names only: no globs, run IDs, or `--attach`. Env: `RUNWISP_HOOK_TOKEN`. See [Remote triggers](/recipes/remote-trigger/#restart-a-service-from-a-task-that-runs-as-another-user). Since 1.8. |
 
 ### `runwisp restart`
 
@@ -333,12 +335,13 @@ task, the active run is cancelled, RunWisp waits for it to actually end, then
 triggers exactly one fresh run. A glob silently skips a target locked with
 `manual_trigger = false`; naming one directly is rejected.
 
-| Flag         | Description                                                                                                                                                      |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--local`    | Use the per-user unit when both a system and a per-user unit exist.                                                                                              |
-| `--attach`   | With targets, then follow the logs of the ones it acted on, like [`runwisp logs -f`](#runwisp-logs). Each run it starts is shown from its first line. Since 1.5. |
-| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.                                                                                                          |
-| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                                                                   |
+| Flag         | Description                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--local`    | Use the per-user unit when both a system and a per-user unit exist.                                                                                                                                                                                                                                                                                                           |
+| `--attach`   | With targets, then follow the logs of the ones it acted on, like [`runwisp logs -f`](#runwisp-logs). Each run it starts is shown from its first line. Since 1.5.                                                                                                                                                                                                              |
+| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.                                                                                                                                                                                                                                                                                                                       |
+| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                                                                                                                                                                                                                                                                                |
+| `--token`    | One of the target's [`hook_tokens`](/configuration/tasks/#hook_tokens), used instead of a password so a task running as another user can control a service. Needs `--url`. Takes names only: no globs, run IDs, or `--attach`. Env: `RUNWISP_HOOK_TOKEN`. See [Remote triggers](/recipes/remote-trigger/#restart-a-service-from-a-task-that-runs-as-another-user). Since 1.8. |
 
 ### `runwisp stop`
 
@@ -362,12 +365,13 @@ cancelled and anything queued is dropped, but its cron schedule keeps firing
 (use [`runwisp pause`](#runwisp-pause) to skip it). A run ID stops only that
 run, wherever it came from.
 
-| Flag         | Description                                                                                                                                                      |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--local`    | Use the per-user unit when both a system and a per-user unit exist.                                                                                              |
-| `--attach`   | With targets, then follow the logs of the ones it acted on, like [`runwisp logs -f`](#runwisp-logs). Each run it starts is shown from its first line. Since 1.5. |
-| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.                                                                                                          |
-| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                                                                   |
+| Flag         | Description                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--local`    | Use the per-user unit when both a system and a per-user unit exist.                                                                                                                                                                                                                                                                                                           |
+| `--attach`   | With targets, then follow the logs of the ones it acted on, like [`runwisp logs -f`](#runwisp-logs). Each run it starts is shown from its first line. Since 1.5.                                                                                                                                                                                                              |
+| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.                                                                                                                                                                                                                                                                                                                       |
+| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                                                                                                                                                                                                                                                                                |
+| `--token`    | One of the target's [`hook_tokens`](/configuration/tasks/#hook_tokens), used instead of a password so a task running as another user can control a service. Needs `--url`. Takes names only: no globs, run IDs, or `--attach`. Env: `RUNWISP_HOOK_TOKEN`. See [Remote triggers](/recipes/remote-trigger/#restart-a-service-from-a-task-that-runs-as-another-user). Since 1.8. |
 
 ### `runwisp pause`
 
