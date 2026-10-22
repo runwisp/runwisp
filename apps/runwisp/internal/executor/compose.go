@@ -182,10 +182,8 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 
 	// A service whose container `docker compose up` already runs is attached
 	// to rather than started twice (see attach).
-	if ce.Mode == model.ComposeModeRun && task.Kind.IsService() {
-		if c, ok := b.composeUpContainer(ctx, ce, instanceIndex); ok {
-			return b.attach(ctx, task, c)
-		}
+	if c, ok := b.composeUpContainer(ctx, ce, task, instanceIndex); ok {
+		return b.attach(ctx, task, c)
 	}
 
 	// Services mode uses a deterministic --name; reclaim any container our

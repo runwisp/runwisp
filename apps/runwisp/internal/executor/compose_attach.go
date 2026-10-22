@@ -24,13 +24,16 @@ type upContainer struct {
 }
 
 // composeUpContainer returns the container `docker compose up` runs for ce's
-// service in the instanceIndex-th slot (by container name), if any. Compose
+// service in the instanceIndex-th slot (by container name), if any. Only a
+// run-mode service attaches: a one-off task next to an `up` stack (a
+// migration) is a normal pattern, and stack and exec modes never start a
+// second container of the service. Compose
 // labels its own containers with project and service, and marks `compose run`
 // ones, RunWisp's included, as oneoff, so those never match. A unit without a
 // project name has nothing to match on. A Docker error fails open: the caller
 // starts its own container, as it would without this check.
-func (b *ComposeBackend) composeUpContainer(ctx context.Context, ce *model.ComposeExecution, instanceIndex int) (upContainer, bool) {
-	if ce.ProjectName == "" || ce.Service == "" {
+func (b *ComposeBackend) composeUpContainer(ctx context.Context, ce *model.ComposeExecution, task *model.Task, instanceIndex int) (upContainer, bool) {
+	if ce.Mode != model.ComposeModeRun || !task.Kind.IsService() || ce.ProjectName == "" || ce.Service == "" {
 		return upContainer{}, false
 	}
 	ctx, cancel := context.WithTimeout(ctx, composeHousekeepingTimeout)

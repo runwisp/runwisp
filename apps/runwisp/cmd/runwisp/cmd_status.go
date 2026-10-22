@@ -41,19 +41,7 @@ func init() {
 }
 
 func runStatus(ctx context.Context, out io.Writer, f Flags, rf remoteFlags, asJSON bool) error {
-	// Locally, the Unix socket is the trusted transport (same as exec/tui):
-	// no password needed, and unlike a TCP probe it cannot hit a different
-	// process that happens to squat on the port.
-	baseURL, password := rf.resolve()
-	client, err := connectDaemon(ctx, f, baseURL, password)
-	if err == nil && baseURL != "" {
-		// A cached session may have expired. Log in again now, or every probe
-		// below would fail quietly and status would show a bare "healthy".
-		err = withSessionRetry(ctx, client, baseURL, password, func() error {
-			_, err := client.GetDaemonInfo(ctx)
-			return err
-		})
-	}
+	client, err := statusClient(ctx, f, rf)
 	if err != nil {
 		if asJSON {
 			// Emit an unhealthy document so an agent learns of the failure from
@@ -107,6 +95,23 @@ func runStatus(ctx context.Context, out io.Writer, f Flags, rf remoteFlags, asJS
 		printDownServices(out, tasks)
 	}
 	return nil
+}
+
+// statusClient connects status to its daemon. Locally, the Unix socket is the
+// trusted transport (same as exec/tui): no password needed, and unlike a TCP
+// probe it cannot hit a different process that happens to squat on the port.
+func statusClient(ctx context.Context, f Flags, rf remoteFlags) (*apiclient.Client, error) {
+	baseURL, password := rf.resolve()
+	client, err := connectDaemon(ctx, f, baseURL, password)
+	if err != nil || baseURL == "" {
+		return client, err
+	}
+	// A cached session may have expired. Log in again now, or every probe
+	// below would fail quietly and status would show a bare "healthy".
+	return client, withSessionRetry(ctx, client, baseURL, password, func() error {
+		_, err := client.GetDaemonInfo(ctx)
+		return err
+	})
 }
 
 // printDownServices lists the services with an instance that gave up

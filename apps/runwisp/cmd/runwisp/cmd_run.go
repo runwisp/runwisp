@@ -615,32 +615,33 @@ func runExecStandalone(taskName string, f Flags, params map[string]*string, asJS
 
 	slog.Info("Task triggered", "name", taskName, "run", run.ID)
 
-	// The in-process manager retries a failed run itself; wait for each retry
-	// so the exit code is the task's final outcome, not its first attempt's.
-	result := <-done
-	for {
-		delay, retrying := pendingRetry(target, result.Run)
-		if !retrying {
-			break
-		}
-		logRetry(taskName, target, result.Run, exitCodeFromRun(result.Run), delay)
-		next, ok := awaitTerminal(done, delay+retryAppearGrace)
-		if !ok {
-			break
-		}
-		result = next
-	}
-
+	result := awaitRetries(done, target, <-done)
 	if asJSON {
 		if err := writeJSON(os.Stdout, newExecJSONDoc(taskName, result.Run)); err != nil {
 			return 0, err
 		}
-	}
-
-	if !asJSON {
+	} else {
 		logRunOutcome(taskName, result.Run)
 	}
 	return exitCodeFromRun(result.Run), nil
+}
+
+// awaitRetries follows result through the retries the in-process manager
+// schedules itself, so the exit code is the task's final outcome, not its
+// first attempt's.
+func awaitRetries(done <-chan *events.RunEvent, target *model.Task, result *events.RunEvent) *events.RunEvent {
+	for {
+		delay, retrying := pendingRetry(target, result.Run)
+		if !retrying {
+			return result
+		}
+		logRetry(target.Name, target, result.Run, exitCodeFromRun(result.Run), delay)
+		next, ok := awaitTerminal(done, delay+retryAppearGrace)
+		if !ok {
+			return result
+		}
+		result = next
+	}
 }
 
 // awaitTerminal waits up to within for the next terminal run event.
