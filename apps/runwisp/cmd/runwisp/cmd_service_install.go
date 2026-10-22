@@ -321,7 +321,7 @@ func ensureServicePasswordFallback(out io.Writer, installer autostart.Installer,
 
 	fmt.Fprintf(out, "\nGenerated a Web UI password and saved it to %s (0600):\n\n    %s\n\n"+
 		"Store it now. It won't be shown again here, and 'runwisp password' won't disclose it —\n"+
-		"it lives only in that root-owned drop-in. To rotate it, edit or delete the file and restart.\n", path, pw)
+		"it lives only in that drop-in. To rotate it, edit or delete the file and restart.\n", path, pw)
 	return true
 }
 

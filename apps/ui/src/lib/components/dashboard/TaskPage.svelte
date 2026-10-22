@@ -257,7 +257,7 @@
                   title: "Select a run",
                   description: "Pick a run from the list, or clear the filters to see every run.",
               }
-            : noRunsMessage(task, systemStore.schedulingActive, clock.now),
+            : noRunsMessage(task, systemStore.schedulingActive, clock.now, systemStore.timezone),
     );
 </script>
 

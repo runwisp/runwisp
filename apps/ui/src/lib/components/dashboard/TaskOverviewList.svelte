@@ -33,6 +33,7 @@
     } from "./overview-format.js";
     import { isService } from "@runwisp/common";
     import { hasCron, taskIcon, taskTriggerTooltip } from "$lib/utils/task";
+    import { systemStore } from "$lib/stores";
 
     type BadgeTone = "default" | "primary" | "success" | "warning" | "danger" | "info";
 
@@ -296,7 +297,7 @@
                                     <p
                                         class="font-mono text-xs font-medium text-on-surface tabular-nums"
                                     >
-                                        {formatTaskNextRunLabel(task, now)}
+                                        {formatTaskNextRunLabel(task, now, systemStore.timezone)}
                                     </p>
                                 </div>
 

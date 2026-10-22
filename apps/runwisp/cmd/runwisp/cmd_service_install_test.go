@@ -789,6 +789,21 @@ func TestEnsureServiceEnv_AuthOffStillCapturedNoPasswordFallback(t *testing.T) {
 		"RUNWISP_AUTH now rides the env drop-in, so the old warning is stale")
 }
 
+// `service install --local` saves the password under ~/.config/systemd/user,
+// which the operator owns, yet the note called it a root-owned drop-in.
+func TestServicePasswordFallbackLocalDoesNotSayRootOwned(t *testing.T) {
+	t.Setenv("RUNWISP_AUTH", "")
+	t.Setenv("RUNWISP_PASSWORD", "")
+	inst := &autostartfake.Installer{
+		EnsurePath:  filepath.Join(t.TempDir(), ".config/systemd/user/runwisp.service.d/password.conf"),
+		EnsureWrote: true,
+	}
+	var out bytes.Buffer
+	require.True(t, ensureServicePasswordFallback(&out, inst, autostart.InstallOptions{System: false}))
+	assert.Contains(t, out.String(), inst.EnsurePath)
+	assert.NotContains(t, out.String(), "root-owned")
+}
+
 // A reinstall run from a shell that no longer exports the operator's
 // RUNWISP_* vars (fresh terminal, CI, upgrade script) makes WriteEnvDropIn
 // remove a previous install's captured environment. This must never be

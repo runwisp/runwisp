@@ -8,7 +8,7 @@ import {
     runDuration,
 } from "@runwisp/ui";
 import type { TaskOverview } from "./overview.js";
-import { serviceLabel } from "$lib/utils/task";
+import { scheduleTimeZone, serviceLabel } from "$lib/utils/task";
 import { isService, type Run } from "@runwisp/common";
 
 export function pluralize(count: number): string {
@@ -50,7 +50,12 @@ export function formatTaskLastResultLabel(task: TaskOverview): string {
     return humanizeStatus(task.lastStatus);
 }
 
-export function formatTaskNextRunLabel(task: TaskOverview, now: Date = new Date()): string {
+/** daemonZone is the daemon's resolved timezone; a task's own timezone wins over it. */
+export function formatTaskNextRunLabel(
+    task: TaskOverview,
+    now: Date = new Date(),
+    daemonZone = "",
+): string {
     if (isService(task.task.kind)) {
         return task.state === "stopped" ? "Stopped" : "Always on";
     }
@@ -60,7 +65,11 @@ export function formatTaskNextRunLabel(task: TaskOverview, now: Date = new Date(
     }
 
     if (task.nextRunMs !== undefined) {
-        return formatRelativeTimeWithAbsolute(new Date(task.nextRunMs), now);
+        return formatRelativeTimeWithAbsolute(
+            new Date(task.nextRunMs),
+            now,
+            scheduleTimeZone(task.task, daemonZone),
+        );
     }
 
     return task.isApiOnly ? "Manual only" : "Not scheduled";

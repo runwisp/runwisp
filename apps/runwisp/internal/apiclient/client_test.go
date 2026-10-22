@@ -626,3 +626,18 @@ func TestHealthCheck_CancelledByContext(t *testing.T) {
 		t.Fatal("HealthCheck did not return promptly after its context was cancelled")
 	}
 }
+
+// A rejected reload printed `API error 400: {"title":"Bad Request",...}`. The
+// daemon's problem-details detail is the message; any other body keeps the code.
+func TestHTTPStatusErrorUsesProblemDetail(t *testing.T) {
+	problem := &HTTPStatusError{StatusCode: 400, Body: `{"title":"Bad Request","status":400,"detail":"tls cannot change on reload; restart the daemon"}`}
+	assert.Equal(t, "tls cannot change on reload; restart the daemon", problem.Error())
+	assert.Equal(t, problem.Error(), problem.Detail())
+
+	plain := &HTTPStatusError{StatusCode: 502, Body: "bad gateway"}
+	assert.Equal(t, "API error 502: bad gateway", plain.Error())
+	assert.Equal(t, "bad gateway", plain.Detail())
+
+	empty := &HTTPStatusError{StatusCode: 500}
+	assert.Equal(t, "API error 500: ", empty.Error())
+}

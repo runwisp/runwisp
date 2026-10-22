@@ -235,20 +235,33 @@ type HTTPStatusError struct {
 	Body       string
 }
 
+// Error is the daemon's own explanation when the body is a problem-details
+// document with one, so a rejected reload reads as the reason rather than a
+// JSON dump. Any other body keeps the status code for context.
 func (e *HTTPStatusError) Error() string {
+	if detail := e.problemDetail(); detail != "" {
+		return detail
+	}
 	return fmt.Sprintf("API error %d: %s", e.StatusCode, e.Body)
 }
 
 // Detail returns the problem-details "detail" message from the body, or the
 // raw body when it carries none.
 func (e *HTTPStatusError) Detail() string {
+	if detail := e.problemDetail(); detail != "" {
+		return detail
+	}
+	return e.Body
+}
+
+func (e *HTTPStatusError) problemDetail() string {
 	var problem struct {
 		Detail string `json:"detail"`
 	}
-	if json.Unmarshal([]byte(e.Body), &problem) == nil && problem.Detail != "" {
-		return problem.Detail
+	if json.Unmarshal([]byte(e.Body), &problem) != nil {
+		return ""
 	}
-	return e.Body
+	return problem.Detail
 }
 
 // IsHTTPStatus reports whether err is (or wraps) an HTTPStatusError with the

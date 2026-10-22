@@ -13,6 +13,7 @@ import (
 	"log/slog"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui"
 	"golang.org/x/term"
@@ -29,6 +30,9 @@ func runDefault(ctx context.Context, f Flags) error {
 	// Spawn a background daemon or handle port conflicts.
 	serviceInstalled, err := scaffoldIfMissing(f)
 	if err != nil {
+		return err
+	}
+	if err := datadir.EnsureDir(f.DataDir); err != nil {
 		return err
 	}
 
