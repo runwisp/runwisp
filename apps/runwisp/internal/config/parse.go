@@ -157,7 +157,8 @@ func parseScopedByteSize(scope, raw string) (int64, error) {
 // as an absolute http(s) URL. Empty is the supported default — no link line
 // is rendered in notifications when unset.
 func parseExternalURL(raw string) (string, error) {
-	return parseHTTPURL("daemon.external_url", strings.TrimRight(strings.TrimSpace(raw), "/"))
+	u, err := parseHTTPURL("daemon.external_url", raw)
+	return strings.TrimRight(u, "/"), err
 }
 
 // parseHTTPURL trims raw and rejects anything that isn't an absolute http(s)
