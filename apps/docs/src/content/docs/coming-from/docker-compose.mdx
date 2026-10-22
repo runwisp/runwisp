@@ -37,8 +37,12 @@ Compose plugin must be installed.
 ## Stop the compose stack
 
 RunWisp starts its own containers with `docker compose run`. If the stack is
-also running from `docker compose up`, every service runs twice and published
-ports clash. Stop it first:
+already running from `docker compose up`, RunWisp attaches to each running
+service container instead of starting a second one, and takes it over at the
+next restart. Stopping the daemon stops those containers too. See
+[`import = "services"`](/configuration/compose/#import--services-default).
+
+For a clean start under RunWisp, stop the stack first:
 
 ```bash
 docker compose down

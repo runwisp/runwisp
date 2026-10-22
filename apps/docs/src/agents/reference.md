@@ -232,7 +232,7 @@ Expands to one observable service-task per imported compose service (or one task
 ```
 file:         path =auto-discover  — compose.yaml/.yml/docker-compose.yaml/.yml
 services:     []string             — filter imported services: bare/"+name" keeps only those, "-name" drops those; polarities mutually exclusive; omit to import all
-import:       enum =services       — services (per-service tasks) | stack (one task)
+import:       enum =services       — services (per-service tasks) | stack (one task). services: an instance whose container already runs from `docker compose up` (labels project+service, oneoff=False; Nth instance = Nth by name) attaches via `docker logs -f --since now` instead of starting a second one, ends with the container's exit code; a stop/restart (or daemon stop) docker-stops it, so the next start is RunWisp's own compose run (since 1.8; tasks never attach; probe errors fail open)
 group:        string =alias        — UI group
 project_name: string =file own project — compose project name (-p); unset = COMPOSE_PROJECT_NAME > top-level name: > dir name, like `docker compose up`. Block-imported services get --service-ports --use-aliases; task-level compose_mode="run" does not
 profiles:     []string             — compose profiles

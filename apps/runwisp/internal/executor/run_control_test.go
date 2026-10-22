@@ -34,6 +34,7 @@ type scriptedBackend struct {
 	startErr  error
 	exitHint  func() string
 	endReason func() model.EndReason
+	notice    string
 }
 
 func (b *scriptedBackend) Start(ctx context.Context, task *model.Task, _ *model.Run, _ model.ExecutionDef) (*Process, error) {
@@ -60,6 +61,7 @@ func (b *scriptedBackend) Start(ctx context.Context, task *model.Task, _ *model.
 		},
 		ExitHint:  b.exitHint,
 		EndReason: b.endReason,
+		Notice:    b.notice,
 	}, nil
 }
 
