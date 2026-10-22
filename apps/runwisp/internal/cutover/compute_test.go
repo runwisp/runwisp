@@ -58,6 +58,27 @@ func TestCompute_MissingConfigIsAStepNotARefusal(t *testing.T) {
 	assert.True(t, p.MasksCron)
 }
 
+// RunWisp reads crontabs at load, so an edit waits for a reload. The step that
+// promises crontab -e keeps working must say so, or the operator expects cron's
+// pick-it-up-next-minute behaviour.
+func TestConfigSteps_WriteConfigSaysToReloadAfterCrontabEdit(t *testing.T) {
+	c, _, _ := fixture{
+		crontabs:   map[string]string{"backup": oneJob},
+		cronUnit:   "cron.service",
+		cronActive: true,
+	}.build(t)
+
+	p, err := c.Compute(context.Background())
+	require.NoError(t, err)
+	for _, s := range p.Steps {
+		if s.Kind == StepWriteConfig {
+			assert.Contains(t, s.Detail, "sudo runwisp reload")
+			return
+		}
+	}
+	t.Fatal("no write-config step")
+}
+
 func TestCompute_ExistingConfigWithoutIncludeCronGetsWired(t *testing.T) {
 	c, _, _ := fixture{
 		config:     "[tasks.hello]\nrun = \"echo hi\"\n",

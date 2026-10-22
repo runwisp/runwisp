@@ -21,6 +21,9 @@ runwisp import systemd /etc/systemd/system/myapp.service -o runwisp.toml
 runwisp validate
 ```
 
+A bare unit name such as `myapp.service` also works: it is looked up where
+systemd keeps units.
+
 Given `tempoledger.service`:
 
 ```ini

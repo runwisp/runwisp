@@ -47,6 +47,12 @@ func TestDecodeUnknownKeySuggestions(t *testing.T) {
 			want: []string{`unknown key "failur"`, `did you mean "failure"?`},
 		},
 		{
+			// retry_attempts is 8 edits from "retrys" as a whole; its stem is one.
+			name: "typo of a key's stem",
+			toml: "[tasks.backup]\nrun = \"echo hi\"\nretrys = 3\n",
+			want: []string{`unknown key "retrys"`, `did you mean "retry_attempts"?`},
+		},
+		{
 			name: "uppercase typo still matches",
 			toml: "[tasks.backup]\nrun = \"echo hi\"\nTIMEUOT = \"5m\"\n",
 			want: []string{`did you mean "timeout"?`},

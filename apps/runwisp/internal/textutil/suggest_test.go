@@ -20,6 +20,13 @@ func TestClosest(t *testing.T) {
 	assert.Equal(t, "", Closest("anything", nil))
 }
 
+func TestClosestMatchesAKeysStem(t *testing.T) {
+	candidates := []string{"retry_attempts", "retry_delay", "timeout"}
+	assert.Equal(t, "retry_attempts", Closest("retrys", candidates))
+	assert.Equal(t, "timeout", Closest("timout", candidates))
+	assert.Equal(t, "retry_delay", Closest("retry_dealy", candidates), "a full-key match beats a stem")
+}
+
 func TestLevenshtein(t *testing.T) {
 	assert.Equal(t, 0, levenshtein("abc", "abc"))
 	assert.Equal(t, 1, levenshtein("abc", "abd"))

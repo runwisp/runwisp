@@ -11,7 +11,8 @@ head:
 There are two ways to move cron jobs to RunWisp:
 
 - **Take over** (Linux with systemd): RunWisp reads your crontabs where they
-  are and replaces the cron service. `crontab -e` keeps working.
+  are and replaces the cron service. `crontab -e` keeps working; run
+  `sudo runwisp reload` after an edit.
 - **Convert by hand** (any system): `runwisp import cron` turns a crontab into
   TOML, and you disable the old cron lines yourself.
 
@@ -351,7 +352,9 @@ For jobs read live through `include_cron`, you can't edit these lines;
   [`smtp`](/notifications/providers/smtp/) instead.
 - **`@reboot`.** [`run_on_start = "boot"`](/configuration/tasks/#run_on_start)
   runs once per boot, but only once the daemon is up. If the daemon starts
-  late, or only after the boot, the job runs then.
+  late, or only after the boot, the job runs then. A command that never exits,
+  such as a script that starts a server, belongs in a
+  [service](/configuration/services/) instead.
 - **A `%` that feeds input.** In cron, text after an unescaped `%` is sent to
   the job on stdin. RunWisp has no stdin setting, so the command is cut at the
   `%` and the input is quoted in a `# TODO`. Put it back into the command, for

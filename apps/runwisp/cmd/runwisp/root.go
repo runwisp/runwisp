@@ -78,6 +78,11 @@ Machine-readable reference for agents: https://docs.runwisp.com/llms.txt`,
 		if err := resolveFlags(cmd); err != nil {
 			return err
 		}
+		// Bare `runwisp` may only attach to a running daemon or fail for want
+		// of a config; runDefault makes the data dir once it will spawn one.
+		if cmd == cmd.Root() {
+			return nil
+		}
 		return datadir.EnsureDir(flags.DataDir)
 	},
 }
