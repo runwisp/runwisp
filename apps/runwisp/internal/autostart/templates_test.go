@@ -234,3 +234,11 @@ func TestRender_StopTimeoutFollowsShutdownBudget(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(unit), "TimeoutStopSec=30s\n")
 }
+
+// Starting cron re-runs its @reboot lines, which can start a second copy of an
+// app RunWisp already ran; the failsafe says so when it hands cron back.
+func TestRenderCronFailsafeUnit_WarnsAboutRebootLines(t *testing.T) {
+	body, err := RenderCronFailsafeUnit(CronFailsafeParams{Service: "runwisp.service", CronUnit: "cron.service"})
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "Starting cron also runs its @reboot lines again.")
+}

@@ -171,11 +171,14 @@ healthy_after = "2m"
 
 ### restart_attempts
 
-**type**: `integer` **default**: `3` **min**: `0` **max**: `100`
+**type**: `integer` **default**: `10` **min**: `0` **max**: `100`
 
 How many failed starts in a row an instance may have before it goes
 [FATAL](#when-a-service-cant-start-fatal) and stops restarting. `0` gives up
-after the first failed start.
+after the first failed start. With the default
+[`restart_delay`](#restart_delay) and [`restart_backoff`](#restart_backoff),
+10 attempts keep trying for about 5 minutes, enough to ride out a database
+restart. Since 1.8, the default is `10` (it was `3`).
 
 ```toml title="runwisp.toml"
 [services.flaky]

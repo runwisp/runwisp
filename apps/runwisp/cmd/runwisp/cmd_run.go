@@ -23,6 +23,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime/retry"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 	"github.com/spf13/cobra"
 )
@@ -200,15 +201,101 @@ func runExecViaDaemon(ctx context.Context, taskName string, f Flags, params map[
 	}
 
 	slog.Info("Task triggered", "name", taskName, "run", run.ID)
-	exitCode, final, err := followRun(ctx, client, taskName, run.ID, defaultFollowPace, runLineOut(asJSON))
+	return followToOutcome(ctx, client, taskName, run.ID, asJSON)
+}
+
+// retryAppearGrace is how long past its retry delay followToOutcome waits for
+// a retry run to show up before it reports the attempt it has.
+const retryAppearGrace = 30 * time.Second
+
+// retryPollInterval paces the run-list polls that look for the retry run.
+const retryPollInterval = time.Second
+
+// followToOutcome follows runID, then each retry the daemon starts for it, and
+// reports the last one: its exit code, and its --json document or outcome
+// line. A task with retry_attempts would otherwise exit 1 on its first failed
+// attempt while the daemon went on to retry it, and a CI step would fail even
+// when a retry passed. Ctrl+C stops following and returns the last exit code.
+func followToOutcome(ctx context.Context, client *apiclient.Client, taskName, runID string, asJSON bool) (int, error) {
+	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	task := daemonTask(sigCtx, client, taskName)
+	for {
+		exitCode, final, err := followRun(sigCtx, client, taskName, runID, defaultFollowPace, runLineOut(asJSON))
+		if err != nil {
+			return exitCode, err
+		}
+		delay, retrying := pendingRetry(task, final)
+		if retrying && sigCtx.Err() == nil {
+			logRetry(taskName, task, final, exitCode, delay)
+			if next := awaitRetryRun(sigCtx, client, taskName, final.ID, delay+retryAppearGrace); next != nil {
+				runID = next.ID
+				continue
+			}
+		}
+		if asJSON {
+			return exitCode, finishExecJSON(ctx, os.Stdout, client, taskName, runID, final)
+		}
+		logRunOutcome(taskName, final)
+		return exitCode, nil
+	}
+}
+
+// daemonTask fetches taskName's definition from the daemon, for its retry
+// settings. Best effort: nil (no retries followed) when the fetch fails.
+func daemonTask(ctx context.Context, client *apiclient.Client, taskName string) *model.Task {
+	tasks, err := client.ListTasks(ctx)
 	if err != nil {
-		return exitCode, err
+		return nil
 	}
-	if asJSON {
-		return exitCode, finishExecJSON(ctx, os.Stdout, client, taskName, run.ID, final)
+	for _, t := range tasks {
+		if t.Name == taskName {
+			return &t.Task
+		}
 	}
-	logRunOutcome(taskName, final)
-	return exitCode, nil
+	return nil
+}
+
+// pendingRetry reports whether the daemon retries run, and after how long. It
+// mirrors retry.ShouldRetry with what a client can see: the run's classified
+// failure bit stands in for the task's `failures` policy.
+func pendingRetry(task *model.Task, run *model.Run) (time.Duration, bool) {
+	if task == nil || run == nil || run.EndReason == nil || !run.IsFailure ||
+		!retry.IsFailedExecution(*run.EndReason) || run.RetryAttempt >= task.RetryAttempts {
+		return 0, false
+	}
+	return retry.ComputeRetryDelay(task, run.RetryAttempt), true
+}
+
+// logRetry says the attempt that just ended is not the outcome yet.
+func logRetry(taskName string, task *model.Task, run *model.Run, exitCode int, delay time.Duration) {
+	slog.Warn("Retrying", "name", taskName, "exit", exitCode,
+		"attempt", fmt.Sprintf("%d/%d", run.RetryAttempt+1, task.RetryAttempts), "in", delay.String())
+}
+
+// awaitRetryRun polls the task's runs until the retry of failedRunID shows up,
+// or returns nil once within has passed or ctx is cancelled.
+func awaitRetryRun(ctx context.Context, client *apiclient.Client, taskName, failedRunID string, within time.Duration) *model.Run {
+	deadline := time.Now().Add(within)
+	for {
+		runs, _, err := client.ListRuns(ctx, apiclient.RunsParams{TaskName: taskName, Limit: 10})
+		if err == nil {
+			for i := range runs {
+				if runs[i].RetryOfRunID != nil && *runs[i].RetryOfRunID == failedRunID {
+					return &runs[i]
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(retryPollInterval):
+		}
+	}
 }
 
 // finishExecJSON writes the runJSONDoc for the run to w. It is the shared
@@ -293,15 +380,7 @@ func runExecViaRemote(ctx context.Context, taskName, baseURL, password string, d
 		fmt.Println(run.ID)
 		return 0, nil
 	}
-	exitCode, final, err := followRun(ctx, client, taskName, run.ID, defaultFollowPace, runLineOut(asJSON))
-	if err != nil {
-		return exitCode, err
-	}
-	if asJSON {
-		return exitCode, finishExecJSON(ctx, os.Stdout, client, taskName, run.ID, final)
-	}
-	logRunOutcome(taskName, final)
-	return exitCode, nil
+	return followToOutcome(ctx, client, taskName, run.ID, asJSON)
 }
 
 // authenticateRemote runs the CHAP handshake and caches the resulting session
@@ -536,7 +615,21 @@ func runExecStandalone(taskName string, f Flags, params map[string]*string, asJS
 
 	slog.Info("Task triggered", "name", taskName, "run", run.ID)
 
+	// The in-process manager retries a failed run itself; wait for each retry
+	// so the exit code is the task's final outcome, not its first attempt's.
 	result := <-done
+	for {
+		delay, retrying := pendingRetry(target, result.Run)
+		if !retrying {
+			break
+		}
+		logRetry(taskName, target, result.Run, exitCodeFromRun(result.Run), delay)
+		next, ok := awaitTerminal(done, delay+retryAppearGrace)
+		if !ok {
+			break
+		}
+		result = next
+	}
 
 	if asJSON {
 		if err := writeJSON(os.Stdout, newExecJSONDoc(taskName, result.Run)); err != nil {
@@ -548,6 +641,16 @@ func runExecStandalone(taskName string, f Flags, params map[string]*string, asJS
 		logRunOutcome(taskName, result.Run)
 	}
 	return exitCodeFromRun(result.Run), nil
+}
+
+// awaitTerminal waits up to within for the next terminal run event.
+func awaitTerminal(done <-chan *events.RunEvent, within time.Duration) (*events.RunEvent, bool) {
+	select {
+	case re := <-done:
+		return re, true
+	case <-time.After(within):
+		return nil, false
+	}
 }
 
 // logRunOutcome closes a run's output with how it ended: the output alone

@@ -41,7 +41,7 @@ Besides the `RUNWISP_*` twins of the global options above:
 | `RUNWISP_PASSWORD`        | The Web UI and REST API password, kept in memory only. Unset: a new one every boot. See [Authentication](/operations/auth/).                  |
 | `RUNWISP_VIEWER_PASSWORD` | Optional second password that signs in read-only. Unset: no read-only access. See [Read-only access](/operations/auth/#read-only-access).     |
 | `RUNWISP_AUTH`            | `off` disables authentication. Can't be combined with `RUNWISP_PASSWORD`. See [Authentication](/operations/auth/#running-without-a-password). |
-| `RUNWISP_URL`             | Remote daemon URL for `run`, `logs`, `start`, `stop`, `restart`, and `tui`, same as `--url`.                                                  |
+| `RUNWISP_URL`             | Remote daemon URL for `run`, `logs`, `list`, `status`, `start`, `stop`, `restart`, and `tui`, same as `--url`.                                |
 | `RUNWISP_HOOK_TOKEN`      | Hook token for `start`, `stop`, and `restart`, same as `--token`. Since 1.8.                                                                  |
 | `RUNWISP_TLS`             | Overrides [`[daemon] tls`](/configuration/daemon/#tls-tls_cert-tls_key) (`auto` or `off`).                                                    |
 | `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDRs. Overrides [`[daemon] trusted_proxies`](/configuration/daemon/#trusted_proxies).                                        |
@@ -147,14 +147,19 @@ Parse errors in JSON carry the exact location:
 ```bash
 runwisp list
 runwisp list --json
+runwisp list --url https://runwisp.example.com
 ```
 
-Prints every configured task and service with its schedule. Reads only
-`runwisp.toml`; no daemon needed.
+Prints every configured task and service with its schedule. Reads
+`runwisp.toml`; no daemon needed. When a daemon runs on the same data dir, each
+service also shows its live state, such as `(service x3) FATAL` (`"state"` in
+JSON).
 
-| Flag     | Description                                   |
-| -------- | --------------------------------------------- |
-| `--json` | Print one JSON document instead of the table. |
+| Flag         | Description                                                                                                       |
+| ------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `--json`     | Print one JSON document instead of the table.                                                                     |
+| `--url`      | List the tasks of a remote daemon at this URL instead of the local `runwisp.toml`. Env: `RUNWISP_URL`. Since 1.8. |
+| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                    |
 
 In JSON, a task not defined in your own file carries `"source"`: `"staged"`
 (from [`import --write`](#runwisp-import)) or `"cron"` (from
@@ -170,12 +175,16 @@ runwisp status --json
 Checks that the daemon is up, prints a short summary, and warns when
 `runwisp.toml` changed since the daemon loaded it. The summary names the
 [Web UI address](/configuration/daemon/#external_url) notifications link to,
-and whether it is configured or detected. Exits non-zero if the daemon isn't
-running.
+and whether it is configured or detected. It also lists services that went
+[FATAL](/configuration/services/#when-a-service-cant-start-fatal), with the
+`runwisp start` command that brings them back. Exits non-zero if the daemon
+isn't running.
 
-| Flag     | Description                                                                                   |
-| -------- | --------------------------------------------------------------------------------------------- |
-| `--json` | Print daemon health plus every task and its last run (exit code, timing, `failed`, `missed`). |
+| Flag         | Description                                                                                                                             |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `--json`     | Print daemon health plus every task and its last run (exit code, timing, `failed`, `missed`), and each service's state under `service`. |
+| `--url`      | Check a remote daemon at this URL. Env: `RUNWISP_URL`. Since 1.8.                                                                       |
+| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                                          |
 
 For "will the daemon start on boot?", use [`service status`](#runwisp-service-status).
 
@@ -200,7 +209,9 @@ runwisp run deploy --url https://runwisp.example.com
 
 Runs a task, streams its output, and exits with its exit code. If the run
 fails but the process exited 0 (for example a `failures` pattern matched, or a
-timeout), the exit code is 1.
+timeout), the exit code is 1. Since 1.8, when a failed run gets a
+[retry](/concepts/retries/), it follows the retry and exits with the last
+attempt's code.
 
 Without `--url`, it sends the run to the local daemon if one is running,
 otherwise it runs the task inside the CLI process.

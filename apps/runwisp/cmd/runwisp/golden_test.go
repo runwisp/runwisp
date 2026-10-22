@@ -90,7 +90,7 @@ run = "exec /usr/bin/web"
 instances = 2
 `)}
 	var buf bytes.Buffer
-	require.NoError(t, runList(&buf, f, true))
+	require.NoError(t, runList(t.Context(), &buf, f, remoteFlags{}, true))
 	checkGolden(t, "testdata/list.golden.json", buf.Bytes())
 }
 
@@ -142,6 +142,6 @@ func TestStatusJSONGolden(t *testing.T) {
 	f := serveStatusSocket(t, mux)
 
 	var buf bytes.Buffer
-	require.NoError(t, runStatus(t.Context(), &buf, f, true))
+	require.NoError(t, runStatus(t.Context(), &buf, f, remoteFlags{}, true))
 	checkGolden(t, "testdata/status.golden.json", buf.Bytes())
 }

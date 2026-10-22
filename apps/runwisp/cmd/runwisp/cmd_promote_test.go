@@ -322,7 +322,7 @@ func TestListCmd_FooterOnlyWhenSomethingIsStaged(t *testing.T) {
 	cfgPath := promoteFixture(t)
 
 	var staged bytes.Buffer
-	require.NoError(t, runList(&staged, Flags{CfgFile: cfgPath}, false))
+	require.NoError(t, runList(t.Context(), &staged, Flags{CfgFile: cfgPath}, remoteFlags{}, false))
 	assert.Contains(t, staged.String(), "NAME")
 	assert.Contains(t, staged.String(), "2 tasks are imported or read from a crontab")
 
@@ -330,7 +330,7 @@ func TestListCmd_FooterOnlyWhenSomethingIsStaged(t *testing.T) {
 	require.NoError(t, err)
 
 	var native bytes.Buffer
-	require.NoError(t, runList(&native, Flags{CfgFile: cfgPath}, false))
+	require.NoError(t, runList(t.Context(), &native, Flags{CfgFile: cfgPath}, remoteFlags{}, false))
 	assert.Contains(t, native.String(), "NAME")
 	assert.NotContains(t, native.String(), "staged")
 }

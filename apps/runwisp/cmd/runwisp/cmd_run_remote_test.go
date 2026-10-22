@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -290,4 +292,78 @@ func TestRunExecViaRemote_Unreachable(t *testing.T) {
 	ufe, ok := isUserFacing(err)
 	require.True(t, ok)
 	assert.Contains(t, ufe.Error(), "not reachable")
+}
+
+// `run` exited 1 on a task's first failed attempt while the daemon went on to
+// retry it, so a CI step failed even when the retry passed. It follows the
+// retry and exits with the final outcome.
+func TestRunExecViaRemote_FollowsRetryToFinalOutcome(t *testing.T) {
+	useTempCacheDir(t)
+	failed, success := model.ReasonFailed, model.ReasonSuccess
+	first := model.Run{ID: "run-1", TaskName: "backup", Status: model.PhaseEnded, EndReason: &failed, ExitCode: 1, IsFailure: true}
+	retryOf := first.ID
+	second := model.Run{ID: "run-2", TaskName: "backup", Status: model.PhaseEnded, EndReason: &success, RetryAttempt: 1, RetryOfRunID: &retryOf}
+	zero := time.Duration(0)
+
+	var mu sync.Mutex
+	var streamed []string
+	mux := serveTasks(http.NewServeMux(), model.TaskResponse{Task: model.Task{Name: "backup", ManualTrigger: true, RetryAttempts: 2, RetryDelay: &zero}})
+	mux.HandleFunc("POST /api/tasks/backup/run", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(model.Run{ID: first.ID, TaskName: "backup", Status: model.PhasePending})
+	})
+	mux.HandleFunc("GET /api/runs/{id}/log/stream", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		streamed = append(streamed, r.PathValue("id"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "event: done\ndata: {\"final_line\":0,\"status\":\"ended\"}\n\n")
+	})
+	mux.HandleFunc("GET /api/runs/{id}", func(w http.ResponseWriter, r *http.Request) {
+		run := first
+		if r.PathValue("id") == second.ID {
+			run = second
+		}
+		_ = json.NewEncoder(w).Encode(run)
+	})
+	mux.HandleFunc("GET /api/runs", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(server.RunsResponseBody{Total: 2, Items: []model.Run{second, first}})
+	})
+	var logins atomic.Int32
+	srv := httptest.NewServer(remoteAuth(mux, &logins))
+	defer srv.Close()
+
+	code, err := runExecViaRemote(t.Context(), "backup", srv.URL, "pw", false, false, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 0, code, "the retry passed, so the run passed")
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []string{"run-1", "run-2"}, streamed, "both attempts' logs are followed")
+}
+
+func TestPendingRetry(t *testing.T) {
+	failed, success, stopped := model.ReasonFailed, model.ReasonSuccess, model.ReasonStopped
+	delay := 5 * time.Second
+	task := &model.Task{Name: "backup", RetryAttempts: 2, RetryDelay: &delay}
+	for _, tc := range []struct {
+		name      string
+		task      *model.Task
+		run       model.Run
+		want      bool
+		wantDelay time.Duration
+	}{
+		{name: "first failed attempt retries", task: task, run: model.Run{EndReason: &failed, IsFailure: true}, want: true, wantDelay: 5 * time.Second},
+		{name: "last attempt is final", task: task, run: model.Run{EndReason: &failed, IsFailure: true, RetryAttempt: 2}},
+		{name: "success is final", task: task, run: model.Run{EndReason: &success}},
+		{name: "failure the policy forgives is final", task: task, run: model.Run{EndReason: &failed}},
+		{name: "a stop is never retried", task: task, run: model.Run{EndReason: &stopped, IsFailure: true}},
+		{name: "unknown task follows one run", run: model.Run{EndReason: &failed, IsFailure: true}},
+		{name: "no retries configured", task: &model.Task{Name: "backup"}, run: model.Run{EndReason: &failed, IsFailure: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := pendingRetry(tc.task, &tc.run)
+			assert.Equal(t, tc.want, ok)
+			assert.Equal(t, tc.wantDelay, got)
+		})
+	}
 }

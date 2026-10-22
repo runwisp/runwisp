@@ -120,6 +120,21 @@ Jobs from `/etc/anacrontab` are held the same way while anacron runs.
 You never set a hold yourself. RunWisp checks for a running cron daemon on
 every load.
 
+### If RunWisp keeps crashing
+
+The take-over installs a failsafe. If RunWisp crashes 5 times in 5 minutes and
+systemd stops restarting it, the failsafe unmasks and starts cron, so your
+crontab jobs keep running. Services and jobs that only `runwisp.toml` defines
+stay stopped. Starting cron also runs its `@reboot` lines again. Restarts you
+ask for with `runwisp restart` or `runwisp service install` don't count toward
+the limit.
+
+Once RunWisp is fixed, hand the jobs back to it:
+
+```bash
+sudo systemctl reset-failed runwisp.service && sudo runwisp takeover
+```
+
 ### Undoing it
 
 ```bash

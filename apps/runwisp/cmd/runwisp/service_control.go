@@ -356,6 +356,16 @@ func hookControlError(err error, baseURL, verb, name string) error {
 	return controlError(err, "", verb, name, false)
 }
 
+// connectDaemon connects to a remote daemon when baseURL is set, and to the
+// local socket otherwise. Unlike controlClient it skips the PID-lock check: a
+// read-only probe like status asks the socket itself whether anything answers.
+func connectDaemon(ctx context.Context, f Flags, baseURL, password string) (*apiclient.Client, error) {
+	if baseURL != "" {
+		return connectRemote(ctx, baseURL, password)
+	}
+	return connectLocal(ctx, f)
+}
+
 // connectLocal returns a client for the local daemon socket after a health
 // check.
 func connectLocal(ctx context.Context, f Flags) (*apiclient.Client, error) {

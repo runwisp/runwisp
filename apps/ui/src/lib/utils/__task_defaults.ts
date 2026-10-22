@@ -21,7 +21,7 @@ export const TASK_DEFAULTS: Record<"task" | "service", Task> = {
         "restartDelay": 1000000000,
         "restartBackoff": "exponential",
         "healthyAfter": 60000000000,
-        "restartAttempts": 3,
+        "restartAttempts": 10,
         "autostart": true,
         "logMaxSize": 104857600,
         "logOnFull": "drop_old",

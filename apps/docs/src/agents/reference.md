@@ -118,7 +118,7 @@ log_on_full:         enum =drop_old — drop_new | drop_old | kill
 keep_runs:           int          — row-count retention; 0..1000000 (0 = keep none)
 keep_for:            dur          — age retention; positive
 healthy_after:       dur  =60s    — service uptime that counts as healthy: resets the restart counter and clears the failed-start streak (SERVICES only); 0 = healthy immediately, kept literally if set
-restart_attempts:       int  =3      — consecutive failed starts (any exit, exit 0 included, before healthy_after) before a service instance goes FATAL (SERVICES only); 0 = give up after the first failure, kept literally if set
+restart_attempts:       int  =10     — consecutive failed starts (any exit, exit 0 included, before healthy_after) before a service instance goes FATAL (SERVICES only); 0 = give up after the first failure, kept literally if set
 restart_delay:       dur  =1s     — base delay before a service restart (SERVICES only)
 restart_backoff:     enum =exponential — restart backoff curve (SERVICES only): constant|linear|exponential
 catch_up:            int  =1       — default missed-tick replay count for cron tasks (TASKS only); 0..10000
@@ -324,10 +324,12 @@ runwisp daemon               — start headless daemon (no TUI); --app reads the
 runwisp tui                  — attach a TUI to a running daemon
 runwisp validate             — validate runwisp.toml without starting anything; --json for the structured document (see above); --app validates a JSON document on stdin;
                                --explain adds each schedule in words + next 3 firings (zone-aware, DST marked; `schedules` in --json)
-runwisp list                 — list configured tasks and schedules; --json for a machine-readable document
-runwisp status               — is the daemon alive?; --json for daemon health + every task's last run (+ pausedAt when its schedule is paused) + externalUrl/externalUrlSource (config|detected); human output lists paused schedules and the Web UI address
+runwisp list                 — list configured tasks and schedules; --json for a machine-readable document; services show their live state (`state` in --json) when a local daemon answers;
+                               --url (env RUNWISP_URL) + --password list a remote daemon's tasks instead of the local runwisp.toml
+runwisp status               — is the daemon alive?; --json for daemon health + every task's last run (+ pausedAt when its schedule is paused) + externalUrl/externalUrlSource (config|detected); human output lists paused schedules, FATAL services and the Web UI address; --url/--password check a remote daemon; --json carries each service's `service` state
 runwisp run <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive
                              — exit code = the process's exit code; 1 when the run failed (failures pattern, timeout, stop) but the process exited 0
+                             — a failed run that gets a retry (retry_attempts) is followed through its retries; the exit code is the last attempt's
                              — --param key=value (repeatable) supplies task parameter values; a param not mentioned uses its declared default
                              — --json prints the outcome as one JSON document on stdout once the run ends; log lines go to stderr instead
                              — --url (env RUNWISP_URL) dispatches to a remote daemon over HTTP; --password (env RUNWISP_PASSWORD) authenticates it;

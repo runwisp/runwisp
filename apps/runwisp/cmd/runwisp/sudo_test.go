@@ -101,7 +101,7 @@ func TestRunList_PointsAtTheSystemConfig(t *testing.T) {
 
 	t.Chdir(t.TempDir())
 	defaults := Flags{CfgFile: defaultConfigPath(os.Geteuid(), ""), DataDir: defaultDataDir(os.Geteuid(), "")}
-	err := runList(io.Discard, defaults, false)
+	err := runList(t.Context(), io.Discard, defaults, remoteFlags{}, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "/etc/runwisp/runwisp.toml")
 	assert.Contains(t, err.Error(), "sudo ")
