@@ -292,6 +292,22 @@ func TestTakeoverSavesAStablePassword(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(dropIn), 0o755))
 	require.NoError(t, os.WriteFile(dropIn, []byte("x"), 0o600))
 	out.Reset()
-	printTakeoverDone(&out, Flags{CfgFile: filepath.Join(t.TempDir(), "none.toml")})
+	printTakeoverDone(&out, Flags{CfgFile: filepath.Join(t.TempDir(), "none.toml")}, "/usr/local/bin/runwisp")
 	assert.Contains(t, out.String(), "Password:   sudo cat "+dropIn)
+}
+
+// The unit runs the root-owned copy service install made, and `upgrade`
+// replaces the binary it runs from, so the hint must name that copy rather
+// than the home binary the operator typed takeover with.
+func TestPrintTakeoverDone_UpgradeNamesTheUnitBinary(t *testing.T) {
+	cfg := Flags{CfgFile: filepath.Join(t.TempDir(), "none.toml")}
+
+	var out bytes.Buffer
+	printTakeoverDone(&out, cfg, "/usr/local/bin/runwisp")
+	assert.Contains(t, out.String(), "Upgrade:    sudo runwisp upgrade\n")
+	assert.Contains(t, out.String(), "Reload:     sudo runwisp reload (after crontab -e)\n")
+
+	out.Reset()
+	printTakeoverDone(&out, cfg, "/opt/rw/runwisp")
+	assert.Contains(t, out.String(), "Upgrade:    sudo /opt/rw/runwisp upgrade\n")
 }

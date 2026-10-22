@@ -19,6 +19,7 @@
     } from "@runwisp/ui";
     import type { TaskOverview } from "./overview.js";
     import type { Run } from "@runwisp/common";
+    import { systemStore } from "$lib/stores";
     import {
         formatRunDurationLabel,
         formatTaskLastRunLabel,
@@ -98,7 +99,7 @@
                 {#each attentionTasks as task (task.task.name)}
                     {@const statusConfig = task.lastStatus && RUN_STATUS_CONFIG[task.lastStatus]}
                     {@const exitCode = failureExitCode(task.lastRun)}
-                    {@const nextLabel = formatTaskNextRunLabel(task, now)}
+                    {@const nextLabel = formatTaskNextRunLabel(task, now, systemStore.timezone)}
 
                     <TaskCard accent="danger" onclick={() => onTaskClick(task.task.name)}>
                         <div class="flex items-start justify-between gap-2">
@@ -218,7 +219,11 @@
                                         class="mt-1 flex items-baseline gap-x-2 text-xs text-on-surface-muted"
                                     >
                                         <span class="truncate">
-                                            {formatTaskNextRunLabel(task, now)}
+                                            {formatTaskNextRunLabel(
+                                                task,
+                                                now,
+                                                systemStore.timezone,
+                                            )}
                                         </span>
                                         {#if task.task.cron}
                                             <span

@@ -35,13 +35,20 @@ func JoinAnd(items []string) string {
 
 // Closest returns the candidate closest to target by levenshtein distance,
 // or "" when nothing is within the typo threshold of max(2, len/3).
-// Case-insensitive, so SCHEDLUE still suggests schedule.
+// Case-insensitive, so SCHEDLUE still suggests schedule. A candidate also
+// scores by its stem (the part before the first "_") plus one, so `retrys`
+// finds retry_attempts, eight edits away as a whole. A full-key match still
+// wins, and on a tie the earlier candidate does.
 func Closest(target string, candidates []string) string {
 	lowered := strings.ToLower(target)
 	threshold := max(2, len(lowered)/3)
 	best, bestDist := "", threshold+1
 	for _, candidate := range candidates {
-		d := levenshtein(lowered, strings.ToLower(candidate))
+		key := strings.ToLower(candidate)
+		d := levenshtein(lowered, key)
+		if stem, _, ok := strings.Cut(key, "_"); ok {
+			d = min(d, levenshtein(lowered, stem)+1)
+		}
 		if d < bestDist {
 			best, bestDist = candidate, d
 		}

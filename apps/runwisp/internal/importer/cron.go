@@ -417,12 +417,16 @@ func (cp *crontabParser) importJob(line string) bool {
 				"crontab line whose user column has been read as part of the command. "+
 				"Re-run with --system to split it out, or --system=false to accept it as written.")
 	}
+	b := block{header: "tasks." + name}
+	// The note only lives in this import's report; the comment above the table
+	// travels with it through promote, so a failed run with an empty log still
+	// says where its output went.
 	if target := outputRedirect(command); target != "" {
 		ref.note(NoteOutputRedirected,
 			"its output goes to "+target+", so RunWisp can't show it in the run's log. "+
 				"Remove the redirect to capture it.")
+		b.lead = append(b.lead, "Output goes to "+target+"; RunWisp can't show it. Remove the redirect to capture it.")
 	}
-	b := block{header: "tasks." + name}
 	if description != "" {
 		b.set("description", tomlString(description))
 	}
@@ -740,7 +744,13 @@ func cronStdin(rest string) string {
 func (cp *crontabParser) applySchedule(b *block, ref itemRef, schedule string, runOnStart bool) {
 	if runOnStart {
 		b.set("run_on_start", tomlString(string(model.RunOnStartBoot)))
-		b.lead = []string{"@reboot: runs once per machine boot, not on daemon restarts."}
+		// No heuristic tells a one-shot boot script from one that execs a server
+		// (`start-app.sh` ending in `exec node`), so every @reboot gets the hint: a
+		// command that never exits sits "running" forever as a task and races the
+		// real service for its port.
+		const asService = "If this command never exits (a server, a worker), make it a [services.<name>] instead."
+		b.lead = append(b.lead, "@reboot: runs once per machine boot, not on daemon restarts.", asService)
+		ref.note(NoteRebootLongRunning, asService)
 		// @reboot consults no cron grammar, but it still runs under the crontab's
 		// timezone, so a bad zone has to be caught here too.
 		cp.applyTimezone(b, ref)

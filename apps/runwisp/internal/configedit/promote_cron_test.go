@@ -126,6 +126,18 @@ func TestPromote_CronSourcedTaskIsNativeAfterReloadWithNoDuplicate(t *testing.T)
 	assert.Contains(t, crontab, layout.RootPath, "the commented line carries a note pointing at where the job moved")
 }
 
+// A job whose output goes to a file failed with an empty log once promoted,
+// because the import's note about the redirect stayed behind in the report. The
+// comment above the imported table has to travel into runwisp.toml with it.
+func TestPromote_CronRedirectCommentTravels(t *testing.T) {
+	layout := cronLayout(t, cronRoot, "0 3 * * * /usr/local/bin/dump.sh >> /var/log/dump.log 2>&1\n")
+	cfg := loadLayout(t, layout)
+
+	_, err := Promote(PromoteRequest{Layout: layout, Config: cfg, Names: []string{"dump"}})
+	require.NoError(t, err)
+	assert.Contains(t, readFile(t, layout.RootPath), "# Output goes to /var/log/dump.log")
+}
+
 // TestPromote_CronSourcedTaskRestampsRatherThanChanges is the guard on
 // config.sameDefinition's provenance mask. A promote must read as a provenance-only
 // restamp, because a Changed verdict would recycle a running service and re-anchor

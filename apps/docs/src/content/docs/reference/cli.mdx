@@ -410,13 +410,15 @@ crontab -l | runwisp import cron
 runwisp import cron /etc/crontab --write
 runwisp import supervisord /etc/supervisor/conf.d/*.conf -o runwisp.toml
 runwisp import systemd /etc/systemd/system/myapp.service
-runwisp import systemd /etc/systemd/system/backup.timer
+runwisp import systemd backup.timer
 runwisp import ofelia compose.yaml -o runwisp.toml
 ```
 
 Converts existing config into RunWisp TOML and prints it to stdout. Reads files
 or stdin. With neither, `import supervisord` reads
-`/etc/supervisor/supervisord.conf` or `/etc/supervisord.conf`. Anything that doesn't map cleanly becomes a `# TODO` comment. Import
+`/etc/supervisor/supervisord.conf` or `/etc/supervisord.conf`. `import systemd`
+also takes a bare unit name and finds it in `/etc/systemd/system`,
+`/run/systemd/system`, `/usr/lib/systemd/system` or `~/.config/systemd/user`. Anything that doesn't map cleanly becomes a `# TODO` comment. Import
 never disables the source, so turn the old job off before starting RunWisp or it
 runs twice.
 

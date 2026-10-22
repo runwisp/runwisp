@@ -174,6 +174,47 @@ Register-ScheduledTask -TaskName 'RunWispBoot' -Action $Action -Trigger $Trigger
 installer tells you to run `sudo runwisp takeover`. See
 [From cron](/coming-from/cron/).
 
+## Back up and move
+
+Everything RunWisp knows lives in a few places. Back these up:
+
+- **The data directory**, `/var/lib/runwisp`: run history in `runwisp.db` (with
+  its `runwisp.db-wal` and `runwisp.db-shm` files), run output in `logs/`, and
+  the self-signed certificate in `tls/`. Keep `tls/` so clients that pinned the
+  certificate still connect.
+- **The config**, `/etc/runwisp/`.
+- **The unit's drop-ins**, `/etc/systemd/system/runwisp.service.d/`: the saved
+  password and the carried environment.
+- **After a [takeover](/coming-from/cron/)**, the crontabs RunWisp reads.
+
+`daemon.pid`, `runwisp.sock` and `daemon.log` are rebuilt on start and don't
+need a backup.
+
+The database is SQLite in WAL mode, so copying it while the daemon writes can
+catch it halfway. Stop the daemon for the copy:
+
+```bash
+sudo runwisp stop
+sudo tar -czf runwisp-backup.tar.gz /var/lib/runwisp /etc/runwisp \
+  /etc/systemd/system/runwisp.service.d
+sudo systemctl start runwisp
+```
+
+For a copy without stopping, use `sqlite3 /var/lib/runwisp/runwisp.db ".backup
+/tmp/runwisp.db"` (`sqlite3` doesn't ship with RunWisp) and copy `logs/`
+next to it.
+
+To move RunWisp to a new machine:
+
+1. Install the same version or a newer one. The database only migrates forward.
+2. Restore the paths above, keeping their owners and the data directory's
+   `0700` mode.
+3. Run `sudo runwisp service install`. It keeps the restored `password.conf`.
+4. If the old machine ran `takeover`, run `sudo runwisp takeover` again.
+
+In Docker, back up the volume mounted at `/var/lib/runwisp` the same way, with
+the container stopped.
+
 ## Uninstall
 
 ```bash

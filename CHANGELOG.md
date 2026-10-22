@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp import supervisord` with no file reads `/etc/supervisor/supervisord.conf` or `/etc/supervisord.conf`, and `runwisp import cron` with nothing on stdin says what to pipe in.
 - `runwisp import cron` notes jobs that redirect their output to a file, since RunWisp can't show that output.
 - A run killed by a signal RunWisp didn't send names the signal in its log, and a `SIGKILL` points at the kernel's out-of-memory killer.
+- `runwisp takeover` says to run `sudo runwisp reload` after `crontab -e`, since an edit waits for a reload.
+- `runwisp import cron` suggests a `[services.*]` table for an `@reboot` job that never exits, and a job that writes its output to a file keeps a comment saying so above its table, also after `runwisp promote`.
+- `runwisp import systemd` finds a unit by name, such as `backup.timer`, in the systemd unit directories, and with nothing on stdin it says what to pass instead of importing an empty service.
+- An unknown key like `retrys` suggests the key you likely meant (`retry_attempts`).
 
 ### Fixed
 
@@ -55,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp restart` checks the config first and leaves the daemon running when the config is invalid, instead of stopping it for one that can't start.
 - Live logs and Web UI updates stream through nginx as they happen, instead of arriving in one burst.
 - A non-root `runwisp list` or `runwisp run` on a box with the system service says to use sudo, instead of failing on a missing `runwisp.toml`.
+- `runwisp takeover` ends with the upgrade command for the binary the service runs, not for the copy in your home directory.
+- Errors from the daemon, like a rejected `runwisp reload`, print the reason instead of the raw JSON response.
+- The Web UI shows a task's next run in the timezone its schedule uses, so "next run in 7 hours (02:30)" agrees with "At 02:30".
+- `runwisp service install --local` no longer calls the password file it saved root-owned.
+- `runwisp` without a terminal and without a `runwisp.toml` fails right away with a hint, instead of leaving an empty `.runwisp` directory behind.
 
 ## [1.7.1] - 2026-10-19
 
