@@ -153,6 +153,7 @@
         "shutdown_timeout": { "$ref": "#/$defs/duration", "description": "SIGTERM→SIGKILL drain budget for in-flight runs on shutdown. Default 10s." },
         "external_url": { "type": "string", "description": "Public Web UI base for notification deep-links; absolute http(s) with host. When unset, the address of the most recent signed-in Web UI visit is used." },
         "check_updates": { "type": "boolean", "default": true, "description": "Poll concierge.runwisp.com for a newer release and show an indicator; also enables the Web UI feedback prompt. Set false to keep the daemon fully offline. Never auto-applies." },
+        "heartbeat_url": { "type": "string", "description": "Dead man's switch URL (absolute http(s)) the daemon GETs at start and every 60s, so a monitor such as healthchecks.io alerts when the pings stop. Treated as a secret: never logged or served over the API. Applied by a reload." },
         "log_output": { "type": "boolean", "default": false, "description": "Copy every run's output lines to the daemon's own stdout and stderr, so `docker logs` shows what the jobs printed. The RUNWISP_LOG_OUTPUT env var overrides it; the Docker image sets it to true." },
         "metrics_enabled": { "type": "boolean", "default": false, "description": "Master switch for /metrics." },
         "metrics_listen": { "type": "string", "description": "Dedicated metrics listener host:port; setting it enables metrics." },
@@ -424,7 +425,7 @@
               "description": "Match on fine-grained outcomes — the same vocabulary as [tasks.*] failures.",
               "items": {
                 "type": "string",
-                "enum": ["started", "succeeded", "failed", "timeout", "crashed", "log_overflow", "queue_full", "stopped", "daemon_stopped", "missed", "unhealthy", "service.fatal", "log.disk_pressure", "long_running"]
+                "enum": ["started", "succeeded", "failed", "timeout", "crashed", "log_overflow", "queue_full", "stopped", "daemon_stopped", "missed", "unhealthy", "service.fatal", "log.disk_pressure", "long_running", "recovered"]
               }
             },
             "failure": { "type": "boolean", "description": "Match any run classified as a failure (per [tasks.*] failures)." },

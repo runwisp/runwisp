@@ -33,9 +33,10 @@ func TestCoalesce_ID_DelegatesToInner(t *testing.T) {
 
 func failEvent(taskName string) *notify.Event {
 	return &notify.Event{
-		Kind:     notify.KindRunFailed,
-		Severity: notify.SevError,
-		TaskName: taskName,
+		Kind:      notify.KindRunFailed,
+		Severity:  notify.SevError,
+		TaskName:  taskName,
+		IsFailure: true,
 	}
 }
 
@@ -606,4 +607,84 @@ func TestCoalesce_StopDeadlineIsNotADeliveryFailure(t *testing.T) {
 	svc.Stop(stopCtx)
 
 	assert.Never(t, func() bool { return sink.count() > 0 }, 300*time.Millisecond, 10*time.Millisecond)
+}
+
+// TestService_SuccessBetweenFailuresStartsNewGroup: fail, succeed, fail is two
+// incidents. The success isn't routed to Slack, yet it still ends the first
+// failure's group, so the second failure pages instead of being held for an
+// hour.
+func TestService_SuccessBetweenFailuresStartsNewGroup(t *testing.T) {
+	inner := testutil.NewFakeChannel("slack")
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, time.Now, slog.Default(), nil)
+	withManualTimers(c)
+	bus := events.NewEventBus()
+	svc := notify.New(notify.Config{
+		Bus:      bus,
+		Channels: []notify.Channel{c},
+		Rules:    []notify.Rule{{Match: notify.MatchFailure(), ActionIDs: []string{"slack"}}},
+	})
+	svc.Start(context.Background())
+	defer stopWithin(t, svc)
+
+	failed, success := model.ReasonFailed, model.ReasonSuccess
+	bus.Publish(events.EventRunFailed, events.RunEvent{Run: &model.Run{
+		ID: "01HFAIL1", TaskName: "etl", Status: model.PhaseEnded, EndReason: &failed, ExitCode: 1, IsFailure: true,
+	}})
+	bus.Publish(events.EventRunCompleted, events.RunEvent{Run: &model.Run{
+		ID: "01HOK", TaskName: "etl", Status: model.PhaseEnded, EndReason: &success,
+	}})
+	bus.Publish(events.EventRunFailed, events.RunEvent{Run: &model.Run{
+		ID: "01HFAIL2", TaskName: "etl", Status: model.PhaseEnded, EndReason: &failed, ExitCode: 1, IsFailure: true,
+	}})
+
+	require.Eventually(t, func() bool { return len(inner.Received()) == 2 }, 2*time.Second, time.Millisecond,
+		"the failure after the success must page")
+	for _, ev := range inner.Received() {
+		assert.Equal(t, notify.KindRunFailed, ev.Kind, "the success itself is not routed to slack")
+		assert.Nil(t, ev.Extra, "neither failure is a summary")
+	}
+}
+
+// TestCoalesce_ResetTaskFlushesPendingSummary: a success ending a group that
+// still holds suppressed failures sends their summary right away.
+func TestCoalesce_ResetTaskFlushesPendingSummary(t *testing.T) {
+	inner := testutil.NewFakeChannel("slack")
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, fakeclock.New(time.Unix(0, 0)).Now, slog.Default(), nil)
+	defer c.Close(context.Background())
+	mt := withManualTimers(c)
+
+	for range 3 {
+		require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
+	}
+	c.ResetTask(context.Background(), "etl")
+
+	got := inner.Received()
+	require.Len(t, got, 2, "first failure + the summary of the two held back")
+	assert.Equal(t, 2, got[1].Extra["coalesced_count"])
+	assert.Equal(t, true, got[1].Extra["coalesced_summary"])
+	mt.FireAll()
+	c.wg.Wait()
+	assert.Len(t, inner.Received(), 2, "the stopped window-close timer sends nothing more")
+
+	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
+	assert.Len(t, inner.Received(), 3, "the next failure opens a new group and pages")
+}
+
+// TestCoalesce_ResetTaskKeepsNonFailureGroups: a success only ends failure
+// groups of its own task. Another task's failures, and the task's own
+// non-failure events, keep coalescing.
+func TestCoalesce_ResetTaskKeepsNonFailureGroups(t *testing.T) {
+	inner := testutil.NewFakeChannel("slack")
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, fakeclock.New(time.Unix(0, 0)).Now, slog.Default(), nil)
+	defer c.Close(context.Background())
+	withManualTimers(c)
+	pressure := &notify.Event{Kind: notify.KindLogDiskPressure, Severity: notify.SevWarn, TaskName: "etl"}
+
+	require.NoError(t, c.Execute(context.Background(), pressure))
+	require.NoError(t, c.Execute(context.Background(), failEvent("other")))
+	c.ResetTask(context.Background(), "etl")
+	require.NoError(t, c.Execute(context.Background(), pressure))
+	require.NoError(t, c.Execute(context.Background(), failEvent("other")))
+
+	assert.Len(t, inner.Received(), 2, "both repeats stay folded into their open groups")
 }

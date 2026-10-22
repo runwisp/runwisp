@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp import systemd` reads `.timer` units and turns each timer and the service it starts into one scheduled task.
 - A hook `run` takes `tail=N` and returns the last N lines of the run's log with the run, so a CI job holding only a hook token can show why a run failed.
 - `runwisp start`, `stop` and `restart` take `--token` (or `RUNWISP_HOOK_TOKEN`) with `--url`, so a task that runs as another user can restart a service through its hook token.
+- A `recovered` notification tells you when a task succeeds after a failed run. It goes wherever the task's failures go, the bell included.
+- `[daemon] heartbeat_url` pings a dead man's switch such as healthchecks.io every minute, so you hear about it when the daemon itself is down.
 
 ### Changed
 
@@ -67,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Web UI shows a task's next run in the timezone its schedule uses, so "next run in 7 hours (02:30)" agrees with "At 02:30".
 - `runwisp service install --local` no longer calls the password file it saved root-owned.
 - `runwisp` without a terminal and without a `runwisp.toml` fails right away with a hint, instead of leaving an empty `.runwisp` directory behind.
+- A failure that comes back after a successful run alerts again and gets a new bell row, instead of being held in the earlier failure's `coalesce_window`.
 
 ## [1.7.1] - 2026-10-19
 

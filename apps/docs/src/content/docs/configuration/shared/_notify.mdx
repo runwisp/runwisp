@@ -1,9 +1,11 @@
 **type**: `string[]`
 
 Notifier ids to alert when a run counts as a failure (see
-[`failures`](/configuration/tasks/#failures)) or, on a task, when it is still
-going after [`warn_after`](/configuration/tasks/#warn_after). A missed run is a
-failure by default, so it alerts here too.
+[`failures`](/configuration/tasks/#failures)), when a run succeeds after a
+failed one ([`recovered`](/configuration/routes/#matchkinds), since 1.8), or, on
+a task, when it is still going after
+[`warn_after`](/configuration/tasks/#warn_after). A missed run is a failure by
+default, so it alerts here too.
 
 ```toml title="runwisp.toml"
 [tasks.backup-db]

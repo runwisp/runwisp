@@ -36,6 +36,7 @@ shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flig
 timezone:             IANA string =host system zone — TZ for cron eval when a task pins none
 external_url:         string =last signed-in Web UI address — public Web UI base for notification deep-links; absolute http(s) w/ host; unset = detected from the latest browser password sign-in to the Web UI (persisted; `--url` clients and TUI-opened tabs don't count; never with RUNWISP_AUTH=off)
 check_updates:        bool =true  — poll concierge.runwisp.com for a newer release; shows an indicator, never auto-updates; also gates the Web UI feedback prompt; false = fully offline
+heartbeat_url:        string       — dead man's switch (e.g. healthchecks.io ping URL); GET at start + every 60s, 10s timeout, non-2xx = failed ping; absolute http(s) w/ host; secret: never logged (host only, failure/recovery logged once) and not in the API; reloadable; unset = off; since 1.8
 log_output:           bool =false — print each run output line to the daemon stdout as `task | line` (stderr lines to stderr; JSON under --log-format=json); RUNWISP_LOG_OUTPUT overrides; headless only (a TUI session ignores it); bounded buffer drops overflow and reports the count; reloadable; the Docker image sets it true. since 1.7
 metrics_enabled:      bool =false — master switch for /metrics
 metrics_listen:       host:port   — dedicated metrics listener; setting it enables metrics on its own
@@ -187,7 +188,7 @@ params:            []table          — per-run inputs (TASKS only, rejected on 
                                      (needs choices), description string. Scheduled runs (cron/run_on_start/catch_up) use default; a retry uses the
                                      original run's values; values are passed as real args/env, never pasted into the shell string. See
                                      /configuration/tasks/#params
-notify: []string         — sugar → route on any classified failure (see failures) and, on a task, on long_running (see warn_after); notifier ids, "id:override", or "inapp". Non-failure outcomes use an explicit [[route]].
+notify: []string         — sugar → route on any classified failure (see failures), on recovered (since 1.8), and, on a task, on long_running (see warn_after); notifier ids, "id:override", or "inapp". Non-failure outcomes use an explicit [[route]].
 ```
 
 ### [services.&lt;name&gt;] (long-running)
@@ -248,11 +249,11 @@ Per-service override `[compose.<alias>.<svc>]` accepts: [`group`](/configuration
 ### [notify] (global notification settings)
 
 ```
-global_notifiers:  []string =["inapp"] — channels added to every notify list + catch-all on failures; [] opts out
+global_notifiers:  []string =["inapp"] — channels added to every notify list + catch-all on failures, recovered and long_running; [] opts out
 retry_budget:   dur                  — total retry budget per delivery
 keep_notifications:      int  =1024           — in-app bell row cap
 keep_for:  dur  =90d            — max bell row age
-coalesce_window:   dur  =1h             — collapse repeat (kind+task) into one bell row; also coalesces outbound bursts. "0s" = one outbound message per event (bell still coalesces on its default window)
+coalesce_window:   dur  =1h             — collapse repeat (kind+task) into one bell row; also coalesces outbound bursts. "0s" = one outbound message per event (bell still coalesces on its default window). Since 1.8 a success of the task closes its failure (and recovered) groups: held summary sent at once, next failure pages and gets a new bell row
 coalesce_limit:   int  =10             — recent timestamps kept per coalesced bell row; also the count of suppressed events after which an outbound delivery (Slack/Telegram/etc) is force-forwarded instead of waiting for coalesce_window to close
 ```
 
@@ -285,7 +286,7 @@ Secret-bearing values (`webhook_url`, `bot_token`, `password`, …) arrive final
 
 ```
 match.failure: bool     — match any run classified as a failure (same axis as [tasks.*] failures) (optional)
-match.kinds:   []string — outcomes (same vocab as failures): started | succeeded | failed | timeout | crashed | log_overflow | unhealthy | queue_full | stopped | daemon_stopped | missed | service.fatal | log.disk_pressure | long_running (notify.delivery_failed rejected; long_running + match.failure rejected)
+match.kinds:   []string — outcomes (same vocab as failures): started | succeeded | failed | timeout | crashed | log_overflow | unhealthy | queue_full | stopped | daemon_stopped | missed | service.fatal | log.disk_pressure | long_running | recovered (notify.delivery_failed rejected; long_running/recovered + match.failure rejected). recovered (since 1.8) = a success whose previous ended run of the task failed; sent as run.recovered alongside run.succeeded, severity info
 match.task:    string   — glob over task name (optional)
 notifiers:      []string (req, non-empty) — notifier ids (or "inapp"); "id:#override" inline target (slack #/@, telegram chat_id, smtp/sendmail email)
 ```

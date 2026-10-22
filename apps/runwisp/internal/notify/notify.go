@@ -34,6 +34,7 @@ type Service struct {
 
 	retentionEvery time.Duration
 	retentionFn    func(context.Context)
+	prevRunFailed  func(ctx context.Context, task, runID string) (bool, error)
 
 	unsubscribe     func()
 	detachOnce      sync.Once
@@ -64,6 +65,9 @@ type Config struct {
 	Logger         *slog.Logger          // 0 → slog.Default
 	RetentionEvery time.Duration         // 0 → 5min
 	RetentionFn    func(context.Context) // executed on each tick; injected by Service builder
+	// PrevRunFailed reports whether the task's run before runID failed, so a
+	// success after it also sends run.recovered. Nil sends no recoveries.
+	PrevRunFailed func(ctx context.Context, task, runID string) (bool, error)
 }
 
 // New constructs a Service from already-built channels and pre-compiled rules.
@@ -97,6 +101,7 @@ func New(cfg Config) *Service {
 		logger:         logger,
 		retentionEvery: retentionEvery,
 		retentionFn:    cfg.RetentionFn,
+		prevRunFailed:  cfg.PrevRunFailed,
 		stopRetries:    make(chan struct{}),
 	}
 }
@@ -267,8 +272,34 @@ func (s *Service) runDispatch(ctx context.Context) {
 				return
 			}
 			s.disp.dispatch(ev)
+			if rec := s.recovery(ctx, ev); rec != nil {
+				s.disp.dispatch(rec)
+			}
 		}
 	}
+}
+
+// recovery returns the run.recovered copy of a success whose previous run
+// failed, or nil. It is dispatched after the success, so the coalescers have
+// already closed the task's failure groups when it arrives.
+func (s *Service) recovery(ctx context.Context, ev *Event) *Event {
+	if s.prevRunFailed == nil || ev.Kind != KindRunSucceeded || ev.Run == nil {
+		return nil
+	}
+	failed, err := s.prevRunFailed(ctx, ev.TaskName, ev.Run.ID)
+	if err != nil {
+		s.logger.Warn("notify: previous run lookup failed; no recovered notification",
+			"task", ev.TaskName, "error", err)
+		return nil
+	}
+	if !failed {
+		return nil
+	}
+	rec := *ev
+	rec.Kind = KindRunRecovered
+	rec.Severity = SevInfo
+	rec.IsFailure = false
+	return &rec
 }
 
 // runRetention runs the configured pruning function on a ticker. Exits when

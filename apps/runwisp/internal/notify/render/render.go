@@ -179,6 +179,8 @@ func statusEmoji(k notify.Kind) string {
 		return "❌"
 	case notify.KindRunSucceeded:
 		return "✅"
+	case notify.KindRunRecovered:
+		return "💚"
 	case notify.KindRunTimeout:
 		return "⏱️"
 	case notify.KindRunStopped:
@@ -210,6 +212,8 @@ func statusVerb(k notify.Kind) string {
 		return "failed"
 	case notify.KindRunSucceeded:
 		return "succeeded"
+	case notify.KindRunRecovered:
+		return "recovered"
 	case notify.KindRunTimeout:
 		return "timed out"
 	case notify.KindRunStopped:
@@ -318,6 +322,8 @@ func kindSentence(e *notify.Event) string {
 		return failedSentence(e)
 	case notify.KindRunSucceeded:
 		return succeededSentence(e)
+	case notify.KindRunRecovered:
+		return "Run succeeded after a failed run."
 	case notify.KindRunTimeout:
 		return timeoutSentence(e)
 	case notify.KindRunStopped:

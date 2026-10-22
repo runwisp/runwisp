@@ -59,6 +59,8 @@ curl --silent --show-error --fail-with-body \\
   repeats inside [`coalesce_window`](/configuration/notify/#coalesce_window)
   (default `1h`) are grouped: the first alert goes out right away, then
   occasional check-ins with a count, instead of one message every five minutes.
+  When the check passes again, a [`recovered`](/configuration/routes/#matchkinds)
+  alert says so.
 - **`--fail-with-body`:** makes curl exit non-zero on an HTTP 4xx or 5xx and
   print the response body into the log. Without it, a `500` counts as success.
   It needs curl 7.76 or newer; on older curl use `--fail`.
@@ -83,6 +85,12 @@ into one row with a count and a sparkline:
 
 This relies on [`global_notifiers`](/configuration/notify/#global_notifiers)
 keeping its default `["inapp"]`.
+
+## When RunWisp itself is down
+
+A stopped daemon runs no checks and sends no alerts. To hear about that too,
+set [`heartbeat_url`](/configuration/daemon/#heartbeat_url) to a dead man's
+switch such as healthchecks.io. It alerts you when the daemon's pings stop.
 
 ## Probing internal services
 
