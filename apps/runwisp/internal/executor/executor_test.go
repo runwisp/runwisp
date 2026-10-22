@@ -421,6 +421,20 @@ func TestExecuteExitHint(t *testing.T) {
 	}
 }
 
+// A backend's Notice lands in the run log as a system line ahead of the output.
+func TestExecuteBackendNotice(t *testing.T) {
+	r, eb := newScriptedExecutor(t, &scriptedBackend{output: "hello\n", notice: "Attached to blog-web-1"})
+	getLogPath := captureLogPath(eb)
+
+	r.Execute(context.Background(), &model.Task{Name: "t", Run: "x"}, newRun())
+
+	logContent, err := os.ReadFile(getLogPath())
+	require.NoError(t, err)
+	log := string(logContent)
+	require.Contains(t, log, "Attached to blog-web-1")
+	assert.Less(t, strings.Index(log, "Attached to blog-web-1"), strings.Index(log, "hello"))
+}
+
 // A backend's EndReason names how the run ended, unless a timeout or stop
 // already explains it.
 func TestExecuteBackendEndReason(t *testing.T) {

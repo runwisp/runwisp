@@ -313,6 +313,14 @@ docker compose -f <file> -p <project> [--profile ...] [--env-file ...]
 network aliases as in the compose file. `--rm` removes the container on exit, so
 every restart starts from a fresh container.
 
+Since 1.8, an instance whose container is already running from
+`docker compose up` is not started twice. RunWisp attaches to that container
+instead: the run shows its output from then on (through `docker logs -f`) and
+ends with its exit code, and the run log says it attached. A stop or restart,
+including stopping the daemon, stops the `up` container, so the next start runs
+RunWisp's own. The Nth instance attaches to the Nth `up` container by name.
+Tasks always start their own container.
+
 ### `import = "stack"`
 
 One RunWisp service named `<alias>` runs the whole project:

@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp import cron` suggests a `[services.*]` table for an `@reboot` job that never exits, and a job that writes its output to a file keeps a comment saying so above its table, also after `runwisp promote`.
 - `runwisp import systemd` finds a unit by name, such as `backup.timer`, in the systemd unit directories, and with nothing on stdin it says what to pass instead of importing an empty service.
 - An unknown key like `retrys` suggests the key you likely meant (`retry_attempts`).
+- A compose service whose container already runs from `docker compose up` attaches to that container instead of starting a second one, and runs its own container from the next restart.
 
 ### Fixed
 
