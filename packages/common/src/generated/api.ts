@@ -999,6 +999,57 @@ export interface components {
              */
             type: string;
         };
+        HookRunBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/HookRunBody.json
+             */
+            readonly $schema?: string;
+            /**
+             * Format: int64
+             * @description User plus system CPU time of the run's processes, in milliseconds. Shell runs only; absent when not measured.
+             */
+            cpuTimeMs?: number;
+            /** Format: date-time */
+            createdAt: string;
+            endReason?: components["schemas"]["EndReason"];
+            /** Format: date-time */
+            endedAt?: string;
+            executionId?: string;
+            /** Format: int64 */
+            exitCode: number;
+            id: string;
+            /** Format: int64 */
+            instanceIndex: number;
+            isFailure: boolean;
+            /** @description The last lines of the run's log, ascending by n. Present only with tail > 0. */
+            log?: components["schemas"]["LogLineEntry"][] | null;
+            params?: {
+                [key: string]: string;
+            };
+            /**
+             * Format: int64
+             * @description Highest resident memory of the run's process group, in bytes. Shell runs only; absent when not measured.
+             */
+            peakMemoryBytes?: number;
+            /** Format: int64 */
+            retryAttempt: number;
+            retryOfRunId?: string;
+            /** Format: date-time */
+            startedAt?: string;
+            /**
+             * @description Run lifecycle phase
+             * @enum {string}
+             */
+            status: "pending" | "running" | "ended";
+            taskName: string;
+            /**
+             * @description How the run was triggered
+             * @enum {string}
+             */
+            triggeredBy: "cron" | "api" | "ui" | "cli" | "station" | "service" | "startup" | "hook";
+        };
         InstanceInfo: {
             /**
              * Format: uri
@@ -2649,6 +2700,8 @@ export interface operations {
                 wait?: boolean;
                 /** @description With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going. */
                 waitTimeout?: number;
+                /** @description Include the last N lines of the run's log in the response's log field. Use with wait=true, so a CI job can show why the run failed. The run's own hook token is enough; no session is needed. 0 (the default) omits the log. */
+                tail?: number;
             };
             header?: {
                 /** @description Bearer <token>, where <token> is one of the unit's hook_tokens */
@@ -2672,7 +2725,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Run"];
+                    "application/json": components["schemas"]["HookRunBody"];
                 };
             };
             /** @description Unauthorized */

@@ -6,12 +6,16 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"unicode/utf8"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,7 +54,7 @@ func writeConfig(t *testing.T, body string) string {
 func runListString(t *testing.T, f Flags) string {
 	t.Helper()
 	var buf bytes.Buffer
-	require.NoError(t, runList(&buf, f, false))
+	require.NoError(t, runList(t.Context(), &buf, f, remoteFlags{}, false))
 	return buf.String()
 }
 
@@ -98,7 +102,7 @@ func TestRunList_MissingConfigFile(t *testing.T) {
 	f := Flags{CfgFile: filepath.Join(t.TempDir(), "absent.toml")}
 
 	var buf bytes.Buffer
-	err := runList(&buf, f, false)
+	err := runList(t.Context(), &buf, f, remoteFlags{}, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load")
 }
@@ -108,7 +112,7 @@ func TestRunList_JSONServiceAndCron(t *testing.T) {
 	f := Flags{CfgFile: writeConfig(t, body)}
 
 	var buf bytes.Buffer
-	require.NoError(t, runList(&buf, f, true))
+	require.NoError(t, runList(t.Context(), &buf, f, remoteFlags{}, true))
 
 	var doc listJSONDoc
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
@@ -142,7 +146,7 @@ func TestRunList_JSONMissingConfigEmitsErrorDoc(t *testing.T) {
 	f := Flags{CfgFile: filepath.Join(t.TempDir(), "absent.toml")}
 
 	var buf bytes.Buffer
-	err := runList(&buf, f, true)
+	err := runList(t.Context(), &buf, f, remoteFlags{}, true)
 	require.Error(t, err)
 
 	var doc listJSONDoc
@@ -156,4 +160,40 @@ func TestRunList_JSONMissingConfigEmitsErrorDoc(t *testing.T) {
 	// slice and `null` to nil, so NotNil distinguishes the two.
 	require.NotNil(t, doc.Tasks, "tasks must serialize as [] on the error path, never null")
 	assert.Empty(t, doc.Tasks)
+}
+
+// list showed only "(service x1)" for a service that had gone FATAL. With a
+// daemon on the data dir it shows the live state, in the table and --json.
+func TestRunList_ShowsLiveServiceState(t *testing.T) {
+	worker := fatalWorker()
+	worker.Instances = 3
+	f := serveStatusSocket(t, serveTasks(http.NewServeMux(), worker))
+	f.CfgFile = writeConfig(t, minimalCfgServiceTask)
+
+	assert.Contains(t, runListString(t, f), "(service x3) FATAL")
+
+	var buf bytes.Buffer
+	require.NoError(t, runList(t.Context(), &buf, f, remoteFlags{}, true))
+	var doc listJSONDoc
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+	require.Len(t, doc.Tasks, 1)
+	assert.Equal(t, "fatal", doc.Tasks[0].State)
+}
+
+// From a laptop, list read whatever runwisp.toml sat in the cwd. With --url
+// it lists the remote daemon's tasks.
+func TestRunListURLReadsTheDaemonNotTheLocalFile(t *testing.T) {
+	useTempCacheDir(t)
+	remote := model.TaskResponse{Task: model.Task{Name: "deploy", Cron: "0 4 * * *", MaxConcurrent: 1, OnOverlap: model.PolicySkip}}
+	var logins atomic.Int32
+	srv := httptest.NewServer(remoteAuth(serveTasks(http.NewServeMux(), remote), &logins))
+	defer srv.Close()
+
+	f := Flags{CfgFile: writeConfig(t, minimalCfgOneTask)}
+	var buf bytes.Buffer
+	require.NoError(t, runList(t.Context(), &buf, f, remoteFlags{URL: srv.URL, Password: "pw"}, false))
+	out := buf.String()
+	assert.Contains(t, out, "deploy")
+	assert.Contains(t, out, "0 4 * * *")
+	assert.NotContains(t, out, "hello", "the local runwisp.toml is not read")
 }

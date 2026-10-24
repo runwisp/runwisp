@@ -35,19 +35,19 @@ func TestRunValidate_JSONInvalidEmitsErrorDoc(t *testing.T) {
 
 func TestNewListTaskJSON_CarriesProvenance(t *testing.T) {
 	t.Parallel()
-	staged := newListTaskJSON(model.Task{Name: "imported", Kind: model.KindTask, Cron: "0 0 * * *",
-		Source: model.SourceStaged, SourceFile: "/etc/runwisp.d/imported.toml"})
+	staged := newListTaskJSON(model.TaskResponse{Task: model.Task{Name: "imported", Kind: model.KindTask, Cron: "0 0 * * *",
+		Source: model.SourceStaged, SourceFile: "/etc/runwisp.d/imported.toml"}})
 	assert.Equal(t, "staged", staged.Source)
 	assert.Equal(t, "/etc/runwisp.d/imported.toml", staged.SourceFile)
 
 	// A cron-sourced task reports the crontab it came from — the fact an operator
 	// needs to know which file to edit, and the reason source_file exists.
-	cron := newListTaskJSON(model.Task{Name: "backup", Kind: model.KindTask,
-		Source: model.SourceCron, SourceFile: "/etc/cron.d/backup"})
+	cron := newListTaskJSON(model.TaskResponse{Task: model.Task{Name: "backup", Kind: model.KindTask,
+		Source: model.SourceCron, SourceFile: "/etc/cron.d/backup"}})
 	assert.Equal(t, "cron", cron.Source)
 	assert.Equal(t, "/etc/cron.d/backup", cron.SourceFile)
 
-	native := newListTaskJSON(model.Task{Name: "native", Kind: model.KindTask})
+	native := newListTaskJSON(model.TaskResponse{Task: model.Task{Name: "native", Kind: model.KindTask}})
 	assert.Empty(t, native.Source)
 
 	// omitempty: a native task must not carry either key at all.
@@ -116,7 +116,7 @@ func TestRunStatus_JSONUnreachableEmitsUnhealthyDoc(t *testing.T) {
 	f := Flags{DataDir: testutil.ShortTempDir(t)}
 
 	var buf bytes.Buffer
-	err := runStatus(t.Context(), &buf, f, true)
+	err := runStatus(t.Context(), &buf, f, remoteFlags{}, true)
 	require.Error(t, err, "an unreachable daemon must still exit non-zero")
 
 	var doc statusJSONDoc
