@@ -133,7 +133,19 @@ type HookControlInput struct {
 // HookRunInput drives POST /api/hooks/tasks/{taskName}/run.
 type HookRunInput struct {
 	HookControlInput
+	Tail int `query:"tail" minimum:"0" maximum:"1000" default:"0" doc:"Include the last N lines of the run's log in the response's log field. Use with wait=true, so a CI job can show why the run failed. The run's own hook token is enough; no session is needed. 0 (the default) omits the log."`
 	Body *TriggerRunInputBody
+}
+
+// HookRunBody is the hook run response: the run, plus its log tail when the
+// caller asked for one with tail=N.
+type HookRunBody struct {
+	model.Run
+	Log []LogLineEntry `json:"log,omitempty" doc:"The last lines of the run's log, ascending by n. Present only with tail > 0."`
+}
+
+type HookRunOutput struct {
+	Body HookRunBody
 }
 
 // RunIDInput drives the per-run endpoints (GET/DELETE /api/runs/{runId},

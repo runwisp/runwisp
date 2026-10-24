@@ -40,6 +40,11 @@ With --attach, it then follows the logs of the targets it acted on, as
 With --url (or RUNWISP_URL), targets are stopped on a remote daemon instead —
 the same CHAP login and session caching as 'runwisp run --url'.
 
+With --token (or RUNWISP_HOOK_TOKEN) and --url, it uses one of the unit's
+hook_tokens instead of a password, so a task that runs as another user can
+still stop a service. A token takes literal names only: no globs, run IDs or
+--attach.
+
 With no target, the whole daemon stops. When it is managed by systemd or
 launchd (wired up via 'runwisp service install'), the stop is delegated to
 the service manager so its view of the unit stays in sync — the unit remains
@@ -68,6 +73,7 @@ pin the per-user one when both a system and a user unit are present.`,
 func init() {
 	stopCmd.Flags().BoolVar(&stopLocal, "local", false, localFlagUsage)
 	addRemoteFlags(stopCmd)
+	addTokenFlag(stopCmd)
 	addAttachFlag(stopCmd)
 }
 
@@ -81,6 +87,9 @@ func runStop(cmd *cobra.Command, args []string, f Flags, attach bool) error {
 
 	if url, _ := controlRemote.resolve(); url != "" {
 		return errors.New("--url needs a target; the remote daemon itself can't be stopped from here")
+	}
+	if controlRemote.hookToken() != "" {
+		return errors.New("--token needs a target; a hook token can't stop the daemon itself")
 	}
 
 	out := cmd.OutOrStdout()

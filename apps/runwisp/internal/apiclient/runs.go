@@ -129,6 +129,13 @@ func (c *Client) StopTask(ctx context.Context, taskName string) error {
 	return c.postTaskAction(ctx, "stop", taskName, "")
 }
 
+// HookAction POSTs /api/hooks/tasks/{taskName}/{action}: start, stop or
+// restart authenticated by one of the unit's hook tokens, seeded with SetToken,
+// instead of a session.
+func (c *Client) HookAction(ctx context.Context, action model.HookAction, taskName string) error {
+	return c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/hooks/tasks/%s/%s", taskName, action), nil, nil)
+}
+
 // StopRun sends a stop signal to a running execution.
 func (c *Client) StopRun(ctx context.Context, runID string) error {
 	return c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/runs/%s/stop", runID), nil, nil)

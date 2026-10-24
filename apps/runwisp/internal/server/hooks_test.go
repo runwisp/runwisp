@@ -125,6 +125,47 @@ func TestHook_RunTriggersAsHook(t *testing.T) {
 	assert.Equal(t, model.PhaseEnded, run.Status, "wait=true returns the finished run")
 }
 
+// A CI caller holding only a hook token can't read /api/runs/{id}/log, so
+// tail=N hands back the end of the log with the finished run.
+func TestHook_RunWaitTailReturnsLastLines(t *testing.T) {
+	s, exec := setupHookServer(t, nil)
+	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			writeLogLines(t, s, args.Get(2).(*model.Run), "one", "two", "three", "deploy failed: disk full")
+		}).
+		Return(&executor.ExecuteResult{ExitCode: 1})
+
+	w := postHookURL(s, "/api/hooks/tasks/task1/run?wait=true&tail=2", "Bearer "+hookTokenA)
+
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	var body HookRunBody
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "task1", body.TaskName, "the run fields stay at the top level")
+	require.Len(t, body.Log, 2)
+	assert.Equal(t, "three", body.Log[0].Text)
+	assert.Equal(t, "deploy failed: disk full", body.Log[1].Text)
+}
+
+func TestHook_RunWithoutTailOmitsLog(t *testing.T) {
+	s, exec := setupHookServer(t, nil)
+	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) { writeLogLines(t, s, args.Get(2).(*model.Run), "hello") }).
+		Return(&executor.ExecuteResult{ExitCode: 0})
+
+	w := postHookURL(s, "/api/hooks/tasks/task1/run?wait=true", "Bearer "+hookTokenA)
+
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &raw))
+	assert.NotContains(t, raw, "log")
+}
+
+func TestHook_TailAboveMaxRejected(t *testing.T) {
+	s, _ := setupHookServer(t, nil)
+	w := postHookURL(s, "/api/hooks/tasks/task1/run?wait=true&tail=1001", "Bearer "+hookTokenA)
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code, w.Body.String())
+}
+
 func TestHook_StartRestartStop(t *testing.T) {
 	s, exec := setupHookServer(t, nil)
 	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).

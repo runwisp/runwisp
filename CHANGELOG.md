@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `runwisp import systemd` reads `.timer` units and turns each timer and the service it starts into one scheduled task.
+- A hook `run` takes `tail=N` and returns the last N lines of the run's log with the run, so a CI job holding only a hook token can show why a run failed.
+- `runwisp start`, `stop` and `restart` take `--token` (or `RUNWISP_HOOK_TOKEN`) with `--url`, so a task that runs as another user can restart a service through its hook token.
+- `runwisp status` and `runwisp list` take `--url` and `--password` to ask a remote daemon, and `RUNWISP_URL` now applies to them too.
 
 ### Changed
 
@@ -22,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp import supervisord` with no file reads `/etc/supervisor/supervisord.conf` or `/etc/supervisord.conf`, and `runwisp import cron` with nothing on stdin says what to pipe in.
 - `runwisp import cron` notes jobs that redirect their output to a file, since RunWisp can't show that output.
 - A run killed by a signal RunWisp didn't send names the signal in its log, and a `SIGKILL` points at the kernel's out-of-memory killer.
+- `runwisp list` shows each service's live state, such as `FATAL`, and `runwisp status` lists the services that gave up restarting.
 
 ### Fixed
 

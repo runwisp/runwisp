@@ -195,6 +195,89 @@ func TestControlTargets_StopViaRemote(t *testing.T) {
 	assert.Contains(t, buf.String(), `Service "web" stopped.`)
 }
 
+// A deploy task running as another user can't open the daemon's socket, so
+// --token reaches the daemon over HTTP through the hook routes: no login, no
+// task listing, the token as the bearer.
+func TestControlWithToken_PostsHookRoute(t *testing.T) {
+	useTempCacheDir(t)
+	const token = "hook-token-for-shop"
+	var hits []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		hits = append(hits, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Header.Get("Authorization") != "Bearer "+token:
+			w.WriteHeader(http.StatusUnauthorized)
+		case r.URL.Path == "/api/hooks/tasks/shop/restart":
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/api/hooks/tasks/locked/restart":
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"detail":"This hook token is not allowed to restart \"locked\""}`))
+		default:
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer srv.Close()
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	buf := &bytes.Buffer{}
+	cmd.SetOut(buf)
+
+	err := controlTargets(cmd, Flags{}, remoteFlags{URL: srv.URL, Token: token}, []string{"shop"}, restartVerb, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"POST /api/hooks/tasks/shop/restart"}, hits)
+	assert.Contains(t, buf.String(), `"shop" restarted.`)
+
+	err = controlTargets(cmd, Flags{}, remoteFlags{URL: srv.URL, Token: token}, []string{"locked"}, restartVerb, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "allow list")
+
+	err = controlTargets(cmd, Flags{}, remoteFlags{URL: srv.URL, Token: "wrong"}, []string{"shop"}, restartVerb, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "rejected the hook token")
+}
+
+// A hook token can't list tasks or read logs, so anything that needs either is
+// refused before a request goes out.
+func TestControlWithToken_RejectsGlob(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	cmd.SetOut(&bytes.Buffer{})
+	withURL := remoteFlags{URL: "http://127.0.0.1:1", Token: "tok"}
+
+	cases := map[string]struct {
+		rf     remoteFlags
+		args   []string
+		attach bool
+		want   string
+	}{
+		"glob":     {withURL, []string{"web*"}, false, "literal task or service names"},
+		"run ID":   {withURL, []string{"01J8Z3K9QK6VN8XG2R5F7T1C4M"}, false, "not the run ID"},
+		"attach":   {withURL, []string{"web"}, true, "--attach can't be used with --token"},
+		"no --url": {remoteFlags{Token: "tok"}, []string{"web"}, false, "--token needs --url"},
+	}
+	for name, tc := range cases {
+		err := controlTargets(cmd, Flags{}, tc.rf, tc.args, startVerb, tc.attach)
+		require.Error(t, err, name)
+		assert.Contains(t, err.Error(), tc.want, name)
+	}
+}
+
+// Inside a task, "run it again under sudo" is the wrong advice: the task can't
+// sudo, but it can carry a hook token.
+func TestControlClient_InsideTaskHintsHookToken(t *testing.T) {
+	t.Setenv("RUNWISP_INSTANCE_INDEX", "0")
+	_, err := controlClient(t.Context(), Flags{DataDir: t.TempDir()}, "", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--token")
+	assert.NotContains(t, err.Error(), "sudo")
+}
+
 func TestRunExecViaRemote_Unreachable(t *testing.T) {
 	useTempCacheDir(t)
 	// A closed server's URL is unroutable, so HealthCheck fails to dial.

@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 	"github.com/spf13/cobra"
 )
 
@@ -19,25 +21,28 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Check if the daemon is alive",
 	Long: `Pings the daemon over its local Unix socket to verify it is running and
-responsive, prints a short system summary, and warns when runwisp.toml has
-changed on disk since the daemon started (apply them with 'runwisp reload').`,
+responsive, prints a short system summary, lists services that gave up
+restarting, and warns when runwisp.toml has changed on disk since the daemon
+started (apply them with 'runwisp reload').
+
+With --url (or RUNWISP_URL), it asks a remote daemon instead, with the same
+CHAP login and session caching as 'runwisp run --url'.`,
 	Example: `  runwisp status
-  runwisp status --json   # daemon + per-task snapshot as JSON`,
+  runwisp status --json   # daemon + per-task snapshot as JSON
+  runwisp status --url https://rw.example.com`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runStatus(cmd.Context(), cmd.OutOrStdout(), flags, statusJSON)
+		return runStatus(cmd.Context(), cmd.OutOrStdout(), flags, controlRemote, statusJSON)
 	},
 }
 
 func init() {
 	statusCmd.Flags().BoolVar(&statusJSON, "json", false, "emit a machine-readable JSON document to stdout instead of the human summary")
+	addRemoteFlags(statusCmd)
 }
 
-func runStatus(ctx context.Context, out io.Writer, f Flags, asJSON bool) error {
-	// The Unix socket is the local-trusted transport (same as exec/tui):
-	// no password needed, and unlike a TCP probe it cannot hit a different
-	// process that happens to squat on the port.
-	client := apiclient.NewUnix(localAPISocketPath(f))
-	if err := client.HealthCheck(ctx); err != nil {
+func runStatus(ctx context.Context, out io.Writer, f Flags, rf remoteFlags, asJSON bool) error {
+	client, err := statusClient(ctx, f, rf)
+	if err != nil {
 		if asJSON {
 			// Emit an unhealthy document so an agent learns of the failure from
 			// the JSON, not from stderr text; the returned error still drives
@@ -51,7 +56,7 @@ func runStatus(ctx context.Context, out io.Writer, f Flags, asJSON bool) error {
 				return werr
 			}
 		}
-		return localUnreachableError(f, err)
+		return err
 	}
 
 	if asJSON {
@@ -87,8 +92,59 @@ func runStatus(ctx context.Context, out io.Writer, f Flags, asJSON bool) error {
 	}
 	if tasks, err := client.ListTasks(ctx); err == nil {
 		printPausedBlock(out, pausedTaskNames(tasks))
+		printDownServices(out, tasks)
 	}
 	return nil
+}
+
+// statusClient connects status to its daemon. Locally, the Unix socket is the
+// trusted transport (same as exec/tui): no password needed, and unlike a TCP
+// probe it cannot hit a different process that happens to squat on the port.
+func statusClient(ctx context.Context, f Flags, rf remoteFlags) (*apiclient.Client, error) {
+	baseURL, password := rf.resolve()
+	client, err := connectDaemon(ctx, f, baseURL, password)
+	if err != nil || baseURL == "" {
+		return client, err
+	}
+	// A cached session may have expired. Log in again now, or every probe
+	// below would fail quietly and status would show a bare "healthy".
+	return client, withSessionRetry(ctx, client, baseURL, password, func() error {
+		_, err := client.GetDaemonInfo(ctx)
+		return err
+	})
+}
+
+// printDownServices lists the services with an instance that gave up
+// restarting (FATAL). Nothing respawns those until an operator starts them,
+// so status names them and the command that does.
+func printDownServices(out io.Writer, tasks []model.TaskResponse) {
+	var down, names []string
+	for _, t := range tasks {
+		if t.Service == nil || !hasFatalInstance(t.Service) {
+			continue
+		}
+		down = append(down, fmt.Sprintf("%s (%s, %d/%d running)", t.Name,
+			strings.ToUpper(t.Service.State), t.Service.RunningInstances, t.Service.DesiredInstances))
+		names = append(names, t.Name)
+	}
+	if len(down) == 0 {
+		return
+	}
+	n := len(down)
+	fmt.Fprintf(out, "\n✗ %s %s down: %s\n", textutil.Count(n, "service", "services"), textutil.Pluralize(n, "is", "are"), strings.Join(down, ", "))
+	fmt.Fprintf(out, "  Run 'runwisp start %s' once the cause is fixed.\n", strings.Join(names, " "))
+}
+
+func hasFatalInstance(s *model.ServiceStatus) bool {
+	if s.State == "fatal" {
+		return true
+	}
+	for _, inst := range s.Instances {
+		if inst.State == "fatal" {
+			return true
+		}
+	}
+	return false
 }
 
 // buildStatusDoc assembles the live snapshot for `status --json`. Health is

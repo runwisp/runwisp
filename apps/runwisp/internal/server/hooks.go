@@ -108,7 +108,7 @@ func (srv *Server) authorizeHook(name string, auth HookAuthInput, action model.H
 	return task, nil
 }
 
-func (srv *Server) humaHookRun(ctx context.Context, input *HookRunInput) (*RunOutput, error) {
+func (srv *Server) humaHookRun(ctx context.Context, input *HookRunInput) (*HookRunOutput, error) {
 	task, err := srv.authorizeHook(input.TaskName, input.HookAuthInput, model.HookRun)
 	if err != nil {
 		return nil, err
@@ -121,7 +121,11 @@ func (srv *Server) humaHookRun(ctx context.Context, input *HookRunInput) (*RunOu
 	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to trigger run")
 	}
-	return &RunOutput{Body: *run}, nil
+	out := &HookRunOutput{Body: HookRunBody{Run: *run}}
+	if input.Tail > 0 {
+		out.Body.Log = srv.runLogTail(run, input.Tail)
+	}
+	return out, nil
 }
 
 func (srv *Server) humaHookStart(ctx context.Context, input *HookControlInput) (*WaitedRunOutput, error) {

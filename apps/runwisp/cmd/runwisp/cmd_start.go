@@ -25,6 +25,11 @@ With --attach, it then follows the logs of the targets it acted on, as
 With --url (or RUNWISP_URL), targets are started on a remote daemon instead —
 the same CHAP login and session caching as 'runwisp run --url'.
 
+With --token (or RUNWISP_HOOK_TOKEN) and --url, it uses one of the unit's
+hook_tokens instead of a password, so a task that runs as another user can
+still start a service. A token takes literal names only: no globs, run IDs or
+--attach.
+
 'runwisp start' never returns a run ID; use 'runwisp run --detach' when you
 need one.`,
 	Example: `  runwisp start web
@@ -39,5 +44,6 @@ need one.`,
 
 func init() {
 	addRemoteFlags(startCmd)
+	addTokenFlag(startCmd)
 	addAttachFlag(startCmd)
 }
