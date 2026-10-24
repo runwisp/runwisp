@@ -210,12 +210,13 @@ func initNotify(
 	retentionFn := buildRetentionFn(db, notifyCfg, logger)
 
 	return notify.New(notify.Config{
-		Bus:         bus,
-		Channels:    channels,
-		Rules:       resolved.Rules,
-		FailureSink: failureSink,
-		Logger:      logger,
-		RetentionFn: retentionFn,
+		Bus:           bus,
+		Channels:      channels,
+		Rules:         resolved.Rules,
+		FailureSink:   failureSink,
+		Logger:        logger,
+		RetentionFn:   retentionFn,
+		PrevRunFailed: db.PreviousRunFailed,
 	}), nil
 }
 

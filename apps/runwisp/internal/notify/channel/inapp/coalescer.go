@@ -8,6 +8,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -37,6 +38,15 @@ type Coalescer struct {
 	clock func() time.Time
 	cfg   CoalescerConfig
 	log   *slog.Logger
+
+	// resetAt is when each task last succeeded (ResetTask). A closable row
+	// older than that never folds a new occurrence, so a failure after a
+	// success opens a fresh bell entry.
+	// ponytail: in memory only, so a restart or a notify reload forgets it and
+	// the next failure can still fold into the row from before the success.
+	// Persist it (or look up the task's last success) if that ever matters.
+	mu      sync.Mutex
+	resetAt map[string]time.Time
 }
 
 // NewCoalescer constructs a coalescer.
@@ -51,12 +61,35 @@ func NewCoalescer(repo storage.NotificationRepository, hub *Hub, clock func() ti
 		log = slog.Default()
 	}
 	return &Coalescer{
-		repo:  repo,
-		hub:   hub,
-		clock: clock,
-		cfg:   cfg,
-		log:   log,
+		repo:    repo,
+		hub:     hub,
+		clock:   clock,
+		cfg:     cfg,
+		log:     log,
+		resetAt: make(map[string]time.Time),
 	}
+}
+
+// ResetTask records that task just succeeded, ending its failure rows' window.
+func (c *Coalescer) ResetTask(task string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.resetAt[task] = c.clock()
+}
+
+// window is the span an existing row may fold ev into: the configured window,
+// cut short at the task's last success for events a success closes.
+func (c *Coalescer) window(ev *notify.Event, now time.Time) time.Duration {
+	if !notify.ClosedBySuccess(ev) {
+		return c.cfg.Window
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	reset, ok := c.resetAt[ev.TaskName]
+	if !ok {
+		return c.cfg.Window
+	}
+	return min(c.cfg.Window, now.Sub(reset))
 }
 
 // Receive folds the (rendered, ev) pair into the persistent store and
@@ -78,7 +111,7 @@ func (c *Coalescer) Receive(ctx context.Context, title, body string, ev *notify.
 		CreatedAt:      now,
 		LastOccurredAt: now,
 	}
-	created, err := c.repo.UpsertByFingerprint(ctx, n, c.cfg.Window, c.cfg.CoalesceLimit)
+	created, err := c.repo.UpsertByFingerprint(ctx, n, c.window(ev, now), c.cfg.CoalesceLimit)
 	if err != nil {
 		c.log.Error("notify coalescer: upsert failed", "fingerprint", n.Fingerprint, "error", err)
 		return
