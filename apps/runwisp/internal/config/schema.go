@@ -267,6 +267,11 @@ type Daemon struct {
 	// a newer release (surfaced as a Web UI / TUI indicator, never auto-applied).
 	// Default true; set false to keep the daemon fully offline.
 	CheckUpdates bool
+	// HeartbeatURL is a dead man's switch URL (healthchecks.io and the like)
+	// the daemon GETs every minute while it runs, so its silence raises an
+	// alert elsewhere. Empty turns it off. It often embeds a secret token, so
+	// it is never logged or served over the API.
+	HeartbeatURL string
 	// LogOutput copies every run's output lines to the daemon's own stdout and
 	// stderr, so `docker logs` shows what the jobs printed. Default false; the
 	// RUNWISP_LOG_OUTPUT env var overrides it (the Docker image sets it).

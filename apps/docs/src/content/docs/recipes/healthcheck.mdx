@@ -84,6 +84,12 @@ into one row with a count and a sparkline:
 This relies on [`global_notifiers`](/configuration/notify/#global_notifiers)
 keeping its default `["inapp"]`.
 
+## When RunWisp itself is down
+
+A stopped daemon runs no checks and sends no alerts. To hear about that too,
+set [`heartbeat_url`](/configuration/daemon/#heartbeat_url) to a dead man's
+switch such as healthchecks.io. It alerts you when the daemon's pings stop.
+
 ## Probing internal services
 
 Probe something that uses the service, not only its port. A database that
