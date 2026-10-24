@@ -111,6 +111,16 @@ describe("formatTaskNextRunLabel", () => {
         expect(formatTaskNextRunLabel(overview)).toBe("Not scheduled");
     });
 
+    it("shows the time in the schedule's zone, the task's own over the daemon's", () => {
+        const now = new Date("2026-10-21T00:00:00Z");
+        const nextRunMs = new Date("2026-10-21T02:30:00Z").getTime();
+        expect(formatTaskNextRunLabel(makeOverview({ nextRunMs }), now, "Asia/Kathmandu")).toMatch(
+            /\(0?8:15\)$/,
+        );
+        const zoned = makeOverview({ task: makeTask({ timezone: "Asia/Kathmandu" }), nextRunMs });
+        expect(formatTaskNextRunLabel(zoned, now, "Etc/UTC")).toMatch(/\(0?8:15\)$/);
+    });
+
     it("ticks down as the supplied now advances", () => {
         const nextRun = new Date("2024-01-01T12:00:00Z");
         const overview = makeOverview({ nextRunMs: nextRun.getTime() });

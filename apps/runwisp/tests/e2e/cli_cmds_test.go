@@ -115,6 +115,23 @@ func TestCLIListCmd(t *testing.T) {
 	require.Contains(t, out, "SCHEDULE")
 }
 
+// Bare `runwisp` with no terminal and no runwisp.toml created ./.runwisp
+// before failing. It must fail up front and leave the directory clean.
+func TestCLIBareNoTTYNoConfigLeavesNoDataDir(t *testing.T) {
+	t.Parallel()
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	dir := t.TempDir()
+	cmd := exec.Command(binaryPath)
+	cmd.Dir = dir
+	cmd.Env = subprocEnv()
+	out, err := cmd.CombinedOutput()
+	require.Error(t, err, "no config and no terminal must fail: %s", out)
+	require.Contains(t, string(out), "no runwisp.toml")
+	require.NoDirExists(t, filepath.Join(dir, ".runwisp"))
+}
+
 func TestCLIStatusCmd(t *testing.T) {
 	t.Parallel()
 	projectDir := runwispProjectDir(t)

@@ -333,7 +333,7 @@ func (c *Cutover) configSteps(ev Evidence) []Step {
 	case !ev.ConfigExists:
 		return []Step{{Kind: StepWriteConfig, Detail: fmt.Sprintf(
 			"Write %s\n       reads %s live via [daemon] include_cron — nothing is converted or\n"+
-				"       rewritten, and crontab -e keeps working",
+				"       rewritten, and crontab -e keeps working; run sudo runwisp reload after an edit",
 			c.deps.Opts.Config, sources)}}
 	case len(ev.ReadFiles) > 0 && (len(ev.Uncovered) == 0 || ev.CronIncludeDeclared):
 		return []Step{{Kind: StepWireIncludeCron, Satisfied: true, Detail: fmt.Sprintf(

@@ -46,6 +46,7 @@ CRON_TZ = "Europe/Bratislava"
 PATH = "/usr/local/bin:/usr/bin:/bin"
 
 # @reboot: runs once per machine boot, not on daemon restarts.
+# If this command never exits (a server, a worker), make it a [services.<name>] instead.
 [tasks.warmup]
 run_on_start = "boot"
 timezone = "Europe/Bratislava"

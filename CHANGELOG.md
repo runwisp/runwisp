@@ -26,9 +26,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp import cron` notes jobs that redirect their output to a file, since RunWisp can't show that output.
 - A run killed by a signal RunWisp didn't send names the signal in its log, and a `SIGKILL` points at the kernel's out-of-memory killer.
 - `runwisp list` shows each service's live state, such as `FATAL`, and `runwisp status` lists the services that gave up restarting.
+- A run killed by a signal RunWisp didn't send names the signal in its log, also when the shell reports it as exit 128+n (such as 137), and a `SIGKILL` points at the kernel's out-of-memory killer.
+- `runwisp takeover` says to run `sudo runwisp reload` after `crontab -e`, since an edit waits for a reload.
+- `runwisp import cron` suggests a `[services.*]` table for an `@reboot` job that never exits, and a job that writes its output to a file keeps a comment saying so above its table, also after `runwisp promote`.
+- `runwisp import systemd` finds a unit by name, such as `backup.timer`, in the systemd unit directories, and with nothing on stdin it says what to pass instead of importing an empty service.
+- An unknown key like `retrys` suggests the key you likely meant (`retry_attempts`).
+- A service now tries 10 failed starts in a row before it goes FATAL, about 5 minutes with the default backoff, instead of 3. Set `restart_attempts = 3` to keep the old limit.
 
 ### Fixed
 
+- Scheduled tasks run on time after the system clock jumps (`date -s`, an NTP step, a VM snapshot restore or a laptop waking up), instead of waiting out the old interval.
+- `runwisp restart` and `runwisp service install` no longer count toward systemd's crash-loop limit, so restarting a few times in a row no longer hands the jobs back to cron.
 - `@runwisp/js` in an Astro app under pnpm finds the runwisp binary in the built server instead of failing at startup with "could not run runwisp".
 - `@runwisp/js` in a Nuxt app on the `node-cluster` preset stops its tasks on SIGTERM and lets running ones finish, instead of hanging for 30 seconds and killing them.
 - `withRunWisp()` fails the build with `output: "export"`, where the tasks would never run.
@@ -60,6 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Live logs and Web UI updates stream through nginx as they happen, instead of arriving in one burst.
 - A non-root `runwisp list` or `runwisp run` on a box with the system service says to use sudo, instead of failing on a missing `runwisp.toml`.
 - Opening a dropdown menu in the Web UI no longer scrolls the page. Thanks @dahool.
+- `runwisp takeover` ends with the upgrade command for the binary the service runs, not for the copy in your home directory.
+- Errors from the daemon, like a rejected `runwisp reload`, print the reason instead of the raw JSON response.
+- The Web UI shows a task's next run in the timezone its schedule uses, so "next run in 7 hours (02:30)" agrees with "At 02:30".
+- `runwisp service install --local` no longer calls the password file it saved root-owned.
+- `runwisp` without a terminal and without a `runwisp.toml` fails right away with a hint, instead of leaving an empty `.runwisp` directory behind.
 
 ## [1.7.1] - 2026-10-19
 

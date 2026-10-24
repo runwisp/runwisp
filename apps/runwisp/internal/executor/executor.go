@@ -323,10 +323,11 @@ func daemonizeHint(task *model.Task, result *ExecuteResult, uptime time.Duration
 }
 
 // abnormalExitMessage describes a wait error that the exit code alone does not
-// explain: death by signal (exit -1), or a backend failing to wait at all (a
-// lost Docker connection). A plain non-zero exit is already shown as the exit
-// code, so it returns "". It only sees deaths RunWisp did not cause: a
-// timeout, stop or policy kill never surfaces its wait error.
+// explain: death by signal (exit -1), a shell reporting a child's death by
+// signal as 128+n, or a backend failing to wait at all (a lost Docker
+// connection). Any other non-zero exit is already shown as the exit code, so
+// it returns "". It only sees deaths RunWisp did not cause: a timeout, stop or
+// policy kill never surfaces its wait error.
 func abnormalExitMessage(err error) string {
 	if err == nil {
 		return ""
@@ -335,18 +336,38 @@ func abnormalExitMessage(err error) string {
 	if !errors.As(err, &exitErr) {
 		return "Could not wait for the run to finish: " + err.Error()
 	}
-	if exitErr.ExitCode() >= 0 {
-		return ""
+	if code := exitErr.ExitCode(); code >= 0 {
+		return shellSignalMessage(code)
 	}
 	ws, ok := exitErr.Sys().(syscall.WaitStatus)
 	if !ok || !ws.Signaled() {
 		return "Process terminated abnormally: " + err.Error()
 	}
-	sig := ws.Signal()
-	if sig == syscall.SIGKILL {
-		return "Killed by SIGKILL from outside RunWisp. The kernel's out-of-memory killer is the usual cause: check `journalctl -k | grep -i oom` or `dmesg`."
+	return "Process " + signalCause(ws.Signal())
+}
+
+// shellSignalMessage explains an exit code above 128 that names a signal. A
+// run is usually `sh -c`, and when the command it runs dies from a signal the
+// shell exits 128+n instead of dying itself: an OOM-killed `python3 job.py`
+// shows up as exit 137, not as a SIGKILL. Exit codes that name no signal
+// (255, or anything up to 128) return "".
+func shellSignalMessage(code int) string {
+	if code <= 128 {
+		return ""
 	}
-	return fmt.Sprintf("Process died from signal %s (%s).", unix.SignalName(sig), sig)
+	sig := syscall.Signal(code - 128)
+	if unix.SignalName(sig) == "" {
+		return ""
+	}
+	return fmt.Sprintf("Exit code %d: a process the run started %s", code, signalCause(sig))
+}
+
+// signalCause is the rest of a sentence saying how a process died from sig.
+func signalCause(sig syscall.Signal) string {
+	if sig == syscall.SIGKILL {
+		return "was killed by SIGKILL from outside RunWisp. The kernel's out-of-memory killer is the usual cause: check `journalctl -k | grep -i oom` or `dmesg`."
+	}
+	return fmt.Sprintf("died from signal %s (%s).", unix.SignalName(sig), sig)
 }
 
 // outputMatcher checks output lines against a task's `failures` output

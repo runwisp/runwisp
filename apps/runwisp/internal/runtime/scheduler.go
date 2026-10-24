@@ -151,7 +151,7 @@ func NewScheduler(taskManager RunTrigger, tasks map[string]*model.Task, location
 		clock = time.Now
 	}
 	scheduler := &Scheduler{
-		cron:        newCronEngine(),
+		cron:        newCronEngine(cron.RealClock{}),
 		location:    location,
 		taskManager: taskManager,
 		tasks:       tasks,
@@ -171,9 +171,26 @@ func NewScheduler(taskManager RunTrigger, tasks map[string]*model.Task, location
 // must keep (a UTC-pinned task's hourly tick, every @every tick in the rewound
 // hour) and swallows the repeat fireOnce records as dst_skipped. UTC never
 // falls back, so the engine never dedups and fireOnce stays the only judge.
-// opts lets tests add a fake clock.
-func newCronEngine(opts ...cron.Option) *cron.Cron {
-	return cron.New(append([]cron.Option{cron.WithLocation(time.UTC), cron.WithParser(cronspec.NewParser())}, opts...)...)
+// clock is cron.RealClock in production; tests pass a fake.
+func newCronEngine(clock cron.Clock) *cron.Cron {
+	return cron.New(cron.WithLocation(time.UTC), cron.WithParser(cronspec.NewParser()), cron.WithClock(wakeClock{clock}))
+}
+
+// cronWakeInterval is the longest go-cron sleeps before it reads the wall
+// clock again. Its timer runs on the monotonic clock, so without the cap a
+// wall-clock step (date -s, an NTP correction, a VM snapshot restore, a laptop
+// resume) left every entry waiting out the old interval: a forward step fired
+// nothing until the timer armed before it expired, and a backward step stalled
+// entries whose last run now lay in the future. Waking every few seconds lets
+// go-cron see the new time, run what is overdue once, and re-plan from there.
+const cronWakeInterval = 5 * time.Second
+
+// wakeClock caps every go-cron timer at cronWakeInterval. A wake with nothing
+// due just re-arms, so the cost is one idle loop every few seconds.
+type wakeClock struct{ cron.Clock }
+
+func (c wakeClock) NewTimer(d time.Duration) cron.Timer {
+	return c.Clock.NewTimer(min(d, cronWakeInterval))
 }
 
 func (scheduler *Scheduler) Start() (ScheduleResult, error) {

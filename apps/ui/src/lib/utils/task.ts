@@ -15,6 +15,18 @@ export const HELD_BY_CRON_HELP =
     "`sudo systemctl disable --now cron`): RunWisp picks it up on its own " +
     "within a minute.";
 
+/**
+ * The zone a task's cron is evaluated in: its own timezone, else the daemon's.
+ * Next-run times are shown in it so they agree with the cron description.
+ */
+export function scheduleTimeZone(
+    task: Pick<Task, "timezone">,
+    daemonZone: string,
+): string | undefined {
+    if (task.timezone) return task.timezone;
+    return daemonZone ? daemonZone : undefined;
+}
+
 /** Whether the task has a cron schedule. */
 export function hasCron(task: Pick<Task, "cron">): task is Pick<Task, "cron"> & { cron: string } {
     return Boolean(task.cron?.trim());
@@ -91,6 +103,7 @@ export function noRunsMessage(
     task: Task,
     schedulingActive: boolean,
     now: Date,
+    daemonZone = "",
 ): { title: string; description: string } {
     if (task.heldBy) {
         return {
@@ -102,7 +115,7 @@ export function noRunsMessage(
     if (hasCron(task) && task.nextRunAt && schedulingActive) {
         return {
             title: "No runs yet",
-            description: `The first run is ${formatRelativeTimeWithAbsolute(task.nextRunAt, now)}.`,
+            description: `The first run is ${formatRelativeTimeWithAbsolute(task.nextRunAt, now, scheduleTimeZone(task, daemonZone))}.`,
         };
     }
     if (isService(task.kind)) {
