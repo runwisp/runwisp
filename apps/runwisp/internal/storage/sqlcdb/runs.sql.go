@@ -346,6 +346,28 @@ func (q *Queries) MarkCrashedRuns(ctx context.Context, endedAt *time.Time) (int6
 	return result.RowsAffected()
 }
 
+const previousRunIsFailure = `-- name: PreviousRunIsFailure :one
+SELECT is_failure FROM runs
+WHERE task_name = ? AND id != ? AND deleted_at IS NULL AND status = 'ended'
+  AND (started_at IS NOT NULL OR is_failure = 1)
+ORDER BY COALESCE(started_at, created_at) DESC, id DESC
+LIMIT 1
+`
+
+type PreviousRunIsFailureParams struct {
+	TaskName string `json:"task_name"`
+	ID       string `json:"id"`
+}
+
+// The failure bit of the task's newest ended run other than the given one,
+// counted the way GetLastRun counts: a missed run only when it is a failure.
+func (q *Queries) PreviousRunIsFailure(ctx context.Context, arg PreviousRunIsFailureParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, previousRunIsFailure, arg.TaskName, arg.ID)
+	var is_failure int64
+	err := row.Scan(&is_failure)
+	return is_failure, err
+}
+
 const queryRunsCreatedAtAsc = `-- name: QueryRunsCreatedAtAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)

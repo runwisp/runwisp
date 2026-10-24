@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,6 +22,22 @@ type SyntheticIngester interface {
 	IngestSynthetic(ev *Event)
 }
 
+// TaskResetter is a channel that groups repeats of an event (the coalescers).
+// ResetTask closes the task's open failure groups when one of its runs
+// succeeds, so the next failure is a new incident that pages again. The
+// dispatcher calls it on every success, whether or not a route sent the
+// success to that channel.
+type TaskResetter interface {
+	ResetTask(ctx context.Context, task string)
+}
+
+// delivery is one item on a channel's queue. deliver is false for a success
+// queued only so a TaskResetter sees it in order with the failures around it.
+type delivery struct {
+	ev      *Event
+	deliver bool
+}
+
 // dispatcher pumps events from the ingress channel through the router to
 // per-channel queues, where workers execute side effects with retry and
 // surface permanent failures back via the SyntheticIngester.
@@ -31,7 +48,7 @@ type dispatcher struct {
 	failures SyntheticIngester
 	logger   *slog.Logger
 
-	queues  map[string]chan *Event
+	queues  map[string]chan delivery
 	workers sync.WaitGroup
 
 	droppedAction atomic.Uint64
@@ -41,9 +58,9 @@ func newDispatcher(router *Router, channels map[string]Channel, queueSize int, c
 	if queueSize <= 0 {
 		queueSize = DefaultActionQueueSize
 	}
-	queues := make(map[string]chan *Event, len(channels))
+	queues := make(map[string]chan delivery, len(channels))
 	for id := range channels {
-		queues[id] = make(chan *Event, queueSize)
+		queues[id] = make(chan delivery, queueSize)
 	}
 	return &dispatcher{
 		router:   router,
@@ -65,21 +82,35 @@ func (d *dispatcher) startWorkers(ctx context.Context) {
 	}
 }
 
-// dispatch enqueues an event into every matching channel's queue.
+// dispatch enqueues an event into every matching channel's queue, and a
+// success also into every TaskResetter's queue the route skipped.
 // Drop-oldest under pressure: when the queue is full we drain one slot
 // (the oldest waiting event) before retrying the send.
 func (d *dispatcher) dispatch(ev *Event) {
-	for _, c := range d.router.Route(ev) {
-		queue, ok := d.queues[c.ID()]
-		if !ok {
-			continue
-		}
-		SendDropOldest(queue, ev, func() {
-			d.droppedAction.Add(1)
-			d.logger.Warn("notify dispatcher queue full; dropping oldest",
-				"action", c.ID(), "kind", string(ev.Kind))
-		})
+	routed := d.router.Route(ev)
+	for _, c := range routed {
+		d.enqueue(c.ID(), delivery{ev: ev, deliver: true})
 	}
+	if ev.Kind != KindRunSucceeded {
+		return
+	}
+	for id, c := range d.channels {
+		if _, ok := c.(TaskResetter); ok && !slices.ContainsFunc(routed, func(r Channel) bool { return r.ID() == id }) {
+			d.enqueue(id, delivery{ev: ev})
+		}
+	}
+}
+
+func (d *dispatcher) enqueue(id string, item delivery) {
+	queue, ok := d.queues[id]
+	if !ok {
+		return
+	}
+	SendDropOldest(queue, item, func() {
+		d.droppedAction.Add(1)
+		d.logger.Warn("notify dispatcher queue full; dropping oldest",
+			"action", id, "kind", string(item.ev.Kind))
+	})
 }
 
 // SendDropOldest delivers v on ch, evicting the oldest buffered value when ch
@@ -109,17 +140,23 @@ func (d *dispatcher) closeQueues() {
 	}
 }
 
-func (d *dispatcher) worker(ctx context.Context, id string, ch Channel, queue <-chan *Event) {
+func (d *dispatcher) worker(ctx context.Context, id string, ch Channel, queue <-chan delivery) {
 	defer d.workers.Done()
+	resetter, _ := ch.(TaskResetter)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case ev, ok := <-queue:
+		case item, ok := <-queue:
 			if !ok {
 				return
 			}
-			d.executeOne(ctx, id, ch, ev)
+			if resetter != nil && item.ev.Kind == KindRunSucceeded {
+				resetter.ResetTask(ctx, item.ev.TaskName)
+			}
+			if item.deliver {
+				d.executeOne(ctx, id, ch, item.ev)
+			}
 		}
 	}
 }
