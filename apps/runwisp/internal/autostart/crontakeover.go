@@ -21,17 +21,6 @@ import (
 // a take-over has nothing to take over.
 var ErrNoCronUnit = errors.New("autostart: no cron systemd unit found (looked for " + strings.Join(importer.CronUnits(), ", ") + ")")
 
-// runSystemctlSystem runs a systemctl call scoped to the system manager
-// regardless of whether this InstallOptions itself is --system — the cron
-// unit being taken over is always a system unit. It goes through
-// systemctlInvocation (the single place that decides sudo-vs-not) rather
-// than hardcoding "systemctl", so cron-takeover code never re-derives that
-// decision.
-func (s *systemdInstaller) runSystemctlSystem(ctx context.Context, args ...string) ([]byte, []byte, error) {
-	argv := systemctlInvocation(true, s.deps.Euid, args...)
-	return s.deps.Cmd.Run(ctx, argv[0], argv[1:]...)
-}
-
 // probeCronUnit reads LoadState/ActiveState/UnitFileState for a candidate
 // unit in one call. LoadState "not-found" (or empty, on older systemd) means
 // the unit doesn't exist on this machine at all.
@@ -198,13 +187,14 @@ func (s *systemdInstaller) stopAndMaskCron(ctx context.Context, units string, ou
 	priors = strings.Join(states, " ")
 
 	fmt.Fprintf(out, "Stopping %s\n", units)
-	if _, stderr, err := s.runSystemctlSystem(ctx, append([]string{"stop"}, names...)...); err != nil {
+	// Cron is always a system unit, whichever manager RunWisp runs under.
+	if _, stderr, err := s.runSystemctl(ctx, true, append([]string{"stop"}, names...)...); err != nil {
 		return priors, false, fmt.Errorf("systemctl stop %s: %w: %s", units, err, string(stderr))
 	}
 	stopped = true
 
 	fmt.Fprintf(out, "Masking %s\n", units)
-	if _, stderr, err := s.runSystemctlSystem(ctx, append([]string{"mask"}, names...)...); err != nil {
+	if _, stderr, err := s.runSystemctl(ctx, true, append([]string{"mask"}, names...)...); err != nil {
 		return priors, stopped, fmt.Errorf("systemctl mask %s: %w: %s", units, err, string(stderr))
 	}
 	return priors, stopped, nil
@@ -238,14 +228,14 @@ func (s *systemdInstaller) restoreCron(ctx context.Context, units, priors string
 		return nil
 	}
 	fmt.Fprintf(out, "Unmasking %s\n", strings.Join(unmask, " "))
-	if _, stderr, err := s.runSystemctlSystem(ctx, append([]string{"unmask"}, unmask...)...); err != nil {
+	if _, stderr, err := s.runSystemctl(ctx, true, append([]string{"unmask"}, unmask...)...); err != nil {
 		return fmt.Errorf("systemctl unmask %s: %w: %s", strings.Join(unmask, " "), err, string(stderr))
 	}
 	if len(start) == 0 {
 		return nil
 	}
 	fmt.Fprintf(out, "Starting %s\n", strings.Join(start, " "))
-	if _, stderr, err := s.runSystemctlSystem(ctx, append([]string{"start"}, start...)...); err != nil {
+	if _, stderr, err := s.runSystemctl(ctx, true, append([]string{"start"}, start...)...); err != nil {
 		return fmt.Errorf("systemctl start %s: %w: %s", strings.Join(start, " "), err, string(stderr))
 	}
 	return nil

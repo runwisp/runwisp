@@ -383,3 +383,22 @@ func TestComputeRestartDelay(t *testing.T) {
 		assert.Equal(t, RestartBackoffCap, computeRestartDelay(task, 10))
 	})
 }
+
+// A service with no restart settings of its own must outlast a short outage of
+// what it depends on (a database restart, a network blip). With the old
+// default of 3 attempts the backoff gave up after 7s and the service stayed
+// FATAL once the database came back.
+func TestDefaultRestartWindowOutlastsShortOutage(t *testing.T) {
+	cfg := &config.Config{
+		Scheduler: config.Scheduler{Timezone: "UTC"},
+		Tasks:     []model.Task{{Name: "worker", Kind: model.KindService}},
+	}
+	config.ApplyDefaults(cfg)
+	task := &cfg.Tasks[0]
+
+	var window time.Duration
+	for attempt := range *task.RestartAttempts {
+		window += RestartDelay(task, attempt, nil)
+	}
+	assert.GreaterOrEqual(t, window, 2*time.Minute)
+}

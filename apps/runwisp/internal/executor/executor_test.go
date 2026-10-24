@@ -377,7 +377,7 @@ func TestExecuteSignalDeathReasonIsInLog(t *testing.T) {
 	assert.Equal(t, -1, result.ExitCode)
 	logContent, err := os.ReadFile(getLogPath())
 	require.NoError(t, err)
-	assert.Contains(t, string(logContent), "Killed by SIGKILL from outside RunWisp")
+	assert.Contains(t, string(logContent), "Process was killed by SIGKILL from outside RunWisp")
 }
 
 // A plain non-zero exit is already shown as the exit code; no extra line.
@@ -390,6 +390,14 @@ func TestAbnormalExitMessage(t *testing.T) {
 		"an outside SIGKILL points at the OOM killer")
 	assert.Equal(t, "Process died from signal SIGSEGV (segmentation fault).",
 		abnormalExitMessage(exec.Command("sh", "-c", "kill -SEGV $$").Run()))
+
+	// Under `sh -c` the shell outlives the command and exits 128+n, so the
+	// signal only shows in the exit code.
+	assert.Contains(t, abnormalExitMessage(exec.Command("sh", "-c", "exit 137").Run()), "out-of-memory killer",
+		"a shell's 137 is a SIGKILL of the command it ran")
+	assert.Equal(t, "Exit code 139: a process the run started died from signal SIGSEGV (segmentation fault).",
+		abnormalExitMessage(exec.Command("sh", "-c", `sh -c 'kill -SEGV $$'; exit $?`).Run()))
+	assert.Empty(t, abnormalExitMessage(exec.Command("sh", "-c", "exit 255").Run()), "255 names no signal")
 }
 
 // A backend's ExitHint explains a non-zero exit as a system line; a clean exit
