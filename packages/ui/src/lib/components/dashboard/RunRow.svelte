@@ -13,7 +13,11 @@
         runUsageLabel,
         usageLevel,
         highlightParts,
-        type RunUsageAmounts,
+        formatLines,
+        outputUnusual,
+        runOutputLabel,
+        runOutputLines,
+        type OutputScale,
         type RunUsageScale,
     } from "./run-helpers.js";
     import type { RunOutputMatch } from "./types.js";
@@ -36,6 +40,7 @@
         bulkActions,
         selectionActive,
         usage,
+        output,
         onselect,
     }: {
         run: Run;
@@ -53,6 +58,8 @@
          * no run has usage yet (rows keep the bars' room), undefined for none.
          */
         usage: RunUsageScale | null | undefined;
+        /** The task's output scale for the rail's third bar, undefined for none. */
+        output: OutputScale | undefined;
         onselect: (runId: string) => void;
     } = $props();
 
@@ -62,6 +69,22 @@
     const startedAt = $derived(run.startedAt ?? run.createdAt);
     const retry = $derived(runRetryLabel(run));
     const amounts = $derived(usage ? runUsageAmounts(run) : undefined);
+    const lines = $derived(output ? runOutputLines(run) : undefined);
+    const barsTitle = $derived(
+        [
+            [runUsageLabel(run), runOutputLabel(run)].filter(Boolean).join(" · "),
+            [
+                usage &&
+                    `CPU ${formatDuration(usage.usual.cpu)} · RAM ${formatBytes(usage.usual.ram)}`,
+                output?.band &&
+                    `${formatLines(output.band.p10)} to ${formatLines(output.band.p90)}`,
+            ]
+                .filter(Boolean)
+                .join(" · "),
+        ]
+            .filter(Boolean)
+            .join(". Usual for this task: "),
+    );
     const tight = $derived(usage === undefined ? "" : "@max-[19rem]:hidden");
     const LEVEL_COLOR = ["bg-success-surface", "bg-warning-surface", "bg-danger-surface"];
     // With bulk actions on, the status dot fades out on row hover, or whenever a
@@ -141,16 +164,37 @@
                     <span class="font-mono text-2xs text-on-surface-faint">{suffix}</span>
                 {/if}
             </span>
-            {#if usage && amounts}
+            {#if usage !== undefined && (amounts || lines !== undefined)}
+                <!-- Fixed slots, CPU over RAM over lines printed, so a run
+                     missing one (a non-shell backend has no CPU/RAM) keeps the
+                     others aligned with its neighbours. -->
                 <span
                     class="flex w-6 shrink-0 cursor-help flex-col gap-0.5"
-                    title="{runUsageLabel(run)}. Usual for this task: CPU {formatDuration(
-                        usage.usual.cpu,
-                    )} · RAM {formatBytes(usage.usual.ram)}"
+                    title={barsTitle}
                     data-testid="run-usage-bars"
                 >
-                    {@render bar(amounts.cpu, usage.max.cpu, usage.usual.cpu, "cpu")}
-                    {@render bar(amounts.ram, usage.max.ram, usage.usual.ram, "ram")}
+                    {#if usage && amounts}
+                        {@render bar(
+                            amounts.cpu,
+                            usage.max.cpu,
+                            usageLevel(amounts.cpu, usage.usual.cpu, "cpu"),
+                        )}
+                        {@render bar(
+                            amounts.ram,
+                            usage.max.ram,
+                            usageLevel(amounts.ram, usage.usual.ram, "ram"),
+                        )}
+                    {:else}
+                        <span class="block h-[3px]"></span>
+                        <span class="block h-[3px]"></span>
+                    {/if}
+                    {#if output && lines !== undefined}
+                        {@render bar(
+                            lines,
+                            output.max,
+                            output.band && outputUnusual(lines, output.band) ? 1 : 0,
+                        )}
+                    {/if}
                 </span>
             {:else if usage !== undefined}
                 <span class="w-6 shrink-0" aria-hidden="true"></span>
@@ -182,10 +226,10 @@
     ></div>
 </button>
 
-{#snippet bar(value: number, max: number, usual: number, kind: keyof RunUsageAmounts)}
+{#snippet bar(value: number, max: number, level: 0 | 1 | 2)}
     <span class="block h-[3px] overflow-hidden rounded-[1px] bg-outline-faint">
         <span
-            class="block h-full {LEVEL_COLOR[usageLevel(value, usual, kind)]}"
+            class="block h-full {LEVEL_COLOR[level]}"
             style="width: {String(max > 0 ? Math.max(4, Math.round((100 * value) / max)) : 4)}%"
         ></span>
     </span>

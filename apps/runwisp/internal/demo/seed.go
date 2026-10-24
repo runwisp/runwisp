@@ -396,6 +396,7 @@ func (s *seeder) execOne(ctx context.Context, spec *runSpec) error {
 	}
 	spec.run.End(spec.task, reason, res.ExitCode, end)
 	spec.run.PeakMemoryBytes, spec.run.CPUTimeMs = seedUsage(spec.run.TaskName, start, end)
+	spec.run.StdoutLines, spec.run.StderrLines = new(res.StdoutLines), new(res.StderrLines)
 	return s.db.CreateRun(ctx, spec.run)
 }
 

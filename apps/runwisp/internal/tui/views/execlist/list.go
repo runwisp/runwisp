@@ -298,7 +298,14 @@ func (e *ExecList) rowPrefix(runID string) string {
 	return checkboxEmpty + " "
 }
 
-func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidths, usual *uikit.RunUsage) string {
+// rowBaselines are what a scoped list judges each run's vitals against: the
+// task's usual CPU and RAM, and its usual output band. nil when unknown.
+type rowBaselines struct {
+	usage  *uikit.RunUsage
+	output *uikit.OutputBand
+}
+
+func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidths, usual rowBaselines) string {
 	bg, fg, bold := uikit.ColorBg, uikit.ColorText, false
 	isCursor := e.focused && rowIdx == e.cursor
 	isHovered := rowIdx == e.hoveredRow && !isCursor
@@ -313,11 +320,34 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	if item == nil {
 		return rowStyle.Render("  " + padCell("loading…", cw.rowWidth()-2))
 	}
-	cpu, mem := usageCells(&item.Run, usual, isCursor)
+	cpu, mem := usageCells(&item.Run, usual.usage, isCursor)
 	return rowStyle.Render(e.rowPrefix(item.Run.ID)+padCell(e.firstCell(item.Run, cw), cw.first)+" ") +
 		statusCell(item.Run.DisplayStatus(), cw.status, rowStyle) +
 		trailingCells(cw, rowStyle, cell{text: e.startedCell(item, cw)}, cell{text: item.Duration},
-			cpu, mem, cell{text: string(item.Run.TriggeredBy)})
+			cpu, mem, outputCell(&item.Run, usual.output, isCursor), cell{text: string(item.Run.TriggeredBy)})
+}
+
+// outputCell is a run's OUTPUT cell, its line count, in the warning colour
+// when the run printed far more or far less than the task usually does. The
+// cursor row keeps its own highlight colour.
+func outputCell(run *model.Run, band *uikit.OutputBand, isCursor bool) cell {
+	lines, ok := run.OutputLines()
+	var c cell
+	switch {
+	case !ok:
+		c = cell{text: "–", fg: uikit.ColorTextMuted}
+	case lines == 0:
+		c = cell{text: "none", fg: uikit.ColorTextMuted}
+	default:
+		c = cell{text: uikit.FormatLines(lines)}
+	}
+	if ok && band != nil && band.Unusual(lines) {
+		c.fg = uikit.ColorWarning
+	}
+	if isCursor {
+		c.fg = nil
+	}
+	return c
 }
 
 // usageCells are a run's CPU and RAM cells, colored by how they compare with
@@ -394,7 +424,7 @@ type cell struct {
 	fg   color.Color
 }
 
-// trailingCells renders the STARTED, DURATION, CPU, RAM and TRIGGER cells in
+// trailingCells renders the STARTED, DURATION, CPU, RAM, OUTPUT and TRIGGER cells in
 // style, each led by its separating space; hidden (zero-width) columns are
 // skipped.
 func trailingCells(cw colWidths, style lipgloss.Style, cells ...cell) string {
@@ -414,9 +444,12 @@ func trailingCells(cw colWidths, style lipgloss.Style, cells ...cell) string {
 
 func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, contentW int, cw colWidths, sb scrollbarRender) {
 	end := min(e.Scroll+vpH, n)
-	var usual *uikit.RunUsage
+	var usual rowBaselines
 	if cw.cpu > 0 || cw.mem > 0 {
-		usual = e.window.UsualUsage()
+		usual.usage = e.window.UsualUsage()
+	}
+	if cw.output > 0 {
+		usual.output = e.window.UsualOutput()
 	}
 	// contentW is w when no scrollbar shows and w-1 when it does; the scrollbar
 	// glyph is exactly one cell. So a row padded to contentW plus the scrollbar
@@ -510,7 +543,7 @@ func (e *ExecList) View() string {
 	// STATUS sits over the badge text, past the badge's padding.
 	header := uikit.TableHeaderStyle.Render("  "+padCell(first, cw.first)+" "+padCell(" STATUS", cw.status)) +
 		trailingCells(cw, uikit.TableHeaderStyle,
-			cell{text: "STARTED"}, cell{text: "DURATION"}, cell{text: "CPU"}, cell{text: "RAM"}, cell{text: "TRIGGER"})
+			cell{text: "STARTED"}, cell{text: "DURATION"}, cell{text: "CPU"}, cell{text: "RAM"}, cell{text: "OUTPUT"}, cell{text: "TRIGGER"})
 	b.WriteString(uikit.PadLine(header, w, uikit.ColorBgLight))
 	b.WriteString("\n")
 

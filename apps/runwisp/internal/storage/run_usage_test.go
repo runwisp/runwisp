@@ -31,19 +31,25 @@ func TestRun_ResourceUsageRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, fetched.PeakMemoryBytes, "unmeasured stays nil")
 	assert.Nil(t, fetched.CPUTimeMs)
+	assert.Nil(t, fetched.StdoutLines)
+	assert.Nil(t, fetched.StderrLines)
 
 	peak, cpu := int64(48<<20), int64(1200)
 	run.PeakMemoryBytes, run.CPUTimeMs = &peak, &cpu
+	run.StdoutLines, run.StderrLines = new(int64(12)), new(int64(3))
 	require.NoError(t, db.UpdateRun(ctx, run))
 
 	fetched, err = db.GetRun(ctx, run.ID)
 	require.NoError(t, err)
 	assert.Equal(t, &peak, fetched.PeakMemoryBytes)
 	assert.Equal(t, &cpu, fetched.CPUTimeMs)
+	assert.Equal(t, new(int64(12)), fetched.StdoutLines)
+	assert.Equal(t, new(int64(3)), fetched.StderrLines)
 
 	listed, err := db.QueryRuns(ctx, RunQuery{Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, listed, 1)
 	assert.Equal(t, &peak, listed[0].PeakMemoryBytes, "list queries carry the columns too")
 	assert.Equal(t, &cpu, listed[0].CPUTimeMs)
+	assert.Equal(t, new(int64(3)), listed[0].StderrLines)
 }

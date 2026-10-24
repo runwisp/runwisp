@@ -30,7 +30,7 @@
         runFilterParams,
         type RunsListFilters,
     } from "./run-filters.js";
-    import { instanceSuffix, runUsageScale } from "./run-helpers.js";
+    import { instanceSuffix, runOutputScale, runUsageScale } from "./run-helpers.js";
     import { formatDateTime } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
@@ -104,8 +104,9 @@
         // True while a query is typed but its results aren't in yet (debounce
         // window or request in flight), the rail shows its searching shimmer.
         outputSearchPending?: boolean;
-        // Task rail only: two small bars per finished run, CPU time over RAM,
-        // scaled to the largest loaded run and colored against the usual one.
+        // Task rail only: three small bars per finished run, CPU time, RAM and
+        // lines printed, scaled to the largest loaded run and colored against
+        // the usual one.
         usageBars?: boolean;
         // Folds the list to a thin strip that still counts the runs, giving the
         // run detail the width. Omitted where the screen keeps the list open.
@@ -114,6 +115,7 @@
     } = $props();
 
     const usageScale = $derived(usageBars ? runUsageScale(items) : undefined);
+    const outputScale = $derived(usageBars ? runOutputScale(items) : undefined);
 
     // Task-rail rows are one dense line (44px); the cross-task /runs view adds
     // the task name on a second line (64px).
@@ -529,6 +531,7 @@
         {bulkActions}
         {selectionActive}
         usage={usageBars ? (usageScale ?? null) : undefined}
+        output={outputScale}
         onselect={selectRun}
     />
 {/snippet}

@@ -1433,6 +1433,16 @@
             ],
             "type": "string"
           },
+          "stderrLines": {
+            "description": "Lines the run printed on stderr, including any the log dropped. Absent for runs that never executed.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "stdoutLines": {
+            "description": "Lines the run printed on stdout, including any the log dropped. Absent for runs that never executed.",
+            "format": "int64",
+            "type": "integer"
+          },
           "taskName": {
             "type": "string"
           },

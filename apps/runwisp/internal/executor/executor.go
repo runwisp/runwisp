@@ -57,6 +57,9 @@ type ExecuteResult struct {
 	// the backend has no measurable process or the value is unknown.
 	PeakMemoryBytes *int64
 	CPUTimeMs       *int64
+	// StdoutLines and StderrLines are the lines the run printed per stream.
+	StdoutLines int64
+	StderrLines int64
 }
 
 // EndReason maps the raw process outcome to a terminal reason. Exit 0 is the sole
@@ -273,6 +276,7 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	result := classifyExecuteResult(killer.ctx, killReason, exitCode, waitErr)
 	r.explainExit(writer, task, run, proc, result, r.clock().Sub(startedAt))
 	result.OutputMatched = matcher.pattern() != ""
+	result.StdoutLines, result.StderrLines = writer.OutputLines()
 	peak, sampled := stopSampling()
 	var ru *syscall.Rusage
 	if proc.Rusage != nil {

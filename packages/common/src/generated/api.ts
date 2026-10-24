@@ -1442,6 +1442,16 @@ export interface components {
              * @enum {string}
              */
             status: "pending" | "running" | "ended";
+            /**
+             * Format: int64
+             * @description Lines the run printed on stderr, including any the log dropped. Absent for runs that never executed.
+             */
+            stderrLines?: number;
+            /**
+             * Format: int64
+             * @description Lines the run printed on stdout, including any the log dropped. Absent for runs that never executed.
+             */
+            stdoutLines?: number;
             taskName: string;
             /**
              * @description How the run was triggered

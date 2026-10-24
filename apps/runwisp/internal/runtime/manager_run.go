@@ -155,6 +155,7 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 		outcome.eventType = events.EventRunFailed
 	}
 	run.PeakMemoryBytes, run.CPUTimeMs = result.PeakMemoryBytes, result.CPUTimeMs
+	run.StdoutLines, run.StderrLines = new(result.StdoutLines), new(result.StderrLines)
 	run.End(task, outcome.endReason, result.ExitCode, endTime)
 
 	m.persistence.PersistExisting(run)

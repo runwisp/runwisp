@@ -57,6 +57,8 @@ type Run struct {
 	IsFailure       int64             `json:"is_failure"`
 	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
 	CpuTimeMs       *int64            `json:"cpu_time_ms"`
+	StdoutLines     *int64            `json:"stdout_lines"`
+	StderrLines     *int64            `json:"stderr_lines"`
 }
 
 type TaskBootID struct {
