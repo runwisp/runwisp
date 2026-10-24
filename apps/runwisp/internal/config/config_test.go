@@ -1978,6 +1978,33 @@ run = "echo hi"
 		assert.Equal(t, "", cfg.Daemon.ExternalURL)
 	})
 
+	t.Run("daemon heartbeat_url is kept as written", func(t *testing.T) {
+		path := writeTOML(t, `
+[daemon]
+heartbeat_url = " https://hc-ping.com/abc-123/?rid=1 "
+
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, "https://hc-ping.com/abc-123/?rid=1", cfg.Daemon.HeartbeatURL)
+	})
+
+	t.Run("daemon heartbeat_url rejects non-http schemes without echoing the URL", func(t *testing.T) {
+		path := writeTOML(t, `
+[daemon]
+heartbeat_url = "ftp://hc-ping.com/secret-token"
+
+[tasks.t]
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "daemon.heartbeat_url")
+		assert.NotContains(t, err.Error(), "secret-token")
+	})
+
 	t.Run("daemon check_updates defaults to true", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks.t]

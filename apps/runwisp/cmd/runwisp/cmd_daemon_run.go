@@ -25,6 +25,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/heartbeat"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/runlog"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
@@ -140,6 +141,10 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	defer cancelUpdate()
 	go updateChecker.Run(updateCtx)
 
+	// Dead man's switch ping ([daemon] heartbeat_url); idles while unset.
+	pinger := heartbeat.New(cfg.Config.Daemon.HeartbeatURL, version.Version, slog.Default())
+	go pinger.Run(updateCtx)
+
 	// Job output on the daemon's own stdout/stderr (`docker logs`). Subscribed
 	// only when headless, below: a TUI owns the terminal.
 	output := runlog.NewOutputMirror(os.Stdout, os.Stderr, f.LogFormat == clilog.FormatJSON, cfg.Config.Daemon.LogOutput)
@@ -148,6 +153,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		svc:         svc,
 		fingerprint: cfg.Fingerprint,
 		updates:     updateChecker,
+		heartbeat:   pinger,
 		output:      output,
 	}
 	reconciler, reloadFn := newReconciler(cfg, svc, src, configSnap, settings)
