@@ -425,6 +425,9 @@ func (r *RoutingExecutor) startBackend(ctx context.Context, backend Backend, tas
 		r.systemLine(writer, task, run, errMsg)
 		return nil, &ExecuteResult{ExitCode: -1, Error: errors.New(errMsg)}
 	}
+	if proc.Notice != "" {
+		r.systemLine(writer, task, run, proc.Notice)
+	}
 	return proc, nil
 }
 
