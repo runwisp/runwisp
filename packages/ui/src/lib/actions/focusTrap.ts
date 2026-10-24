@@ -53,6 +53,11 @@ export interface TrapFocusOptions {
      * that focuses its own search input).
      */
     autoFocus?: boolean;
+    /**
+     * When true, focusing elements inside the trap (and restoring focus upon
+     * teardown) will not cause the browser to scroll the viewport. Defaults to `false`.
+     */
+    preventScroll?: boolean;
 }
 
 /**
@@ -64,10 +69,10 @@ export interface TrapFocusOptions {
  * alone.
  */
 export function trapFocus(node: HTMLElement, options: TrapFocusOptions = {}) {
-    const autoFocus = options.autoFocus ?? true;
+    let currentOptions = options;
     const previouslyFocused = isHTMLElement(document.activeElement) ? document.activeElement : null;
 
-    if (autoFocus) {
+    if (currentOptions.autoFocus ?? true) {
         // Deferred a tick: `node` may still be moved by a sibling `use:portal`
         // action (appendChild-ing it to <body>) after this action runs, and
         // relocating a focused element resets focus to <body>. Waiting a
@@ -78,7 +83,7 @@ export function trapFocus(node: HTMLElement, options: TrapFocusOptions = {}) {
             if (target === node && !node.hasAttribute("tabindex")) {
                 node.tabIndex = -1;
             }
-            target.focus();
+            target.focus({ preventScroll: currentOptions.preventScroll ?? false });
         });
     }
 
@@ -87,13 +92,16 @@ export function trapFocus(node: HTMLElement, options: TrapFocusOptions = {}) {
         const target = resolveTrapFocusTarget(e, getFocusableElements(node), active);
         if (target) {
             e.preventDefault();
-            target.focus();
+            target.focus({ preventScroll: currentOptions.preventScroll ?? false });
         }
     }
 
     node.addEventListener("keydown", handleKeydown);
 
     return {
+        update(newOptions: TrapFocusOptions = {}) {
+            currentOptions = newOptions;
+        },
         destroy() {
             node.removeEventListener("keydown", handleKeydown);
             // By the time an action's destroy() runs, `node` (and whatever
@@ -108,7 +116,7 @@ export function trapFocus(node: HTMLElement, options: TrapFocusOptions = {}) {
             const active = document.activeElement;
             const focusWasReset = !isHTMLElement(active) || active === document.body;
             if (focusWasReset && previouslyFocused && document.contains(previouslyFocused)) {
-                previouslyFocused.focus();
+                previouslyFocused.focus({ preventScroll: currentOptions.preventScroll ?? false });
             }
         },
     };

@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp restart` checks the config first and leaves the daemon running when the config is invalid, instead of stopping it for one that can't start.
 - Live logs and Web UI updates stream through nginx as they happen, instead of arriving in one burst.
 - A non-root `runwisp list` or `runwisp run` on a box with the system service says to use sudo, instead of failing on a missing `runwisp.toml`.
+- Opening a dropdown menu in the Web UI no longer scrolls the page. Thanks @dahool.
 
 ## [1.7.1] - 2026-10-19
 
