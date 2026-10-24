@@ -520,6 +520,25 @@ func TestLogWriter_WriteLineEvent_DropReturnsNegative(t *testing.T) {
 	require.NoError(t, w.Close())
 }
 
+func TestLogWriter_OutputLines_CountsDroppedLinesButNotSystemLines(t *testing.T) {
+	opts := newTestOpts(t.TempDir())
+	opts.MaxSize = 80
+	opts.Overflow = "drop_new"
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+
+	_, _ = w.WriteLineEvent("ok", logutil.StreamStdout)
+	_, _ = w.WriteLineEvent("warn", logutil.StreamStderr)
+	_, _ = w.WriteLineEvent("note", logutil.StreamSystem)
+	n, _ := w.WriteLineEvent(strings.Repeat("y", 100), logutil.StreamStdout)
+	require.Equal(t, int64(-1), n, "the line past the cap is dropped")
+
+	stdout, stderr := w.OutputLines()
+	assert.Equal(t, int64(2), stdout, "a dropped line still counts")
+	assert.Equal(t, int64(1), stderr)
+	require.NoError(t, w.Close())
+}
+
 // TestLogWriter_InjectedClockStampsSystemLine pins the determinism guarantee of
 // the LogWriter clock injection: the SYSTEM line written on truncation must
 // format its timestamp from the injected Now, not an inline time.Now(). A

@@ -176,6 +176,11 @@ type Run struct {
 	// and for runs recorded before they existed.
 	PeakMemoryBytes *int64 `json:"peakMemoryBytes,omitempty" doc:"Highest resident memory of the run's process group, in bytes. Shell runs only; absent when not measured."`
 	CPUTimeMs       *int64 `json:"cpuTimeMs,omitempty" doc:"User plus system CPU time of the run's processes, in milliseconds. Shell runs only; absent when not measured."`
+	// StdoutLines and StderrLines count the lines the run printed on each
+	// stream, including any the log dropped; nil for runs that never executed
+	// and for runs recorded before they existed.
+	StdoutLines *int64 `json:"stdoutLines,omitempty" doc:"Lines the run printed on stdout, including any the log dropped. Absent for runs that never executed."`
+	StderrLines *int64 `json:"stderrLines,omitempty" doc:"Lines the run printed on stderr, including any the log dropped. Absent for runs that never executed."`
 	// OutputMatched records that a captured output line matched one of the
 	// task's `failures` output patterns. Transient: set by the run manager from
 	// the executor result just before End, which folds it into the persisted
@@ -190,6 +195,15 @@ func (r *Run) Duration() (d time.Duration, ok bool) {
 		return 0, false
 	}
 	return r.EndedAt.Sub(*r.StartedAt), true
+}
+
+// OutputLines is the number of lines the run printed on stdout and stderr
+// together; ok is false until a finished run has counts.
+func (r *Run) OutputLines() (total int64, ok bool) {
+	if r.Status != PhaseEnded || r.StdoutLines == nil || r.StderrLines == nil {
+		return 0, false
+	}
+	return *r.StdoutLines + *r.StderrLines, true
 }
 
 // Copy creates a deep copy of the Run to prevent data races.
@@ -225,6 +239,12 @@ func (r *Run) Copy() *Run {
 	if r.CPUTimeMs != nil {
 		ct := *r.CPUTimeMs
 		cpy.CPUTimeMs = &ct
+	}
+	if r.StdoutLines != nil {
+		cpy.StdoutLines = new(*r.StdoutLines)
+	}
+	if r.StderrLines != nil {
+		cpy.StderrLines = new(*r.StderrLines)
 	}
 	if r.Params != nil {
 		params := make(map[string]string, len(r.Params))

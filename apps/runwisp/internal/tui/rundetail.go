@@ -127,10 +127,27 @@ func (d *RunDetailDialog) facts(row func(label, value string, color color.Color)
 	if run.CPUTimeMs != nil {
 		out = append(out, row("CPU time", (time.Duration(*run.CPUTimeMs)*time.Millisecond).String(), uikit.ColorText))
 	}
+	if lines, ok := run.OutputLines(); ok {
+		out = append(out, row("Output", outputSummary(lines, *run.StderrLines), uikit.ColorText))
+	}
 	if len(run.Params) > 0 {
 		out = append(out, row("Params", strconv.Itoa(len(run.Params)), uikit.ColorTextMuted))
 	}
 	return out
+}
+
+// outputSummary is how much a run printed: "none", "12 lines", or
+// "12 lines, 3 on stderr".
+func outputSummary(lines, stderr int64) string {
+	switch {
+	case lines == 0:
+		return "none"
+	case stderr == 0:
+		return uikit.FormatLines(lines)
+	case stderr == lines:
+		return uikit.FormatLines(lines) + ", all on stderr"
+	}
+	return fmt.Sprintf("%s, %d on stderr", uikit.FormatLines(lines), stderr)
 }
 
 // exitCodeColor greens a clean exit and reddens any non-zero code.

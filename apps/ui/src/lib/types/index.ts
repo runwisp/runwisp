@@ -55,6 +55,8 @@ const runSchema = z
         instanceIndex: z.number().int(),
         peakMemoryBytes: z.number().optional(),
         cpuTimeMs: z.number().optional(),
+        stdoutLines: z.number().optional(),
+        stderrLines: z.number().optional(),
     })
     .pipe(z.custom<Run>());
 

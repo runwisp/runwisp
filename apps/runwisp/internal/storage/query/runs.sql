@@ -5,14 +5,15 @@
 INSERT INTO runs (id, execution_id, task_name, status, end_reason,
   exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt,
   retry_of_run_id, instance_index, params_json, is_failure, peak_memory_bytes,
-  cpu_time_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+  cpu_time_ms, stdout_lines, stderr_lines)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateRun :execrows
 UPDATE runs SET execution_id = ?, task_name = ?, status = ?,
   end_reason = ?, exit_code = ?, started_at = ?, ended_at = ?, triggered_by = ?,
   created_at = ?, retry_attempt = ?, retry_of_run_id = ?, instance_index = ?,
-  params_json = ?, is_failure = ?, peak_memory_bytes = ?, cpu_time_ms = ?
+  params_json = ?, is_failure = ?, peak_memory_bytes = ?, cpu_time_ms = ?,
+  stdout_lines = ?, stderr_lines = ?
 WHERE id = ?;
 
 -- name: GetRun :one

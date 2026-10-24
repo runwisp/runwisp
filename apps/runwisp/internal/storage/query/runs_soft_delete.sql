@@ -41,7 +41,7 @@ WHERE deleted_at IS NOT NULL
 RETURNING id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
   instance_index, params_json, deleted_at, is_failure, peak_memory_bytes,
-  cpu_time_ms;
+  cpu_time_ms, stdout_lines, stderr_lines;
 
 -- name: RestoreRunsByFilter :many
 UPDATE runs SET deleted_at = NULL
@@ -62,7 +62,7 @@ WHERE deleted_at IS NOT NULL
 RETURNING id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
   instance_index, params_json, deleted_at, is_failure, peak_memory_bytes,
-  cpu_time_ms;
+  cpu_time_ms, stdout_lines, stderr_lines;
 
 -- name: ResolveSelectorIDsByIDs :many
 -- Slice must come AFTER scalar args. sqlc emits `?N` for named scalars and
