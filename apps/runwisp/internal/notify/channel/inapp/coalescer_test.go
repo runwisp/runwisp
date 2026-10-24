@@ -162,6 +162,38 @@ func TestIngestSynthetic_PersistsTheEvent(t *testing.T) {
 	assert.Len(t, rows, 1)
 }
 
+// TestCoalescer_ResetTaskShrinksWindow: a failure after the task succeeded is a
+// new bell entry, not another count on the row from before the success. Rows a
+// success doesn't close keep folding across it.
+func TestCoalescer_ResetTaskShrinksWindow(t *testing.T) {
+	db := newDB(t)
+	hub := NewHub(8)
+	clk := fakeclock.New(time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
+	c := NewCoalescer(db, hub, clk.Now, CoalescerConfig{Window: time.Hour, CoalesceLimit: 5}, nil)
+	ch := New("inapp", &fakeRenderer{}, c)
+	failure := makeEvent("backup-db")
+	failure.IsFailure = true
+	pressure := &notify.Event{Kind: notify.KindLogDiskPressure, Severity: notify.SevWarn, TaskName: "backup-db"}
+
+	c.Receive(context.Background(), "t", "b", failure)
+	c.Receive(context.Background(), "t", "b", pressure)
+	clk.Advance(5 * time.Minute)
+	ch.ResetTask(context.Background(), "backup-db")
+	clk.Advance(time.Minute)
+	c.Receive(context.Background(), "t", "b", failure)
+	c.Receive(context.Background(), "t", "b", pressure)
+	c.Receive(context.Background(), "t", "b", failure)
+
+	rows, err := db.ListNotifications(context.Background(), 50, "")
+	require.NoError(t, err)
+	counts := map[string][]int{}
+	for _, r := range rows {
+		counts[r.Kind] = append(counts[r.Kind], r.Count)
+	}
+	assert.ElementsMatch(t, []int{1, 2}, counts[string(notify.KindRunFailed)], "the failures after the success open a new row")
+	assert.Equal(t, []int{2}, counts[string(notify.KindLogDiskPressure)], "disk pressure folds across the success")
+}
+
 type fakeRenderer struct{}
 
 func (f *fakeRenderer) Render(ev *notify.Event) (render.RenderedMessage, error) {

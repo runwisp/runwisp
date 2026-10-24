@@ -103,8 +103,8 @@ notify = ["ops"]
 	assert.Contains(t, synth.NotifierID, "inapp", "per-task sugar must imply inapp by default")
 
 	synthLong := cfg.Notify.Routes[2]
-	assert.Equal(t, []string{"long_running"}, synthLong.Kinds)
-	assert.False(t, synthLong.MatchFailure, "long_running is never a failure")
+	assert.Equal(t, []string{"long_running", "recovered"}, synthLong.Kinds)
+	assert.False(t, synthLong.MatchFailure, "long_running and recovered are never failures")
 	assert.Equal(t, synth.TaskGlob, synthLong.TaskGlob)
 	assert.Equal(t, synth.NotifierID, synthLong.NotifierID)
 
@@ -115,7 +115,7 @@ notify = ["ops"]
 	assert.Equal(t, []string{"inapp"}, defaultRoute.NotifierID)
 
 	defaultLong := cfg.Notify.Routes[4]
-	assert.Equal(t, []string{"long_running"}, defaultLong.Kinds)
+	assert.Equal(t, []string{"long_running", "recovered"}, defaultLong.Kinds, "the catch-all also sends recoveries")
 	assert.False(t, defaultLong.MatchFailure)
 	assert.Empty(t, defaultLong.TaskGlob)
 	assert.Equal(t, []string{"inapp"}, defaultLong.NotifierID)
@@ -246,13 +246,14 @@ notifiers = ["inapp"]
 
 // TestValidate_RejectsFailureWithNeverFailureKind is the bug-first regression
 // for match.failure = true combined with a match.kinds token whose event can
-// never carry the classified-failure bit ("succeeded", "started", "long_running"): the AND
+// never carry the classified-failure bit ("succeeded", "started", "long_running",
+// "recovered"): the AND
 // of the two predicates can never be true, so the route validates but can
 // never fire — the same class of dead-route bug as
 // TestValidate_RejectsDeliveryFailedInRouteKinds, just reached through the
 // cross-field combination rather than a single token.
 func TestValidate_RejectsFailureWithNeverFailureKind(t *testing.T) {
-	for _, kind := range []string{"succeeded", "started", "long_running"} {
+	for _, kind := range []string{"succeeded", "started", "long_running", "recovered"} {
 		src := `
 [[route]]
 match = { kinds = ["` + kind + `"], failure = true }

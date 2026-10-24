@@ -316,13 +316,14 @@ func resolveGlobalNotifiers(raw *[]string) []string {
 
 // alertRoutes is the pair of synthetic routes behind every built-in alert
 // destination: runs the task's `failures` policy classifies as failures, plus
-// runs still going past `warn_after` (the long_running outcome, never a
-// failure). One constructor so the catch-all and the per-task `notify` sugar
-// can't drift apart on what they carry.
+// the two non-failure alerts, runs still going past `warn_after`
+// (long_running) and a success after a failed run (recovered). One
+// constructor so the catch-all and the per-task `notify` sugar can't drift
+// apart on what they carry.
 func alertRoutes(taskGlob string, notifiers []string) []NotificationRoute {
 	return []NotificationRoute{
 		{MatchFailure: true, TaskGlob: taskGlob, NotifierID: notifiers},
-		{Kinds: []string{kinds.LongRunningKind}, TaskGlob: taskGlob, NotifierID: notifiers},
+		{Kinds: []string{kinds.LongRunningKind, kinds.RecoveredKind}, TaskGlob: taskGlob, NotifierID: notifiers},
 	}
 }
 

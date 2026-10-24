@@ -202,6 +202,16 @@ func (db *SQLiteDatabase) LastRuns(ctx context.Context, taskNames []string) (map
 	return out, nil
 }
 
+// PreviousRunFailed reports whether the task's newest ended run other than
+// runID was a failure. A task with no such run reports false.
+func (db *SQLiteDatabase) PreviousRunFailed(ctx context.Context, taskName, runID string) (bool, error) {
+	isFailure, err := db.q.PreviousRunIsFailure(ctx, sqlcdb.PreviousRunIsFailureParams{TaskName: taskName, ID: runID})
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return isFailure == 1, err
+}
+
 func (db *SQLiteDatabase) GetRunByExecutionID(ctx context.Context, executionID string) (*model.Run, error) {
 	row, err := db.q.GetRunByExecutionID(ctx, &executionID)
 	if errors.Is(err, sql.ErrNoRows) {

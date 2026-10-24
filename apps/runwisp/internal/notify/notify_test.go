@@ -6,6 +6,7 @@ package notify
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -303,4 +304,59 @@ func TestServiceStop_RetentionTickerExits(t *testing.T) {
 	prior := ticks.Load()
 	time.Sleep(50 * time.Millisecond)
 	assert.Equal(t, prior, ticks.Load(), "retention loop must stop ticking after Stop returns")
+}
+
+// runRecoveredService runs a service that routes failures and recoveries (as
+// the built-in alert routes do) to one channel, publishes a success of task-x,
+// stops the service so every delivery has landed, and returns them.
+func runRecoveredService(t *testing.T, prevFailed bool) []*Event {
+	t.Helper()
+	var (
+		mu   sync.Mutex
+		got  []*Event
+		asks []string
+	)
+	ch := &executeChannel{id: "a", execFn: func(_ context.Context, ev *Event) error {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, ev)
+		return nil
+	}}
+	bus := events.NewEventBus()
+	svc := New(Config{
+		Bus:      bus,
+		Channels: []Channel{ch},
+		Rules: []Rule{
+			{Match: MatchFailure(), ActionIDs: []string{"a"}},
+			{Match: MatchOutcomes("recovered"), ActionIDs: []string{"a"}},
+		},
+		PrevRunFailed: func(_ context.Context, task, runID string) (bool, error) {
+			asks = append(asks, task+"/"+runID)
+			return prevFailed, nil
+		},
+	})
+	svc.Start(context.Background())
+	success := model.ReasonSuccess
+	bus.Publish(events.EventRunCompleted, events.RunEvent{Run: &model.Run{
+		ID: "01HOK", TaskName: "task-x", Status: model.PhaseEnded, EndReason: &success,
+	}})
+	stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	svc.Stop(stopCtx)
+	assert.Equal(t, []string{"task-x/01HOK"}, asks, "the lookup skips the run that just succeeded")
+	return got
+}
+
+func TestService_RecoveredAfterFailedRun(t *testing.T) {
+	got := runRecoveredService(t, true)
+	require.Len(t, got, 1, "only the recovery is routed, not the success itself")
+	assert.Equal(t, KindRunRecovered, got[0].Kind)
+	assert.Equal(t, SevInfo, got[0].Severity)
+	assert.False(t, got[0].IsFailure)
+	assert.Equal(t, "recovered", got[0].Outcome())
+	assert.Equal(t, "01HOK", got[0].Run.ID)
+}
+
+func TestService_NoRecoveredWhenPreviousSucceeded(t *testing.T) {
+	assert.Empty(t, runRecoveredService(t, false))
 }
