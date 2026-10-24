@@ -13,6 +13,7 @@ import (
 	"slices"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/heartbeat"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/runlog"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
@@ -26,6 +27,7 @@ type settingsApplier struct {
 	svc         *daemonServices
 	fingerprint string
 	updates     *update.Checker
+	heartbeat   *heartbeat.Pinger
 	output      *runlog.OutputMirror
 	srv         *server.Server
 	// readFile reads template_path files; nil means os.ReadFile.
@@ -83,6 +85,9 @@ func (a *settingsApplier) prepare(old, updated *config.Config) ([]string, func()
 	set(old.Daemon.ExternalURL != updated.Daemon.ExternalURL, "daemon.external_url", func() {})
 	set(old.Daemon.CheckUpdates != updated.Daemon.CheckUpdates, "daemon.check_updates", func() {
 		a.updates.SetEnabled(updated.Daemon.CheckUpdates)
+	})
+	set(old.Daemon.HeartbeatURL != updated.Daemon.HeartbeatURL, "daemon.heartbeat_url", func() {
+		a.heartbeat.SetURL(updated.Daemon.HeartbeatURL)
 	})
 	set(old.Daemon.LogOutput != updated.Daemon.LogOutput, "daemon.log_output", func() {
 		a.output.SetEnabled(updated.Daemon.LogOutput)
