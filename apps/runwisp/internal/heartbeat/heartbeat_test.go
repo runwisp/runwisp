@@ -167,3 +167,55 @@ func (s *safeBuffer) String() string {
 	defer s.mu.Unlock()
 	return s.b.String()
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func TestPing_RejectsBadURLAndNon2xx(t *testing.T) {
+	status := http.StatusInternalServerError
+	p := New("", "1.8.0", slog.New(slog.DiscardHandler))
+	p.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+	})}
+
+	require.Error(t, p.ping(context.Background(), "http://bad host/\x7f"))
+	assert.EqualError(t, p.ping(context.Background(), "https://hc.example/abc"), "unexpected status 500")
+	status = http.StatusNoContent
+	assert.NoError(t, p.ping(context.Background(), "https://hc.example/abc"))
+}
+
+func TestReport_LogsRecoveryOnce(t *testing.T) {
+	var buf safeBuffer
+	p := New("https://hc.example/secret", "1.8.0", slog.New(slog.NewTextHandler(&buf, nil)))
+
+	p.report("https://hc.example/secret", errors.New("boom"))
+	p.report("https://hc.example/secret", errors.New("boom"))
+	p.report("https://hc.example/secret", nil)
+	p.report("https://hc.example/secret", nil)
+
+	assert.Equal(t, 1, strings.Count(buf.String(), "Heartbeat ping failed"))
+	assert.Equal(t, 1, strings.Count(buf.String(), "Heartbeat ping succeeded again"))
+	assert.NotContains(t, buf.String(), "secret")
+}
+
+func TestHostOf(t *testing.T) {
+	assert.Equal(t, "hc.example", hostOf("https://hc.example/abc"))
+	assert.Empty(t, hostOf("http://bad host/\x7f"))
+}
+
+func TestReport_IgnoresShutdownAndReplacedURL(t *testing.T) {
+	var buf safeBuffer
+	p := New("https://hc.example/new", "1.8.0", slog.New(slog.NewTextHandler(&buf, nil)))
+
+	p.report("https://hc.example/new", context.Canceled)
+	p.report("https://hc.example/old", errors.New("boom"))
+
+	assert.Empty(t, buf.String())
+	assert.False(t, p.failing)
+}
+
+func TestStripURL_KeepsPlainErrors(t *testing.T) {
+	err := errors.New("plain")
+	assert.Same(t, err, stripURL(err))
+}
