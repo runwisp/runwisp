@@ -27,7 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tasks that start at the same second are reported in one warning line, and any notifier now answers the warning about a crontab's `MAILTO`.
 - `runwisp import supervisord` with no file reads `/etc/supervisor/supervisord.conf` or `/etc/supervisord.conf`, and `runwisp import cron` with nothing on stdin says what to pipe in.
 - `runwisp import cron` notes jobs that redirect their output to a file, since RunWisp can't show that output.
-- A run killed by a signal RunWisp didn't send names the signal in its log, and a `SIGKILL` points at the kernel's out-of-memory killer.
 - `runwisp list` shows each service's live state, such as `FATAL`, and `runwisp status` lists the services that gave up restarting.
 - A compose service whose container already runs from `docker compose up` attaches to that container instead of starting a second one, and runs its own container from the next restart.
 - A run killed by a signal RunWisp didn't send names the signal in its log, also when the shell reports it as exit 128+n (such as 137), and a `SIGKILL` points at the kernel's out-of-memory killer.
