@@ -30,8 +30,10 @@ const (
 	// DefaultStartRetries is the number of consecutive fast failures a service
 	// instance may accrue before the supervisor marks it FATAL and stops
 	// restarting it. Applied when neither the service nor [defaults] sets
-	// restart_attempts.
-	DefaultStartRetries = 3
+	// restart_attempts. With the default 1s exponential backoff capped at 60s,
+	// 10 attempts keep a service trying for about 5 minutes, long enough to ride
+	// out a database restart.
+	DefaultStartRetries = 10
 	// DefaultStopSignal is the first signal of the stop ladder when neither the
 	// task nor [defaults] selects one. The daemon always follows with SIGKILL
 	// after graceful_stop.

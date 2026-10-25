@@ -583,6 +583,7 @@ func TestSystemdStopRestart_RunSystemctlUserVerbs(t *testing.T) {
 	cmd.Expect("systemctl", []string{"--user", "stop", "runwisp-bright-falcon.service"}, nil, nil, nil)
 	require.NoError(t, inst.Stop(context.Background(), opts))
 
+	cmd.Expect("systemctl", []string{"--user", "reset-failed", "runwisp-bright-falcon.service"}, nil, nil, nil)
 	cmd.Expect("systemctl", []string{"--user", "restart", "runwisp-bright-falcon.service"}, nil, nil, nil)
 	require.NoError(t, inst.Restart(context.Background(), opts))
 
@@ -600,7 +601,25 @@ func TestSystemdStopRestart_SystemWideUsesSudo(t *testing.T) {
 	cmd.Expect("sudo", []string{"systemctl", "stop", "runwisp.service"}, nil, nil, nil)
 	require.NoError(t, inst.Stop(context.Background(), opts))
 
+	cmd.Expect("sudo", []string{"systemctl", "reset-failed", "runwisp.service"}, nil, nil, nil)
 	cmd.Expect("sudo", []string{"systemctl", "restart", "runwisp.service"}, nil, nil, nil)
+	require.NoError(t, inst.Restart(context.Background(), opts))
+
+	assert.Zero(t, cmd.Remaining())
+}
+
+// systemd counts manual restarts toward StartLimitBurst, so five `runwisp
+// restart`s in five minutes used to hit start-limit-hit and fire the cron
+// failsafe. Restart clears the failed state first, and a reset-failed error
+// (an old systemd, a unit that never failed) never blocks the restart.
+func TestSystemdRestart_ResetsStartLimitFirst(t *testing.T) {
+	inst, _, cmd, _, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := defaultInstallOpts(binary)
+	opts.System = true
+
+	cmd.Expect("systemctl", []string{"reset-failed", "runwisp.service"}, nil, []byte("Unit not loaded"), errors.New("exit status 1"))
+	cmd.Expect("systemctl", []string{"restart", "runwisp.service"}, nil, nil, nil)
 	require.NoError(t, inst.Restart(context.Background(), opts))
 
 	assert.Zero(t, cmd.Remaining())

@@ -143,12 +143,14 @@ func TestComposeAliasFromDir(t *testing.T) {
 	}
 }
 
-func TestScaffoldIfMissing_NoTTYReturnsNilWithoutWritingFile(t *testing.T) {
-	// go test invocation has no TTY on stdin, so missing config path
-	// short-circuits to nil without creating a file.
+// Bare `runwisp` with no terminal and no config used to carry on, make the data
+// dir and spawn a daemon that could only fail. It now stops here and says why.
+func TestScaffoldIfMissingWithoutTTYErrors(t *testing.T) {
+	// go test invocation has no TTY on stdin.
 	path := filepath.Join(t.TempDir(), "runwisp.toml")
 	_, err := scaffoldIfMissing(Flags{CfgFile: path})
-	require.NoError(t, err)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "runwisp.toml")
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("expected no file created, got %v", err)
 	}

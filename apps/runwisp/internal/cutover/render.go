@@ -153,7 +153,7 @@ func DescribeOffer(p Plan) string {
 	}
 	return fmt.Sprintf(`
 RunWisp can take over from cron. It will:
-  · read %s as RunWisp tasks (nothing rewritten — crontab -e still works)
+  · read %s as RunWisp tasks (nothing rewritten; crontab -e still works, then runwisp reload)
   · install itself as a system service, so it starts on boot
   · stop and mask %s, so nothing fires twice
 %s

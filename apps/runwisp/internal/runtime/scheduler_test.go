@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -767,7 +768,7 @@ func TestSchedulerEngineKeepsFallBackTicks(t *testing.T) {
 			runner := &fakeTaskRunner{}
 			clock := cron.NewFakeClock(start)
 			sched := NewScheduler(runner, map[string]*model.Task{"t": tt.task}, bratislava, clock.Now)
-			sched.cron = newCronEngine(cron.WithClock(clock))
+			sched.cron = newCronEngine(clock)
 			_, err := sched.Start()
 			require.NoError(t, err)
 			defer sched.Stop()
@@ -792,6 +793,117 @@ func TestSchedulerEngineKeepsFallBackTicks(t *testing.T) {
 			defer runner.mu.Unlock()
 			assert.Len(t, runner.triggers, tt.wantTriggers)
 			assert.Len(t, runner.skips, tt.wantSkips)
+		})
+	}
+}
+
+// steppedClock is a cron.Clock whose wall clock can jump while its timers keep
+// counting on the underlying fake clock, the way a real timer runs on the
+// monotonic clock through an NTP step or a VM snapshot restore.
+type steppedClock struct {
+	*cron.FakeClock
+	mu     sync.Mutex
+	offset time.Duration
+}
+
+func (c *steppedClock) step(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.offset += d
+}
+
+func (c *steppedClock) wall(t time.Time) time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return t.Add(c.offset)
+}
+
+func (c *steppedClock) Now() time.Time { return c.wall(c.FakeClock.Now()) }
+
+// NewTimer forwards the fake timer's tick shifted onto the stepped wall clock,
+// since go-cron takes "now" from the value a timer delivers.
+func (c *steppedClock) NewTimer(d time.Duration) cron.Timer {
+	inner := c.FakeClock.NewTimer(d)
+	t := &steppedTimer{Timer: inner, ch: make(chan time.Time, 1), done: make(chan struct{})}
+	go func() {
+		select {
+		case at := <-inner.C():
+			t.ch <- c.wall(at)
+		case <-t.done:
+		}
+	}()
+	return t
+}
+
+type steppedTimer struct {
+	cron.Timer
+	ch   chan time.Time
+	done chan struct{}
+	once sync.Once
+}
+
+func (t *steppedTimer) C() <-chan time.Time { return t.ch }
+
+func (t *steppedTimer) Stop() bool {
+	t.once.Do(func() { close(t.done) })
+	return t.Timer.Stop()
+}
+
+// TestSchedulerFiresOnTimeAfterClockStep steps the wall clock under a running
+// engine. go-cron sleeps on a monotonic timer, so before the wake cap a +3h
+// step fired nothing until the timer armed for 20:20 ran out, and a -8h step
+// left the task waiting for a tick eight hours away.
+func TestSchedulerFiresOnTimeAfterClockStep(t *testing.T) {
+	at := func(h, m, s int) time.Time { return time.Date(2026, 10, 20, h, m, s, 0, time.UTC) }
+	tests := []struct {
+		name      string
+		fireFirst bool // let the 20:20 tick fire before the step
+		step      time.Duration
+		wantNext  time.Time
+	}{
+		{name: "forward step runs the overdue tick once", step: 3 * time.Hour, wantNext: at(23, 20, 0)},
+		{name: "backward step re-plans from the new time", fireFirst: true, step: -8 * time.Hour, wantNext: at(12, 30, 0)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeTaskRunner{}
+			clock := &steppedClock{FakeClock: cron.NewFakeClock(at(20, 10, 22))}
+			task := &model.Task{Name: "t", Cron: "*/10 * * * *"}
+			sched := NewScheduler(runner, map[string]*model.Task{"t": task}, time.UTC, clock.Now)
+			sched.cron = newCronEngine(clock)
+			_, err := sched.Start()
+			require.NoError(t, err)
+			defer sched.Stop()
+
+			fires := func() int {
+				runner.mu.Lock()
+				defer runner.mu.Unlock()
+				return len(runner.triggers)
+			}
+			advance := func(d time.Duration) {
+				clock.BlockUntil(1)
+				clock.Advance(d)
+			}
+			if tt.fireFirst {
+				for range 200 {
+					advance(cronWakeInterval)
+					if fires() > 0 {
+						break
+					}
+				}
+				require.Eventually(t, func() bool { return fires() == 1 }, 5*time.Second, time.Millisecond)
+			}
+			clock.BlockUntil(1) // the engine has planned from the pre-step clock
+			clock.step(tt.step)
+			advance(cronWakeInterval)
+
+			require.Eventually(t, func() bool {
+				clock.BlockUntil(1)
+				return sched.cron.Entries()[0].Next.Equal(tt.wantNext)
+			}, 5*time.Second, time.Millisecond, "the next tick is planned from the stepped clock")
+			require.Eventually(t, func() bool { return fires() == 1 }, 5*time.Second, time.Millisecond)
+			assert.Never(t, func() bool { return fires() > 1 }, 20*time.Millisecond, time.Millisecond,
+				"the overdue tick runs once, late, and none are replayed")
 		})
 	}
 }

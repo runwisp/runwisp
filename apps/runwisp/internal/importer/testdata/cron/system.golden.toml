@@ -43,6 +43,7 @@ run = "/usr/bin/vacuumdb --all"
 PATH = "/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin"
 
 # @reboot: runs once per machine boot, not on daemon restarts.
+# If this command never exits (a server, a worker), make it a [services.<name>] instead.
 [tasks.warmup]
 description = "A descriptor line carries the user column too"
 run_on_start = "boot"

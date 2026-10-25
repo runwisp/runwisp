@@ -38,8 +38,16 @@ func scaffoldIfMissing(f Flags) (installed bool, err error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return false, err
 	}
+	// Without a terminal there is nobody to ask, and a daemon spawned without a
+	// config would only fail later, after the data dir was made for nothing.
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return false, nil
+		if systemDaemonElsewhere(f) {
+			return false, configLoadError(f, os.ErrNotExist)
+		}
+		return false, &userFacingError{
+			title:   fmt.Sprintf("no runwisp.toml at %s", configLocation(f.CfgFile)),
+			details: "Run `runwisp` in a terminal to create one, or pass --config.",
+		}
 	}
 	return promptAndScaffold(f, os.Stdin, os.Stderr)
 }
