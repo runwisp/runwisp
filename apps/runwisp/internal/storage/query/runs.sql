@@ -29,6 +29,15 @@ WHERE task_name = ? AND deleted_at IS NULL
 ORDER BY COALESCE(started_at, created_at) DESC, id DESC
 LIMIT 1;
 
+-- name: PreviousRunIsFailure :one
+-- The failure bit of the task's newest ended run other than the given one,
+-- counted the way GetLastRun counts: a missed run only when it is a failure.
+SELECT is_failure FROM runs
+WHERE task_name = ? AND id != ? AND deleted_at IS NULL AND status = 'ended'
+  AND (started_at IS NOT NULL OR is_failure = 1)
+ORDER BY COALESCE(started_at, created_at) DESC, id DESC
+LIMIT 1;
+
 -- name: GetRunByExecutionID :one
 SELECT * FROM runs WHERE execution_id = ? AND deleted_at IS NULL LIMIT 1;
 

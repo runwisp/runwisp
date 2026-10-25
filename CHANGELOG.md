@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp status` and `runwisp list` take `--url` and `--password` to ask a remote daemon, and `RUNWISP_URL` now applies to them too.
 - Runs record how many lines they printed. The TUI run list has an OUTPUT column and the Web UI's task page a third bar next to CPU and RAM, both amber when a run printed far more or far less than the task usually does, such as a silent backup that printed a warning.
 - `[daemon] heartbeat_url` pings a dead man's switch such as healthchecks.io every minute, so you hear about it when the daemon itself is down.
+- A `recovered` notification tells you when a task succeeds after a failed run. It goes wherever the task's failures go, the bell included.
 
 ### Changed
 
@@ -63,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Live logs and Web UI updates stream through nginx as they happen, instead of arriving in one burst.
 - A non-root `runwisp list` or `runwisp run` on a box with the system service says to use sudo, instead of failing on a missing `runwisp.toml`.
 - Opening a dropdown menu in the Web UI no longer scrolls the page. Thanks @dahool.
+- A failure that comes back after a successful run alerts again and gets a new bell row, instead of being held in the earlier failure's `coalesce_window`.
 
 ## [1.7.1] - 2026-10-19
 

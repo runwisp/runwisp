@@ -90,6 +90,59 @@ func TestDispatcher_DeliversMatchingActions(t *testing.T) {
 	assert.Empty(t, sink.Captured(), "successful deliveries must not surface a failure")
 }
 
+// resettingChannel is an executeChannel that also records ResetTask calls, in
+// order with its deliveries.
+type resettingChannel struct {
+	executeChannel
+	mu  sync.Mutex
+	log []string
+}
+
+func (r *resettingChannel) Execute(ctx context.Context, ev *Event) error {
+	r.mu.Lock()
+	r.log = append(r.log, "execute "+string(ev.Kind))
+	r.mu.Unlock()
+	return r.executeChannel.Execute(ctx, ev)
+}
+
+func (r *resettingChannel) ResetTask(_ context.Context, task string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.log = append(r.log, "reset "+task)
+}
+
+func (r *resettingChannel) Log() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.log...)
+}
+
+// TestDispatcher_SuccessResetsUnroutedResetter: a success reaches every
+// TaskResetter in order with the events around it, without being delivered
+// where no route sent it. A routed success is reset and then delivered.
+func TestDispatcher_SuccessResetsUnroutedResetter(t *testing.T) {
+	failuresOnly := &resettingChannel{executeChannel: executeChannel{id: "slack"}}
+	everything := &resettingChannel{executeChannel: executeChannel{id: "inapp"}}
+	plain := &executeChannel{id: "webhook"}
+	channels := map[string]Channel{"slack": failuresOnly, "inapp": everything, "webhook": plain}
+	router := NewRouter([]Rule{
+		{Match: MatchFailure(), ActionIDs: []string{"slack", "webhook"}},
+		{Match: MatchAll(), ActionIDs: []string{"inapp"}},
+	}, channels)
+	d := newDispatcher(router, channels, 8, time.Now, nil, slog.Default())
+	d.startWorkers(context.Background())
+
+	d.dispatch(&Event{Kind: KindRunFailed, TaskName: "etl", IsFailure: true})
+	d.dispatch(&Event{Kind: KindRunSucceeded, TaskName: "etl"})
+	d.dispatch(&Event{Kind: KindRunFailed, TaskName: "etl", IsFailure: true})
+	d.closeQueues()
+	d.workers.Wait()
+
+	assert.Equal(t, []string{"execute run.failed", "reset etl", "execute run.failed"}, failuresOnly.Log())
+	assert.Equal(t, []string{"execute run.failed", "reset etl", "execute run.succeeded", "execute run.failed"}, everything.Log())
+	assert.Equal(t, int64(2), plain.hits.Load(), "a channel that doesn't coalesce never sees the unrouted success")
+}
+
 func TestDispatcher_PermanentFailureSurfacedToSink(t *testing.T) {
 	cause := errors.New("503 Service Unavailable (after retries)")
 	a := &executeChannel{

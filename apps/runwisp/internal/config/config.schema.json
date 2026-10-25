@@ -425,7 +425,7 @@
               "description": "Match on fine-grained outcomes — the same vocabulary as [tasks.*] failures.",
               "items": {
                 "type": "string",
-                "enum": ["started", "succeeded", "failed", "timeout", "crashed", "log_overflow", "queue_full", "stopped", "daemon_stopped", "missed", "unhealthy", "service.fatal", "log.disk_pressure", "long_running"]
+                "enum": ["started", "succeeded", "failed", "timeout", "crashed", "log_overflow", "queue_full", "stopped", "daemon_stopped", "missed", "unhealthy", "service.fatal", "log.disk_pressure", "long_running", "recovered"]
               }
             },
             "failure": { "type": "boolean", "description": "Match any run classified as a failure (per [tasks.*] failures)." },
