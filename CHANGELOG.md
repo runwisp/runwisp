@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp start`, `stop` and `restart` take `--token` (or `RUNWISP_HOOK_TOKEN`) with `--url`, so a task that runs as another user can restart a service through its hook token.
 - `runwisp status` and `runwisp list` take `--url` and `--password` to ask a remote daemon, and `RUNWISP_URL` now applies to them too.
 - Runs record how many lines they printed. The TUI run list has an OUTPUT column and the Web UI's task page a third bar next to CPU and RAM, both amber when a run printed far more or far less than the task usually does, such as a silent backup that printed a warning.
+- `[daemon] heartbeat_url` pings a dead man's switch such as healthchecks.io every minute, so you hear about it when the daemon itself is down.
 
 ### Changed
 

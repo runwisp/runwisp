@@ -894,8 +894,9 @@ type daemonWire struct {
 	ExternalURL          string `toml:"external_url,omitempty"`
 	// CheckUpdates is a pointer so an omitted key (nil → default true) is
 	// distinguishable from an explicit `check_updates = false`.
-	CheckUpdates *bool `toml:"check_updates,omitempty"`
-	LogOutput    bool  `toml:"log_output,omitempty"`
+	CheckUpdates *bool  `toml:"check_updates,omitempty"`
+	HeartbeatURL string `toml:"heartbeat_url,omitempty"`
+	LogOutput    bool   `toml:"log_output,omitempty"`
 	// MetricsEnabled is a pointer for the same reason as CheckUpdates: an
 	// omitted key (nil → implied by metrics_listen) must be distinguishable
 	// from an explicit `metrics_enabled = false`, which is a conflicting
@@ -920,6 +921,10 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 		return Daemon{}, fmt.Errorf("invalid daemon.shutdown_timeout: %w", err)
 	}
 	externalURL, err := parseExternalURL(w.ExternalURL)
+	if err != nil {
+		return Daemon{}, err
+	}
+	heartbeatURL, err := parseHTTPURL("daemon.heartbeat_url", w.HeartbeatURL)
 	if err != nil {
 		return Daemon{}, err
 	}
@@ -956,6 +961,7 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 		ShutdownTimeout:      shutdown,
 		ExternalURL:          externalURL,
 		CheckUpdates:         checkUpdates,
+		HeartbeatURL:         heartbeatURL,
 		LogOutput:            w.LogOutput,
 		MetricsEnabled:       metricsEnabled,
 		MetricsListen:        metricsListen,
