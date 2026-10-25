@@ -680,19 +680,22 @@ func TestClosingHandsServicesToTheNextCopy(t *testing.T) {
 	assert.Equal(t, []string{"restart worker"}, services.recorded())
 }
 
-// lastRole reads what the app is sent until the daemon goes quiet and returns
-// whether the last role message made it active.
+// lastRole waits for the first role message, then reads until the daemon goes
+// quiet and returns whether the last role message made it active. The wait for
+// the first one is long so a loaded CI runner can't read as "never told".
 func (a *fakeApp) lastRole() bool {
 	a.t.Helper()
 	active := false
+	wait := 5 * time.Second
 	for {
-		require.NoError(a.t, a.conn.SetReadDeadline(time.Now().Add(20*time.Millisecond)))
+		require.NoError(a.t, a.conn.SetReadDeadline(time.Now().Add(wait)))
 		var m message
 		if err := a.dec.Decode(&m); err != nil {
 			return active
 		}
 		if m.Type == "role" {
 			active = *m.Active
+			wait = 50 * time.Millisecond
 		}
 	}
 }
