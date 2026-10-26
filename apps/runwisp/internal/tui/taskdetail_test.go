@@ -76,14 +76,17 @@ func TestTaskDetailDialog_View_CommandTimeoutAndRetention(t *testing.T) {
 	})
 	d.command = "/usr/local/bin/backup_opensense.sh"
 	cpu, mem := int64(1500), int64(32<<20)
-	d.ApplySummary(summarizeTaskRuns("backup", []model.Run{{Status: model.PhaseEnded, CPUTimeMs: &cpu, PeakMemoryBytes: &mem}}, 1))
+	start := time.Now()
+	end := start.Add(20 * time.Second)
+	d.ApplySummary(summarizeTaskRuns("backup", []model.Run{{Status: model.PhaseEnded, StartedAt: &start, EndedAt: &end,
+		CPUTimeMs: &cpu, PeakMemoryBytes: &mem}}, 1))
 
 	view := ansi.Strip(d.View(80, 40))
 	for _, want := range []string{
 		"Command", "/usr/local/bin/backup_opensense.sh",
 		"Timeout", "12h",
 		"Output and retention", "10 MB · drop_old", "Keep runs", "50", "Keep for", "120d",
-		"Usual CPU", "2s", "Usual memory", "32 MB",
+		"Usual duration", "20s", "Usual CPU", "2s", "Usual memory", "32 MB",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("expected %q in %q", want, view)

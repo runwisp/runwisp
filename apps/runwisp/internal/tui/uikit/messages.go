@@ -282,17 +282,19 @@ type RunSummaryMsg struct {
 // classified over the most recent Window runs (the panel labels the window so
 // the numbers aren't mistaken for all-time tallies). LastFailure is the end
 // time of the most recent failing run within that window, if any. Usual is the
-// median measured usage over the window, nil when no run in it was measured.
+// median measured usage over the window, nil when no run in it was measured;
+// UsualDuration the median wall time, nil when no run in it has finished.
 type TaskSummaryMsg struct {
-	TaskName    string
-	Total       int64
-	Success     int
-	Failed      int
-	Other       int
-	Window      int
-	LastFailure *time.Time
-	Usual       *RunUsage
-	Err         error
+	TaskName      string
+	Total         int64
+	Success       int
+	Failed        int
+	Other         int
+	Window        int
+	LastFailure   *time.Time
+	Usual         *RunUsage
+	UsualDuration *time.Duration
+	Err           error
 }
 
 // DaemonLogConnectedMsg signals that the daemon log SSE stream is established.

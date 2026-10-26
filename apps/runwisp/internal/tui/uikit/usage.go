@@ -24,6 +24,9 @@ type RunUsage struct {
 const (
 	UsageFloorCPUMs    = 1000
 	UsageFloorMemBytes = 16 << 20
+	// UsageFloorDuration is higher than the CPU floor because wall time also
+	// carries network and scheduling jitter. Mirrors USAGE_FLOOR.duration.
+	UsageFloorDuration = 5 * time.Second
 )
 
 // MeasuredUsage reports a run's usage, and false while it is still going or
@@ -52,6 +55,22 @@ func UsualUsage(runs []model.Run) (RunUsage, bool) {
 	slices.Sort(cpu)
 	slices.Sort(mem)
 	return RunUsage{CPUMs: cpu[len(cpu)/2], MemBytes: mem[len(mem)/2]}, true
+}
+
+// UsualDuration is the upper median wall time over the finished runs given,
+// the baseline a slow run is judged against; false when none has finished.
+func UsualDuration(runs []model.Run) (time.Duration, bool) {
+	var ds []time.Duration
+	for i := range runs {
+		if d, ok := runs[i].Duration(); ok && runs[i].Status == model.PhaseEnded {
+			ds = append(ds, d)
+		}
+	}
+	if len(ds) == 0 {
+		return 0, false
+	}
+	slices.Sort(ds)
+	return ds[len(ds)/2], true
 }
 
 // UsageColor colors an amount by how it compares with the task's usual run:

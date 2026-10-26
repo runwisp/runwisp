@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp start`, `stop` and `restart` take `--token` (or `RUNWISP_HOOK_TOKEN`) with `--url`, so a task that runs as another user can restart a service through its hook token.
 - `runwisp status` and `runwisp list` take `--url` and `--password` to ask a remote daemon, and `RUNWISP_URL` now applies to them too.
 - Runs record how many lines they printed. The TUI run list has an OUTPUT column and the Web UI's task page a third bar next to CPU and RAM, both amber when a run printed far more or far less than the task usually does, such as a silent backup that printed a warning.
+- A task's run durations are colored like CPU and RAM in the TUI run list and the Web UI's task page: amber from 1.5× the task's usual run, red from twice it. The TUI task details show the usual duration.
 - `[daemon] heartbeat_url` pings a dead man's switch such as healthchecks.io every minute, so you hear about it when the daemon itself is down.
 - A `recovered` notification tells you when a task succeeds after a failed run. It goes wherever the task's failures go, the bell included.
 

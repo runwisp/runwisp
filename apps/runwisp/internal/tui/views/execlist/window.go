@@ -315,6 +315,22 @@ func (w *ExecWindow) UsualUsage() *uikit.RunUsage {
 	return &u
 }
 
+// UsualDuration is the median wall time of the loaded runs, the baseline the
+// list colors each run's DURATION against; nil when none has finished.
+func (w *ExecWindow) UsualDuration() *time.Duration {
+	w.mu.Lock()
+	runs := make([]model.Run, len(w.items))
+	for i := range w.items {
+		runs[i] = w.items[i].Run
+	}
+	w.mu.Unlock()
+	d, ok := uikit.UsualDuration(runs)
+	if !ok {
+		return nil
+	}
+	return &d
+}
+
 // UsualOutput is the output band of the loaded runs, the baseline the list
 // colors each run's OUTPUT against; nil until enough runs have line counts.
 func (w *ExecWindow) UsualOutput() *uikit.OutputBand {

@@ -30,7 +30,7 @@
         runFilterParams,
         type RunsListFilters,
     } from "./run-filters.js";
-    import { instanceSuffix, runOutputScale, runUsageScale } from "./run-helpers.js";
+    import { instanceSuffix, runOutputScale, runUsageScale, usualDuration } from "./run-helpers.js";
     import { formatDateTime } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
@@ -106,7 +106,7 @@
         outputSearchPending?: boolean;
         // Task rail only: three small bars per finished run, CPU time, RAM and
         // lines printed, scaled to the largest loaded run and colored against
-        // the usual one.
+        // the usual one. The duration readout is colored against the usual run too.
         usageBars?: boolean;
         // Folds the list to a thin strip that still counts the runs, giving the
         // run detail the width. Omitted where the screen keeps the list open.
@@ -116,6 +116,7 @@
 
     const usageScale = $derived(usageBars ? runUsageScale(items) : undefined);
     const outputScale = $derived(usageBars ? runOutputScale(items) : undefined);
+    const durationUsual = $derived(usageBars ? usualDuration(items) : undefined);
 
     // Task-rail rows are one dense line (44px); the cross-task /runs view adds
     // the task name on a second line (64px).
@@ -532,6 +533,7 @@
         {selectionActive}
         usage={usageBars ? (usageScale ?? null) : undefined}
         output={outputScale}
+        {durationUsual}
         onselect={selectRun}
     />
 {/snippet}
