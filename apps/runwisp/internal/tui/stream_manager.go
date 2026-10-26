@@ -526,6 +526,9 @@ func summarizeTaskRuns(taskName string, runs []model.Run, total int64) uikit.Tas
 	if u, ok := uikit.UsualUsage(runs); ok {
 		msg.Usual = &u
 	}
+	if d, ok := uikit.UsualDuration(runs); ok {
+		msg.UsualDuration = &d
+	}
 	return msg
 }
 

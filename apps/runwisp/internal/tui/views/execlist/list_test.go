@@ -986,6 +986,29 @@ func TestUsageCells_ColorByUsualRun(t *testing.T) {
 	}
 }
 
+func TestDurationCell_ColorByUsualRun(t *testing.T) {
+	start := time.Now()
+	item := func(phase model.RunPhase, d time.Duration) *uikit.ExecListItem {
+		end := start.Add(d)
+		return &uikit.ExecListItem{Run: model.Run{Status: phase, StartedAt: &start, EndedAt: &end}}
+	}
+	usual := new(20 * time.Second)
+
+	if c := durationCell(item(model.PhaseEnded, 4*time.Minute), usual, false); c.fg != uikit.ColorError {
+		t.Errorf("expected a 4m run flagged against a usual 20s, got %v", c.fg)
+	}
+	if c := durationCell(item(model.PhaseEnded, 22*time.Second), usual, false); c.fg != nil {
+		t.Errorf("expected a usual run left plain, got %v", c.fg)
+	}
+	if c := durationCell(item(model.PhaseEnded, 4*time.Minute), nil, false); c.fg != nil {
+		t.Errorf("expected no colour without a baseline, got %v", c.fg)
+	}
+	// The cursor row keeps its own highlight colour.
+	if c := durationCell(item(model.PhaseEnded, 4*time.Minute), usual, true); c.fg != nil {
+		t.Errorf("expected no colour on the cursor row, got %v", c.fg)
+	}
+}
+
 func TestOutputCell_FlagsRunOutsideBand(t *testing.T) {
 	printed := func(n int64) model.Run {
 		return model.Run{Status: model.PhaseEnded, StdoutLines: new(int64(0)), StderrLines: new(n)}

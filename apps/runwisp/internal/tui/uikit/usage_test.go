@@ -5,6 +5,7 @@ package uikit
 
 import (
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
@@ -29,6 +30,27 @@ func TestUsualUsage_UpperMedianOverMeasuredEndedRuns(t *testing.T) {
 	assert.Equal(t, RunUsage{CPUMs: 300, MemBytes: 30}, u)
 
 	_, ok = UsualUsage([]model.Run{{Status: model.PhaseEnded}})
+	assert.False(t, ok)
+}
+
+func TestUsualDuration_UpperMedianOverEndedRuns(t *testing.T) {
+	start := time.Now()
+	ran := func(phase model.RunPhase, d time.Duration) model.Run {
+		end := start.Add(d)
+		return model.Run{Status: phase, StartedAt: &start, EndedAt: &end}
+	}
+	runs := []model.Run{
+		ran(model.PhaseEnded, 20*time.Second),
+		ran(model.PhaseEnded, 4*time.Minute),
+		ran(model.PhaseRunning, time.Hour), // still going: skipped
+		{Status: model.PhaseEnded},         // never started: skipped
+		ran(model.PhaseEnded, 18*time.Second),
+	}
+	d, ok := UsualDuration(runs)
+	assert.True(t, ok)
+	assert.Equal(t, 20*time.Second, d)
+
+	_, ok = UsualDuration([]model.Run{{Status: model.PhaseEnded}})
 	assert.False(t, ok)
 }
 

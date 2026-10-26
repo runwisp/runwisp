@@ -11,6 +11,7 @@
         runRowReadout,
         runUsageAmounts,
         runUsageLabel,
+        runDurationMs,
         usageLevel,
         highlightParts,
         formatLines,
@@ -41,6 +42,7 @@
         selectionActive,
         usage,
         output,
+        durationUsual,
         onselect,
     }: {
         run: Run;
@@ -60,6 +62,8 @@
         usage: RunUsageScale | null | undefined;
         /** The task's output scale for the rail's third bar, undefined for none. */
         output: OutputScale | undefined;
+        /** The task's usual run duration in ms, undefined for none. */
+        durationUsual: number | undefined;
         onselect: (runId: string) => void;
     } = $props();
 
@@ -85,6 +89,33 @@
             .filter(Boolean)
             .join(". Usual for this task: "),
     );
+    // The readout shows the duration only for runs that didn't fail; a failed
+    // one shows its exit code, which stays plain.
+    const durationMs = $derived(
+        durationUsual === undefined || dstatus === "failed" || dstatus === "crashed"
+            ? undefined
+            : runDurationMs(run),
+    );
+    const durationLevel = $derived(
+        durationMs === undefined || durationUsual === undefined
+            ? 0
+            : usageLevel(durationMs, durationUsual, "duration"),
+    );
+    const readoutTitle = $derived(
+        [
+            retry,
+            durationLevel > 0 &&
+                durationUsual !== undefined &&
+                `Usual for this task: ${formatDuration(durationUsual)}`,
+        ]
+            .filter(Boolean)
+            .join(". ") || undefined,
+    );
+    const READOUT_COLOR = [
+        "text-on-surface-faint",
+        "text-warning-soft-text",
+        "text-danger-soft-text",
+    ];
     const tight = $derived(usage === undefined ? "" : "@max-[19rem]:hidden");
     const LEVEL_COLOR = ["bg-success-surface", "bg-warning-surface", "bg-danger-surface"];
     // With bulk actions on, the status dot fades out on row hover, or whenever a
@@ -200,8 +231,8 @@
                 <span class="w-6 shrink-0" aria-hidden="true"></span>
             {/if}
             <span
-                class="shrink-0 font-mono text-[11.5px] text-on-surface-faint tabular-nums"
-                title={retry ?? undefined}
+                class="shrink-0 font-mono text-[11.5px] {READOUT_COLOR[durationLevel]} tabular-nums"
+                title={readoutTitle}
             >
                 {runRowReadout(run, dstatus)}
             </span>

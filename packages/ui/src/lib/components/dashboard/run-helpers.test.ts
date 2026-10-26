@@ -15,6 +15,7 @@ import {
     runUsageLabel,
     runUsageScale,
     usageLevel,
+    usualDuration,
     outputBand,
     runOutputScale,
     outputUnusual,
@@ -280,6 +281,27 @@ describe("usageLevel", () => {
         // 64 MiB against an idle task's 1 MiB stands out; 8 MiB doesn't.
         expect(usageLevel(64 * 1024 * 1024, 1024 * 1024, "ram")).toBe(2);
         expect(usageLevel(8 * 1024 * 1024, 1024 * 1024, "ram")).toBe(0);
+    });
+});
+
+describe("usualDuration", () => {
+    const ran = (seconds: number, status: Run["status"] = "ended") => ({
+        status,
+        startedAt: "2026-01-01T00:00:00Z",
+        endedAt: new Date(Date.parse("2026-01-01T00:00:00Z") + seconds * 1000).toISOString(),
+    });
+
+    it("takes the median over finished runs only", () => {
+        expect(usualDuration([ran(20), ran(240), ran(3600, "running"), ran(18)])).toBe(20_000);
+        expect(usualDuration([{ status: "ended" }, ran(5, "running")])).toBeUndefined();
+    });
+
+    it("flags a run far slower than usual, with a 5s floor", () => {
+        expect(usageLevel(240_000, 20_000, "duration")).toBe(2);
+        expect(usageLevel(31_000, 20_000, "duration")).toBe(1);
+        expect(usageLevel(22_000, 20_000, "duration")).toBe(0);
+        // 3s against a usual 50ms is jitter, not an outlier.
+        expect(usageLevel(3_000, 50, "duration")).toBe(0);
     });
 });
 

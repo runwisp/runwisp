@@ -299,10 +299,12 @@ func (e *ExecList) rowPrefix(runID string) string {
 }
 
 // rowBaselines are what a scoped list judges each run's vitals against: the
-// task's usual CPU and RAM, and its usual output band. nil when unknown.
+// task's usual duration, CPU and RAM, and its usual output band. nil when
+// unknown.
 type rowBaselines struct {
-	usage  *uikit.RunUsage
-	output *uikit.OutputBand
+	duration *time.Duration
+	usage    *uikit.RunUsage
+	output   *uikit.OutputBand
 }
 
 func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidths, usual rowBaselines) string {
@@ -323,8 +325,19 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	cpu, mem := usageCells(&item.Run, usual.usage, isCursor)
 	return rowStyle.Render(e.rowPrefix(item.Run.ID)+padCell(e.firstCell(item.Run, cw), cw.first)+" ") +
 		statusCell(item.Run.DisplayStatus(), cw.status, rowStyle) +
-		trailingCells(cw, rowStyle, cell{text: e.startedCell(item, cw)}, cell{text: item.Duration},
+		trailingCells(cw, rowStyle, cell{text: e.startedCell(item, cw)}, durationCell(item, usual.duration, isCursor),
 			cpu, mem, outputCell(&item.Run, usual.output, isCursor), cell{text: string(item.Run.TriggeredBy)})
+}
+
+// durationCell is a run's DURATION cell, colored like CPU and RAM by how it
+// compares with the task's usual run so a slow one stands out. Live runs stay
+// uncolored. The cursor row keeps its own highlight colour.
+func durationCell(item *uikit.ExecListItem, usual *time.Duration, isCursor bool) cell {
+	c := cell{text: item.Duration}
+	if d, ok := item.Run.Duration(); ok && item.Run.Status == model.PhaseEnded && usual != nil && !isCursor {
+		c.fg = uikit.UsageColor(int64(d), int64(*usual), int64(uikit.UsageFloorDuration), nil)
+	}
+	return c
 }
 
 // outputCell is a run's OUTPUT cell, its line count, in the warning colour
@@ -445,6 +458,10 @@ func trailingCells(cw colWidths, style lipgloss.Style, cells ...cell) string {
 func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, contentW int, cw colWidths, sb scrollbarRender) {
 	end := min(e.Scroll+vpH, n)
 	var usual rowBaselines
+	// Only a scoped list has one task's runs to judge a duration against.
+	if cw.scoped && cw.duration > 0 {
+		usual.duration = e.window.UsualDuration()
+	}
 	if cw.cpu > 0 || cw.mem > 0 {
 		usual.usage = e.window.UsualUsage()
 	}

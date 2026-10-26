@@ -165,12 +165,30 @@ export function runUsageScale(
     };
 }
 
+/** A finished run's wall time in ms, or undefined while it is still going. */
+export function runDurationMs(
+    run: Pick<Run, "status" | "startedAt" | "endedAt">,
+): number | undefined {
+    if (run.status !== "ended" || !run.startedAt || !run.endedAt) return undefined;
+    return new Date(run.endedAt).getTime() - new Date(run.startedAt).getTime();
+}
+
+/** The median wall time in ms over the finished runs given, the baseline a slow run is judged against. */
+export function usualDuration(
+    runs: readonly Pick<Run, "status" | "startedAt" | "endedAt">[],
+): number | undefined {
+    const durations = runs.flatMap((run) => runDurationMs(run) ?? []);
+    return durations.length > 0 ? median(durations) : undefined;
+}
+
 /**
  * The least a usual run counts as using, so a tiny or zero baseline (a mostly
  * idle task's median CPU time is often 0) doesn't hide a run that burns real
- * CPU or memory, nor flag 3ms against 1ms. CPU time in ms, memory in bytes.
+ * CPU or memory, nor flag 3ms against 1ms. CPU time and duration in ms, memory
+ * in bytes. Duration's floor is higher since wall time also carries network
+ * and scheduling jitter. Mirrors the TUI's uikit.UsageFloor*.
  */
-const USAGE_FLOOR: RunUsageAmounts = { cpu: 1000, ram: 16 * 1024 * 1024 };
+const USAGE_FLOOR = { cpu: 1000, ram: 16 * 1024 * 1024, duration: 5000 };
 
 /**
  * How unusual a run's amount is for its task: 0 about as usual, 1 at 1.5×
@@ -178,7 +196,11 @@ const USAGE_FLOOR: RunUsageAmounts = { cpu: 1000, ram: 16 * 1024 * 1024 };
  * amount stays at 0, however large that amount is. The usual run counts as
  * at least USAGE_FLOOR for its kind.
  */
-export function usageLevel(value: number, usual: number, kind: keyof RunUsageAmounts): 0 | 1 | 2 {
+export function usageLevel(
+    value: number,
+    usual: number,
+    kind: keyof typeof USAGE_FLOOR,
+): 0 | 1 | 2 {
     const baseline = Math.max(usual, USAGE_FLOOR[kind]);
     if (baseline <= 0) return 0;
     const ratio = value / baseline;

@@ -373,6 +373,9 @@ func (d *TaskDetailDialog) healthRows(row func(label, value string, color color.
 	} else {
 		out = append(out, row("Last failure", "none", uikit.ColorSuccess))
 	}
+	if s.UsualDuration != nil {
+		out = append(out, row("Usual duration", uikit.FormatElapsed(*s.UsualDuration), uikit.ColorText))
+	}
 	if s.Usual != nil {
 		// The median, like the run list's baseline, so one runaway run doesn't
 		// skew what "usual" means.
