@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- PHP SDK, `runwisp/runwisp` on Packagist: define tasks in plain PHP, or run the Laravel, Symfony or CodeIgniter 4 scheduler under RunWisp with `runwisp:work`. `#[RunWisp\Task]` on a command, job or closure adds task keys such as `retry_attempts`, and `runwisp:check` lists the tasks with their next runs and validates the config before you deploy.
 - `runwisp import systemd` reads `.timer` units and turns each timer and the service it starts into one scheduled task.
 
 ### Changed

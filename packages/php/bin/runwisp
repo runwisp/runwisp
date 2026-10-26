@@ -1,0 +1,24 @@
+#!/usr/bin/env php
+<?php
+
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+// `vendor/bin/runwisp`: the runwisp CLI this package runs, so commands like
+// `vendor/bin/runwisp password --data storage/runwisp` reach the same binary.
+
+declare(strict_types=1);
+
+$binary = realpath(__DIR__ . '/runwisp-bin');
+$binary = $binary !== false && is_executable($binary) ? $binary : 'runwisp';
+$args = array_slice($argv, 1);
+
+if (function_exists('pcntl_exec') && $binary !== 'runwisp') {
+    pcntl_exec($binary, $args);
+}
+$process = proc_open([$binary, ...$args], [STDIN, STDOUT, STDERR], $pipes);
+if ($process === false) {
+    fwrite(STDERR, "runwisp: could not run $binary\n");
+    exit(1);
+}
+exit(proc_close($process));

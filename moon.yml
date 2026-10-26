@@ -10,11 +10,12 @@ tasks:
   generate:
     # Ordered: common:generate-api reads the openapi.json that runwisp:openapi
     # writes; that edge can't be a task dep (see common/moon.yml).
-    description: 'Regenerate sqlc + AsyncAPI + openapi.json + common API and node config types.'
+    description: 'Regenerate sqlc + AsyncAPI + openapi.json + common API and node and PHP config types.'
     deps:
       - 'runwisp:openapi'
       - 'common:generate-api'
       - 'js:generate-config'
+      - 'php:generate-config'
     options:
       cache: false
       runDepsInParallel: false
@@ -67,14 +68,16 @@ tasks:
       - 'ui:check'
       - 'common:check'
       - 'js:check'
+      - 'php:check'
       - 'asyncapi:check'
     options:
       cache: false
 
   test:
-    # CI runs these as separate jobs (ci.yml test + test-ui); add new deps there too.
+    # CI runs these as separate jobs (ci.yml test + test-ui + test-php); add new deps there too.
     deps:
       - 'runwisp:test'
       - 'web-ui:test'
+      - 'php:test'
     options:
       cache: false

@@ -125,6 +125,7 @@ func TestMethod(t *testing.T) {
 		{"npm", "/usr/local/lib/node_modules/runwisp/node_modules/@runwisp/linux-x64/runwisp", []string{"npm", "install", "-g", "runwisp@latest"}, false},
 		{"npm", "/srv/app/node_modules/@runwisp/linux-x64/runwisp", nil, true},
 		{"npx", "/home/u/.npm/_npx/abc/node_modules/@runwisp/linux-x64/runwisp", nil, true},
+		{"composer", "/srv/app/vendor/runwisp/runwisp/bin/runwisp-bin", nil, true},
 		{"docker", "/usr/local/bin/runwisp", nil, true},
 		{"script", "/usr/local/bin/runwisp", nil, false},
 		{"other", "/home/u/.local/bin/runwisp", nil, false},
@@ -139,6 +140,9 @@ func TestMethod(t *testing.T) {
 	}
 	if _, refusal := Method("npm", "/srv/app/node_modules/@runwisp/linux-x64/runwisp", false); !strings.Contains(refusal, "/srv/app") {
 		t.Errorf("project-local refusal %q should name the project", refusal)
+	}
+	if _, refusal := Method("composer", "/srv/app/vendor/runwisp/runwisp/bin/runwisp-bin", false); !strings.Contains(refusal, "/srv/app") {
+		t.Errorf("composer refusal %q should name the project", refusal)
 	}
 	if argv, _ := Method("rpm", "/usr/lib/runwisp/runwisp", true); argv[0] != "dnf" {
 		t.Errorf("as root, Method should run dnf directly, got %v", argv)

@@ -1,0 +1,6 @@
+/vendor/
+/bin/runwisp-bin
+/.phpunit.cache/
+/bin/runwisp-bin.version
+/bin/.runwisp-source
+/bin/.download-*

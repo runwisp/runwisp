@@ -133,10 +133,11 @@ func (c *Checker) finishCheck() {
 // InstallSource reports how this binary was installed. The same
 // release binary ships through every channel, so it can't be baked in at build
 // time: the Docker image and npm wrapper set RUNWISP_INSTALL_SOURCE
-// (docker / npm / npx), and get.runwisp.com, the Homebrew formula and the npm
-// platform packages write "script" / "homebrew" / "npm" to a .runwisp-source
-// file next to the binary, which covers a daemon started without the wrapper
-// (e.g. by `runwisp service install`). Anything else is "other".
+// (docker / npm / npx), and get.runwisp.com, the Homebrew formula, the npm
+// platform packages and the runwisp/runwisp Composer package write "script" /
+// "homebrew" / "npm" / "composer" to a .runwisp-source file next to the
+// binary, which covers a daemon started without the wrapper (e.g. by
+// `runwisp service install`). Anything else is "other".
 func InstallSource() string {
 	if s := os.Getenv("RUNWISP_INSTALL_SOURCE"); s != "" {
 		return s

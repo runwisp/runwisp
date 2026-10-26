@@ -66,6 +66,9 @@ func Method(source, exe string, root bool) (argv []string, refusal string) {
 		}
 		project, _, _ := strings.Cut(p, "/node_modules/")
 		return nil, fmt.Sprintf("RunWisp is a dependency of the project in %s. Update it there with your package manager, e.g.:\n\n  npm install runwisp@latest", project)
+	case "composer":
+		project, _, _ := strings.Cut(p, "/vendor/")
+		return nil, fmt.Sprintf("RunWisp comes with the PHP package runwisp/runwisp in %s. Update it there:\n\n  composer update runwisp/runwisp", project)
 	}
 	return nil, ""
 }
