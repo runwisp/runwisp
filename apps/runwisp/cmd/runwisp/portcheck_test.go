@@ -72,6 +72,11 @@ func TestFreePortIsBindable(t *testing.T) {
 	}
 }
 
+func TestFreePortBadHost(t *testing.T) {
+	_, err := freePort("256.256.256.256")
+	require.Error(t, err)
+}
+
 func TestDemoResolvePort(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -97,6 +102,10 @@ func TestDemoResolvePort(t *testing.T) {
 		require.NoError(t, demoResolvePort(newCmd(), &f))
 		require.NotEqual(t, taken, f.Port)
 		require.NoError(t, probePortAvailable(f.Host, f.Port))
+	})
+	t.Run("no free port is an error", func(t *testing.T) {
+		f := Flags{Host: "256.256.256.256", Port: taken}
+		require.ErrorContains(t, demoResolvePort(newCmd(), &f), "find a free port")
 	})
 	t.Run("explicit port taken is an error", func(t *testing.T) {
 		cmd := newCmd()
