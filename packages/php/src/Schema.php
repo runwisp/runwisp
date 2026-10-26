@@ -35,6 +35,7 @@ namespace RunWisp;
  *     shutdown_timeout?: string,
  *     external_url?: string,
  *     check_updates?: bool,
+ *     heartbeat_url?: string,
  *     log_output?: bool,
  *     metrics_enabled?: bool,
  *     metrics_listen?: string,
@@ -253,7 +254,7 @@ namespace RunWisp;
  * }
  * @phpstan-type NotificationRouteConfig array{
  *     match?: array{
- *         kinds?: list<'started'|'succeeded'|'failed'|'timeout'|'crashed'|'log_overflow'|'queue_full'|'stopped'|'daemon_stopped'|'missed'|'unhealthy'|'service.fatal'|'log.disk_pressure'|'long_running'>,
+ *         kinds?: list<'started'|'succeeded'|'failed'|'timeout'|'crashed'|'log_overflow'|'queue_full'|'stopped'|'daemon_stopped'|'missed'|'unhealthy'|'service.fatal'|'log.disk_pressure'|'long_running'|'recovered'>,
  *         failure?: bool,
  *         task?: string,
  *     },
