@@ -1,0 +1,213 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Laravel
+description: Run Laravel's task scheduler under RunWisp. Every scheduled run is recorded with its output, exit code and duration, and shown in the web UI.
+head:
+    - tag: title
+      content: "Laravel task scheduling with RunWisp: see every scheduled run"
+---
+
+**since**: `1.8`
+
+`runwisp/runwisp` runs Laravel's schedule under RunWisp. Your `Schedule`
+definitions stay as they are. `php artisan runwisp:work` replaces the
+`schedule:run` cron entry, and every run gets a log, an exit code and a
+duration in the web UI.
+
+It works with Laravel 11, 12 and 13.
+
+## Set up
+
+```bash
+composer require runwisp/runwisp
+```
+
+Composer asks to allow the `runwisp/runwisp` plugin, which downloads the
+`runwisp` binary. Laravel finds the package on its own.
+
+Remove the `schedule:run` line from your crontab, and start the worker
+instead:
+
+```bash
+php artisan runwisp:work
+```
+
+Keep it running the way you keep a queue worker running: a systemd unit, a
+Supervisor program or your container's command. On startup it prints where to
+find RunWisp:
+
+```
+RunWisp dashboard: http://127.0.0.1:9477, password: vendor/bin/runwisp password --data storage/runwisp
+```
+
+RunWisp keeps its database, run logs and socket in `storage/runwisp`.
+
+## Your schedule
+
+`runwisp:work` reads the schedule from `routes/console.php`, or from your
+console kernel's `schedule()` method:
+
+```php
+<?php
+
+// routes/console.php
+use App\Console\Commands\SendReports;
+use App\Jobs\PruneUsers;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schedule;
+use RunWisp\Task;
+
+Schedule::command(SendReports::class)->dailyAt('03:00');
+
+Schedule::job(new PruneUsers())->daily();
+
+Schedule::call(#[Task('prune-recent-users')] function () {
+    DB::table('recent_users')->delete();
+})->hourly();
+```
+
+Each event becomes a RunWisp task:
+
+- **Name**: the event's `name()`, else the name in its
+  [`#[Task]`](#runwisp-keys-on-a-task), else the artisan command
+  (`reports:send`), the job's class (`PruneUsers`), or the shell command. The
+  description Laravel sets on its own, a command's description or a job's
+  class, is not a name. A closure without a name is named after its file and
+  line, and the worker warns, since moving the line starts a new run history.
+  Give closures a `name()`.
+- **Schedule**: the cron expression, in the schedule's timezone. Sub-minute
+  frequencies such as `everyTenSeconds()` work.
+- **Overlap**: `withoutOverlapping()` sets
+  [`on_overlap = "skip"`](/configuration/tasks/#on_overlap). Without it,
+  RunWisp's default applies: a run that comes while the last one is still
+  going waits for it.
+
+Events limited to other environments with `environments()` are left out.
+
+Each run is `php artisan runwisp:run <name>` in a new process, so a run gets a
+fresh app, and stopping it from the web UI stops the process.
+`when()`, `skip()`, `evenInMaintenanceMode()` and the `before()`, `after()`,
+`onSuccess()` and `onFailure()` hooks work as with `schedule:run`. An artisan
+or shell command's output goes to the run's log instead of `/dev/null`, and
+its exit code is the run's.
+
+`onOneServer()` is not needed: each run happens once per data directory,
+however many copies of the worker run. `runInBackground()` is ignored.
+
+## RunWisp keys on a task
+
+Put `#[RunWisp\Task]` on the command or job class to name its task and add
+[task keys](/configuration/tasks/) such as `retry_attempts`, `timeout` and
+`notify`. The keys are named as in `runwisp.toml`:
+
+```php
+<?php
+
+// app/Console/Commands/SendReports.php
+declare(strict_types=1);
+
+namespace App\Console\Commands;
+
+use Illuminate\Console\Command;
+use RunWisp\Task;
+
+#[Task(retry_attempts: 3, timeout: '10m', notify: ['slack'])]
+final class SendReports extends Command
+{
+    protected $signature = 'reports:send';
+
+    protected $description = 'Send the daily reports';
+
+    public function handle(): void
+    {
+        // ...
+    }
+}
+```
+
+The first argument is the task name: `#[Task('reports', retry_attempts: 3)]`.
+On a closure, put the attribute before `function`, as in the example above.
+On a `[Class::class, 'method']` callable, put it on the method or the class.
+The schedule comes from Laravel, so `cron` and `timezone` are not accepted.
+
+## RunWisp options
+
+Publish the config file:
+
+```bash
+php artisan vendor:publish --tag=runwisp-config
+```
+
+`config/runwisp.php` takes the [SDK options](/sdk/php/), and the rest of a
+`runwisp.toml` under `config`, such as notifiers and `defaults`:
+
+```php
+<?php
+
+// config/runwisp.php
+declare(strict_types=1);
+
+// RunWisp for `php artisan runwisp:work`. A null key falls back to the
+// RUNWISP_* env var the runwisp CLI reads, then to RunWisp's default.
+return [
+    // Which app this is: copies of one app share a RunWisp. Default: the
+    // `name` in composer.json.
+    'app' => null,
+
+    // Database, run logs and socket. Default: RUNWISP_DATA, else storage/runwisp.
+    'data' => null,
+
+    // Web UI port. Default: RUNWISP_PORT, else 9477 or the next free port.
+    'port' => null,
+
+    // Web UI bind address. Default: RUNWISP_HOST, else 127.0.0.1.
+    'host' => null,
+
+    // Web UI password. Default: RUNWISP_PASSWORD, else a new one on each start.
+    'password' => null,
+
+    // false turns the login off, like RUNWISP_AUTH=off.
+    'auth' => null,
+
+    // Path to the runwisp binary. Default: RUNWISP_BINARY, else the one
+    // Composer downloaded, else runwisp on PATH.
+    'binary' => null,
+
+    // The rest of a runwisp.toml, with the same keys: notifiers, route,
+    // defaults, daemon, storage, and shell tasks. A scheduled task's own keys,
+    // such as retry_attempts, go in #[RunWisp\Task] on its command or job.
+    'config' => [
+        'notifiers' => [
+            'slack' => ['type' => 'slack', 'webhook_url' => env('SLACK_WEBHOOK_URL')],
+        ],
+        'defaults' => ['keep_runs' => 100],
+    ],
+];
+```
+
+Every option also reads its `RUNWISP_*` env var, such as `RUNWISP_PORT` and
+`RUNWISP_PASSWORD`, so most apps need no config file.
+
+## Check your schedule
+
+`php artisan runwisp:check` lists the tasks `runwisp:work` would run, with each schedule, next
+run and RunWisp options, and checks the config with RunWisp, without starting
+anything:
+
+```bash
+php artisan runwisp:check
+```
+
+It exits with code 1 when RunWisp would reject the config, such as for a
+misspelled key, so you can run it in CI. See
+[Check your tasks](/sdk/php/#check-your-tasks).
+
+## Run a task by hand
+
+Start a run from the web UI, the TUI or `runwisp run`. To run a task outside
+RunWisp, without recording it:
+
+```bash
+php artisan runwisp:run reports:send
+```

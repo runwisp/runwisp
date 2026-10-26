@@ -14,6 +14,7 @@ projects:
   ui: 'packages/ui'
   common: 'packages/common'
   js: 'packages/js'
+  php: 'packages/php'
   asyncapi: 'packages/asyncapi'
   eslint-config: 'packages/eslint-config'
   typescript-config: 'packages/typescript-config'

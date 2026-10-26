@@ -1,0 +1,186 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: CodeIgniter 4
+description: Run CodeIgniter 4's task scheduler (codeigniter4/tasks) under RunWisp. Every scheduled run is recorded with its output, exit code and duration, and shown in the web UI.
+head:
+    - tag: title
+      content: "CodeIgniter 4 scheduled tasks with RunWisp: see every run"
+---
+
+**since**: `1.8`
+
+`runwisp/runwisp` runs the [CodeIgniter Tasks](https://tasks.codeigniter.com/)
+schedule under RunWisp. Your `app/Config/Tasks.php` stays as it is.
+`php spark runwisp:work` replaces the `tasks:run` cron entry, and every run
+gets a log, an exit code and a duration in the web UI.
+
+It works with CodeIgniter 4.6 and later, with `codeigniter4/tasks` 1.x.
+
+## Set up
+
+```bash
+composer require runwisp/runwisp codeigniter4/tasks
+```
+
+Composer asks to allow the `runwisp/runwisp` plugin, which downloads the
+`runwisp` binary. CodeIgniter finds the package's commands on its own.
+
+Remove the `tasks:run` line from your crontab, and start the worker instead:
+
+```bash
+php spark runwisp:work
+```
+
+Keep it running the way you keep a queue worker running: a systemd unit, a
+Supervisor program or your container's command. On startup it prints where to
+find RunWisp:
+
+```
+RunWisp dashboard: http://127.0.0.1:9477, password: vendor/bin/runwisp password --data writable/runwisp
+```
+
+RunWisp keeps its database, run logs and socket in `writable/runwisp`.
+
+## Your schedule
+
+`runwisp:work` reads the schedule from `app/Config/Tasks.php`, as `tasks:run`
+does:
+
+```php
+<?php
+
+// app/Config/Tasks.php
+namespace Config;
+
+use App\Models\UserModel;
+use CodeIgniter\Tasks\Config\Tasks as BaseTasks;
+use CodeIgniter\Tasks\Scheduler;
+use RunWisp\Task;
+
+class Tasks extends BaseTasks
+{
+    public function init(Scheduler $schedule)
+    {
+        $schedule->command('reports:send')->daily('3:00 am');
+
+        $schedule->call(#[Task(retry_attempts: 2)] static function () {
+            model(UserModel::class)->pruneInactive();
+        })->hourly()->named('prune-users');
+    }
+}
+```
+
+Each task becomes a RunWisp task:
+
+- **Name**: the task's `named()` name, else the name in its
+  [`#[Task]`](#runwisp-keys-on-a-task), else its action: the spark command
+  (`reports:send`), the shell command, the event, the URL or the queue and job.
+  A closure without a name is named after its file and line, and the worker
+  warns, since moving the line starts a new run history. Give closures a
+  `named()`.
+- **Schedule**: the cron expression, in the app's timezone (`appTimezone` in
+  `app/Config/App.php`).
+- **Overlap**: `singleInstance()` sets
+  [`on_overlap = "skip"`](/configuration/tasks/#on_overlap). Without it,
+  RunWisp's default applies: a run that comes while the last one is still
+  going waits for it.
+
+Tasks limited to other environments with `environments()` are left out.
+
+Each run is `php spark runwisp:run <name>` in a new process, so a run gets a
+fresh app, and stopping it from the web UI stops the process. What the task
+returns goes to the run's log: a command's output, a shell command's lines, a
+URL's body. A command's output shows up when the command ends. An exception
+fails the run with exit code 1 and the stack trace in its log.
+
+## RunWisp keys on a task
+
+Put `#[RunWisp\Task]` on the spark command's class, or before a closure's
+`function`, to add [task keys](/configuration/tasks/) such as `retry_attempts`,
+`timeout` and `notify`. The keys are named as in `runwisp.toml`:
+
+```php
+<?php
+
+// app/Commands/SendReports.php
+namespace App\Commands;
+
+use CodeIgniter\CLI\BaseCommand;
+use RunWisp\Task;
+
+#[Task(retry_attempts: 3, timeout: '10m', notify: ['slack'])]
+class SendReports extends BaseCommand
+{
+    protected $group = 'App';
+    protected $name = 'reports:send';
+    protected $description = 'Sends the daily reports.';
+
+    public function run(array $params)
+    {
+        // ...
+    }
+}
+```
+
+The first argument is the task name: `#[Task('reports', retry_attempts: 3)]`.
+The schedule comes from `app/Config/Tasks.php`, so `cron` and `timezone` are
+not accepted.
+
+## RunWisp options
+
+Extend the package's config in `app/Config/RunWisp.php`:
+
+```php
+<?php
+
+// app/Config/RunWisp.php
+namespace Config;
+
+use RunWisp\CodeIgniter\Config\RunWisp as BaseRunWisp;
+
+class RunWisp extends BaseRunWisp
+{
+    public ?int $port = 9500;
+
+    public array $config = [
+        'notifiers' => [
+            'slack' => ['type' => 'slack', 'webhook_url' => '${SLACK_WEBHOOK_URL}'],
+        ],
+        'defaults' => ['keep_runs' => 100],
+    ];
+}
+```
+
+The properties are the [SDK options](/sdk/php/): `app`, `data`, `port`,
+`host`, `password`, `auth` and `binary`. `config` takes the rest of a
+`runwisp.toml`, such as notifiers and `defaults`.
+
+A property left `null` reads its `RUNWISP_*` env var, such as `RUNWISP_PORT`
+and `RUNWISP_PASSWORD`, so most apps need no config file.
+
+## Check your schedule
+
+`php spark runwisp:check` lists the tasks `runwisp:work` would run, with each schedule, next
+run and RunWisp options, and checks the config with RunWisp, without starting
+anything:
+
+```bash
+php spark runwisp:check
+```
+
+It exits with code 1 when RunWisp would reject the config, such as for a
+misspelled key, so you can run it in CI. See
+[Check your tasks](/sdk/php/#check-your-tasks).
+
+## Run a task by hand
+
+Start a run from the web UI, the TUI or `runwisp run`. To run a task outside
+RunWisp, without recording it:
+
+```bash
+php spark runwisp:run reports:send
+```
+
+See the [PHP SDK](/sdk/php/) for what happens with several copies of the
+worker, and when the worker stops.

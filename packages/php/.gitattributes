@@ -1,0 +1,8 @@
+# Left out of the Packagist archives: dev tooling and tests.
+/tests export-ignore
+/moon.yml export-ignore
+/phpunit.xml.dist export-ignore
+/phpstan.neon.dist export-ignore
+/composer.lock export-ignore
+/.gitignore export-ignore
+/.gitattributes export-ignore

@@ -37,6 +37,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: ./.github/actions/setup
+        with:
+          php: 'true'
 
       - name: Check
         run: bun run check
@@ -137,6 +139,20 @@ jobs:
           name: coverage-ui
           path: apps/ui/coverage/lcov.info
           retention-days: 1
+
+  test-php:
+    name: PHP SDK Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup
+        with:
+          go: 'false'
+          php: 'true'
+
+      - name: Test
+        run: ./node_modules/.bin/moon run php:test
 
   sonar:
     name: SonarCloud Scan
@@ -315,7 +331,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # php: test:e2e also runs packages/php's e2e against the built binary.
       - uses: ./.github/actions/setup
+        with:
+          php: 'true'
 
       - name: Cache Playwright browsers
         id: playwright-cache

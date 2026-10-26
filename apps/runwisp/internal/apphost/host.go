@@ -34,7 +34,8 @@ import (
 // Protocol is the Upgrade token an app sends to open its connection. The
 // number is the protocol version: a daemon answers any other token with 426,
 // so an SDK and a binary that don't match fail on connect, not mid-run. The
-// protocol is private to @runwisp/js and versioned by this token alone.
+// protocol is private to the SDKs (@runwisp/js, runwisp/runwisp for PHP) and
+// versioned by this token alone.
 const Protocol = "runwisp-app/1"
 
 // defaultHandoff is how long a handler run waits for an app to connect: the

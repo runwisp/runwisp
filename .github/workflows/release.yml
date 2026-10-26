@@ -13,6 +13,8 @@
 #        - binary platform packages (@runwisp/{linux,darwin}-{x64,arm64}) in parallel
 #        - main `runwisp` package (waits for the platform packages to be live first)
 #        - `@runwisp/js` SDK (waits for the `runwisp` package, which it depends on)
+#      → push packages/php to runwisp/runwisp-php for Packagist (runwisp/runwisp),
+#        with the PHP_SPLIT_DEPLOY_KEY secret (a write deploy key on that repo).
 #      → build and push the runwisp/runwisp Docker image (alpine + debian,
 #        linux/amd64 + linux/arm64) to Docker Hub, from the same release tarballs.
 #      → regenerate the Homebrew formula in runwisp/homebrew-tap (stable only).
@@ -511,6 +513,45 @@ jobs:
           NPM_TAG: ${{ steps.version.outputs.NPM_TAG }}
         working-directory: packages/js
         run: npm publish --access public --tag "${NPM_TAG}" --provenance
+
+  php-split:
+    if: github.event_name == 'release'
+    name: Publish runwisp/runwisp (PHP)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Packagist reads a package from the root of a git repository, so
+      # packages/php goes, with its own history, to runwisp/runwisp-php, tagged
+      # like this release. Packagist picks the tag up from that repository's
+      # webhook. The split is deterministic, so main only ever fast-forwards.
+      - name: Push packages/php to runwisp/runwisp-php
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          DEPLOY_KEY: ${{ secrets.PHP_SPLIT_DEPLOY_KEY }}
+        run: |
+          if [[ -z "${DEPLOY_KEY}" ]]; then
+            echo "::error::PHP_SPLIT_DEPLOY_KEY is not set: add a deploy key with write access to runwisp/runwisp-php."
+            exit 1
+          fi
+          key="${RUNNER_TEMP}/php-split.key"
+          printf '%s\n' "${DEPLOY_KEY}" > "${key}"
+          chmod 600 "${key}"
+          export GIT_SSH_COMMAND="ssh -i ${key} -o IdentitiesOnly=yes"
+          split=$(git subtree split --prefix=packages/php HEAD)
+          remote=git@github.com:runwisp/runwisp-php.git
+          git push "${remote}" "${split}:refs/tags/${TAG}"
+          # Prereleases are tags only; main follows stable releases.
+          if [[ "${TAG}" != *-* ]]; then
+            git push "${remote}" "${split}:refs/heads/main"
+          fi
+          rm -f "${key}"
 
   deploy-docs:
     # Cloudflare Pages builds/deploys the docs site from its Git integration.

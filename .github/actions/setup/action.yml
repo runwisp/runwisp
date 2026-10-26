@@ -1,12 +1,15 @@
 # Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: GPL-3.0-or-later
 
 name: Set up toolchains
-description: Go with a per-job cache, Node, bun, and the installed JS dependencies.
+description: Go with a per-job cache, Node, bun, the installed JS dependencies, and PHP on request.
 
 inputs:
   go:
     description: Set up Go and restore this job's Go caches.
     default: 'true'
+  php:
+    description: Set up PHP and Composer for packages/php.
+    default: 'false'
 
 runs:
   using: composite
@@ -63,3 +66,20 @@ runs:
     - name: Install JS dependencies
       shell: bash
       run: bun install --frozen-lockfile --ignore-scripts
+
+    # packages/php's dev dependencies (Symfony 8) need PHP 8.4+; the runners ship 8.3.
+    - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+      if: inputs.php == 'true'
+      with:
+        php-version: '8.5'
+        extensions: pcntl, posix
+        tools: composer
+        coverage: none
+
+    - name: Cache Composer downloads
+      if: inputs.php == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/composer
+        key: composer-${{ runner.os }}-${{ hashFiles('packages/php/composer.lock') }}
+        restore-keys: composer-${{ runner.os }}-

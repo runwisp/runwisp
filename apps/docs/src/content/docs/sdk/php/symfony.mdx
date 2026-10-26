@@ -1,0 +1,224 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Symfony
+description: Run Symfony Scheduler schedules under RunWisp. Every scheduled run is recorded with its output, exit code and duration, and shown in the web UI.
+head:
+    - tag: title
+      content: "Symfony Scheduler with RunWisp: see every scheduled run"
+---
+
+**since**: `1.8`
+
+`runwisp/runwisp` runs your [Symfony Scheduler](https://symfony.com/doc/current/scheduler.html)
+schedules under RunWisp. `#[AsCronTask]`, `#[AsPeriodicTask]` and your
+schedule providers stay as they are. `bin/console runwisp:work` replaces
+`messenger:consume scheduler_default`, and every run gets a log, an exit code
+and a duration in the web UI.
+
+It works with Symfony 6.4 or later, on PHP 8.2 or later. See the
+[PHP SDK](/sdk/php/) for how the worker runs tasks.
+
+## Set up
+
+```bash
+composer require runwisp/runwisp
+```
+
+Register the bundle:
+
+```php
+<?php
+
+// config/bundles.php
+return [
+    // ...
+    RunWisp\Symfony\RunWispBundle::class => ['all' => true],
+];
+```
+
+Start the worker:
+
+```bash
+bin/console runwisp:work
+```
+
+It starts RunWisp and prints where to find it:
+
+```
+RunWisp dashboard: http://127.0.0.1:9477, password: vendor/bin/runwisp password --data var/runwisp
+```
+
+RunWisp keeps its database, run logs and socket in `var/runwisp`. Keep the
+worker running the way you run `messenger:consume`: a systemd unit, a
+Supervisor program or your container's command. `bin/console runwisp:work
+--env=prod` runs every task in the `prod` environment too.
+
+## How schedules become tasks
+
+Each recurring message of each schedule becomes a RunWisp task:
+
+```php
+<?php
+
+// src/Command/SendDigestCommand.php
+namespace App\Command;
+
+use Symfony\Component\Console\Attribute\AsCommand;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Scheduler\Attribute\AsCronTask;
+
+#[AsCommand('app:send-digest')]
+#[AsCronTask('0 8 * * *', timezone: 'Europe/Bratislava', jitter: 60)]
+final class SendDigestCommand extends Command
+{
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $output->writeln('Sending the daily digest');
+
+        return Command::SUCCESS;
+    }
+}
+```
+
+Cron triggers need `dragonmantank/cron-expression`, as they do with
+`messenger:consume`:
+
+```bash
+composer require dragonmantank/cron-expression
+```
+
+This task is named `app:send-digest`, with
+[`cron`](/configuration/tasks/#cron) `0 8 * * *`,
+[`timezone`](/configuration/tasks/#timezone) `Europe/Bratislava` and
+[`jitter`](/configuration/tasks/#jitter) `60s`.
+
+| Trigger                        | Task                                                        |
+| ------------------------------ | ----------------------------------------------------------- |
+| `#[AsCronTask]`, `cron()`      | `cron` as written, and `timezone` when the trigger has one. |
+| `#[AsPeriodicTask]`, `every()` | `cron = "@every <n>s"`.                                     |
+| `jitter`, `withJitter()`       | `jitter` in seconds, on top of the trigger.                 |
+| Other triggers                 | Skipped, with a warning when the worker starts.             |
+
+Intervals without a fixed length, such as `1 month`, are skipped too. Use a
+cron expression for them.
+
+The task name comes from the message:
+
+| Message                           | Task name                                    |
+| --------------------------------- | -------------------------------------------- |
+| A command (`#[AsCronTask]` on it) | The command name: `app:send-digest`.         |
+| A service method                  | `Service-Class::method`.                     |
+| Any other message                 | The message's class name, without namespace. |
+
+A name in [`#[Task]`](#add-runwisp-options) comes first. Otherwise, a
+schedule other than `default` prefixes the name: `reports.SendReport`. Two
+messages that get the same name are told apart with `-2`, and the worker warns
+about it. A task keeps its run history under its name, so rename the message
+or its schedule with care.
+
+## Each run
+
+Each run is a new `bin/console runwisp:run <name>` process. A command runs
+there with its output going to the run's log. Any other message is handled
+there and then by your message handlers, as the scheduler's consumer would.
+A message with `transports` is sent to those transports, as Symfony does.
+
+A thrown error fails the run with exit code 1 and the stack trace in its log,
+and a command's exit code is the run's. Run a task by hand with the same
+command:
+
+```bash
+bin/console runwisp:run app:send-digest
+```
+
+## Add RunWisp options
+
+Give a task the [task keys](/configuration/tasks/) Symfony has no word for
+with `#[RunWisp\Task]`, next to its `#[AsCronTask]`. The keys are named as in
+`runwisp.toml`:
+
+```php
+<?php
+
+// src/Command/SendDigestCommand.php
+namespace App\Command;
+
+use RunWisp\Task;
+use Symfony\Component\Console\Attribute\AsCommand;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Scheduler\Attribute\AsCronTask;
+
+#[AsCommand('app:send-digest')]
+#[AsCronTask('0 8 * * *', timezone: 'Europe/Bratislava', jitter: 60)]
+#[Task(retry_attempts: 3, timeout: '10m', notify: ['slack'])]
+final class SendDigestCommand extends Command
+{
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $output->writeln('Sending the daily digest');
+
+        return Command::SUCCESS;
+    }
+}
+```
+
+The first argument is the task name: `#[Task('digest', retry_attempts: 3)]`.
+For a service method, put the attribute on the method or its class; for any
+other message, on the message class. The schedule comes from Symfony, so
+`cron` and `timezone` are not accepted.
+
+The bundle's `config` holds the rest of a `runwisp.toml`, such as notifiers
+and `defaults`, with the same keys:
+
+```yaml
+# config/packages/runwisp.yaml
+runwisp:
+    config:
+        notifiers:
+            slack:
+                type: slack
+                webhook_url: "%env(SLACK_WEBHOOK_URL)%"
+```
+
+## Check your schedule
+
+`bin/console runwisp:check` lists the tasks `runwisp:work` would run, with each schedule, next
+run and RunWisp options, and checks the config with RunWisp, without starting
+anything:
+
+```bash
+bin/console runwisp:check
+```
+
+It exits with code 1 when RunWisp would reject the config, such as for a
+misspelled key, so you can run it in CI. See
+[Check your tasks](/sdk/php/#check-your-tasks).
+
+## Configuration
+
+Every key is optional. A key you leave out falls back to its `RUNWISP_*`
+environment variable, as described in the [PHP SDK](/sdk/php/).
+
+```yaml
+# config/packages/runwisp.yaml
+runwisp:
+    data: "%kernel.project_dir%/var/runwisp"
+    port: 9477
+    password: "%env(RUNWISP_PASSWORD)%"
+```
+
+| Key        | Default                                                 |
+| ---------- | ------------------------------------------------------- |
+| `app`      | The `name` in `composer.json`                           |
+| `data`     | `RUNWISP_DATA`, else `var/runwisp`                      |
+| `port`     | `RUNWISP_PORT`, else `9477` or the next free port       |
+| `host`     | `RUNWISP_HOST`, else `127.0.0.1`                        |
+| `password` | `RUNWISP_PASSWORD`                                      |
+| `auth`     | `true`; `false` turns the login off                     |
+| `binary`   | The binary Composer installed, else `runwisp` on `PATH` |
+| `config`   | The rest of a `runwisp.toml`                            |

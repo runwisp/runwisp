@@ -1,0 +1,66 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+language: "php"
+layer: "library"
+
+tasks:
+    generate-config:
+        # A plain file input, not a task dep on runwisp, as for js:generate-config.
+        # The output is committed: Composer installs the package from git.
+        description: "Generate src/Schema.php from runwisp.toml's JSON Schema."
+        command: "php scripts/generate-config.php"
+        inputs:
+            - "scripts/generate-config.php"
+            - "/apps/runwisp/internal/config/config.schema.json"
+        outputs:
+            - "src/Schema.php"
+
+    install:
+        # composer.lock pins the dev tools and framework versions the tests run.
+        description: "Install the Composer dev dependencies."
+        command: "composer install --no-interaction --no-progress"
+        inputs:
+            - "composer.json"
+            - "composer.lock"
+        options:
+            cache: false
+
+    check:
+        script: "composer validate --strict && vendor/bin/phpstan analyse --no-progress --memory-limit=1G"
+        deps:
+            - "~:generate-config"
+            - "~:install"
+        inputs:
+            - "src/**/*"
+            - "tests/**/*"
+            - "config/**/*"
+            - "bin/**/*"
+            - "composer.json"
+            - "composer.lock"
+            - "phpstan.neon.dist"
+
+    test:
+        command: "vendor/bin/phpunit --testsuite Unit"
+        deps:
+            - "~:install"
+        inputs:
+            - "src/**/*"
+            - "tests/Unit/**/*"
+            - "config/**/*"
+            - "phpunit.xml.dist"
+            - "composer.lock"
+
+    test-e2e:
+        description: "phpunit e2e against the built runwisp binary."
+        command: "vendor/bin/phpunit --testsuite E2E"
+        env:
+            RUNWISP_PHP_TEST_BINARY: "$workspaceRoot/apps/runwisp/runwisp"
+        deps:
+            - "runwisp:build"
+            - "~:install"
+        inputs:
+            - "src/**/*"
+            - "tests/E2E/**/*"
+            - "phpunit.xml.dist"
+            - "composer.lock"
