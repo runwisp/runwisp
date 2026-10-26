@@ -35,7 +35,8 @@ allow_station_dispatch: bool =false — accept peer-dispatched ad-hoc shell/cont
 shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flight runs on shutdown
 timezone:             IANA string =host system zone — TZ for cron eval when a task pins none
 external_url:         string =last signed-in Web UI address — public Web UI base for notification deep-links; absolute http(s) w/ host; unset = detected from the latest browser password sign-in to the Web UI (persisted; `--url` clients and TUI-opened tabs don't count; never with RUNWISP_AUTH=off)
-check_updates:        bool =true  — poll concierge.runwisp.com for a newer release; shows an indicator, never auto-updates; also gates the Web UI feedback prompt; false = fully offline
+check_updates:        bool =true  — poll concierge.runwisp.com for a newer release; shows an indicator, never auto-updates; also gates the Web UI feedback prompt; skipped when env CI is set; false = fully offline
+heartbeat_url:        string       — dead man's switch (e.g. healthchecks.io ping URL); GET at start + every 60s, 10s timeout, non-2xx = failed ping; absolute http(s) w/ host; secret: never logged (host only, failure/recovery logged once) and not in the API; reloadable; unset = off; since 1.8
 log_output:           bool =false — print each run output line to the daemon stdout as `task | line` (stderr lines to stderr; JSON under --log-format=json); RUNWISP_LOG_OUTPUT overrides; headless only (a TUI session ignores it); bounded buffer drops overflow and reports the count; reloadable; the Docker image sets it true. since 1.7
 metrics_enabled:      bool =false — master switch for /metrics
 metrics_listen:       host:port   — dedicated metrics listener; setting it enables metrics on its own
@@ -117,7 +118,7 @@ log_on_full:         enum =drop_old — drop_new | drop_old | kill
 keep_runs:           int          — row-count retention; 0..1000000 (0 = keep none)
 keep_for:            dur          — age retention; positive
 healthy_after:       dur  =60s    — service uptime that counts as healthy: resets the restart counter and clears the failed-start streak (SERVICES only); 0 = healthy immediately, kept literally if set
-restart_attempts:       int  =3      — consecutive failed starts (any exit, exit 0 included, before healthy_after) before a service instance goes FATAL (SERVICES only); 0 = give up after the first failure, kept literally if set
+restart_attempts:       int  =10     — consecutive failed starts (any exit, exit 0 included, before healthy_after) before a service instance goes FATAL (SERVICES only); 0 = give up after the first failure, kept literally if set
 restart_delay:       dur  =1s     — base delay before a service restart (SERVICES only)
 restart_backoff:     enum =exponential — restart backoff curve (SERVICES only): constant|linear|exponential
 catch_up:            int  =1       — default missed-tick replay count for cron tasks (TASKS only); 0..10000
@@ -187,7 +188,7 @@ params:            []table          — per-run inputs (TASKS only, rejected on 
                                      (needs choices), description string. Scheduled runs (cron/run_on_start/catch_up) use default; a retry uses the
                                      original run's values; values are passed as real args/env, never pasted into the shell string. See
                                      /configuration/tasks/#params
-notify: []string         — sugar → route on any classified failure (see failures) and, on a task, on long_running (see warn_after); notifier ids, "id:override", or "inapp". Non-failure outcomes use an explicit [[route]].
+notify: []string         — sugar → route on any classified failure (see failures), on recovered (since 1.8), and, on a task, on long_running (see warn_after); notifier ids, "id:override", or "inapp". Non-failure outcomes use an explicit [[route]].
 ```
 
 ### [services.&lt;name&gt;] (long-running)
@@ -232,7 +233,7 @@ Expands to one observable service-task per imported compose service (or one task
 ```
 file:         path =auto-discover  — compose.yaml/.yml/docker-compose.yaml/.yml
 services:     []string             — filter imported services: bare/"+name" keeps only those, "-name" drops those; polarities mutually exclusive; omit to import all
-import:       enum =services       — services (per-service tasks) | stack (one task)
+import:       enum =services       — services (per-service tasks) | stack (one task). services: an instance whose container already runs from `docker compose up` (labels project+service, oneoff=False; Nth instance = Nth by name) attaches via `docker logs -f --since now` instead of starting a second one, ends with the container's exit code; a stop/restart (or daemon stop) docker-stops it, so the next start is RunWisp's own compose run (since 1.8; tasks never attach; probe errors fail open)
 group:        string =alias        — UI group
 project_name: string =file own project — compose project name (-p); unset = COMPOSE_PROJECT_NAME > top-level name: > dir name, like `docker compose up`. Block-imported services get --service-ports --use-aliases; task-level compose_mode="run" does not
 profiles:     []string             — compose profiles
@@ -248,11 +249,11 @@ Per-service override `[compose.<alias>.<svc>]` accepts: [`group`](/configuration
 ### [notify] (global notification settings)
 
 ```
-global_notifiers:  []string =["inapp"] — channels added to every notify list + catch-all on failures; [] opts out
+global_notifiers:  []string =["inapp"] — channels added to every notify list + catch-all on failures, recovered and long_running; [] opts out
 retry_budget:   dur                  — total retry budget per delivery
 keep_notifications:      int  =1024           — in-app bell row cap
 keep_for:  dur  =90d            — max bell row age
-coalesce_window:   dur  =1h             — collapse repeat (kind+task) into one bell row; also coalesces outbound bursts. "0s" = one outbound message per event (bell still coalesces on its default window)
+coalesce_window:   dur  =1h             — collapse repeat (kind+task) into one bell row; also coalesces outbound bursts. "0s" = one outbound message per event (bell still coalesces on its default window). Since 1.8 a success of the task closes its failure (and recovered) groups: held summary sent at once, next failure pages and gets a new bell row
 coalesce_limit:   int  =10             — recent timestamps kept per coalesced bell row; also the count of suppressed events after which an outbound delivery (Slack/Telegram/etc) is force-forwarded instead of waiting for coalesce_window to close
 ```
 
@@ -285,7 +286,7 @@ Secret-bearing values (`webhook_url`, `bot_token`, `password`, …) arrive final
 
 ```
 match.failure: bool     — match any run classified as a failure (same axis as [tasks.*] failures) (optional)
-match.kinds:   []string — outcomes (same vocab as failures): started | succeeded | failed | timeout | crashed | log_overflow | unhealthy | queue_full | stopped | daemon_stopped | missed | service.fatal | log.disk_pressure | long_running (notify.delivery_failed rejected; long_running + match.failure rejected)
+match.kinds:   []string — outcomes (same vocab as failures): started | succeeded | failed | timeout | crashed | log_overflow | unhealthy | queue_full | stopped | daemon_stopped | missed | service.fatal | log.disk_pressure | long_running | recovered (notify.delivery_failed rejected; long_running/recovered + match.failure rejected). recovered (since 1.8) = a success whose previous ended run of the task failed; sent as run.recovered alongside run.succeeded, severity info
 match.task:    string   — glob over task name (optional)
 notifiers:      []string (req, non-empty) — notifier ids (or "inapp"); "id:#override" inline target (slack #/@, telegram chat_id, smtp/sendmail email)
 ```
@@ -323,8 +324,9 @@ runwisp daemon               — start headless daemon (no TUI); --app reads the
 runwisp tui                  — attach a TUI to a running daemon
 runwisp validate             — validate runwisp.toml without starting anything; --json for the structured document (see above); --app validates a JSON document on stdin;
                                --explain adds each schedule in words + next 3 firings (zone-aware, DST marked; `schedules` in --json)
-runwisp list                 — list configured tasks and schedules; --json for a machine-readable document
-runwisp status               — is the daemon alive?; --json for daemon health + every task's last run (+ pausedAt when its schedule is paused) + externalUrl/externalUrlSource (config|detected); human output lists paused schedules and the Web UI address
+runwisp list                 — list configured tasks and schedules; --json for a machine-readable document; services show their live state (`state` in --json) when a local daemon answers;
+                               --url (env RUNWISP_URL) + --password list a remote daemon's tasks instead of the local runwisp.toml
+runwisp status               — is the daemon alive?; --json for daemon health + every task's last run (+ pausedAt when its schedule is paused) + externalUrl/externalUrlSource (config|detected); human output lists paused schedules, FATAL services and the Web UI address; --url/--password check a remote daemon; --json carries each service's `service` state
 runwisp run <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive
                              — exit code = the process's exit code; 1 when the run failed (failures pattern, timeout, stop) but the process exited 0
                              — --param key=value (repeatable) supplies task parameter values; a param not mentioned uses its declared default
@@ -355,6 +357,7 @@ runwisp logs <target...>     — print run output via the local socket (or --url
                              — --json: NDJSON on stdout; {"type":"line",task,runId,n,ts,stream,text,continued?} per line, {"type":"end", ...same fields as run --json} when a run ends
 runwisp start/restart/stop/pause/resume — a target locked with manual_trigger=false 403s when named directly; a glob silently skips it (pause's glob also skips services, cron-less and held tasks). --url (env RUNWISP_URL) + --password (env RUNWISP_PASSWORD) dispatch to a remote daemon,
                                 same CHAP login/session cache as `run --url`. An unknown name or empty glob fails before anything runs; otherwise each target is attempted and failures print per-target, exit non-zero
+runwisp start/restart/stop --token <t> <name...> — (since 1.8; env RUNWISP_HOOK_TOKEN) act through POST /api/hooks/tasks/{name}/{action} with a unit's hook token instead of a session; needs --url/RUNWISP_URL; literal names only (glob, run ID, --attach and the daemon-wide no-target form rejected); 401 = token not one of the unit's hook_tokens, 403 = allow list omits the verb. For a task with user= that must restart a service (it can't open the root socket). Inside a task, the no-daemon error points at --token instead of sudo
 runwisp start/restart/stop --attach <target...> — then follow, like `logs -f`, only the targets that succeeded (a glob's skipped/locked entries and failed targets excluded; exit non-zero if any failed): live runs from their last 10 lines, every run the action starts from line 0 (subscribed before dispatch, so fast runs aren't missed), no earlier finished runs; Ctrl+C ends it, run IDs only → exits when they end; rejected without a target
 runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --dry-run --quiet --system
 runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --dry-run --quiet
@@ -518,7 +521,7 @@ POST   /api/tasks/{task}/restart                 service: restart all instances;
 POST   /api/tasks/{task}/pause                   pause the cron schedule (204, idempotent, keeps first pausedAt); 403 manual_trigger=false; 409 service / no cron / held / station mode. Task gains pausedAt, loses nextRunAt
 POST   /api/tasks/{task}/resume                  lift a pause (204, idempotent); skipped ticks not caught up
          ?wait=true&waitTimeout=N (1..240, default 120) on run/start/restart: task returns the finished run (start follows an already-active run); service start/restart → 400. On stop: returns once drained, 409 on timeout
-POST   /api/hooks/tasks/{task}/{run,start,stop,restart}  same as the session routes above, authed by a hook token instead of a session (triggeredBy=hook)
+POST   /api/hooks/tasks/{task}/{run,start,stop,restart}  same as the session routes above, authed by a hook token instead of a session (triggeredBy=hook); run also takes ?tail=N (0..1000, since 1.8): the response adds log=[{n,stream,text}] with the run's last N log lines (a hook token can't read /api/runs/{id}/log)
 POST   /api/runs/{runId}/stop                   stop a running task
 DELETE /api/runs/{runId}                        delete a run
 POST   /api/runs/bulk/stop                       stop runs by selector

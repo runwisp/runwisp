@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -49,6 +50,10 @@ func reloadRunningDaemon(ctx context.Context, f Flags, out io.Writer) error {
 
 	client := apiclient.NewUnix(localAPISocketPath(f))
 	result, err := client.Reload(ctx)
+	var rejected *apiclient.HTTPStatusError
+	if errors.As(err, &rejected) {
+		return fmt.Errorf("reload rejected, nothing changed: %w", err)
+	}
 	if err != nil {
 		return err
 	}

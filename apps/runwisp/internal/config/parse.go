@@ -157,20 +157,30 @@ func parseScopedByteSize(scope, raw string) (int64, error) {
 // as an absolute http(s) URL. Empty is the supported default — no link line
 // is rendered in notifications when unset.
 func parseExternalURL(raw string) (string, error) {
+	u, err := parseHTTPURL("daemon.external_url", raw)
+	return strings.TrimRight(u, "/"), err
+}
+
+// parseHTTPURL trims raw and rejects anything that isn't an absolute http(s)
+// URL, naming key in the error. Empty is allowed and stays empty. The error
+// never repeats the URL, which may carry a secret (heartbeat_url).
+func parseHTTPURL(key, raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return "", nil
 	}
-	trimmed = strings.TrimRight(trimmed, "/")
 	u, err := url.Parse(trimmed)
 	if err != nil {
-		return "", fmt.Errorf("invalid daemon.external_url: %w", err)
+		if ue, ok := err.(*url.Error); ok {
+			err = ue.Err
+		}
+		return "", fmt.Errorf("invalid %s: %w", key, err)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return "", fmt.Errorf("invalid daemon.external_url: must start with http:// or https://")
+		return "", fmt.Errorf("invalid %s: must start with http:// or https://", key)
 	}
 	if u.Host == "" {
-		return "", fmt.Errorf("invalid daemon.external_url: missing host")
+		return "", fmt.Errorf("invalid %s: missing host", key)
 	}
 	return trimmed, nil
 }

@@ -462,3 +462,42 @@ func TestLastRuns_FailedMissedRunCounts(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, missed.ID, got["job"].ID)
 }
+
+// TestPreviousRunFailed: the run before a success decides whether it is a
+// recovery. The run itself, unended and deleted rows, and a skipped run that
+// isn't a failure are all looked past.
+func TestPreviousRunFailed(t *testing.T) {
+	ctx := t.Context()
+	db, err := New(":memory:")
+	require.NoError(t, err)
+	defer db.Close()
+
+	at := func(min int) time.Time { return time.Date(2026, 10, 9, 3, min, 0, 0, time.UTC) }
+	failed := newTerminalRun("job")
+	failed.CreatedAt, failed.StartedAt, failed.EndReason, failed.IsFailure = at(0), new(at(0)), model.EndReasonPtr(model.ReasonFailed), true
+	skipped := newTerminalRun("job")
+	skipped.CreatedAt, skipped.EndReason = at(2), model.EndReasonPtr(model.ReasonSkipped)
+	deleted := newTerminalRun("job")
+	deleted.CreatedAt, deleted.StartedAt = at(3), new(at(3))
+	running := newTerminalRun("job")
+	running.CreatedAt, running.StartedAt, running.Status, running.EndReason = at(4), new(at(4)), model.PhaseRunning, nil
+	current := newTerminalRun("job")
+	current.CreatedAt, current.StartedAt = at(5), new(at(5))
+	for _, r := range []*model.Run{failed, skipped, deleted, running, current} {
+		require.NoError(t, db.CreateRun(ctx, r))
+	}
+	_, err = db.SoftDeleteRuns(ctx, model.RunSelector{IDs: []string{deleted.ID}}, time.Now())
+	require.NoError(t, err)
+
+	got, err := db.PreviousRunFailed(ctx, "job", current.ID)
+	require.NoError(t, err)
+	assert.True(t, got, "the failed run is the one before the success")
+
+	got, err = db.PreviousRunFailed(ctx, "job", failed.ID)
+	require.NoError(t, err)
+	assert.False(t, got, "the success after it is the newest other run")
+
+	got, err = db.PreviousRunFailed(ctx, "never-ran", "x")
+	require.NoError(t, err)
+	assert.False(t, got)
+}

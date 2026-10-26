@@ -22,7 +22,7 @@ require (
 	github.com/lnquy/cron v1.1.1
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.2
-	github.com/netresearch/go-cron v0.16.1
+	github.com/netresearch/go-cron v0.17.0
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/pmezard/go-difflib v1.0.0

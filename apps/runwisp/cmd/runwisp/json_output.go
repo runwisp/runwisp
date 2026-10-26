@@ -80,16 +80,19 @@ type statusSystem struct {
 }
 
 type statusTaskJSON struct {
-	Name          string       `json:"name"`
-	Kind          string       `json:"kind"`
-	Cron          string       `json:"cron,omitempty"`
-	ManualTrigger bool         `json:"manualTrigger"`
-	Source        string       `json:"source,omitempty"`
-	SourceFile    string       `json:"sourceFile,omitempty"`
-	HeldBy        string       `json:"heldBy,omitempty"`
-	NextRunAt     *time.Time   `json:"nextRunAt,omitempty"`
-	PausedAt      *time.Time   `json:"pausedAt,omitempty"`
-	LastRun       *lastRunJSON `json:"lastRun"`
+	Name          string     `json:"name"`
+	Kind          string     `json:"kind"`
+	Cron          string     `json:"cron,omitempty"`
+	ManualTrigger bool       `json:"manualTrigger"`
+	Source        string     `json:"source,omitempty"`
+	SourceFile    string     `json:"sourceFile,omitempty"`
+	HeldBy        string     `json:"heldBy,omitempty"`
+	NextRunAt     *time.Time `json:"nextRunAt,omitempty"`
+	PausedAt      *time.Time `json:"pausedAt,omitempty"`
+	// Service is the supervisor's view of a service (state, instance counts);
+	// omitted for tasks.
+	Service *model.ServiceStatus `json:"service,omitempty"`
+	LastRun *lastRunJSON         `json:"lastRun"`
 }
 
 // lastRunJSON is the most recent run of a task. failed/missed are precomputed
@@ -136,6 +139,7 @@ func newStatusTaskJSON(tr model.TaskResponse, last *model.Run) statusTaskJSON {
 		HeldBy:        string(tr.HeldBy),
 		NextRunAt:     tr.NextRunAt,
 		PausedAt:      tr.PausedAt,
+		Service:       tr.Service,
 	}
 	if last != nil {
 		lr := newLastRunJSON(last)
@@ -239,8 +243,9 @@ func newExecJSONDoc(taskName string, r *model.Run) runJSONDoc {
 // --- list ------------------------------------------------------------------
 
 // listJSONDoc is the machine-readable form of `runwisp list`. Like the human
-// table it is offline and config-only — no last-run state (that lives in
-// `status --json`, which talks to the daemon).
+// table it is the config (local, or a remote daemon's with --url) plus each
+// service's live state when a daemon answers — no last-run state (that lives
+// in `status --json`).
 type listJSONDoc struct {
 	SchemaVersion int            `json:"schemaVersion"`
 	Error         string         `json:"error,omitempty"`
@@ -265,9 +270,13 @@ type listTaskJSON struct {
 	SourceFile    string  `json:"sourceFile,omitempty"`
 	HeldBy        string  `json:"heldBy,omitempty"`
 	Description   string  `json:"description,omitempty"`
+	// State is a service's live supervisor state (running, degraded, stopped,
+	// fatal); omitted for tasks and when no daemon answered.
+	State string `json:"state,omitempty"`
 }
 
-func newListTaskJSON(t model.Task) listTaskJSON {
+func newListTaskJSON(tr model.TaskResponse) listTaskJSON {
+	t := tr.Task
 	lt := listTaskJSON{
 		Name:          t.Name,
 		Kind:          taskKindString(t.Kind),
@@ -280,6 +289,9 @@ func newListTaskJSON(t model.Task) listTaskJSON {
 	}
 	if t.Kind.IsService() {
 		lt.Instances = t.Instances
+		if tr.Service != nil {
+			lt.State = tr.Service.State
+		}
 	} else {
 		mc := t.MaxConcurrent
 		lt.MaxConcurrent = &mc

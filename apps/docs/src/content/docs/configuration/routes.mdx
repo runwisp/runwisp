@@ -69,6 +69,9 @@ The outcomes to match. Uses the same names as `failures`:
 - `service.fatal`: a service gave up after [`restart_attempts`](/configuration/services/#restart_attempts)
 - `log.disk_pressure`: free disk fell below [`min_free_space`](/configuration/storage/#min_free_space)
 - `long_running`: a run is still going after [`warn_after`](/configuration/tasks/#warn_after) (not a failure, so it can't be combined with `match.failure`)
+- `recovered`: a run succeeds and the task's run before it failed. It is sent
+  alongside that run's `succeeded`, and like `long_running` it is not a failure.
+  Since 1.8.
 
 `notify.delivery_failed` always goes only to the bell; listing it here is an
 error.

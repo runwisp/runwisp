@@ -5,7 +5,6 @@ package tui
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -561,12 +560,7 @@ func (m Model) handleSchedulePause(msg uikit.SchedulePauseMsg) (tea.Model, tea.C
 	}
 	m.logActionResult(verb+" schedule of", msg.TaskName, msg.Err)
 	if msg.Err != nil {
-		reason := msg.Err.Error()
-		var statusErr *apiclient.HTTPStatusError
-		if errors.As(msg.Err, &statusErr) {
-			reason = statusErr.Detail()
-		}
-		return m, m.dialogs.Flash(failed+reason, flashLong)
+		return m, m.dialogs.Flash(failed+msg.Err.Error(), flashLong)
 	}
 	paused := maps.Clone(m.info.PausedTasks)
 	if paused == nil {

@@ -368,3 +368,55 @@ func TestRunImportSupervisordFindsTheDefaultConfig(t *testing.T) {
 		t.Fatalf("want the searched paths named, got %v", err)
 	}
 }
+
+// `import systemd shop-digest.timer` used to fail with "no such file": only a
+// full path worked. A bare name is looked up where systemd keeps units, and the
+// timer's service is then found next to it.
+func TestRunImportSystemdResolvesABareUnitName(t *testing.T) {
+	first, second := t.TempDir(), t.TempDir()
+	for name, body := range map[string]string{
+		"digest.timer":   "[Timer]\nOnCalendar=daily\n",
+		"digest.service": "[Service]\nType=oneshot\nExecStart=/usr/bin/digest\n",
+	} {
+		if err := os.WriteFile(filepath.Join(second, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prev := systemdUnitDirs
+	t.Cleanup(func() { systemdUnitDirs = prev })
+	systemdUnitDirs = []string{first, second}
+	t.Chdir(t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	if err := runImportSystemd(&stdout, &stderr, openTempFile(t, ""), []string{"digest.timer"}, Flags{}, importOpts{}); err != nil {
+		t.Fatalf("runImportSystemd: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "[tasks.digest]") || !strings.Contains(stderr.String(), "Reading "+filepath.Join(second, "digest.timer")) {
+		t.Errorf("want the unit found by name\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunImportSystemdUnknownNameSaysWhereItLooked(t *testing.T) {
+	prev := systemdUnitDirs
+	t.Cleanup(func() { systemdUnitDirs = prev })
+	systemdUnitDirs = []string{t.TempDir()}
+	t.Chdir(t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	err := runImportSystemd(&stdout, &stderr, openTempFile(t, ""), []string{"nope.timer"}, Flags{}, importOpts{})
+	if err == nil || !strings.Contains(err.Error(), "no unit named nope.timer") || !strings.Contains(err.Error(), "Looked in "+systemdUnitDirs[0]) {
+		t.Fatalf("want the searched dirs named, got %v", err)
+	}
+}
+
+// A bare `import systemd` over an empty pipe emitted `[services.service] run = ""`.
+func TestRunImportSystemdEmptyStdinSaysWhatToRun(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runImportSystemd(&stdout, &stderr, openTempFile(t, "\n"), nil, Flags{}, importOpts{})
+	if err == nil || !strings.Contains(err.Error(), "nothing came in on stdin") {
+		t.Fatalf("want the empty-stdin hint, got %v", err)
+	}
+	if strings.Contains(stdout.String(), "[services.") {
+		t.Errorf("nothing should be emitted, got:\n%s", stdout.String())
+	}
+}

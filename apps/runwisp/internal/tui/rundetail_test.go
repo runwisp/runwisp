@@ -57,6 +57,20 @@ func TestRunDetailDialog_View_ResourceUsage(t *testing.T) {
 	}
 }
 
+func TestRunDetailDialog_View_Output(t *testing.T) {
+	run := endedRun()
+	run.StdoutLines, run.StderrLines = new(int64(9)), new(int64(3))
+	out := NewRunDetailDialog(run, false, 1).View(80, 34)
+	if !strings.Contains(out, "12 lines, 3 on stderr") {
+		t.Fatalf("run detail view missing the output row\n%s", out)
+	}
+	for lines, want := range map[[2]int64]string{{0, 0}: "none", {4, 0}: "4 lines", {0, 1}: "1 line, all on stderr"} {
+		if got := outputSummary(lines[0]+lines[1], lines[1]); got != want {
+			t.Errorf("outputSummary(%v) = %q, want %q", lines, got, want)
+		}
+	}
+}
+
 func TestRunDetailDialog_View_FirstAttemptHasNoLineage(t *testing.T) {
 	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning, TriggeredBy: model.TriggeredByAPI}
 	d := NewRunDetailDialog(run, false, 1)

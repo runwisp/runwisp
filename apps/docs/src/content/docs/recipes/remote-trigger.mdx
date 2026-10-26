@@ -143,6 +143,7 @@ on_overlap  = "kill"      # a new deploy replaces one that's still running
 keep_for    = "180d"
 notify      = ["slack-ops"]
 params      = [{ env = "VERSION", required = true }]
+hook_tokens = ["${CI_DEPLOY_TOKEN}"]
 run = """
 cd /srv/app
 docker pull "ghcr.io/example/app:$VERSION"
@@ -163,11 +164,32 @@ notifiers = ["slack-deploys"]
   `stopped`.
 - **[`params`](/configuration/tasks/#params):** CI passes the version to deploy. See
   [`params`](/configuration/tasks/#params).
+- **[`hook_tokens`](/configuration/tasks/#hook_tokens):** CI holds a token that
+  controls this task only, not the daemon's password.
 - **[`notify`](/configuration/tasks/#notify) and `[[route]]`:** `notify` alerts on failures. The route also
   announces successes to the team channel. See
   [`[[route]]`](/configuration/routes/).
 
-In CI, trigger it with `runwisp run`. In GitHub Actions:
+In CI, call the task's [hook](/operations/auth/#hooks) with the token. In GitHub
+Actions:
+
+```yaml
+- name: Deploy
+  env:
+      DEPLOY_TOKEN: ${{ secrets.RUNWISP_DEPLOY_TOKEN }}
+  run: |
+      RUN=$(curl -fsS -X POST "https://runwisp.example.com/api/hooks/tasks/deploy-app/run?wait=true&tail=100" \
+        -H "Authorization: Bearer $DEPLOY_TOKEN" \
+        -H 'Content-Type: application/json' \
+        -d '{"params": {"VERSION": "${{ github.sha }}"}}')
+      jq -r '.log[].text' <<<"$RUN"
+      [ "$(jq -r .endReason <<<"$RUN")" = succeeded ]
+```
+
+The step prints the last 100 lines of the deploy's output and fails when the
+deploy fails. `wait=true` holds the request for up to 240 seconds; for a longer
+deploy, or to stream the output live, run `runwisp run` with the daemon's
+password instead:
 
 ```yaml
 - name: Deploy
@@ -177,10 +199,6 @@ In CI, trigger it with `runwisp run`. In GitHub Actions:
   run: npx --yes runwisp run deploy-app --param VERSION=${{ github.sha }}
 ```
 
-The step fails when the deploy fails, and its output shows in the CI log. If the
-runner can't run the binary, call the [curl script](#with-curl) with a
-`params` body instead.
-
 To run migrations on their own, use a second manual task with
 `on_overlap = "skip"`. Killing a migration halfway is dangerous; with `skip`, a
 trigger that arrives while one is running is recorded as `skipped` and doesn't
@@ -189,3 +207,38 @@ start.
 Secrets the task needs live on the RunWisp host, not in CI. Keep the data
 directory and any [`env_file`](/configuration/tasks/#env_file) readable only by
 the daemon's user.
+
+## Restart a service from a task that runs as another user
+
+A deploy usually pulls code as the app's user and then restarts the app. A task
+with [`user`](/configuration/tasks/#user) can't open the daemon's local socket,
+so `runwisp restart shop` inside it fails. Give the service a hook token and
+hand the same token to the task:
+
+```toml title="runwisp.toml"
+[services.shop]
+run         = "node server.js"
+working_dir = "/srv/shop"
+hook_tokens = [{ token = "${file:/etc/runwisp/shop-restart.token}", allow = ["restart"] }]
+
+[tasks.deploy-shop]
+user        = "ops"
+working_dir = "/srv/shop"
+run = """
+git pull
+npm ci
+runwisp restart shop
+"""
+
+[tasks.deploy-shop.env]
+RUNWISP_URL = "http://127.0.0.1:9477"
+
+[tasks.deploy-shop.secrets]
+RUNWISP_HOOK_TOKEN = "${file:/etc/runwisp/shop-restart.token}"
+```
+
+`runwisp start`, `stop`, and `restart` read the token from `RUNWISP_HOOK_TOKEN`
+(or `--token`) and send the action to the service's hook at `RUNWISP_URL`
+instead of the local socket. The token only restarts `shop`, so the deploy task
+gets no other control over the daemon. See
+[`runwisp restart`](/reference/cli/#runwisp-restart) for the flags.

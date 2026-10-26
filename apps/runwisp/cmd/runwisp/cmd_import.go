@@ -133,10 +133,12 @@ var importSystemdCmd = &cobra.Command{
 Type=oneshot unit becomes a run-once task; any other service becomes a RunWisp
 service. A .timer and the service it starts become one scheduled task.
 
-Pass unit files, or pipe one in:
+Pass unit names or files, or pipe one in. A bare name is looked up in
+/etc/systemd/system, /run/systemd/system, /usr/lib/systemd/system and
+~/.config/systemd/user:
 
+  runwisp import systemd backup.timer
   runwisp import systemd /etc/systemd/system/myapp.service
-  runwisp import systemd /etc/systemd/system/backup.timer
   cat myapp.service | runwisp import systemd
   runwisp import systemd /etc/systemd/system/*.service -o runwisp.toml
 
@@ -260,6 +262,20 @@ func readPiped(stdin *os.File) ([]byte, error) {
 	return data, nil
 }
 
+// readStdinOrHint reads a piped stdin, and refuses an empty one with hint
+// rather than importing nothing: an empty pipe is a non-interactive SSH session
+// or a `crontab -l` with no crontab, never a source someone meant.
+func readStdinOrHint(stdin *os.File, hint string) (io.Reader, error) {
+	data, err := readPiped(stdin)
+	if err != nil {
+		return nil, err
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil, &userFacingError{title: "nothing came in on stdin", details: hint}
+	}
+	return bytes.NewReader(data), nil
+}
+
 func runImportOfelia(stdout, stderr io.Writer, stdin *os.File, sources []string, f Flags, opts importOpts) error {
 	if err := checkImportFlags(opts); err != nil {
 		return err
@@ -275,9 +291,13 @@ func runImportOfelia(stdout, stderr io.Writer, stdin *os.File, sources []string,
 				details: "Pass a config.ini or a compose file, or pipe an INI config in, e.g. `cat config.ini | runwisp import ofelia`.",
 			}
 		}
-		res, err = importer.ParseOfeliaReader(stdin, ofOpts)
+		fallthrough
 	case len(sources) == 1 && sources[0] == "-":
-		res, err = importer.ParseOfeliaReader(stdin, ofOpts)
+		r, rerr := readStdinOrHint(stdin, "Pipe an INI config in, e.g. `cat config.ini | runwisp import ofelia`, or pass a file.")
+		if rerr != nil {
+			return rerr
+		}
+		res, err = importer.ParseOfeliaReader(r, ofOpts)
 	default:
 		if slices.Contains(sources, "-") {
 			return &userFacingError{title: "can't mix - (stdin) with file paths for Ofelia import"}
@@ -305,19 +325,63 @@ func runImportSystemd(stdout, stderr io.Writer, stdin *os.File, sources []string
 				details: "Pass a .service or .timer file, or pipe one in — e.g. `cat myapp.service | runwisp import systemd`.",
 			}
 		}
-		res, err = importer.ParseSystemdReader(stdin, sdOpts)
+		fallthrough
 	case len(sources) == 1 && sources[0] == "-":
-		res, err = importer.ParseSystemdReader(stdin, sdOpts)
+		r, rerr := readStdinOrHint(stdin, "Pass a unit, e.g. `runwisp import systemd shop-digest.timer`, "+
+			"or pipe one in: `systemctl cat myapp.service | runwisp import systemd`.")
+		if rerr != nil {
+			return rerr
+		}
+		res, err = importer.ParseSystemdReader(r, sdOpts)
 	default:
 		if slices.Contains(sources, "-") {
 			return &userFacingError{title: "can't mix - (stdin) with file paths for systemd import"}
 		}
-		res, err = importer.ParseSystemdFiles(sources, sdOpts)
+		paths := make([]string, len(sources))
+		for i, src := range sources {
+			if paths[i], err = resolveSystemdUnit(stderr, src); err != nil {
+				return err
+			}
+		}
+		res, err = importer.ParseSystemdFiles(paths, sdOpts)
 	}
 	if err != nil {
 		return &userFacingError{title: "failed to read systemd unit", details: err.Error()}
 	}
 	return emitImport(stdout, stderr, stdin, res, sourceSystemd, f, opts)
+}
+
+// systemdUnitDirs is where `import systemd` looks up a bare unit name, in
+// systemd's own precedence: local overrides, runtime units, then the units
+// packages ship. A var so a test can describe a box.
+var systemdUnitDirs = []string{"/etc/systemd/system", "/run/systemd/system", "/usr/lib/systemd/system"}
+
+// resolveSystemdUnit turns a bare unit name (`shop-digest.timer`) into the
+// file systemd loads it from, so the operator need not know where it lives. A
+// path, or a name that exists relative to the working directory, is used as
+// given. The resolved path is said on stderr, since several dirs can hold a
+// unit of that name and the first one wins.
+func resolveSystemdUnit(stderr io.Writer, arg string) (string, error) {
+	if strings.Contains(arg, "/") || fileExists(arg) {
+		return arg, nil
+	}
+	dirs := slices.Clone(systemdUnitDirs)
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, ".config", "systemd", "user"))
+	}
+	candidates := make([]string, len(dirs))
+	for i, d := range dirs {
+		candidates[i] = filepath.Join(d, arg)
+	}
+	path, ok := firstExisting(candidates)
+	if !ok {
+		return "", &userFacingError{
+			title:   fmt.Sprintf("no unit named %s", arg),
+			details: "Looked in " + strings.Join(dirs, ", ") + ". Pass the unit file's path instead.",
+		}
+	}
+	fmt.Fprintf(stderr, "Reading %s\n", path)
+	return path, nil
 }
 
 // checkImportFlags rejects a combination that can't mean anything, before the
@@ -408,17 +472,9 @@ var hostCronFlavor = importer.HostCronFlavor
 // "-" (or empty). The returned close function is always safe to call.
 func openImportSource(source string, stdin *os.File) (io.Reader, func(), error) {
 	if source == "-" || source == "" {
-		data, err := readPiped(stdin)
-		if err != nil {
-			return nil, func() {}, err
-		}
-		if len(bytes.TrimSpace(data)) == 0 {
-			return nil, func() {}, &userFacingError{
-				title:   "nothing came in on stdin",
-				details: "Pipe a crontab in, e.g. `crontab -l | runwisp import cron`, or pass a file: `runwisp import cron /etc/crontab`.",
-			}
-		}
-		return bytes.NewReader(data), func() {}, nil
+		r, err := readStdinOrHint(stdin,
+			"Pipe a crontab in, e.g. `crontab -l | runwisp import cron`, or pass a file: `runwisp import cron /etc/crontab`.")
+		return r, func() {}, err
 	}
 	file, err := os.Open(source)
 	if err != nil {

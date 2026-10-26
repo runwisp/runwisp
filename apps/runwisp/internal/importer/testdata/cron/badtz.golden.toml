@@ -14,6 +14,7 @@ run = "/usr/bin/rollup"
 CRON_TZ = "Mars/Olympus"
 
 # @reboot: runs once per machine boot, not on daemon restarts.
+# If this command never exits (a server, a worker), make it a [services.<name>] instead.
 [tasks.warmup]
 run_on_start = "boot"
 timezone = "Mars/Olympus"  # TODO: RunWisp couldn't use this timezone — fix it.

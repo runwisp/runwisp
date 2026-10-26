@@ -89,7 +89,7 @@
     {#if open}
         <div
             use:portal
-            use:trapFocus
+            use:trapFocus={{ preventScroll: true }}
             use:floating={{
                 reference: triggerEl,
                 placement: align === "right" ? "bottom-end" : "bottom-start",

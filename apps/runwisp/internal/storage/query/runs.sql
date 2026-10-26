@@ -5,14 +5,15 @@
 INSERT INTO runs (id, execution_id, task_name, status, end_reason,
   exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt,
   retry_of_run_id, instance_index, params_json, is_failure, peak_memory_bytes,
-  cpu_time_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+  cpu_time_ms, stdout_lines, stderr_lines)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateRun :execrows
 UPDATE runs SET execution_id = ?, task_name = ?, status = ?,
   end_reason = ?, exit_code = ?, started_at = ?, ended_at = ?, triggered_by = ?,
   created_at = ?, retry_attempt = ?, retry_of_run_id = ?, instance_index = ?,
-  params_json = ?, is_failure = ?, peak_memory_bytes = ?, cpu_time_ms = ?
+  params_json = ?, is_failure = ?, peak_memory_bytes = ?, cpu_time_ms = ?,
+  stdout_lines = ?, stderr_lines = ?
 WHERE id = ?;
 
 -- name: GetRun :one
@@ -24,6 +25,15 @@ SELECT * FROM runs WHERE id = ? AND deleted_at IS NULL LIMIT 1;
 -- state of the run before them.
 SELECT * FROM runs
 WHERE task_name = ? AND deleted_at IS NULL
+  AND (started_at IS NOT NULL OR is_failure = 1)
+ORDER BY COALESCE(started_at, created_at) DESC, id DESC
+LIMIT 1;
+
+-- name: PreviousRunIsFailure :one
+-- The failure bit of the task's newest ended run other than the given one,
+-- counted the way GetLastRun counts: a missed run only when it is a failure.
+SELECT is_failure FROM runs
+WHERE task_name = ? AND id != ? AND deleted_at IS NULL AND status = 'ended'
   AND (started_at IS NOT NULL OR is_failure = 1)
 ORDER BY COALESCE(started_at, created_at) DESC, id DESC
 LIMIT 1;

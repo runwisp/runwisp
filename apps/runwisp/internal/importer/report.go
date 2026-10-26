@@ -34,6 +34,7 @@ const (
 	NoteNoopHere
 	NoteAnacronPeriod
 	NoteOutputRedirected
+	NoteRebootLongRunning
 
 	// Naming and identity, shared by both parsers.
 	NoteAlreadyDefined
@@ -162,6 +163,7 @@ var noteKindInfo = map[NoteKind]noteSeverity{
 	},
 	NoteAnacronPeriod:         {slug: "anacron-period", blocking: false, unsafeLive: false},
 	NoteOutputRedirected:      {slug: "output-redirected", blocking: false, unsafeLive: false},
+	NoteRebootLongRunning:     {slug: "reboot-long-running", blocking: false, unsafeLive: false},
 	NoteAlreadyDefined:        {slug: "already-defined", blocking: false, unsafeLive: false},
 	NoteRenamedOwned:          {slug: "renamed-owned", blocking: false, unsafeLive: false},
 	NoteRenamedCollision:      {slug: "renamed-collision", blocking: false, unsafeLive: false},

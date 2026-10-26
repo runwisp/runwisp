@@ -14,6 +14,8 @@
 //     coalesced_count marker), or the window expires while a pending event is
 //     still buffered (a "summary" event is forwarded carrying the count and
 //     the latest payload).
+//   - A success of the task ends its failure groups early (ResetTask), so a
+//     failure after it is forwarded at once.
 //
 // In-app notifications go through inapp.Coalescer (which folds into a single
 // SQLite row); this wrapper is for outbound channels where each delivery is
@@ -77,6 +79,10 @@ type fpState struct {
 	pending   int
 	lastEvent *notify.Event
 	timer     afterfunc.Stopper
+	// task and closable let ResetTask find the groups a success of task ends
+	// (see notify.ClosedBySuccess).
+	task     string
+	closable bool
 }
 
 func (st *fpState) stopTimer() {
@@ -134,22 +140,7 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 // replaced or the daemon stops, and closes the wrapped channel.
 func (c *Channel) Close(ctx context.Context) error {
 	c.timerCancel()
-
-	type held struct {
-		fp    string
-		ev    *notify.Event
-		count int
-	}
-	var flush []held
-	c.mu.Lock()
-	for fp, st := range c.state {
-		st.stopTimer()
-		if st.pending > 0 && st.lastEvent != nil {
-			flush = append(flush, held{fp, st.lastEvent, st.pending})
-		}
-	}
-	clear(c.state)
-	c.mu.Unlock()
+	flush := c.endGroups(func(*fpState) bool { return true })
 
 	// Wait unconditionally: a window-close summary goroutine calls
 	// c.inner.Execute under its own ctx (see timerFlush), so returning on
@@ -159,6 +150,43 @@ func (c *Channel) Close(ctx context.Context) error {
 		c.sendSummary(ctx, h.fp, h.ev, h.count)
 	}
 	return c.inner.Close(ctx)
+}
+
+// ResetTask implements notify.TaskResetter: a success of task ends its failure
+// groups, so the next failure is forwarded at once as a new incident. A group
+// still holding suppressed events sends its summary now, under ctx, so they
+// are not lost.
+func (c *Channel) ResetTask(ctx context.Context, task string) {
+	flush := c.endGroups(func(st *fpState) bool { return st.task == task && st.closable })
+	for _, h := range flush {
+		c.sendSummary(ctx, h.fp, h.ev, h.count)
+	}
+}
+
+// heldSummary is a summary owed for a group that ended with suppressed events.
+type heldSummary struct {
+	fp    string
+	ev    *notify.Event
+	count int
+}
+
+// endGroups forgets every group match selects, stopping its timer, and returns
+// the summaries owed by those still holding suppressed events.
+func (c *Channel) endGroups(match func(*fpState) bool) []heldSummary {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var flush []heldSummary
+	for fp, st := range c.state {
+		if !match(st) {
+			continue
+		}
+		st.stopTimer()
+		if st.pending > 0 && st.lastEvent != nil {
+			flush = append(flush, heldSummary{fp, st.lastEvent, st.pending})
+		}
+		delete(c.state, fp)
+	}
+	return flush
 }
 
 type decisionAction int
@@ -183,7 +211,7 @@ func (c *Channel) decide(ctx context.Context, ev *notify.Event) decision {
 	st, ok := c.state[fp]
 
 	if !ok {
-		c.state[fp] = &fpState{lastSent: now}
+		c.state[fp] = &fpState{lastSent: now, task: ev.TaskName, closable: notify.ClosedBySuccess(ev)}
 		return decision{action: actionForward}
 	}
 

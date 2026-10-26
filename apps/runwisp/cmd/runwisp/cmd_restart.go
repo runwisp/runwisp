@@ -42,6 +42,11 @@ With --attach, it then follows the logs of the targets it acted on, as
 With --url (or RUNWISP_URL), targets are restarted on a remote daemon instead
 — the same CHAP login and session caching as 'runwisp run --url'.
 
+With --token (or RUNWISP_HOOK_TOKEN) and --url, it uses one of the unit's
+hook_tokens instead of a password, so a task that runs as another user can
+still restart a service. A token takes literal names only: no globs, run IDs
+or --attach.
+
 With no target, the whole daemon restarts. Most config edits only need
 'runwisp reload'; restart is for settings a reload can't apply ([daemon],
 [storage], [notify], the listen address) or to re-fire run_on_start and
@@ -58,6 +63,7 @@ pin the per-user one when both a system and a user unit are present.`,
   runwisp restart web worker 'batch-*'
   runwisp restart --attach 'web*'
   runwisp restart '*' --url https://ci.example.com --password "$RUNWISP_PASSWORD"
+  runwisp restart shop --url http://127.0.0.1:9477 --token "$SHOP_HOOK_TOKEN"
   runwisp restart`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -68,6 +74,7 @@ pin the per-user one when both a system and a user unit are present.`,
 func init() {
 	restartCmd.Flags().BoolVar(&restartLocal, "local", false, localFlagUsage)
 	addRemoteFlags(restartCmd)
+	addTokenFlag(restartCmd)
 	addAttachFlag(restartCmd)
 }
 
@@ -81,6 +88,9 @@ func runRestart(cmd *cobra.Command, args []string, f Flags, attach bool) error {
 
 	if url, _ := controlRemote.resolve(); url != "" {
 		return errors.New("--url needs a target; the remote daemon itself can't be restarted from here")
+	}
+	if controlRemote.hookToken() != "" {
+		return errors.New("--token needs a target; a hook token can't restart the daemon itself")
 	}
 
 	return restartDaemon(cmd, f, restartLocal)

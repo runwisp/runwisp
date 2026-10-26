@@ -315,6 +315,22 @@ func (w *ExecWindow) UsualUsage() *uikit.RunUsage {
 	return &u
 }
 
+// UsualOutput is the output band of the loaded runs, the baseline the list
+// colors each run's OUTPUT against; nil until enough runs have line counts.
+func (w *ExecWindow) UsualOutput() *uikit.OutputBand {
+	w.mu.Lock()
+	runs := make([]model.Run, len(w.items))
+	for i := range w.items {
+		runs[i] = w.items[i].Run
+	}
+	w.mu.Unlock()
+	b, ok := uikit.UsualOutput(runs)
+	if !ok {
+		return nil
+	}
+	return &b
+}
+
 // UpsertRun handles a real-time SSE event. New runs are prepended.
 // Updated runs are patched in-place if within the window.
 func (w *ExecWindow) UpsertRun(run model.Run) {

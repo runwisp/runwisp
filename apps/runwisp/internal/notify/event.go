@@ -32,6 +32,7 @@ const (
 	KindRunStarted           Kind = "run.started"
 	KindRunLongRunning       Kind = "run.long_running"
 	KindRunSucceeded         Kind = "run.succeeded"
+	KindRunRecovered         Kind = "run.recovered"
 	KindRunFailed            Kind = "run.failed"
 	KindRunTimeout           Kind = "run.timeout"
 	KindRunStopped           Kind = "run.stopped"
@@ -51,6 +52,8 @@ func (k Kind) Title(ev *Event) string {
 		return fmt.Sprintf("%s still running", ev.TaskName)
 	case KindRunSucceeded:
 		return fmt.Sprintf("%s succeeded", ev.TaskName)
+	case KindRunRecovered:
+		return fmt.Sprintf("%s recovered", ev.TaskName)
 	case KindRunFailed:
 		return fmt.Sprintf("%s failed", ev.TaskName)
 	case KindRunTimeout:
@@ -99,11 +102,21 @@ func (ev *Event) Outcome() string {
 		return "started"
 	case KindRunLongRunning:
 		return kinds.LongRunningKind
+	case KindRunRecovered:
+		return kinds.RecoveredKind
 	}
 	if ev.Run != nil && ev.Run.EndReason != nil {
 		return string(*ev.Run.EndReason)
 	}
 	return string(ev.Kind)
+}
+
+// ClosedBySuccess reports whether a later success of the same task ends the
+// coalescing group ev belongs to. A failure that comes back after a success is
+// a new incident, so it pages again instead of folding into the old group. A
+// recovery closes too, so the next one is not folded into the last.
+func ClosedBySuccess(ev *Event) bool {
+	return ev.IsFailure || ev.Kind == KindRunRecovered
 }
 
 // FingerprintKey is the coalescing identity of an event: kind + task name +

@@ -11,10 +11,10 @@ package execlist
 // fixed columns have reached their caps. In a list scoped to one task the
 // first column is the absolute start time instead, capped like the others, so
 // the table stays compact rather than stretching across the pane, and CPU and
-// RAM columns follow DURATION.
+// RAM columns follow DURATION, then OUTPUT.
 //
-// When the pane is too narrow for every floor, TRIGGER drops first, then RAM,
-// CPU and DURATION, so the remaining columns stay readable instead of every
+// When the pane is too narrow for every floor, TRIGGER drops first, then
+// OUTPUT, RAM, CPU and DURATION, so the remaining columns stay readable instead of every
 // header truncating ("DURATI", "TRIGG").
 const (
 	// Floors: below these a column is dropped (TRIGGER, DURATION) or, for the
@@ -26,6 +26,7 @@ const (
 	durationColMin = 8
 	triggerColMin  = 7
 	usageColMin    = 7 // CPU "12m 30s", RAM "1023 MB"
+	outputColMin   = 7 // "3 lines"
 
 	// statusColW fits the longest uikit.StatusLabel ("queue full", 10) plus
 	// the badge's own padding.
@@ -37,11 +38,13 @@ const (
 	//   DURATION "9999h59m"       (≈8) → 10
 	//   TRIGGER  "service"/"startup" (7) → 9
 	//   CPU, RAM "12m 30s"/"1023 MB" (7) → 9
+	//   OUTPUT   "1.2k lines"    (10) → 12
 	//   time     "Jan _2 15:04"   (12) → 14, plus " #12" for a multi-instance service
 	startedColCap   = 14
 	durationColCap  = 10
 	triggerColCap   = 9
 	usageColCap     = 9
+	outputColCap    = 12
 	timeColW        = 14
 	instanceSuffixW = 4
 
@@ -52,8 +55,8 @@ const (
 
 // colWidths holds the resolved width of every execution-table column for a
 // given content width. Field order mirrors the on-screen left-to-right order.
-// A zero started, duration, cpu, mem or trigger means the column is hidden;
-// cpu and mem only ever show in a scoped list.
+// A zero started, duration, cpu, mem, output or trigger means the column is
+// hidden; cpu, mem and output only ever show in a scoped list.
 type colWidths struct {
 	// scoped marks a list showing one task's runs: the task name would only
 	// repeat, so the first column shows each run's absolute start time.
@@ -64,12 +67,13 @@ type colWidths struct {
 	duration int
 	cpu      int
 	mem      int
+	output   int
 	trigger  int
 }
 
 // trailing lists the widths of the columns after STATUS, in on-screen order.
 func (c colWidths) trailing() []int {
-	return []int{c.started, c.duration, c.cpu, c.mem, c.trigger}
+	return []int{c.started, c.duration, c.cpu, c.mem, c.output, c.trigger}
 }
 
 // rowWidth returns the cells a rendered row occupies: the 2-cell indent, every
@@ -97,8 +101,8 @@ func gutter(n int) int { return 2 + n - 1 }
 func computeColWidths(contentW, timeW int) colWidths {
 	if timeW > 0 {
 		w := fitColumns(contentW,
-			[]int{timeW, statusColW, startedColMin, durationColMin, usageColMin, usageColMin, triggerColMin},
-			[]int{timeW, statusColW, startedColCap, durationColCap, usageColCap, usageColCap, triggerColCap})
+			[]int{timeW, statusColW, startedColMin, durationColMin, usageColMin, usageColMin, outputColMin, triggerColMin},
+			[]int{timeW, statusColW, startedColCap, durationColCap, usageColCap, usageColCap, outputColCap, triggerColCap})
 		// The surplus pads the last column instead, so the table stays compact
 		// while a highlighted row still spans the pane.
 		if extra := w[0] - timeW; extra > 0 {
@@ -107,7 +111,7 @@ func computeColWidths(contentW, timeW int) colWidths {
 		}
 		return colWidths{
 			scoped: true, first: w[0], status: w[1], started: w[2],
-			duration: at(w, 3), cpu: at(w, 4), mem: at(w, 5), trigger: at(w, 6),
+			duration: at(w, 3), cpu: at(w, 4), mem: at(w, 5), output: at(w, 6), trigger: at(w, 7),
 		}
 	}
 	w := fitColumns(contentW,

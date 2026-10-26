@@ -108,6 +108,19 @@ func TestCronReboot(t *testing.T) {
 	}
 }
 
+// An @reboot script that execs a server became a task that sat "running"
+// forever and raced the real service for its port. The import says it belongs
+// in [services.*], both in the report and above the table.
+func TestCronRebootSuggestsAService(t *testing.T) {
+	res := parseCron(t, "@reboot /srv/shop/start-shop.sh\n", CronOptions{})
+	n := findNote(t, res, NoteRebootLongRunning)
+	mustContain(t, n.Message, "[services.<name>]")
+	if n.Blocking() {
+		t.Error("most @reboot jobs are one-shots; the note is advice")
+	}
+	mustContain(t, res.TOML(), "# If this command never exits")
+}
+
 // TestCronBareDescriptorNoCommandIsUnparseable: a per-user crontab line that is
 // just a descriptor with no trailing command (`@daily` with nothing after it) is
 // not a job crond would ever run — it must become an unparseable-line note, not
@@ -1037,4 +1050,11 @@ func TestCronOutputRedirectIsNoted(t *testing.T) {
 	if hasNoteKind(parseCron(t, "15 3 * * * /srv/app/backup.sh 2>&1\n", CronOptions{}), NoteOutputRedirected) {
 		t.Error("2>&1 alone keeps the output in the run log")
 	}
+}
+
+// The report note vanished after promote, leaving a failed run with an empty log
+// and no cause. The comment above the table is what promote carries along.
+func TestCronRedirectCommentAboveTheTask(t *testing.T) {
+	res := parseCron(t, "15 3 * * * /srv/app/backup.sh >> /var/log/app/backup.log 2>&1\n", CronOptions{})
+	mustContain(t, res.BlockTOML("backup"), "# Output goes to /var/log/app/backup.log")
 }

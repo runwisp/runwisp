@@ -166,6 +166,13 @@ notify   = ["slack-ops"]
 failures = ["-missed"]
 ```
 
+## Recovered runs
+
+When a run succeeds and the task's run before it failed, a
+[`recovered`](/configuration/routes/#matchkinds) notification goes to the same
+channels as the task's failures, the bell included. A run that succeeds after
+another success sends nothing.
+
 ## Testing a channel
 
 Add a task that always fails, pointed at the channel:
@@ -197,7 +204,8 @@ If only the bell shows the failure, open it and look for a
 A task that fails every minute doesn't send a message every minute. Repeats of
 the same failure update one bell row, and channels get the first failure, a
 check-in every few repeats, and a summary at the end. With the defaults that's
-about one message every ten minutes. See
+about one message every ten minutes. A successful run ends the group, so a
+failure after it alerts again right away. See
 [`coalesce_window`](/configuration/notify/#coalesce_window) and
 [`coalesce_limit`](/configuration/notify/#coalesce_limit).
 

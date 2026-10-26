@@ -179,6 +179,16 @@ Add `?wait=true` to hold the request until the work is done:
 - `start`, `restart` on a service: `400`, since a service instance doesn't end
   on its own.
 
+A hook token can't read run logs. Since 1.8, `run` takes `tail=N` (up to
+`1000`) and adds the last `N` lines of the run's log to the response as a `log`
+array of `{n, stream, text}`, so a CI job can show why a run failed:
+
+```bash
+curl -fsS -X POST -H "Authorization: Bearer $CI_DEPLOY_TOKEN" \
+  "https://runwisp.example.com:9477/api/hooks/tasks/deploy/run?wait=true&tail=50" \
+  | jq -r '.log[].text'
+```
+
 Runs started this way show as triggered by `hook`.
 
 If a webhook sender can only set a URL, pass the token as a query parameter
