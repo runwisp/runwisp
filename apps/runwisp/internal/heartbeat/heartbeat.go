@@ -74,16 +74,22 @@ func (p *Pinger) SetURL(rawURL string) {
 // Run pings at once and then every Interval until ctx is cancelled. With no
 // URL it idles until SetURL sets one.
 func (p *Pinger) Run(ctx context.Context) {
+	var pinged string         // the URL the last ping went to; a wake for it is stale
+	var next <-chan time.Time // nil while off: wait for a wake only
 	for {
-		var next <-chan time.Time // nil while off: wait for a wake only
-		if u := p.currentURL(); u != "" {
+		u := p.currentURL()
+		switch {
+		case u == "":
+			pinged, next = "", nil
+		case next == nil || u != pinged: // first ping, a new URL, or the timer fired
 			p.report(u, p.ping(ctx, u))
-			next = p.after(Interval)
+			pinged, next = u, p.after(Interval)
 		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-next:
+			next = nil
 		case <-p.wake:
 		}
 	}
