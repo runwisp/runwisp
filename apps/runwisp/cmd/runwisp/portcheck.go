@@ -19,6 +19,16 @@ func probePortAvailable(host string, port int) error {
 	return ln.Close()
 }
 
+// freePort asks the OS for a TCP port that is free on host right now.
+func freePort(host string) (int, error) {
+	ln, err := net.Listen("tcp", net.JoinHostPort(bindHost(host), "0"))
+	if err != nil {
+		return 0, err
+	}
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port, nil
+}
+
 // bindHost fills in the loopback address RunWisp binds by default, so an
 // empty --host still names something an operator can act on.
 func bindHost(host string) string {

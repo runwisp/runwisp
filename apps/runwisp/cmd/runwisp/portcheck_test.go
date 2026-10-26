@@ -59,3 +59,13 @@ func TestProbePortAvailable_EmptyHost(t *testing.T) {
 	require.NoError(t, ln.Close())
 	require.NoError(t, probePortAvailable("", port))
 }
+
+func TestFreePortIsBindable(t *testing.T) {
+	port, err := freePort("127.0.0.1")
+	if err != nil || port <= 0 {
+		t.Fatalf("freePort = %d, %v", port, err)
+	}
+	if err := probePortAvailable("127.0.0.1", port); err != nil {
+		t.Fatalf("port %d not bindable: %v", port, err)
+	}
+}

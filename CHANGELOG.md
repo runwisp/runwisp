@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `runwisp demo` starts on a free port when 9477 is taken, unless you passed `--port`.
 - The Web UI shows times in 24-hour format everywhere, including cron schedules ("At 03:15") and run list dates.
 - A service that exits 0 before `healthy_after` counts as a failed start, so a command that daemonizes goes FATAL instead of restarting forever. Its run log says a service must stay in the foreground.
 - `runwisp service uninstall` lists the tasks and services that stop running before it asks, and puts back the crontab lines `runwisp promote` commented out.
