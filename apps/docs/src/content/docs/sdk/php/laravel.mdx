@@ -69,12 +69,13 @@ Schedule::call(#[Task('prune-recent-users')] function () {
 
 Each event becomes a RunWisp task:
 
-- **Name**: the name in its [`#[Task]`](#runwisp-keys-on-a-task), else the
-  artisan command (`reports:send`), the job's class (`PruneUsers`), or the
-  shell command. `name()` and `description()` are not used: Laravel sets them
-  to a command's description. A closure without a `#[Task]` name is named
-  after its file and line, and the worker warns, since moving the line starts
-  a new run history.
+- **Name**: the event's `name()`, else the name in its
+  [`#[Task]`](#runwisp-keys-on-a-task), else the artisan command
+  (`reports:send`), the job's class (`PruneUsers`), or the shell command. The
+  description Laravel sets on its own, a command's description or a job's
+  class, is not a name. A closure without a name is named after its file and
+  line, and the worker warns, since moving the line starts a new run history.
+  Give closures a `name()`.
 - **Schedule**: the cron expression, in the schedule's timezone. Sub-minute
   frequencies such as `everyTenSeconds()` work.
 - **Overlap**: `withoutOverlapping()` sets

@@ -45,7 +45,7 @@ final class LaravelTest extends TestCase
     {
         $schedule = $this->schedule();
         $schedule->command('inspire --quiet')->dailyAt('03:00')->timezone('Europe/Bratislava');
-        $schedule->call(#[Task('cleanup', retry_attempts: 2)] static fn () => null)->name('Cleans up')->everyTenSeconds()->withoutOverlapping();
+        $schedule->call(#[Task(retry_attempts: 2)] static fn () => null)->name('cleanup')->everyTenSeconds()->withoutOverlapping();
         $schedule->exec('echo hi')->hourly();
         $schedule->call(static fn () => null)->hourly()->environments(['production']);
         $warnings = [];
@@ -79,6 +79,26 @@ final class LaravelTest extends TestCase
         self::assertSame(['cron' => '0 0 * * *', 'timezone' => 'UTC', 'retry_attempts' => 1], $units['PruneUsers'][0]->options);
     }
 
+    public function testNameNamesTheTask(): void
+    {
+        Artisan::registerCommand(new SendReports());
+        $schedule = $this->schedule();
+        $schedule->command(SendReports::class)->name('nightly-reports')->daily();
+        $schedule->command('inspire')->name('quote')->hourly();
+        $schedule->job(new PruneUsers())->name('prune')->daily();
+        $schedule->call(#[Task('ignored')] static fn () => null)->name('Clean up')->hourly();
+        $warnings = [];
+
+        $units = ScheduleUnits::map($schedule, $this->laravel(), static function (string $m) use (&$warnings): void {
+            $warnings[] = $m;
+        });
+
+        self::assertSame(['nightly-reports', 'quote', 'prune', 'Clean-up'], array_keys($units));
+        // The class's #[Task] keys still apply under the name() name.
+        self::assertSame(['cron' => '0 0 * * *', 'timezone' => 'UTC', 'timeout' => '10m'], $units['nightly-reports'][0]->options);
+        self::assertSame([], $warnings);
+    }
+
     public function testUnnamedClosuresAreNamedByTheirLineAndWarn(): void
     {
         $schedule = $this->schedule();
@@ -96,7 +116,7 @@ final class LaravelTest extends TestCase
         self::assertSame(Names::slug(__FILE__ . ":$line"), $names[0]);
         self::assertSame(['inspire', 'inspire-2'], array_slice($names, 1));
         self::assertCount(2, $warnings);
-        self::assertStringContainsString("has no name, so its run history is lost when that line moves; name it with #[RunWisp\\Task('name')]", $warnings[0]);
+        self::assertStringContainsString("has no name, so its run history is lost when that line moves; name it with ->name() or #[RunWisp\\Task('name')]", $warnings[0]);
         self::assertStringContainsString('"inspire-2"', $warnings[1]);
     }
 
