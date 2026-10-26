@@ -27,8 +27,11 @@ $runwisp->task('tick', ['cron' => '* * * * * *'], function (): void {
     echo "tick\n";
 });
 $runwisp->task('hello', ['retry_attempts' => 0], function (): void {
+    // stdout and stderr are separate pipes, so only output a few ticks apart keeps its order.
     echo "hello from the app\n";
+    usleep(400_000);
     fwrite(STDERR, "and a warning\n");
+    usleep(400_000);
     echo 'no newline';
 });
 $runwisp->task('context', ['env' => ['TOKEN' => 't0ken'], 'params' => [['env' => 'DRY_RUN', 'default' => '1']]], function (Run $run): void {

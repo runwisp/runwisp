@@ -6,8 +6,10 @@ package main
 import (
 	"errors"
 	"net"
+	"strconv"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -58,4 +60,58 @@ func TestProbePortAvailable_EmptyHost(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 	require.NoError(t, ln.Close())
 	require.NoError(t, probePortAvailable("", port))
+}
+
+func TestFreePortIsBindable(t *testing.T) {
+	port, err := freePort("127.0.0.1")
+	if err != nil || port <= 0 {
+		t.Fatalf("freePort = %d, %v", port, err)
+	}
+	if err := probePortAvailable("127.0.0.1", port); err != nil {
+		t.Fatalf("port %d not bindable: %v", port, err)
+	}
+}
+
+func TestFreePortBadHost(t *testing.T) {
+	_, err := freePort("256.256.256.256")
+	require.Error(t, err)
+}
+
+func TestDemoResolvePort(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+	taken := ln.Addr().(*net.TCPAddr).Port
+
+	newCmd := func() *cobra.Command {
+		cmd := &cobra.Command{}
+		cmd.Flags().Int("port", 0, "")
+		return cmd
+	}
+
+	t.Run("free port is kept", func(t *testing.T) {
+		f := Flags{Host: "127.0.0.1"}
+		free, err := freePort(f.Host)
+		require.NoError(t, err)
+		f.Port = free
+		require.NoError(t, demoResolvePort(newCmd(), &f))
+		require.Equal(t, free, f.Port)
+	})
+	t.Run("default port taken moves to a free one", func(t *testing.T) {
+		f := Flags{Host: "127.0.0.1", Port: taken}
+		require.NoError(t, demoResolvePort(newCmd(), &f))
+		require.NotEqual(t, taken, f.Port)
+		require.NoError(t, probePortAvailable(f.Host, f.Port))
+	})
+	t.Run("no free port is an error", func(t *testing.T) {
+		f := Flags{Host: "256.256.256.256", Port: taken}
+		require.ErrorContains(t, demoResolvePort(newCmd(), &f), "find a free port")
+	})
+	t.Run("explicit port taken is an error", func(t *testing.T) {
+		cmd := newCmd()
+		require.NoError(t, cmd.Flags().Set("port", strconv.Itoa(taken)))
+		f := Flags{Host: "127.0.0.1", Port: taken}
+		require.Error(t, demoResolvePort(cmd, &f))
+		require.Equal(t, taken, f.Port)
+	})
 }
