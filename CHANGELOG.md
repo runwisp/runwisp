@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10-26
+
 ### Added
 
 - PHP SDK, `runwisp/runwisp` on Packagist: define tasks in plain PHP, or run the Laravel, Symfony or CodeIgniter 4 scheduler under RunWisp with `runwisp:work`. `#[RunWisp\Task]` on a command, job or closure adds task keys such as `retry_attempts`, and `runwisp:check` lists the tasks with their next runs and validates the config before you deploy.
@@ -1148,7 +1150,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.7.1...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.8.0...main
+[1.8.0]: https://github.com/runwisp/runwisp/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/runwisp/runwisp/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/runwisp/runwisp/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/runwisp/runwisp/compare/v1.5.1...v1.6.0
