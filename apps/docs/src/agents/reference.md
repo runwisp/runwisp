@@ -35,7 +35,7 @@ allow_station_dispatch: bool =false — accept peer-dispatched ad-hoc shell/cont
 shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flight runs on shutdown
 timezone:             IANA string =host system zone — TZ for cron eval when a task pins none
 external_url:         string =last signed-in Web UI address — public Web UI base for notification deep-links; absolute http(s) w/ host; unset = detected from the latest browser password sign-in to the Web UI (persisted; `--url` clients and TUI-opened tabs don't count; never with RUNWISP_AUTH=off)
-check_updates:        bool =true  — poll concierge.runwisp.com for a newer release; shows an indicator, never auto-updates; also gates the Web UI feedback prompt; false = fully offline
+check_updates:        bool =true  — poll concierge.runwisp.com for a newer release; shows an indicator, never auto-updates; also gates the Web UI feedback prompt; skipped when env CI is set; false = fully offline
 heartbeat_url:        string       — dead man's switch (e.g. healthchecks.io ping URL); GET at start + every 60s, 10s timeout, non-2xx = failed ping; absolute http(s) w/ host; secret: never logged (host only, failure/recovery logged once) and not in the API; reloadable; unset = off; since 1.8
 log_output:           bool =false — print each run output line to the daemon stdout as `task | line` (stderr lines to stderr; JSON under --log-format=json); RUNWISP_LOG_OUTPUT overrides; headless only (a TUI session ignores it); bounded buffer drops overflow and reports the count; reloadable; the Docker image sets it true. since 1.7
 metrics_enabled:      bool =false — master switch for /metrics
