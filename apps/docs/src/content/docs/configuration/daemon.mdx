@@ -124,7 +124,9 @@ next to the version in the Web UI and TUI. It never downloads or installs
 anything. It also lets the Web UI ask for a quick rating, at most once a
 month. Nothing is sent unless you press Submit, and then only your rating,
 optional note, and RunWisp version. Set `false` to keep RunWisp fully
-offline.
+offline. The check is always skipped when the `CI` environment variable is set
+(and not `false` or `0`), as it is in GitHub Actions, GitLab CI and most other
+CI services.
 
 ```toml title="runwisp.toml"
 [daemon]

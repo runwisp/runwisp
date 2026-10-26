@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp import supervisord` with no file reads `/etc/supervisor/supervisord.conf` or `/etc/supervisord.conf`, and `runwisp import cron` with nothing on stdin says what to pipe in.
 - `runwisp import cron` notes jobs that redirect their output to a file, since RunWisp can't show that output.
 - `runwisp list` shows each service's live state, such as `FATAL`, and `runwisp status` lists the services that gave up restarting.
+- The update check is skipped when the `CI` environment variable is set, so a daemon in a test pipeline never contacts concierge.runwisp.com.
 - A compose service whose container already runs from `docker compose up` attaches to that container instead of starting a second one, and runs its own container from the next restart.
 - A run killed by a signal RunWisp didn't send names the signal in its log, also when the shell reports it as exit 128+n (such as 137), and a `SIGKILL` points at the kernel's out-of-memory killer.
 - `runwisp takeover` says to run `sudo runwisp reload` after `crontab -e`, since an edit waits for a reload.
