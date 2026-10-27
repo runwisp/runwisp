@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
@@ -435,6 +436,12 @@ func TestBuildDynamicStationTask_DefaultsToStationInline(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
 	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{}, def)
 	assert.Equal(t, "station-inline", task.Name)
+}
+
+func TestBuildDynamicStationTask_LeavesConcurrencyToStation(t *testing.T) {
+	def := &model.ShellExecution{Script: "echo hi"}
+	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{TaskID: "t"}, def)
+	assert.Equal(t, config.MaxConcurrentCap, task.MaxConcurrent)
 }
 
 func TestBuildDynamicStationTask_SetsTimeout(t *testing.T) {

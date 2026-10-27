@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
@@ -99,9 +100,13 @@ func buildDynamicStationTask(dispatch *protocol.ExecutionPayload, execDef model.
 	}
 
 	task := &model.Task{
-		Name:          taskName,
-		ExecutionDef:  execDef,
-		MaxConcurrent: 1,
+		Name:         taskName,
+		ExecutionDef: execDef,
+		// The station already enforced the task's and the runner's concurrency
+		// limits before it dispatched, so the daemon must not add a second
+		// limit of its own: a cap of 1 here queued every overlapping dispatch
+		// locally while the station's deadline for it kept counting.
+		MaxConcurrent: config.MaxConcurrentCap,
 		OnOverlap:     model.PolicyQueue,
 		// MaxQueued is left unset: MaxQueuedValue bounds the queue at the same
 		// default a TOML queue task gets.
