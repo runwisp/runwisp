@@ -2382,7 +2382,7 @@ export interface operations {
                          */
                         event: "line";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     }[];
@@ -2466,7 +2466,7 @@ export interface operations {
                          */
                         event: "config.stale";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -2477,7 +2477,7 @@ export interface operations {
                          */
                         event: "notification.created";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -2488,7 +2488,7 @@ export interface operations {
                          */
                         event: "notification.unreadCountChanged";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -2499,7 +2499,7 @@ export interface operations {
                          */
                         event: "notification.updated";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -2510,7 +2510,7 @@ export interface operations {
                          */
                         event: "ping";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -2521,7 +2521,7 @@ export interface operations {
                          */
                         event: "run.completed";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -2532,7 +2532,7 @@ export interface operations {
                          */
                         event: "run.created";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -2543,7 +2543,7 @@ export interface operations {
                          */
                         event: "run.deleted";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -2554,7 +2554,7 @@ export interface operations {
                          */
                         event: "run.failed";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -2565,7 +2565,7 @@ export interface operations {
                          */
                         event: "run.started";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -2576,7 +2576,7 @@ export interface operations {
                          */
                         event: "run.updated";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -2587,7 +2587,7 @@ export interface operations {
                          */
                         event: "system";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -2598,7 +2598,7 @@ export interface operations {
                          */
                         event: "tasks.changed";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     })[];
@@ -3577,7 +3577,7 @@ export interface operations {
                          */
                         event: "done";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -3588,7 +3588,7 @@ export interface operations {
                          */
                         event: "dropped";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -3599,7 +3599,7 @@ export interface operations {
                          */
                         event: "line";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -3610,7 +3610,7 @@ export interface operations {
                          */
                         event: "region";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
@@ -3621,7 +3621,7 @@ export interface operations {
                          */
                         event: "rotated";
                         /** @description The event ID. */
-                        id?: number;
+                        id?: number | string;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     })[];
