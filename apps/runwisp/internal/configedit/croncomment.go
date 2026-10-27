@@ -164,13 +164,58 @@ func commentOutCronLines(lines []string, drop map[int]bool, rootPath string) []b
 	var b strings.Builder
 	for i, ln := range lines {
 		if drop[i+1] {
-			b.WriteString("# runwisp: this job was promoted to " + rootPath)
+			b.WriteString(promotedMarker + rootPath)
 			b.WriteString(lineTerminator(ln))
 			b.WriteByte('#')
 		}
 		b.WriteString(ln)
 	}
 	return []byte(b.String())
+}
+
+// promotedMarker opens the annotation commentOutCronLines puts above a promoted
+// line; RestorePromotedCron looks for it to undo the move.
+const promotedMarker = "# runwisp: this job was promoted to "
+
+// CronRestore is one promoted crontab line RestorePromotedCron puts back.
+type CronRestore struct {
+	File string
+	Line int // 1-based, in the restored file
+	Text string
+}
+
+// PlanPromotedCronRestores finds the lines `runwisp promote` commented out in
+// files and returns them, with each affected file's content restored: the
+// annotation dropped and the job line uncommented, every other byte kept. It
+// is what `service uninstall` hands back to cron, since without RunWisp nothing
+// would run those jobs. An unreadable file is skipped, not an error.
+func PlanPromotedCronRestores(files []string) ([]CronRestore, map[string][]byte) {
+	var restores []CronRestore
+	edits := map[string][]byte{}
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		lines := splitCronLinesKeepEnds(data)
+		var b strings.Builder
+		n := 0
+		for i := 0; i < len(lines); i++ {
+			if i+1 < len(lines) && strings.HasPrefix(lines[i], promotedMarker) && strings.HasPrefix(lines[i+1], "#") {
+				job := lines[i+1][1:]
+				n++
+				restores = append(restores, CronRestore{File: file, Line: i + 1 - (n - 1), Text: strings.TrimRight(job, "\r\n")})
+				b.WriteString(job)
+				i++
+				continue
+			}
+			b.WriteString(lines[i])
+		}
+		if n > 0 {
+			edits[file] = []byte(b.String())
+		}
+	}
+	return restores, edits
 }
 
 // lineTerminator returns the terminator a kept line carries, so an annotation

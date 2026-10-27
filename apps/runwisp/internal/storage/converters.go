@@ -34,6 +34,8 @@ func runFromRow(s sqlcdb.Run) model.Run {
 
 		PeakMemoryBytes: s.PeakMemoryBytes,
 		CPUTimeMs:       s.CpuTimeMs,
+		StdoutLines:     s.StdoutLines,
+		StderrLines:     s.StderrLines,
 	}
 }
 
@@ -80,6 +82,8 @@ func runToCreateParams(r *model.Run) sqlcdb.CreateRunParams {
 
 		PeakMemoryBytes: r.PeakMemoryBytes,
 		CpuTimeMs:       r.CPUTimeMs,
+		StdoutLines:     r.StdoutLines,
+		StderrLines:     r.StderrLines,
 	}
 }
 
@@ -104,6 +108,8 @@ func runToUpdateParams(r *model.Run) sqlcdb.UpdateRunParams {
 
 		PeakMemoryBytes: r.PeakMemoryBytes,
 		CpuTimeMs:       r.CPUTimeMs,
+		StdoutLines:     r.StdoutLines,
+		StderrLines:     r.StderrLines,
 	}
 }
 

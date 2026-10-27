@@ -15,6 +15,12 @@ import {
     runUsageLabel,
     runUsageScale,
     usageLevel,
+    usualDuration,
+    outputBand,
+    runOutputScale,
+    outputUnusual,
+    formatLines,
+    runOutputLabel,
     instanceSuffix,
     runLogDownloadUrl,
 } from "./run-helpers.js";
@@ -275,5 +281,68 @@ describe("usageLevel", () => {
         // 64 MiB against an idle task's 1 MiB stands out; 8 MiB doesn't.
         expect(usageLevel(64 * 1024 * 1024, 1024 * 1024, "ram")).toBe(2);
         expect(usageLevel(8 * 1024 * 1024, 1024 * 1024, "ram")).toBe(0);
+    });
+});
+
+describe("usualDuration", () => {
+    const ran = (seconds: number, status: Run["status"] = "ended") => ({
+        status,
+        startedAt: "2026-01-01T00:00:00Z",
+        endedAt: new Date(Date.parse("2026-01-01T00:00:00Z") + seconds * 1000).toISOString(),
+    });
+
+    it("takes the median over finished runs only", () => {
+        expect(usualDuration([ran(20), ran(240), ran(3600, "running"), ran(18)])).toBe(20_000);
+        expect(usualDuration([{ status: "ended" }, ran(5, "running")])).toBeUndefined();
+    });
+
+    it("flags a run far slower than usual, with a 5s floor", () => {
+        expect(usageLevel(240_000, 20_000, "duration")).toBe(2);
+        expect(usageLevel(31_000, 20_000, "duration")).toBe(1);
+        expect(usageLevel(22_000, 20_000, "duration")).toBe(0);
+        // 3s against a usual 50ms is jitter, not an outlier.
+        expect(usageLevel(3_000, 50, "duration")).toBe(0);
+    });
+});
+
+describe("output band", () => {
+    const printed = (
+        stdoutLines: number,
+        stderrLines = 0,
+    ): Pick<Run, "status" | "stdoutLines" | "stderrLines"> => ({
+        status: "ended",
+        stdoutLines,
+        stderrLines,
+    });
+
+    it("takes the nearest-rank p10 and p90 once ten runs have counts", () => {
+        const runs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => printed(n));
+        expect(outputBand(runs)).toEqual({ p10: 1, p90: 9 });
+        expect(outputBand(runs.slice(1))).toBeUndefined();
+    });
+
+    it("scales the output bars to the chattiest run", () => {
+        expect(runOutputScale([printed(2), printed(40, 2)])).toEqual({ max: 42, band: undefined });
+        expect(runOutputScale([{ status: "ended" }])).toBeUndefined();
+    });
+
+    it("flags clear outliers only", () => {
+        expect(outputUnusual(3, { p10: 0, p90: 0 })).toBe(true);
+        expect(outputUnusual(0, { p10: 0, p90: 0 })).toBe(false);
+        expect(outputUnusual(3, { p10: 480, p90: 520 })).toBe(true);
+        expect(outputUnusual(5000, { p10: 480, p90: 520 })).toBe(true);
+        expect(outputUnusual(300, { p10: 480, p90: 520 })).toBe(false);
+        expect(outputUnusual(3, { p10: 0, p90: 1 })).toBe(false);
+    });
+
+    it("labels what a run printed", () => {
+        expect(formatLines(1)).toBe("1 line");
+        expect(formatLines(1234)).toBe("1.2K lines");
+        expect(runOutputLabel(printed(0))).toBe("no output");
+        expect(runOutputLabel(printed(9, 3))).toBe("12 lines · 3 on stderr");
+        expect(runOutputLabel(printed(0, 2))).toBe("2 lines · all on stderr");
+        expect(
+            runOutputLabel({ status: "running", stdoutLines: 1, stderrLines: 0 }),
+        ).toBeUndefined();
     });
 });

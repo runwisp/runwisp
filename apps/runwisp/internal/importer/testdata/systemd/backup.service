@@ -1,0 +1,8 @@
+[Unit]
+Description=Nightly database backup
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/backup --all
+User=backup
+Environment=BACKUP_DIR=/var/backups

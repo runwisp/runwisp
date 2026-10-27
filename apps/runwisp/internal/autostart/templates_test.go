@@ -41,6 +41,9 @@ func TestRenderSystemdUnit_Golden(t *testing.T) {
 		"Restart=on-failure",
 		"RestartSec=5s",
 		"KillMode=mixed",
+		"# A task the kernel OOM-kills must not stop RunWisp and every other task with",
+		"# it. No OOMScoreAdjust: tasks inherit it, so it would shield them too.",
+		"OOMPolicy=continue",
 		"TimeoutStopSec=30s",
 		`Environment="HOME=/home/alice"`,
 		`Environment="PATH=/usr/local/bin:/usr/bin:/bin"`,
@@ -230,4 +233,12 @@ func TestRender_StopTimeoutFollowsShutdownBudget(t *testing.T) {
 	unit, err = RenderSystemdUnit(SystemdParams{Binary: "/b"})
 	require.NoError(t, err)
 	assert.Contains(t, string(unit), "TimeoutStopSec=30s\n")
+}
+
+// Starting cron re-runs its @reboot lines, which can start a second copy of an
+// app RunWisp already ran; the failsafe says so when it hands cron back.
+func TestRenderCronFailsafeUnit_WarnsAboutRebootLines(t *testing.T) {
+	body, err := RenderCronFailsafeUnit(CronFailsafeParams{Service: "runwisp.service", CronUnit: "cron.service"})
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "Starting cron also runs its @reboot lines again.")
 }

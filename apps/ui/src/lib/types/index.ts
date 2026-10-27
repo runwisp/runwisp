@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { z } from "zod";
+import { z } from "../zod";
 import {
     RUN_PHASES,
     END_REASONS,
@@ -55,6 +55,8 @@ const runSchema = z
         instanceIndex: z.number().int(),
         peakMemoryBytes: z.number().optional(),
         cpuTimeMs: z.number().optional(),
+        stdoutLines: z.number().optional(),
+        stderrLines: z.number().optional(),
     })
     .pipe(z.custom<Run>());
 

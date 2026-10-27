@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { z } from "../zod";
 import { phrase, relative, sparkline } from "./notification-rhythm";
 import vectorsRaw from "./__rhythm_vectors.json";
 

@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { setTimeout as sleep } from "node:timers/promises";
+import { inspect } from "node:util";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { Capture, MAX_PIECE, runCaptured } from "./capture.ts";
+import { Capture, describeError, MAX_PIECE, runCaptured } from "./capture.ts";
 import type { Stream } from "./session.ts";
 
 describe("runCaptured", () => {
@@ -121,5 +122,42 @@ describe("runCaptured", () => {
             },
         );
         expect(lines).toEqual(["from the second copy"]);
+    });
+});
+
+describe("describeError", () => {
+    const throwing = () => {
+        throw new Error("no");
+    };
+
+    it("gives the stack of an Error, and prints anything else", () => {
+        // Cut at this package's first frame, which here is the test's own.
+        expect(describeError(new Error("plain"))).toBe("Error: plain");
+        expect(describeError("text")).toBe("text");
+        expect(describeError(undefined)).toBe("undefined");
+        expect(describeError(Symbol("s"))).toBe("Symbol(s)");
+        expect(describeError(Object.create(null))).toBe("[Object: null prototype] {}");
+    });
+
+    it("never throws, whichever part of the value does", () => {
+        const noStack = new Error("message only");
+        Object.defineProperty(noStack, "stack", { get: throwing });
+        expect(describeError(noStack)).toBe("Error: message only");
+
+        const noMessage = new Error("x");
+        Object.defineProperty(noMessage, "stack", { get: throwing });
+        Object.defineProperty(noMessage, "message", { get: throwing });
+        expect(describeError(noMessage)).toBe(
+            "runwisp: can't print the thrown value ([object Error])",
+        );
+
+        const noInspect = { [inspect.custom]: throwing };
+        expect(describeError(noInspect)).toBe(
+            "runwisp: can't print the thrown value ([object Object])",
+        );
+
+        const { proxy, revoke } = Proxy.revocable({}, {});
+        revoke();
+        expect(typeof describeError(proxy)).toBe("string");
     });
 });

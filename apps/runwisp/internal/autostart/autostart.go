@@ -201,6 +201,7 @@ type Status struct {
 	DataDirWritable  bool
 	DataDirLastWrite time.Time
 
+	System bool // a system-wide unit, which has no session to linger
 	Linger bool // loginctl linger; false on macOS (N/A)
 
 	LastStart time.Time

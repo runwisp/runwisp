@@ -139,10 +139,9 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 		return err
 	}
 
-	// Fail fast on a port conflict before spawning a daemon that can't bind.
-	if bindErr := probePortAvailable(f.Host, f.Port); bindErr != nil {
+	if err := demoResolvePort(cmd, &f); err != nil {
 		os.RemoveAll(tmp)
-		return portConflictMessage(f.Host, f.Port, bindErr, probeRunwispInstance(f.Host, f.Port))
+		return err
 	}
 
 	// Hand the temp dir to the spawned daemon; from here it owns cleanup.
@@ -174,6 +173,26 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 		_ = shutdownDaemon(f)
 		return err
 	}
+	return nil
+}
+
+// demoResolvePort fails fast on a port conflict before spawning a daemon that
+// can't bind. A throwaway demo on the default port just moves to a free one; an
+// explicit --port is still honored or rejected.
+func demoResolvePort(cmd *cobra.Command, f *Flags) error {
+	bindErr := probePortAvailable(f.Host, f.Port)
+	if bindErr == nil {
+		return nil
+	}
+	if cmd.Flags().Changed("port") {
+		return portConflictMessage(f.Host, f.Port, bindErr, probeRunwispInstance(f.Host, f.Port))
+	}
+	port, err := freePort(f.Host)
+	if err != nil {
+		return fmt.Errorf("find a free port: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "Port %d is taken, using %d instead.\n", f.Port, port)
+	f.Port = port
 	return nil
 }
 

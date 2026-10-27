@@ -33,6 +33,15 @@ type Process struct {
 	// cause itself (no timeout, stop, or kill) and may return a system log line
 	// explaining it. "" adds nothing.
 	ExitHint func() string
+	// Notice, when set, is a system log line the executor writes as soon as the
+	// process has started: the backend saying it did something other than the
+	// usual (compose attaching to a container it didn't start).
+	Notice string
+	// EndReason, when non-nil, is called after Wait and may return the
+	// reason the backend itself ended the run for (an SDK app skipping a run
+	// under on_overlap = "skip"). "" leaves the exit code to decide. A
+	// timeout, stop or policy kill outranks it.
+	EndReason func() model.EndReason
 	// ForceKill, when non-nil, immediately SIGKILLs the running process (and
 	// its group, when applicable). Unlike the cmd.Cancel ladder this skips
 	// the per-task graceful_stop window — used by the daemon shutdown

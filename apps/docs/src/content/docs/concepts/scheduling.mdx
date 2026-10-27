@@ -94,6 +94,17 @@ A schedule runs once per wall-clock time, even across a clock change:
 `@every` schedules are not affected. They count real elapsed time, not wall-clock
 times, so `@every 30m` keeps running every 30 minutes through a clock change.
 
+### Clock changes
+
+When the system clock jumps (`date -s`, an NTP correction, a VM snapshot
+restore, a laptop waking from sleep), the scheduler notices within 5 seconds
+and plans from the new time:
+
+- **Forward:** a tick the jump skipped over runs once, late. Ticks in between
+  are not replayed and are not counted as missed.
+- **Backward:** the next run is the next matching time on the new clock. A run
+  stamped before the jump keeps its original time in the history.
+
 ## Catching up after downtime
 
 When the daemon was down (a reboot, a deploy, a crash), scheduled runs didn't

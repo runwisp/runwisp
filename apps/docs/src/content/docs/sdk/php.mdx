@@ -1,0 +1,369 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: PHP SDK
+description: Schedule tasks from PHP with runwisp/runwisp. Every run is recorded with its output, exit code and duration, and shown in the web UI.
+head:
+    - tag: title
+      content: "RunWisp PHP SDK (runwisp/runwisp): scheduled tasks you can see"
+---
+
+**since**: `1.8`
+
+`runwisp/runwisp` schedules tasks from a PHP app. RunWisp records every run
+with its output, exit code and duration. See [SDKs](/sdk/) for how it works.
+
+Using a framework? See [Laravel](/sdk/php/laravel/),
+[Symfony](/sdk/php/symfony/) or [CodeIgniter](/sdk/php/codeigniter/). They
+read the schedule you already have.
+
+## Install
+
+```bash
+composer require runwisp/runwisp
+```
+
+It needs PHP 8.2 or later on Linux, macOS or WSL. Composer asks to allow the
+package's plugin, which downloads the `runwisp` binary of the same version
+into `vendor/`. Without the plugin, it uses `runwisp` on `PATH`. Install it with
+`curl -fsSL https://get.runwisp.com | sh`, or set [`binary`](#binary).
+
+With `ext-pcntl`, a run can [see that it is being stopped](#stop-a-run) and the
+worker [finishes its runs](#when-the-worker-stops) before it exits.
+
+## Define a task
+
+```php
+<?php
+// runwisp.php
+require __DIR__ . '/vendor/autoload.php';
+
+use RunWisp\Run;
+use RunWisp\RunWisp;
+
+$runwisp = new RunWisp();
+
+$runwisp->task('nightly-backup', ['cron' => '0 3 * * *'], function (Run $run) {
+    echo "dumping the database\n";
+});
+
+exit($runwisp->main());
+```
+
+`php runwisp.php` is the worker. It starts RunWisp and prints where to find it:
+
+```
+RunWisp dashboard: http://127.0.0.1:9477, password: vendor/bin/runwisp password --data .runwisp
+```
+
+Without a [`password`](#password) option, RunWisp picks a new password on each
+start. The worker never prints it. Run the command from the notice to see it.
+
+Keep the worker running the way you keep a queue worker running: a systemd
+unit, a Supervisor program or your container's command.
+
+Each run is `php runwisp.php` again in a new process, where `main()` calls the
+task's callback instead of starting the worker. Runs of different tasks happen
+at the same time, and a run that leaks memory or crashes takes only itself
+down.
+
+The task name is the task's name in RunWisp, and its run history is kept under
+it. Use 1 to 100 of `a-z A-Z 0-9 . _ : -`.
+
+RunWisp keeps its database, run logs and socket in `./.runwisp`. Add it to
+`.gitignore`.
+
+## Task options
+
+The second argument takes [`[tasks.*]`](/configuration/tasks/) keys, with the
+same names. Durations are strings like `"30s"` or `"1h30m"`.
+
+```php
+$runwisp->task('nightly-backup', [
+    'cron' => '0 3 * * *',
+    'jitter' => '5m',
+    'timeout' => '30m',
+    'retry_attempts' => 3,
+    'retry_delay' => '1m',
+    'keep_runs' => 50,
+    'notify' => ['slack'],
+], function (Run $run) {
+    backup();
+});
+```
+
+PhpStorm completes the keys, and PHPStan checks their values, from the types
+in `RunWisp\Schema`, generated from RunWisp's config schema.
+
+The callback runs the task ([`sdk`](/configuration/tasks/#sdk)), so keys for a
+shell command, such as `run` or `shell`, are rejected. Without `cron`, the
+task runs only when you start it from the web UI, the TUI or the CLI.
+
+The worker checks the config with RunWisp when it starts, and exits with
+code 1 and RunWisp's error if RunWisp would reject it. To check it before you
+deploy, see [Check your tasks](#check-your-tasks).
+
+## Services
+
+A service is a callback that keeps running. RunWisp restarts it when it
+returns or throws. The options are [`[services.*]`](/configuration/services/)
+keys.
+
+```php
+$runwisp->service('queue-worker', ['restart_delay' => '5s'], function (Run $run) {
+    while (!$run->stopping()) {
+        processNextJob();
+    }
+});
+```
+
+## Notifiers and the rest of the config
+
+Pass anything else a `runwisp.toml` holds as `config`, with the same keys:
+[`notifiers`](/notifications/), [`route`](/configuration/routes/),
+[`defaults`](/configuration/defaults/), [`daemon`](/configuration/daemon/),
+[`storage`](/configuration/storage/), and tasks that run a shell command.
+
+```php
+$runwisp = new RunWisp([
+    'config' => [
+        'defaults' => ['keep_runs' => 100],
+        'notifiers' => [
+            'slack' => ['type' => 'slack', 'webhook_url' => getenv('SLACK_WEBHOOK_URL')],
+        ],
+        'tasks' => [
+            'vacuum-db' => ['cron' => '0 4 * * 0', 'run' => "psql app -c 'VACUUM'"],
+        ],
+    ],
+]);
+```
+
+A task defined in code keeps all its keys in code: an entry under `tasks` or
+`services` with the same name is an error. The framework integrations take a
+scheduled task's keys from `#[RunWisp\Task]` on its class or closure.
+
+Relative paths resolve against the worker's working directory.
+
+## Check your tasks
+
+`php runwisp.php check` lists every task and service with its schedule, its
+next run and its RunWisp options, and checks the config with RunWisp. It
+starts nothing and writes nothing:
+
+```
+$ php runwisp.php check
+nightly-backup
+  0 3 * * *: At 03:00 (Europe/Bratislava), next Fri 2026-10-23 03:00 CEST
+  jitter = "5m", retry_attempts = 3, notify = ["slack"]
+queue-worker (service)
+  restart_delay = "5s"
+runwisp: RunWisp accepts the config: 1 task, 1 service
+```
+
+A key RunWisp doesn't know fails the check, with the key it guesses you meant:
+
+```
+runwisp: RunWisp rejects the config:
+  failed to parse config file:
+    unknown key "retry_attemps" at tasks.nightly-backup.retry_attemps (did you mean "retry_attempts"?)
+```
+
+The check exits with code 1 when RunWisp would reject the config, so you can
+run it in CI or a pre-commit hook. It needs the `runwisp` binary, but not a
+running RunWisp.
+
+To try a task, run it once in your terminal, outside RunWisp and without
+recording it:
+
+```bash
+php runwisp.php run nightly-backup
+```
+
+It runs the callback as a run would, and exits with the run's exit code.
+
+## Environment and parameters
+
+A task's [`env`](/configuration/tasks/#env), [`secrets`](/configuration/tasks/#secrets)
+and env [parameters](/configuration/tasks/#params) are set in the run's
+process, so `getenv()` reads them. They are also in `$run->env`, and every
+parameter is in `$run->params`.
+
+```php
+$runwisp->task('send-digest', [
+    'cron' => '0 8 * * *',
+    'params' => [['env' => 'DRY_RUN', 'default' => '0']],
+], function (Run $run) {
+    sendDigest(dryRun: getenv('DRY_RUN') === '1');
+});
+```
+
+## Output and failures
+
+What a run prints to stdout goes to the run's stdout, and what it writes to
+stderr to its stderr. That includes `echo`, `fwrite(STDERR, ...)`, loggers
+that write to either, and programs the run starts with `passthru()` or
+`system()`.
+
+A thrown exception fails the run with exit code 1 and the exception, with its
+stack trace, in the log. When the callback returns, the run succeeds with exit
+code 0. A callback that returns an `int` exits with it. A fatal error or
+`exit()` ends the run with PHP's exit code.
+
+## Stop a run
+
+When a run is stopped from the web UI, or hits its `timeout`, its process gets
+`SIGTERM`. A run that never calls `$run->stopping()` ends right away. One that
+does gets [`graceful_stop`](/configuration/tasks/#graceful_stop) to finish:
+
+```php
+$runwisp->task('sync', ['cron' => '*/15 * * * *', 'timeout' => '10m'], function (Run $run) {
+    foreach (pages() as $page) {
+        if ($run->stopping()) {
+            return;
+        }
+        save($page);
+    }
+});
+```
+
+Past `graceful_stop`, the run's process gets `SIGKILL`. Where `setsid` is
+installed (Linux), the stop and the kill also reach every process the run
+started. `stopping()` needs `ext-pcntl`; without it, it is always `false`.
+
+## Several copies of the worker
+
+Workers that share a data directory share one RunWisp, so each run happens
+once. The first worker runs every task and gives RunWisp its config. The
+others wait, and one of them takes over as soon as it stops. A waiting worker
+says so:
+
+```
+runwisp: standby: another copy of this app is active (pid 4182); this one runs the tasks once that one stops
+```
+
+Workers are told apart from other apps by [`app`](#app). RunWisp refuses a
+different app while one is connected, so give each app its own
+[data directory](#data).
+
+RunWisp outlives a worker restart, so a deploy doesn't stop runs in progress.
+When a worker starts with a different `runwisp` binary, or with a different
+value for a variable RunWisp uses, RunWisp restarts once that worker runs the
+tasks and no worker that stopped is still finishing runs. With shell tasks in
+`config`, that is any variable; with only tasks defined in code, it is
+`RUNWISP_*`, `TZ` and the variables the config names.
+
+If RunWisp stops or can't start, the worker logs why and tries again, waiting
+up to 30 seconds between attempts.
+
+## When the worker stops
+
+On `SIGTERM` or Ctrl-C, the worker stops taking runs, waits for the running
+ones and stops its services, then exits with `143` or `130`. If another worker
+is running, it takes over. Otherwise RunWisp stops. A second signal stops the
+runs at once. This needs `ext-pcntl`.
+
+When the last worker exits without that, RunWisp stops 10 seconds later, so a
+worker that restarts finds it still running. Runs that were in progress fail
+with `the app disconnected`. A run that fires while no worker is running waits
+up to 10 seconds for one, then fails with `no app is connected`.
+
+In Docker, run the worker with an init (`docker run --init`, or
+`init: true` in Compose), so the processes it starts are reaped.
+
+## Reference
+
+### `new RunWisp(options)`
+
+Every option is optional. The framework integrations take the same options
+from their config.
+
+```php
+$runwisp = new RunWisp([
+    'data' => __DIR__ . '/.runwisp',
+    'port' => 9477,
+    'password' => getenv('RUNWISP_PASSWORD'),
+]);
+```
+
+#### data
+
+**type**: `string` **default**: `RUNWISP_DATA`, else `./.runwisp` (`/var/lib/runwisp` as root)
+
+Data directory: database, run logs and socket. The framework integrations
+default to their own writable directory.
+
+#### app
+
+**type**: `string` **default**: the `name` in the nearest `composer.json`, else
+the working directory
+
+Which app this is. Copies of one app share a RunWisp. A different app on the
+same data directory is refused.
+
+#### port
+
+**type**: `int` **default**: `RUNWISP_PORT`, else `9477`, or the next free
+port if 9477 is taken
+
+Web UI port. A port picked this way is saved in the data directory, so the
+address stays the same across restarts.
+
+#### host
+
+**type**: `string` **default**: `RUNWISP_HOST`, else `127.0.0.1`
+
+Web UI bind address.
+
+#### password
+
+**type**: `string` **default**: `RUNWISP_PASSWORD`
+
+Web UI password. Without one, RunWisp picks a new one on each start.
+
+#### auth
+
+**type**: `bool` **default**: `true`
+
+`false` turns the login off, like `RUNWISP_AUTH=off`. See
+[Authentication](/operations/auth/).
+
+#### binary
+
+**type**: `string` **default**: `RUNWISP_BINARY`, else the one the Composer
+plugin downloaded, else `runwisp` on `PATH`
+
+Path to the `runwisp` binary.
+
+#### config
+
+**type**: `array` **default**: `[]`
+
+The rest of a `runwisp.toml`, with the same keys. See
+[Notifiers and the rest of the config](#notifiers-and-the-rest-of-the-config).
+
+### RunWisp methods
+
+| Method                       | Description                                                                                                                                                                                     |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `task(name, options, fn)`    | Registers a task with [task options](#task-options).                                                                                                                                            |
+| `service(name, options, fn)` | Registers a [service](#services).                                                                                                                                                               |
+| `main()`                     | Runs the worker, or in a run's process, that run's callback. Returns the exit code. With the argument `check` it [checks the tasks](#check-your-tasks), and with `run <name>` it runs one task. |
+
+### `Run`
+
+The callback gets the run:
+
+| Member           | Description                                                                                    |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| `id`             | The RunWisp run id, as shown in the web UI. Empty for a run you start by hand outside RunWisp. |
+| `task`           | The task or service name.                                                                      |
+| `env`            | The run's [environment](#environment-and-parameters), also set in the process.                 |
+| `params`         | The run's [parameters](#environment-and-parameters).                                           |
+| `scheduledAt`    | The scheduled time a scheduled run is for, as a `DateTimeImmutable`. Otherwise null.           |
+| `stopping()`     | `true` once RunWisp asked the run to [stop](#stop-a-run).                                      |
+| `Run::current()` | The run this process was started for, or null outside one.                                     |
+
+### `vendor/bin/runwisp`
+
+The `runwisp` CLI the package runs, such as
+`vendor/bin/runwisp password --data .runwisp`.

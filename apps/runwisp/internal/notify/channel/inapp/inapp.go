@@ -26,6 +26,9 @@ func New(id string, renderer render.Renderer, coalescer *Coalescer) *Channel {
 func (c *Channel) ID() string                  { return c.id }
 func (c *Channel) Close(context.Context) error { return nil }
 
+// ResetTask implements notify.TaskResetter.
+func (c *Channel) ResetTask(_ context.Context, task string) { c.coalescer.ResetTask(task) }
+
 // Execute renders the event and hands it to the Coalescer. The Coalescer
 // owns mutex + index + hub fan-out; we just glue.
 func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {

@@ -377,7 +377,7 @@ func TestExecuteSignalDeathReasonIsInLog(t *testing.T) {
 	assert.Equal(t, -1, result.ExitCode)
 	logContent, err := os.ReadFile(getLogPath())
 	require.NoError(t, err)
-	assert.Contains(t, string(logContent), "signal: killed")
+	assert.Contains(t, string(logContent), "Process was killed by SIGKILL from outside RunWisp")
 }
 
 // A plain non-zero exit is already shown as the exit code; no extra line.
@@ -386,6 +386,18 @@ func TestAbnormalExitMessage(t *testing.T) {
 	assert.Empty(t, abnormalExitMessage(exec.Command("sh", "-c", "exit 3").Run()))
 	assert.Equal(t, "Could not wait for the run to finish: docker gone",
 		abnormalExitMessage(errors.New("docker gone")), "a backend error is not a signal death")
+	assert.Contains(t, abnormalExitMessage(exec.Command("sh", "-c", "kill -9 $$").Run()), "out-of-memory killer",
+		"an outside SIGKILL points at the OOM killer")
+	assert.Equal(t, "Process died from signal SIGSEGV (segmentation fault).",
+		abnormalExitMessage(exec.Command("sh", "-c", "kill -SEGV $$").Run()))
+
+	// Under `sh -c` the shell outlives the command and exits 128+n, so the
+	// signal only shows in the exit code.
+	assert.Contains(t, abnormalExitMessage(exec.Command("sh", "-c", "exit 137").Run()), "out-of-memory killer",
+		"a shell's 137 is a SIGKILL of the command it ran")
+	assert.Equal(t, "Exit code 139: a process the run started died from signal SIGSEGV (segmentation fault).",
+		abnormalExitMessage(exec.Command("sh", "-c", `sh -c 'kill -SEGV $$'; exit $?`).Run()))
+	assert.Empty(t, abnormalExitMessage(exec.Command("sh", "-c", "exit 255").Run()), "255 names no signal")
 }
 
 // A backend's ExitHint explains a non-zero exit as a system line; a clean exit
@@ -415,6 +427,36 @@ func TestExecuteExitHint(t *testing.T) {
 			assert.Equal(t, tc.want, calls == 1)
 		})
 	}
+}
+
+// A backend's Notice lands in the run log as a system line ahead of the output.
+func TestExecuteBackendNotice(t *testing.T) {
+	r, eb := newScriptedExecutor(t, &scriptedBackend{output: "hello\n", notice: "Attached to blog-web-1"})
+	getLogPath := captureLogPath(eb)
+
+	r.Execute(context.Background(), &model.Task{Name: "t", Run: "x"}, newRun())
+
+	logContent, err := os.ReadFile(getLogPath())
+	require.NoError(t, err)
+	log := string(logContent)
+	require.Contains(t, log, "Attached to blog-web-1")
+	assert.Less(t, strings.Index(log, "Attached to blog-web-1"), strings.Index(log, "hello"))
+}
+
+// A backend's EndReason names how the run ended, unless a timeout or stop
+// already explains it.
+func TestExecuteBackendEndReason(t *testing.T) {
+	skipped := func() model.EndReason { return model.ReasonSkipped }
+
+	r, _ := newScriptedExecutor(t, &scriptedBackend{exitCode: -1, endReason: skipped})
+	result := r.Execute(context.Background(), &model.Task{Name: "t", Run: "x"}, newRun())
+	assert.Equal(t, model.ReasonSkipped, result.EndReason())
+
+	r, _ = newScriptedExecutor(t, &scriptedBackend{hang: true, endReason: skipped})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result = r.Execute(ctx, &model.Task{Name: "t", Run: "x"}, newRun())
+	assert.Equal(t, model.ReasonStopped, result.EndReason())
 }
 
 func TestExecuteCommandStartFailure(t *testing.T) {
@@ -643,4 +685,28 @@ func TestRoutingExecutor_Execute_BlockedURLSurfacesStartFailure(t *testing.T) {
 	require.NotNil(t, result.Error)
 	assert.Equal(t, -1, result.ExitCode)
 	assert.Contains(t, result.Error.Error(), "failed to start")
+}
+
+// A service that daemonizes exits 0 at once. Its log says why it keeps
+// failing to start, instead of showing a clean, empty run.
+func TestExecuteServiceCleanExitHintsAtDaemonizing(t *testing.T) {
+	eb := events.NewEventBus()
+	getLogPath := captureLogPath(eb)
+	exec := New(Options{LogDir: t.TempDir(), EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
+
+	exec.Execute(context.Background(), &model.Task{Name: "t", Kind: model.KindService, Run: "true"}, &model.Run{ID: ulid.Make().String()})
+
+	logContent, err := os.ReadFile(getLogPath())
+	require.NoError(t, err)
+	assert.Contains(t, string(logContent), "A service must stay in the foreground")
+}
+
+func TestDaemonizeHint(t *testing.T) {
+	healthy := 10 * time.Second
+	svc := &model.Task{Kind: model.KindService, HealthyAfter: &healthy}
+	assert.NotEmpty(t, daemonizeHint(svc, &ExecuteResult{}, time.Second))
+	assert.Empty(t, daemonizeHint(svc, &ExecuteResult{}, healthy), "it stayed up long enough")
+	assert.Empty(t, daemonizeHint(svc, &ExecuteResult{ExitCode: 1}, time.Second), "a crash is shown as its exit code")
+	assert.Empty(t, daemonizeHint(svc, &ExecuteResult{Stopped: true}, time.Second), "the operator stopped it")
+	assert.Empty(t, daemonizeHint(&model.Task{HealthyAfter: &healthy}, &ExecuteResult{}, time.Second), "tasks may exit at once")
 }

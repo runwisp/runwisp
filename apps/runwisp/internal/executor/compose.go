@@ -180,6 +180,12 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 		instanceIndex = run.InstanceIndex
 	}
 
+	// A service whose container `docker compose up` already runs is attached
+	// to rather than started twice (see attach).
+	if c, ok := b.composeUpContainer(ctx, ce, task, instanceIndex); ok {
+		return b.attach(ctx, task, c)
+	}
+
 	// Services mode uses a deterministic --name; reclaim any container our
 	// previous daemon life left behind for this slot before launching, so a
 	// kill -9 / restart can't collide with our own orphan. Label-scoped to this

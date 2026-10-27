@@ -5,7 +5,9 @@ package importer
 
 import (
 	"bufio"
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,23 +26,47 @@ type SystemdOptions struct {
 	Existing Owned
 }
 
-// ParseSystemdFiles converts one or more systemd `.service` unit files into a
-// *Result. Each file is exactly one unit; its RunWisp name comes from the
-// filename (foo.service → foo).
+// ParseSystemdFiles converts one or more systemd `.service` and `.timer` unit
+// files into a *Result. Each file is one unit, named after its filename
+// (foo.service → foo). A timer and the service it starts become one scheduled
+// task named after the timer; a service also passed as an argument is not
+// imported a second time on its own.
 func ParseSystemdFiles(paths []string, opts SystemdOptions) (*Result, error) {
+	units := make([]systemdUnit, 0, len(paths))
+	started := map[string]bool{} // absolute paths of services some timer starts
+	for _, p := range paths {
+		sections, err := readSystemdFile(p)
+		if err != nil {
+			return nil, err
+		}
+		u := systemdUnit{sections: sections, name: systemdUnitName(p), source: filepath.Base(p)}
+		if timer := findSection(sections, "Timer"); timer != nil {
+			svcPath := systemdTimerService(p, timer)
+			u.timer = sections
+			u.sections, err = readSystemdFile(svcPath)
+			switch {
+			case errors.Is(err, fs.ErrNotExist):
+				u.missingService = "the timer starts " + filepath.Base(svcPath) + ", but " + svcPath +
+					" doesn't exist, so there is nothing to run. Add the run line by hand."
+			case err != nil:
+				return nil, err
+			case findSection(u.sections, "Service") == nil:
+				u.missingService = "the timer starts " + svcPath + ", which has no [Service] section, so there is nothing to run."
+			}
+			if abs, err := filepath.Abs(svcPath); err == nil {
+				started[abs] = true
+			}
+		}
+		units = append(units, u)
+	}
+
 	res := &Result{}
 	names := newNamer(res, opts.Existing, "")
-	for _, p := range paths {
-		f, err := os.Open(p)
-		if err != nil {
-			return nil, err
+	for i, u := range units {
+		if abs, err := filepath.Abs(paths[i]); err == nil && u.timer == nil && started[abs] {
+			continue // imported as part of the timer that starts it
 		}
-		sections, err := parseSystemdUnit(f)
-		_ = f.Close()
-		if err != nil {
-			return nil, err
-		}
-		importSystemdUnit(names, sections, systemdUnitName(p), filepath.Base(p))
+		importSystemdUnit(names, u)
 	}
 	return res, nil
 }
@@ -55,15 +81,40 @@ func ParseSystemdReader(r io.Reader, opts SystemdOptions) (*Result, error) {
 	}
 	res := &Result{}
 	names := newNamer(res, opts.Existing, "")
-	importSystemdUnit(names, sections, "", "(stdin)")
+	u := systemdUnit{sections: sections, source: "(stdin)"}
+	if findSection(sections, "Timer") != nil {
+		u.timer = sections
+		u.missingService = "read from stdin, so there's no directory to find the service this timer starts in. " +
+			"Add the run line by hand, or pass the timer as a file."
+	}
+	importSystemdUnit(names, u)
 	return res, nil
+}
+
+func readSystemdFile(path string) ([]systemdSection, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return parseSystemdUnit(f)
+}
+
+// systemdTimerService is the path of the service a timer starts: its [Timer]
+// Unit=, or else the service named after the timer, in the timer's directory.
+func systemdTimerService(timerPath string, timer *systemdSection) string {
+	unit := strings.TrimSpace(timer.last("Unit"))
+	if unit == "" {
+		unit = strings.TrimSuffix(filepath.Base(timerPath), ".timer") + ".service"
+	}
+	return filepath.Join(filepath.Dir(timerPath), unit)
 }
 
 // systemdUnitName turns a unit path into its base name: /etc/systemd/system/foo.service
 // → "foo". A template unit (foo@.service) keeps the "@" so the mapper can flag it.
 func systemdUnitName(path string) string {
 	base := filepath.Base(path)
-	for _, ext := range []string{".service", ".target", ".socket"} {
+	for _, ext := range []string{".service", ".timer", ".target", ".socket"} {
 		base = strings.TrimSuffix(base, ext)
 	}
 	return base
@@ -225,24 +276,39 @@ var systemdCosmeticKeys = map[string]bool{
 	"PIDFile": true, "GuessMainPID": true, "NotifyAccess": true,
 }
 
+// systemdUnit is one unit to import: a service, or a timer and the service it
+// starts.
+type systemdUnit struct {
+	sections []systemdSection // the service unit; nil when a timer's service is missing
+	timer    []systemdSection // the timer unit that starts the service, or nil
+	// missingService is the note for a timer whose service has no [Service]
+	// section to import, usually because the file isn't there.
+	missingService string
+	name, source   string
+}
+
 // importSystemdUnit maps one parsed unit onto a RunWisp task or service, opening
 // a report row before anything about the mapping can go wrong.
-func importSystemdUnit(names *namer, sections []systemdSection, unitName, source string) {
-	svc := findSection(sections, "Service")
-	if svc == nil {
+func importSystemdUnit(names *namer, u systemdUnit) {
+	svc := findSection(u.sections, "Service")
+	noService := svc == nil
+	if noService {
 		svc = &systemdSection{} // still open a row so the empty unit is reported
 	}
 
 	kind := systemdKind(svc)
+	if u.timer != nil {
+		kind = model.KindTask // systemd ignores Restart= for a timer-run unit too
+	}
 	execStarts := svc.all("ExecStart")
 	runLine, _ := systemdRunLine(execStarts)
 
-	base := finalizeTaskName(unitName, "service")
-	ref, name, skip := names.resolve(source, base, OwnedEntry{Kind: kind, Run: runLine, User: systemdUser(svc)}, 0)
+	base := finalizeTaskName(u.name, "service")
+	ref, name, skip := names.resolve(u.source, base, OwnedEntry{Kind: kind, Run: runLine, User: systemdUser(svc)}, 0)
 	if skip {
 		return
 	}
-	if unitName == "" {
+	if u.name == "" {
 		ref.note(NoteSystemdNoName,
 			"read from stdin, so there's no filename to name this after — imported as \""+name+"\"; rename it before running.")
 	}
@@ -253,14 +319,23 @@ func importSystemdUnit(names *namer, sections []systemdSection, unitName, source
 	}
 	b := block{header: prefix + name}
 
-	if unit := findSection(sections, "Unit"); unit != nil {
-		if desc := strings.TrimSpace(unit.last("Description")); desc != "" {
-			b.set("description", tomlString(desc))
-		}
+	if desc := systemdDescription(u.sections); desc != "" {
+		b.set("description", tomlString(desc))
+	} else if desc := systemdDescription(u.timer); desc != "" {
+		b.set("description", tomlString(desc))
 	}
 
-	run := systemdApplyRun(&b, svc, ref, execStarts)
-	if kind == model.KindTask {
+	var run string
+	if u.timer != nil && noService {
+		b.setComment("run", tomlVerbatimString(""), "TODO: the timer's service wasn't found.")
+		ref.note(NoteSystemdTimerNoService, u.missingService)
+	} else {
+		run = systemdApplyRun(&b, svc, ref, execStarts)
+	}
+	switch {
+	case u.timer != nil:
+		schedule = systemdApplyTimer(&b, findSection(u.timer, "Timer"), ref)
+	case kind == model.KindTask:
 		b.set("run_on_start", tomlString(string(model.RunOnStartBoot)))
 		ref.note(NoteSystemdOneshot,
 			"Type=oneshot → imported as a run-once-per-boot task (run_on_start = \"boot\").")
@@ -272,6 +347,14 @@ func importSystemdUnit(names *namer, sections []systemdSection, unitName, source
 		blocks = append(blocks, eb)
 	}
 	ref.emit(name, kind, schedule, run, blocks...)
+}
+
+// systemdDescription is the unit's [Unit] Description=, or empty.
+func systemdDescription(sections []systemdSection) string {
+	if unit := findSection(sections, "Unit"); unit != nil {
+		return strings.TrimSpace(unit.last("Description"))
+	}
+	return ""
 }
 
 // systemdKind decides whether a unit maps onto a RunWisp service or a run-once

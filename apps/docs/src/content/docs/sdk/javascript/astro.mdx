@@ -66,6 +66,10 @@ server after you change a task.
 Don't import the tasks from `src/middleware.ts`: Astro loads middleware on the
 first request, so nothing would run until someone visits the site.
 
+The integration keeps `@runwisp/js` out of the server bundle, so it finds the
+runwisp binary. List it under `dependencies`, not `devDependencies`, so it is
+installed where the server runs.
+
 The built server starts the tasks with `node dist/server/entry.mjs`, or
 `bun dist/server/entry.mjs` on Bun.
 

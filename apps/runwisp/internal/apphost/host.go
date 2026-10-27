@@ -34,7 +34,8 @@ import (
 // Protocol is the Upgrade token an app sends to open its connection. The
 // number is the protocol version: a daemon answers any other token with 426,
 // so an SDK and a binary that don't match fail on connect, not mid-run. The
-// protocol is private to @runwisp/js and versioned by this token alone.
+// protocol is private to the SDKs (@runwisp/js, runwisp/runwisp for PHP) and
+// versioned by this token alone.
 const Protocol = "runwisp-app/1"
 
 // defaultHandoff is how long a handler run waits for an app to connect: the
@@ -64,12 +65,15 @@ const maxLine = 16 << 20
 // Daemon to app: role {active, alone, pid} (pid: the active copy's, sent to a
 // standby; alone: see aloneLocked), alone (this active copy became alone), run
 // {run, task, env, params, at} (at: the firing, for a run the schedule
-// started), stop {run}, overlap {task, at} (a firing on_overlap = "skip"
-// dropped), missed {task, at} (firings missed while the daemon was down, at the
-// latest), config_ok {result}, config_error {error, restart}.
+// started), stop {run}, kill {run} (the run outlived its graceful_stop after
+// stop), overlap {task, at} (a firing on_overlap = "skip" dropped), missed
+// {task, at} (firings missed while the daemon was down, at the latest),
+// config_ok {result}, config_error {error, restart}.
 // App to daemon: output {run, stream, line, partial} (partial: no newline
-// after line), exit {run, code}, config {doc}, leave (the app is shutting
-// down for good, not restarting; see Host.leave).
+// after line), exit {run, code, reason} (reason: "skipped" when the app's own
+// overlap check skipped the run, which then records exit code -1), config
+// {doc}, leave (the app is shutting down for good, not restarting; see
+// Host.leave).
 //
 // A line that is JSON but doesn't fit this shape (a field of another type) is
 // skipped, so either side can be newer than the other.
@@ -87,6 +91,7 @@ type message struct {
 	Line    string              `json:"line,omitempty"`
 	Partial bool                `json:"partial,omitempty"`
 	Code    *int                `json:"code,omitempty"`
+	Reason  string              `json:"reason,omitempty"`
 	Doc     json.RawMessage     `json:"doc,omitempty"`
 	Result  *model.ReloadResult `json:"result,omitempty"`
 	Error   string              `json:"error,omitempty"`
@@ -752,7 +757,11 @@ func (s *session) handle(m message) {
 		_, _ = io.WriteString(w, m.Line)
 	case "exit":
 		if r := s.run(m.Run); r != nil && m.Code != nil {
-			r.finish(*m.Code)
+			var reason model.EndReason
+			if m.Reason == string(model.ReasonSkipped) {
+				reason = model.ReasonSkipped
+			}
+			r.finish(*m.Code, reason)
 		}
 	default:
 		// Unknown types are ignored, so an app can be newer than the daemon.
@@ -794,6 +803,14 @@ func (s *session) services() []string {
 	return names
 }
 
+// kill tells the app to kill what it can of a run past its graceful_stop: a
+// task file's process. A callback in the app itself can't be killed.
+func (s *session) kill(id string) {
+	if err := s.send(message{Type: "kill", Run: id}); err != nil {
+		slog.Debug("Failed to tell an app to kill a run", "run", id, "err", err)
+	}
+}
+
 func (s *session) forget(id string) {
 	s.mu.Lock()
 	delete(s.runs, id)
@@ -809,6 +826,6 @@ func (s *session) disconnect() {
 	s.mu.Unlock()
 	for _, r := range runs {
 		_, _ = io.WriteString(r.stderr, "runwisp: the app running this task disconnected\n")
-		r.finish(-1)
+		r.finish(-1, "")
 	}
 }

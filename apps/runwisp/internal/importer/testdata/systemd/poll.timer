@@ -1,0 +1,10 @@
+[Unit]
+Description=Poll the feed
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=feed-poll.service
+
+[Install]
+WantedBy=timers.target

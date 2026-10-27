@@ -23,7 +23,8 @@ The data directory is set with `--data` (default `.runwisp`); see
 named after the run's time (in UTC) and its run ID, so files sort by time. Characters other than letters, digits, `_`, and `-` in the task name
 become `_`.
 
-stdout and stderr are written to the same file, in the order they arrived. Next
+stdout and stderr are written to the same file, in the order they arrived. A
+line longer than 65,536 characters is split into lines of that length. Next
 to each `.log` there is a hidden `.<name>.log.meta` file with the indexes that
 make scrolling fast. RunWisp manages it; don't delete it while the run is still
 going.

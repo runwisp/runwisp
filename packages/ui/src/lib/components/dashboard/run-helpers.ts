@@ -165,12 +165,30 @@ export function runUsageScale(
     };
 }
 
+/** A finished run's wall time in ms, or undefined while it is still going. */
+export function runDurationMs(
+    run: Pick<Run, "status" | "startedAt" | "endedAt">,
+): number | undefined {
+    if (run.status !== "ended" || !run.startedAt || !run.endedAt) return undefined;
+    return new Date(run.endedAt).getTime() - new Date(run.startedAt).getTime();
+}
+
+/** The median wall time in ms over the finished runs given, the baseline a slow run is judged against. */
+export function usualDuration(
+    runs: readonly Pick<Run, "status" | "startedAt" | "endedAt">[],
+): number | undefined {
+    const durations = runs.flatMap((run) => runDurationMs(run) ?? []);
+    return durations.length > 0 ? median(durations) : undefined;
+}
+
 /**
  * The least a usual run counts as using, so a tiny or zero baseline (a mostly
  * idle task's median CPU time is often 0) doesn't hide a run that burns real
- * CPU or memory, nor flag 3ms against 1ms. CPU time in ms, memory in bytes.
+ * CPU or memory, nor flag 3ms against 1ms. CPU time and duration in ms, memory
+ * in bytes. Duration's floor is higher since wall time also carries network
+ * and scheduling jitter. Mirrors the TUI's uikit.UsageFloor*.
  */
-const USAGE_FLOOR: RunUsageAmounts = { cpu: 1000, ram: 16 * 1024 * 1024 };
+const USAGE_FLOOR = { cpu: 1000, ram: 16 * 1024 * 1024, duration: 5000 };
 
 /**
  * How unusual a run's amount is for its task: 0 about as usual, 1 at 1.5×
@@ -178,13 +196,113 @@ const USAGE_FLOOR: RunUsageAmounts = { cpu: 1000, ram: 16 * 1024 * 1024 };
  * amount stays at 0, however large that amount is. The usual run counts as
  * at least USAGE_FLOOR for its kind.
  */
-export function usageLevel(value: number, usual: number, kind: keyof RunUsageAmounts): 0 | 1 | 2 {
+export function usageLevel(
+    value: number,
+    usual: number,
+    kind: keyof typeof USAGE_FLOOR,
+): 0 | 1 | 2 {
     const baseline = Math.max(usual, USAGE_FLOOR[kind]);
     if (baseline <= 0) return 0;
     const ratio = value / baseline;
     if (ratio >= 2) return 2;
     if (ratio >= 1.5) return 1;
     return 0;
+}
+
+/** Lines a finished run printed on stdout and stderr together, or undefined without counts. */
+export function runOutputLines(
+    run: Pick<Run, "status" | "stdoutLines" | "stderrLines">,
+): number | undefined {
+    if (run.status !== "ended") return undefined;
+    if (run.stdoutLines === undefined || run.stderrLines === undefined) return undefined;
+    return run.stdoutLines + run.stderrLines;
+}
+
+/** The range of output a task's runs usually print, in lines: its 10th and 90th percentile. */
+export interface OutputBand {
+    p10: number;
+    p90: number;
+}
+
+/** How many finished runs a task needs before a run is judged against its band. */
+const OUTPUT_BAND_MIN_RUNS = 10;
+/** The fewest lines a run must be past the band's edge, so 3 against a usual 1 isn't flagged. */
+const OUTPUT_BAND_SLACK = 5;
+
+/** The p-th percentile of sorted values, by the nearest-rank method. */
+function nearestRank(sorted: number[], p: number): number {
+    const rank = Math.max(Math.ceil((p * sorted.length) / 100), 1);
+    return sorted[rank - 1] ?? 0;
+}
+
+/**
+ * The output band over the finished runs given, or undefined while fewer than
+ * OUTPUT_BAND_MIN_RUNS have line counts. Mirrors the TUI's uikit.UsualOutput.
+ */
+export function outputBand(
+    runs: readonly Pick<Run, "status" | "stdoutLines" | "stderrLines">[],
+): OutputBand | undefined {
+    const lines = runs.flatMap((run) => runOutputLines(run) ?? []);
+    if (lines.length < OUTPUT_BAND_MIN_RUNS) return undefined;
+    const sorted = lines.toSorted((a, b) => a - b);
+    return { p10: nearestRank(sorted, 10), p90: nearestRank(sorted, 90) };
+}
+
+/**
+ * Whether a line count is clearly outside the band: more than twice its 90th
+ * percentile or under half its 10th, and at least OUTPUT_BAND_SLACK lines past
+ * it. A task that is silent nearly every time is flagged by any output at all.
+ */
+export function outputUnusual(lines: number, band: OutputBand): boolean {
+    if (band.p90 === 0) return lines > 0;
+    const high = lines > 2 * band.p90 && lines - band.p90 >= OUTPUT_BAND_SLACK;
+    const low = 2 * lines < band.p10 && band.p10 - lines >= OUTPUT_BAND_SLACK;
+    return high || low;
+}
+
+/**
+ * How a task's runs compare on output: `max` is its chattiest run (the full
+ * length of an output bar), `band` its usual range, undefined until enough
+ * runs have counts. Undefined when no run has counts yet.
+ */
+export interface OutputScale {
+    max: number;
+    band: OutputBand | undefined;
+}
+
+/** The scale for a task's output bars, over the finished runs given. */
+export function runOutputScale(
+    runs: readonly Pick<Run, "status" | "stdoutLines" | "stderrLines">[],
+): OutputScale | undefined {
+    const lines = runs.flatMap((run) => runOutputLines(run) ?? []);
+    if (lines.length === 0) return undefined;
+    return { max: Math.max(...lines), band: outputBand(runs) };
+}
+
+const compactNumber = new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+});
+
+/** "1 line", "37 lines", "1.2K lines". */
+export function formatLines(lines: number): string {
+    return lines === 1 ? "1 line" : `${compactNumber.format(lines)} lines`;
+}
+
+/**
+ * How much a run printed: "no output", "12 lines", "12 lines · 3 on stderr",
+ * or undefined for a run without counts.
+ */
+export function runOutputLabel(
+    run: Pick<Run, "status" | "stdoutLines" | "stderrLines">,
+): string | undefined {
+    const lines = runOutputLines(run);
+    if (lines === undefined) return undefined;
+    if (lines === 0) return "no output";
+    const stderr = run.stderrLines ?? 0;
+    if (stderr === 0) return formatLines(lines);
+    if (stderr === lines) return `${formatLines(lines)} · all on stderr`;
+    return `${formatLines(lines)} · ${String(stderr)} on stderr`;
 }
 
 /**

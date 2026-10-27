@@ -8,7 +8,7 @@ import {
     runDuration,
 } from "@runwisp/ui";
 import type { TaskOverview } from "./overview.js";
-import { serviceLabel } from "$lib/utils/task";
+import { scheduleTimeZone, serviceLabel } from "$lib/utils/task";
 import { isService, type Run } from "@runwisp/common";
 
 export function pluralize(count: number): string {
@@ -50,7 +50,12 @@ export function formatTaskLastResultLabel(task: TaskOverview): string {
     return humanizeStatus(task.lastStatus);
 }
 
-export function formatTaskNextRunLabel(task: TaskOverview, now: Date = new Date()): string {
+/** daemonZone is the daemon's resolved timezone; a task's own timezone wins over it. */
+export function formatTaskNextRunLabel(
+    task: TaskOverview,
+    now: Date = new Date(),
+    daemonZone = "",
+): string {
     if (isService(task.task.kind)) {
         return task.state === "stopped" ? "Stopped" : "Always on";
     }
@@ -60,7 +65,11 @@ export function formatTaskNextRunLabel(task: TaskOverview, now: Date = new Date(
     }
 
     if (task.nextRunMs !== undefined) {
-        return formatRelativeTimeWithAbsolute(new Date(task.nextRunMs), now);
+        return formatRelativeTimeWithAbsolute(
+            new Date(task.nextRunMs),
+            now,
+            scheduleTimeZone(task.task, daemonZone),
+        );
     }
 
     return task.isApiOnly ? "Manual only" : "Not scheduled";
@@ -85,6 +94,13 @@ export function taskTriggerIsHumanizedCron(task: TaskOverview): boolean {
         return false;
     }
     return humanizeCron(task.task.cron).isHumanized;
+}
+
+// failureExitCode is the exit code worth showing for a failed run. A run the
+// daemon killed (timeout, stop) never returned a code and reports -1, so it
+// gets none: its status already says what happened.
+export function failureExitCode(run: Run | undefined): number | undefined {
+    return run?.isFailure === true && run.exitCode > 0 ? run.exitCode : undefined;
 }
 
 export function formatRunDurationLabel(run: Run): string {

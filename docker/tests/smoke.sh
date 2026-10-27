@@ -184,7 +184,10 @@ else
 	fail "docker exec runwisp status" "$(docker logs "$container" 2>&1 | tail -20)"
 fi
 
-if docker exec "$container" runwisp run hello 2>&1 | grep -q hello-from-container; then
+# Capture first: with pipefail, grep -q closing the pipe early would SIGPIPE
+# the closing "Task completed" line and fail the pipeline.
+run_out=$(docker exec "$container" runwisp run hello 2>&1 || true)
+if [[ "$run_out" == *hello-from-container* ]]; then
 	pass "docker exec runwisp run runs a task"
 else
 	fail "docker exec runwisp run hello"

@@ -63,7 +63,7 @@
         {/if}
     </div>
     <div class="flex items-center gap-4">
-        <span>{totalLines.toLocaleString()} lines</span>
+        <span>{totalLines.toLocaleString()} {totalLines === 1 ? "line" : "lines"}</span>
         {#if totalBytes > 0}
             <span>{formatBytes(totalBytes)}</span>
         {/if}

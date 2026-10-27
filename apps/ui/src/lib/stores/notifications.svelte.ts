@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { z } from "zod";
+import { z } from "../zod";
 import type { AppEventStream } from "./event-manager";
 import { appEventStream } from "./app-stream";
 import { createLogger } from "@runwisp/common";

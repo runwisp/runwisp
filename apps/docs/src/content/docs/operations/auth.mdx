@@ -179,6 +179,16 @@ Add `?wait=true` to hold the request until the work is done:
 - `start`, `restart` on a service: `400`, since a service instance doesn't end
   on its own.
 
+A hook token can't read run logs. Since 1.8, `run` takes `tail=N` (up to
+`1000`) and adds the last `N` lines of the run's log to the response as a `log`
+array of `{n, stream, text}`, so a CI job can show why a run failed:
+
+```bash
+curl -fsS -X POST -H "Authorization: Bearer $CI_DEPLOY_TOKEN" \
+  "https://runwisp.example.com:9477/api/hooks/tasks/deploy/run?wait=true&tail=50" \
+  | jq -r '.log[].text'
+```
+
 Runs started this way show as triggered by `hook`.
 
 If a webhook sender can only set a URL, pass the token as a query parameter
@@ -244,6 +254,41 @@ Keep the list tight: an address in it can claim to be any client IP, and so use
 up another client's login limit. The
 `RUNWISP_TRUSTED_PROXIES` environment variable (comma-separated) overrides the
 key. See [`trusted_proxies`](/configuration/daemon/#trusted_proxies).
+
+Serve RunWisp at the root of its own host name, such as
+`runwisp.example.com`. A path prefix like `example.com/runwisp/` doesn't work,
+because the Web UI loads its files from `/`.
+
+A minimal nginx site:
+
+```nginx title="/etc/nginx/sites-available/runwisp"
+server {
+    listen 443 ssl;
+    server_name runwisp.example.com;
+    # ssl_certificate and ssl_certificate_key go here
+
+    location / {
+        proxy_pass http://127.0.0.1:9477;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+The same with Caddy, which gets the certificate for you:
+
+```text title="Caddyfile"
+runwisp.example.com {
+    reverse_proxy 127.0.0.1:9477
+}
+```
+
+Live logs and Web UI updates use long-lived streams. RunWisp tells nginx not to
+buffer them and sends a keepalive every 30 seconds, so the default
+`proxy_read_timeout` of 60 seconds is enough. If your proxy times out idle
+connections sooner, raise that limit.
 
 For a LAN or a tailnet, you don't need a proxy:
 [`tls = "auto"`](/configuration/daemon/#tls-tls_cert-tls_key) serves HTTPS with

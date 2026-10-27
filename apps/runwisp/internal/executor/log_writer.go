@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -77,8 +78,12 @@ type LogWriter struct {
 	currentOffset int64
 	lineCount     int64
 	totalProduced int64 // total bytes the process output (before any truncation)
-	truncated     bool
-	stopped       bool // drop_new mode or disk-full: no more writes accepted
+	// stdoutLines and stderrLines count the process's lines per stream, dropped
+	// ones included, like totalProduced.
+	stdoutLines atomic.Int64
+	stderrLines atomic.Int64
+	truncated   bool
+	stopped     bool // drop_new mode or disk-full: no more writes accepted
 
 	// Rotation bookkeeping: cumulative counts from rotated-away files
 	rotatedLines int64
@@ -164,9 +169,21 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 // non-decreasing across rotations and is the canonical `n` for log events on
 // the bus.
 func (w *LogWriter) WriteLineEvent(text, stream string) (int64, error) {
+	switch stream {
+	case logutil.StreamStdout:
+		w.stdoutLines.Add(1)
+	case logutil.StreamStderr:
+		w.stderrLines.Add(1)
+	}
 	formatted := []byte(logutil.FormatLine(text, stream))
 	lineNum, _, err := w.writeOneLine(formatted)
 	return lineNum, err
+}
+
+// OutputLines reports how many lines the process printed on stdout and on
+// stderr, counting lines the log dropped. System lines are not counted.
+func (w *LogWriter) OutputLines() (stdout, stderr int64) {
+	return w.stdoutLines.Load(), w.stderrLines.Load()
 }
 
 // WriteFrameHistory appends the whole-region frame history for a settled commit

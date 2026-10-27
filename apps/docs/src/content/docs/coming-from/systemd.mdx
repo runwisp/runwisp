@@ -2,15 +2,17 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: From systemd
-description: Convert systemd .service units into runwisp.toml with runwisp import systemd. How each directive maps, and what needs a human.
+description: Convert systemd .service and .timer units into runwisp.toml with runwisp import systemd. How each directive maps, and what needs a human.
 head:
     - tag: title
       content: "Migrate a systemd service to RunWisp: convert a .service unit in one command"
 ---
 
-`runwisp import systemd` converts `.service` units into `runwisp.toml`. A
-`Type=oneshot` unit becomes a [task](/configuration/tasks/) that runs when the
-daemon starts. Any other unit becomes a [service](/configuration/services/).
+`runwisp import systemd` converts `.service` and `.timer` units into
+`runwisp.toml`. A `Type=oneshot` unit becomes a [task](/configuration/tasks/)
+that runs when the daemon starts. Any other unit becomes a
+[service](/configuration/services/). A timer and the service it starts become
+one scheduled task, see [Timers](#timers).
 
 ## Convert a unit
 
@@ -18,6 +20,9 @@ daemon starts. Any other unit becomes a [service](/configuration/services/).
 runwisp import systemd /etc/systemd/system/myapp.service -o runwisp.toml
 runwisp validate
 ```
+
+A bare unit name such as `myapp.service` also works: it is looked up where
+systemd keeps units.
 
 Given `tempoledger.service`:
 
@@ -100,6 +105,63 @@ RunWisp starts services when the daemon starts. To keep one stopped at boot,
 set [`autostart = false`](/configuration/services/#autostart). For start order,
 use [`depends_on`](/configuration/services/#depends_on).
 
+## Timers
+
+**since**: `1.8`
+
+Pass the `.timer` file. The import reads the service it starts from the timer's
+`Unit=`, or else `NAME.service` next to it, and writes one task named after the
+timer:
+
+```bash
+runwisp import systemd /etc/systemd/system/backup.timer -o runwisp.toml
+```
+
+Given `backup.timer` and `backup.service`:
+
+```ini
+# backup.timer
+[Timer]
+OnCalendar=Mon..Fri *-*-* 03:30:00
+Persistent=true
+
+# backup.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/backup --all
+```
+
+you get:
+
+```toml title="runwisp.toml"
+[tasks.backup]
+run = "/usr/local/bin/backup --all"
+cron = "30 3 * * 1-5"
+```
+
+If you also pass the service, it isn't imported a second time. Disable the
+timer, not the service: `sudo systemctl disable --now backup.timer`.
+
+| systemd                                  | runwisp.toml                                                  | Notes                                                                                     |
+| ---------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `OnCalendar`                             | [`cron`](/configuration/tasks/#cron)                          | `weekly` is Monday. A trailing zone becomes [`timezone`](/configuration/tasks/#timezone). |
+| `OnUnitActiveSec`, `OnUnitInactiveSec`   | `cron = "@every …"`                                           | Counted from the last scheduled run, not from when the unit ran.                          |
+| `OnBootSec`, `OnStartupSec`              | [`run_on_start = "boot"`](/configuration/tasks/#run_on_start) | The delay is dropped.                                                                     |
+| `Persistent=true`                        | _(default)_                                                   | Without it, the import sets [`catch_up = 0`](/configuration/tasks/#catch_up).             |
+| `RandomizedDelaySec`                     | [`jitter`](/configuration/tasks/#jitter)                      | The closest match, with a note.                                                           |
+| `OnActiveSec`, `OnClockChange`           | _(dropped)_                                                   | With a note.                                                                              |
+| `AccuracySec`, `WakeSystem`, `[Install]` | _(not needed)_                                                |                                                                                           |
+
+A timer-run service becomes a task whatever its `Type=`, and `Restart=` is
+ignored, as systemd ignores it. These need a human:
+
+- **A year or a weekday plus a date.** `OnCalendar=2027-*-* 00:00` and
+  `Mon *-*-01..07` have no cron form. The value is kept under a `# TODO`.
+- **More than one `OnCalendar`.** Only the first is imported. Add a task for
+  each other schedule.
+- **A missing service.** The task gets an empty `run` and a `# TODO`. A timer
+  piped on stdin has no folder to look in, so it always gets one.
+
 ## What needs a human
 
 Anything that can't be mapped gets a `# TODO` in the TOML and a note on the
@@ -129,4 +191,4 @@ unit's row.
 - [`[services.*]`](/configuration/services/)
 - [Tasks vs services](/concepts/tasks-vs-services/)
 - [Autostart](/operations/autostart/), to run RunWisp itself under systemd
-- [From cron](/coming-from/cron/), for timers and cron jobs
+- [From cron](/coming-from/cron/), for cron jobs

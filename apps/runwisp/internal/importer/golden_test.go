@@ -35,17 +35,17 @@ var cronGoldenCases = []struct {
 	expectNotes []NoteKind
 }{
 	// A per-user `crontab -l` dump: descriptors, wrappers, comments, env, TZ.
-	{name: "user", file: "testdata/cron/user.crontab"},
+	{name: "user", file: "testdata/cron/user.crontab", expectNotes: []NoteKind{NoteRebootLongRunning}},
 	// A system crontab (/etc/crontab) with the extra user column, including a
 	// descriptor line that carries one. Every job gets `working_dir = "~"`, which
 	// the executor resolves against the user column's home — so a system crontab
 	// now imports with nothing left for a human.
-	{name: "system", file: "testdata/cron/system.crontab", opts: CronOptions{System: true}},
+	{name: "system", file: "testdata/cron/system.crontab", opts: CronOptions{System: true}, expectNotes: []NoteKind{NoteRebootLongRunning}},
 	// Notes-only edge cases (MAILTO, relative SHELL, both '%' forms, dedupe, an
 	// unparseable line) that must surface but still leave a valid config.
 	{name: "messy", file: "testdata/cron/messy.crontab", expectNotes: []NoteKind{
 		NoteMailto, NoteShellNotAbsolute, NotePercentStdin, NotePercentTranslated,
-		NoteLineUnparseable, NoteRenamedCollision,
+		NoteLineUnparseable, NoteRenamedCollision, NoteOutputRedirected,
 	}},
 	// An invalid cron expression becomes a `# TODO` and a non-loadable config —
 	// the import still succeeds and tells the operator exactly what to fix.
@@ -55,7 +55,7 @@ var cronGoldenCases = []struct {
 	// A CRON_TZ RunWisp can't load: the expression is fine, the zone isn't, and
 	// the config genuinely doesn't load — so the row must not read clean.
 	{name: "badtz", file: "testdata/cron/badtz.crontab", expectNotes: []NoteKind{
-		NoteTimezoneInvalid,
+		NoteTimezoneInvalid, NoteRebootLongRunning,
 	}},
 }
 

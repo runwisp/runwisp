@@ -250,7 +250,15 @@
 
     const clock = new TickingNow();
     $effect(() => clock.start());
-    const empty = $derived(noRunsMessage(task, systemStore.schedulingActive, clock.now));
+    // Under a filter the task may well have runs; "No runs yet" would be wrong.
+    const empty = $derived(
+        activeFilterCount(filters) > 0
+            ? {
+                  title: "Select a run",
+                  description: "Pick a run from the list, or clear the filters to see every run.",
+              }
+            : noRunsMessage(task, systemStore.schedulingActive, clock.now, systemStore.timezone),
+    );
 </script>
 
 <!-- Card-less, full-bleed: the rail and detail panel fill the content area
@@ -286,6 +294,8 @@
                 showFilters
                 bulkActions={!readOnly}
                 taskNameFilter={task.name}
+                emptyText={panes.detail ? "" : empty.title}
+                emptyDescription={panes.detail ? undefined : empty.description}
                 onBulkCancel={selection.handleBulkCancel}
                 onBulkDelete={selection.handleBulkDelete}
                 onBulkRerun={selection.handleBulkRerun}

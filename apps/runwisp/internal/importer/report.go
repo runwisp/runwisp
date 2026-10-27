@@ -33,6 +33,8 @@ const (
 	NoteCronTZIgnored
 	NoteNoopHere
 	NoteAnacronPeriod
+	NoteOutputRedirected
+	NoteRebootLongRunning
 
 	// Naming and identity, shared by both parsers.
 	NoteAlreadyDefined
@@ -72,6 +74,9 @@ const (
 	NoteSystemdOneshot
 	NoteSystemdEnvFileMulti
 	NoteSystemdEnvFileMissing
+	NoteSystemdTimerNoService
+	NoteSystemdTimerMultiCalendar
+	NoteSystemdTimerApprox
 
 	// noteKindCount bounds the enum so TestNoteKindsAreTotal can walk it.
 	noteKindCount
@@ -157,6 +162,8 @@ var noteKindInfo = map[NoteKind]noteSeverity{
 		slug: "noop-here", blocking: false, unsafeLive: false,
 	},
 	NoteAnacronPeriod:         {slug: "anacron-period", blocking: false, unsafeLive: false},
+	NoteOutputRedirected:      {slug: "output-redirected", blocking: false, unsafeLive: false},
+	NoteRebootLongRunning:     {slug: "reboot-long-running", blocking: false, unsafeLive: false},
 	NoteAlreadyDefined:        {slug: "already-defined", blocking: false, unsafeLive: false},
 	NoteRenamedOwned:          {slug: "renamed-owned", blocking: false, unsafeLive: false},
 	NoteRenamedCollision:      {slug: "renamed-collision", blocking: false, unsafeLive: false},
@@ -236,6 +243,20 @@ var noteKindInfo = map[NoteKind]noteSeverity{
 		// An optional EnvironmentFile=-path that doesn't exist yet; RunWisp's
 		// env_file must exist, so it was left out rather than failing the load.
 		slug: "systemd-env-file-missing", blocking: false, unsafeLive: false,
+	},
+	NoteSystemdTimerNoService: {
+		// The timer's service couldn't be read, so the task has no command.
+		slug: "systemd-timer-no-service", blocking: true, unsafeLive: true,
+	},
+	NoteSystemdTimerMultiCalendar: {
+		// Only the first OnCalendar= was imported, so the task fires less often
+		// than the timer did. What it does run is still the right command.
+		slug: "systemd-timer-multi-calendar", blocking: true, unsafeLive: false,
+	},
+	NoteSystemdTimerApprox: {
+		// A timer setting landed on the nearest RunWisp equivalent (an interval
+		// counted differently, a dropped boot delay, jitter). Worth knowing.
+		slug: "systemd-timer-approx", blocking: false, unsafeLive: false,
 	},
 }
 

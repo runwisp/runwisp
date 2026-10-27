@@ -55,9 +55,9 @@ type Checker struct {
 	os      string
 	arch    string
 	source  string // install channel, see InstallSource
-	// official is false for builds outside the release workflow, which never
-	// check (version.Official).
-	official bool
+	// eligible is false for builds outside the release workflow
+	// (version.Official) and inside CI, which never check.
+	eligible bool
 
 	baseURL string
 	client  *http.Client
@@ -80,7 +80,7 @@ func NewChecker(current, goos, goarch string, enabled bool) *Checker {
 		os:       goos,
 		arch:     goarch,
 		source:   InstallSource(),
-		official: version.IsOfficial(),
+		eligible: version.IsOfficial() && !InCI(os.Getenv("CI")),
 		enabled:  enabled,
 		baseURL:  DefaultBaseURL,
 		client:   &http.Client{Timeout: requestTimeout},
@@ -133,10 +133,11 @@ func (c *Checker) finishCheck() {
 // InstallSource reports how this binary was installed. The same
 // release binary ships through every channel, so it can't be baked in at build
 // time: the Docker image and npm wrapper set RUNWISP_INSTALL_SOURCE
-// (docker / npm / npx), and get.runwisp.com, the Homebrew formula and the npm
-// platform packages write "script" / "homebrew" / "npm" to a .runwisp-source
-// file next to the binary, which covers a daemon started without the wrapper
-// (e.g. by `runwisp service install`). Anything else is "other".
+// (docker / npm / npx), and get.runwisp.com, the Homebrew formula, the npm
+// platform packages and the runwisp/runwisp Composer package write "script" /
+// "homebrew" / "npm" / "composer" to a .runwisp-source file next to the
+// binary, which covers a daemon started without the wrapper (e.g. by
+// `runwisp service install`). Anything else is "other".
 func InstallSource() string {
 	if s := os.Getenv("RUNWISP_INSTALL_SOURCE"); s != "" {
 		return s
@@ -171,11 +172,11 @@ func (c *Checker) Status() (available bool, latest string) {
 }
 
 // Run checks once immediately, then reschedules using the ttl each response
-// carries. It returns when ctx is cancelled. A dev build, or any build outside
-// the release workflow, returns immediately without ever reaching out; a disabled checker idles until
-// SetEnabled turns it on.
+// carries. It returns when ctx is cancelled. A dev build, any build outside
+// the release workflow, or a daemon running in CI returns immediately without
+// ever reaching out; a disabled checker idles until SetEnabled turns it on.
 func (c *Checker) Run(ctx context.Context) {
-	if !c.official || !IsRelease(c.current) {
+	if !c.eligible || !IsRelease(c.current) {
 		return
 	}
 	for {
@@ -247,6 +248,18 @@ func (c *Checker) fetch(ctx context.Context) (checkResponse, error) {
 		return checkResponse{}, err
 	}
 	return body, nil
+}
+
+// InCI reports whether the CI environment variable marks a CI run. GitHub
+// Actions, GitLab CI, CircleCI, Buildkite, Travis and most others set it; a
+// daemon started there (an official image in a test job, say) is not an
+// install and must not count as one.
+func InCI(ci string) bool {
+	switch strings.ToLower(strings.TrimSpace(ci)) {
+	case "", "0", "false":
+		return false
+	}
+	return true
 }
 
 // IsRelease reports whether current looks like a published release rather than a

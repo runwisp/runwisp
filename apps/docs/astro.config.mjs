@@ -209,6 +209,15 @@ export default defineConfig({
                                 { label: "NestJS", slug: "sdk/javascript/nestjs" },
                             ],
                         },
+                        {
+                            label: "PHP",
+                            items: [
+                                { label: "Overview", slug: "sdk/php" },
+                                { label: "Laravel", slug: "sdk/php/laravel" },
+                                { label: "Symfony", slug: "sdk/php/symfony" },
+                                { label: "CodeIgniter", slug: "sdk/php/codeigniter" },
+                            ],
+                        },
                     ],
                 },
                 {

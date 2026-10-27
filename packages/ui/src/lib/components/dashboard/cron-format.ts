@@ -67,9 +67,10 @@ export function humanizeCron(cron: string): HumanizedCron {
 
     try {
         // cronstrue reads a last weekday as Quartz's "5L"; "5#L" would come out as
-        // "on the null Friday of the month".
+        // "on the null Friday of the month". 24-hour, like every other clock in the UI.
         const humanized = cronstrue.toString(raw.replace(/#L/gi, "L"), {
             throwExceptionOnParseError: true,
+            use24HourTimeFormat: true,
         });
         return { humanized, raw, isHumanized: true };
     } catch {

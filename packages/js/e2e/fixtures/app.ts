@@ -20,8 +20,11 @@ const cron = new RunWisp({
     binary,
     log: false,
     ...(app === undefined ? {} : { app }),
-    // Runs in the daemon, so it sees the daemon's env, not this copy's.
-    config: { tasks: { "shell-env": { run: 'echo "foo=$FOO"' } } },
+    config: {
+        defaults: { graceful_stop: "1s" },
+        // Runs in the daemon, so it sees the daemon's env, not this copy's.
+        tasks: { "shell-env": { run: 'echo "foo=$FOO"' } },
+    },
 });
 
 cron.task("who", {}, () => {
@@ -47,6 +50,19 @@ cron.task("crash", {}, async () => {
     }, 50);
     await sleep(60_000);
 });
+
+cron.task("exits", {}, () => {
+    console.log("last words");
+    process.exit(3);
+});
+
+cron.task("rejects", {}, async () => {
+    void Promise.reject(new Error("rejected kaboom"));
+    await sleep(60_000);
+});
+
+// Outlives its timeout and graceful_stop, ignoring SIGTERM.
+cron.createTask("0 3 1 1 *", "./stubborn-job.ts", { name: "stubborn-file", executeTimeout: 1000 });
 
 await cron.start();
 process.stdout.write("ready\n");

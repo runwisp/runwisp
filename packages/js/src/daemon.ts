@@ -50,6 +50,9 @@ export interface DaemonPaths {
 
 export const DEFAULT_PORT = 9477;
 
+const BUNDLED =
+    "@runwisp/js was bundled into the app, so it can't find the runwisp binary: mark it external (Next.js: withRunWisp from @runwisp/js/next; Astro: the @runwisp/js/astro integration; other bundlers: their external option) and list it under dependencies, not devDependencies";
+
 /** The `runwisp` npm package's launcher, else `runwisp` on PATH. */
 export function resolveBinary(explicit: string | undefined): string {
     if (explicit) return explicit;
@@ -60,12 +63,18 @@ export function resolveBinary(explicit: string | undefined): string {
         return "runwisp";
     }
     // Turbopack, for one, swaps the resolve for a module id when it bundles this file.
-    if (!isAbsolute(launcher)) {
-        throw new Error(
-            "@runwisp/js was bundled into the app, so it can't find the runwisp binary: mark it external (Next.js: withRunWisp from @runwisp/js/next)",
-        );
-    }
+    if (!isAbsolute(launcher)) throw new Error(BUNDLED);
     return launcher;
+}
+
+/** This package's package.json, or undefined when bundled into the app: `../package.json` is then the app's, or missing. */
+function ownPackage(): unknown {
+    try {
+        const pkg: unknown = createRequire(import.meta.url)("../package.json");
+        return field(pkg, "name") === "@runwisp/js" ? pkg : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 /**
@@ -455,12 +464,8 @@ export function recordLaunch(paths: DaemonPaths, pid: number, fingerprint: strin
 
 /** This package's version, or undefined if it can't say. */
 export function sdkVersion(): string | undefined {
-    try {
-        const version = field(createRequire(import.meta.url)("../package.json"), "version");
-        return typeof version === "string" ? version : undefined;
-    } catch {
-        return undefined;
-    }
+    const version = field(ownPackage(), "version");
+    return typeof version === "string" ? version : undefined;
 }
 
 /** The version `binary --version` reports, or undefined if it can't say. */
@@ -603,7 +608,11 @@ function runJson(binary: string, args: string[], input?: string): unknown {
         const status = field(err, "status");
         if (typeof status !== "number" || status === 0) {
             const why =
-                field(err, "code") === "ENOENT" ? "install the runwisp package" : String(err);
+                field(err, "code") !== "ENOENT"
+                    ? String(err)
+                    : ownPackage() !== undefined
+                      ? "install the runwisp package"
+                      : BUNDLED;
             throw new Error(`could not run ${binary}: ${why}`, { cause: err });
         }
         output = String(field(err, "stdout"));

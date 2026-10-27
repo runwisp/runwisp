@@ -6,6 +6,7 @@ import type { Run, Task } from "@runwisp/common";
 import { formatTriggeredByLabel } from "@runwisp/ui";
 import type { TaskOverview } from "./overview.js";
 import {
+    failureExitCode,
     formatCompactCount,
     formatRunDurationLabel,
     formatTaskLastResultLabel,
@@ -108,6 +109,16 @@ describe("formatTaskNextRunLabel", () => {
     it("returns 'Not scheduled' when nextRunMs is undefined and isApiOnly is false", () => {
         const overview = makeOverview({ nextRunMs: undefined, isApiOnly: false });
         expect(formatTaskNextRunLabel(overview)).toBe("Not scheduled");
+    });
+
+    it("shows the time in the schedule's zone, the task's own over the daemon's", () => {
+        const now = new Date("2026-10-21T00:00:00Z");
+        const nextRunMs = new Date("2026-10-21T02:30:00Z").getTime();
+        expect(formatTaskNextRunLabel(makeOverview({ nextRunMs }), now, "Asia/Kathmandu")).toMatch(
+            /\(0?8:15\)$/,
+        );
+        const zoned = makeOverview({ task: makeTask({ timezone: "Asia/Kathmandu" }), nextRunMs });
+        expect(formatTaskNextRunLabel(zoned, now, "Etc/UTC")).toMatch(/\(0?8:15\)$/);
     });
 
     it("ticks down as the supplied now advances", () => {
@@ -225,5 +236,22 @@ describe("formatCompactCount", () => {
         expect(formatCompactCount(1000)).toBe("1k");
         expect(formatCompactCount(2_500_000)).toBe("2.5m");
         expect(formatCompactCount(3_000_000_000)).toBe("3b");
+    });
+});
+
+describe("failureExitCode", () => {
+    it("shows the code a failed command returned", () => {
+        expect(failureExitCode(makeRun({ isFailure: true, exitCode: 3 }))).toBe(3);
+    });
+
+    it("hides the -1 of a run the daemon killed", () => {
+        expect(
+            failureExitCode(makeRun({ isFailure: true, exitCode: -1, endReason: "timeout" })),
+        ).toBeUndefined();
+    });
+
+    it("hides codes on successful or missing runs", () => {
+        expect(failureExitCode(makeRun({ isFailure: false, exitCode: 0 }))).toBeUndefined();
+        expect(failureExitCode(undefined)).toBeUndefined();
     });
 });

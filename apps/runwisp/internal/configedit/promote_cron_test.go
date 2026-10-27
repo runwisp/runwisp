@@ -126,6 +126,18 @@ func TestPromote_CronSourcedTaskIsNativeAfterReloadWithNoDuplicate(t *testing.T)
 	assert.Contains(t, crontab, layout.RootPath, "the commented line carries a note pointing at where the job moved")
 }
 
+// A job whose output goes to a file failed with an empty log once promoted,
+// because the import's note about the redirect stayed behind in the report. The
+// comment above the imported table has to travel into runwisp.toml with it.
+func TestPromote_CronRedirectCommentTravels(t *testing.T) {
+	layout := cronLayout(t, cronRoot, "0 3 * * * /usr/local/bin/dump.sh >> /var/log/dump.log 2>&1\n")
+	cfg := loadLayout(t, layout)
+
+	_, err := Promote(PromoteRequest{Layout: layout, Config: cfg, Names: []string{"dump"}})
+	require.NoError(t, err)
+	assert.Contains(t, readFile(t, layout.RootPath), "# Output goes to /var/log/dump.log")
+}
+
 // TestPromote_CronSourcedTaskRestampsRatherThanChanges is the guard on
 // config.sameDefinition's provenance mask. A promote must read as a provenance-only
 // restamp, because a Changed verdict would recycle a running service and re-anchor
@@ -363,4 +375,23 @@ func TestCommentOutCronLines_FinalLineWithoutTrailingNewline(t *testing.T) {
 			"0 2 * * * two.sh",
 		string(commentFirst),
 		"commenting an earlier line must not manufacture a trailing newline on the final one")
+}
+
+// `service uninstall` left promoted jobs commented out, so a nightly backup
+// never ran again once RunWisp was gone. Restoring undoes promote exactly.
+func TestPlanPromotedCronRestores_UndoesPromote(t *testing.T) {
+	original := "MAILTO=\"\"\n0 1 * * * one.sh\n# 2am, keep\n0 2 * * * two.sh\r\n0 3 * * * three.sh"
+	promoted := commentOutCronLines(splitCronLinesKeepEnds([]byte(original)), map[int]bool{2: true, 4: true, 5: true}, "/etc/runwisp.toml")
+	file := filepath.Join(t.TempDir(), "root")
+	require.NoError(t, os.WriteFile(file, promoted, 0o600))
+
+	restores, edits := PlanPromotedCronRestores([]string{file, filepath.Join(t.TempDir(), "missing")})
+
+	assert.Equal(t, original, string(edits[file]))
+	assert.Equal(t, []CronRestore{
+		{File: file, Line: 2, Text: "0 1 * * * one.sh"},
+		{File: file, Line: 4, Text: "0 2 * * * two.sh"},
+		{File: file, Line: 5, Text: "0 3 * * * three.sh"},
+	}, restores)
+	assert.Len(t, edits, 1, "an unpromoted or unreadable file is left alone")
 }

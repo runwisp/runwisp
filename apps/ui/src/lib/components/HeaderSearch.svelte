@@ -99,7 +99,7 @@
                 <X size={14} />
             </button>
         {:else}
-            <span class="pointer-events-none hidden shrink-0 @2xl:flex">
+            <span class="pointer-events-none hidden shrink-0 @xs:flex">
                 <Kbd keys={shortcut} size="xs" tone="faint" />
             </span>
         {/if}

@@ -11,6 +11,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { field } from "./daemon.ts";
 import type { TaskContext } from "./scheduled-task.ts";
 
+/**
+ * On a run's context: an AbortSignal that aborts once RunWisp gave up on the
+ * stopped run after its graceful_stop. A task file's process is killed then.
+ */
+export const KILL: unique symbol = Symbol("runwisp.kill");
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EXT = extname(import.meta.url);
 
@@ -38,11 +44,16 @@ export function solvePath(filePath: string): string {
 
 // The forked process: loads the file, runs its `task` with the context, sends
 // back the result or the error, and exits even when the file left handles
-// open (a database pool, say), once its output had a second to drain.
+// open (a database pool, say), once its output had a second to drain. It
+// leads its own process group: when the app dies (its IPC channel closes) it
+// kills the group, the processes it started included.
 const CHILD = `
+const orphaned = () => process.kill(-process.pid, "SIGKILL");
+process.once("disconnect", orphaned);
 process.once("message", ({ path, context }) => {
     const done = (reply, code) => {
         process.exitCode = code;
+        process.off("disconnect", orphaned);
         process.send(reply, () => {
             process.disconnect();
             setTimeout(() => process.exit(), 1000).unref();
@@ -76,11 +87,22 @@ function revive(sent: unknown): Error {
     return error;
 }
 
+/** Signals the process group child leads, unless it is gone already. */
+function signalGroup(pid: number | undefined, signal: NodeJS.Signals): void {
+    if (pid === undefined) return;
+    try {
+        process.kill(-pid, signal);
+    } catch {
+        // The group has exited.
+    }
+}
+
 /**
  * A callback that runs node-cron background task file url (a module that
  * exports `task`) in a forked Node process, one per run. Its output is the
  * run's output, its error or exit fails the run, and stopping the run sends
- * it SIGTERM. The run's env is added to the process env.
+ * SIGTERM to the process and the ones it started; the context's KILL signal
+ * sends them SIGKILL. The run's env is added to the process env.
  */
 export function forkedTask(
     url: string,
@@ -90,16 +112,27 @@ export function forkedTask(
             const child = spawn(process.execPath, [...process.execArgv, "-e", CHILD], {
                 stdio: ["ignore", "pipe", "pipe", "ipc"],
                 env: { ...process.env, ...context.env },
+                // Its own process group, so a stop reaches what it started too.
+                detached: true,
             });
             child.stdout?.on("data", (chunk: Buffer) => process.stdout.write(chunk));
             child.stderr?.on("data", (chunk: Buffer) => process.stderr.write(chunk));
             let reply: unknown;
             child.on("message", (message) => (reply = message));
-            const stop = () => child.kill("SIGTERM");
+            const stop = () => {
+                signalGroup(child.pid, "SIGTERM");
+            };
+            const kill = () => {
+                signalGroup(child.pid, "SIGKILL");
+            };
+            const killed: unknown = Reflect.get(context, KILL);
+            const killSignal = killed instanceof AbortSignal ? killed : undefined;
             context.signal.addEventListener("abort", stop, { once: true });
+            killSignal?.addEventListener("abort", kill, { once: true });
             child.once("error", reject);
             child.once("close", (code, signal) => {
                 context.signal.removeEventListener("abort", stop);
+                killSignal?.removeEventListener("abort", kill);
                 const error = field(reply, "error");
                 if (error !== undefined) reject(revive(error));
                 else if (code === 0 && reply !== undefined) resolvePromise(field(reply, "result"));

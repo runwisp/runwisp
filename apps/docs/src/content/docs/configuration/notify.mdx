@@ -26,7 +26,8 @@ coalesce_limit     = 10
 
 **type**: `string[]` **default**: `["inapp"]`
 
-Notifier ids that get every failure and every
+Notifier ids that get every failure, every
+[`recovered`](/configuration/routes/#matchkinds) run (since 1.8), and every
 [`warn_after`](/configuration/tasks/#warn_after) warning, on top of each task's own
 [`notify`](/configuration/tasks/#notify) list (duplicates removed). They also
 cover tasks with no `notify` at all. `"inapp"` is the bell in the Web UI and TUI.
@@ -88,6 +89,10 @@ back:
 3. When the window ends, one **summary** covers what was held since the last
    check-in. A reload that changes notifications, or a daemon stop, sends the
    summary early.
+
+Since 1.8, a successful run of the task ends its failure windows early: the
+held summary goes out, and the next failure is a new event that goes out right
+away and gets its own bell row.
 
 A task failing every minute with the defaults sends one message about every ten
 minutes (a check-in every 10th repeat).

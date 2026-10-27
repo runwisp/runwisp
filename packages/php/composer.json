@@ -1,0 +1,57 @@
+{
+    "name": "runwisp/runwisp",
+    "description": "Scheduled tasks you can see: run your PHP, Laravel, Symfony or CodeIgniter tasks under RunWisp, with every run's output, exit code and duration in a web UI.",
+    "type": "composer-plugin",
+    "license": "Apache-2.0",
+    "keywords": ["cron", "scheduler", "laravel", "symfony", "codeigniter", "background-jobs", "cron-history", "dashboard", "runwisp"],
+    "homepage": "https://docs.runwisp.com/sdk/php/",
+    "support": {
+        "issues": "https://github.com/runwisp/runwisp/issues",
+        "source": "https://github.com/runwisp/runwisp/tree/main/packages/php",
+        "docs": "https://docs.runwisp.com/sdk/php/"
+    },
+    "require": {
+        "php": "^8.2",
+        "composer-plugin-api": "^2.0",
+        "symfony/process": "^6.4 || ^7.0 || ^8.0"
+    },
+    "require-dev": {
+        "codeigniter4/framework": "^4.6",
+        "codeigniter4/tasks": "^1.0",
+        "composer/composer": "^2.9",
+        "orchestra/testbench": "^11.0",
+        "phpstan/phpstan": "^2.3",
+        "phpunit/phpunit": "^13.4",
+        "symfony/framework-bundle": "^8.1",
+        "symfony/messenger": "^8.1",
+        "symfony/scheduler": "^8.1"
+    },
+    "suggest": {
+        "ext-pcntl": "Lets a run see that it is being stopped, and the worker finish its runs on SIGTERM"
+    },
+    "autoload": {
+        "psr-4": {
+            "RunWisp\\": "src/",
+            "RunWisp\\CodeIgniter\\": "src/CodeIgniter/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "RunWisp\\Tests\\": "tests/"
+        }
+    },
+    "bin": [
+        "bin/runwisp"
+    ],
+    "extra": {
+        "class": "RunWisp\\Installer\\Plugin",
+        "laravel": {
+            "providers": [
+                "RunWisp\\Laravel\\RunWispServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

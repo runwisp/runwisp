@@ -4,15 +4,21 @@
 <script lang="ts">
     import { displayStatus, type Run } from "@runwisp/common";
     import { RUN_STATUS_CONFIG } from "./status-config.js";
+    import { humanizeStatus } from "./run-filters.js";
     import {
         formatTriggeredByLabel,
         runRetryLabel,
         runRowReadout,
         runUsageAmounts,
         runUsageLabel,
+        runDurationMs,
         usageLevel,
         highlightParts,
-        type RunUsageAmounts,
+        formatLines,
+        outputUnusual,
+        runOutputLabel,
+        runOutputLines,
+        type OutputScale,
         type RunUsageScale,
     } from "./run-helpers.js";
     import type { RunOutputMatch } from "./types.js";
@@ -35,6 +41,8 @@
         bulkActions,
         selectionActive,
         usage,
+        output,
+        durationUsual,
         onselect,
     }: {
         run: Run;
@@ -52,6 +60,10 @@
          * no run has usage yet (rows keep the bars' room), undefined for none.
          */
         usage: RunUsageScale | null | undefined;
+        /** The task's output scale for the rail's third bar, undefined for none. */
+        output: OutputScale | undefined;
+        /** The task's usual run duration in ms, undefined for none. */
+        durationUsual: number | undefined;
         onselect: (runId: string) => void;
     } = $props();
 
@@ -61,6 +73,49 @@
     const startedAt = $derived(run.startedAt ?? run.createdAt);
     const retry = $derived(runRetryLabel(run));
     const amounts = $derived(usage ? runUsageAmounts(run) : undefined);
+    const lines = $derived(output ? runOutputLines(run) : undefined);
+    const barsTitle = $derived(
+        [
+            [runUsageLabel(run), runOutputLabel(run)].filter(Boolean).join(" · "),
+            [
+                usage &&
+                    `CPU ${formatDuration(usage.usual.cpu)} · RAM ${formatBytes(usage.usual.ram)}`,
+                output?.band &&
+                    `${formatLines(output.band.p10)} to ${formatLines(output.band.p90)}`,
+            ]
+                .filter(Boolean)
+                .join(" · "),
+        ]
+            .filter(Boolean)
+            .join(". Usual for this task: "),
+    );
+    // The readout shows the duration only for runs that didn't fail; a failed
+    // one shows its exit code, which stays plain.
+    const durationMs = $derived(
+        durationUsual === undefined || dstatus === "failed" || dstatus === "crashed"
+            ? undefined
+            : runDurationMs(run),
+    );
+    const durationLevel = $derived(
+        durationMs === undefined || durationUsual === undefined
+            ? 0
+            : usageLevel(durationMs, durationUsual, "duration"),
+    );
+    const readoutTitle = $derived(
+        [
+            retry,
+            durationLevel > 0 &&
+                durationUsual !== undefined &&
+                `Usual for this task: ${formatDuration(durationUsual)}`,
+        ]
+            .filter(Boolean)
+            .join(". ") || undefined,
+    );
+    const READOUT_COLOR = [
+        "text-on-surface-faint",
+        "text-warning-soft-text",
+        "text-danger-soft-text",
+    ];
     const tight = $derived(usage === undefined ? "" : "@max-[19rem]:hidden");
     const LEVEL_COLOR = ["bg-success-surface", "bg-warning-surface", "bg-danger-surface"];
     // With bulk actions on, the status dot fades out on row hover, or whenever a
@@ -91,9 +146,8 @@
                             >{/if}
                     </span>
                     <span class="shrink-0 text-on-surface-faint">·</span>
-                    <span
-                        class="shrink-0 font-mono text-[12px] font-semibold capitalize {config.color}"
-                        >{dstatus}</span
+                    <span class="shrink-0 font-mono text-[12px] font-semibold {config.color}"
+                        >{humanizeStatus(dstatus)}</span
                     >
                 </span>
                 <span
@@ -134,31 +188,51 @@
                 <!-- With usage bars a tight rail drops the status word; the dot
                      keeps its colour. -->
                 <span class="text-on-surface-faint {tight}">·</span>
-                <span
-                    class="font-mono text-[12.5px] font-semibold capitalize {config.color} {tight}"
-                    >{dstatus}</span
+                <span class="font-mono text-[12.5px] font-semibold {config.color} {tight}"
+                    >{humanizeStatus(dstatus)}</span
                 >
                 {#if suffix}
                     <span class="font-mono text-2xs text-on-surface-faint">{suffix}</span>
                 {/if}
             </span>
-            {#if usage && amounts}
+            {#if usage !== undefined && (amounts || lines !== undefined)}
+                <!-- Fixed slots, CPU over RAM over lines printed, so a run
+                     missing one (a non-shell backend has no CPU/RAM) keeps the
+                     others aligned with its neighbours. -->
                 <span
                     class="flex w-6 shrink-0 cursor-help flex-col gap-0.5"
-                    title="{runUsageLabel(run)}. Usual for this task: CPU {formatDuration(
-                        usage.usual.cpu,
-                    )} · RAM {formatBytes(usage.usual.ram)}"
+                    title={barsTitle}
                     data-testid="run-usage-bars"
                 >
-                    {@render bar(amounts.cpu, usage.max.cpu, usage.usual.cpu, "cpu")}
-                    {@render bar(amounts.ram, usage.max.ram, usage.usual.ram, "ram")}
+                    {#if usage && amounts}
+                        {@render bar(
+                            amounts.cpu,
+                            usage.max.cpu,
+                            usageLevel(amounts.cpu, usage.usual.cpu, "cpu"),
+                        )}
+                        {@render bar(
+                            amounts.ram,
+                            usage.max.ram,
+                            usageLevel(amounts.ram, usage.usual.ram, "ram"),
+                        )}
+                    {:else}
+                        <span class="block h-[3px]"></span>
+                        <span class="block h-[3px]"></span>
+                    {/if}
+                    {#if output && lines !== undefined}
+                        {@render bar(
+                            lines,
+                            output.max,
+                            output.band && outputUnusual(lines, output.band) ? 1 : 0,
+                        )}
+                    {/if}
                 </span>
             {:else if usage !== undefined}
                 <span class="w-6 shrink-0" aria-hidden="true"></span>
             {/if}
             <span
-                class="shrink-0 font-mono text-[11.5px] text-on-surface-faint tabular-nums"
-                title={retry ?? undefined}
+                class="shrink-0 font-mono text-[11.5px] {READOUT_COLOR[durationLevel]} tabular-nums"
+                title={readoutTitle}
             >
                 {runRowReadout(run, dstatus)}
             </span>
@@ -183,10 +257,10 @@
     ></div>
 </button>
 
-{#snippet bar(value: number, max: number, usual: number, kind: keyof RunUsageAmounts)}
+{#snippet bar(value: number, max: number, level: 0 | 1 | 2)}
     <span class="block h-[3px] overflow-hidden rounded-[1px] bg-outline-faint">
         <span
-            class="block h-full {LEVEL_COLOR[usageLevel(value, usual, kind)]}"
+            class="block h-full {LEVEL_COLOR[level]}"
             style="width: {String(max > 0 ? Math.max(4, Math.round((100 * value) / max)) : 4)}%"
         ></span>
     </span>

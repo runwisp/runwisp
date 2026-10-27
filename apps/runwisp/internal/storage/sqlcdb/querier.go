@@ -70,6 +70,9 @@ type Querier interface {
 	// write must not make a pause silently disappear. An already-paused task keeps
 	// its original paused_at.
 	PauseTaskSchedule(ctx context.Context, arg PauseTaskScheduleParams) error
+	// The failure bit of the task's newest ended run other than the given one,
+	// counted the way GetLastRun counts: a missed run only when it is a failure.
+	PreviousRunIsFailure(ctx context.Context, arg PreviousRunIsFailureParams) (int64, error)
 	PruneNotificationsByAge(ctx context.Context, lastOccurredAt time.Time) (int64, error)
 	PruneNotificationsByCount(ctx context.Context, offset int64) (int64, error)
 	QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreatedAtAscParams) ([]Run, error)

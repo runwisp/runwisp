@@ -280,9 +280,13 @@ test.describe("task execution", () => {
         // filter, to undo it) must stay, not give way to the "never ran" state.
         await page.getByRole("checkbox", { name: "Failed", exact: true }).check();
         const main = page.getByRole("main");
-        await expect(main.getByText("No runs yet")).toBeVisible();
-        await expect(main.getByText("This task hasn't run yet.", { exact: false })).toHaveCount(0);
+        await expect(main.getByText("No matching runs")).toBeVisible();
+        await expect(main.getByText("No runs yet")).toHaveCount(0);
         await expect(filter).toBeVisible();
+        // The empty state undoes the filter in one click.
+        await page.keyboard.press("Escape");
+        await main.getByRole("button", { name: "Clear filters" }).click();
+        await expect(main.getByText("No matching runs")).toHaveCount(0);
     });
 
     test("on a phone, opening a run from a notification shows that run", async ({

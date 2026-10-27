@@ -171,11 +171,14 @@ healthy_after = "2m"
 
 ### restart_attempts
 
-**type**: `integer` **default**: `3` **min**: `0` **max**: `100`
+**type**: `integer` **default**: `10` **min**: `0` **max**: `100`
 
 How many failed starts in a row an instance may have before it goes
 [FATAL](#when-a-service-cant-start-fatal) and stops restarting. `0` gives up
-after the first failed start.
+after the first failed start. With the default
+[`restart_delay`](#restart_delay) and [`restart_backoff`](#restart_backoff),
+10 attempts keep trying for about 5 minutes, enough to ride out a database
+restart. Since 1.8, the default is `10` (it was `3`).
 
 ```toml title="runwisp.toml"
 [services.flaky]
@@ -201,10 +204,15 @@ Possible values: `constant`, `linear`, `exponential` (the same curves as
 
 ### When a service can't start: FATAL
 
-A **failed start** is a failure exit before the instance became healthy: before
-it reached [`healthy_after`](#healthy_after), or, with a
-[`health_check`](#health_check), before its check first passed. A clean exit
-(success code) never counts.
+A **failed start** is any exit before the instance became healthy: before it
+reached [`healthy_after`](#healthy_after), or, with a
+[`health_check`](#health_check), before its check first passed. Since 1.8, a
+clean exit (success code) counts too, since a service has to keep running.
+
+A service must stay in the foreground. A command that daemonizes (`redis-server
+--daemonize yes`, `nginx` without `-g 'daemon off;'`, a trailing `&`) exits 0
+at once, so every start fails, and the run log says so. Run it in its
+foreground mode instead.
 
 - After more than [`restart_attempts`](#restart_attempts) failed starts in a
   row, the instance goes **FATAL**: it stops restarting, a `start_failed` run is

@@ -422,6 +422,13 @@ func TestDiscord_RunSucceeded_Green(t *testing.T) {
 	require.Len(t, parsed.Embeds, 1)
 	assert.Equal(t, "✅ nightly-backup succeeded", parsed.Embeds[0].Title)
 	assert.Equal(t, 5763719, parsed.Embeds[0].Color, "success must render green")
+
+	ev.Kind = notify.KindRunRecovered
+	parsed = discordPayload{}
+	require.NoError(t, json.Unmarshal([]byte(renderDiscord(t, TemplateContext{Fingerprint: "fp"}, ev)), &parsed))
+	require.Len(t, parsed.Embeds, 1)
+	assert.Equal(t, "💚 nightly-backup recovered", parsed.Embeds[0].Title)
+	assert.Equal(t, 5763719, parsed.Embeds[0].Color, "a recovery renders green too")
 }
 
 func TestDiscord_LogDiskPressure_TaskLinkAndYellow(t *testing.T) {

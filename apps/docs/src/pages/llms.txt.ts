@@ -74,6 +74,10 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
             "sdk/javascript/sveltekit",
             "sdk/javascript/astro",
             "sdk/javascript/nestjs",
+            "sdk/php",
+            "sdk/php/laravel",
+            "sdk/php/symfony",
+            "sdk/php/codeigniter",
         ],
     },
     {

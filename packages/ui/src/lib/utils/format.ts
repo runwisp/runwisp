@@ -63,12 +63,14 @@ function dateFormatter(options: Intl.DateTimeFormatOptions): (date: string | Dat
     return (date) => format.format(new Date(date));
 }
 
+/** Date and time, 24-hour like every other clock in the UI, e.g. "Oct 20, 2026, 21:05". */
 export const formatDateTime = dateFormatter({
     year: "numeric",
     month: "short",
     day: "numeric",
-    hour: "numeric",
+    hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
 });
 
 /** Wall-clock time of day, seconds included, 24-hour, e.g. "17:15:02". */
@@ -102,16 +104,38 @@ export const formatFullDateTime = dateFormatter({
     hour12: false,
 });
 
-const formatShortTime = dateFormatter({ hour: "numeric", minute: "2-digit", hour12: false });
+/** Formats date with options in timeZone; the browser's zone when unset or unknown to Intl. */
+function formatInZone(date: Date, options: Intl.DateTimeFormatOptions, timeZone?: string): string {
+    if (timeZone) {
+        try {
+            return new Intl.DateTimeFormat(undefined, { ...options, timeZone }).format(date);
+        } catch {
+            // A zone the daemon knows but this browser's Intl doesn't.
+        }
+    }
+    return new Intl.DateTimeFormat(undefined, options).format(date);
+}
 
+/**
+ * "in 7 hours (02:30)". Pass timeZone for a scheduled time, so the clock time
+ * agrees with the cron description ("At 02:30") written in the schedule's zone.
+ */
 export function formatRelativeTimeWithAbsolute(
     dateStr: string | Date,
     now: Date = new Date(),
+    timeZone?: string,
 ): string {
     const date = new Date(dateStr);
     const diffDays = Math.abs(now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
-    const absolute = diffDays < 1 ? formatShortTime(date) : formatDayMonth(date);
-    return `${formatRelativeTime(date, now)} (${absolute})`;
+    const year = (d: Date): string => formatInZone(d, { year: "numeric" }, timeZone);
+    // The year only when it differs, so "in 1 year (Feb 29)" can't hide which Feb 29.
+    const options: Intl.DateTimeFormatOptions =
+        diffDays < 1
+            ? { hour: "numeric", minute: "2-digit", hour12: false }
+            : year(date) === year(now)
+              ? { month: "short", day: "numeric" }
+              : { year: "numeric", month: "short", day: "numeric" };
+    return `${formatRelativeTime(date, now)} (${formatInZone(date, options, timeZone)})`;
 }
 
 export function formatBytes(bytes: number): string {

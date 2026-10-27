@@ -132,6 +132,41 @@ Put the variables after `sudo`, or `sudo` drops them. The file is rewritten on
 every install: to change a value or remove one, change your shell and install
 again.
 
+### Other variables
+
+Only `RUNWISP_*` variables are carried over. For a `${SLACK_URL}` in
+`runwisp.toml`, pick one of these.
+
+Read the value from a file with [`${file:...}`](/configuration/substitution/#filepath-file-contents).
+This needs no change to the unit, and [`runwisp reload`](/operations/reload/)
+picks up a new value:
+
+```toml title="runwisp.toml"
+[notifiers.slack-ops]
+type        = "slack"
+webhook_url = "${file:/etc/runwisp/slack.url}"
+```
+
+Or set the variable on the unit with a systemd drop-in:
+
+```bash
+sudo systemctl edit runwisp
+```
+
+```ini title="/etc/systemd/system/runwisp.service.d/override.conf"
+[Service]
+Environment=SLACK_URL=https://hooks.slack.com/services/...
+# or, one KEY=VALUE per line in a 0600 file:
+EnvironmentFile=/etc/runwisp/daemon.env
+```
+
+The daemon reads its environment only when it starts, so run
+`sudo runwisp restart` after the edit. `service install` leaves this file alone.
+
+If only a task's command needs the value, and not `runwisp.toml` itself, give
+that task an [`env_file`](/configuration/tasks/#env_file), or a
+[`secrets_file`](/configuration/tasks/#secrets_file) for a secret.
+
 ## Running in station mode
 
 To keep a daemon connected to a Station across reboots, install it with
@@ -174,6 +209,47 @@ Register-ScheduledTask -TaskName 'RunWispBoot' -Action $Action -Trigger $Trigger
 installer tells you to run `sudo runwisp takeover`. See
 [From cron](/coming-from/cron/).
 
+## Back up and move
+
+Everything RunWisp knows lives in a few places. Back these up:
+
+- **The data directory**, `/var/lib/runwisp`: run history in `runwisp.db` (with
+  its `runwisp.db-wal` and `runwisp.db-shm` files), run output in `logs/`, and
+  the self-signed certificate in `tls/`. Keep `tls/` so clients that pinned the
+  certificate still connect.
+- **The config**, `/etc/runwisp/`.
+- **The unit's drop-ins**, `/etc/systemd/system/runwisp.service.d/`: the saved
+  password and the carried environment.
+- **After a [takeover](/coming-from/cron/)**, the crontabs RunWisp reads.
+
+`daemon.pid`, `runwisp.sock` and `daemon.log` are rebuilt on start and don't
+need a backup.
+
+The database is SQLite in WAL mode, so copying it while the daemon writes can
+catch it halfway. Stop the daemon for the copy:
+
+```bash
+sudo runwisp stop
+sudo tar -czf runwisp-backup.tar.gz /var/lib/runwisp /etc/runwisp \
+  /etc/systemd/system/runwisp.service.d
+sudo systemctl start runwisp
+```
+
+For a copy without stopping, use `sqlite3 /var/lib/runwisp/runwisp.db ".backup
+/tmp/runwisp.db"` (`sqlite3` doesn't ship with RunWisp) and copy `logs/`
+next to it.
+
+To move RunWisp to a new machine:
+
+1. Install the same version or a newer one. The database only migrates forward.
+2. Restore the paths above, keeping their owners and the data directory's
+   `0700` mode.
+3. Run `sudo runwisp service install`. It keeps the restored `password.conf`.
+4. If the old machine ran `takeover`, run `sudo runwisp takeover` again.
+
+In Docker, back up the volume mounted at `/var/lib/runwisp` the same way, with
+the container stopped.
+
 ## Uninstall
 
 ```bash
@@ -183,7 +259,8 @@ sudo runwisp service uninstall --purge   # delete it too
 
 Uninstall stops the daemon, turns off autostart, and removes the unit. Your data
 directory (run history and logs) stays. If `takeover` retired cron, uninstall
-gives it back.
+gives it back, along with the jobs `promote` moved out of your crontabs. It
+lists the tasks and services that stop running before it asks.
 
 `--purge` also deletes the data directory. It asks you to type `delete`, even
 with `--yes`.

@@ -596,7 +596,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 	t.Run("nil-item-renders-loading-placeholder", func(t *testing.T) {
 		l := buildList(5)
 		l.SetSize(80, 24)
-		text := l.buildRowText(nil, 0, computeColWidths(60, 0), nil)
+		text := l.buildRowText(nil, 0, computeColWidths(60, 0), rowBaselines{})
 		if !strings.Contains(text, "loading") {
 			t.Fatalf("expected loading placeholder, got %q", text)
 		}
@@ -609,7 +609,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		if item == nil {
 			t.Fatal("pre-condition: expected item at index 0")
 		}
-		text := l.buildRowText(item, 0, computeColWidths(60, 0), nil)
+		text := l.buildRowText(item, 0, computeColWidths(60, 0), rowBaselines{})
 		if !strings.Contains(text, "task") {
 			t.Fatalf("expected task name in row, got %q", text)
 		}
@@ -624,7 +624,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l.SetSize(80, 24)
 		l.SetFocused(true)
 		l.cursor = 2
-		text := l.buildRowText(l.window.Item(2), 2, computeColWidths(60, 0), nil)
+		text := l.buildRowText(l.window.Item(2), 2, computeColWidths(60, 0), rowBaselines{})
 		if !strings.Contains(text, "task") {
 			t.Fatalf("expected task name in cursor row, got %q", text)
 		}
@@ -634,7 +634,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := buildList(5)
 		l.SetSize(80, 24)
 		l.SetHovered(1)
-		text := l.buildRowText(l.window.Item(1), 1, computeColWidths(60, 0), nil)
+		text := l.buildRowText(l.window.Item(1), 1, computeColWidths(60, 0), rowBaselines{})
 		if !strings.Contains(text, "task") {
 			t.Fatalf("expected task name in hovered row, got %q", text)
 		}
@@ -648,7 +648,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := NewExecList(w)
 		l.SetInstanceCountLookup(func(string) int { return 3 })
 		l.SetSize(80, 24)
-		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0), nil)
+		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0), rowBaselines{})
 		// 0-based slot 2 → 1-based display #3.
 		if !strings.Contains(text, "task#3") {
 			t.Fatalf("expected task#3 in multi-instance row, got %q", text)
@@ -663,7 +663,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := NewExecList(w)
 		l.SetInstanceCountLookup(func(string) int { return 3 })
 		l.SetSize(80, 24)
-		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0), nil)
+		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0), rowBaselines{})
 		// Slot 0 of a multi-instance service must still be suffixed (#1).
 		if !strings.Contains(text, "task#1") {
 			t.Fatalf("expected task#1 for slot 0 of multi-instance service, got %q", text)
@@ -678,7 +678,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := NewExecList(w)
 		l.SetInstanceCountLookup(func(string) int { return 1 })
 		l.SetSize(80, 24)
-		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0), nil)
+		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0), rowBaselines{})
 		if strings.Contains(text, "task#") {
 			t.Fatalf("expected no instance suffix for single-instance task, got %q", text)
 		}
@@ -697,7 +697,7 @@ func TestBuildRowText_BadgesShareOneWidth(t *testing.T) {
 	l.SetSize(80, 24)
 	cw := computeColWidths(80, 0)
 	for i := range 2 {
-		text := l.buildRowText(l.window.Item(i), i, cw, nil)
+		text := l.buildRowText(l.window.Item(i), i, cw, rowBaselines{})
 		if got := uikit.VisibleWidth(text); got != cw.rowWidth() {
 			t.Fatalf("row %d: width %d, want %d", i, got, cw.rowWidth())
 		}
@@ -720,7 +720,7 @@ func TestBuildRowText_TruncatedStatusKeepsColour(t *testing.T) {
 	l.SetSize(80, 24)
 	cw := computeColWidths(60, 0)
 	cw.status = 5
-	text := l.buildRowText(l.window.Item(0), 0, cw, nil)
+	text := l.buildRowText(l.window.Item(0), 0, cw, rowBaselines{})
 	// The label truncates to the 5-cell column minus the badge's padding.
 	want := uikit.StatusStyle("succeeded").Render(uikit.TruncateToWidth("success", 3))
 	if !strings.Contains(text, want) {
@@ -986,12 +986,58 @@ func TestUsageCells_ColorByUsualRun(t *testing.T) {
 	}
 }
 
-func TestComputeColWidths_ScopedDropsTriggerThenUsage(t *testing.T) {
-	if cw := computeColWidths(89, timeColW); cw.cpu == 0 || cw.mem == 0 || cw.trigger == 0 {
+func TestDurationCell_ColorByUsualRun(t *testing.T) {
+	start := time.Now()
+	item := func(phase model.RunPhase, d time.Duration) *uikit.ExecListItem {
+		end := start.Add(d)
+		return &uikit.ExecListItem{Run: model.Run{Status: phase, StartedAt: &start, EndedAt: &end}}
+	}
+	usual := new(20 * time.Second)
+
+	if c := durationCell(item(model.PhaseEnded, 4*time.Minute), usual, false); c.fg != uikit.ColorError {
+		t.Errorf("expected a 4m run flagged against a usual 20s, got %v", c.fg)
+	}
+	if c := durationCell(item(model.PhaseEnded, 22*time.Second), usual, false); c.fg != nil {
+		t.Errorf("expected a usual run left plain, got %v", c.fg)
+	}
+	if c := durationCell(item(model.PhaseEnded, 4*time.Minute), nil, false); c.fg != nil {
+		t.Errorf("expected no colour without a baseline, got %v", c.fg)
+	}
+	// The cursor row keeps its own highlight colour.
+	if c := durationCell(item(model.PhaseEnded, 4*time.Minute), usual, true); c.fg != nil {
+		t.Errorf("expected no colour on the cursor row, got %v", c.fg)
+	}
+}
+
+func TestOutputCell_FlagsRunOutsideBand(t *testing.T) {
+	printed := func(n int64) model.Run {
+		return model.Run{Status: model.PhaseEnded, StdoutLines: new(int64(0)), StderrLines: new(n)}
+	}
+	silent := &uikit.OutputBand{}
+
+	if c := outputCell(new(printed(3)), silent, false); c.text != "3 lines" || c.fg != uikit.ColorWarning {
+		t.Errorf("expected a silent task's 3 lines flagged, got %+v", c)
+	}
+	if c := outputCell(new(printed(0)), silent, false); c.text != "none" || c.fg != uikit.ColorTextMuted {
+		t.Errorf("expected a muted none, got %+v", c)
+	}
+	if c := outputCell(&model.Run{Status: model.PhaseEnded}, silent, false); c.text != "–" {
+		t.Errorf("expected a dash for a run without counts, got %+v", c)
+	}
+	if c := outputCell(new(printed(3)), silent, true); c.fg != nil {
+		t.Errorf("expected no colour on the cursor row, got %v", c.fg)
+	}
+}
+
+func TestComputeColWidths_ScopedDropsTriggerThenOutputThenUsage(t *testing.T) {
+	if cw := computeColWidths(89, timeColW); cw.cpu == 0 || cw.mem == 0 || cw.output == 0 || cw.trigger == 0 {
 		t.Fatalf("expected every column at 89 cells, got %+v", cw)
 	}
-	if cw := computeColWidths(64, timeColW); cw.trigger != 0 || cw.mem == 0 {
-		t.Fatalf("expected only TRIGGER hidden at 64 cells, got %+v", cw)
+	if cw := computeColWidths(76, timeColW); cw.trigger != 0 || cw.output == 0 {
+		t.Fatalf("expected only TRIGGER hidden at 76 cells, got %+v", cw)
+	}
+	if cw := computeColWidths(64, timeColW); cw.output != 0 || cw.mem == 0 {
+		t.Fatalf("expected OUTPUT hidden before RAM at 64 cells, got %+v", cw)
 	}
 	if cw := computeColWidths(56, timeColW); cw.mem != 0 || cw.cpu == 0 {
 		t.Fatalf("expected RAM hidden before CPU at 56 cells, got %+v", cw)

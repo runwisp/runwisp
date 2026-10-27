@@ -213,10 +213,48 @@ func TestStopGivesUpAfterGracefulStop(t *testing.T) {
 	p := <-started
 
 	cancel()
-	go func() { app.next() }() // the stop the handler ignores
+	got := make(chan []message, 1)
+	go func() { got <- []message{app.next(), app.next()} }() // the stop the handler ignores, then the kill
 	_, stderr, exit := output(t, p)
 	assert.Contains(t, stderr, "did not stop within graceful_stop")
 	assert.Equal(t, -1, exit)
+	assert.Equal(t, []message{{Type: "stop", Run: "r1"}, {Type: "kill", Run: "r1"}}, <-got)
+}
+
+func TestForceKillTellsTheApp(t *testing.T) {
+	h := New()
+	app := connect(t, h)
+	app.role()
+	p := startRun(t, h, app, "r1")
+
+	p.ForceKill()
+	assert.Equal(t, message{Type: "kill", Run: "r1"}, app.next())
+	_, _, exit := output(t, p)
+	assert.Equal(t, -1, exit)
+}
+
+func TestAppSkippedRunEndsSkipped(t *testing.T) {
+	h := New()
+	app := connect(t, h)
+	app.role()
+	p := startRun(t, h, app, "r1")
+
+	go app.send(message{Type: "exit", Run: "r1", Code: code(1), Reason: "skipped"})
+	_, _, exit := output(t, p)
+	assert.Equal(t, -1, exit)
+	assert.Equal(t, model.ReasonSkipped, p.EndReason())
+}
+
+func TestAppExitReasonOtherThanSkippedIsIgnored(t *testing.T) {
+	h := New()
+	app := connect(t, h)
+	app.role()
+	p := startRun(t, h, app, "r1")
+
+	go app.send(message{Type: "exit", Run: "r1", Code: code(1), Reason: "succeeded"})
+	_, _, exit := output(t, p)
+	assert.Equal(t, 1, exit)
+	assert.Equal(t, model.EndReason(""), p.EndReason())
 }
 
 func TestDisconnectEndsRuns(t *testing.T) {
@@ -642,19 +680,22 @@ func TestClosingHandsServicesToTheNextCopy(t *testing.T) {
 	assert.Equal(t, []string{"restart worker"}, services.recorded())
 }
 
-// lastRole reads what the app is sent until the daemon goes quiet and returns
-// whether the last role message made it active.
+// lastRole waits for the first role message, then reads until the daemon goes
+// quiet and returns whether the last role message made it active. The wait for
+// the first one is long so a loaded CI runner can't read as "never told".
 func (a *fakeApp) lastRole() bool {
 	a.t.Helper()
 	active := false
+	wait := 5 * time.Second
 	for {
-		require.NoError(a.t, a.conn.SetReadDeadline(time.Now().Add(20*time.Millisecond)))
+		require.NoError(a.t, a.conn.SetReadDeadline(time.Now().Add(wait)))
 		var m message
 		if err := a.dec.Decode(&m); err != nil {
 			return active
 		}
 		if m.Type == "role" {
 			active = *m.Active
+			wait = 50 * time.Millisecond
 		}
 	}
 }

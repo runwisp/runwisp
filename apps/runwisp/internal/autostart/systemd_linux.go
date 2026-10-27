@@ -498,8 +498,16 @@ func (s *systemdInstaller) Stop(ctx context.Context, opts InstallOptions) error 
 	return s.runSystemctlVerb(ctx, opts.System, "stop")
 }
 
-// Restart implements Installer.
+// Restart implements Installer. It clears the unit's failed state first:
+// systemd counts every start, manual ones included, toward StartLimitBurst, so
+// an operator restarting a few times while editing the config would otherwise
+// trip the crash-loop limit and hand the jobs back to cron via the failsafe.
+// reset-failed is best effort; on a unit that never failed it is a no-op.
 func (s *systemdInstaller) Restart(ctx context.Context, opts InstallOptions) error {
+	if err := s.requireFingerprint(opts.System); err != nil {
+		return err
+	}
+	_, _, _ = s.runSystemctl(ctx, opts.System, "reset-failed", s.serviceName(opts.System))
 	return s.runSystemctlVerb(ctx, opts.System, "restart")
 }
 
@@ -777,6 +785,7 @@ func (s *systemdInstaller) Status(ctx context.Context, opts InstallOptions) (Sta
 	name := s.serviceName(opts.System)
 	st := Status{
 		OS:       "linux",
+		System:   opts.System,
 		UnitPath: unitPath,
 		Binary:   opts.Binary,
 		DataDir:  opts.DataDir,

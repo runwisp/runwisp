@@ -57,6 +57,7 @@
             running,
             schedulingActive: systemStore.schedulingActive,
             now: clock.now,
+            daemonZone: systemStore.timezone,
             readOnly: authStore.current.readOnly,
         }),
     );

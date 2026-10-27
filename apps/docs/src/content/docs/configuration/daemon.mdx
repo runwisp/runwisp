@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: "[daemon]"
-description: "Daemon-wide settings: name, shutdown_timeout, timezone, external_url, log_output, TLS, metrics, trusted proxies, include, and include_cron."
+description: "Daemon-wide settings: name, shutdown_timeout, timezone, external_url, heartbeat_url, log_output, TLS, metrics, trusted proxies, include, and include_cron."
 ---
 
 `[daemon]` holds settings for the whole daemon. The table is optional.
@@ -22,6 +22,7 @@ shutdown_timeout = "10s"
 timezone         = "Europe/Bratislava"
 external_url     = "https://runwisp.example.com"
 check_updates    = true
+heartbeat_url    = "https://hc-ping.com/your-check-uuid"
 log_output       = false
 tls              = "off"
 tls_cert         = ""
@@ -123,12 +124,38 @@ next to the version in the Web UI and TUI. It never downloads or installs
 anything. It also lets the Web UI ask for a quick rating, at most once a
 month. Nothing is sent unless you press Submit, and then only your rating,
 optional note, and RunWisp version. Set `false` to keep RunWisp fully
-offline.
+offline. The check is always skipped when the `CI` environment variable is set
+(and not `false` or `0`), as it is in GitHub Actions, GitLab CI and most other
+CI services.
 
 ```toml title="runwisp.toml"
 [daemon]
 check_updates = false
 ```
+
+### `heartbeat_url`
+
+**type**: `string` (http or https URL) **default**: unset **since**: `1.8`
+
+A URL the daemon requests (`GET`) when it starts and then every minute while it
+runs. Point it at a dead man's switch service such as
+[healthchecks.io](https://healthchecks.io): when the requests stop, that
+service alerts you. It covers the one failure RunWisp can't report itself:
+the daemon being down.
+
+```toml title="runwisp.toml"
+[daemon]
+heartbeat_url = "${file:secrets/heartbeat.url}"
+```
+
+- On healthchecks.io, create a check with a period of 1 minute and give it a
+  few minutes of grace time, then copy its ping URL.
+- A response other than 2xx counts as a failed ping. The first failure is
+  logged with the host name, and so is the first success after it.
+- The URL often contains a secret token, so RunWisp never logs it or shows it
+  in the API. Keep it out of `runwisp.toml` with
+  [substitution](/configuration/substitution/).
+- Unset, nothing is sent.
 
 ### `log_output`
 

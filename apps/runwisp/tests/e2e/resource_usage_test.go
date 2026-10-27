@@ -19,7 +19,7 @@ import (
 
 // TestResourceUsageLiveAndPersisted runs a shell task and checks both halves of
 // resource usage: the task reports live usage while it runs, and the finished
-// run carries its peak memory and CPU time.
+// run carries its peak memory, CPU time and the lines it printed per stream.
 func TestResourceUsageLiveAndPersisted(t *testing.T) {
 	t.Parallel()
 	const taskName = "usage-task"
@@ -30,7 +30,7 @@ func TestResourceUsageLiveAndPersisted(t *testing.T) {
 shutdown_timeout = "500ms"
 
 [tasks.%s]
-run = "sleep 3"
+run = "echo hi; echo warn >&2; sleep 3"
 `, taskName)
 	require.NoError(t, os.WriteFile(configPath, []byte(body), 0o600))
 
@@ -63,6 +63,8 @@ run = "sleep 3"
 	require.NotNil(t, run.PeakMemoryBytes, "the finished run records its peak memory")
 	assert.Positive(t, *run.PeakMemoryBytes)
 	require.NotNil(t, run.CPUTimeMs, "the finished run records its CPU time")
+	assert.Equal(t, new(int64(1)), run.StdoutLines, "the finished run counts its stdout lines")
+	assert.Equal(t, new(int64(1)), run.StderrLines, "the finished run counts its stderr lines")
 
 	// The task list carries what the Web UI's task page shows without a
 	// second request: the newest run and the run command.
@@ -72,7 +74,7 @@ run = "sleep 3"
 		if task.Name == taskName {
 			require.NotNil(t, task.LastRun, "the task reports its newest run")
 			assert.Equal(t, triggered.ID, task.LastRun.ID)
-			assert.Equal(t, "sleep 3", task.RunCommand)
+			assert.Equal(t, "echo hi; echo warn >&2; sleep 3", task.RunCommand)
 		}
 	}
 }

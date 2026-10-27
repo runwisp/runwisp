@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strings"
@@ -43,11 +44,26 @@ func newCutover(f Flags, deps autostart.Deps, installer autostart.Installer, opt
 		},
 		DaemonRunning: func() bool { return isDaemonRunning(f) },
 		Reload:        func(ctx context.Context) error { return reloadRunningDaemon(ctx, f, deps.Stdout) },
+		AfterInstall:  ensureCutoverPassword(installer, opts),
 	}
 	for _, tweak := range tweaks {
 		tweak(&cd)
 	}
 	return cutover.New(cd)
+}
+
+// ensureCutoverPassword gives a service the cutover installed the same stable
+// Web UI password `service install` does. Without it the daemon mints a new
+// one, signing everyone out, on every restart and reboot.
+func ensureCutoverPassword(installer autostart.Installer, opts autostart.InstallOptions) func(context.Context, io.Writer) {
+	return func(ctx context.Context, out io.Writer) {
+		if !ensureServicePasswordFallback(out, installer, opts) {
+			return
+		}
+		if err := installer.Restart(ctx, opts); err != nil {
+			fmt.Fprintf(out, "\nSaved the password, but restarting to apply it failed (%v). Run 'runwisp restart'.\n", err)
+		}
+	}
 }
 
 // resolveCutover builds the cutover for `runwisp takeover`.

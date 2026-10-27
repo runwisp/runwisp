@@ -496,13 +496,14 @@ func worthReporting(n importer.Note, live bool) bool {
 // meets. Called once the whole Config exists, because the answer lives outside the
 // crontab that raised the question.
 //
-// Only MAILTO so far. It is a real gap on a box that hasn't wired up mail — crond
-// delivered that output and RunWisp doesn't — but it is a gap the operator closes
-// once, daemon-wide, and a warning that keeps firing after it has been dealt with
-// is how an operator learns to stop reading warnings. The findings list is
-// re-derived every load, so this stays correct if the notifier is later removed.
+// Only MAILTO so far. It is a real gap on a box that hasn't wired up any alerts:
+// crond delivered that output and RunWisp doesn't. But it is a gap the operator
+// closes once, daemon-wide, and a warning that keeps firing after it has been
+// dealt with is how an operator learns to stop reading warnings. The findings
+// list is re-derived every load, so this stays correct if the notifier is later
+// removed.
 func dropAnsweredFindings(cfg *Config) {
-	if !hasMailNotifier(cfg) {
+	if len(cfg.Notify.Notifiers) == 0 {
 		return
 	}
 	kept := make([]CronFinding, 0, len(cfg.CronFindings))
@@ -513,16 +514,6 @@ func dropAnsweredFindings(cfg *Config) {
 		kept = append(kept, f)
 	}
 	cfg.CronFindings = kept
-}
-
-// hasMailNotifier reports whether the config can deliver mail at all. Both mail
-// types count: `sendmail` is what the importer suggests because it needs no
-// configuration on a box that already ran cron, but an operator who reached for
-// `smtp` instead has answered the same question.
-func hasMailNotifier(cfg *Config) bool {
-	return slices.ContainsFunc(cfg.Notify.Notifiers, func(n NotifierSpec) bool {
-		return n.Type == "sendmail" || n.Type == "smtp"
-	})
 }
 
 // isRenameNote reports whether a note explains that a job is running under a name

@@ -46,16 +46,18 @@ function recorder() {
     const roles: boolean[] = [];
     const overlaps: [string, Date][] = [];
     const missed: [string, Date][] = [];
+    const stops: string[] = [];
     const events: SessionEvents = {
         role: (_s, active) => roles.push(active),
         alone: () => undefined,
         run: (_s, request) => runs.push(request),
-        stop: () => undefined,
+        stop: (run) => stops.push(`stop ${run}`),
+        kill: (run) => stops.push(`kill ${run}`),
         overlap: (task, at) => overlaps.push([task, at]),
         missed: (task, at) => missed.push([task, at]),
         closed: () => undefined,
     };
-    return { runs, roles, overlaps, missed, events };
+    return { runs, roles, overlaps, missed, stops, events };
 }
 
 describe("Session", () => {
@@ -232,5 +234,56 @@ describe("Session", () => {
         servers.push(server);
         await new Promise<void>((resolve) => server.listen(path, resolve));
         await expect(Session.open(path, recorder().events, WHO)).rejects.toThrow("HTTP 403");
+    });
+
+    it("passes on stop and kill, and reports a skipped run's reason", async () => {
+        let got: string[] = [];
+        const { path } = await fakeDaemon((socket, received) => {
+            got = received;
+            socket.write(
+                '{"type":"role","active":true}\n{"type":"stop","run":"r1"}\n{"type":"kill","run":"r1"}\n{"type":"kill"}\n',
+            );
+        });
+        const { stops, events } = recorder();
+        const session = await Session.open(path, events, WHO);
+        await expect.poll(() => stops).toEqual(["stop r1", "kill r1"]);
+        session.exit("r2", 1, "skipped");
+        session.exit("r3", 0);
+        await expect
+            .poll(() => got)
+            .toEqual([
+                '{"type":"exit","run":"r2","code":1,"reason":"skipped"}',
+                '{"type":"exit","run":"r3","code":0}',
+            ]);
+        await session.close();
+    });
+
+    it("drops output past the cap, keeps the connection, and says how much in the run's log", async () => {
+        let daemon: Socket | undefined;
+        let got: string[] = [];
+        const { path } = await fakeDaemon((socket, received) => {
+            daemon = socket;
+            got = received;
+            socket.write('{"type":"role","active":true}\n');
+            // A daemon busy elsewhere: it reads nothing for now.
+            socket.pause();
+        });
+        const cap = 4 * 1024 * 1024;
+        const session = await Session.open(path, recorder().events, WHO, undefined, cap);
+        const line = "x".repeat(1024);
+        const sent = Math.ceil((cap * 1.5) / line.length);
+        for (let i = 0; i < sent; i++) session.output("r1", "stdout", line);
+        session.exit("r1", 0);
+        daemon?.resume();
+
+        const exit = '{"type":"exit","run":"r1","code":0}';
+        await expect.poll(() => got.at(-1), { timeout: 10_000 }).toBe(exit);
+        const kept = got.filter((m) => m.includes('"stdout"')).length;
+        const notice = got.at(-2) ?? "";
+        const dropped = Number(/dropped (\d+) lines/.exec(notice)?.[1]);
+        expect(notice).toContain("the app wrote faster than RunWisp could take it");
+        expect(kept).toBeLessThan(sent);
+        expect(kept + dropped).toBe(sent);
+        await session.close();
     });
 });

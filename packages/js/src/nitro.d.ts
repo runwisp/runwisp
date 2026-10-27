@@ -22,8 +22,11 @@ declare module "#runwisp/nuxt-internal" {
 
     export const dev: boolean;
     export const exitOnSignal: boolean;
+    export const clustered: boolean;
     export const scheduled: [cron: string, task: string][];
     export const config: Config | undefined;
+    export const output: string | undefined;
+    export const rootDir: string;
 }
 
 interface ImportMeta {

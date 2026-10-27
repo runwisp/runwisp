@@ -4,6 +4,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,4 +85,24 @@ func TestOwnsSystemDaemon(t *testing.T) {
 	assert.True(t, ownsSystemDaemon(Flags{DataDir: "/var/lib/runwisp"}, 1000), "named the system data dir")
 	assert.False(t, ownsSystemDaemon(Flags{DataDir: ".runwisp"}, 1000))
 	assert.False(t, ownsSystemDaemon(Flags{DataDir: "/tmp/e2e/data"}, 1000))
+}
+
+// After `takeover`, `runwisp list` from the operator's shell said only "open
+// runwisp.toml: no such file or directory". It now names the system config.
+func TestRunList_PointsAtTheSystemConfig(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("describes a non-root shell")
+	}
+	unit := filepath.Join(t.TempDir(), "runwisp.service")
+	prev := systemUnitFile
+	t.Cleanup(func() { systemUnitFile = prev })
+	systemUnitFile = unit
+	require.NoError(t, os.WriteFile(unit, nil, 0o644))
+
+	t.Chdir(t.TempDir())
+	defaults := Flags{CfgFile: defaultConfigPath(os.Geteuid(), ""), DataDir: defaultDataDir(os.Geteuid(), "")}
+	err := runList(t.Context(), io.Discard, defaults, remoteFlags{}, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "/etc/runwisp/runwisp.toml")
+	assert.Contains(t, err.Error(), "sudo ")
 }

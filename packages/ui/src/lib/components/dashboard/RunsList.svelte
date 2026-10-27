@@ -24,8 +24,13 @@
     import RunRow from "./RunRow.svelte";
     import type { RunOutputMatch } from "./types.js";
     import type { Run, RunSelector } from "@runwisp/common";
-    import { runFilterParams, type RunsListFilters } from "./run-filters.js";
-    import { instanceSuffix, runUsageScale } from "./run-helpers.js";
+    import {
+        activeFilterCount,
+        emptyRunFilters,
+        runFilterParams,
+        type RunsListFilters,
+    } from "./run-filters.js";
+    import { instanceSuffix, runOutputScale, runUsageScale, usualDuration } from "./run-helpers.js";
     import { formatDateTime } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
@@ -75,7 +80,7 @@
         showTaskName?: boolean;
         taskNameFilter?: string;
         emptyText?: string;
-        emptyDescription?: string;
+        emptyDescription?: string | undefined;
         bulkActions?: boolean;
         onBulkCancel?: BulkHandler;
         onBulkDelete?: BulkHandler;
@@ -99,8 +104,9 @@
         // True while a query is typed but its results aren't in yet (debounce
         // window or request in flight), the rail shows its searching shimmer.
         outputSearchPending?: boolean;
-        // Task rail only: two small bars per finished run, CPU time over RAM,
-        // scaled to the largest loaded run and colored against the usual one.
+        // Task rail only: three small bars per finished run, CPU time, RAM and
+        // lines printed, scaled to the largest loaded run and colored against
+        // the usual one. The duration readout is colored against the usual run too.
         usageBars?: boolean;
         // Folds the list to a thin strip that still counts the runs, giving the
         // run detail the width. Omitted where the screen keeps the list open.
@@ -109,6 +115,8 @@
     } = $props();
 
     const usageScale = $derived(usageBars ? runUsageScale(items) : undefined);
+    const outputScale = $derived(usageBars ? runOutputScale(items) : undefined);
+    const durationUsual = $derived(usageBars ? usualDuration(items) : undefined);
 
     // Task-rail rows are one dense line (44px); the cross-task /runs view adds
     // the task name on a second line (64px).
@@ -244,6 +252,12 @@
             ...filters,
             sortDirection: filters.sortDirection === "asc" ? "desc" : "asc",
         };
+    }
+
+    // An empty list under filters says so, rather than claiming no runs exist.
+    const filtered = $derived(activeFilterCount(filters) > 0 || filters.search !== "");
+    function clearFilters() {
+        filters = { ...emptyRunFilters(), sortDirection: filters.sortDirection };
     }
 
     // The count stands in for a title: "12 runs", or matches while searching.
@@ -420,7 +434,21 @@
                 {/if}
             {:else if items.length === 0 && loading}
                 <RunListSkeleton label="Loading runs" {showTaskName} />
-            {:else if items.length === 0}
+            {:else if items.length === 0 && filtered}
+                <EmptyState
+                    title="No matching runs"
+                    description="No run matches the current filters."
+                    icon={Clock}
+                    iconSize={32}
+                    class="py-8"
+                >
+                    {#snippet actions()}
+                        <Button variant="secondary" size="sm" onclick={clearFilters}>
+                            Clear filters
+                        </Button>
+                    {/snippet}
+                </EmptyState>
+            {:else if items.length === 0 && emptyText}
                 <EmptyState
                     title={emptyText}
                     description={emptyDescription}
@@ -504,6 +532,8 @@
         {bulkActions}
         {selectionActive}
         usage={usageBars ? (usageScale ?? null) : undefined}
+        output={outputScale}
+        {durationUsual}
         onselect={selectRun}
     />
 {/snippet}

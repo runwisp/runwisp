@@ -14,6 +14,12 @@ describe("@runwisp/js/astro", () => {
         expect(integration.name).toBe("@runwisp/js");
     });
 
+    it("keeps itself out of the server bundle, so it finds the runwisp binary", () => {
+        const updateConfig = vi.fn();
+        runwisp({ tasks: "src/tasks.ts" }).hooks["astro:config:setup"]({ updateConfig });
+        expect(updateConfig).toHaveBeenCalledWith({ vite: { ssr: { external: ["@runwisp/js"] } } });
+    });
+
     it("loads the tasks module once the dev server listens", () => {
         const httpServer = new EventEmitter();
         const load = vi.fn((_id: string) => Promise.resolve());

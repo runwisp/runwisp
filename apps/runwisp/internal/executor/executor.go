@@ -25,6 +25,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/procstat"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -48,13 +49,17 @@ type ExecuteResult struct {
 	TimedOut bool
 	Stopped  bool
 	// KillReason is why a policy stopped the run (log_on_full = "kill" →
-	// log_overflow, a failing health check → unhealthy); empty when none did.
+	// log_overflow, a failing health check → unhealthy), or the reason the
+	// backend ended it for (Process.EndReason); empty when neither did.
 	KillReason    model.EndReason
 	OutputMatched bool // an output line matched a `failures` output pattern
 	// PeakMemoryBytes and CPUTimeMs are the run's resource totals; nil when
 	// the backend has no measurable process or the value is unknown.
 	PeakMemoryBytes *int64
 	CPUTimeMs       *int64
+	// StdoutLines and StderrLines are the lines the run printed per stream.
+	StdoutLines int64
+	StderrLines int64
 }
 
 // EndReason maps the raw process outcome to a terminal reason. Exit 0 is the sole
@@ -249,6 +254,7 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	if errResult != nil {
 		return errResult
 	}
+	startedAt := r.clock()
 	if r.onProcessStarted != nil {
 		r.onProcessStarted(run.ID, proc.ForceKill)
 	}
@@ -264,19 +270,13 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	}
 	// Seal before stopping the watcher: from here the process has exited on
 	// its own terms, and no late kill may relabel how it ended.
-	killReason := killer.seal()
+	killReason := sealEndReason(killer, proc)
 	stopWatcher()
 
 	result := classifyExecuteResult(killer.ctx, killReason, exitCode, waitErr)
-	if msg := abnormalExitMessage(result.Error); msg != "" {
-		r.systemLine(writer, task, run, msg)
-	}
-	if proc.ExitHint != nil && exitCode != 0 && !result.TimedOut && !result.Stopped && result.KillReason == "" {
-		if msg := proc.ExitHint(); msg != "" {
-			r.systemLine(writer, task, run, msg)
-		}
-	}
+	r.explainExit(writer, task, run, proc, result, r.clock().Sub(startedAt))
 	result.OutputMatched = matcher.pattern() != ""
+	result.StdoutLines, result.StderrLines = writer.OutputLines()
 	peak, sampled := stopSampling()
 	var ru *syscall.Rusage
 	if proc.Rusage != nil {
@@ -295,10 +295,43 @@ func (r *RoutingExecutor) track(task *model.Task, run *model.Run, proc *Process)
 	return r.sampler.Track(task.Name, run.ID, proc.Pid)
 }
 
+// explainExit writes the system lines that say why a run ended the way it
+// did, where its exit code alone doesn't.
+func (r *RoutingExecutor) explainExit(writer *LogWriter, task *model.Task, run *model.Run, proc *Process, result *ExecuteResult, uptime time.Duration) {
+	if msg := abnormalExitMessage(result.Error); msg != "" {
+		r.systemLine(writer, task, run, msg)
+	}
+	if proc.ExitHint != nil && result.ExitCode != 0 && !result.TimedOut && !result.Stopped && result.KillReason == "" {
+		if msg := proc.ExitHint(); msg != "" {
+			r.systemLine(writer, task, run, msg)
+		}
+	}
+	if msg := daemonizeHint(task, result, uptime); msg != "" {
+		r.systemLine(writer, task, run, msg)
+	}
+}
+
+// daemonizeHint explains a service that exited 0 before healthy_after. The
+// usual cause is a command that forks into the background and exits, which
+// RunWisp counts as a failed start.
+func daemonizeHint(task *model.Task, result *ExecuteResult, uptime time.Duration) string {
+	if !task.Kind.IsService() || result.ExitCode != 0 || result.Error != nil || result.TimedOut || result.Stopped || result.KillReason != "" {
+		return ""
+	}
+	if uptime >= model.OrDefault(task.HealthyAfter, config.DefaultHealthyAfter) {
+		return ""
+	}
+	return fmt.Sprintf("Exited 0 after %s, before healthy_after. A service must stay in the foreground: "+
+		"if this command daemonizes (a --daemonize or -D flag, or a trailing &), run it in foreground mode.",
+		uptime.Round(time.Millisecond))
+}
+
 // abnormalExitMessage describes a wait error that the exit code alone does not
-// explain: death by signal (exit -1, "signal: killed"), or a backend failing to
-// wait at all (a lost Docker connection). A plain non-zero exit is already
-// shown as the exit code, so it returns "".
+// explain: death by signal (exit -1), a shell reporting a child's death by
+// signal as 128+n, or a backend failing to wait at all (a lost Docker
+// connection). Any other non-zero exit is already shown as the exit code, so
+// it returns "". It only sees deaths RunWisp did not cause: a timeout, stop or
+// policy kill never surfaces its wait error.
 func abnormalExitMessage(err error) string {
 	if err == nil {
 		return ""
@@ -307,10 +340,38 @@ func abnormalExitMessage(err error) string {
 	if !errors.As(err, &exitErr) {
 		return "Could not wait for the run to finish: " + err.Error()
 	}
-	if exitErr.ExitCode() >= 0 {
+	if code := exitErr.ExitCode(); code >= 0 {
+		return shellSignalMessage(code)
+	}
+	ws, ok := exitErr.Sys().(syscall.WaitStatus)
+	if !ok || !ws.Signaled() {
+		return "Process terminated abnormally: " + err.Error()
+	}
+	return "Process " + signalCause(ws.Signal())
+}
+
+// shellSignalMessage explains an exit code above 128 that names a signal. A
+// run is usually `sh -c`, and when the command it runs dies from a signal the
+// shell exits 128+n instead of dying itself: an OOM-killed `python3 job.py`
+// shows up as exit 137, not as a SIGKILL. Exit codes that name no signal
+// (255, or anything up to 128) return "".
+func shellSignalMessage(code int) string {
+	if code <= 128 {
 		return ""
 	}
-	return "Process terminated abnormally: " + err.Error()
+	sig := syscall.Signal(code - 128)
+	if unix.SignalName(sig) == "" {
+		return ""
+	}
+	return fmt.Sprintf("Exit code %d: a process the run started %s", code, signalCause(sig))
+}
+
+// signalCause is the rest of a sentence saying how a process died from sig.
+func signalCause(sig syscall.Signal) string {
+	if sig == syscall.SIGKILL {
+		return "was killed by SIGKILL from outside RunWisp. The kernel's out-of-memory killer is the usual cause: check `journalctl -k | grep -i oom` or `dmesg`."
+	}
+	return fmt.Sprintf("died from signal %s (%s).", unix.SignalName(sig), sig)
 }
 
 // outputMatcher checks output lines against a task's `failures` output
@@ -385,6 +446,9 @@ func (r *RoutingExecutor) startBackend(ctx context.Context, backend Backend, tas
 		r.systemLine(writer, task, run, errMsg)
 		return nil, &ExecuteResult{ExitCode: -1, Error: errors.New(errMsg)}
 	}
+	if proc.Notice != "" {
+		r.systemLine(writer, task, run, proc.Notice)
+	}
 	return proc, nil
 }
 
@@ -412,6 +476,17 @@ func (r *RoutingExecutor) streamOne(wg *sync.WaitGroup, reader io.ReadCloser, wr
 		}()
 		r.streamToFile(reader, writer, task, run, matcher, stream)
 	}()
+}
+
+// sealEndReason seals the run's killer and returns the policy kill it
+// recorded, else the backend's own reason (Process.EndReason) when no
+// timeout or stop explains how the run ended.
+func sealEndReason(killer *runKiller, proc *Process) model.EndReason {
+	reason := killer.seal()
+	if reason != "" || killer.ctx.Err() != nil || proc.EndReason == nil {
+		return reason
+	}
+	return proc.EndReason()
 }
 
 // classifyExecuteResult translates wait state + cancellation cause into the

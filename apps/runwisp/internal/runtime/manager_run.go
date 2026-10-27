@@ -155,6 +155,7 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 		outcome.eventType = events.EventRunFailed
 	}
 	run.PeakMemoryBytes, run.CPUTimeMs = result.PeakMemoryBytes, result.CPUTimeMs
+	run.StdoutLines, run.StderrLines = new(result.StdoutLines), new(result.StderrLines)
 	run.End(task, outcome.endReason, result.ExitCode, endTime)
 
 	m.persistence.PersistExisting(run)
@@ -190,10 +191,14 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 		}
 	}
 	if task.Kind.IsService() {
-		wasFailure := retry.IsFailedExecution(endReason)
+		// A clean exit counts as a failed start too: a service must stay up, and
+		// one that exits 0 before healthy_after (most often a command that
+		// daemonizes) would otherwise restart forever. RecordExit only counts it
+		// when the run never became healthy.
+		failedStart := retry.IsFailedExecution(endReason) || endReason == model.ReasonSuccess
 		startRetries := model.OrDefault(task.RestartAttempts, config.DefaultStartRetries)
 		nextRestartAttempt, serviceFatal = ts.supervisor.RecordExit(
-			run.InstanceIndex, runDuration, startRetries, wasFailure)
+			run.InstanceIndex, runDuration, startRetries, failedStart)
 		ts.supervisor.SetLastExitCode(run.InstanceIndex, exitCode)
 		if serviceFatal {
 			fatalAttempts = ts.supervisor.StartFails(run.InstanceIndex)

@@ -28,6 +28,10 @@ const logDiskPressureKind = "log.disk_pressure"
 // keeps going and its eventual outcome is classified on its own.
 const LongRunningKind = "long_running"
 
+// RecoveredKind is the token for a success whose previous run failed. It is
+// sent alongside that run's `succeeded` and is never a failure.
+const RecoveredKind = "recovered"
+
 // AllKindStrings lists the tokens a [[route]] match.kinds entry may use. They
 // are the outcome vocabulary shared with a task's `failures` list — every
 // model.EndReason except excludedEndReasons — plus the non-run event tokens
@@ -37,14 +41,14 @@ const LongRunningKind = "long_running"
 // DeliveryFailedKind is separately excluded (see its own doc comment): it
 // bypasses the route engine, straight to the bell.
 var AllKindStrings = func() []string {
-	out := make([]string, 0, len(model.AllEndReasons)+4)
+	out := make([]string, 0, len(model.AllEndReasons)+5)
 	out = append(out, "started")
 	for _, r := range model.AllEndReasons {
 		if _, excluded := excludedEndReasons[r]; !excluded {
 			out = append(out, string(r))
 		}
 	}
-	return append(out, "service.fatal", logDiskPressureKind, LongRunningKind)
+	return append(out, "service.fatal", logDiskPressureKind, LongRunningKind, RecoveredKind)
 }()
 
 // DeliveryFailedKind is the synthetic event a permanently-failed delivery
@@ -61,7 +65,8 @@ const DeliveryFailedKind = "notify.delivery_failed"
 // is unconditionally excluded from failure classification (model.Task's
 // IsFailureReason short-circuits ReasonSuccess), and "log.disk_pressure"
 // events are hardcoded to IsFailure: false in bridge.go's MapEvent, as are
-// "long_running" ones (the run is still going). Combined
+// "long_running" ones (the run is still going) and "recovered" ones (a copy
+// of a success). Combined
 // with match.failure = true, any one of these ANDs down to a route that can
 // never fire — see validateRoute.
-var NeverFailureKinds = []string{"started", string(model.ReasonSuccess), logDiskPressureKind, LongRunningKind}
+var NeverFailureKinds = []string{"started", string(model.ReasonSuccess), logDiskPressureKind, LongRunningKind, RecoveredKind}

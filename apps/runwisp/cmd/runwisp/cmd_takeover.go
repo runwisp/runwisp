@@ -41,7 +41,7 @@ Run it on a box that has cron jobs and nothing else — no ` + "`runwisp.toml`" 
 RunWisp finds your crontabs, writes a config that reads them live, installs
 itself as a system service so it starts on boot, then stops and masks the system
 cron service so exactly one scheduler owns your jobs. Nothing is converted or
-rewritten: ` + "`crontab -e`" + ` keeps working, and RunWisp re-reads the files.
+rewritten: ` + "`crontab -e`" + ` keeps working, and ` + "`sudo runwisp reload`" + ` picks up an edit.
 
 Until cron is retired, RunWisp deliberately does not run the jobs it reads from
 your crontabs: cron is still running them, and firing them from both would run
@@ -149,19 +149,27 @@ func runTakeover(cmd *cobra.Command, f Flags) error {
 		fmt.Fprintln(out, staleSettingsNote)
 	}
 	if !res.Aborted {
-		printTakeoverDone(out, f)
+		printTakeoverDone(out, f, plan.Opts.Binary)
 	}
 	return nil
 }
 
 // printTakeoverDone answers what everyone asks next: where the dashboard is and
 // how to get in. The system daemon's socket is root's, so a plain
-// `runwisp password` from the operator's own shell cannot reach it.
-func printTakeoverDone(out io.Writer, f Flags) {
+// `runwisp password` from the operator's own shell cannot reach it. A password
+// saved in the unit's drop-in is one `runwisp password` won't disclose, so that
+// case points at the file. The upgrade line names binary, the copy the unit
+// runs: `upgrade` replaces the executable it runs from, so the operator's home
+// copy would upgrade a binary the service never starts.
+func printTakeoverDone(out io.Writer, f Flags, binary string) {
 	url := localBindURL("http", f.Host, f.Port)
 	if cfg, err := config.Load(f.CfgFile); err == nil {
 		url = daemonListenURL(cfg, f)
 	}
-	fmt.Fprintf(out, "\nDashboard:  %s\nPassword:   %s\nUpgrade:    %s\n",
-		url, sudoRunwisp("password"), sudoRunwisp("upgrade"))
+	password := sudoRunwisp("password")
+	if dropIn := systemUnitFile + ".d/password.conf"; fileExists(dropIn) {
+		password = "sudo cat " + dropIn
+	}
+	fmt.Fprintf(out, "\nDashboard:  %s\nPassword:   %s\nUpgrade:    %s\nReload:     %s (after crontab -e)\n",
+		url, password, sudoRunwispFor(binary, "upgrade"), sudoRunwispFor(binary, "reload"))
 }

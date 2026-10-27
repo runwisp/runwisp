@@ -9,7 +9,13 @@ import {
     humanizeCron,
     runDuration,
 } from "@runwisp/ui";
-import { canTogglePause, hasCron, isServiceStopped, taskInstanceCount } from "./task";
+import {
+    canTogglePause,
+    hasCron,
+    isServiceStopped,
+    scheduleTimeZone,
+    taskInstanceCount,
+} from "./task";
 
 /** Which state the badge names; each gets its own colour and icon (TaskStateBadge). */
 export type StripBadgeKind =
@@ -62,6 +68,8 @@ export interface TaskStripInput {
     /** False in station mode: the station schedules, this daemon only runs. */
     schedulingActive: boolean;
     now: Date;
+    /** The daemon's resolved timezone; the task's own wins. The next run's time is shown in it. */
+    daemonZone?: string;
     /** Signed in with the read-only password: the strip shows state but offers no actions. */
     readOnly?: boolean;
 }
@@ -100,15 +108,17 @@ function runningBadge(run: Run, now: Date): TaskStripModel["badge"] {
 function failedBadge(task: Task): TaskStripModel["badge"] | undefined {
     const last = task.lastRun;
     if (last?.status !== "ended" || !last.isFailure) return undefined;
+    // Name the way it failed when "failed" would contradict the run's own verdict.
+    const how = last.endReason === "timeout" ? "timed out" : "failed";
     return {
-        text: "Last run failed",
+        text: `Last run ${how}`,
         kind: "failed",
         runId: last.id,
         title: "Open the failed run",
     };
 }
 
-function cronStrip({ task, schedulingActive, now }: TaskStripInput): TaskStripModel {
+function cronStrip({ task, schedulingActive, now, daemonZone }: TaskStripInput): TaskStripModel {
     const schedule = humanizeCron(task.cron ?? "").humanized;
     const run = task.manualTrigger ? [runAction(task, true)] : [];
     if (task.pausedAt) {
@@ -168,7 +178,13 @@ function cronStrip({ task, schedulingActive, now }: TaskStripInput): TaskStripMo
     return {
         badge: failedBadge(task) ?? { text: "Scheduled", kind: "scheduled" },
         sentence: next
-            ? [t(schedule), m(" · "), t(`next run ${formatRelativeTimeWithAbsolute(next, now)}`)]
+            ? [
+                  t(schedule),
+                  m(" · "),
+                  t(
+                      `next run ${formatRelativeTimeWithAbsolute(next, now, scheduleTimeZone(task, daemonZone ?? ""))}`,
+                  ),
+              ]
             : [t(schedule)],
         short: next ? [t(`next ${formatRelativeTime(next, now)}`)] : [t(schedule)],
         actions: [...run, ...pause],

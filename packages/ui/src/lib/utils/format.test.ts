@@ -103,6 +103,24 @@ describe("formatRelativeTimeWithAbsolute", () => {
         expect(r).toMatch(/\([^)]*\d[^)]*\)$/);
         expect(r).not.toMatch(/\(\d{1,2}:\d{2}\)$/);
     });
+    it("adds the year when the date falls in another year", () => {
+        const now = new Date(2026, 9, 20, 12);
+        expect(formatRelativeTimeWithAbsolute(new Date(2028, 1, 29), now)).toMatch(/2028\)$/);
+        expect(formatRelativeTimeWithAbsolute(new Date(2026, 11, 1), now)).not.toMatch(/2026/);
+    });
+    it("shows the clock time in the given zone, not the browser's", () => {
+        // Kathmandu is UTC+05:45, so no browser zone renders 02:30Z as 08:15.
+        const now = new Date("2026-10-21T00:00:00Z");
+        expect(
+            formatRelativeTimeWithAbsolute("2026-10-21T02:30:00Z", now, "Asia/Kathmandu"),
+        ).toMatch(/\(0?8:15\)$/);
+    });
+    it("falls back to the browser zone for a zone Intl doesn't know", () => {
+        const now = new Date("2026-10-21T00:00:00Z");
+        expect(formatRelativeTimeWithAbsolute("2026-10-21T02:30:00Z", now, "Mars/Olympus")).toBe(
+            formatRelativeTimeWithAbsolute("2026-10-21T02:30:00Z", now),
+        );
+    });
     it("computes the relative part against the supplied now", () => {
         const date = new Date("2024-01-01T12:00:00Z");
         const twoHoursBefore = formatRelativeTimeWithAbsolute(

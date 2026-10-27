@@ -76,7 +76,7 @@ describe("taskStrip: cron tasks", () => {
     it("is scheduled, with the schedule and next run, Run filled and Pause beside it", () => {
         const m = strip(makeTask({ nextRunAt: "2026-10-10T03:15:00Z" }));
         expect(m.badge).toEqual({ text: "Scheduled", kind: "scheduled" });
-        expect(text(m.sentence)).toMatch(/^At 03:15 AM · next run in 15 hours/);
+        expect(text(m.sentence)).toMatch(/^At 03:15 · next run in 15 hours/);
         expect(labels(m)).toEqual(["Run now", "Pause"]);
         expect(primaries(m)).toEqual(["Run now"]);
     });
@@ -84,6 +84,11 @@ describe("taskStrip: cron tasks", () => {
     it("says the last run failed and opens it", () => {
         const m = strip(makeTask({ lastRun: makeRun({ isFailure: true, endReason: "failed" }) }));
         expect(m.badge).toMatchObject({ text: "Last run failed", kind: "failed", runId: "run-1" });
+    });
+
+    it("says a timed-out last run timed out, not failed", () => {
+        const m = strip(makeTask({ lastRun: makeRun({ isFailure: true, endReason: "timeout" }) }));
+        expect(m.badge).toMatchObject({ text: "Last run timed out", kind: "failed" });
     });
 
     it("puts a running run above everything, paused included", () => {
@@ -97,7 +102,7 @@ describe("taskStrip: cron tasks", () => {
         const m = strip(makeTask({ pausedAt: "2026-10-07T14:02:00Z" }));
         expect(m.badge).toEqual({ text: "Paused", kind: "paused" });
         expect(text(m.sentence)).toContain("is skipped, manual runs still work");
-        expect(m.sentence.find((p) => p.struck === true)?.text).toBe("At 03:15 AM");
+        expect(m.sentence.find((p) => p.struck === true)?.text).toBe("At 03:15");
         expect(labels(m)).toEqual(["Run now", "Resume schedule"]);
         expect(primaries(m)).toEqual(["Resume schedule"]);
     });
