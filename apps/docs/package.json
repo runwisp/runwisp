@@ -9,13 +9,13 @@
     },
     "dependencies": {
         "@astrojs/starlight": "^0.42.7",
-        "@astrojs/svelte": "^9.1.1",
+        "@astrojs/svelte": "^9.1.2",
         "@runwisp/ui": "workspace:*",
-        "astro": "^7.4.2",
+        "astro": "^7.4.4",
         "js-yaml": "^4.3.2",
         "sharp": "^0.35.5",
         "starlight-openapi": "^0.27.0",
-        "svelte": "^5.57.2"
+        "svelte": "^5.57.3"
     },
     "devDependencies": {
         "@astrojs/check": "^0.9.12",
