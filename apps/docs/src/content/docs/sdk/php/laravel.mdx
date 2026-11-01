@@ -27,7 +27,8 @@ Composer asks to allow the `runwisp/runwisp` plugin, which downloads the
 `runwisp` binary. Laravel finds the package on its own.
 
 Remove the `schedule:run` line from your crontab, and start the worker
-instead:
+instead. A crontab line left behind runs every task twice, so
+`runwisp:work` and `runwisp:check` warn when they find one:
 
 ```bash
 php artisan runwisp:work
@@ -71,13 +72,18 @@ Schedule::call(#[Task('prune-recent-users')] function () {
 
 Each event becomes a RunWisp task:
 
-- **Name**: the event's `name()`, else the name in its
+- **Name**: the event's `name()` when it is a plain task name (letters,
+  digits, `.`, `_`, `:` and `-`), else the name in its
   [`#[Task]`](#runwisp-keys-on-a-task), else the artisan command
-  (`reports:send`), the job's class (`PruneUsers`), or the shell command. The
-  description Laravel sets on its own, a command's description or a job's
-  class, is not a name. A closure without a name is named after its file and
-  line, and the worker warns, since moving the line starts a new run history.
-  Give closures a `name()`.
+  (`reports:send`), the job's class (`PruneUsers`), or the shell command.
+  A closure with none of these is named after its `description()` or `name()`,
+  with spaces turned into `-`, else after its file and line, and the worker
+  warns, since moving the line starts a new run history. Give closures a
+  `name()`.
+- **Description**: a `description()` that is a sentence, such as
+  `Email the daily sales digest (production only)`, is the task's
+  [`description`](/configuration/tasks/#description) and never its name.
+  Without one, a command's own `$description` is used.
 - **Schedule**: the cron expression, in the schedule's timezone. Sub-minute
   frequencies such as `everyTenSeconds()` work.
 - **Overlap**: `withoutOverlapping()` sets
@@ -89,10 +95,12 @@ Events limited to other environments with `environments()` are left out.
 
 Each run is `php artisan runwisp:run <name>` in a new process, so a run gets a
 fresh app, and stopping it from the web UI stops the process.
-`when()`, `skip()`, `evenInMaintenanceMode()` and the `before()`, `after()`,
-`onSuccess()` and `onFailure()` hooks work as with `schedule:run`. An artisan
-or shell command's output goes to the run's log instead of `/dev/null`, and
-its exit code is the run's.
+`when()`, `skip()`, `between()`, `evenInMaintenanceMode()` and the `before()`,
+`after()`, `onSuccess()` and `onFailure()` hooks work as with `schedule:run`.
+A run that a filter, maintenance mode or `withoutOverlapping()` skips ends as
+skipped, not succeeded, and its log says why. An artisan or shell command's
+output goes to the run's log instead of `/dev/null`, and its exit code is the
+run's.
 
 `onOneServer()` is not needed: each run happens once per data directory,
 however many copies of the worker run. `runInBackground()` is ignored.
@@ -150,46 +158,89 @@ php artisan vendor:publish --tag=runwisp-config
 // config/runwisp.php
 declare(strict_types=1);
 
-// RunWisp for `php artisan runwisp:work`. A null key falls back to the
-// RUNWISP_* env var the runwisp CLI reads, then to RunWisp's default.
+// RunWisp for `php artisan runwisp:work`. A null key falls back to RunWisp's
+// default. The env() calls are read when Laravel loads its config, so they
+// keep working after `php artisan config:cache`.
 return [
     // Which app this is: copies of one app share a RunWisp. Default: the
     // `name` in composer.json.
-    'app' => null,
+    'app' => env('RUNWISP_APP'),
 
-    // Database, run logs and socket. Default: RUNWISP_DATA, else storage/runwisp.
-    'data' => null,
+    // Database, run logs and socket. Default: storage/runwisp.
+    'data' => env('RUNWISP_DATA'),
 
-    // Web UI port. Default: RUNWISP_PORT, else 9477 or the next free port.
-    'port' => null,
+    // Web UI port. Default: 9477 or the next free port.
+    'port' => env('RUNWISP_PORT'),
 
-    // Web UI bind address. Default: RUNWISP_HOST, else 127.0.0.1.
-    'host' => null,
+    // Web UI bind address. Default: 127.0.0.1.
+    'host' => env('RUNWISP_HOST'),
 
-    // Web UI password. Default: RUNWISP_PASSWORD, else a new one on each start.
-    'password' => null,
+    // Web UI password. Default: a new one on each start.
+    'password' => env('RUNWISP_PASSWORD'),
 
     // false turns the login off, like RUNWISP_AUTH=off.
     'auth' => null,
 
-    // Path to the runwisp binary. Default: RUNWISP_BINARY, else the one
-    // Composer downloaded, else runwisp on PATH.
-    'binary' => null,
+    // Path to the runwisp binary. Default: the one Composer downloaded, else
+    // runwisp on PATH.
+    'binary' => env('RUNWISP_BINARY'),
 
     // The rest of a runwisp.toml, with the same keys: notifiers, route,
-    // defaults, daemon, storage, and shell tasks. A scheduled task's own keys,
-    // such as retry_attempts, go in #[RunWisp\Task] on its command or job.
+    // defaults, daemon, storage, services, and shell tasks. A scheduled task's
+    // own keys, such as retry_attempts, go in #[RunWisp\Task] on its command
+    // or job.
     'config' => [
         'notifiers' => [
             'slack' => ['type' => 'slack', 'webhook_url' => env('SLACK_WEBHOOK_URL')],
         ],
         'defaults' => ['keep_runs' => 100],
+        // A queue worker that RunWisp keeps running and restarts:
+        // 'services' => [
+        //     'queue-worker' => [
+        //         'run' => 'php artisan queue:work --sleep=3 --tries=3 --max-time=3600',
+        //         'restart_delay' => '5s',
+        //         'graceful_stop' => '60s',
+        //     ],
+        // ],
     ],
 ];
 ```
 
 Every option also reads its `RUNWISP_*` env var, such as `RUNWISP_PORT` and
-`RUNWISP_PASSWORD`, so most apps need no config file.
+`RUNWISP_PASSWORD`, so most apps need no config file. The file reads them with
+`env()`, so they keep working after `php artisan config:cache`.
+
+## Queue workers
+
+RunWisp can run your queue worker as a service and restart it when it exits,
+as Supervisor does. Put it under `services` in `config/runwisp.php`:
+
+```php
+<?php
+
+// config/runwisp.php
+return [
+    // ...
+    'config' => [
+        'services' => [
+            'queue-worker' => [
+                'run' => 'php artisan queue:work --sleep=3 --tries=3 --max-time=3600',
+                'restart_delay' => '5s',
+                'graceful_stop' => '60s',
+            ],
+        ],
+    ],
+];
+```
+
+The service starts with `runwisp:work`, and its output and exits show in the
+web UI next to the scheduled tasks. It runs in the directory the worker was
+started in, so start `runwisp:work` from the app's root. `instances` runs
+several copies. The keys are the [service keys](/configuration/services/) of
+`runwisp.toml`.
+
+After a deploy, run `php artisan queue:restart`. The worker finishes its job
+and exits, and RunWisp starts it again with the new code.
 
 ## Check your schedule
 
