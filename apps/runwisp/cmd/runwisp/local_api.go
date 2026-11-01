@@ -4,6 +4,8 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
@@ -46,10 +48,12 @@ func clientDataDir(f Flags) string {
 }
 
 // findAppDataDir returns def when it holds a daemon socket, else the first
-// candidate that does, else def.
+// candidate that does, else def. A socket another user's private data dir
+// hides counts as found: connecting there then says whose daemon it is, where
+// def would only say no daemon runs.
 func findAppDataDir(def string, candidates []string) string {
 	for _, dir := range append([]string{def}, candidates...) {
-		if _, err := os.Stat(datadir.SocketPath(dir)); err == nil {
+		if _, err := os.Stat(datadir.SocketPath(dir)); err == nil || errors.Is(err, fs.ErrPermission) {
 			return dir
 		}
 	}

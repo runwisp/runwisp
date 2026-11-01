@@ -42,3 +42,16 @@ func TestFindAppDataDir(t *testing.T) {
 	assert.Equal(t, first, findAppDataDir(def, []string{empty, first, second}), "first candidate with a socket")
 	assert.Equal(t, second, findAppDataDir(second, []string{first}), "the default wins when it holds a socket")
 }
+
+func TestFindAppDataDirCountsAnotherUsersPrivateDir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads every directory")
+	}
+	t.Parallel()
+	private := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(private, "runwisp.sock"), nil, 0o600))
+	require.NoError(t, os.Chmod(private, 0)) // as storage/runwisp (0700, www-data's) looks to the deploy user
+	t.Cleanup(func() { _ = os.Chmod(private, 0o700) })
+
+	assert.Equal(t, private, findAppDataDir(t.TempDir(), []string{private}))
+}
