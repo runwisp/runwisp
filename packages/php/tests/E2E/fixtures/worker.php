@@ -49,4 +49,11 @@ $runwisp->service('worker', [], function (Run $run): void {
     echo "worker stopping\n";
 });
 
+// A deploy, as WorkerTest makes one: a reload reads the tasks again from this
+// file, so what is here now is what it finds.
+$deploy = getenv('RUNWISP_DATA') . '.deploy.php';
+if (is_file($deploy)) {
+    require $deploy;
+}
+
 exit($runwisp->main());

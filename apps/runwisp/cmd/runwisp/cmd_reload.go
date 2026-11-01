@@ -17,7 +17,7 @@ import (
 
 var reloadCmd = &cobra.Command{
 	Use:   "reload",
-	Short: "Reload runwisp.toml into the running daemon",
+	Short: "Reload runwisp.toml, or the app's config, into the running daemon",
 	Long: `Re-read runwisp.toml and apply it to the running daemon: add, change,
 and remove tasks, and apply daemon-wide settings ([notify], notifiers, routes,
 [storage], [daemon] including timezone) without a full restart.
@@ -31,6 +31,12 @@ is left exactly as it was.
 Added tasks do not fire run_on_start and are not caught up for ticks they
 "missed" before existing — reload is not a restart. In-flight cron runs finish
 under the definition they started with.
+
+When an app supplies the config (an SDK worker such as
+"php artisan runwisp:work"), reload asks the app to read its config again from
+its code as it is now, so a deploy reaches the schedule without restarting the
+worker. If the app can't, for example because the deploy broke it, the reload
+is rejected with the app's error and the running config stays.
 
 This is equivalent to sending the daemon a SIGHUP.`,
 	Args: cobra.NoArgs,

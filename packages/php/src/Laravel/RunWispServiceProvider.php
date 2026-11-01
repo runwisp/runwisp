@@ -9,7 +9,7 @@ namespace RunWisp\Laravel;
 
 use Illuminate\Support\ServiceProvider;
 
-/** Adds `runwisp:work`, which runs Laravel's schedule under RunWisp, and `runwisp:check`. */
+/** Adds `runwisp:work`, which runs Laravel's schedule under RunWisp, `runwisp:check` and `runwisp:reload`. */
 final class RunWispServiceProvider extends ServiceProvider
 {
     private const CONFIG = __DIR__ . '/../../config/runwisp.php';
@@ -25,6 +25,6 @@ final class RunWispServiceProvider extends ServiceProvider
             return;
         }
         $this->publishes([self::CONFIG => $this->app->configPath('runwisp.php')], 'runwisp-config');
-        $this->commands([WorkCommand::class, CheckCommand::class, RunCommand::class]);
+        $this->commands([WorkCommand::class, CheckCommand::class, ReloadCommand::class, RunCommand::class]);
     }
 }

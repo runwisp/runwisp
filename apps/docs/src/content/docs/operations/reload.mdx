@@ -31,6 +31,11 @@ of asking runs the same reload:
 
 `runwisp status` and the TUI header show the same "config changed" notice.
 
+A RunWisp that an app started with the [PHP](/sdk/php/#deploy) or
+[JavaScript](/sdk/javascript/) SDK has no `runwisp.toml`. Its reload asks the
+app for its config as the app's code defines it now, and a reload the app
+can't answer is rejected like a bad file.
+
 A daemon started with `runwisp station` reloads the same way. The Station
 schedules the tasks there, so no local cron entries change; after the reload the
 daemon sends the new task list to the Station.

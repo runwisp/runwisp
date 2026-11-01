@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace RunWisp;
 
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
 /**
@@ -21,6 +22,12 @@ final class Worker
     private const TICK_US = 100_000;
     private const RECONNECT_S = 1;
     private const MAX_RECONNECT_S = 30;
+    /** Set on the copy a reload starts: it writes this app's tasks to that file and exits. */
+    private const DESCRIBE = 'RUNWISP_DESCRIBE';
+    /** RunWisp gives up waiting after 60 seconds. */
+    private const RELOAD_TIMEOUT_S = 55;
+    /** How much of a failed reload's output RunWisp is told. */
+    private const RELOAD_ERROR_LINES = 20;
 
     private readonly Daemon $daemon;
     /** @var array<string, Unit> */
@@ -47,6 +54,12 @@ final class Worker
     private float $retryAt = 0;
     /** The signal that asked the worker to stop, once one did. */
     private ?int $leaving = null;
+    /** How this worker was started, for a reload to read the app's tasks as they are now. */
+    private readonly string $cwd;
+    /** @var list<string> */
+    private readonly array $argv;
+    /** @var array{process: Process, file: string, ids: list<string>, session: Session}|null the reload under way */
+    private ?array $reloading = null;
 
     /**
      * @param array<string, mixed>                  $config the rest of a runwisp.toml: notifiers, defaults, shell tasks
@@ -55,7 +68,7 @@ final class Worker
      */
     public function __construct(
         private readonly Settings $settings,
-        private readonly array $config,
+        private array $config,
         array $units,
         ?\Closure $log = null,
     ) {
@@ -67,6 +80,8 @@ final class Worker
             fwrite($level === 'info' ? STDOUT : STDERR, $message . "\n");
         };
         $this->setsid = self::which('setsid');
+        $this->cwd = (string) getcwd();
+        $this->argv = array_values(array_map('strval', (array) ($_SERVER['argv'] ?? [])));
     }
 
     /**
@@ -76,10 +91,19 @@ final class Worker
      */
     public function document(): string
     {
-        $doc = $this->config;
+        return self::documentOf($this->config, $this->units);
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     * @param array<string, Unit>  $units
+     */
+    private static function documentOf(array $config, array $units): string
+    {
+        $doc = $config;
         $tasks = (array) ($doc['tasks'] ?? []);
         $services = (array) ($doc['services'] ?? []);
-        foreach ($this->units as $name => $unit) {
+        foreach ($units as $name => $unit) {
             $kind = $unit->service ? 'services' : 'tasks';
             if (isset($tasks[$name]) || isset($services[$name])) {
                 throw new \RuntimeException("the config's $kind also define \"$name\", which the code defines; set its keys in the code, with #[RunWisp\\Task] for a scheduled task");
@@ -154,6 +178,10 @@ final class Worker
      */
     public function run(): int
     {
+        $describe = getenv(self::DESCRIBE);
+        if (is_string($describe) && $describe !== '') {
+            return $this->describe($describe);
+        }
         // Checked first: an invalid config is the app's to fix, not a reason to retry.
         if ($this->validated() === null) {
             return 1;
@@ -171,6 +199,142 @@ final class Worker
             }
             $this->tick();
         }
+    }
+
+    /**
+     * Asks the running worker, through RunWisp, to read this app's tasks
+     * again: what to run after a deploy. Prints what changed, and returns
+     * non-zero when RunWisp or the app rejected it, which leaves the running
+     * tasks as they were.
+     */
+    public function reload(): int
+    {
+        $process = new Process([$this->settings->binary, 'reload', '--data', $this->settings->data, '--socket', $this->settings->socket], null, null, null, null);
+        try {
+            $process->run();
+        } catch (\Throwable $e) {
+            ($this->log)('error', "runwisp: could not run {$this->settings->binary}: {$e->getMessage()}");
+
+            return 1;
+        }
+        foreach (['info' => $process->getOutput(), 'error' => $process->getErrorOutput()] as $level => $text) {
+            if (trim($text) !== '') {
+                ($this->log)($level, rtrim($text));
+            }
+        }
+
+        return $process->getExitCode() ?? 1;
+    }
+
+    /** Writes the tasks and config this copy of the app defines to $path, for the worker that started it to reload. */
+    private function describe(string $path): int
+    {
+        $units = array_map(static fn (Unit $unit): array => [
+            'name' => $unit->name,
+            'options' => $unit->options,
+            'argv' => $unit->argv,
+            'service' => $unit->service,
+        ], array_values($this->units));
+        file_put_contents($path, json_encode(['config' => $this->config, 'units' => $units], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+
+        return 0;
+    }
+
+    /**
+     * RunWisp asks for the config as the code defines it now. This process
+     * loaded the code as it was when it started, so a new one reads it: the
+     * same command this worker was started with, which writes its tasks out
+     * instead of running them.
+     */
+    private function startReload(Session $session, string $id): void
+    {
+        if ($this->reloading !== null) {
+            $this->reloading['ids'][] = $id;
+
+            return;
+        }
+        $file = "{$this->settings->data}/reload.json";
+        @unlink($file);
+        $process = new Process([PHP_BINARY, ...$this->argv], $this->cwd, [self::DESCRIBE => $file], null, self::RELOAD_TIMEOUT_S);
+        try {
+            $process->start();
+        } catch (\Throwable $e) {
+            $session->send(['type' => 'reload_error', 'reload' => $id, 'error' => "could not start PHP to read the tasks: {$e->getMessage()}"]);
+
+            return;
+        }
+        $this->reloading = ['process' => $process, 'file' => $file, 'ids' => [$id], 'session' => $session];
+    }
+
+    /** Once the reload's process ended: takes on what it read and sends it to RunWisp, or tells RunWisp why it can't. */
+    private function finishReload(): void
+    {
+        $reload = $this->reloading;
+        if ($reload === null) {
+            return;
+        }
+        $process = $reload['process'];
+        try {
+            $process->checkTimeout();
+        } catch (ProcessTimedOutException) {
+            // Stopped: reported below like any other failure.
+        }
+        if ($process->isRunning()) {
+            return;
+        }
+        $this->reloading = null;
+        $error = null;
+        try {
+            [$config, $units] = $this->read($process, $reload['file']);
+            $document = self::documentOf($config, $units);
+            $this->config = $config;
+            $this->units = $units;
+        } catch (\RuntimeException $e) {
+            $document = null;
+            $error = $e->getMessage();
+        } finally {
+            @unlink($reload['file']);
+        }
+        $session = $reload['session'];
+        if ($session !== $this->session) {
+            return; // RunWisp hung up meanwhile: the next connection sends the new config.
+        }
+        foreach ($reload['ids'] as $id) {
+            if ($document === null) {
+                $session->send(['type' => 'reload_error', 'reload' => $id, 'error' => $error ?? '']);
+                continue;
+            }
+            $this->pushing = true;
+            $this->pushed = $document;
+            $session->config($document, $id);
+        }
+    }
+
+    /**
+     * What a reload's process read.
+     *
+     * @return array{array<string, mixed>, array<string, Unit>}
+     *
+     * @throws \RuntimeException with the process's own output when it failed
+     */
+    private function read(Process $process, string $file): array
+    {
+        $json = $process->isSuccessful() ? @file_get_contents($file) : false;
+        $data = is_string($json) ? json_decode($json, true) : null;
+        if (!is_array($data) || !is_array($data['units'] ?? null)) {
+            $lines = preg_split('/\R/', trim($process->getErrorOutput() . "\n" . $process->getOutput())) ?: [];
+            $tail = implode("\n", array_slice(array_values(array_filter($lines, static fn (string $l): bool => trim($l) !== '')), -self::RELOAD_ERROR_LINES));
+            $why = $process->isSuccessful() ? 'it wrote no tasks' : 'exit code ' . ($process->getExitCode() ?? 'none, it was stopped after ' . self::RELOAD_TIMEOUT_S . 's');
+            throw new \RuntimeException("reading the tasks with `php " . implode(' ', $this->argv) . "` failed ($why)" . ($tail === '' ? '' : ":\n$tail"));
+        }
+        $units = [];
+        foreach ($data['units'] as $unit) {
+            $unit = (array) $unit;
+            $name = (string) ($unit['name'] ?? '');
+            $units[$name] = new Unit($name, (array) ($unit['options'] ?? []), array_values(array_map('strval', (array) ($unit['argv'] ?? []))), (bool) ($unit['service'] ?? false));
+        }
+
+        return [(array) ($data['config'] ?? []), $units];
     }
 
     /** One turn: wait up to a tick for RunWisp, handle what it sent, relay run output. */
@@ -191,6 +355,7 @@ final class Worker
             usleep(self::TICK_US);
         }
         $this->pump();
+        $this->finishReload();
     }
 
     private function connect(): void
@@ -250,6 +415,9 @@ final class Worker
                 break;
             case 'run':
                 $this->start($session, $m);
+                break;
+            case 'reload':
+                $this->startReload($session, (string) ($m['reload'] ?? ''));
                 break;
             case 'stop':
                 $this->signalRun((string) ($m['run'] ?? ''), 15);

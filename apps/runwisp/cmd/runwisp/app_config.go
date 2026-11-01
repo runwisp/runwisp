@@ -51,8 +51,10 @@ func withAppDocument(f Flags, in io.Reader, enabled bool) (Flags, error) {
 
 // serveAppConfig makes the connected app the config's source of truth: its
 // documents reload the daemon, and the daemon exits once no copy of the app
-// has been connected for appIdleExit.
-func serveAppConfig(apps *apphost.Host, doc *config.DocumentSource, reload func() (model.ReloadResult, error)) {
+// has been connected for appIdleExit. It returns what an operator's reload
+// (`runwisp reload`, SIGHUP) does instead of reloading the last document: ask
+// the app for its config afresh.
+func serveAppConfig(apps *apphost.Host, doc *config.DocumentSource, reload func() (model.ReloadResult, error)) func() (model.ReloadResult, error) {
 	apps.AcceptConfig(doc, reload)
 	apps.ExitWhenIdle(appIdleExit, func() {
 		slog.Info("The app is gone; shutting down")
@@ -60,4 +62,5 @@ func serveAppConfig(apps *apphost.Host, doc *config.DocumentSource, reload func(
 			slog.Error("Failed to shut down after the app left", "err", err)
 		}
 	})
+	return apps.RequestConfig
 }

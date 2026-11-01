@@ -51,7 +51,9 @@ RunWisp dashboard: http://127.0.0.1:9477, password: vendor/bin/runwisp password 
 
 RunWisp keeps its database, run logs and socket in `var/runwisp`. Keep the
 worker running the way you run `messenger:consume`: a systemd unit, a
-Supervisor program or your container's command. `bin/console runwisp:work
+Supervisor program or your container's command. For systemd, use the unit in
+[Keep the worker running](/sdk/php/#keep-the-worker-running) with
+`bin/console runwisp:work` and `bin/console runwisp:reload`. `bin/console runwisp:work
 --env=prod` runs every task in the `prod` environment too.
 
 ## How schedules become tasks
@@ -198,6 +200,21 @@ bin/console runwisp:check
 It exits with code 1 when RunWisp would reject the config, such as for a
 misspelled key, so you can run it in CI. See
 [Check your tasks](/sdk/php/#check-your-tasks).
+
+## Deploy
+
+**since**: `1.9`
+
+After each deploy:
+
+```bash
+bin/console runwisp:reload
+```
+
+The running `runwisp:work` reads the schedules again, and RunWisp applies what
+changed. Runs in progress keep going. If the deploy broke the app, it exits
+with code 1 and PHP's error, and the schedules stay as they were. See
+[Deploy](/sdk/php/#deploy).
 
 ## Configuration
 
