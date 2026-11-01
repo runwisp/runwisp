@@ -1058,3 +1058,17 @@ func TestCronRedirectCommentAboveTheTask(t *testing.T) {
 	res := parseCron(t, "15 3 * * * /srv/app/backup.sh >> /var/log/app/backup.log 2>&1\n", CronOptions{})
 	mustContain(t, res.BlockTOML("backup"), "# Output goes to /var/log/app/backup.log")
 }
+
+// TestCronLeadingCdBecomesWorkingDir: a Laravel-style line cds itself, so the
+// task starts there instead of in `~`, and is named after the artisan command.
+func TestCronLeadingCdBecomesWorkingDir(t *testing.T) {
+	in := "* * * * * cd /var/www/parcel && php artisan payments:reconcile >> storage/logs/cron.log 2>&1\n" +
+		"0 * * * * cd /var/www/parcel && php artisan queue:prune\n"
+	out := parseCron(t, in, CronOptions{}).TOML()
+	mustContain(t, out, "[tasks.payments-reconcile]")
+	mustContain(t, out, "[tasks.queue-prune]")
+	mustContain(t, out, `working_dir = "/var/www/parcel"`)
+	mustContain(t, out, `run = "php artisan payments:reconcile >> storage/logs/cron.log 2>&1"`)
+	mustNotContain(t, out, `working_dir = "~"`)
+	mustNotContain(t, out, "cd /var/www/parcel")
+}

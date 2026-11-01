@@ -5,6 +5,7 @@ package importer
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
@@ -15,7 +16,7 @@ import (
 // and shell builtins with their arguments), then uses that token's basename
 // (minus a script extension), sanitized to RunWisp's name rules. A launcher
 // (`run-parts DIR`, `service NAME`) is named after what it launches instead,
-// kept whole with dots as hyphens: `cron.hourly` is a directory, not a file with
+// kept whole with dots and colons as hyphens: `cron.hourly` is a directory, not a file with
 // a `.hourly` suffix, and reads better as `cron-hourly` than `cron_hourly`.
 func deriveCronName(command string) string {
 	base, launched := firstCommandProgram(strings.Fields(command))
@@ -23,7 +24,7 @@ func deriveCronName(command string) string {
 		base = "job"
 	}
 	if launched {
-		base = strings.ReplaceAll(base, ".", "-")
+		base = strings.NewReplacer(".", "-", ":", "-").Replace(base)
 	} else if ext := filepath.Ext(base); ext != "" && len(ext) <= 5 {
 		base = strings.TrimSuffix(base, ext)
 	}
@@ -86,7 +87,7 @@ func firstCommandProgram(tokens []string) (name string, launched bool) {
 			atCmd = false
 		default:
 			prog := filepath.Base(word)
-			if pick, ok := cronLaunchers[prog]; ok && !ends {
+			if pick, ok := cronLauncher(prog); ok && !ends {
 				if target := pick(commandArgs(tokens[i+1:])); target != "" {
 					return filepath.Base(target), true
 				}
@@ -116,6 +117,46 @@ var cronLaunchers = map[string]func(args []string) string{
 	"run-parts":   lastArg, // run-parts [options] DIRECTORY
 	"invoke-rc.d": firstArg,
 	"service":     firstArg,
+}
+
+// phpProgram matches `php` and versioned binaries such as `php8.3`.
+var phpProgram = regexp.MustCompile(`^php[0-9.]*$`)
+
+// phpFrameworkScripts are the console entry points of Laravel (artisan),
+// Symfony (bin/console) and CodeIgniter (spark).
+var phpFrameworkScripts = map[string]bool{"artisan": true, "console": true, "spark": true}
+
+// cronLauncher returns the launcher entry for a program, if it is one.
+func cronLauncher(prog string) (func(args []string) string, bool) {
+	if phpProgram.MatchString(prog) {
+		return phpSubcommand, true
+	}
+	pick, ok := cronLaunchers[prog]
+	return pick, ok
+}
+
+// phpSubcommand names `php artisan payments:reconcile` after its subcommand.
+// Any other php script gets no target, so it is named after `php` as before.
+func phpSubcommand(args []string) string {
+	for i, a := range args {
+		if phpFrameworkScripts[filepath.Base(a)] {
+			return firstArg(args[i+1:])
+		}
+	}
+	return ""
+}
+
+var cdPlainDir = regexp.MustCompile(`^cd\s+((?:/|~/?)[A-Za-z0-9_./~+@%-]*)\s+&&\s+(\S.*)$`)
+
+// splitLeadingCd turns `cd DIR && rest` into DIR and rest when DIR is a plain
+// absolute or ~-relative path with no quoting or shell syntax in it. Anything
+// else comes back unchanged with an empty dir.
+func splitLeadingCd(command string) (dir, rest string) {
+	m := cdPlainDir.FindStringSubmatch(strings.TrimSpace(command))
+	if m == nil {
+		return "", command
+	}
+	return m[1], m[2]
 }
 
 func firstArg(args []string) string {
