@@ -83,25 +83,7 @@ func runValidate(w io.Writer, f Flags, opts validateOpts) error {
 		err = errAppSuppliesConfig
 	}
 	if err != nil {
-		if opts.JSON {
-			// Emit the error document to stdout so an agent never has to parse
-			// text to know validation failed; the returned error still drives a
-			// non-zero exit (and its human copy to stderr via main.go).
-			if werr := writeJSON(w, validateJSONDoc{
-				SchemaVersion: jsonSchemaVersion,
-				Valid:         false,
-				ConfigPath:    f.CfgFile,
-				Warnings:      messagesFromStrings(nil),
-				Errors:        messagesFromError(err),
-			}); werr != nil {
-				return werr
-			}
-		}
-		title := fmt.Sprintf("%s is not valid", f.CfgFile)
-		if errors.Is(err, errAppSuppliesConfig) {
-			title = "there is no runwisp.toml to validate"
-		}
-		return &userFacingError{title: title, details: err.Error()}
+		return validateFailure(w, f, opts, err)
 	}
 
 	tasks, services := 0, 0
@@ -156,4 +138,28 @@ func runValidate(w io.Writer, f Flags, opts validateOpts) error {
 	held := config.Held(cfg)
 	printHeldBlock(w, held.Tasks, held.CronState)
 	return nil
+}
+
+// validateFailure reports a config that failed to load: as the JSON error
+// document with opts.JSON, and always as the error that sets the exit code.
+func validateFailure(w io.Writer, f Flags, opts validateOpts, err error) error {
+	if opts.JSON {
+		// Emit the error document to stdout so an agent never has to parse
+		// text to know validation failed; the returned error still drives a
+		// non-zero exit (and its human copy to stderr via main.go).
+		if werr := writeJSON(w, validateJSONDoc{
+			SchemaVersion: jsonSchemaVersion,
+			Valid:         false,
+			ConfigPath:    f.CfgFile,
+			Warnings:      messagesFromStrings(nil),
+			Errors:        messagesFromError(err),
+		}); werr != nil {
+			return werr
+		}
+	}
+	title := fmt.Sprintf("%s is not valid", f.CfgFile)
+	if errors.Is(err, errAppSuppliesConfig) {
+		title = "there is no runwisp.toml to validate"
+	}
+	return &userFacingError{title: title, details: err.Error()}
 }
