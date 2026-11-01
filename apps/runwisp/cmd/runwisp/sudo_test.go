@@ -4,13 +4,19 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -105,4 +111,41 @@ func TestRunList_PointsAtTheSystemConfig(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "/etc/runwisp/runwisp.toml")
 	assert.Contains(t, err.Error(), "sudo ")
+}
+
+// A socket another user owns is a daemon that is up; the hint must not send the
+// operator off to start a second one.
+func TestOtherUserHint(t *testing.T) {
+	hint := otherUserHint("deploy", []string{"status", "--data", "storage/runwisp"})
+	assert.Contains(t, hint, "belongs to deploy")
+	assert.Contains(t, hint, "sudo -u deploy ")
+	assert.Contains(t, hint, "status --data storage/runwisp")
+	assert.NotContains(t, hint, "runwisp daemon")
+
+	hint = otherUserHint("", []string{"status"})
+	assert.Contains(t, hint, "another user")
+	assert.NotContains(t, hint, "sudo")
+}
+
+func TestDaemonUnreachableHint_PermissionDenied(t *testing.T) {
+	denied := fmt.Errorf("request failed: %w", &net.OpError{Op: "dial", Net: "unix", Err: os.NewSyscallError("connect", syscall.EACCES)})
+	assert.Contains(t, daemonUnreachableHint(Flags{Socket: "/nonexistent/dir/runwisp.sock"}, denied), "another user")
+	assert.Equal(t, startDaemonHint, daemonUnreachableHint(Flags{DataDir: "/srv/rw"}, errors.New("connection refused")))
+}
+
+// The hint keys off errors.Is(err, fs.ErrPermission), so the client must keep
+// that error in its chain all the way up from the dial.
+func TestHealthCheckKeepsPermissionDeniedInTheChain(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can open any socket")
+	}
+	sock := filepath.Join(testutil.ShortTempDir(t), "runwisp.sock")
+	ln, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	require.NoError(t, os.Chmod(sock, 0))
+
+	err = apiclient.NewUnix(sock).HealthCheck(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, daemonUnreachableHint(Flags{Socket: sock}, err), "belongs to")
 }
