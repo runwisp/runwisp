@@ -483,6 +483,15 @@ func (client *Client) startSession(ctx context.Context, connection *websocket.Co
 	}
 	session.lastReceived.Store(time.Now().UnixMilli())
 
+	// Inventory goes first, before attachSession lets live updates and the
+	// buffered flush onto this session: everything it lists was owned before
+	// this connection, so the station can crash any earlier-acked execution
+	// that is missing. RecoverArchiveBacklog has already buffered recovered
+	// terminal updates, so those executions are listed too.
+	if err := sendMessage(session, NewExecutionInventoryMessage(client.tracker.Inventory())); err != nil {
+		slog.Warn("failed to queue execution inventory", "err", err)
+	}
+
 	isFirstConnect := client.conn.attachSession(session)
 	client.endSessionIfCapabilitiesChanged()
 

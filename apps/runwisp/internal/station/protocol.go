@@ -89,6 +89,18 @@ func NewExecutionUpdateMessage(executionID string, status protocol.ExecutionStat
 	}
 }
 
+// NewExecutionInventoryMessage lists the executions the daemon still owns,
+// sent once per connection before any other message.
+func NewExecutionInventoryMessage(executionIDs []string) protocol.ExecutionInventoryMessage {
+	v, s := newEnvelopeFields()
+	return protocol.ExecutionInventoryMessage{
+		Type:            "execution:inventory",
+		ProtocolVersion: v,
+		SentAt:          s,
+		ExecutionIds:    executionIDs,
+	}
+}
+
 // NewLogLinesMessage builds a coalesced batch of live line events for one
 // execution, so a burst ships as a single frame. lines must be in ascending n
 // order.
