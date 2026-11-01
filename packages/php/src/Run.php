@@ -30,6 +30,8 @@ final class Run
         public readonly array $env = [],
         /** The firing, for a run the schedule started; null for one started by hand. */
         public readonly ?\DateTimeImmutable $scheduledAt = null,
+        /** The file whose existence tells the worker the run was skipped; null for a run started by hand. */
+        public readonly ?string $skipFile = null,
     ) {
     }
 
@@ -60,6 +62,7 @@ final class Run
             array_map('strval', (array) ($payload['params'] ?? [])),
             $env,
             is_string($payload['at'] ?? null) ? new \DateTimeImmutable($payload['at']) : null,
+            is_string($payload['skip'] ?? null) ? $payload['skip'] : null,
         );
     }
 
@@ -69,9 +72,23 @@ final class Run
      * @param array<string, string> $env
      * @param array<string, string> $params
      */
-    public static function payload(string $run, string $task, array $env, array $params, ?string $at): string
+    public static function payload(string $run, string $task, array $env, array $params, ?string $at, ?string $skip = null): string
     {
-        return (string) json_encode(['run' => $run, 'task' => $task, 'env' => array_keys($env), 'params' => (object) $params, 'at' => $at], JSON_UNESCAPED_SLASHES);
+        return (string) json_encode(['run' => $run, 'task' => $task, 'env' => array_keys($env), 'params' => (object) $params, 'at' => $at, 'skip' => $skip], JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Ends the run as skipped, not succeeded: prints why, which is the run's
+     * log, and tells the worker. Return its result as the exit code.
+     */
+    public function skip(string $why): int
+    {
+        echo "runwisp: skipped: $why\n";
+        if ($this->skipFile !== null) {
+            @file_put_contents($this->skipFile, $why);
+        }
+
+        return 0;
     }
 
     /**

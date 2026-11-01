@@ -426,6 +426,7 @@ The callback gets the run:
 | `params`         | The run's [parameters](#environment-and-parameters).                                           |
 | `scheduledAt`    | The scheduled time a scheduled run is for, as a `DateTimeImmutable`. Otherwise null.           |
 | `stopping()`     | `true` once RunWisp asked the run to [stop](#stop-a-run).                                      |
+| `skip($why)`     | Prints why and returns `0`: `return $run->skip('nothing to do')` ends the run as skipped.      |
 | `Run::current()` | The run this process was started for, or null outside one.                                     |
 
 ### `vendor/bin/runwisp`

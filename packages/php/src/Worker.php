@@ -587,7 +587,9 @@ final class Worker
         // (it lets runs finish), and a stop reaches what the run started too.
         $group = $this->setsid !== null && function_exists('posix_kill');
         $argv = $group ? [$this->setsid, ...$unit->argv] : $unit->argv;
-        $process = new Process($argv, null, [...$env, Run::ENV => Run::payload($id, $name, $env, $params, $at)], null, null);
+        $skip = $this->skipFile($id);
+        @unlink($skip);
+        $process = new Process($argv, null, [...$env, Run::ENV => Run::payload($id, $name, $env, $params, $at, $skip)], null, null);
         try {
             $process->start();
         } catch (\Throwable $e) {
@@ -614,9 +616,22 @@ final class Worker
             $this->relay($id, $run, 'stderr', $run['stderr']->flush());
             $process->clearOutput()->clearErrorOutput();
             // Killed by a signal: 128 + the signal, as the shell reports it.
-            $run['session']->send(['type' => 'exit', 'run' => $id, 'code' => $process->getExitCode() ?? -1]);
+            $exit = ['type' => 'exit', 'run' => $id, 'code' => $process->getExitCode() ?? -1];
+            $skip = $this->skipFile($id);
+            if (is_file($skip)) {
+                // Run::skip() left it: the run chose not to run, which is no success.
+                $exit = ['type' => 'exit', 'run' => $id, 'code' => 0, 'reason' => 'skipped'];
+                @unlink($skip);
+            }
+            $run['session']->send($exit);
             unset($this->runs[$id]);
         }
+    }
+
+    /** Where a run says it was skipped: Run::skip() creates it. */
+    private function skipFile(string $id): string
+    {
+        return "{$this->settings->data}/run-$id.skip";
     }
 
     /**
