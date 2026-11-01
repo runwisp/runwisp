@@ -76,7 +76,8 @@ func runStatus(ctx context.Context, out io.Writer, f Flags, rf remoteFlags, asJS
 	}
 
 	if infoErr == nil && info.ConfigStale {
-		fmt.Fprintln(out, "\n⚠ runwisp.toml has changed since it was loaded, run 'runwisp reload' to apply")
+		identity, _ := client.GetInstanceInfo(ctx)
+		fmt.Fprintln(out, "\n⚠ "+staleConfigNotice(isAppDaemon(identity)))
 	}
 	// Findings the daemon printed at boot, re-derived from the live config so a
 	// reload's are shown instead. Chiefly crontab jobs include_cron couldn't
@@ -95,6 +96,15 @@ func runStatus(ctx context.Context, out io.Writer, f Flags, rf remoteFlags, asJS
 		printDownServices(out, tasks)
 	}
 	return nil
+}
+
+// staleConfigNotice says what changed on disk. An app supplies the root config,
+// so only its included and env files are watched.
+func staleConfigNotice(appConfig bool) string {
+	if appConfig {
+		return "An included or env file has changed since the config was loaded, run 'runwisp reload' to apply"
+	}
+	return "runwisp.toml has changed since it was loaded, run 'runwisp reload' to apply"
 }
 
 // statusClient connects status to its daemon. Locally, the Unix socket is the

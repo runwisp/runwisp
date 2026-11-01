@@ -152,6 +152,10 @@ func launchConnectedTUI(ctx context.Context, client *apiclient.Client, mode tuiC
 
 	startupInfo := buildStartupInfoFromDaemon(info)
 	startupInfo.ListenURL = resolveTUIListenURL(info, mode)
+	// Loopback/socket only: a remote attach gets an error here, which reads as
+	// "not an app".
+	identity, _ := client.GetInstanceInfo(ctx)
+	startupInfo.AppConfig = isAppDaemon(identity)
 
 	if !mode.remote {
 		// Fetch the ephemeral password over the local socket so the TUI's

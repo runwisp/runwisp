@@ -215,6 +215,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	startupInfo := uikit.StartupInfo{
 		Version:    version.Version,
 		ConfigPath: absPathOrFallback(f.CfgFile),
+		AppConfig:  fromApp,
 		DataDir:    absPathOrFallback(f.DataDir),
 		DBPath:     f.DBPath(),
 		LogDir:     f.LogDir(),

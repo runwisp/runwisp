@@ -66,6 +66,9 @@ type StartupInfo struct {
 	// after the daemon loaded it. Kept current by the TUI's periodic
 	// /api/daemon poll; renders as a "press R to reload" notice in the header.
 	ConfigStale bool
+	// AppConfig is true when an SDK app supplies the config, so there is no
+	// runwisp.toml to validate or reload from; notices point at `runwisp status`.
+	AppConfig bool
 	// ConfigWarnings holds the live config's non-fatal findings, chiefly crontab
 	// jobs [daemon] include_cron declined to schedule. Kept current by the same
 	// /api/daemon poll as ConfigStale, because a reload can add or clear one. The

@@ -121,7 +121,7 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 	if info.ConfigStale {
 		// Warning color, not muted \u2014 a pending config change is actionable.
 		warn := uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
-			Render("\u26a0 runwisp.toml changed \u2014 press R to reload")
+			Render("\u26a0 " + staleConfigLabel(info) + " changed \u2014 press R to reload")
 		parts = append(parts, warn)
 	}
 	if n := HeldTaskCount(info.Tasks); n > 0 {
@@ -141,7 +141,7 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 		// Warning color for the same reason as the stale notice: these name jobs the
 		// daemon is not running, and nothing else in the TUI would ever mention them.
 		warn := uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
-			Render(fmt.Sprintf("\u26a0 %s \u2014 see `runwisp validate`", textutil.Count(n, "config warning", "config warnings")))
+			Render(fmt.Sprintf("\u26a0 %s \u2014 see `%s`", textutil.Count(n, "config warning", "config warnings"), warningsCommand(info)))
 		parts = append(parts, warn)
 	}
 	if len(parts) > 0 {
@@ -493,4 +493,23 @@ func HeldTaskCount(tasks []model.Task) int {
 		}
 	}
 	return n
+}
+
+// warningsCommand names the command that prints the config warnings in full.
+// An app-supplied config has no runwisp.toml for `validate` to read, but
+// `status` prints the live warnings either way.
+func warningsCommand(info uikit.StartupInfo) string {
+	if info.AppConfig {
+		return "runwisp status"
+	}
+	return "runwisp validate"
+}
+
+// staleConfigLabel names what changed on disk. An app-supplied config has no
+// runwisp.toml; only its included and env files are watched.
+func staleConfigLabel(info uikit.StartupInfo) string {
+	if info.AppConfig {
+		return "config files"
+	}
+	return "runwisp.toml"
 }
