@@ -442,5 +442,8 @@ The callback gets the run:
 
 ### `vendor/bin/runwisp`
 
-The `runwisp` CLI the package runs, such as
-`vendor/bin/runwisp password --data .runwisp`.
+The `runwisp` CLI the package runs, such as `vendor/bin/runwisp status`. From the
+app's root it finds the daemon in `storage/runwisp`, `var/runwisp` or
+`writable/runwisp`; for any other data dir, pass `--data`. `runwisp list` shows
+the app's tasks, and `runwisp validate` points you to the [check](#check-your-tasks),
+since there is no `runwisp.toml` to read.

@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - A Laravel schedule entry whose `description()` is a sentence is now named after its command or job and keeps the sentence as its task description. Tasks that were named from such a description get new names, so their run history starts fresh.
+- `runwisp status`, `password`, `reload` and the other commands that talk to a daemon find an SDK app's daemon from the app's root, in `storage/runwisp`, `var/runwisp` or `writable/runwisp`, without `--data`.
+- When an app supplies the config, `runwisp list` shows the app's tasks, `runwisp validate` points to the app's own check command, and the TUI points to `runwisp status` for config warnings instead of `runwisp validate`.
+- The same-second warning lists at most 5 task names, and for SDK tasks says to set `jitter` in each task's options.
+- The PHP and JavaScript SDKs note "(listening on all interfaces)" in the dashboard line when the host is `0.0.0.0` or `::`, and `runwisp:check` prints warnings after the task list.
 
 ### Fixed
 
@@ -23,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `config/runwisp.php` reads `RUNWISP_*` through `env()`, so the settings still apply after `php artisan config:cache`. If you published it before, republish it or wrap its values in `env()` the same way.
 - The JavaScript SDK reports a daemon that resets the connection mid-answer as "RunWisp hung up during ...", not a bare `read ECONNRESET`.
 - The PHP SDK reports a daemon that stops mid-answer as "RunWisp hung up during ...", instead of taking the cut-off body as the answer.
+- A command run as a user that cannot open the daemon's socket says the daemon belongs to another user and names `sudo -u <owner> runwisp ...`, instead of suggesting you start a second daemon.
+- `runwisp status` words the changed-config notice as an included or env file when an app supplies the config, since there is no `runwisp.toml`.
 
 ## [1.8.0] - 2026-10-26
 
