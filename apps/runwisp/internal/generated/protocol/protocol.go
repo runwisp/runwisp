@@ -336,6 +336,16 @@ type LogChunkUrlsMessage struct {
 	ExecutionID     string   `json:"executionId"`
 	FromSeq         int      `json:"fromSeq"`
 	Urls            []string `json:"urls"`
+	// Optional fresh signed PUT URL for the terminal log archive,
+	// replacing the dispatch's `logUploadUrl` (and any earlier
+	// refresh), so a long run's archive key and signature stay current.
+	// Honoured only together with `archivePath`; omitted means keep the
+	// current one.
+	ArchiveURL string `json:"archiveUrl,omitzero"`
+	// Storage object key matching `archiveUrl`; the daemon echoes it as
+	// `logPath` on the terminal `execution:update` instead of the
+	// dispatch's `logPath`. Honoured only together with `archiveUrl`.
+	ArchivePath string `json:"archivePath,omitzero"`
 }
 
 type LogStopMessage struct {
