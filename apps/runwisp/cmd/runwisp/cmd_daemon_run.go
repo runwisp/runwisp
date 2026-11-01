@@ -187,6 +187,8 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		SessionKey:          cfg.SessionKey,
 		NoAuth:              cfg.NoAuth,
 		TrustedProxies:      cfg.Config.Daemon.TrustedProxies,
+		APITokens:           cfg.Config.Daemon.APITokens,
+		ViewerAPITokens:     cfg.Config.Daemon.ViewerAPITokens,
 		OnSignedInVisit:     svc.DetectedURL.Observe,
 		DetectedExternalURL: svc.DetectedURL.Load,
 		DaemonInfo:          daemonInfo,

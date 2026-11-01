@@ -104,6 +104,14 @@ func (a *settingsApplier) prepare(old, updated *config.Config) ([]string, func()
 			slog.Error("Failed to apply reloaded trusted_proxies; keeping the previous set", "err", err)
 		}
 	})
+	// Token values are secrets: only the key names are reported.
+	applyTokens := func() {
+		if a.srv != nil {
+			a.srv.SetAPITokens(updated.Daemon.APITokens, updated.Daemon.ViewerAPITokens)
+		}
+	}
+	set(!slices.Equal(old.Daemon.APITokens, updated.Daemon.APITokens), "daemon.api_tokens", applyTokens)
+	set(!slices.Equal(old.Daemon.ViewerAPITokens, updated.Daemon.ViewerAPITokens), "daemon.viewer_api_tokens", applyTokens)
 	set(old.Storage.MaxSize != updated.Storage.MaxSize, "storage.max_size", func() {
 		a.svc.RetentionCleaner.SetMaxTotalSize(updated.Storage.MaxSize)
 	})

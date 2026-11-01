@@ -33,6 +33,8 @@ func TestCheckNonReloadable_AcceptsLiveSettings(t *testing.T) {
 			ExternalURL:     "https://x",
 			CheckUpdates:    true,
 			TrustedProxies:  []string{"10.0.0.0/8"},
+			APITokens:       []string{"operator-token"},
+			ViewerAPITokens: []string{"viewer-token"},
 		},
 	}
 	assert.NoError(t, CheckNonReloadable(old, updated))
