@@ -42,7 +42,6 @@ return [
         //     'queue-worker' => [
         //         'run' => 'php artisan queue:work --sleep=3 --tries=3 --max-time=3600',
         //         'restart_delay' => '5s',
-        //         'graceful_stop' => '60s',
         //     ],
         // ],
     ],
