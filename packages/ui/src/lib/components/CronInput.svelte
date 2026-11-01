@@ -11,9 +11,12 @@
     let {
         value = $bindable(),
         disabled = false,
+        timezone,
     }: {
         value: string;
         disabled?: boolean;
+        /** IANA zone the schedule runs in; the next-run preview is shown in it. */
+        timezone?: string;
     } = $props();
 
     let examplesModalOpen = $state(false);
@@ -36,6 +39,28 @@
         examplesModalOpen = false;
     }
 
+    // "Mon, Nov 2, 09:00 AM UTC (Mon 10:00 AM your time)" in the schedule's zone,
+    // with the browser-local time appended when the zones differ.
+    function formatNext(date: Date): string {
+        if (!timezone) return date.toLocaleString();
+        const zoned = date.toLocaleString(undefined, {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            timeZone: timezone,
+            timeZoneName: "short",
+        });
+        if (timezone === Intl.DateTimeFormat().resolvedOptions().timeZone) return zoned;
+        const local = date.toLocaleString(undefined, {
+            weekday: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+        return `${zoned} (${local} your time)`;
+    }
+
     let explanation = $derived.by(() => {
         if (!value || value.trim() === "") {
             return { text: "Empty schedule", next: undefined, isValid: false };
@@ -45,10 +70,12 @@
             // but we want to catch it to show "Invalid cron expression".
             const text = cronstrue.toString(value, { throwExceptionOnParseError: true });
 
-            let next: Date | undefined;
+            let next: string | undefined;
             try {
-                const interval = CronExpressionParser.parse(value);
-                next = interval.next().toDate();
+                const date = CronExpressionParser.parse(value, timezone ? { tz: timezone } : {})
+                    .next()
+                    .toDate();
+                next = formatNext(date);
             } catch {
                 // If parser fails, we consider it invalid or at least can't show next run
             }
@@ -100,7 +127,7 @@
             {#if explanation.next}
                 <div class="mt-0.5 font-sans text-xs text-on-surface-muted">
                     Next run: <span class="font-mono font-medium text-on-surface"
-                        >{explanation.next.toLocaleString()}</span
+                        >{explanation.next}</span
                     >
                 </div>
             {/if}
