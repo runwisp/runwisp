@@ -5,6 +5,11 @@ deleted by the hourly cleanup. `0` keeps no completed runs; unset means no
 count limit. With
 [`keep_for`](/configuration/tasks/#keep_for) also set, whichever deletes more wins.
 
+Nothing is deleted by default: with neither this nor `keep_for` set, a task keeps
+every run, so an every-minute task grows until you set one. Set it for the
+whole file in [`[defaults]`](/configuration/defaults/). The
+[`[storage]`](/configuration/storage/) limits apply on top when you set them.
+
 ```toml title="runwisp.toml"
 [tasks.backup-db]
 # ...

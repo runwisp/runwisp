@@ -3,6 +3,9 @@
 Delete runs older than this. With [`keep_runs`](/configuration/tasks/#keep_runs) also set, whichever
 deletes more wins.
 
+Unset means no age limit, and with `keep_runs` unset too a task keeps every run.
+The [`[storage]`](/configuration/storage/) limits apply on top when you set them.
+
 ```toml title="runwisp.toml"
 [tasks.backup-db]
 # ...
