@@ -15,6 +15,7 @@ import (
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/station/logarchive"
 )
 
@@ -123,6 +124,9 @@ func (u *LogUploader) StopStream(ctx context.Context, executionID string) (chunk
 // that doesn't continue where the stream's URLs end is stale and dropped; an
 // empty one means the station's per-execution cap was reached.
 func (u *LogUploader) OnChunkUrls(message protocol.LogChunkUrlsMessage) {
+	if message.ArchiveURL != "" && message.ArchivePath != "" {
+		u.refreshArchive(message.ExecutionID, message.ArchiveURL, message.ArchivePath)
+	}
 	u.mu.Lock()
 	s, ok := u.streams[message.ExecutionID]
 	u.mu.Unlock()
@@ -138,6 +142,27 @@ func (u *LogUploader) OnChunkUrls(message protocol.LogChunkUrlsMessage) {
 	s.requestedAt = time.Time{}
 	if len(message.Urls) == 0 {
 		s.capped = true
+	}
+}
+
+// refreshArchive swaps a pending upload's archive URL and key for the fresh
+// pair the station minted with a chunk URL batch (the key embeds the month, so
+// a long run outlives the dispatch's), persisting it so crash recovery uses the
+// fresh pair too. No-op when the execution has no pending upload.
+func (u *LogUploader) refreshArchive(executionID, uploadURL, logPath string) {
+	u.mu.Lock()
+	entry, ok := u.pending[executionID]
+	if ok {
+		entry.uploadURL, entry.logPath = uploadURL, logPath
+		u.pending[executionID] = entry
+	}
+	u.mu.Unlock()
+	if !ok || u.repo == nil {
+		return
+	}
+	rec := model.PendingLogUpload{ExecutionID: executionID, UploadURL: uploadURL, LogPath: logPath, InsertedAt: u.now().Unix()}
+	if err := u.repo.UpsertPendingLogUpload(context.Background(), rec); err != nil {
+		slog.Warn("failed to persist refreshed log archive URL", "executionId", executionID, "err", err)
 	}
 }
 
