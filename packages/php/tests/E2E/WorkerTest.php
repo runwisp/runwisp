@@ -128,10 +128,13 @@ final class WorkerTest extends TestCase
     public function testSigtermLeavesAndTheDaemonStops(): void
     {
         $pid = self::$daemon->identity()['pid'];
+        // RunWisp takes a while to stop with this run in progress.
+        self::assertSame(201, self::$daemon->call('POST', '/api/tasks/linger/run')['status']);
         self::$worker->signal(15);
         self::waitFor(fn (): bool => !self::$worker->isRunning(), 'the worker to exit');
         self::assertSame(143, self::$worker->getExitCode(), self::$worker->getErrorOutput());
-        self::waitFor(fn (): bool => !Daemon::alive($pid), 'the daemon to exit');
+        // Already gone: under systemd's KillMode=mixed whatever outlives the worker is killed.
+        self::assertFalse(Daemon::alive($pid), 'the daemon outlived the last worker');
         self::assertStringContainsString('RunWisp dashboard: http://127.0.0.1:', self::$worker->getOutput());
     }
 

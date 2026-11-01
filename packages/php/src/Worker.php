@@ -24,6 +24,8 @@ final class Worker
     private const MAX_RECONNECT_S = 30;
     /** Set on the copy a reload starts: it writes this app's tasks to that file and exits. */
     private const DESCRIBE = 'RUNWISP_DESCRIBE';
+    /** How long the last copy to stop waits for RunWisp to stop with it. */
+    private const DAEMON_STOP_S = 30;
     /** RunWisp gives up waiting after 60 seconds. */
     private const RELOAD_TIMEOUT_S = 55;
     /** How much of a failed reload's output RunWisp is told. */
@@ -54,6 +56,8 @@ final class Worker
     private float $retryAt = 0;
     /** The signal that asked the worker to stop, once one did. */
     private ?int $leaving = null;
+    /** The RunWisp daemon this copy is connected to. */
+    private int $daemonPid = 0;
     /** How this worker was started, for a reload to read the app's tasks as they are now. */
     private readonly string $cwd;
     /** @var list<string> */
@@ -190,7 +194,7 @@ final class Worker
         while (true) {
             if ($this->leaving !== null && ($this->runs === [] || $this->session === null)) {
                 $this->killAll(15);
-                $this->session?->close();
+                $this->stop();
 
                 return 128 + $this->leaving;
             }
@@ -337,6 +341,32 @@ final class Worker
         return [(array) ($data['config'] ?? []), $units];
     }
 
+    /**
+     * Disconnects for good. The last copy to stop waits for RunWisp to stop
+     * too, which it does as this copy goes: under systemd's KillMode=mixed,
+     * whatever outlives the worker is killed, and a RunWisp killed before it
+     * saved how the last runs ended records them as crashed.
+     */
+    private function stop(): void
+    {
+        $session = $this->session;
+        if ($session === null) {
+            return;
+        }
+        // The leave is answered at once when another copy takes over: wait a tick for that.
+        $read = [$session->stream()];
+        $none = null;
+        @stream_select($read, $none, $none, 0, self::TICK_US);
+        foreach ($session->read() as $message) {
+            $this->receive($session, $message);
+        }
+        $last = $session->active;
+        $session->close();
+        for ($deadline = microtime(true) + self::DAEMON_STOP_S; $last && Daemon::alive($this->daemonPid) && microtime(true) < $deadline;) {
+            usleep(self::TICK_US);
+        }
+    }
+
     /** One turn: wait up to a tick for RunWisp, handle what it sent, relay run output. */
     public function tick(): void
     {
@@ -396,6 +426,7 @@ final class Worker
         } else {
             $this->stale = $this->daemon->staleReason($daemon, $document, $version);
         }
+        $this->daemonPid = (int) $daemon['pid'];
         $this->session = Session::open($this->settings->socket, $this->settings->app, getmypid() ?: 0, $daemon);
         $this->pushed = null;
         $this->pushing = false;

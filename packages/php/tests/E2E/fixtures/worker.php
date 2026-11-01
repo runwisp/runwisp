@@ -19,6 +19,8 @@ $runwisp = new RunWisp([
         'defaults' => ['env' => ['REGION' => 'eu']],
         'tasks' => [
             'shell' => ['run' => 'echo from a shell task'],
+            // Keeps RunWisp busy stopping for a while: it outlives SIGTERM.
+            'linger' => ['run' => "trap '' TERM; sleep 2"],
         ],
     ],
 ]);
