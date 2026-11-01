@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `runwisp reload` on a RunWisp an SDK app started asks the app to read its tasks again, so a deploy reaches the schedule without restarting the worker. The PHP SDK adds `runwisp:reload` for Laravel, Symfony and CodeIgniter (`php runwisp.php reload` for a plain script); a deploy that broke the app fails the reload with PHP's error and keeps the running schedule.
 - `runwisp:work` and `runwisp:check` in Laravel warn when a crontab still runs `schedule:run` or `schedule:work`, since that runs every scheduled task twice.
+- `[daemon] api_tokens` and `viewer_api_tokens` accept static bearer tokens for the REST API, full and read-only, so scripts and monitoring can call it without logging in. A reload applies changes.
 
 ### Changed
 
@@ -20,9 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Runs that Laravel skips (`when()`, `skip()`, `between()`, maintenance mode, `withoutOverlapping()`) are recorded as skipped, not succeeded.
 - `config/runwisp.php` reads `RUNWISP_*` through `env()`, so the settings still apply after `php artisan config:cache`. If you published it before, republish it or wrap its values in `env()` the same way.
-
-### Fixed
-
 - The JavaScript SDK reports a daemon that resets the connection mid-answer as "RunWisp hung up during ...", not a bare `read ECONNRESET`.
 - The PHP SDK reports a daemon that stops mid-answer as "RunWisp hung up during ...", instead of taking the cut-off body as the answer.
 

@@ -8,7 +8,8 @@ description: How the CLI, TUI, Web UI, and REST clients log in to RunWisp; setti
 RunWisp has two ways in:
 
 - The CLI and TUI on the same machine use the control socket. No password.
-- The Web UI and anything else over HTTP need the password.
+- The Web UI and anything else over HTTP need the password. Scripts can use an
+  [API token](#api-tokens) instead.
 
 ## Local clients (CLI, TUI)
 
@@ -118,6 +119,46 @@ runwisp password --viewer
 The first call makes up a random password and keeps it in memory until the
 daemon restarts; later calls print the same one. Like `runwisp password`, it
 exits `1` when `RUNWISP_VIEWER_PASSWORD` is set.
+
+## API tokens
+
+**since**: `1.9`
+
+A script or monitoring job can call the REST API with a static token instead of
+logging in. Make one and put it in the daemon's environment:
+
+```bash
+openssl rand -hex 32
+export RUNWISP_API_TOKEN='the-value-it-printed'
+```
+
+Name it in `runwisp.toml` with [substitution](/configuration/substitution/), so
+the secret stays out of the file, then run `runwisp reload`:
+
+```toml title="runwisp.toml"
+[daemon]
+api_tokens = ["${RUNWISP_API_TOKEN}"]
+```
+
+Send it as a bearer header:
+
+```bash
+curl -fsS -H "Authorization: Bearer $RUNWISP_API_TOKEN" \
+  https://runwisp.example.com:9477/api/tasks
+```
+
+- A token from [`api_tokens`](/configuration/daemon/#api_tokens) can do
+  everything a signed-in operator can, including triggering and stopping tasks.
+- A token from [`viewer_api_tokens`](/configuration/daemon/#viewer_api_tokens)
+  is read-only: anything that changes state gets `403`, like a
+  [read-only session](#read-only-access).
+- A token never expires. To rotate one, change the value and reload. The old
+  value stops working at once; sessions and other tokens carry on.
+- Tokens work in place of the session token on every `/api/` route. They don't
+  replace [hooks](#hooks), which control a single task. They are for scripts,
+  not for the Web UI, and `runwisp run --url` still takes the password.
+- Use TLS or a [reverse proxy](#reverse-proxies) off loopback. A token in plain
+  HTTP can be read on the way.
 
 ## Running without a password
 
