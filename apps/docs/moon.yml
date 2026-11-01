@@ -37,12 +37,13 @@ tasks:
         # Not split types/lint: eslint needs the .astro/types.d.ts that `astro check` generates.
         # `~:links` dep means moon runs the link check as part of this task —
         # it also gives `links` its own cache key and lets it be run on its own.
-        description: "astro check, then prettier --check + eslint + docs link check + prose lint."
+        description: "astro check, then prettier --check + eslint + docs link check + prose lint + export test."
         script: "bun scripts/sync-openapi.ts && bunx --bun astro check && prettier --check . && eslint ."
         deps:
             - "runwisp:openapi"
             - "~:links"
             - "~:lint-prose"
+            - "~:test"
         inputs:
             - "**/*"
             - "/apps/runwisp/openapi.json"
@@ -74,6 +75,16 @@ tasks:
             - "/README.md"
             - "/SECURITY.md"
             - "/scripts/install.sh"
+
+    test:
+        # The `.md` export flattens MDX for agents; this runs the transform on
+        # small cases and on every page.
+        description: "Test the MDX-to-Markdown export transform."
+        command: "bun scripts/test-mdx-to-markdown.ts"
+        inputs:
+            - "src/content/docs/**/*"
+            - "src/lib/mdx-to-markdown.ts"
+            - "scripts/test-mdx-to-markdown.ts"
 
     lint-prose:
         # The mechanical rules of STYLE.md: banned words, em dashes, and TOML
