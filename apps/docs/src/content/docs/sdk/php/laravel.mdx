@@ -140,6 +140,8 @@ The first argument is the task name: `#[Task('reports', retry_attempts: 3)]`.
 On a closure, put the attribute before `function`, as in the example above.
 On a `[Class::class, 'method']` callable, put it on the method or the class.
 The schedule comes from Laravel, so `cron` and `timezone` are not accepted.
+Any other task key works here, including [`hook_tokens`](/configuration/tasks/#hook_tokens),
+which lets a CI job trigger the task.
 
 ## RunWisp options
 
@@ -193,6 +195,7 @@ return [
         'notifiers' => [
             'slack' => ['type' => 'slack', 'webhook_url' => env('SLACK_WEBHOOK_URL')],
         ],
+        // Caps each task's run history at its 100 latest runs.
         'defaults' => ['keep_runs' => 100],
         // A queue worker that RunWisp keeps running and restarts:
         // 'services' => [

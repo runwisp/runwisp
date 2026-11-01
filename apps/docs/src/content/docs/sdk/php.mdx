@@ -28,6 +28,17 @@ package's plugin, which downloads the `runwisp` binary of the same version
 into `vendor/`. Without the plugin, it uses `runwisp` on `PATH`. Install it with
 `curl -fsSL https://get.runwisp.com | sh`, or set [`binary`](#binary).
 
+Scripted installs (CI, deploy scripts, `--no-interaction`) can't answer that
+question, so Composer skips the plugin. Allow it first:
+
+```bash
+composer config allow-plugins.runwisp/runwisp true
+composer require runwisp/runwisp
+```
+
+The downloaded CLI is `vendor/bin/runwisp`. It isn't on `PATH`, so call it by
+that path for `status`, `reload` and the other commands.
+
 With `ext-pcntl`, a run can [see that it is being stopped](#stop-a-run) and the
 worker [finishes its runs](#when-the-worker-stops) before it exits.
 
