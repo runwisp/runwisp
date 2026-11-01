@@ -4,8 +4,11 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
@@ -59,6 +62,11 @@ func loadValidateConfig(f Flags) (*config.Config, error) {
 	return config.Load(f.CfgFile)
 }
 
+// errAppSuppliesConfig replaces "no runwisp.toml" when the daemon here gets its
+// config from an app: the app is the one that can check it.
+var errAppSuppliesConfig = errors.New("this RunWisp gets its config from an app. " +
+	"Check it with the app's check command, such as `php artisan runwisp:check` or `php runwisp.php check`")
+
 // runValidate loads and validates f.CfgFile, or the document standing in for
 // it under `--app`. On success it prints a
 // short ✓ summary to w and returns nil; on failure it returns a userFacing
@@ -71,6 +79,9 @@ func loadValidateConfig(f Flags) (*config.Config, error) {
 // failure, still returning the error so the exit code stays non-zero).
 func runValidate(w io.Writer, f Flags, opts validateOpts) error {
 	cfg, err := loadValidateConfig(f)
+	if errors.Is(err, fs.ErrNotExist) && f.ConfigDoc == nil && connectedAppDaemon(context.Background(), f) {
+		err = errAppSuppliesConfig
+	}
 	if err != nil {
 		if opts.JSON {
 			// Emit the error document to stdout so an agent never has to parse
@@ -86,10 +97,11 @@ func runValidate(w io.Writer, f Flags, opts validateOpts) error {
 				return werr
 			}
 		}
-		return &userFacingError{
-			title:   fmt.Sprintf("%s is not valid", f.CfgFile),
-			details: err.Error(),
+		title := fmt.Sprintf("%s is not valid", f.CfgFile)
+		if errors.Is(err, errAppSuppliesConfig) {
+			title = "there is no runwisp.toml to validate"
 		}
+		return &userFacingError{title: title, details: err.Error()}
 	}
 
 	tasks, services := 0, 0

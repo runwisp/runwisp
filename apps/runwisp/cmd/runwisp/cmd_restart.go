@@ -181,6 +181,15 @@ func appDaemonRestartError(info *model.InstanceInfo) error {
 	}
 }
 
+// connectedAppDaemon reports whether the local daemon answering on the control
+// socket gets its config from an app. A missing or slow daemon is "no".
+func connectedAppDaemon(ctx context.Context, f Flags) bool {
+	ctx, cancel := context.WithTimeout(ctx, liveStateTimeout)
+	defer cancel()
+	info, err := apiclient.NewUnix(localAPISocketPath(f)).GetInstanceInfo(ctx)
+	return err == nil && isAppDaemon(info)
+}
+
 // isAppDaemon reports whether an SDK app started the daemon, with its own
 // config: only the app can restart it.
 func isAppDaemon(info *model.InstanceInfo) bool {
