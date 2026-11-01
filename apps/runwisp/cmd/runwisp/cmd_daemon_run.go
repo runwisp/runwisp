@@ -179,7 +179,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		DataDir:             absPathOrFallback(f.DataDir),
 		ConfigPath:          absPathOrFallback(f.CfgFile),
 		AppConfig:           fromApp,
-		SocketPath:          localAPISocketPath(f),
+		SocketPath:          daemonSocketPath(f),
 		LogDir:              f.LogDir(),
 		EventBus:            svc.EventBus,
 		Password:            cfg.Password,
@@ -586,7 +586,7 @@ func emitReadiness(rt *daemonRuntime, listenURL string, f Flags) {
 	// boot doesn't trip a spurious "health check did not pass" warning. A fatal
 	// bind error short-circuits the wait and flows through the shutdown path.
 	waitServerReady(rt, serverReadyTimeout)
-	client := apiclient.NewUnix(localAPISocketPath(f))
+	client := apiclient.NewUnix(daemonSocketPath(f))
 	if err := pollHealth(client, 3*time.Second); err != nil {
 		slog.Warn("health check did not pass during startup", "err", err)
 	}

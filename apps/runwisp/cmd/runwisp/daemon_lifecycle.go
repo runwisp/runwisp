@@ -421,7 +421,7 @@ func handleReloadSignal(rt *daemonRuntime) {
 // runWithTUI starts the interactive TUI, waits for it to exit, then shuts down
 // or transitions to headless mode depending on user choice.
 func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
-	client := apiclient.NewUnix(localAPISocketPath(f))
+	client := apiclient.NewUnix(daemonSocketPath(f))
 	if rt.srv != nil {
 		// Wait for the listeners to bind first so a slow boot doesn't trip a
 		// spurious health-check warning (same race emitReadiness guards).
