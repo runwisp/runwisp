@@ -428,6 +428,22 @@ type ExecutionAckMessage struct {
 	ExecutionID     string `json:"executionId"`
 }
 
+// Daemon → station. Sent once per connection, after auth and before any
+// other message, listing every execution the daemon still owns: running,
+// accepted for dispatch but not yet running, ended with its terminal
+// `execution:update` not yet sent, or with an `execution:update` buffered
+// for delivery on this connection. The station should treat executions
+// it tracks as active on this runner, acknowledged on an earlier
+// connection, and absent from executionIds as lost by the daemon (e.g.
+// a daemon restart without its state). Executions acknowledged on this
+// connection are never in the list. Old daemons never send this.
+type ExecutionInventoryMessage struct {
+	Type            string   `json:"type"`
+	ProtocolVersion int      `json:"protocolVersion,omitzero"`
+	SentAt          string   `json:"sentAt,omitzero"`
+	ExecutionIds    []string `json:"executionIds"`
+}
+
 type ExecutionUpdateMessage struct {
 	Type            string          `json:"type"`
 	ProtocolVersion int             `json:"protocolVersion,omitzero"`

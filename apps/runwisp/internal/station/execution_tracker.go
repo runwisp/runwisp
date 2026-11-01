@@ -4,6 +4,8 @@
 package station
 
 import (
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -25,7 +27,13 @@ type ExecutionTracker struct {
 	// PhaseRunning (when TrackRunning records it): without it a duplicate
 	// dispatch arriving in that window would start a second run, because the
 	// run row is persisted asynchronously and carries no unique constraint.
-	reserved                map[string]struct{}
+	reserved map[string]struct{}
+	// finishing holds executionIds whose run ended (Remove) but whose
+	// terminal update is not yet sent or buffered: the event bridge removes
+	// the run, then queues the terminal update from a separate goroutine.
+	// Without it Inventory would miss the execution in that window and the
+	// station would crash a run that actually finished.
+	finishing               map[string]struct{}
 	pendingExecutionUpdates []protocol.ExecutionUpdateMessage
 }
 
@@ -33,6 +41,7 @@ func NewExecutionTracker() *ExecutionTracker {
 	return &ExecutionTracker{
 		activeExecutions: make(map[string]activeExecution),
 		reserved:         make(map[string]struct{}),
+		finishing:        make(map[string]struct{}),
 	}
 }
 
@@ -73,15 +82,43 @@ func (t *ExecutionTracker) Remove(executionID string) {
 	defer t.mu.Unlock()
 	delete(t.activeExecutions, executionID)
 	delete(t.reserved, executionID)
+	t.finishing[executionID] = struct{}{}
 }
 
 func (t *ExecutionTracker) QueueUpdate(update protocol.ExecutionUpdateMessage, trySend func(any) error) {
-	if trySend != nil {
-		if err := trySend(update); err == nil {
-			return
-		}
+	if trySend == nil || trySend(update) != nil {
+		t.bufferUpdate(update)
 	}
-	t.bufferUpdate(update)
+	if update.Status != protocol.ExecutionStatusRunning {
+		t.mu.Lock()
+		delete(t.finishing, update.ExecutionID)
+		t.mu.Unlock()
+	}
+}
+
+// Inventory lists every execution the daemon still owns: running, reserved,
+// ended with its terminal update not yet queued, or with an update buffered
+// for delivery. Sent to the station on connect so it can crash executions the
+// daemon has lost. Never nil, so it marshals as a JSON array.
+func (t *ExecutionTracker) Inventory() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	ids := map[string]struct{}{}
+	for id := range t.activeExecutions {
+		ids[id] = struct{}{}
+	}
+	for id := range t.reserved {
+		ids[id] = struct{}{}
+	}
+	for id := range t.finishing {
+		ids[id] = struct{}{}
+	}
+	for _, update := range t.pendingExecutionUpdates {
+		ids[update.ExecutionID] = struct{}{}
+	}
+	out := slices.AppendSeq(make([]string, 0, len(ids)), maps.Keys(ids))
+	slices.Sort(out)
+	return out
 }
 
 func (t *ExecutionTracker) bufferUpdate(update protocol.ExecutionUpdateMessage) {

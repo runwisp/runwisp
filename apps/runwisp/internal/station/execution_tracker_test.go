@@ -377,3 +377,36 @@ func TestFlushPendingPartialFailureRequeuesRemainder(t *testing.T) {
 	assert.Equal(t, "second", tracker.pendingExecutionUpdates[0].ExecutionID)
 	assert.Equal(t, "third", tracker.pendingExecutionUpdates[1].ExecutionID)
 }
+
+// TestInventoryCoversFinishingGap pins the window between the event bridge's
+// Remove and finalizeRun queueing the terminal update: the execution is
+// neither active nor buffered, yet must stay in the inventory, or the station
+// would crash a run that actually finished.
+func TestInventoryCoversFinishingGap(t *testing.T) {
+	tracker := NewExecutionTracker()
+	assert.Equal(t, []string{}, tracker.Inventory())
+
+	now := time.Now()
+	tracker.TrackRunning("exec-run", &now)
+	tracker.Reserve("exec-res")
+	tracker.TrackRunning("exec-fin", &now)
+	tracker.Remove("exec-fin")
+	tracker.QueueUpdate(NewExecutionUpdateMessage("exec-buf", protocol.ExecutionStatusFailed, nil, nil, nil), nil)
+
+	assert.Equal(t, []string{"exec-buf", "exec-fin", "exec-res", "exec-run"}, tracker.Inventory())
+
+	// A running update does not end the finishing window.
+	tracker.QueueUpdate(NewExecutionUpdateMessage("exec-fin", protocol.ExecutionStatusRunning, nil, nil, nil), func(any) error { return nil })
+	assert.Contains(t, tracker.Inventory(), "exec-fin")
+
+	// The terminal update, once sent, does.
+	tracker.QueueUpdate(NewExecutionUpdateMessage("exec-fin", protocol.ExecutionStatusSucceeded, nil, nil, nil), func(any) error { return nil })
+	assert.NotContains(t, tracker.Inventory(), "exec-fin")
+
+	// Buffered instead of sent: still listed, via the pending buffer.
+	tracker.TrackRunning("exec-off", &now)
+	tracker.Remove("exec-off")
+	tracker.QueueUpdate(NewExecutionUpdateMessage("exec-off", protocol.ExecutionStatusSucceeded, nil, nil, nil), func(any) error { return errors.New("offline") })
+	assert.Contains(t, tracker.Inventory(), "exec-off")
+	assert.NotContains(t, tracker.finishing, "exec-off")
+}

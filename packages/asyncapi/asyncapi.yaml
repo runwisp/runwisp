@@ -87,6 +87,7 @@ channels:
           - $ref: "#/components/messages/ping"
           - $ref: "#/components/messages/executionAck"
           - $ref: "#/components/messages/executionUpdate"
+          - $ref: "#/components/messages/executionInventory"
           - $ref: "#/components/messages/logLine"
           - $ref: "#/components/messages/logLines"
           - $ref: "#/components/messages/logReplayChunk"
@@ -181,6 +182,11 @@ components:
       name: execution:update
       payload:
         $ref: "#/components/schemas/ExecutionUpdateMessage"
+
+    executionInventory:
+      name: execution:inventory
+      payload:
+        $ref: "#/components/schemas/ExecutionInventoryMessage"
 
     logLine:
       name: log:line
@@ -943,6 +949,35 @@ components:
       required:
         - type
         - executionId
+
+    ExecutionInventoryMessage:
+      type: object
+      description: |
+        Daemon → station. Sent once per connection, after auth and before any
+        other message, listing every execution the daemon still owns: running,
+        accepted for dispatch but not yet running, ended with its terminal
+        `execution:update` not yet sent, or with an `execution:update` buffered
+        for delivery on this connection. The station should treat executions
+        it tracks as active on this runner, acknowledged on an earlier
+        connection, and absent from executionIds as lost by the daemon (e.g.
+        a daemon restart without its state). Executions acknowledged on this
+        connection are never in the list. Old daemons never send this.
+      properties:
+        type:
+          type: string
+          const: execution:inventory
+        protocolVersion:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        executionIds:
+          type: array
+          items:
+            type: string
+      required:
+        - type
+        - executionIds
 
     ExecutionUpdateMessage:
       type: object

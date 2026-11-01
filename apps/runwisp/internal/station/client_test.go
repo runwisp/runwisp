@@ -269,6 +269,52 @@ func TestConnectionAuthSuccessReachesReady(t *testing.T) {
 	cancel()
 }
 
+// TestSessionSendsInventoryBeforeAttach checks execution:inventory is the
+// first frame after auth, ahead of the buffered updates flushed on attach, and
+// lists the buffered and still-finishing executions.
+func TestSessionSendsInventoryBeforeAttach(t *testing.T) {
+	frames := make(chan map[string]any, 8)
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		defer conn.Close(websocket.StatusNormalClosure, "done")
+		_ = sendJSON(conn, protocol.AuthResultMessage{Type: "auth:result", Success: true, ConnectionID: "conn-inv"})
+		for {
+			_, data, err := conn.Read(context.Background())
+			if err != nil {
+				return
+			}
+			var frame map[string]any
+			if json.Unmarshal(data, &frame) == nil && frame["type"] != "ping" {
+				frames <- frame
+			}
+		}
+	})
+	defer env.close()
+
+	env.client.tracker.QueueUpdate(NewExecutionUpdateMessage("exec-buf", protocol.ExecutionStatusSucceeded, nil, nil, nil), nil)
+	env.client.tracker.Remove("exec-fin")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go func() { _ = env.client.Run(ctx) }()
+
+	var first, second map[string]any
+	select {
+	case first = <-frames:
+	case <-ctx.Done():
+		t.Fatal("no frame received")
+	}
+	assert.Equal(t, "execution:inventory", first["type"])
+	assert.Equal(t, []any{"exec-buf", "exec-fin"}, first["executionIds"])
+
+	select {
+	case second = <-frames:
+	case <-ctx.Done():
+		t.Fatal("buffered update not flushed")
+	}
+	assert.Equal(t, "execution:update", second["type"])
+	assert.Equal(t, "exec-buf", second["executionId"])
+}
+
 func TestConnectionAuthFailureReturnsError(t *testing.T) {
 	env := newTestEnv(t, func(conn *websocket.Conn) {
 		defer conn.Close(websocket.StatusPolicyViolation, "auth failed")
