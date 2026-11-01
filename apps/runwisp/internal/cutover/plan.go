@@ -55,6 +55,7 @@ const (
 	BlockerConfigUntrusted
 	BlockerIncludeCronMissesCrontabs
 	BlockerCronSourcesFailed
+	BlockerBinaryNotDurable
 )
 
 // Blocker is a reason the cutover cannot proceed. Unlike a step, nothing RunWisp
