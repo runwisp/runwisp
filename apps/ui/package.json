@@ -22,11 +22,11 @@
         "@vitest/coverage-v8": "^5.0.5",
         "@xterm/xterm": "^6.0.0",
         "cookie": "^0.7.2",
-        "eslint": "^10.13.0",
+        "eslint": "^10.14.0",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-sonarjs": "^4.2.2",
         "eslint-plugin-svelte": "^3.23.1",
-        "globals": "^17.13.0",
+        "globals": "^17.14.0",
         "prettier": "^3.9.10",
         "prettier-plugin-svelte": "^4.1.1",
         "prettier-plugin-tailwindcss": "^0.8.1",
@@ -39,7 +39,7 @@
         "vitest": "^5.0.5"
     },
     "dependencies": {
-        "@lucide/svelte": "^1.64.0",
+        "@lucide/svelte": "^1.66.0",
         "@noble/hashes": "^2.4.0",
         "@runwisp/common": "workspace:*",
         "@runwisp/ui": "workspace:*",
