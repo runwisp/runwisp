@@ -276,6 +276,8 @@ session can: read, trigger, stop.
 - Keep the value out of the file with
   [substitution](/configuration/substitution/#var-environment-variables).
 - A reload applies changes, so rotating a token needs no restart.
+- Can't be combined with `RUNWISP_AUTH=off`, for this key or
+  `viewer_api_tokens`.
 - See [API tokens](/operations/auth/#api-tokens).
 
 ```toml title="runwisp.toml"

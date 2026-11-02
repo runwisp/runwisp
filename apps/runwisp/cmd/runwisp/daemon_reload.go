@@ -30,6 +30,7 @@ type settingsApplier struct {
 	heartbeat   *heartbeat.Pinger
 	output      *runlog.OutputMirror
 	srv         *server.Server
+	noAuth      bool // RUNWISP_AUTH=off: API tokens are refused (checkAPITokensNeedAuth)
 	// readFile reads template_path files; nil means os.ReadFile.
 	readFile func(string) ([]byte, error)
 }
@@ -63,6 +64,9 @@ func readNotifyTemplates(cfg config.NotifyConfig, read func(string) ([]byte, err
 // changed, template files included, so an unrelated reload leaves coalescing
 // windows and in-flight retries alone.
 func (a *settingsApplier) prepare(old, updated *config.Config) ([]string, func(), error) {
+	if err := checkAPITokensNeedAuth(a.noAuth, updated.Daemon); err != nil {
+		return nil, nil, err
+	}
 	var keys []string
 	var steps []func()
 	set := func(changed bool, key string, apply func()) {

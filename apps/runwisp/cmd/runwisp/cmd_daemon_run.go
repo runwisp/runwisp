@@ -155,6 +155,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		updates:     updateChecker,
 		heartbeat:   pinger,
 		output:      output,
+		noAuth:      cfg.NoAuth,
 	}
 	reconciler, reloadFn := newReconciler(cfg, svc, src, configSnap, settings)
 	if mode == modeStandalone {

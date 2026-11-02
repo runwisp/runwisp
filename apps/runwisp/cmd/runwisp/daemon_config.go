@@ -59,6 +59,9 @@ func loadDaemonConfig(ctx context.Context, configRepo *storage.SQLiteDatabase, m
 	if err != nil {
 		return nil, err
 	}
+	if err := checkAPITokensNeedAuth(noAuth, cfg.Daemon); err != nil {
+		return nil, err
+	}
 
 	password, ephemeral, err := resolvePassword()
 	if err != nil {
@@ -117,6 +120,17 @@ func resolveAuthMode() (noAuth bool, err error) {
 		return false, errors.New("RUNWISP_AUTH=off and RUNWISP_VIEWER_PASSWORD are mutually exclusive — unset one of them")
 	}
 	return true, nil
+}
+
+// checkAPITokensNeedAuth rejects [daemon] api_tokens and viewer_api_tokens
+// under RUNWISP_AUTH=off, as resolveAuthMode does RUNWISP_VIEWER_PASSWORD: with
+// no auth boundary every caller can write, so a "read-only" token would be a
+// false promise. Checked at boot and on every reload.
+func checkAPITokensNeedAuth(noAuth bool, d config.Daemon) error {
+	if noAuth && (len(d.APITokens) > 0 || len(d.ViewerAPITokens) > 0) {
+		return errors.New("RUNWISP_AUTH=off accepts every request, so [daemon] api_tokens and viewer_api_tokens can't be used with it; remove them or turn auth on")
+	}
+	return nil
 }
 
 // resolveViewerPassword returns the optional read-only password from
