@@ -105,6 +105,9 @@ func restartDaemon(cmd *cobra.Command, f Flags, local bool) error {
 	if err := otherUserDaemonError(f); err != nil {
 		return err
 	}
+	// Pin the dir the running daemon was found in, so the fresh one comes back
+	// there and not in the default (an empty ./.runwisp next to an app's dir).
+	f.DataDir = clientDataDir(f)
 	running := isDaemonRunning(f)
 	var info *model.InstanceInfo
 	if running {
