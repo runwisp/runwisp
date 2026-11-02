@@ -146,11 +146,12 @@ func phpSubcommand(args []string) string {
 	return ""
 }
 
-var cdPlainDir = regexp.MustCompile(`^cd\s+((?:/|~/?)[A-Za-z0-9_./~+@%-]*)\s+&&\s+(\S.*)$`)
+var cdPlainDir = regexp.MustCompile(`^cd\s+(~|(?:/|~/)[A-Za-z0-9_./~+@%-]*)\s+&&\s+(\S.*)$`)
 
 // splitLeadingCd turns `cd DIR && rest` into DIR and rest when DIR is a plain
 // absolute or ~-relative path with no quoting or shell syntax in it. Anything
-// else comes back unchanged with an empty dir.
+// else comes back unchanged with an empty dir. `~user/...` stays in the command:
+// working_dir only expands a bare `~` or `~/`, so it would read as relative.
 func splitLeadingCd(command string) (dir, rest string) {
 	m := cdPlainDir.FindStringSubmatch(strings.TrimSpace(command))
 	if m == nil {
