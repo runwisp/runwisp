@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The JavaScript SDK reports a daemon that resets the connection mid-answer as "RunWisp hung up during ...", not a bare `read ECONNRESET`.
+- The PHP SDK reports a daemon that stops mid-answer as "RunWisp hung up during ...", instead of taking the cut-off body as the answer.
 
 ## [1.8.0] - 2026-10-26
 
