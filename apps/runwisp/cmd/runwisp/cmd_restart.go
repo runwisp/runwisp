@@ -102,6 +102,9 @@ func runRestart(cmd *cobra.Command, args []string, f Flags, attach bool) error {
 func restartDaemon(cmd *cobra.Command, f Flags, local bool) error {
 	out := cmd.OutOrStdout()
 
+	if err := otherUserDaemonError(f); err != nil {
+		return err
+	}
 	running := isDaemonRunning(f)
 	var info *model.InstanceInfo
 	if running {

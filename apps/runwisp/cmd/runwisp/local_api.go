@@ -5,6 +5,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 
@@ -58,4 +59,19 @@ func findAppDataDir(def string, candidates []string) string {
 		}
 	}
 	return def
+}
+
+// otherUserDaemonError is non-nil when the data dir a client command looks in
+// is another user's: its PID file can't even be looked at, so the lock check
+// would say "no daemon" about a daemon that may well be up, and starting one
+// here would make a second.
+func otherUserDaemonError(f Flags) error {
+	dir := clientDataDir(f)
+	if _, err := os.Stat(datadir.PidFilePath(dir)); !errors.Is(err, fs.ErrPermission) {
+		return nil
+	}
+	return &userFacingError{
+		title:   fmt.Sprintf("cannot open the data dir %s", dir),
+		details: "The daemon may be running, but " + otherUserHint(socketOwner(datadir.SocketPath(dir)), os.Args[1:]) + ".",
+	}
 }

@@ -99,6 +99,9 @@ func runStop(cmd *cobra.Command, args []string, f Flags, attach bool) error {
 		return stopViaService(out, installer, opts, st, f)
 	}
 
+	if err := otherUserDaemonError(f); err != nil {
+		return err
+	}
 	if !isDaemonRunning(f) {
 		fmt.Fprintf(out, "No daemon is running on data dir %s — nothing to stop.\n", absPathOrFallback(f.DataDir))
 		if ok {

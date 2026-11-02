@@ -149,3 +149,26 @@ func TestHealthCheckKeepsPermissionDeniedInTheChain(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, daemonUnreachableHint(Flags{Socket: sock}, err), "belongs to")
 }
+
+// A data dir another user keeps private hides its daemon's PID lock, so the
+// lock check alone said "no daemon is running, nothing to reload" and exited 0.
+func TestReload_AnotherUsersDataDirSaysWhose(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads every directory")
+	}
+	private := testutil.ShortTempDir(t)
+	require.NoError(t, os.WriteFile(filepath.Join(private, "daemon.pid"), nil, 0o600))
+	require.NoError(t, os.Chmod(private, 0)) // as storage/runwisp (0700, www-data's) looks to the deploy user
+	t.Cleanup(func() { _ = os.Chmod(private, 0o700) })
+
+	var out strings.Builder
+	err := reloadRunningDaemon(t.Context(), Flags{DataDir: private}, &out)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot open the data dir")
+	var ufe *userFacingError
+	require.ErrorAs(t, err, &ufe)
+	assert.Contains(t, ufe.details, "belongs to")
+	assert.NotContains(t, out.String(), "No daemon is running")
+
+	assert.NoError(t, otherUserDaemonError(Flags{DataDir: t.TempDir()}), "a readable dir is left to the lock check")
+}

@@ -26,6 +26,9 @@ func runDefault(ctx context.Context, f Flags) error {
 	if client.HealthCheck(ctx) == nil {
 		return runTUIConnect(ctx, client, f, tui.DaemonAttached)
 	}
+	if err := otherUserDaemonError(f); err != nil {
+		return err
+	}
 
 	// Spawn a background daemon or handle port conflicts.
 	serviceInstalled, err := scaffoldIfMissing(f)
