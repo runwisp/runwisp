@@ -26,8 +26,8 @@ final class Worker
     private const DESCRIBE = 'RUNWISP_DESCRIBE';
     /** How long the last copy to stop waits for RunWisp to stop with it. */
     private const DAEMON_STOP_S = 30;
-    /** RunWisp gives up waiting after 60 seconds. */
-    private const RELOAD_TIMEOUT_S = 55;
+    /** Under the 25 seconds RunWisp waits (apphost.ReloadTimeout), so RunWisp hears why. */
+    private const RELOAD_TIMEOUT_S = 20;
     /** How much of a failed reload's output RunWisp is told. */
     private const RELOAD_ERROR_LINES = 20;
 

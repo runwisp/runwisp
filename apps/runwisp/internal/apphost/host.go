@@ -49,10 +49,11 @@ const defaultHandoff = 10 * time.Second
 // the middle of a send; past this its connection is closed and its runs fail.
 const defaultWriteTimeout = 10 * time.Second
 
-// defaultReloadTimeout is how long RequestConfig waits for the app to read its
-// config afresh: an SDK boots the app in a new process for it, which a big app
-// may take seconds to do.
-const defaultReloadTimeout = 60 * time.Second
+// ReloadTimeout is how long RequestConfig waits for the app to read its config
+// afresh: an SDK boots the app in a new process for it, which a big app may
+// take seconds to do. It stays under apiclient.RequestTimeout, so `runwisp
+// reload` hears the outcome instead of timing out while the daemon still waits.
+const ReloadTimeout = 25 * time.Second
 
 // maxQueuedNotices bounds the overlap and missed messages waiting for a slow
 // app; past it they are dropped.
@@ -110,9 +111,8 @@ type message struct {
 // Host tracks the connected apps and implements executor.Backend for sdk
 // units.
 type Host struct {
-	after         func(time.Duration) <-chan time.Time
-	writeTimeout  time.Duration
-	reloadTimeout time.Duration
+	after        func(time.Duration) <-chan time.Time
+	writeTimeout time.Duration
 	// reloads numbers the RequestConfig calls, so an answer finds its caller.
 	reloads atomic.Uint64
 
@@ -259,7 +259,7 @@ func (h *Host) ExitWhenIdle(idle time.Duration, exit func()) {
 
 // New returns a Host with no apps connected.
 func New() *Host {
-	return &Host{after: time.After, writeTimeout: defaultWriteTimeout, reloadTimeout: defaultReloadTimeout, changed: make(chan struct{})}
+	return &Host{after: time.After, writeTimeout: defaultWriteTimeout, changed: make(chan struct{})}
 }
 
 // ServeHTTP upgrades a request to an app connection and serves it until either
@@ -675,8 +675,8 @@ func (h *Host) RequestConfig() (model.ReloadResult, error) {
 		return a.result, a.err
 	case <-s.done:
 		return model.ReloadResult{}, errors.New("the app disconnected before it sent its config")
-	case <-h.after(h.reloadTimeout):
-		return model.ReloadResult{}, fmt.Errorf("the app (pid %d) did not send its config within %s; restart it to apply changes (SDKs before 1.9 can't reload)", s.pid, h.reloadTimeout)
+	case <-h.after(ReloadTimeout):
+		return model.ReloadResult{}, fmt.Errorf("the app (pid %d) did not send its config within %s; restart it to apply changes (SDKs before 1.9 can't reload)", s.pid, ReloadTimeout)
 	}
 }
 
