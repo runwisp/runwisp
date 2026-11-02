@@ -186,7 +186,9 @@ var RestartBackoffValues = []RestartBackoff{RestartBackoffConstant, RestartBacko
 type ServiceApplyPayload struct {
 	TaskID   string `json:"taskId"`
 	TaskName string `json:"taskName"`
-	// ExecutionDef JSON, same shape as ExecutionPayload.script.
+	// ExecutionDef JSON, same shape as ExecutionPayload.script. `null`
+	// (sent for a service synced from the daemon's config whose command
+	// the operator did not override) keeps the daemon's own command.
 	Script json.RawMessage `json:"script"`
 	// Desired number of always-running instances.
 	Instances int `json:"instances"`

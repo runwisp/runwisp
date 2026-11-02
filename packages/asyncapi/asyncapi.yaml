@@ -477,7 +477,11 @@ components:
           type: string
         script:
           type: object
-          description: ExecutionDef JSON, same shape as ExecutionPayload.script.
+          nullable: true
+          description: |
+            ExecutionDef JSON, same shape as ExecutionPayload.script. `null`
+            (sent for a service synced from the daemon's config whose command
+            the operator did not override) keeps the daemon's own command.
         instances:
           type: integer
           minimum: 1
