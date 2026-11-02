@@ -243,6 +243,18 @@ final class LaravelTest extends TestCase
         }
     }
 
+    public function testConfigCacheKeepsTheLoginOff(): void
+    {
+        self::assertNull(config('runwisp.auth'));
+        putenv('RUNWISP_AUTH=off');
+        try {
+            $this->refreshApplication();
+            self::assertFalse(config('runwisp.auth'));
+        } finally {
+            putenv('RUNWISP_AUTH');
+        }
+    }
+
     public function testUnknownTaskFails(): void
     {
         self::assertSame(1, $this->runTask('nope', $output));

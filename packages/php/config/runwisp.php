@@ -25,8 +25,8 @@ return [
     // Web UI password. Default: a new one on each start.
     'password' => env('RUNWISP_PASSWORD'),
 
-    // false turns the login off, like RUNWISP_AUTH=off.
-    'auth' => null,
+    // false turns the login off. Default: on, off with RUNWISP_AUTH=off.
+    'auth' => env('RUNWISP_AUTH') === 'off' ? false : null,
 
     // Path to the runwisp binary. Default: the one Composer downloaded, else
     // runwisp on PATH.
