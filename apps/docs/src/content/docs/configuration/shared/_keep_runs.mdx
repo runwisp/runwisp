@@ -1,14 +1,13 @@
-**type**: `integer` **min**: `0` **max**: `1000000`
+**type**: `integer` **default**: none (no limit) **min**: `0` **max**: `1000000`
 
 Keep only the N most recent completed runs. Older runs and their logs are
-deleted by the hourly cleanup. `0` keeps no completed runs; unset means no
-count limit. With
+deleted by the hourly cleanup. `0` keeps no completed runs. With
 [`keep_for`](/configuration/tasks/#keep_for) also set, whichever deletes more wins.
 
-Nothing is deleted by default: with neither this nor `keep_for` set, a task keeps
-every run, so an every-minute task grows until you set one. Set it for the
-whole file in [`[defaults]`](/configuration/defaults/). The
-[`[storage]`](/configuration/storage/) limits apply on top when you set them.
+With neither this nor `keep_for` set, a task keeps every run, so an every-minute
+task grows until you set one. Set it for every task in
+[`[defaults]`](/configuration/defaults/), or cap all logs with
+[`storage.max_size`](/configuration/storage/#max_size).
 
 ```toml title="runwisp.toml"
 [tasks.backup-db]
