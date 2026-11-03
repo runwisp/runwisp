@@ -68,9 +68,14 @@ func maxBodySize(limit int64) func(http.Handler) http.Handler {
 	}
 }
 
-// ReadOnlySessionMessage is the 403 body a viewer session gets on any write. The
-// API client matches it to tell a read-only rejection from other 403s.
-const ReadOnlySessionMessage = "read-only access: this password or token can view but not change anything"
+// ReadOnlyMessagePrefix starts the 403 body of every read-only rejection. The
+// API client matches the prefix, not the whole body, so the wording can change
+// without a CLI or TUI on another version losing track of it (daemons before
+// 1.9 said "read-only session: ...").
+const ReadOnlyMessagePrefix = "read-only "
+
+// ReadOnlySessionMessage is the 403 body a viewer session gets on any write.
+const ReadOnlySessionMessage = ReadOnlyMessagePrefix + "access: this password or token can view but not change anything"
 
 // isSafeMethod reports whether method cannot change daemon state.
 func isSafeMethod(method string) bool {

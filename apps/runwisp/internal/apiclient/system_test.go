@@ -234,12 +234,30 @@ func TestMintViewerPassword_StatusMapping(t *testing.T) {
 }
 
 func TestSend_ReadOnly403MapsToErrReadOnly(t *testing.T) {
+	for name, body := range map[string]string{
+		"current daemon": server.ReadOnlySessionMessage,
+		"older daemon":   "read-only session: this password can view but not change anything",
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, body, http.StatusForbidden)
+			}))
+			defer srv.Close()
+
+			_, err := New(srv.URL, "").TriggerRun(t.Context(), "t", nil, "cli")
+			assert.ErrorIs(t, err, ErrReadOnly)
+			assert.False(t, IsHTTPStatus(err, http.StatusForbidden))
+		})
+	}
+}
+
+func TestSend_Other403StaysAnHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, server.ReadOnlySessionMessage, http.StatusForbidden)
+		http.Error(w, "forbidden", http.StatusForbidden)
 	}))
 	defer srv.Close()
 
 	_, err := New(srv.URL, "").TriggerRun(t.Context(), "t", nil, "cli")
-	assert.ErrorIs(t, err, ErrReadOnly)
-	assert.False(t, IsHTTPStatus(err, http.StatusForbidden))
+	assert.NotErrorIs(t, err, ErrReadOnly)
+	assert.True(t, IsHTTPStatus(err, http.StatusForbidden))
 }

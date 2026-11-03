@@ -222,7 +222,7 @@ func (c *Client) send(hc *http.Client, req *http.Request) (*http.Response, error
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		resp.Body.Close()
 		body := strings.TrimSpace(string(errBody))
-		if resp.StatusCode == http.StatusForbidden && body == server.ReadOnlySessionMessage {
+		if resp.StatusCode == http.StatusForbidden && strings.HasPrefix(body, server.ReadOnlyMessagePrefix) {
 			return nil, ErrReadOnly
 		}
 		return nil, &HTTPStatusError{StatusCode: resp.StatusCode, Body: body}
