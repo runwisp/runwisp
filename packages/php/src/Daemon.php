@@ -39,7 +39,9 @@ final class Daemon
             throw new \RuntimeException("RunWisp did not answer $method $path in time");
         }
         [$head, $body] = array_pad(explode("\r\n\r\n", $raw, 2), 2, '');
-        if (preg_match('#^HTTP/1\.[01] (\d{3})#', $head, $m) !== 1) {
+        // A daemon dying mid-answer leaves a body shorter than it announced.
+        $short = preg_match('/^content-length:\s*(\d+)/im', $head, $length) === 1 && strlen($body) < (int) $length[1];
+        if (preg_match('#^HTTP/1\.[01] (\d{3})#', $head, $m) !== 1 || $short) {
             throw new \RuntimeException("RunWisp hung up during $method $path");
         }
         $decoded = json_decode($body, true);

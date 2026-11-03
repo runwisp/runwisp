@@ -83,6 +83,26 @@ describe("daemon calls", () => {
         }
     });
 
+    it("fail as a hang-up when the daemon resets the connection mid-answer", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "rwn-"));
+        const socket = join(dir, "reset.sock");
+        // Never reading the request leaves it unread, so closing resets the client.
+        const server = createServer({ pauseOnConnect: true }, (conn) => {
+            conn.write('HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{"items":', () =>
+                setTimeout(() => conn.destroy(), 10),
+            );
+        });
+        await new Promise<void>((resolve) => server.listen(socket, resolve));
+        try {
+            await expect(call(socket, "GET", "/api/tasks", 60_000)).rejects.toThrow(
+                "hung up during GET /api/tasks",
+            );
+        } finally {
+            server.close();
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
     it("tells a missing binary apart from an invalid config", () => {
         expect(() => validateConfig("/nonexistent/runwisp", daemonPaths("/tmp"), {})).toThrow(
             "install the runwisp package",
