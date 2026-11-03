@@ -42,7 +42,7 @@ metrics_enabled:      bool =false — master switch for /metrics
 metrics_listen:       host:port   — dedicated metrics listener; setting it enables metrics on its own
 trusted_proxies:      []string    — CIDR allowlist of reverse proxies whose X-Forwarded-For is trusted; catch-all
                                     (0.0.0.0/0, ::/0) rejected at load; RUNWISP_TRUSTED_PROXIES env overrides
-api_tokens:           []string    - static REST API bearer tokens (`Authorization: Bearer <token>`) with full operator rights; each >= 32 chars, no whitespace, unique across both lists; use ${VAR} substitution; secret, never logged; reloadable; since 1.9
+api_tokens:           []string    - static REST API bearer tokens (`Authorization: Bearer <token>`) with full operator rights; each >= 32 chars, no whitespace, not starting `<digits>.` (session-token shape), unique across both lists; 20 wrong API tokens per client IP per minute -> 429 for that IP's API tokens (valid included) until the window slides, sessions unaffected; use ${VAR} substitution; secret, never logged; reloadable; since 1.9
 viewer_api_tokens:    []string    - like api_tokens but read-only (state changes get 403); either list with RUNWISP_AUTH=off is refused at boot and reload; since 1.9
 include:              []string    — glob(s) of extra TOML files merged at load; root config only, no nesting
 include_cron:         []string    — glob(s) of REAL crontabs read as live task defs at every load/reload; root

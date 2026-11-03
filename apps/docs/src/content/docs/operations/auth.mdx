@@ -267,6 +267,13 @@ Launch tickets and the control socket aren't limited. Challenges are capped at
 client IP within a minute, that IP gets `429` (even with a valid token) until
 the window moves on. Successful calls never count.
 
+[API tokens](#api-tokens) work the same way, with their own count: after 20
+wrong API tokens from one client IP within a minute, that IP gets `429` for
+every API token, the right one included, until the window moves on. RunWisp
+logs one warning per lockout, without the token. Session cookies, session
+tokens and password logins from that IP keep working, and an expired session
+never counts as a wrong token.
+
 Live log streams are capped at 128 open at once, and 16 per client IP. Past the
 cap, new streams get `503 Service Unavailable`. Close some log views and try
 again.
@@ -288,7 +295,8 @@ From those addresses only, RunWisp trusts:
 - `X-Forwarded-Proto: https`, so the session cookie is marked `Secure`.
 
 Without it, every client looks like the proxy, so one client's wrong passwords
-slow down logins for everyone. When proxy headers arrive from an address that
+slow down logins for everyone, and one script's wrong tokens lock every client
+out of hooks and API tokens for a minute. When proxy headers arrive from an address that
 isn't in the list, RunWisp logs a warning and adds one to the notification bell.
 
 Keep the list tight: an address in it can claim to be any client IP, and so use

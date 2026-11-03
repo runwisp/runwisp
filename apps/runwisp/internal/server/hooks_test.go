@@ -194,7 +194,7 @@ func TestHook_Service(t *testing.T) {
 // guess and so does not count toward the failure lockout.
 func TestHook_AllowList(t *testing.T) {
 	s, _ := setupHookServer(t, nil)
-	for range hookMaxFailures + 1 {
+	for range tokenMaxFailures + 1 {
 		require.Equal(t, http.StatusForbidden, postHook(s, "task1", "run", "Bearer "+hookTokenB).Code)
 	}
 	assert.Equal(t, http.StatusNoContent, postHook(s, "task1", "stop", "Bearer "+hookTokenB).Code)
@@ -210,7 +210,7 @@ func TestHook_QueryToken(t *testing.T) {
 }
 
 // Only rejected tokens count toward the lockout: a valid caller can fire far
-// past hookMaxFailures, while a guesser is cut off (even if it then presents a
+// past tokenMaxFailures, while a guesser is cut off (even if it then presents a
 // valid token) and other IPs are unaffected.
 func TestHook_FailureLimiter(t *testing.T) {
 	s, exec := setupHookServer(t, nil)
@@ -231,12 +231,12 @@ func TestHook_FailureLimiter(t *testing.T) {
 		return w.Code
 	}
 
-	for range 5 * hookMaxFailures {
+	for range 5 * tokenMaxFailures {
 		assert.NotEqual(t, http.StatusTooManyRequests, post("192.0.2.1", "Bearer "+hookTokenA),
 			"successful triggers must never count toward the lockout")
 	}
 
-	for range hookMaxFailures {
+	for range tokenMaxFailures {
 		require.Equal(t, http.StatusUnauthorized, post("192.0.2.2", "Bearer wrong"))
 	}
 	assert.Equal(t, http.StatusTooManyRequests, post("192.0.2.2", "Bearer wrong"))

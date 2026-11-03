@@ -48,6 +48,10 @@ func TestAPITokens_Rejected(t *testing.T) {
 			daemon:  "api_tokens = " + list(validHookToken+" x"),
 			wantErr: "daemon.api_tokens[0] contains whitespace",
 		},
+		"shaped like a session token": {
+			daemon:  "viewer_api_tokens = " + list("1700000000."+validHookToken),
+			wantErr: "daemon.viewer_api_tokens[0] starts like a session token",
+		},
 		"duplicate in one list": {
 			daemon:  "api_tokens = " + list(validHookToken, validHookToken),
 			wantErr: "daemon.api_tokens[1] repeats daemon.api_tokens[0]",

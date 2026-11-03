@@ -273,6 +273,10 @@ session can: read, trigger, stop.
 - Each token is at least 32 characters with no whitespace. Generate one with
   `openssl rand -hex 32`.
 - A token can't be listed twice, here or in `viewer_api_tokens`.
+- A token can't start with digits followed by a dot, which is how session
+  tokens start.
+- Wrong tokens are [rate limited](/operations/auth/#rate-limiting) per client
+  IP.
 - Keep the value out of the file with
   [substitution](/configuration/substitution/#var-environment-variables).
 - A reload applies changes, so rotating a token needs no restart.

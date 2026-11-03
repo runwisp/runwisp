@@ -167,7 +167,7 @@
         },
         "api_tokens": {
           "type": "array",
-          "description": "Static bearer tokens for the REST API with the same rights as a password session. Each is at least 32 characters, no whitespace, and unique across this list and viewer_api_tokens. Use ${VAR} substitution to keep them out of the file. Applied on reload.",
+          "description": "Static bearer tokens for the REST API with the same rights as a password session. Each is at least 32 characters, no whitespace, doesn't start with digits and a dot (a session token's shape), and is unique across this list and viewer_api_tokens. Use ${VAR} substitution to keep them out of the file. Applied on reload.",
           "items": { "type": "string", "minLength": 32 }
         },
         "viewer_api_tokens": {

@@ -287,6 +287,15 @@ func IsViewerToken(token string) bool {
 	return ok && role == viewerRole
 }
 
+// LooksLikeSessionToken reports whether token has a session token's shape
+// ("<exp>.<mac>" or "<exp>.viewer.<mac>"), genuine or not. Static API tokens
+// may not have it, so the server can tell a failed API token from a stale
+// session without checking either.
+func LooksLikeSessionToken(token string) bool {
+	_, ok := TokenExpiry(token)
+	return ok
+}
+
 // TokenExpiry reads the expiry out of a session token without checking its
 // MAC. Only the daemon can tell whether a token is genuine; clients use this
 // to stop reusing a cached token the daemon is about to reject.

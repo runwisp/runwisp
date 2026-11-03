@@ -87,16 +87,31 @@ func isSafeMethod(method string) bool {
 // already gated socket access; running CHAP on top would add no security and
 // would force the local CLI/TUI to keep a password around just to talk to the
 // daemon that owns its data dir.
+//
+// A bearer credential that can't be a session token can only be an API token
+// guess (config refuses API tokens shaped like a session token), so only those
+// count toward the apiTokens lockout. An expired browser cookie or a remote
+// CLI's stale session token never does, and a locked-out IP keeps its cookie
+// sessions and session tokens; CHAP login has its own limiter.
 func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
+	apiTokens := newFailureLimiter("API token")
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if IsLocalTrusted(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
+			bearer := auth.BearerToken(r.Header.Get("Authorization"))
+			apiToken := bearer != "" && !auth.LooksLikeSessionToken(bearer)
+			if apiToken && apiTokens.refuse(w, r) {
+				return
+			}
 			readOnly, ok := authSvc.VerifyToken(auth.TokenFromRequest(r))
 			if !ok {
 				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+				if apiToken {
+					apiTokens.fail(w, r)
+				}
 				return
 			}
 			// A viewer session may look at everything and change nothing, so the

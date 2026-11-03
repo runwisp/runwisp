@@ -16,6 +16,7 @@ import (
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 )
 
 // validateDefaults checks the [defaults] section: enum membership, ranges, and
@@ -295,7 +296,8 @@ func validateTaskCron(task *model.Task) error {
 }
 
 // minTokenLength is long enough that guessing a token over HTTP is
-// infeasible; the failure limiters only have to stop scanners.
+// infeasible; the server's per-IP failure limiters on hook and API tokens only
+// have to stop scanners.
 const minTokenLength = 32
 
 // checkToken rejects a token too short to resist guessing, or with whitespace
@@ -314,7 +316,10 @@ func checkToken(where, token string) error {
 
 // validateAPITokens applies checkToken to [daemon] api_tokens and
 // viewer_api_tokens and rejects a token listed twice, within a list or across
-// both (one token can't be both operator and viewer).
+// both (one token can't be both operator and viewer). A token shaped like a
+// session token is refused too: the server counts only failed bearer tokens
+// without that shape toward its API token lockout, so an expired session never
+// locks a client out.
 func validateAPITokens(operator, viewer []string) error {
 	seen := make(map[string]string)
 	for _, list := range []struct {
@@ -325,6 +330,9 @@ func validateAPITokens(operator, viewer []string) error {
 			where := fmt.Sprintf("%s[%d]", list.key, i)
 			if err := checkToken(where, tok); err != nil {
 				return err
+			}
+			if auth.LooksLikeSessionToken(tok) {
+				return fmt.Errorf("%s starts like a session token (digits, then a dot); use another value (e.g. `openssl rand -hex 32`)", where)
 			}
 			if first, dup := seen[tok]; dup {
 				return fmt.Errorf("%s repeats %s; every API token must be unique", where, first)
