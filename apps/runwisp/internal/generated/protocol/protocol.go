@@ -39,8 +39,8 @@ type PongMessage struct {
 }
 
 // Dispatches an execution to a daemon.
-// For "fan-out" distribution on cluster runners, the control plane sends
-// this message to every connected node simultaneously.
+// For "fan-out" distribution, the control plane dispatches a separate
+// execution, with its own id, to each connected daemon of the runner.
 type ExecutionDispatchMessage struct {
 	Type            string            `json:"type"`
 	ProtocolVersion int               `json:"protocolVersion,omitzero"`
