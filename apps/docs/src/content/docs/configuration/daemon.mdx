@@ -30,6 +30,8 @@ tls_key          = ""
 metrics_enabled  = false
 metrics_listen   = ""
 trusted_proxies  = ["127.0.0.1/32"]
+# api_tokens        = ["${RUNWISP_API_TOKEN}"]
+# viewer_api_tokens = ["${RUNWISP_VIEWER_API_TOKEN}"]
 include          = ["conf.d/*.toml"]
 # include_cron   = ["/etc/crontab", "/etc/cron.d/*"]
 ```
@@ -258,6 +260,46 @@ Reverse proxies (nginx, Caddy, Traefik, Cloudflare Tunnel) whose
 ```toml title="runwisp.toml"
 [daemon]
 trusted_proxies = ["127.0.0.1/32", "10.0.0.0/8"]
+```
+
+### `api_tokens`
+
+**type**: `string[]` **default**: unset **since**: `1.9`
+
+Static bearer tokens for scripts and monitoring that call the REST API. A
+request with `Authorization: Bearer <token>` can do everything a password
+session can: read, trigger, stop.
+
+- Each token is at least 32 characters with no whitespace. Generate one with
+  `openssl rand -hex 32`.
+- A token can't be listed twice, here or in `viewer_api_tokens`.
+- A token can't start with digits followed by a dot, which is how session
+  tokens start.
+- Wrong tokens are [rate limited](/operations/auth/#rate-limiting) per client
+  IP.
+- Keep the value out of the file with
+  [substitution](/configuration/substitution/#var-environment-variables).
+- A reload applies changes, so rotating a token needs no restart.
+- Can't be combined with `RUNWISP_AUTH=off`, for this key or
+  `viewer_api_tokens`.
+- See [API tokens](/operations/auth/#api-tokens).
+
+```toml title="runwisp.toml"
+[daemon]
+api_tokens = ["${RUNWISP_API_TOKEN}"]
+```
+
+### `viewer_api_tokens`
+
+**type**: `string[]` **default**: unset **since**: `1.9`
+
+Like [`api_tokens`](#api_tokens), but read-only: the same access as a
+[read-only password](/operations/auth/#read-only-access). Every request that
+changes state gets `403`.
+
+```toml title="runwisp.toml"
+[daemon]
+viewer_api_tokens = ["${RUNWISP_VIEWER_API_TOKEN}"]
 ```
 
 ### `allow_station_dispatch`

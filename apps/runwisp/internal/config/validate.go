@@ -16,6 +16,7 @@ import (
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 )
 
 // validateDefaults checks the [defaults] section: enum membership, ranges, and
@@ -294,24 +295,63 @@ func validateTaskCron(task *model.Task) error {
 	return nil
 }
 
-// minHookTokenLength is long enough that guessing a token over HTTP is
-// infeasible; the hooks failure limiter only has to stop scanners.
-const minHookTokenLength = 32
+// minTokenLength is long enough that guessing a token over HTTP is
+// infeasible; the server's per-IP failure limiters on hook and API tokens only
+// have to stop scanners.
+const minTokenLength = 32
 
-// validateTaskHookTokens rejects tokens too short to resist guessing, tokens
-// with whitespace (a pasted newline would never match a header), and allow
+// checkToken rejects a token too short to resist guessing, or with whitespace
+// (a pasted newline would never match a header). where names the key for the
+// error; the token value itself never appears in it.
+func checkToken(where, token string) error {
+	if len(token) < minTokenLength {
+		return fmt.Errorf("%s is %d characters; use at least %d (e.g. `openssl rand -hex 32`)",
+			where, len(token), minTokenLength)
+	}
+	if strings.IndexFunc(token, unicode.IsSpace) >= 0 {
+		return fmt.Errorf("%s contains whitespace", where)
+	}
+	return nil
+}
+
+// validateAPITokens applies checkToken to [daemon] api_tokens and
+// viewer_api_tokens and rejects a token listed twice, within a list or across
+// both (one token can't be both operator and viewer). A token shaped like a
+// session token is refused too: the server counts only failed bearer tokens
+// without that shape toward its API token lockout, so an expired session never
+// locks a client out.
+func validateAPITokens(operator, viewer []string) error {
+	seen := make(map[string]string)
+	for _, list := range []struct {
+		key    string
+		tokens []string
+	}{{"daemon.api_tokens", operator}, {"daemon.viewer_api_tokens", viewer}} {
+		for i, tok := range list.tokens {
+			where := fmt.Sprintf("%s[%d]", list.key, i)
+			if err := checkToken(where, tok); err != nil {
+				return err
+			}
+			if auth.LooksLikeSessionToken(tok) {
+				return fmt.Errorf("%s starts like a session token (digits, then a dot); use another value (e.g. `openssl rand -hex 32`)", where)
+			}
+			if first, dup := seen[tok]; dup {
+				return fmt.Errorf("%s repeats %s; every API token must be unique", where, first)
+			}
+			seen[tok] = where
+		}
+	}
+	return nil
+}
+
+// validateTaskHookTokens rejects weak hook tokens (see checkToken) and allow
 // lists naming an action the unit doesn't support. manual_trigger does not
 // gate hooks, so it isn't consulted here. Token values never appear in errors,
 // only their position.
 func validateTaskHookTokens(task *model.Task) error {
 	supported := model.HookActionsFor(task.Kind)
 	for i, h := range task.HookTokens {
-		if len(h.Token) < minHookTokenLength {
-			return fmt.Errorf("hook_tokens[%d] for %s %q is %d characters; use at least %d (e.g. `openssl rand -hex 32`)",
-				i, unitKind(task), task.Name, len(h.Token), minHookTokenLength)
-		}
-		if strings.IndexFunc(h.Token, unicode.IsSpace) >= 0 {
-			return fmt.Errorf("hook_tokens[%d] for %s %q contains whitespace", i, unitKind(task), task.Name)
+		if err := checkToken(fmt.Sprintf("hook_tokens[%d] for %s %q", i, unitKind(task), task.Name), h.Token); err != nil {
+			return err
 		}
 		if h.Allow != nil && len(h.Allow) == 0 {
 			return fmt.Errorf("hook_tokens[%d] for %s %q has an empty allow list; omit allow to grant every action", i, unitKind(task), task.Name)

@@ -37,6 +37,12 @@ func (srv *Server) SetTrustedProxies(cidrs []string) error {
 	return nil
 }
 
+// SetAPITokens replaces the static API tokens ([daemon] api_tokens and
+// viewer_api_tokens) on a config reload.
+func (srv *Server) SetAPITokens(operator, viewer []string) {
+	srv.auth.SetAPITokens(operator, viewer)
+}
+
 func (p proxySet) contains(ip net.IP) bool {
 	for _, n := range p {
 		if n.Contains(ip) {

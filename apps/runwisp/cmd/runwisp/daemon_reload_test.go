@@ -139,3 +139,32 @@ func TestSettingsApplier_ReportsChangedKeys(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"daemon.log_output", "storage.max_size", "notifications"}, keys)
 }
+
+// API tokens apply live: the applier reports the key names (never the secret
+// values) and the commit runs without a server in the way of the report.
+func TestSettingsApplier_APITokensApplyLive(t *testing.T) {
+	old := &config.Config{}
+	a := newTestApplier(t, old, fakeFiles{})
+	updated := &config.Config{Daemon: config.Daemon{APITokens: []string{"secret-op"}, ViewerAPITokens: []string{"secret-view"}}}
+
+	require.NoError(t, runtime.CheckNonReloadable(old, updated))
+	keys, commit, err := a.prepare(old, updated)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"daemon.api_tokens", "daemon.viewer_api_tokens"}, keys)
+	assert.NotPanics(t, commit)
+}
+
+// RUNWISP_AUTH=off accepts every request, so a reload can't add API tokens
+// that would look like they gate (or limit) access.
+func TestSettingsApplier_RejectsAPITokensWithAuthOff(t *testing.T) {
+	old := &config.Config{}
+	a := newTestApplier(t, old, fakeFiles{})
+	a.noAuth = true
+
+	for _, d := range []config.Daemon{{APITokens: []string{"op"}}, {ViewerAPITokens: []string{"view"}}} {
+		_, _, err := a.prepare(old, &config.Config{Daemon: d})
+		assert.ErrorContains(t, err, "RUNWISP_AUTH=off")
+	}
+	_, _, err := a.prepare(old, old)
+	assert.NoError(t, err, "no tokens, nothing to refuse")
+}

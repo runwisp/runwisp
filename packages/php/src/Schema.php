@@ -43,6 +43,8 @@ namespace RunWisp;
  *     tls_cert?: string,
  *     tls_key?: string,
  *     trusted_proxies?: list<string>,
+ *     api_tokens?: list<string>,
+ *     viewer_api_tokens?: list<string>,
  *     include?: list<string>,
  *     include_cron?: list<string>,
  *     timezone?: string,

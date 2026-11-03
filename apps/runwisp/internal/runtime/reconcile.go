@@ -557,6 +557,8 @@ func restartOnly(d config.Daemon) config.Daemon {
 	d.HeartbeatURL = ""
 	d.LogOutput = false
 	d.TrustedProxies = nil
+	d.APITokens = nil
+	d.ViewerAPITokens = nil
 	return d
 }
 

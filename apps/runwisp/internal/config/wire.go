@@ -907,8 +907,12 @@ type daemonWire struct {
 	TLSCert        string   `toml:"tls_cert,omitempty"`
 	TLSKey         string   `toml:"tls_key,omitempty"`
 	TrustedProxies []string `toml:"trusted_proxies,omitempty"`
-	Include        []string `toml:"include,omitempty"`
-	IncludeCron    []string `toml:"include_cron,omitempty"`
+	// APITokens and ViewerAPITokens are static bearer tokens for the REST API,
+	// full and read-only. Operators feed them through ${VAR} substitution.
+	APITokens       []string `toml:"api_tokens,omitempty"`
+	ViewerAPITokens []string `toml:"viewer_api_tokens,omitempty"`
+	Include         []string `toml:"include,omitempty"`
+	IncludeCron     []string `toml:"include_cron,omitempty"`
 	// Timezone is the daemon-wide IANA zone used to evaluate cron expressions
 	// for any task that doesn't pin its own. A reload re-bases the schedules
 	// onto a new zone (Scheduler.SetLocation).
@@ -951,6 +955,9 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 	if err != nil {
 		return Daemon{}, fmt.Errorf("invalid daemon.trusted_proxies: %w", err)
 	}
+	if err := validateAPITokens(w.APITokens, w.ViewerAPITokens); err != nil {
+		return Daemon{}, err
+	}
 	checkUpdates := true
 	if w.CheckUpdates != nil {
 		checkUpdates = *w.CheckUpdates
@@ -969,6 +976,8 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 		TLSCert:              strings.TrimSpace(w.TLSCert),
 		TLSKey:               strings.TrimSpace(w.TLSKey),
 		TrustedProxies:       trustedProxies,
+		APITokens:            w.APITokens,
+		ViewerAPITokens:      w.ViewerAPITokens,
 	}, nil
 }
 
