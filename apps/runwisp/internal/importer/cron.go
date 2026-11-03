@@ -388,26 +388,35 @@ func (cp *crontabParser) importJob(line string) bool {
 	// field. See splitCronPercent.
 	cc := splitCronPercent(j.command)
 	command := cc.run
+	// A leading `cd DIR &&` becomes the task's working_dir; what is left is the
+	// command RunWisp runs, so it is also what identifies the entry on re-import.
+	cwd, run := splitLeadingCd(command)
+	cc.run = run
 
-	base := deriveCronName(command)
+	base, oldBase := deriveCronName(command), legacyCronName(command)
 	if why, noop := noopGuard(command, cp.opts.HostStat); noop {
 		cp.addItem(base).note(NoteNoopHere, why+", so its guard makes it do nothing on this box")
 		return true
 	}
 	if cp.jobName != "" {
 		base = finalizeTaskName(strings.ReplaceAll(cp.jobName, ".", "-"), base)
+		oldBase = base
 	}
 	description := cp.pendingComment
 	// Bun.cron() marks each job it writes with "# bun-cron: <title>"; the title names it.
 	if title, ok := strings.CutPrefix(description, "bun-cron: "); ok {
 		base = finalizeTaskName(title, base)
+		oldBase = base
 		description = ""
 	}
 	// The per-line user column, or the whole file's owner for a spool crontab.
 	// applyOwner resolves which, so buildJob doesn't have to know the difference.
 	owner := cp.applyOwner(j)
-	id := OwnedEntry{Kind: model.KindTask, Run: command, User: owner, Schedule: cronSchedule(j.schedule, j.runOnStart)}
-	ref, name, skip := cp.names.resolve(base, base, id, cp.line)
+	id := OwnedEntry{Kind: model.KindTask, Run: run, User: owner, Schedule: cronSchedule(j.schedule, j.runOnStart)}
+	// RunWisp 1.8 and earlier kept the cd in run and named PHP console jobs `php`.
+	legacy := namedEntry{name: oldBase, id: id}
+	legacy.id.Run = command
+	ref, name, skip := cp.names.resolve(base, base, id, cp.line, legacy)
 	if skip {
 		return true
 	}
@@ -421,7 +430,7 @@ func (cp *crontabParser) importJob(line string) bool {
 	// The note only lives in this import's report; the comment above the table
 	// travels with it through promote, so a failed run with an empty log still
 	// says where its output went.
-	if target := outputRedirect(command); target != "" {
+	if target := outputRedirect(run); target != "" {
 		ref.note(NoteOutputRedirected,
 			"its output goes to "+target+", so RunWisp can't show it in the run's log. "+
 				"Remove the redirect to capture it.")
@@ -453,7 +462,7 @@ func (cp *crontabParser) importJob(line string) bool {
 	// from a different shell. Any PATH= the crontab set lands in the task's own
 	// env and layers over this.
 	b.set("env_base", tomlString(string(model.EnvBaseClean)))
-	cp.applyWorkingDir(&b)
+	cp.applyWorkingDir(&b, cwd)
 	cp.applyFiringPolicies(&b, !j.runOnStart)
 
 	cp.applyCommand(&b, ref, cc)
@@ -461,7 +470,7 @@ func (cp *crontabParser) importJob(line string) bool {
 	if eb, ok := envBlock("tasks."+name+".env", cp.env); ok {
 		blocks = append(blocks, eb)
 	}
-	ref.emit(name, model.KindTask, id.Schedule, command, blocks...)
+	ref.emit(name, model.KindTask, id.Schedule, run, blocks...)
 	return true
 }
 
@@ -615,7 +624,14 @@ func (cp *crontabParser) noteSuspectUserColumn(line, user string) bool {
 //
 // A HOME= line in the crontab overrides that default: crond changes into the
 // HOME it hands the job, so the job started there, not in the account's own home.
-func (cp *crontabParser) applyWorkingDir(b *block) {
+//
+// A command that began with `cd DIR &&` says where it runs itself: cwd is that
+// DIR, already lifted out of the command (see splitLeadingCd), and wins over both.
+func (cp *crontabParser) applyWorkingDir(b *block, cwd string) {
+	if cwd != "" {
+		b.set("working_dir", tomlString(cwd))
+		return
+	}
 	if home := cp.env["HOME"]; filepath.IsAbs(home) {
 		b.set("working_dir", tomlString(home))
 		return

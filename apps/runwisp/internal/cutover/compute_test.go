@@ -6,6 +6,7 @@ package cutover
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -274,6 +275,24 @@ func TestCompute_NoCronUnitIsNotABlocker(t *testing.T) {
 	assert.False(t, p.Blocked(), "%v", blockerKinds(p))
 	assert.False(t, p.MasksCron, "there is no unit to mask")
 	assert.True(t, p.pending(StepInstallService))
+}
+
+// A binary that cannot go into a unit is a blocker next to the rest of the
+// plan, so --dry-run can print everything instead of dying before it says anything.
+func TestCompute_UndurableBinaryIsABlockerNotAnError(t *testing.T) {
+	c, _, _ := fixture{
+		crontabs:      map[string]string{"backup": oneJob},
+		cronUnit:      "cron.service",
+		cronActive:    true,
+		binaryProblem: errors.New("refusing to install service pointing at /tmp/runwisp"),
+	}.build(t)
+
+	p, err := c.Compute(context.Background())
+	require.NoError(t, err)
+	require.True(t, hasBlocker(p, BlockerBinaryNotDurable), "%v", blockerKinds(p))
+	assert.True(t, p.Blocked())
+	assert.Contains(t, p.Blockers[0].Details, "/tmp/runwisp")
+	assert.Equal(t, 1, p.Evidence.Scan.Jobs, "the rest of the plan is still worked out")
 }
 
 func TestCompute_SkippedCronSourcesBlockUnlessAllowed(t *testing.T) {

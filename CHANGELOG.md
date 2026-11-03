@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When an app supplies the config, `runwisp list` shows the app's tasks, `runwisp validate` points to the app's own check command, and the TUI points to `runwisp status` for config warnings instead of `runwisp validate`.
 - The same-second warning lists at most 5 task names, and for SDK tasks says to set `jitter` in each task's options.
 - The PHP and JavaScript SDKs note "(listening on all interfaces)" in the dashboard line when the host is `0.0.0.0` or `::`, and `runwisp:check` prints warnings after the task list.
+- `runwisp import cron` names a PHP framework line such as `php artisan payments:reconcile` after its subcommand (`payments-reconcile`) instead of `php`, and turns a leading `cd DIR &&` into the task's `working_dir`.
 
 ### Fixed
 
@@ -29,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The PHP SDK reports a daemon that stops mid-answer as "RunWisp hung up during ...", instead of taking the cut-off body as the answer.
 - A command run as a user that cannot open the daemon's socket says the daemon belongs to another user and names `sudo -u <owner> runwisp ...`, instead of suggesting you start a second daemon.
 - `runwisp status` words the changed-config notice as an included or env file when an app supplies the config, since there is no `runwisp.toml`.
+- `runwisp takeover --dry-run` run from a binary under `/tmp` prints the whole plan and lists the binary path as the blocker, instead of stopping before the plan. It still exits non-zero.
+- On macOS, `runwisp service install` refuses a binary or data directory under `/tmp` or `/var/tmp` like it does on Linux, also when the path resolves to `/private/tmp`.
+- `runwisp service uninstall` removes the password and environment drop-ins it saved beside the systemd unit, and prints the config and data paths it leaves in place.
 
 ## [1.8.0] - 2026-10-26
 

@@ -410,22 +410,35 @@ func inspectServiceInstall(cmd *cobra.Command, installer autostart.Installer, op
 // treats an untrusted config as an error and `takeover` reports it as a plan
 // blocker, so the caller decides. See assertTrustedIfSystem.
 func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags, systemWide bool, binaryOverride string) (autostart.InstallOptions, error) {
+	opts, _, err := resolveServiceOptionsTolerant(cmd, deps, f, systemWide, binaryOverride, false)
+	return opts, err
+}
+
+// resolveServiceOptionsTolerant is resolveServiceOptions for a caller that can
+// report a refused binary path instead of dying on it, as `takeover --dry-run`
+// does with its plan. With tolerate set, a binary that is not durable comes back
+// as binaryErr alongside options built around the rejected path, so the rest of
+// the plan can still be worked out and shown.
+func resolveServiceOptionsTolerant(cmd *cobra.Command, deps autostart.Deps, f Flags, systemWide bool, binaryOverride string, tolerate bool) (opts autostart.InstallOptions, binaryErr, err error) {
 	binary, err := resolveUnitBinary(cmd.ErrOrStderr(), deps, binaryOverride)
 	if err != nil {
-		return autostart.InstallOptions{}, err
+		if !tolerate || binary == "" {
+			return autostart.InstallOptions{}, nil, err
+		}
+		binaryErr = err
 	}
 
 	dataDir, err := resolveServiceDataDir(cmd, deps, f, systemWide)
 	if err != nil {
-		return autostart.InstallOptions{}, err
+		return autostart.InstallOptions{}, nil, err
 	}
 
 	configPath, err := resolveServiceConfigPath(cmd, deps, f, systemWide)
 	if err != nil {
-		return autostart.InstallOptions{}, err
+		return autostart.InstallOptions{}, nil, err
 	}
 
-	opts := autostart.InstallOptions{
+	opts = autostart.InstallOptions{
 		Binary:      binary,
 		Config:      configPath,
 		DataDir:     dataDir,
@@ -439,7 +452,7 @@ func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags, sys
 	if systemWide && binaryOverride == "" {
 		useRootOwnedBinary(&opts)
 	}
-	return opts, nil
+	return opts, binaryErr, nil
 }
 
 // systemBinaryPath is where a system install keeps its root-owned copy of the
@@ -460,8 +473,10 @@ func useRootOwnedBinary(opts *autostart.InstallOptions) {
 // resolveUnitBinary resolves the durable binary path to bake into the unit —
 // either an explicit --binary override or this process's own executable. Shared
 // with the first-run cutover, which builds its InstallOptions without cobra.
-// Any non-fatal warning (a path under /tmp, a symlink that may not survive an
-// upgrade) goes to stderr rather than blocking the install.
+// Any non-fatal warning (a symlink that may not survive an upgrade) goes to
+// stderr rather than blocking the install. A refused path (under /tmp, not
+// executable) returns the error together with the rejected candidate, which a
+// caller that only wants the refusal ignores.
 func resolveUnitBinary(stderr io.Writer, deps autostart.Deps, override string) (string, error) {
 	opts := autostart.ResolveBinaryOptions{HomeDir: deps.Home}
 	exe := override
@@ -484,7 +499,7 @@ func resolveUnitBinary(stderr io.Writer, deps autostart.Deps, override string) (
 	opts.ExecutablePath = exe
 	binary, warning, err := autostart.ResolveBinary(opts)
 	if err != nil {
-		return "", &userFacingError{
+		return exe, &userFacingError{
 			title:   "binary path is not durable",
 			details: err.Error(),
 		}

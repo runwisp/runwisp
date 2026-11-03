@@ -160,6 +160,13 @@ func (c *Cutover) blockers(ev Evidence) []Blocker {
 		return []Blocker{unsupportedOSBlocker(c.deps.GOOS)}
 	}
 
+	if c.deps.BinaryProblem != nil {
+		out = append(out, Blocker{
+			Kind:    BlockerBinaryNotDurable,
+			Title:   "binary path is not durable",
+			Details: c.deps.BinaryProblem.Error(),
+		})
+	}
 	if ev.Scan.Jobs == 0 && len(ev.ReadFiles) == 0 {
 		out = append(out, noCronJobsBlocker(ev))
 	}

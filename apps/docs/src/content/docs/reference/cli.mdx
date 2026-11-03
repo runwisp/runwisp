@@ -527,8 +527,9 @@ overwriting.
 sudo runwisp service uninstall
 ```
 
-Stops the daemon, disables autostart, and removes the unit. Keeps the data
-directory. If `takeover` retired cron, this gives cron back. Before it asks, it
+Stops the daemon, disables autostart, and removes the unit and the drop-ins
+RunWisp saved beside it. Keeps the config and the data directory, and prints
+their paths. If `takeover` retired cron, this gives cron back. Before it asks, it
 lists the tasks and services in `runwisp.toml` that stop running. Crontab lines
 that `promote` commented out are uncommented, so cron runs those jobs again.
 

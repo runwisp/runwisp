@@ -341,6 +341,10 @@ were written for cron:
   the job would run in the directory the daemon started in, and relative paths
   would point somewhere else. `~` is the home of the user the task runs as.
 
+A job that starts with `cd DIR &&` gets `working_dir = "DIR"` instead, and the
+`cd` is dropped from `run`. This applies when `DIR` is a plain absolute or
+`~/` path.
+
 ### Catch-up and overlap
 
 Both are written out, so you can delete the line to get RunWisp's behaviour:

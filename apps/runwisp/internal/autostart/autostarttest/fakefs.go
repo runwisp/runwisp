@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -92,8 +93,17 @@ func (f *FakeFS) WriteFile(path string, data []byte, perm fs.FileMode) error {
 func (f *FakeFS) Remove(path string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if _, ok := f.files[path]; !ok {
+	ff, ok := f.files[path]
+	if !ok {
 		return &fs.PathError{Op: "remove", Path: path, Err: fs.ErrNotExist}
+	}
+	if ff.isDir {
+		// Like os.Remove: a directory goes only when it is empty.
+		for p := range f.files {
+			if p != path && filepath.Dir(p) == path {
+				return &fs.PathError{Op: "remove", Path: path, Err: syscall.ENOTEMPTY}
+			}
+		}
 	}
 	delete(f.files, path)
 	return nil

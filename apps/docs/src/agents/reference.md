@@ -81,7 +81,9 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     `test -e /run/systemd/system || …`) are left out, not skipped-as-error:
                                     note kind noop-here, listed by import/takeover, no boot warning.
                                     Names: `run-parts DIR` -> basename of DIR with dots as '-' (cron-daily);
-                                    `invoke-rc.d X` / `service X` -> X; shell keywords (if/then/!/…) skipped.
+                                    `invoke-rc.d X` / `service X` -> X; `php[N.N] artisan|bin/console|spark
+                                    SUB` -> SUB with ':' as '-' (payments-reconcile); shell keywords
+                                    (if/then/!/…) skipped.
                                     Glob hits that are directories or dotfiles are dropped without a finding.
                                     Tasks report "source": "cron" + "source_file" in list/status --json;
                                     `runwisp promote` graduates them.
@@ -387,6 +389,8 @@ runwisp import ofelia [FILE...] — convert Ofelia jobs (INI config, or a .yml/.
                                account when no `user` is emitted, the user column's when one is. A ~ on a
                                task with `user` stays literal through config.Load and is joined in
                                executor.resolveWorkingDir from the resolved credential's home.
+                               A leading `cd DIR &&` (DIR a plain absolute, `~` or `~/` path, no quoting
+                               or $) becomes working_dir = DIR and is cut from run.
                              — every imported task gets env_base = "clean"; the crontab's own PATH= lands in
                                the task's env and layers over it.
                              — cron's '%' rules are applied, not copied: an unescaped % ends the command

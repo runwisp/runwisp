@@ -79,7 +79,7 @@ func resolveCutover(cmd *cobra.Command, f Flags, req takeoverRequest) (*cutover.
 	}
 
 	const systemWide = true
-	opts, err := resolveServiceOptions(cmd, deps, f, systemWide, req.Binary)
+	opts, binaryErr, err := resolveServiceOptionsTolerant(cmd, deps, f, systemWide, req.Binary, true)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +99,7 @@ func resolveCutover(cmd *cobra.Command, f Flags, req takeoverRequest) (*cutover.
 
 	return newCutover(f, deps, installer, opts, func(d *cutover.Deps) {
 		d.AllowSkippedCronJobs = req.AllowSkippedCronJobs
+		d.BinaryProblem = binaryProblem(binaryErr)
 		d.RootCommand = sudoRunwisp(os.Args[1:]...)
 	}), nil
 }
@@ -140,6 +141,18 @@ func asUserFacing(err error) error {
 	var ue *cutover.UserError
 	if errors.As(err, &ue) {
 		return &userFacingError{title: ue.Title, details: ue.Details}
+	}
+	return err
+}
+
+// binaryProblem unwraps the refusal text of a rejected unit binary for the plan's
+// blocker, which carries its own title.
+func binaryProblem(err error) error {
+	if err == nil {
+		return nil
+	}
+	if ue, ok := isUserFacing(err); ok {
+		return errors.New(ue.details)
 	}
 	return err
 }

@@ -117,6 +117,11 @@ func transientBinaryReason(p string) string {
 // binary needs it durable across reboots; a data dir just needs it to survive
 // tmpwatch).
 func transientPathReason(p, varTmpReason string) string {
+	// On macOS /tmp and /var are symlinks into /private, so a resolved path
+	// (the running binary, after EvalSymlinks) names /private/tmp/...
+	if rest, ok := strings.CutPrefix(p, "/private/"); ok {
+		p = "/" + rest
+	}
 	switch {
 	case strings.HasPrefix(p, "/tmp/"), p == "/tmp":
 		return "/tmp is wiped on reboot"
