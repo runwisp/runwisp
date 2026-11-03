@@ -44,6 +44,10 @@
         // run panel seeding its tail). Shows the loading state rather than
         // "No output yet" until that output arrives.
         loading?: boolean;
+        // The caller knows this log can't be loaded right now (e.g. it lives on
+        // a daemon that is offline). An empty console then says so instead of
+        // "Waiting for logs...", which reads as a run that is still going.
+        unavailable?: boolean;
         // Wrap long lines instead of horizontally scrolling them. When on, each
         // rendered row's height becomes a multiple of `lineHeight` (one per
         // wrapped visual row), so the virtualizer switches from the fixed-height
@@ -61,6 +65,7 @@
         endTone = "muted",
         error = null,
         loading = false,
+        unavailable = false,
         wrap = $bindable(false),
     }: Props = $props();
 
@@ -545,7 +550,12 @@
                     class="absolute inset-0 flex items-center justify-center text-[var(--rw-con-dim)]"
                 >
                     <div class="text-center">
-                        {#if cache.finished}
+                        {#if unavailable}
+                            <div class="mb-1 text-lg">Log unavailable</div>
+                            <div class="text-sm text-[var(--rw-con-gutter)]">
+                                It can't be loaded right now.
+                            </div>
+                        {:else if cache.finished}
                             <div class="mb-1 text-lg">No output</div>
                             <div class="text-sm text-[var(--rw-con-gutter)]">
                                 The run ended without printing anything.

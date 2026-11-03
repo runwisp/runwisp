@@ -259,7 +259,7 @@
                                 <button
                                     onclick={() => handleSort(String(column.key))}
                                     class="
-                                        inline-flex items-center gap-1 group-hover:text-on-surface
+                                        inline-flex items-center gap-1 uppercase group-hover:text-on-surface
                                         {sorted ? 'text-on-surface' : ''}
                                     "
                                 >
