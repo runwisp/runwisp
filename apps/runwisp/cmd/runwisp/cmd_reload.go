@@ -49,6 +49,9 @@ This is equivalent to sending the daemon a SIGHUP.`,
 // reload too — internal/cutover hands the held cron jobs to a daemon that was
 // already running, and the first-run flow has no *cobra.Command to hand it.
 func reloadRunningDaemon(ctx context.Context, f Flags, out io.Writer) error {
+	if err := otherUserDaemonError(f); err != nil {
+		return err
+	}
 	if !isDaemonRunning(f) {
 		fmt.Fprintf(out, "No daemon is running on data dir %s — nothing to reload.\n", absPathOrFallback(f.DataDir))
 		return nil

@@ -179,7 +179,7 @@ func runExec(ctx context.Context, taskName string, f Flags) (int, error) {
 // path must defer to the daemon when one is alive. It checks the lock, not the
 // PID, because a starting daemon holds the lock before it writes its PID.
 func isDaemonRunning(f Flags) bool {
-	return datadir.PidFileLocked(datadir.PidFilePath(f.DataDir))
+	return datadir.PidFileLocked(datadir.PidFilePath(clientDataDir(f)))
 }
 
 // runExecViaDaemon dispatches the run through the running daemon's REST API

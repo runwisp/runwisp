@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 
@@ -108,6 +109,13 @@ func runPasswordVia(ctx context.Context, stdout, stderr io.Writer, fetch func(co
 	if apiclient.IsHTTPStatus(err, http.StatusForbidden) {
 		renderError(stderr, "internal error: socket request was not local-trusted", "", "")
 		return passwordExitInternalGate
+	}
+	if errors.Is(err, fs.ErrPermission) {
+		renderError(stderr,
+			fmt.Sprintf("cannot open the daemon socket at %s: %v", socketPath, err),
+			"The daemon is running, but "+otherUserHint(socketOwner(socketPath), os.Args[1:])+".",
+			"")
+		return passwordExitUnreachable
 	}
 	if isTransportError(err) {
 		renderError(stderr,

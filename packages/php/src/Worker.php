@@ -138,24 +138,27 @@ final class Worker
      */
     public function check(): int
     {
-        $report = $this->validated();
+        $report = $this->validated(false);
         if ($report === null) {
             return 1;
         }
         /** @var array{tasks: array<string, array<string, mixed>>, services: array<string, array<string, mixed>>} $doc */
         $doc = json_decode($report['document'], true, 512, JSON_THROW_ON_ERROR);
         Check::print($doc, $report['schedules'], $this->log);
+        // After the listing, so they are the last thing on screen.
+        $this->logWarnings($report['warnings']);
 
         return 0;
     }
 
     /**
      * The config document and what RunWisp says about it, with its warnings
-     * logged; null, with the reason logged, when it is rejected.
+     * logged (unless $logWarnings is false); null, with the reason logged,
+     * when it is rejected.
      *
-     * @return array{document: string, schedules: array<string, array<string, mixed>>}|null
+     * @return array{document: string, schedules: array<string, array<string, mixed>>, warnings: list<string>}|null
      */
-    private function validated(): ?array
+    private function validated(bool $logWarnings = true): ?array
     {
         try {
             $document = $this->document();
@@ -165,8 +168,8 @@ final class Worker
 
             return null;
         }
-        foreach ($report['warnings'] as $warning) {
-            ($this->log)('warn', "runwisp: $warning");
+        if ($logWarnings) {
+            $this->logWarnings($report['warnings']);
         }
         // The daemon repeats them when it applies the config: already said.
         $this->configWarnings = array_fill_keys($report['warnings'], true);
@@ -179,7 +182,15 @@ final class Worker
             return null;
         }
 
-        return ['document' => $document, 'schedules' => $report['schedules']];
+        return ['document' => $document, 'schedules' => $report['schedules'], 'warnings' => $report['warnings']];
+    }
+
+    /** @param list<string> $warnings */
+    private function logWarnings(array $warnings): void
+    {
+        foreach ($warnings as $warning) {
+            ($this->log)('warn', "runwisp: $warning");
+        }
     }
 
     /**
@@ -709,6 +720,9 @@ final class Worker
             $suffix = ' (login off)';
         } elseif ($this->settings->password === null) {
             $suffix = ', password: ' . $this->passwordCommand();
+        }
+        if (in_array($this->settings->host, ['0.0.0.0', '::'], true)) {
+            $suffix = ' (listening on all interfaces)' . $suffix;
         }
         ($this->log)('info', 'RunWisp dashboard: ' . $this->settings->url($this->settings->port ?? $this->daemon->savedPort()) . $suffix);
     }

@@ -5,8 +5,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -51,6 +53,9 @@ func runList(ctx context.Context, out io.Writer, f Flags, rf remoteFlags, asJSON
 	}
 
 	cfg, err := config.Load(f.CfgFile)
+	if errors.Is(err, fs.ErrNotExist) && connectedAppDaemon(ctx, f) {
+		return listFromApp(ctx, out, f, asJSON)
+	}
 	if err != nil {
 		return listFailed(out, asJSON, configLoadError(f, err))
 	}
@@ -69,6 +74,19 @@ func runList(ctx context.Context, out io.Writer, f Flags, rf remoteFlags, asJSON
 		fmt.Fprintf(out, "\n%s\n", footer)
 	}
 	return nil
+}
+
+// listFromApp lists a daemon whose config an app supplies: there is no
+// runwisp.toml, so the live task list is the only one.
+func listFromApp(ctx context.Context, out io.Writer, f Flags, asJSON bool) error {
+	tasks, err := apiclient.NewUnix(localAPISocketPath(f)).ListTasks(ctx)
+	if err != nil {
+		return listFailed(out, asJSON, fmt.Errorf("list tasks: %w", err))
+	}
+	if !asJSON {
+		fmt.Fprint(out, "Tasks from the connected app:\n\n")
+	}
+	return writeTaskList(out, tasks, asJSON)
 }
 
 // listFailed emits the --json error document, so an agent learns of the

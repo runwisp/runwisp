@@ -9,8 +9,12 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/user"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
@@ -88,6 +92,45 @@ func daemonNotRunningHint(f Flags) string {
 		return startDaemonHint + ". For the system service instead, whose socket is root's: " + sudo
 	}
 	return "RunWisp runs here as the system service, and its socket is root's: " + sudo
+}
+
+// daemonUnreachableHint is daemonNotRunningHint for a connection that failed
+// with err. A socket this user may not open belongs to a daemon that is up, so
+// starting one here would be a second daemon, not the fix.
+func daemonUnreachableHint(f Flags, err error) string {
+	if errors.Is(err, fs.ErrPermission) {
+		return otherUserHint(socketOwner(localAPISocketPath(f)), os.Args[1:])
+	}
+	return daemonNotRunningHint(f)
+}
+
+// otherUserHint says whose daemon it is and how to reach it: the same command,
+// as them. owner is empty when it could not be determined.
+func otherUserHint(owner string, args []string) string {
+	if owner == "" {
+		return "it belongs to another user; run the same command as them"
+	}
+	rerun := strings.TrimPrefix(sudoRunwisp(args...), "sudo ")
+	return fmt.Sprintf("it belongs to %s; run the same command as them with 'sudo -u %s %s'", owner, owner, rerun)
+}
+
+// socketOwner is the user that owns the data dir holding socketPath, or "" when
+// that cannot be told. It stats the dir: the daemon makes it owner-only, so the
+// socket inside is out of reach, but its parent can still be searched.
+func socketOwner(socketPath string) string {
+	info, err := os.Stat(filepath.Dir(socketPath))
+	if err != nil {
+		return ""
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return ""
+	}
+	u, err := user.LookupId(strconv.FormatUint(uint64(st.Uid), 10))
+	if err != nil {
+		return ""
+	}
+	return u.Username
 }
 
 // hasLocalSetup reports a RunWisp setup of this directory's own: a config, or a

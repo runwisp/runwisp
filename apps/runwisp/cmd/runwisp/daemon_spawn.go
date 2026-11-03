@@ -127,7 +127,7 @@ func shutdownDaemon(f Flags) error {
 // `runwisp stop`/`restart` size it from [daemon] shutdown_timeout so a
 // long-draining daemon isn't reported as stuck.
 func shutdownDaemonWait(timeout time.Duration, f Flags) error {
-	pid, err := datadir.ReadPidFile(f.DataDir)
+	pid, err := datadir.ReadPidFile(clientDataDir(f))
 	if err != nil {
 		return fmt.Errorf("cannot read daemon PID file: %w", err)
 	}
@@ -143,7 +143,7 @@ func shutdownDaemonWait(timeout time.Duration, f Flags) error {
 
 	fmt.Fprintf(os.Stderr, "Waiting for daemon (pid %d) to shut down...\n", pid)
 
-	return waitForProcessExit(pid, timeout, f.DataDir)
+	return waitForProcessExit(pid, timeout, clientDataDir(f))
 }
 
 // waitForProcessExit polls until the daemon has exited. It checks two signals:

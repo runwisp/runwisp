@@ -4,13 +4,19 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -105,4 +111,64 @@ func TestRunList_PointsAtTheSystemConfig(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "/etc/runwisp/runwisp.toml")
 	assert.Contains(t, err.Error(), "sudo ")
+}
+
+// A socket another user owns is a daemon that is up; the hint must not send the
+// operator off to start a second one.
+func TestOtherUserHint(t *testing.T) {
+	hint := otherUserHint("deploy", []string{"status", "--data", "storage/runwisp"})
+	assert.Contains(t, hint, "belongs to deploy")
+	assert.Contains(t, hint, "sudo -u deploy ")
+	assert.Contains(t, hint, "status --data storage/runwisp")
+	assert.NotContains(t, hint, "runwisp daemon")
+
+	hint = otherUserHint("", []string{"status"})
+	assert.Contains(t, hint, "another user")
+	assert.NotContains(t, hint, "sudo")
+}
+
+func TestDaemonUnreachableHint_PermissionDenied(t *testing.T) {
+	denied := fmt.Errorf("request failed: %w", &net.OpError{Op: "dial", Net: "unix", Err: os.NewSyscallError("connect", syscall.EACCES)})
+	assert.Contains(t, daemonUnreachableHint(Flags{Socket: "/nonexistent/dir/runwisp.sock"}, denied), "another user")
+	assert.Equal(t, startDaemonHint, daemonUnreachableHint(Flags{DataDir: "/srv/rw"}, errors.New("connection refused")))
+}
+
+// The hint keys off errors.Is(err, fs.ErrPermission), so the client must keep
+// that error in its chain all the way up from the dial.
+func TestHealthCheckKeepsPermissionDeniedInTheChain(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can open any socket")
+	}
+	sock := filepath.Join(testutil.ShortTempDir(t), "runwisp.sock")
+	ln, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	require.NoError(t, os.Chmod(sock, 0))
+
+	err = apiclient.NewUnix(sock).HealthCheck(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, daemonUnreachableHint(Flags{Socket: sock}, err), "belongs to")
+}
+
+// A data dir another user keeps private hides its daemon's PID lock, so the
+// lock check alone said "no daemon is running, nothing to reload" and exited 0.
+func TestReload_AnotherUsersDataDirSaysWhose(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads every directory")
+	}
+	private := testutil.ShortTempDir(t)
+	require.NoError(t, os.WriteFile(filepath.Join(private, "daemon.pid"), nil, 0o600))
+	require.NoError(t, os.Chmod(private, 0)) // as storage/runwisp (0700, www-data's) looks to the deploy user
+	t.Cleanup(func() { _ = os.Chmod(private, 0o700) })
+
+	var out strings.Builder
+	err := reloadRunningDaemon(t.Context(), Flags{DataDir: private}, &out)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot open the data dir")
+	var ufe *userFacingError
+	require.ErrorAs(t, err, &ufe)
+	assert.Contains(t, ufe.details, "belongs to")
+	assert.NotContains(t, out.String(), "No daemon is running")
+
+	assert.NoError(t, otherUserDaemonError(Flags{DataDir: t.TempDir()}), "a readable dir is left to the lock check")
 }

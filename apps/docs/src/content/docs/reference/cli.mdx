@@ -30,6 +30,11 @@ These work on every command. A flag beats its environment variable.
 As root, `--config` defaults to `/etc/runwisp/runwisp.toml` and `--data` to
 `/var/lib/runwisp`, so `sudo runwisp reload` finds a daemon that root started.
 
+With neither `--data` nor `RUNWISP_DATA` set, and no daemon socket in the
+default, the commands that talk to a daemon also look in `storage/runwisp`,
+`var/runwisp` and `writable/runwisp`, the data directories the
+[PHP SDK](/sdk/php/) uses. `runwisp daemon` always uses the default.
+
 To move the data directory, stop the daemon and move the directory.
 
 ## Environment variables

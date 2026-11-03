@@ -244,6 +244,23 @@ func TestRenderHeader_ConfigStale(t *testing.T) {
 	assert.Contains(t, header, "press R to reload")
 }
 
+func TestRenderHeader_AppConfigNotices(t *testing.T) {
+	info := uikit.StartupInfo{
+		Port:           9477,
+		AppConfig:      true,
+		ConfigStale:    true,
+		ConfigWarnings: []string{"tasks a, b fire in the same second"},
+	}
+	header, _ := RenderHeader(info, false, 120, -1, -1, false)
+	assert.Contains(t, header, "see `runwisp status`")
+	assert.NotContains(t, header, "runwisp validate")
+	assert.NotContains(t, header, "runwisp.toml")
+
+	info.AppConfig = false
+	header, _ = RenderHeader(info, false, 120, -1, -1, false)
+	assert.Contains(t, header, "see `runwisp validate`")
+}
+
 func TestRenderHeader_ConfigFresh_NoNotice(t *testing.T) {
 	info := uikit.StartupInfo{Port: 9477}
 	header, _ := RenderHeader(info, false, 80, -1, -1, false)

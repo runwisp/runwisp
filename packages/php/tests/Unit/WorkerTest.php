@@ -49,8 +49,32 @@ final class WorkerTest extends TestCase
         self::assertSame('{"tasks":{},"services":{}}', (new Worker(self::settings(), [], []))->document());
     }
 
-    private static function settings(): Settings
+    public function testTheDashboardNoticeSaysWhenItListensOnAllInterfaces(): void
     {
-        return new Settings('app', '/tmp/rw-unit', null, '127.0.0.1', null, true, 'runwisp', '/tmp');
+        self::assertSame(
+            ['info: RunWisp dashboard: http://127.0.0.1:9477 (listening on all interfaces) (login off)'],
+            self::announced(self::settings('0.0.0.0', false)),
+        );
+        self::assertSame(
+            ['info: RunWisp dashboard: http://[::1]:9477 (login off)'],
+            self::announced(self::settings('::1', false)),
+        );
+    }
+
+    /** @return list<string> */
+    private static function announced(Settings $settings): array
+    {
+        $lines = [];
+        $worker = new Worker($settings, [], [], static function (string $level, string $message) use (&$lines): void {
+            $lines[] = "$level: $message";
+        });
+        (new \ReflectionMethod($worker, 'announce'))->invoke($worker);
+
+        return $lines;
+    }
+
+    private static function settings(string $host = '127.0.0.1', bool $auth = true): Settings
+    {
+        return new Settings('app', '/tmp/rw-unit', 9477, $host, null, $auth, 'runwisp', '/tmp');
     }
 }
