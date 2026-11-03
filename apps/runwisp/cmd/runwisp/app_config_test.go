@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apphost"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,4 +50,12 @@ func TestRunValidateAppDocument(t *testing.T) {
 	err = runValidate(&out, f, validateOpts{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "sets both sdk and run")
+}
+
+// `runwisp reload` on an app's daemon waits for the app to read its config: the
+// daemon has to give up first, so the CLI prints why instead of timing out
+// while the reload may still apply.
+func TestAppReloadGivesUpBeforeTheCLIDoes(t *testing.T) {
+	t.Parallel()
+	assert.Less(t, apphost.ReloadTimeout, apiclient.RequestTimeout)
 }

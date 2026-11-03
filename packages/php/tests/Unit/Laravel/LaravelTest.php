@@ -41,6 +41,11 @@ final class LaravelTest extends TestCase
         self::assertFalse(Artisan::all()['runwisp:run']->isHidden());
     }
 
+    public function testReloadIsACommandForDeployScripts(): void
+    {
+        self::assertArrayHasKey('runwisp:reload', Artisan::all());
+    }
+
     public function testMapsEventsToTasks(): void
     {
         $schedule = $this->schedule();

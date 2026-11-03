@@ -142,9 +142,11 @@ final class Session
     }
 
     /** Sends a config document, already JSON, as a reload would apply it. */
-    public function config(string $document): void
+    /** Sends the config; $reload is the id of the reload RunWisp asked for that it answers. */
+    public function config(string $document, ?string $reload = null): void
     {
-        if (!$this->closed && !self::write($this->conn, '{"type":"config","doc":' . $document . "}\n")) {
+        $answers = $reload === null ? '' : ',"reload":' . json_encode($reload, JSON_THROW_ON_ERROR);
+        if (!$this->closed && !self::write($this->conn, '{"type":"config","doc":' . $document . $answers . "}\n")) {
             $this->close();
         }
     }

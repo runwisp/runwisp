@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `runwisp reload` on a RunWisp an SDK app started asks the app to read its tasks again, so a deploy reaches the schedule without restarting the worker. The PHP SDK adds `runwisp:reload` for Laravel, Symfony and CodeIgniter (`php runwisp.php reload` for a plain script); a deploy that broke the app fails the reload with PHP's error and keeps the running schedule.
+
 ### Fixed
 
 - The JavaScript SDK reports a daemon that resets the connection mid-answer as "RunWisp hung up during ...", not a bare `read ECONNRESET`.

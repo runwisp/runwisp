@@ -30,7 +30,7 @@ final class WorkerTest extends TestCase
         self::$worker = new Process([PHP_BINARY, __DIR__ . '/fixtures/worker.php'], null, [
             'RUNWISP_DATA' => self::$data,
             'RUNWISP_PORT' => (string) $port,
-            'RUNWISP_PHP_TEST_BINARY' => getenv('RUNWISP_PHP_TEST_BINARY') ?: 'runwisp',
+            'RUNWISP_PHP_TEST_BINARY' => self::binary(),
         ]);
         self::$worker->start();
         self::$daemon = new Daemon(Settings::resolve(['data' => self::$data, 'binary' => 'runwisp', 'app' => 'e2e']));
@@ -43,7 +43,7 @@ final class WorkerTest extends TestCase
             self::$worker->stop(0);
         }
         self::$daemon->stop();
-        exec('rm -rf ' . escapeshellarg(self::$data));
+        exec('rm -rf ' . escapeshellarg(self::$data) . ' ' . escapeshellarg(self::$data . '.deploy.php') . ' ' . escapeshellarg(self::$data . '.daemon.json'));
     }
 
     public function testTaskOutputIsTheRunsLog(): void
@@ -99,15 +99,86 @@ final class WorkerTest extends TestCase
         self::assertSame('stopped', self::$daemon->call('GET', "/api/runs/$id")['body']['endReason']);
     }
 
+    public function testReloadReadsTheTasksAsDeployed(): void
+    {
+        self::deploy('<?php $runwisp->task("deployed", [], function (): void { echo "new code\n"; });');
+        $reload = self::reload();
+        self::assertSame(0, $reload->getExitCode(), $reload->getErrorOutput());
+        self::assertStringContainsString('+ added   deployed', $reload->getOutput());
+        self::assertSame("new code\n", self::trigger('deployed')['log']);
+    }
+
+    #[Depends('testReloadReadsTheTasksAsDeployed')]
+    public function testABrokenDeployFailsTheReloadAndKeepsTheTasks(): void
+    {
+        self::deploy('<?php syntax error(');
+        // The binary itself: the worker script can't run to ask, since the deploy broke it.
+        $reload = new Process([self::binary(), 'reload', '--data', self::$data]);
+        $reload->run();
+        self::assertSame(1, $reload->getExitCode(), $reload->getOutput());
+        self::assertStringContainsString('syntax error', $reload->getErrorOutput());
+        // The tasks stay. Each run is a new process, so it meets the broken code and says so.
+        $run = self::trigger('deployed');
+        self::assertNotSame(0, $run['exitCode']);
+        self::assertStringContainsString('syntax error', (string) $run['log']);
+        unlink(self::$data . '.deploy.php');
+    }
+
+    #[Depends('testABrokenDeployFailsTheReloadAndKeepsTheTasks')]
+    public function testAReloadThatNeedsARestartIsRejectedAndRunWispKeepsRunning(): void
+    {
+        $pid = self::$daemon->identity()['pid'];
+        $run = self::$daemon->call('POST', '/api/tasks/linger/run')['body'];
+        self::assertIsArray($run);
+        file_put_contents(self::$data . '.daemon.json', '{"allow_station_dispatch": true}');
+        try {
+            $reload = self::reload();
+        } finally {
+            unlink(self::$data . '.daemon.json');
+        }
+        self::assertSame(1, $reload->getExitCode(), $reload->getOutput());
+        self::assertStringContainsString('requires `runwisp restart`', $reload->getErrorOutput());
+        // The worker would restart RunWisp for it, stopping the run in progress: it must not.
+        self::waitFor(fn (): bool => str_contains(self::$worker->getErrorOutput(), 'reload rejected'), 'the worker to log the rejected reload');
+        self::assertSame($pid, self::$daemon->identity()['pid']);
+        $id = $run['id'];
+        self::waitFor(fn (): bool => (self::$daemon->call('GET', "/api/runs/$id")['body']['status'] ?? '') === 'ended', 'the run to end');
+        self::assertSame(0, self::$daemon->call('GET', "/api/runs/$id")['body']['exitCode']);
+    }
+
     #[Depends('testStoppingAServiceReachesItsCallback')]
     public function testSigtermLeavesAndTheDaemonStops(): void
     {
         $pid = self::$daemon->identity()['pid'];
+        // RunWisp takes a while to stop with this run in progress.
+        self::assertSame(201, self::$daemon->call('POST', '/api/tasks/linger/run')['status']);
         self::$worker->signal(15);
         self::waitFor(fn (): bool => !self::$worker->isRunning(), 'the worker to exit');
         self::assertSame(143, self::$worker->getExitCode(), self::$worker->getErrorOutput());
-        self::waitFor(fn (): bool => !Daemon::alive($pid), 'the daemon to exit');
+        // Already gone: under systemd's KillMode=mixed whatever outlives the worker is killed.
+        self::assertFalse(Daemon::alive($pid), 'the daemon outlived the last worker');
         self::assertStringContainsString('RunWisp dashboard: http://127.0.0.1:', self::$worker->getOutput());
+    }
+
+    private static function deploy(string $code): void
+    {
+        file_put_contents(self::$data . '.deploy.php', $code);
+    }
+
+    private static function reload(): Process
+    {
+        $reload = new Process([PHP_BINARY, __DIR__ . '/fixtures/worker.php', 'reload'], null, [
+            'RUNWISP_DATA' => self::$data,
+            'RUNWISP_PHP_TEST_BINARY' => self::binary(),
+        ]);
+        $reload->run();
+
+        return $reload;
+    }
+
+    private static function binary(): string
+    {
+        return getenv('RUNWISP_PHP_TEST_BINARY') ?: 'runwisp';
     }
 
     /** @return array{exitCode: mixed, log: mixed} */

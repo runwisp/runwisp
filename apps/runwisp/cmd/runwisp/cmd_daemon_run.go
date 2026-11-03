@@ -163,7 +163,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	}
 	doc, fromApp := src.(*config.DocumentSource)
 	if fromApp && reloadFn != nil {
-		serveAppConfig(svc.Apps, doc, reloadFn)
+		reloadFn = serveAppConfig(svc.Apps, doc, reloadFn)
 	}
 
 	srv, err := server.New(server.Options{

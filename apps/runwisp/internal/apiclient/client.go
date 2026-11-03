@@ -20,6 +20,10 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 )
 
+// RequestTimeout bounds every non-streaming request, `runwisp reload`
+// included.
+const RequestTimeout = 30 * time.Second
+
 // Client communicates with the RunWisp daemon HTTP API.
 // It is used by the TUI and CLI commands to interact with a running daemon.
 //
@@ -54,7 +58,7 @@ func New(baseURL, password string) *Client {
 		baseURL:  NormalizeBaseURL(baseURL),
 		password: password,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: RequestTimeout,
 		},
 		streamClient: &http.Client{},
 	}
@@ -91,7 +95,7 @@ func NewUnix(socketPath string) *Client {
 		baseURL: "http://runwisp",
 		local:   true,
 		httpClient: &http.Client{
-			Timeout:   30 * time.Second,
+			Timeout:   RequestTimeout,
 			Transport: transport,
 		},
 		streamClient: &http.Client{Transport: transport},

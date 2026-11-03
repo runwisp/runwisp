@@ -60,7 +60,8 @@ Without a [`password`](#password) option, RunWisp picks a new password on each
 start. The worker never prints it. Run the command from the notice to see it.
 
 Keep the worker running the way you keep a queue worker running: a systemd
-unit, a Supervisor program or your container's command.
+unit, a Supervisor program or your container's command. See
+[Keep the worker running](#keep-the-worker-running).
 
 Each run is `php runwisp.php` again in a new process, where `main()` calls the
 task's callback instead of starting the worker. Runs of different tasks happen
@@ -230,6 +231,32 @@ Past `graceful_stop`, the run's process gets `SIGKILL`. Where `setsid` is
 installed (Linux), the stop and the kill also reach every process the run
 started. `stopping()` needs `ext-pcntl`; without it, it is always `false`.
 
+## Deploy
+
+**since**: `1.9`
+
+Each run is a new process, so it always runs the code deployed now. The worker
+reads your tasks once, when it starts. After a deploy, tell it to read them
+again:
+
+```bash
+php runwisp.php reload
+```
+
+```
+Configuration reloaded.
+  ~ changed nightly-backup (schedule)
+```
+
+The worker reads the tasks in a new PHP process, so it keeps running and runs
+in progress keep going. If the deploy broke the app, the reload fails with
+PHP's error and exits with code 1, and the tasks stay as they were. A change
+that [needs a restart](/operations/reload/#what-needs-a-restart) fails the
+reload the same way: restart the worker to apply it.
+`runwisp reload` and `SIGHUP` to RunWisp do the same.
+
+Restart the worker only after you update `runwisp/runwisp`.
+
 ## Several copies of the worker
 
 Workers that share a data directory share one RunWisp, so each run happens
@@ -245,8 +272,8 @@ Workers are told apart from other apps by [`app`](#app). RunWisp refuses a
 different app while one is connected, so give each app its own
 [data directory](#data).
 
-RunWisp outlives a worker restart, so a deploy doesn't stop runs in progress.
-When a worker starts with a different `runwisp` binary, or with a different
+RunWisp outlives a worker restart, so the copy that starts next finds it
+running. When a worker starts with a different `runwisp` binary, or with a different
 value for a variable RunWisp uses, RunWisp restarts once that worker runs the
 tasks and no worker that stopped is still finishing runs. With shell tasks in
 `config`, that is any variable; with only tasks defined in code, it is
@@ -269,6 +296,44 @@ up to 10 seconds for one, then fails with `no app is connected`.
 
 In Docker, run the worker with an init (`docker run --init`, or
 `init: true` in Compose), so the processes it starts are reaped.
+
+## Keep the worker running
+
+**since**: `1.9`
+
+With systemd:
+
+```ini
+# /etc/systemd/system/app-runwisp.service
+[Unit]
+Description=RunWisp worker
+After=network.target
+
+[Service]
+User=www-data
+WorkingDirectory=/var/www/app
+ExecStart=/usr/bin/php runwisp.php
+ExecReload=/usr/bin/php runwisp.php reload
+KillMode=mixed
+TimeoutStopSec=1h
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+- `KillMode=mixed` sends `SIGTERM` to the worker only, so it lets the runs in
+  progress finish, as in [When the worker stops](#when-the-worker-stops). With
+  systemd's default, every process of the unit gets it and the runs stop at
+  once.
+- `TimeoutStopSec` is how long a stop or restart waits for those runs. Set it
+  above your longest run. Past it, systemd kills what is left.
+- `ExecReload` makes `systemctl reload app-runwisp` read the tasks again, as
+  in [Deploy](#deploy).
+
+The worker's user owns the data directory, so run the CLI as that user:
+`sudo -u www-data vendor/bin/runwisp status`.
 
 ## Reference
 

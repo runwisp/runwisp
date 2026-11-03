@@ -12,15 +12,24 @@ require __DIR__ . '/../../../vendor/autoload.php';
 use RunWisp\Run;
 use RunWisp\RunWisp;
 
+$config = [
+    'defaults' => ['env' => ['REGION' => 'eu']],
+    'tasks' => [
+        'shell' => ['run' => 'echo from a shell task'],
+        // Keeps RunWisp busy stopping for a while: it outlives SIGTERM.
+        'linger' => ['run' => "trap '' TERM; sleep 2"],
+    ],
+];
+// A deploy that changes [daemon], as WorkerTest makes one.
+$daemon = getenv('RUNWISP_DATA') . '.daemon.json';
+if (is_file($daemon)) {
+    $config['daemon'] = json_decode((string) file_get_contents($daemon), true, flags: JSON_THROW_ON_ERROR);
+}
+
 $runwisp = new RunWisp([
     'auth' => false,
     'binary' => (string) getenv('RUNWISP_PHP_TEST_BINARY') ?: 'runwisp',
-    'config' => [
-        'defaults' => ['env' => ['REGION' => 'eu']],
-        'tasks' => [
-            'shell' => ['run' => 'echo from a shell task'],
-        ],
-    ],
+    'config' => $config,
 ]);
 
 $runwisp->task('tick', ['cron' => '* * * * * *'], function (): void {
@@ -48,5 +57,12 @@ $runwisp->service('worker', [], function (Run $run): void {
     }
     echo "worker stopping\n";
 });
+
+// A deploy, as WorkerTest makes one: a reload reads the tasks again from this
+// file, so what is here now is what it finds.
+$deploy = getenv('RUNWISP_DATA') . '.deploy.php';
+if (is_file($deploy)) {
+    require $deploy;
+}
 
 exit($runwisp->main());

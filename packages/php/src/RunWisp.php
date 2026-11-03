@@ -16,8 +16,9 @@ namespace RunWisp;
  *
  * `php script.php` is the worker. It runs each task in a new `php script.php`
  * process, where main() calls the task's callback instead. `php script.php
- * check` checks the config and lists the tasks without running anything, and
- * `php script.php run <name>` runs one task in the terminal.
+ * check` checks the config and lists the tasks without running anything,
+ * `php script.php reload` makes the running worker read the tasks again after a
+ * deploy, and `php script.php run <name>` runs one task in the terminal.
  *
  * @phpstan-import-type Config from Schema
  * @phpstan-import-type TaskConfig from Schema
@@ -65,8 +66,9 @@ final class RunWisp
 
     /**
      * Runs the worker, or in a run's process, that run. With arguments,
-     * `check` checks the config and `run <name>` runs one task here, outside
-     * RunWisp. Returns the exit code.
+     * `check` checks the config, `reload` makes the running worker read the
+     * tasks again, and `run <name>` runs one task here, outside RunWisp.
+     * Returns the exit code.
      */
     public function main(): int
     {
@@ -87,7 +89,11 @@ final class RunWisp
         unset($options['config']);
         $worker = new Worker(Settings::resolve($options), $config, array_column($this->units, 0));
 
-        return ($args[1] ?? null) === 'check' ? $worker->check() : $worker->run();
+        return match ($args[1] ?? null) {
+            'check' => $worker->check(),
+            'reload' => $worker->reload(),
+            default => $worker->run(),
+        };
     }
 
     /** @return list<string> this script, run again by the same PHP */

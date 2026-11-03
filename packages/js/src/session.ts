@@ -114,6 +114,8 @@ export class Session {
     private readonly socket: Socket;
     private readonly events: SessionEvents;
     private readonly replies: ((reply: ConfigReply) => void)[] = [];
+    /** The last config this copy sent, to answer a reload with. */
+    private lastDoc: string | undefined;
     private readonly gone: Promise<void>;
     private readonly maxQueuedOutput: number;
     /** Messages not yet written: see BATCH_SIZE. */
@@ -297,6 +299,7 @@ export class Session {
                 return;
             }
             this.replies.push(resolve);
+            this.lastDoc = doc;
             this.flush();
             this.socket.write(`{"type":"config","doc":${doc}}\n`);
         });
@@ -348,6 +351,9 @@ export class Session {
             case "kill":
                 this.receiveStop(message);
                 break;
+            case "reload":
+                this.receiveReload(field(message, "reload"));
+                break;
             case "config_ok": {
                 const warnings = field(field(message, "result"), "warnings");
                 this.replies.shift()?.({
@@ -370,6 +376,29 @@ export class Session {
             default:
             // Unknown types are ignored, so the daemon can be newer than the app.
         }
+    }
+
+    /**
+     * RunWisp asks for the config as the code defines it now (`runwisp
+     * reload`). Here that is the config this copy last sent: the code it runs
+     * can't change while it runs, and a change it makes is sent as it happens.
+     */
+    private receiveReload(id: unknown): void {
+        if (typeof id !== "string") return;
+        if (this.lastDoc === undefined || this.replies.length > 0) {
+            const error =
+                this.lastDoc === undefined
+                    ? "this copy of the app has not sent a config yet"
+                    : "a config change is being applied; reload again once it is";
+            this.send({ type: "reload_error", reload: id, error });
+            return;
+        }
+        // RunWisp answers this config like any other: in order.
+        this.replies.push(() => undefined);
+        this.flush();
+        this.socket.write(
+            `{"type":"config","doc":${this.lastDoc},"reload":${JSON.stringify(id)}}\n`,
+        );
     }
 
     /** RunWisp stopping a run, or giving up on it after graceful_stop (kill). */
