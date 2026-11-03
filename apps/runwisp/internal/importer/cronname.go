@@ -19,7 +19,21 @@ import (
 // kept whole with dots and colons as hyphens: `cron.hourly` is a directory, not a file with
 // a `.hourly` suffix, and reads better as `cron-hourly` than `cron_hourly`.
 func deriveCronName(command string) string {
-	base, launched := firstCommandProgram(strings.Fields(command))
+	return cronName(command, cronLauncher)
+}
+
+// legacyCronName is the name RunWisp 1.8 and earlier derived for command, before
+// PHP console commands were named after their subcommand. A task imported under
+// it is still the same job; see namer.resolve.
+func legacyCronName(command string) string {
+	return cronName(command, func(prog string) (func([]string) string, bool) {
+		pick, ok := cronLaunchers[prog]
+		return pick, ok
+	})
+}
+
+func cronName(command string, launcher launcherFunc) string {
+	base, launched := firstCommandProgram(strings.Fields(command), launcher)
 	if base == "" {
 		base = "job"
 	}
@@ -59,7 +73,7 @@ func finalizeTaskName(base, fallback string) string {
 // || …` after `system`, `command -v x > /dev/null && x` after `null`, and
 // `if [ -x … ]; then …` after `if` — the path-like tokens in those lines are
 // arguments to a guard, not the program.
-func firstCommandProgram(tokens []string) (name string, launched bool) {
+func firstCommandProgram(tokens []string, launcher launcherFunc) (name string, launched bool) {
 	atCmd := true       // is the next token the start of a simple command?
 	skipTarget := false // is the next token a redirection target to ignore?
 	for i, t := range tokens {
@@ -87,7 +101,7 @@ func firstCommandProgram(tokens []string) (name string, launched bool) {
 			atCmd = false
 		default:
 			prog := filepath.Base(word)
-			if pick, ok := cronLauncher(prog); ok && !ends {
+			if pick, ok := launcher(prog); ok && !ends {
 				if target := pick(commandArgs(tokens[i+1:])); target != "" {
 					return filepath.Base(target), true
 				}
@@ -125,6 +139,9 @@ var phpProgram = regexp.MustCompile(`^php[0-9.]*$`)
 // phpFrameworkScripts are the console entry points of Laravel (artisan),
 // Symfony (bin/console) and CodeIgniter (spark).
 var phpFrameworkScripts = map[string]bool{"artisan": true, "console": true, "spark": true}
+
+// launcherFunc looks up the launcher entry for a program, if it is one.
+type launcherFunc func(prog string) (pick func(args []string) string, ok bool)
 
 // cronLauncher returns the launcher entry for a program, if it is one.
 func cronLauncher(prog string) (func(args []string) string, bool) {

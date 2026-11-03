@@ -110,6 +110,26 @@ description = "promoted, and retimed since"
 	assert.Equal(t, model.SourceNative, task.Source)
 }
 
+// TestIncludeCron_NativeWinsJobAnOlderReleaseImported: a task `import cron` wrote
+// before the cd lift and the PHP subcommand names (named `php`, cd kept in run)
+// is still that crontab line, so an upgrade does not schedule the job twice.
+func TestIncludeCron_NativeWinsJobAnOlderReleaseImported(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["crontabs/*"]
+
+[tasks.php]
+cron = "* * * * *"
+run = "cd /var/www/parcel && php artisan payments:reconcile"
+`,
+		"crontabs/app": "* * * * * cd /var/www/parcel && php artisan payments:reconcile\n",
+	})
+
+	cfg := loadTree(t, dir)
+	assert.Equal(t, []string{"php"}, taskNames(cfg), "the cron copy must not come back as payments-reconcile")
+}
+
 // TestIncludeCron_RenamesDifferentJob is the other half: cron names are derived
 // from the command, so collisions are routine. Dropping on a name match alone
 // would silently retire a live job — a rename keeps both running.

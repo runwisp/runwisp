@@ -393,25 +393,30 @@ func (cp *crontabParser) importJob(line string) bool {
 	cwd, run := splitLeadingCd(command)
 	cc.run = run
 
-	base := deriveCronName(command)
+	base, oldBase := deriveCronName(command), legacyCronName(command)
 	if why, noop := noopGuard(command, cp.opts.HostStat); noop {
 		cp.addItem(base).note(NoteNoopHere, why+", so its guard makes it do nothing on this box")
 		return true
 	}
 	if cp.jobName != "" {
 		base = finalizeTaskName(strings.ReplaceAll(cp.jobName, ".", "-"), base)
+		oldBase = base
 	}
 	description := cp.pendingComment
 	// Bun.cron() marks each job it writes with "# bun-cron: <title>"; the title names it.
 	if title, ok := strings.CutPrefix(description, "bun-cron: "); ok {
 		base = finalizeTaskName(title, base)
+		oldBase = base
 		description = ""
 	}
 	// The per-line user column, or the whole file's owner for a spool crontab.
 	// applyOwner resolves which, so buildJob doesn't have to know the difference.
 	owner := cp.applyOwner(j)
 	id := OwnedEntry{Kind: model.KindTask, Run: run, User: owner, Schedule: cronSchedule(j.schedule, j.runOnStart)}
-	ref, name, skip := cp.names.resolve(base, base, id, cp.line)
+	// RunWisp 1.8 and earlier kept the cd in run and named PHP console jobs `php`.
+	legacy := namedEntry{name: oldBase, id: id}
+	legacy.id.Run = command
+	ref, name, skip := cp.names.resolve(base, base, id, cp.line, legacy)
 	if skip {
 		return true
 	}
