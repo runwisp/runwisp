@@ -102,32 +102,37 @@ func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
 	apiTokens := newFailureLimiter("API token")
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if IsLocalTrusted(r) {
+			if IsLocalTrusted(r) || authorizeRequest(authSvc, apiTokens, w, r) {
 				next.ServeHTTP(w, r)
-				return
 			}
-			bearer := auth.BearerToken(r.Header.Get("Authorization"))
-			apiToken := bearer != "" && !auth.LooksLikeSessionToken(bearer)
-			if apiToken && apiTokens.refuse(w, r) {
-				return
-			}
-			readOnly, ok := authSvc.VerifyToken(auth.TokenFromRequest(r))
-			if !ok {
-				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
-				if apiToken {
-					apiTokens.fail(w, r)
-				}
-				return
-			}
-			// A viewer session may look at everything and change nothing, so the
-			// check is the method, not a per-route list a new route could miss.
-			if readOnly && !isSafeMethod(r.Method) {
-				http.Error(w, ReadOnlySessionMessage, http.StatusForbidden)
-				return
-			}
-			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// authorizeRequest checks the request's session or API token and reports
+// whether it may proceed. When it may not, it has already written the 401,
+// 403 or 429.
+func authorizeRequest(authSvc *auth.Service, apiTokens *failureLimiter, w http.ResponseWriter, r *http.Request) bool {
+	bearer := auth.BearerToken(r.Header.Get("Authorization"))
+	apiToken := bearer != "" && !auth.LooksLikeSessionToken(bearer)
+	if apiToken && apiTokens.refuse(w, r) {
+		return false
+	}
+	readOnly, ok := authSvc.VerifyToken(auth.TokenFromRequest(r))
+	if !ok {
+		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		if apiToken {
+			apiTokens.fail(w, r)
+		}
+		return false
+	}
+	// A viewer session may look at everything and change nothing, so the
+	// check is the method, not a per-route list a new route could miss.
+	if readOnly && !isSafeMethod(r.Method) {
+		http.Error(w, ReadOnlySessionMessage, http.StatusForbidden)
+		return false
+	}
+	return true
 }
 
 // signInBaseKey carries a browser auth request's Web UI base URL from
