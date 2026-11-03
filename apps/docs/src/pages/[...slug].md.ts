@@ -7,11 +7,15 @@
 // instead of HTML (see cloudflare-rules.md) turns a trailing-slash request
 // like `/configuration/tasks/` into `/configuration/tasks/index.md`, and a
 // moved URL like `/operations/cli` into a 404 without the stub. The page
-// body is the source markdown with frontmatter stripped, so agents can
-// `curl` it without HTML noise. Linked from the curated /llms.txt index.
+// body is the page's source with frontmatter stripped and the MDX flattened to
+// plain Markdown (see lib/mdx-to-markdown.ts), so agents can `curl` it without
+// HTML or JSX noise. Linked from the curated /llms.txt index.
 
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import type { APIRoute, GetStaticPaths, InferGetStaticPropsType } from "astro";
 import { getCollection } from "astro:content";
+import { mdxToMarkdown } from "../lib/mdx-to-markdown";
 import { redirects } from "../redirects.mjs";
 
 // Leads each response with a UTF-8 BOM. Prerendered static files lose the
@@ -28,7 +32,19 @@ export const getStaticPaths = (async () => {
     const paths: { params: { slug: string }; props: Props }[] = [];
 
     for (const entry of docs) {
-        const body = entry.body ?? "";
+        // Shared partials (`<KeepRuns />`) live in sibling files; read them from disk.
+        const file = resolve(process.cwd(), entry.filePath ?? entry.id);
+        const body = mdxToMarkdown(entry.body ?? "", file, {
+            site: SITE,
+            resolve: (specifier, from) => {
+                const id = resolve(dirname(from), specifier);
+                try {
+                    return { id, source: readFileSync(id, "utf8") };
+                } catch {
+                    return undefined;
+                }
+            },
+        });
         paths.push({ params: { slug: entry.id }, props: { body } });
         // The root page's `<slug>.md` (index.md) already covers the `/`
         // twin; every other page also needs one at `<slug>/index.md`.
