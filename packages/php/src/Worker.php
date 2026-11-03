@@ -45,7 +45,14 @@ final class Worker
     private ?string $stale = null;
     /** The document RunWisp applied from this copy, or the one waiting for its answer. */
     private ?string $pushed = null;
-    private bool $pushing = false;
+    /**
+     * The configs sent and waiting for RunWisp's answer, oldest first: what a
+     * reload read, to take on once RunWisp accepts it, or null for this copy's
+     * own config.
+     *
+     * @var list<array{array<string, mixed>, array<string, Unit>}|null>
+     */
+    private array $pending = [];
     private bool $standby = false;
     private bool $announced = false;
     /** @var array<string, true> */
@@ -288,11 +295,10 @@ final class Worker
         }
         $this->reloading = null;
         $error = null;
+        $read = null;
         try {
-            [$config, $units] = $this->read($process, $reload['file']);
-            $document = self::documentOf($config, $units);
-            $this->config = $config;
-            $this->units = $units;
+            $read = $this->read($process, $reload['file']);
+            $document = self::documentOf(...$read);
         } catch (\RuntimeException $e) {
             $document = null;
             $error = $e->getMessage();
@@ -301,14 +307,15 @@ final class Worker
         }
         $session = $reload['session'];
         if ($session !== $this->session) {
-            return; // RunWisp hung up meanwhile: the next connection sends the new config.
+            return; // RunWisp hung up meanwhile, which failed the reload: the tasks stay.
         }
         foreach ($reload['ids'] as $id) {
             if ($document === null) {
                 $session->send(['type' => 'reload_error', 'reload' => $id, 'error' => $error ?? '']);
                 continue;
             }
-            $this->pushing = true;
+            // Taken on once RunWisp accepts it: a rejected reload leaves the tasks as they were.
+            $this->pending[] = $read;
             $this->pushed = $document;
             $session->config($document, $id);
         }
@@ -429,7 +436,7 @@ final class Worker
         $this->daemonPid = (int) $daemon['pid'];
         $this->session = Session::open($this->settings->socket, $this->settings->app, getmypid() ?: 0, $daemon);
         $this->pushed = null;
-        $this->pushing = false;
+        $this->pending = [];
         $this->retries = 0;
         $this->announce();
     }
@@ -458,7 +465,10 @@ final class Worker
                 $this->signalRun((string) ($m['run'] ?? ''), 9);
                 break;
             case 'config_ok':
-                $this->pushing = false;
+                $read = array_shift($this->pending);
+                if ($read !== null) {
+                    [$this->config, $this->units] = $read;
+                }
                 $warnings = array_filter((array) ($m['result']['warnings'] ?? []), 'is_string');
                 foreach ($warnings as $warning) {
                     if (!isset($this->configWarnings[$warning])) {
@@ -468,10 +478,14 @@ final class Worker
                 $this->configWarnings = array_fill_keys($warnings, true);
                 break;
             case 'config_error':
-                $this->pushing = false;
+                $reload = array_shift($this->pending) !== null;
                 $this->pushed = null;
                 $error = is_string($m['error'] ?? null) ? $m['error'] : 'RunWisp rejected the config';
-                if (($m['restart'] ?? false) === true) {
+                if ($reload) {
+                    // The reload's caller hears it too. Even a change that needs a restart
+                    // doesn't get one here: that would stop the runs in progress.
+                    ($this->log)('error', "runwisp: reload rejected, the tasks stay as they were: $error");
+                } elseif (($m['restart'] ?? false) === true) {
                     $this->restart("to apply the new config ($error)");
                 } else {
                     // Most likely an old daemon not knowing the new config: it restarts once alone.
@@ -522,8 +536,8 @@ final class Worker
             return;
         }
         $document = $this->document();
-        if (!$this->pushing && $document !== $this->pushed) {
-            $this->pushing = true;
+        if ($this->pending === [] && $document !== $this->pushed) {
+            $this->pending[] = null;
             $this->pushed = $document;
             $session->config($document);
         }

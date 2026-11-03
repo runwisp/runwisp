@@ -43,7 +43,7 @@ final class WorkerTest extends TestCase
             self::$worker->stop(0);
         }
         self::$daemon->stop();
-        exec('rm -rf ' . escapeshellarg(self::$data) . ' ' . escapeshellarg(self::$data . '.deploy.php'));
+        exec('rm -rf ' . escapeshellarg(self::$data) . ' ' . escapeshellarg(self::$data . '.deploy.php') . ' ' . escapeshellarg(self::$data . '.daemon.json'));
     }
 
     public function testTaskOutputIsTheRunsLog(): void
@@ -122,6 +122,28 @@ final class WorkerTest extends TestCase
         self::assertNotSame(0, $run['exitCode']);
         self::assertStringContainsString('syntax error', (string) $run['log']);
         unlink(self::$data . '.deploy.php');
+    }
+
+    #[Depends('testABrokenDeployFailsTheReloadAndKeepsTheTasks')]
+    public function testAReloadThatNeedsARestartIsRejectedAndRunWispKeepsRunning(): void
+    {
+        $pid = self::$daemon->identity()['pid'];
+        $run = self::$daemon->call('POST', '/api/tasks/linger/run')['body'];
+        self::assertIsArray($run);
+        file_put_contents(self::$data . '.daemon.json', '{"allow_station_dispatch": true}');
+        try {
+            $reload = self::reload();
+        } finally {
+            unlink(self::$data . '.daemon.json');
+        }
+        self::assertSame(1, $reload->getExitCode(), $reload->getOutput());
+        self::assertStringContainsString('requires `runwisp restart`', $reload->getErrorOutput());
+        // The worker would restart RunWisp for it, stopping the run in progress: it must not.
+        self::waitFor(fn (): bool => str_contains(self::$worker->getErrorOutput(), 'reload rejected'), 'the worker to log the rejected reload');
+        self::assertSame($pid, self::$daemon->identity()['pid']);
+        $id = $run['id'];
+        self::waitFor(fn (): bool => (self::$daemon->call('GET', "/api/runs/$id")['body']['status'] ?? '') === 'ended', 'the run to end');
+        self::assertSame(0, self::$daemon->call('GET', "/api/runs/$id")['body']['exitCode']);
     }
 
     #[Depends('testStoppingAServiceReachesItsCallback')]

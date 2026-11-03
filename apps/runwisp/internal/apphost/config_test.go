@@ -295,6 +295,13 @@ func TestRequestConfigAppliesTheAppsFreshConfig(t *testing.T) {
 	require.NotEmpty(t, ask.Reload)
 
 	app.send(message{Type: "config", Doc: json.RawMessage(digestDoc), Reload: ask.Reload})
+	// The app takes on the new tasks on config_ok: the caller, who may start a
+	// run of one next, hears only after the app did.
+	select {
+	case <-done:
+		t.Fatal("the reload returned before the app heard config_ok")
+	case <-time.After(50 * time.Millisecond):
+	}
 	assert.Equal(t, "config_ok", app.next().Type, "the app hears the outcome too")
 	got := <-done
 	require.NoError(t, got.err)

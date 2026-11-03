@@ -250,7 +250,9 @@ Configuration reloaded.
 
 The worker reads the tasks in a new PHP process, so it keeps running and runs
 in progress keep going. If the deploy broke the app, the reload fails with
-PHP's error and exits with code 1, and the tasks stay as they were.
+PHP's error and exits with code 1, and the tasks stay as they were. A change
+that [needs a restart](/operations/reload/#what-needs-a-restart) fails the
+reload the same way: restart the worker to apply it.
 `runwisp reload` and `SIGHUP` to RunWisp do the same.
 
 Restart the worker only after you update `runwisp/runwisp`.

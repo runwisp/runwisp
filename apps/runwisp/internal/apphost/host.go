@@ -624,14 +624,16 @@ func (h *Host) active(stop <-chan struct{}) *session {
 // Documents apply one at a time, each only if its sender is still active.
 func (h *Host) applyConfig(s *session, doc json.RawMessage, reload string) {
 	result, err := h.applyDocument(s, doc)
-	s.answerReload(reload, result, err)
 	reply := message{Type: "config_ok", Result: &result}
 	if err != nil {
 		reply = message{Type: "config_error", Error: err.Error(), Restart: errors.Is(err, runtime.ErrRestartRequired)}
 	}
+	// The app first: it takes on a reload's tasks once it hears config_ok, so
+	// a run the reload's caller starts next must reach it after that.
 	if err := s.send(reply); err != nil {
 		slog.Debug("Failed to answer an app's config", "err", err)
 	}
+	s.answerReload(reload, result, err)
 }
 
 // applyDocument applies doc if s is still the active copy.

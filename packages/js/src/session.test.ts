@@ -136,6 +136,46 @@ describe("Session", () => {
         await session.close();
     });
 
+    it("keeps a rejected reload's reply from the app's next config, so it can't restart RunWisp", async () => {
+        const { path } = await fakeDaemon((socket, lines) => {
+            socket.write('{"type":"role","active":true}\n');
+            let seen = 0;
+            // Slow to answer, so the app's next config could go out before the reload's reply.
+            socket.on("data", () =>
+                setTimeout(() => {
+                    for (; seen < lines.length; seen++) {
+                        if (lines[seen]?.includes('"reload":"7"') === true) {
+                            socket.write(
+                                '{"type":"config_error","error":"reload rejected: [daemon] metrics changed; requires `runwisp restart`","restart":true}\n',
+                            );
+                            continue;
+                        }
+                        // One write: the app reads the reload as it hears its first config is in.
+                        socket.write(
+                            seen === 0
+                                ? '{"type":"config_ok"}\n{"type":"reload","reload":"7"}\n'
+                                : '{"type":"config_ok"}\n',
+                        );
+                    }
+                }, 20),
+            );
+        });
+        const session = await Session.open(path, recorder().events, WHO);
+        expect(await session.config('{"tasks":{}}')).toEqual({ ok: true, warnings: [] });
+        const replies: Awaited<ReturnType<Session["config"]>>[] = [];
+        await expect
+            .poll(async () => {
+                const reply = await session.config('{"tasks":{"a":{}}}');
+                replies.push(reply);
+                return reply.ok;
+            })
+            .toBe(true);
+        // The reload's rejection, restart and all, is for the reload's caller: handed
+        // to this config, it would restart RunWisp and stop the runs in progress.
+        expect(replies.filter((reply) => !reply.ok && reply.restart)).toEqual([]);
+        await session.close();
+    });
+
     it("can't answer a reload before it sent a config", async () => {
         let received: string[] = [];
         const { path } = await fakeDaemon((socket, lines) => {
