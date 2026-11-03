@@ -50,6 +50,7 @@ $runwisp->task('broken', [], function (): void {
     throw new RuntimeException('boom');
 });
 $runwisp->task('exits', [], fn (): int => 3);
+$runwisp->task('skips', [], fn (Run $run): int => $run->skip('nothing to do'));
 $runwisp->service('worker', [], function (Run $run): void {
     echo "worker up\n";
     while (!$run->stopping()) {

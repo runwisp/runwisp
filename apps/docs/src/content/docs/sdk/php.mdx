@@ -28,6 +28,17 @@ package's plugin, which downloads the `runwisp` binary of the same version
 into `vendor/`. Without the plugin, it uses `runwisp` on `PATH`. Install it with
 `curl -fsSL https://get.runwisp.com | sh`, or set [`binary`](#binary).
 
+Scripted installs (CI, deploy scripts, `--no-interaction`) can't answer that
+question, so Composer skips the plugin. Allow it first:
+
+```bash
+composer config allow-plugins.runwisp/runwisp true
+composer require runwisp/runwisp
+```
+
+The downloaded CLI is `vendor/bin/runwisp`. It isn't on `PATH`, so call it by
+that path for `status`, `reload` and the other commands.
+
 With `ext-pcntl`, a run can [see that it is being stopped](#stop-a-run) and the
 worker [finishes its runs](#when-the-worker-stops) before it exits.
 
@@ -426,6 +437,7 @@ The callback gets the run:
 | `params`         | The run's [parameters](#environment-and-parameters).                                           |
 | `scheduledAt`    | The scheduled time a scheduled run is for, as a `DateTimeImmutable`. Otherwise null.           |
 | `stopping()`     | `true` once RunWisp asked the run to [stop](#stop-a-run).                                      |
+| `skip($why)`     | Prints why and returns `0`: `return $run->skip('nothing to do')` ends the run as skipped.      |
 | `Run::current()` | The run this process was started for, or null outside one.                                     |
 
 ### `vendor/bin/runwisp`

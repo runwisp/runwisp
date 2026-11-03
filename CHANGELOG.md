@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `runwisp reload` on a RunWisp an SDK app started asks the app to read its tasks again, so a deploy reaches the schedule without restarting the worker. The PHP SDK adds `runwisp:reload` for Laravel, Symfony and CodeIgniter (`php runwisp.php reload` for a plain script); a deploy that broke the app fails the reload with PHP's error and keeps the running schedule.
+- `runwisp:work` and `runwisp:check` in Laravel warn when a crontab still runs `schedule:run` or `schedule:work`, since that runs every scheduled task twice.
+
+### Changed
+
+- A Laravel schedule entry whose `description()` is a sentence is now named after its command or job and keeps the sentence as its task description. Tasks that were named from such a description get new names, so their run history starts fresh.
+
+### Fixed
+
+- Runs that Laravel skips (`when()`, `skip()`, `between()`, maintenance mode, `withoutOverlapping()`) are recorded as skipped, not succeeded.
+- `config/runwisp.php` reads `RUNWISP_*` through `env()`, so the settings still apply after `php artisan config:cache`. If you published it before, republish it or wrap its values in `env()` the same way.
 
 ### Fixed
 

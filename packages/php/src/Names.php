@@ -18,6 +18,12 @@ final class Names
     {
     }
 
+    /** Whether $raw is a task name as it is: it would not need a slug. */
+    public static function valid(string $raw): bool
+    {
+        return preg_match('/^[A-Za-z0-9._:-]{1,100}$/D', $raw) === 1;
+    }
+
     /** $raw as a task name: 1 to 100 of a-z A-Z 0-9 . _ : - */
     public static function slug(string $raw): string
     {

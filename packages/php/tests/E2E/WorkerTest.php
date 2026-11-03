@@ -70,6 +70,15 @@ final class WorkerTest extends TestCase
         self::assertSame(3, self::trigger('exits')['exitCode']);
     }
 
+    public function testSkippedRunIsRecordedAsSkipped(): void
+    {
+        $run = self::$daemon->call('POST', '/api/tasks/skips/run?wait=true', 30.0)['body'];
+        self::assertIsArray($run);
+        self::assertSame('skipped', $run['endReason'] ?? null);
+        self::assertSame("runwisp: skipped: nothing to do\n", self::$daemon->call('GET', "/api/runs/{$run['id']}/log/raw")['body']);
+        self::assertSame([], glob(self::$data . '/run-*.skip'));
+    }
+
     public function testShellTasksFromTheConfigRunInTheDaemon(): void
     {
         self::assertSame("from a shell task\n", self::trigger('shell')['log']);

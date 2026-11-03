@@ -15,6 +15,7 @@ use Orchestra\Testbench\TestCase;
 use RunWisp\Laravel\RunWispServiceProvider;
 use RunWisp\Laravel\ScheduleUnits;
 use RunWisp\Names;
+use RunWisp\Run;
 use RunWisp\Task;
 
 final class LaravelTest extends TestCase
@@ -80,7 +81,7 @@ final class LaravelTest extends TestCase
         $units = ScheduleUnits::map($schedule, $this->laravel());
 
         self::assertSame(['reports', 'inspire', 'PruneUsers', 'Reports.weekly'], array_keys($units));
-        self::assertSame(['cron' => '0 0 * * *', 'timezone' => 'UTC', 'timeout' => '10m'], $units['reports'][0]->options);
+        self::assertSame(['cron' => '0 0 * * *', 'timezone' => 'UTC', 'description' => 'Send the daily reports', 'timeout' => '10m'], $units['reports'][0]->options);
         self::assertSame(['cron' => '0 0 * * *', 'timezone' => 'UTC', 'retry_attempts' => 1], $units['PruneUsers'][0]->options);
     }
 
@@ -91,17 +92,52 @@ final class LaravelTest extends TestCase
         $schedule->command(SendReports::class)->name('nightly-reports')->daily();
         $schedule->command('inspire')->name('quote')->hourly();
         $schedule->job(new PruneUsers())->name('prune')->daily();
-        $schedule->call(#[Task('ignored')] static fn () => null)->name('Clean up')->hourly();
+        $schedule->call(#[Task('ignored')] static fn () => null)->name('clean.up')->hourly();
         $warnings = [];
 
         $units = ScheduleUnits::map($schedule, $this->laravel(), static function (string $m) use (&$warnings): void {
             $warnings[] = $m;
         });
 
-        self::assertSame(['nightly-reports', 'quote', 'prune', 'Clean-up'], array_keys($units));
-        // The class's #[Task] keys still apply under the name() name.
-        self::assertSame(['cron' => '0 0 * * *', 'timezone' => 'UTC', 'timeout' => '10m'], $units['nightly-reports'][0]->options);
+        self::assertSame(['nightly-reports', 'quote', 'prune', 'clean.up'], array_keys($units));
+        // The class's #[Task] keys still apply under the name() name, and its own description stays the description.
+        self::assertSame(['cron' => '0 0 * * *', 'timezone' => 'UTC', 'description' => 'Send the daily reports', 'timeout' => '10m'], $units['nightly-reports'][0]->options);
+        self::assertArrayNotHasKey('description', $units['quote'][0]->options);
+        self::assertArrayNotHasKey('description', $units['clean.up'][0]->options);
         self::assertSame([], $warnings);
+    }
+
+    public function testASentenceIsTheDescriptionAndTheCommandOrJobNamesTheTask(): void
+    {
+        Artisan::registerCommand(new SendReports());
+        $schedule = $this->schedule();
+        $schedule->command('reports:send')->description('Email the daily sales digest (production only)')->daily();
+        $schedule->job(new PruneUsers())->name('Remove stale users')->daily();
+        $schedule->call(#[Task('closure-task')] static fn () => null)->description('Clean up the cache')->hourly();
+        $schedule->call(static fn () => null)->name('Clean up old files')->hourly();
+        $warnings = [];
+
+        $units = ScheduleUnits::map($schedule, $this->laravel(), static function (string $m) use (&$warnings): void {
+            $warnings[] = $m;
+        });
+
+        // The closure with only a sentence keeps its slug: that beats its file and line.
+        self::assertSame(['reports', 'PruneUsers', 'closure-task', 'Clean-up-old-files'], array_keys($units));
+        self::assertSame('Email the daily sales digest (production only)', $units['reports'][0]->options['description']);
+        self::assertSame('Remove stale users', $units['PruneUsers'][0]->options['description']);
+        self::assertSame('Clean up the cache', $units['closure-task'][0]->options['description']);
+        self::assertSame('Clean up old files', $units['Clean-up-old-files'][0]->options['description']);
+        self::assertSame([], $warnings);
+    }
+
+    public function testATaskAttributeDescriptionWins(): void
+    {
+        $schedule = $this->schedule();
+        $schedule->call(#[Task(description: 'From the attribute')] static fn () => null)->description('A sentence about it')->hourly();
+
+        $units = ScheduleUnits::map($schedule, $this->laravel());
+
+        self::assertSame('From the attribute', array_values($units)[0][0]->options['description']);
     }
 
     public function testUnnamedClosuresAreNamedByTheirLineAndWarn(): void
@@ -165,6 +201,58 @@ final class LaravelTest extends TestCase
 
         self::assertSame(0, $this->runTask('filtered', $output));
         self::assertStringNotContainsString('ran', $output);
+        self::assertStringContainsString('runwisp: skipped: a when(), skip() or between() filter said no', $output);
+    }
+
+    public function testASkippedRunTellsTheWorker(): void
+    {
+        $file = sys_get_temp_dir() . '/rwp-skip-' . bin2hex(random_bytes(4));
+        putenv(Run::ENV . '=' . Run::payload('01RUN', 'filtered', [], [], null, $file));
+        try {
+            $this->schedule()->call(#[Task('filtered')] static fn () => null)->when(false);
+            self::assertSame(0, $this->runTask('filtered', $output));
+            self::assertFileExists($file);
+        } finally {
+            putenv(Run::ENV);
+            @unlink($file);
+        }
+    }
+
+    public function testAnEventThatRanLeavesNoSkipFile(): void
+    {
+        $file = sys_get_temp_dir() . '/rwp-skip-' . bin2hex(random_bytes(4));
+        putenv(Run::ENV . '=' . Run::payload('01RUN', 'ok', [], [], null, $file));
+        try {
+            $this->schedule()->call(#[Task('ok')] static fn () => null);
+            self::assertSame(0, $this->runTask('ok', $output));
+            self::assertFileDoesNotExist($file);
+        } finally {
+            putenv(Run::ENV);
+        }
+    }
+
+    public function testConfigReadsTheEnvSoConfigCacheKeepsIt(): void
+    {
+        self::assertNull(config('runwisp.port'));
+        putenv('RUNWISP_PORT=9555');
+        try {
+            $this->refreshApplication();
+            self::assertSame('9555', config('runwisp.port'));
+        } finally {
+            putenv('RUNWISP_PORT');
+        }
+    }
+
+    public function testConfigCacheKeepsTheLoginOff(): void
+    {
+        self::assertNull(config('runwisp.auth'));
+        putenv('RUNWISP_AUTH=off');
+        try {
+            $this->refreshApplication();
+            self::assertFalse(config('runwisp.auth'));
+        } finally {
+            putenv('RUNWISP_AUTH');
+        }
     }
 
     public function testUnknownTaskFails(): void
