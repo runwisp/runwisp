@@ -109,14 +109,9 @@ func restartDaemon(cmd *cobra.Command, f Flags, local bool) error {
 	// there and not in the default (an empty ./.runwisp next to an app's dir).
 	f.DataDir = clientDataDir(f)
 	running := isDaemonRunning(f)
-	var info *model.InstanceInfo
-	if running {
-		if got, err := apiclient.NewUnix(localAPISocketPath(f)).GetInstanceInfo(cmd.Context()); err == nil {
-			info = got
-		}
-		if err := appDaemonRestartError(info); err != nil {
-			return err
-		}
+	info, err := runningDaemonInfo(cmd, f, running)
+	if err != nil {
+		return err
 	}
 
 	installer, opts, st, ok := serviceState(cmd, f, local)
@@ -149,6 +144,20 @@ func restartDaemon(cmd *cobra.Command, f Flags, local bool) error {
 	}
 	printRestarted(out, f)
 	return nil
+}
+
+// runningDaemonInfo asks the running daemon about itself, and refuses when it
+// belongs to an SDK app, which restarts it on its own. It is nil when no
+// daemon is running or none answered.
+func runningDaemonInfo(cmd *cobra.Command, f Flags, running bool) (*model.InstanceInfo, error) {
+	if !running {
+		return nil, nil
+	}
+	info, err := apiclient.NewUnix(localAPISocketPath(f)).GetInstanceInfo(cmd.Context())
+	if err != nil {
+		return nil, nil // a daemon that does not answer is just unknown
+	}
+	return info, appDaemonRestartError(info)
 }
 
 // runningConfigPath is the config the running daemon reported, or f.CfgFile
