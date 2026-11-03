@@ -868,7 +868,7 @@ export interface components {
             authRequired: boolean;
             /** @description Whether the current request is already authenticated via cookie */
             authenticated: boolean;
-            /** @description Whether the session was opened with the read-only password: it can view everything and change nothing */
+            /** @description Whether the caller has read-only access (the read-only password or a viewer API token): it can view everything and change nothing */
             readOnly: boolean;
         };
         BulkAffectedBody: {
