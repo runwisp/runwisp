@@ -11,7 +11,7 @@
         "@astrojs/starlight": "^0.42.8",
         "@astrojs/svelte": "^9.1.2",
         "@runwisp/ui": "workspace:*",
-        "astro": "^7.4.4",
+        "astro": "^7.4.5",
         "js-yaml": "^4.3.2",
         "sharp": "^0.35.5",
         "starlight-openapi": "^0.27.0",
