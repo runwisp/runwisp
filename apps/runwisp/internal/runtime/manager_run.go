@@ -23,6 +23,7 @@ import (
 // startRun registers the run and spawns the execution goroutine. Assumes m.mu
 // is held.
 func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
+	task = run.TaskFor(task)
 	ctx, cancel := task.WithTimeout(context.Background())
 
 	active := &ActiveRun{

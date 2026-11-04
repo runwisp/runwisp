@@ -131,7 +131,7 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 		slog.Warn("failed to register dispatch for log archival", "executionId", executionID, "err", err)
 	}
 
-	taskName, resolveErr := h.resolveDispatchTask(message.Execution)
+	taskName, overlay, resolveErr := h.resolveDispatchTask(message.Execution)
 	if resolveErr != nil {
 		h.releaseReservation(executionID)
 		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, new(-1), nil, new(time.Now().UTC())))
@@ -147,7 +147,8 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 		ExecutionID: executionID,
 		// The protocol carries plain string values (no explicit-omit state), so
 		// every supplied key is a present value; absent keys use the default.
-		Params: model.PointerValues(message.Execution.InputValues),
+		Params:  model.PointerValues(message.Execution.InputValues),
+		Overlay: overlay,
 	})
 	if triggerErr != nil {
 		return h.handleTriggerError(ctx, executionID, run, triggerErr)

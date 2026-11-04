@@ -90,8 +90,11 @@ var LogOnFullValues = []LogOnFull{LogOnFullDropNew, LogOnFullDropOld, LogOnFullK
 
 // Optional per-run execution knobs the station control plane carries through
 // dispatch and the daemon overlays onto the dynamically-built station task
-// (`buildDynamicStationTask`). Every field is optional; an omitted field
-// means "use the daemon default". Knobs not modelled here (stop signal,
+// (`buildDynamicStationTask`), or, for a `config` script, onto that run of
+// the TOML task, together with `timeout` (an env that differs from the
+// TOML's needs allow_station_dispatch). Every field is optional; an
+// omitted field means "use the daemon default" (for a `config` script, the
+// TOML value). Knobs not modelled here (stop signal,
 // success exit codes, run-as user) are not honored by the daemon and so
 // are intentionally absent — adding them would be dead surface.
 type ExecutionTaskConfig struct {

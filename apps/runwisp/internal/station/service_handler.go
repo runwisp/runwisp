@@ -357,13 +357,13 @@ func (h *InboundHandler) checkEnvOverrideAllowed(task *model.Task, cfg *protocol
 	if execDef == nil {
 		return &StationError{
 			Kind:    StationErrorKindConflict,
-			Message: fmt.Sprintf("env override for service %q not available: it has no resolvable execution definition", task.Name),
+			Message: fmt.Sprintf("env override for %q not available: it has no resolvable execution definition", task.Name),
 		}
 	}
 	if status := h.liveAvailability().ForType(execDef.ExecType()); !status.Available {
 		return &StationError{
 			Kind:    StationErrorKindConflict,
-			Message: fmt.Sprintf("env override for service %q not available: %s", task.Name, status.Reason),
+			Message: fmt.Sprintf("env override for %q not available: %s", task.Name, status.Reason),
 		}
 	}
 	return nil

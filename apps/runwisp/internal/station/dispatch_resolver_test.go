@@ -159,7 +159,7 @@ func httpScript(t *testing.T, url string) json.RawMessage {
 
 func TestResolveDispatchTask_InvalidJSON(t *testing.T) {
 	h := newDispatchHandler(executor.Availability{}, nil)
-	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: json.RawMessage(`not-json`)})
+	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: json.RawMessage(`not-json`)})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -171,7 +171,7 @@ func TestResolveDispatchTask_UnavailableBackend(t *testing.T) {
 		Shell: executor.BackendStatus{Available: false, Reason: "no shell"},
 	}
 	h := newDispatchHandler(avail, nil)
-	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: shellScript(t, "echo hi")})
+	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: shellScript(t, "echo hi")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -185,7 +185,7 @@ func TestResolveDispatchTask_ConfigTaskFound(t *testing.T) {
 	tasks := map[string]*model.Task{"mytask": {Name: "mytask", ManualTrigger: true}}
 	h := newDispatchHandler(avail, tasks)
 
-	name, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "mytask")})
+	name, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "mytask")})
 	require.NoError(t, err)
 	assert.Equal(t, "mytask", name)
 }
@@ -200,7 +200,7 @@ func TestResolveDispatchTask_ConfigTaskManualTriggerDisabled(t *testing.T) {
 	tasks := map[string]*model.Task{"mytask": {Name: "mytask", ManualTrigger: false}}
 	h := newDispatchHandler(avail, tasks)
 
-	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "mytask")})
+	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "mytask")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -219,7 +219,7 @@ func TestResolveDispatchTask_ConfigTaskIsService(t *testing.T) {
 	tasks := map[string]*model.Task{"myservice": {Name: "myservice", Kind: model.KindService, ManualTrigger: true}}
 	h := newDispatchHandler(avail, tasks)
 
-	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "myservice")})
+	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "myservice")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -233,7 +233,7 @@ func TestResolveDispatchTask_ConfigTaskNotFound(t *testing.T) {
 	}
 	h := newDispatchHandler(avail, nil)
 
-	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "missing")})
+	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "missing")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -253,7 +253,7 @@ func TestResolveDispatchTask_ShellInlineUpserted(t *testing.T) {
 		logListeners:    make(map[string]struct{}),
 	}
 
-	name, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
+	name, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
 		TaskID: "my-task",
 		Script: shellScript(t, "echo hello"),
 	})
@@ -280,7 +280,7 @@ func TestResolveDispatchTask_ContainerRejectedWhenDispatchDisabled(t *testing.T)
 		logListeners:    make(map[string]struct{}),
 	}
 
-	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "evil", Script: containerScript(t, "rm -rf /")})
+	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "evil", Script: containerScript(t, "rm -rf /")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -301,7 +301,7 @@ func TestResolveDispatchTask_ContainerInlineUpsertedWhenEnabled(t *testing.T) {
 		logListeners:    make(map[string]struct{}),
 	}
 
-	name, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "build", Script: containerScript(t, "echo hi")})
+	name, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "build", Script: containerScript(t, "echo hi")})
 	require.NoError(t, err)
 	assert.NotEmpty(t, name)
 	assert.Len(t, runner.upserted, 1)
@@ -323,7 +323,7 @@ func TestResolveDispatchTask_HTTPRejectedWithoutDispatch(t *testing.T) {
 		logListeners:    make(map[string]struct{}),
 	}
 
-	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "probe", Script: httpScript(t, "https://example.com")})
+	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "probe", Script: httpScript(t, "https://example.com")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -346,7 +346,7 @@ func TestResolveDispatchTask_HTTPAllowedWithDispatch(t *testing.T) {
 		logListeners:    make(map[string]struct{}),
 	}
 
-	name, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "probe", Script: httpScript(t, "https://example.com")})
+	name, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "probe", Script: httpScript(t, "https://example.com")})
 	require.NoError(t, err)
 	assert.NotEmpty(t, name)
 }
@@ -365,7 +365,7 @@ func TestResolveDispatchTask_RejectsConfigTaskNameCollision(t *testing.T) {
 		map[string]*model.Task{"station-sync": local})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
+	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
 		TaskID: "sync",
 		Script: httpScript(t, "https://attacker.example/p"),
 	})
@@ -385,7 +385,7 @@ func TestResolveDispatchTask_EphemeralNameCollisionAllowed(t *testing.T) {
 		map[string]*model.Task{"station-probe": prior})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	name, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
+	name, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
 		TaskID: "probe",
 		Script: httpScript(t, "https://example.com"),
 	})
@@ -513,7 +513,7 @@ func TestResolveDispatchTask_RejectsInvalidFailures(t *testing.T) {
 	h := newDispatchHandler(executor.Availability{HTTP: executor.BackendStatus{Available: true}}, nil)
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
+	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
 		TaskID:     "probe",
 		Script:     httpScript(t, "https://example.com"),
 		TaskConfig: &protocol.ExecutionTaskConfig{Failures: []string{"bogus"}},
@@ -545,4 +545,45 @@ func TestSanitizeStationTaskName(t *testing.T) {
 			assert.Equal(t, tt.expected, sanitizeStationTaskName(tt.input))
 		})
 	}
+}
+
+// TestResolveDispatchTask_ConfigTaskOverlay: the control plane's overrides of a
+// TOML task apply to that run only; the registered task keeps its TOML values.
+func TestResolveDispatchTask_ConfigTaskOverlay(t *testing.T) {
+	avail := executor.Availability{
+		Config: executor.BackendStatus{Available: true},
+		Shell:  executor.BackendStatus{Available: false, Reason: "dispatch off"},
+	}
+	toml := &model.Task{Name: "mytask", ManualTrigger: true, Run: "echo hi", Env: map[string]string{"A": "1"}}
+	h := newDispatchHandler(avail, map[string]*model.Task{"mytask": toml})
+	payload := func(cfg *protocol.ExecutionTaskConfig) *protocol.ExecutionPayload {
+		return &protocol.ExecutionPayload{Script: configScript(t, "mytask"), Timeout: 5000, TaskConfig: cfg}
+	}
+
+	_, overlay, err := h.resolveDispatchTask(payload(&protocol.ExecutionTaskConfig{
+		Failures: []string{"+3"}, Env: map[string]string{"A": "1"}, LogMaxSize: 1024,
+	}))
+	require.NoError(t, err, "an env equal to the TOML's is no override, so the dispatch-off gate must not trip")
+	require.NotNil(t, overlay)
+	run := &model.Run{Overlay: overlay}
+	got := run.TaskFor(toml)
+	assert.True(t, got.IsFailureReason(model.ReasonFailed, 3, false))
+	assert.Equal(t, int64(1024), got.LogMaxSize)
+	require.NotNil(t, got.Timeout)
+	assert.Equal(t, 5*time.Second, *got.Timeout)
+	assert.Nil(t, toml.Timeout, "the overlay must not touch the TOML task")
+	assert.Zero(t, toml.LogMaxSize)
+
+	_, _, err = h.resolveDispatchTask(payload(&protocol.ExecutionTaskConfig{Env: map[string]string{"A": "2"}}))
+	var ce *StationError
+	require.ErrorAs(t, err, &ce, "a real env override needs allow_station_dispatch")
+	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+
+	_, _, err = h.resolveDispatchTask(payload(&protocol.ExecutionTaskConfig{Failures: []string{"bogus"}}))
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+
+	_, overlay, err = h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "mytask")})
+	require.NoError(t, err)
+	assert.Nil(t, overlay, "no overrides, no overlay")
 }
