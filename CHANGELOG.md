@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-04
+
 ### Added
 
 - `runwisp reload` on a RunWisp an SDK app started asks the app to read its tasks again, so a deploy reaches the schedule without restarting the worker. The PHP SDK adds `runwisp:reload` for Laravel, Symfony and CodeIgniter (`php runwisp.php reload` for a plain script); a deploy that broke the app fails the reload with PHP's error and keeps the running schedule.
@@ -1177,7 +1179,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.8.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.9.0...main
+[1.9.0]: https://github.com/runwisp/runwisp/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/runwisp/runwisp/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/runwisp/runwisp/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/runwisp/runwisp/compare/v1.6.0...v1.7.0
