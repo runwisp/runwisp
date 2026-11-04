@@ -1953,3 +1953,30 @@ func TestReloadRaisingMaxConcurrentDrainsQueue(t *testing.T) {
 	exec.WaitStarted(t)
 	assert.Equal(t, 3, jm.GetActiveRunCount("task1"))
 }
+
+// TestTriggerRunOverlay: a run's overlay reaches the executor, also when the
+// run queues first, and leaves the registered task untouched.
+func TestTriggerRunOverlay(t *testing.T) {
+	jm, exec, eb := newTestManager(t)
+	task := testTask("task1", model.PolicyQueue, 1)
+	jm.UpsertTask(task)
+
+	var seen []int64
+	var mu sync.Mutex
+	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		mu.Lock()
+		seen = append(seen, args.Get(1).(*model.Task).LogMaxSize)
+		mu.Unlock()
+	}).Return(&executor.ExecuteResult{ExitCode: 0}, 20*time.Millisecond)
+
+	done := watchCompletions(eb)
+	overlay := func(t *model.Task) { t.LogMaxSize = 42 }
+	for range 2 {
+		_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByStation, Overlay: overlay})
+		require.NoError(t, err)
+	}
+	done.waitFor(t, 2)
+
+	assert.Equal(t, []int64{42, 42}, seen)
+	assert.Zero(t, task.LogMaxSize)
+}

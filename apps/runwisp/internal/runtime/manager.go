@@ -66,6 +66,9 @@ type TriggerRunOptions struct {
 	// RecordMissedRun backdates CreatedAt to the missed tick. Zero means "use
 	// the clock", which is every non-jittered path. Non-service only.
 	ScheduledAt time.Time
+	// Overlay adjusts a copy of the task for this run only (model.Run.Overlay):
+	// the station's overrides of a TOML task. Nil runs the task as defined.
+	Overlay func(*model.Task)
 }
 
 // Compile-time check: *defaultTaskManager satisfies TaskManager.
@@ -544,6 +547,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		RetryOfRunID:  options.RetryOfRunID,
 		InstanceIndex: instanceIndex,
 		Params:        resolvedParams,
+		Overlay:       options.Overlay,
 	}
 
 	m.persistence.PersistNew(run)
@@ -553,12 +557,12 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		action, actionErr := m.evaluateConcurrency(ts, run, ts.task.MaxConcurrentValue())
 		switch action {
 		case actionRejected:
-			run.End(ts.task, model.ReasonSkipped, -1, m.clock())
+			run.End(run.TaskFor(ts.task), model.ReasonSkipped, -1, m.clock())
 			m.persistence.PersistExisting(run)
 			publishTerminal = func() { m.publishTerminal(events.EventRunFailed, run, "") }
 			return run.Copy(), actionErr
 		case actionQueueFull:
-			run.End(ts.task, model.ReasonQueueFull, -1, m.clock())
+			run.End(run.TaskFor(ts.task), model.ReasonQueueFull, -1, m.clock())
 			m.persistence.PersistExisting(run)
 			publishTerminal = func() { m.publishTerminal(events.EventRunFailed, run, "") }
 			return run.Copy(), actionErr

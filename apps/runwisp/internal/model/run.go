@@ -192,6 +192,22 @@ type Run struct {
 	// the dead daemon left running. Zero/empty for backends without one.
 	Pgid         int    `json:"-"`
 	ProcessStart string `json:"-"`
+	// Overlay adjusts a copy of the task for this run only: the control plane's
+	// overrides of a TOML task (failures, env, log knobs, timeout). Transient
+	// like OutputMatched: never stored, so a run still queued when the daemon
+	// restarts resumes with the TOML values. Nil for every other run.
+	Overlay func(*Task) `json:"-"`
+}
+
+// TaskFor returns the task this run executes as: task itself, or a copy with
+// the run's Overlay applied.
+func (r *Run) TaskFor(task *Task) *Task {
+	if r.Overlay == nil || task == nil {
+		return task
+	}
+	cpy := *task
+	r.Overlay(&cpy)
+	return &cpy
 }
 
 // Duration is EndedAt minus StartedAt; ok is false until the run has both
