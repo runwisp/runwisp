@@ -147,3 +147,18 @@ func TestAPIToken_FailureLimiterSparesSessions(t *testing.T) {
 	assert.Equal(t, http.StatusOK, apiTokenRequest(s, "192.0.2.5", "", session).Code, "cookie session still works")
 	assert.Equal(t, http.StatusOK, apiTokenRequest(s, "192.0.2.5", session, "").Code, "bearer session token still works")
 }
+
+// An API token is accepted from the session cookie too, so guesses sent that
+// way count toward the lockout like bearer ones; otherwise the cookie is a
+// way around it.
+func TestAPIToken_FailureLimiterCountsCookieGuesses(t *testing.T) {
+	s := setupAPITokenServer(t)
+	const guess = "guessed-api-token-0123456789abcdef"
+
+	for range tokenMaxFailures {
+		require.Equal(t, http.StatusUnauthorized, apiTokenRequest(s, "192.0.2.6", "", guess).Code)
+	}
+	assert.Equal(t, http.StatusTooManyRequests, apiTokenRequest(s, "192.0.2.6", "", guess).Code)
+	assert.Equal(t, http.StatusTooManyRequests, apiTokenRequest(s, "192.0.2.6", testOperatorAPIToken, "").Code,
+		"the lockout covers bearer tokens too")
+}

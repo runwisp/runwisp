@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/update"
 )
 
@@ -39,7 +40,11 @@ func sudoRunwispFor(exe string, args ...string) string {
 	if exe != "" && !slices.Contains(sudoSecurePath, filepath.Dir(exe)) {
 		name = exe
 	}
-	return strings.Join(append([]string{"sudo", name}, args...), " ")
+	words := []string{"sudo", textutil.ShellWord(name)}
+	for _, a := range args {
+		words = append(words, textutil.ShellWord(a))
+	}
+	return strings.Join(words, " ")
 }
 
 // sudoForwardedEnv are the settings a re-run under sudo keeps. sudo resets the

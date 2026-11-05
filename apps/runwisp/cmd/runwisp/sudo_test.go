@@ -30,6 +30,16 @@ func TestSudoRunwispFor_NamesTheBinaryWhenSudoCannotFindIt(t *testing.T) {
 	assert.Equal(t, "sudo runwisp upgrade", sudoRunwispFor("", "upgrade"))
 }
 
+// The hint is pasted into a shell, so an argument with a space (or the binary's own
+// path) has to arrive as one word.
+func TestSudoRunwispFor_QuotesWordsTheShellWouldSplit(t *testing.T) {
+	assert.Equal(t, "sudo runwisp run 'my task' --config '/etc/my dir/runwisp.toml'",
+		sudoRunwispFor("/usr/bin/runwisp", "run", "my task", "--config", "/etc/my dir/runwisp.toml"))
+	assert.Equal(t, "sudo '/home/me/my bin/runwisp' status",
+		sudoRunwispFor("/home/me/my bin/runwisp", "status"))
+	assert.Equal(t, "sudo runwisp status --host=0.0.0.0", sudoRunwispFor("/usr/bin/runwisp", "status", "--host=0.0.0.0"))
+}
+
 func TestSudoArgv_KeepsArgsAndSettingsButNotSecrets(t *testing.T) {
 	argv := sudoArgv("/usr/bin/sudo", "/home/me/.local/bin/runwisp",
 		[]string{"takeover", "--yes"},

@@ -444,6 +444,12 @@ func (r *RoutingExecutor) startBackend(ctx context.Context, backend Backend, tas
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to start %s execution: %v", execDef.ExecType(), err)
 		r.systemLine(writer, task, run, errMsg)
+		// A run stopped or timed out before its process spawned is stopped or
+		// timed out, not failed: failed is retry-eligible, and a stop must
+		// never race its own re-run.
+		if ctx.Err() != nil {
+			return nil, classifyExecuteResult(ctx, "", -1, err)
+		}
 		return nil, &ExecuteResult{ExitCode: -1, Error: errors.New(errMsg)}
 	}
 	if proc.Notice != "" {

@@ -16,6 +16,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/composespec"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // Ofelia (github.com/mcuadros/ofelia) schedules jobs in Docker setups. Its jobs
@@ -336,7 +337,7 @@ func ofeliaExecArgs(j *ofeliaJob, env map[string]string) []string {
 	args = ofeliaFlag(args, "-u", j.one("user"))
 	args = ofeliaFlag(args, "-w", j.one("working-dir"))
 	args = ofeliaEnvFlags(args, env)
-	return append(args, shellWord(j.one("container")))
+	return append(args, textutil.ShellWord(j.one("container")))
 }
 
 func ofeliaRunArgs(j *ofeliaJob, env map[string]string) []string {
@@ -356,7 +357,7 @@ func ofeliaRunArgs(j *ofeliaJob, env map[string]string) []string {
 		args = ofeliaFlag(args, "-v", v)
 	}
 	args = ofeliaEnvFlags(args, env)
-	return append(args, shellWord(j.one("image")))
+	return append(args, textutil.ShellWord(j.one("image")))
 }
 
 // joinCommand puts the job's command after the docker arguments. Ofelia splits
@@ -373,7 +374,7 @@ func ofeliaFlag(args []string, flag, value string) []string {
 	if value == "" {
 		return args
 	}
-	return append(args, flag, shellWord(value))
+	return append(args, flag, textutil.ShellWord(value))
 }
 
 // ofeliaEnvFlags passes each variable by name: its value comes from the task's

@@ -529,7 +529,7 @@ func shellExecArg(arg string) string {
 	var out, lit strings.Builder
 	flush := func() {
 		if lit.Len() > 0 {
-			out.WriteString(shellWord(lit.String()))
+			out.WriteString(textutil.ShellWord(lit.String()))
 			lit.Reset()
 		}
 	}
@@ -554,18 +554,6 @@ func shellExecArg(arg string) string {
 		return "''"
 	}
 	return out.String()
-}
-
-// shellWord leaves a word the shell reads literally as it is, and
-// single-quotes anything else.
-func shellWord(s string) string {
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.IndexByte("_-./:=,+@%^", c) >= 0) {
-			return textutil.ShellQuote(s)
-		}
-	}
-	return s
 }
 
 // systemdApplyRun sets the run line from ExecStart, flagging the cases RunWisp
