@@ -298,6 +298,9 @@ func (m *defaultTaskManager) upsertTaskLocked(task *model.Task) []*model.Run {
 			m.wg.Add(1)
 			go m.queueProcessLoop(ts)
 		}
+		// A reload may have raised max_concurrent while runs wait: the loop is
+		// parked against the old limit and only re-reads it when woken.
+		ts.cond.Broadcast()
 	} else if ts.cond != nil {
 		// This task just flipped off queue policy. queueProcessLoop re-checks the
 		// policy only around cond.Wait(), so without a signal it would park

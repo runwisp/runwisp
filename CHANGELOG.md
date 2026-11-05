@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A run stopped or timed out before its process started is recorded as stopped or timed out instead of failed, so `retry` doesn't run it again.
+- A reload that raises `max_concurrent` on an `on_overlap = "queue"` task starts the queued runs right away instead of waiting for a running one to finish.
+- `runwisp import cron` imports a `! test -x FILE || cmd` job as written instead of dropping it when FILE exists.
+- `runwisp import cron` keeps `%` as written in anacrontab commands. Only crontab lines treat it as a newline.
+- `sudo` hints that `runwisp` prints quote arguments containing spaces, so you can paste them as they are.
+
+### Security
+
+- The lockout after 20 rejected API or hook tokens no longer lets attempts through uncounted just under the limit, and it also counts API tokens sent in the session cookie.
+
 ## [1.9.0] - 2026-11-04
 
 ### Added

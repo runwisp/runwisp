@@ -5,6 +5,7 @@ package server
 
 import (
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -39,12 +40,17 @@ func failureKey(r *http.Request) string {
 	return httprate.CanonicalizeIP(hostFromAddr(r.RemoteAddr))
 }
 
+// failures is the IP's failure count as the counter itself sees it: the
+// sliding-window rate rounded to a whole number. OnLimit stops incrementing
+// once the rounded rate reaches the cap, so comparing the raw rate here would
+// leave a band just under the cap (19.5 to 20) where neither refuse nor fail
+// takes effect and every attempt is free.
 func (l *failureLimiter) failures(key string) float64 {
 	_, rate, err := l.rl.Status(key)
 	if err != nil {
 		return 0
 	}
-	return rate
+	return math.Round(rate)
 }
 
 // refuse answers 429 and reports true when r's IP is locked out.

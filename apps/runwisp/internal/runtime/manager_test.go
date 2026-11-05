@@ -1859,3 +1859,29 @@ func TestServiceStopStatePublishesTasksChanged(t *testing.T) {
 	require.NoError(t, jm.RestartServiceInstances("svc"))
 	assert.Equal(t, int32(4), changed.Load(), "restarting a stopped service publishes")
 }
+
+// TestReloadRaisingMaxConcurrentDrainsQueue is the bug-first regression for a
+// reload that raises max_concurrent while runs sit in the queue: the drain loop
+// was parked on the old limit and nothing woke it, so free slots stayed empty
+// until some running run happened to end.
+func TestReloadRaisingMaxConcurrentDrainsQueue(t *testing.T) {
+	jm, exec, _ := newGatedManager(t)
+
+	jm.UpsertTask(testTask("task1", model.PolicyQueue, 1))
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
+	require.NoError(t, err)
+	exec.WaitStarted(t)
+	for range 2 {
+		queued, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
+		require.NoError(t, err)
+		require.Equal(t, model.PhasePending, queued.Status)
+	}
+
+	// Let the drain loop settle into its wait on the old limit.
+	time.Sleep(100 * time.Millisecond)
+	jm.UpsertTask(testTask("task1", model.PolicyQueue, 3))
+
+	exec.WaitStarted(t)
+	exec.WaitStarted(t)
+	assert.Equal(t, 3, jm.GetActiveRunCount("task1"))
+}

@@ -113,12 +113,14 @@ func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
 // whether it may proceed. When it may not, it has already written the 401,
 // 403 or 429.
 func authorizeRequest(authSvc *auth.Service, apiTokens *failureLimiter, w http.ResponseWriter, r *http.Request) bool {
-	bearer := auth.BearerToken(r.Header.Get("Authorization"))
-	apiToken := bearer != "" && !auth.LooksLikeSessionToken(bearer)
+	// The cookie can carry an API token too (VerifyToken accepts it), so a
+	// guess counts whichever way it arrives.
+	token := auth.TokenFromRequest(r)
+	apiToken := token != "" && !auth.LooksLikeSessionToken(token)
 	if apiToken && apiTokens.refuse(w, r) {
 		return false
 	}
-	readOnly, ok := authSvc.VerifyToken(auth.TokenFromRequest(r))
+	readOnly, ok := authSvc.VerifyToken(token)
 	if !ok {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 		if apiToken {

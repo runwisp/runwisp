@@ -386,7 +386,10 @@ func (cp *crontabParser) importJob(line string) bool {
 	// Everything downstream — the derived name, the report row, the emitted
 	// `run` — works from what crond would actually execute, not from the raw
 	// field. See splitCronPercent.
-	cc := splitCronPercent(j.command)
+	cc := cronCommand{run: j.command}
+	if !cp.anacron { // anacron hands the command to sh as is; '%' means nothing to it
+		cc = splitCronPercent(j.command)
+	}
 	command := cc.run
 	// A leading `cd DIR &&` becomes the task's working_dir; what is left is the
 	// command RunWisp runs, so it is also what identifies the entry on re-import.

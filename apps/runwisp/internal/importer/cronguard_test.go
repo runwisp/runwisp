@@ -117,3 +117,15 @@ func TestNoopGuardShapes(t *testing.T) {
 		}
 	}
 }
+
+// A negated test before `||` is no stock distro guard, so it is imported as
+// written whatever the host looks like now; the guard runs with the job.
+func TestCronGuardNegatedTestBeforeOrIsImportedAsWritten(t *testing.T) {
+	const line = "25 6 * * * root ! test -x /usr/sbin/anacron || /usr/local/bin/nightly\n"
+
+	for _, host := range []fstest.MapFS{systemdAnacronHost, {}} {
+		got := parseCron(t, line, CronOptions{System: true, HostStat: hostStat(host)})
+		mustContain(t, got.TOML(), "[tasks.nightly]")
+		mustContain(t, got.TOML(), "! test -x /usr/sbin/anacron || /usr/local/bin/nightly")
+	}
+}
