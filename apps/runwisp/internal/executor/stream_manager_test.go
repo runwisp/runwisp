@@ -204,3 +204,28 @@ func TestStreamManager_NonEOFReadErrorIsSurfaced(t *testing.T) {
 	assert.Contains(t, string(disk), readErr.Error(),
 		"a non-EOF stream read error must be surfaced in the run's own log, not swallowed like a clean EOF")
 }
+
+// TestStreamManager_OutputPatternMatchesLinesTheLogDropped pins that a
+// `failures` output pattern still sees a line the log writer dropped: once
+// log_max_size is hit under drop_new, later lines never reach the file, but an
+// error printed there must still fail the run.
+func TestStreamManager_OutputPatternMatchesLinesTheLogDropped(t *testing.T) {
+	w, err := NewLogWriter(LogWriterOpts{
+		LogPath:  filepath.Join(t.TempDir(), "test.log"),
+		MaxSize:  64,
+		Overflow: model.LogOverflowDropNew,
+	})
+	require.NoError(t, err)
+
+	sm := &RoutingExecutor{eventBus: events.NewEventBus(), clock: time.Now}
+	spec, err := model.ParseFailures([]string{"+output:FATAL"})
+	require.NoError(t, err)
+	task := &model.Task{Name: "t", Failures: spec.Resolve(model.DefaultFailures())}
+	matcher := &outputMatcher{res: task.Failures.OutputRegexps()}
+
+	input := strings.Repeat("noise noise noise noise\n", 10) + "FATAL: it broke\n"
+	sm.streamToFile(strings.NewReader(input), w, task, &model.Run{ID: "r1"}, matcher, logutil.StreamStdout)
+	require.NoError(t, w.Close())
+
+	assert.NotEmpty(t, matcher.pattern(), "the FATAL line was dropped from the log but must still match")
+}

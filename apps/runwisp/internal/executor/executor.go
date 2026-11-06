@@ -570,6 +570,8 @@ func (r *RoutingExecutor) checkDisk() error {
 // commit, K lines for a multi-line redraw) and publishes a LogLineEvent per
 // line. Frame history is keyed to the group's first committed line — the
 // clickable anchor — and only that line's published event carries FrameCount.
+// publish also sees a line the log dropped (lineNum < 0): the caller still has
+// to inspect it, but there is no log line to announce.
 func commitGroup(
 	writer *LogWriter,
 	stream string,
@@ -598,9 +600,6 @@ func commitGroup(
 	}
 
 	for i, line := range lines {
-		if ns[i] < 0 {
-			continue
-		}
 		fc := 0
 		if ns[i] == anchor {
 			fc = frameCount
@@ -634,12 +633,17 @@ func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task
 	executionID := model.OrDefault(run.ExecutionID, "")
 	nowMs := func() int64 { return r.clock().UnixMilli() }
 
-	// publishCommitted sees each successfully written line's redacted text, so
-	// output patterns match exactly what the operator sees in the log.
+	// publishCommitted sees each line's redacted text, so output patterns match
+	// exactly what the operator sees in the log. That includes a line the log
+	// dropped (lineNum < 0, log_max_size or disk pressure): an error past the cap
+	// must still fail the run, it just has no log line to announce.
 	publishCommitted := func(text string, lineNum int64, continued bool, frameCount int) {
 		// Note the match inline, so the operator sees why an exit-0 run turned red.
 		if re, ok := matcher.match(text); ok {
 			writer.WriteLineEvent(fmt.Sprintf("Output matched failures pattern %q; run will be marked failed", re.String()), logutil.StreamSystem)
+		}
+		if lineNum < 0 {
+			return
 		}
 		r.publishLine(task, run, stream, text, lineNum, continued, frameCount)
 	}
