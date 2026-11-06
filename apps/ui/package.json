@@ -9,11 +9,11 @@
     "devDependencies": {
         "@eslint/js": "^10.0.1",
         "@fontsource-variable/geist-mono": "^5.3.0",
-        "@playwright/test": "^1.64.1",
+        "@playwright/test": "^1.65.0",
         "@runwisp/eslint-config": "workspace:*",
         "@runwisp/typescript-config": "workspace:*",
-        "@sveltejs/adapter-static": "^3.0.10",
-        "@sveltejs/kit": "^2.70.3",
+        "@sveltejs/adapter-static": "^3.0.11",
+        "@sveltejs/kit": "^2.70.4",
         "@sveltejs/vite-plugin-svelte": "^7.3.1",
         "@tailwindcss/forms": "^0.5.11",
         "@tailwindcss/typography": "^0.5.20",
@@ -39,7 +39,7 @@
         "vitest": "^5.1.0"
     },
     "dependencies": {
-        "@lucide/svelte": "^1.69.0",
+        "@lucide/svelte": "^1.70.0",
         "@noble/hashes": "^2.4.0",
         "@runwisp/common": "workspace:*",
         "@runwisp/ui": "workspace:*",
