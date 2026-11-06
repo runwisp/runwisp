@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - A negative `warn_after`, `restart_delay` or `graceful_stop` in `[defaults]` is rejected with an error naming `[defaults]` instead of loading and being ignored.
+- A reload restarts a running service only when a change reaches its process (command, shell, working directory, environment, user, limits, instance count). Edits such as its description, retention or restart policy apply without a restart.
+- `failures` output patterns match the text without colour codes, so `^ERROR` also matches a coloured line.
 
 ### Fixed
 
@@ -18,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A notifier URL that redirects with 301, 302 or 303 is reported as a failed delivery naming the new address, instead of counting as delivered while the message was lost. 307 and 308 redirects are still followed.
 - In-app notifications on a host outside UTC are kept for `keep_for` and grouped over the right window, instead of being shifted by the time zone offset.
 - The log viewer numbers lines correctly when the rotated `.prev` log file is empty.
+- Stopping a task, or removing it in a reload, cancels a retry still waiting out its delay.
+- `[storage] max_size` no longer deletes all finished runs when the logs of active runs and stray files alone exceed it. It keeps the history and logs a warning instead.
+- Deleting more than 32,766 selected runs at once works instead of failing.
+- The web UI catches up after the daemon restarts, after a long disconnect, and when another tab takes over the live connection, instead of missing runs and notifications from the gap. The live event stream sends a new `resync` event when a client must refetch its state.
 
 ## [1.9.1] - 2026-11-06
 
