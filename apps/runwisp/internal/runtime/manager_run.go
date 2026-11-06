@@ -71,6 +71,7 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	result := m.executor.Execute(ctx, task, run)
 	stopWarn()
 
+	task = m.exitDefinition(task)
 	nextRestartAttempt, giveUp := m.recordRunOutcome(task, run, active, result)
 	// Advance the jitter gate now the run is retired from active and the
 	// manager lock is released — recordRunOutcome unlocks before returning, so
@@ -80,6 +81,24 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	if !giveUp {
 		m.scheduleFollowup(task, run, nextRestartAttempt, retryStop)
 	}
+}
+
+// exitDefinition returns the definition to judge a run's exit by. A reload that
+// changed only live settings of a running service (restart policy and delay,
+// start-retry budget, ...) does not recycle it, so the instance still holds the
+// definition it spawned under; its restart decision must come from the one now
+// in force. Anything else, or a task no longer registered, keeps the captured
+// definition.
+func (m *defaultTaskManager) exitDefinition(task *model.Task) *model.Task {
+	if !task.Kind.IsService() {
+		return task
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if ts, ok := m.tasks[task.Name]; ok && ts.task.Kind.IsService() && !ts.task.SpawnDiffers(task) {
+		return ts.task
+	}
+	return task
 }
 
 // armLongRunningWarning schedules the one-shot long_running event for a task
