@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A negative `warn_after`, `restart_delay` or `graceful_stop` in `[defaults]` is rejected with an error naming `[defaults]` instead of loading and being ignored.
+
+### Fixed
+
+- A `failures` output pattern also matches lines printed after the log reached `log_max_size`, so a run that printed the error past the cap is marked failed.
+- Retention and the trash purge delete more than 32,766 runs at once instead of failing on every pass.
+- A notifier URL that redirects with 301, 302 or 303 is reported as a failed delivery naming the new address, instead of counting as delivered while the message was lost. 307 and 308 redirects are still followed.
+- In-app notifications on a host outside UTC are kept for `keep_for` and grouped over the right window, instead of being shifted by the time zone offset.
+- The log viewer numbers lines correctly when the rotated `.prev` log file is empty.
+
 ## [1.9.1] - 2026-11-06
 
 ### Fixed
