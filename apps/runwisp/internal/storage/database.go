@@ -352,15 +352,29 @@ func (db *SQLiteDatabase) SoftDeleteRuns(ctx context.Context, sel model.RunSelec
 		}
 		return runRefsFrom(rows), nil
 	}
-	rows, err := db.q.SoftDeleteRunsByIDs(ctx, sqlcdb.SoftDeleteRunsByIDsParams{
-		DeletedAt:   &deletedAt,
-		StatusPhase: model.PhaseEnded,
-		Ids:         sel.IDs,
-	})
+	// Chunked like DeleteRunsByIDs, in one transaction so the batch is all or nothing.
+	tx, err := db.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	return runRefsFrom(rows), nil
+	defer func() { _ = tx.Rollback() }()
+	qtx := db.q.WithTx(tx)
+	var refs []RunRef
+	for chunk := range slices.Chunk(sel.IDs, deleteRunsChunk) {
+		rows, err := qtx.SoftDeleteRunsByIDs(ctx, sqlcdb.SoftDeleteRunsByIDsParams{
+			DeletedAt:   &deletedAt,
+			StatusPhase: model.PhaseEnded,
+			Ids:         chunk,
+		})
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, runRefsFrom(rows)...)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return refs, nil
 }
 
 // RestoreRuns clears deleted_at for every soft-deleted run matched by sel
