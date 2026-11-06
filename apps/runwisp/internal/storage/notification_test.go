@@ -384,3 +384,34 @@ func TestUpsertByFingerprint_CoalesceClearsReadAt(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, got.ReadAt, "fresh occurrence must reset read state")
 }
+
+// A notification stamped in a non-UTC zone (the daemon passes time.Now(), the
+// host's local zone) must still age by instant, not by the text of its wall
+// clock: PruneNotificationsByAge compares against a UTC cutoff.
+func TestPruneByAge_ComparesInstantsAcrossZones(t *testing.T) {
+	ctx := t.Context()
+	west := time.FixedZone("west", -8*3600)
+	east := time.FixedZone("east", 8*3600)
+
+	t.Run("keeps a recent row stamped west of UTC", func(t *testing.T) {
+		db := setupNotificationDB(t)
+		n := newNotification(time.Now().Add(-30*time.Minute).In(west), "fp-west")
+		_, err := db.UpsertByFingerprint(ctx, n, time.Hour, 10)
+		require.NoError(t, err)
+
+		deleted, err := db.PruneNotificationsByAge(ctx, time.Hour)
+		require.NoError(t, err)
+		assert.EqualValues(t, 0, deleted, "a 30m-old row must survive a 1h cutoff")
+	})
+
+	t.Run("drops an old row stamped east of UTC", func(t *testing.T) {
+		db := setupNotificationDB(t)
+		n := newNotification(time.Now().Add(-2*time.Hour).In(east), "fp-east")
+		_, err := db.UpsertByFingerprint(ctx, n, time.Hour, 10)
+		require.NoError(t, err)
+
+		deleted, err := db.PruneNotificationsByAge(ctx, time.Hour)
+		require.NoError(t, err)
+		assert.EqualValues(t, 1, deleted, "a 2h-old row must be pruned by a 1h cutoff")
+	})
+}

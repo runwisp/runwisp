@@ -239,6 +239,76 @@ describe("trackStreamHealth", () => {
     });
 });
 
+describe("resync", () => {
+    // A stream whose "resync" subscription the test can fire. Tracked twice
+    // below, as run-updates and notifications both do.
+    function resyncStream() {
+        const handlers = new Set<(data: string) => void>();
+        const stream = {
+            subscribe: (type: string, fn: (data: string) => void) => {
+                if (type === "resync") handlers.add(fn);
+                return () => {
+                    handlers.delete(fn);
+                };
+            },
+            onOpen: () => () => undefined,
+            onError: () => () => undefined,
+            onStall: () => () => undefined,
+        };
+        return {
+            stream,
+            fire: () => {
+                for (const fn of handlers) fn("{}");
+            },
+        };
+    }
+
+    it("requestResync fires reconnect listeners even though the connection never dropped", async () => {
+        connectionStore.markConnected();
+        const listener = vi.fn();
+        const off = connectionStore.onReconnect(listener);
+
+        connectionStore.requestResync();
+        await Promise.resolve();
+
+        expect(listener).toHaveBeenCalledOnce();
+        expect(connectionStore.status).toBe("connected");
+        off();
+    });
+
+    it("a resync event from the stream refreshes state once, however many stores track it", async () => {
+        connectionStore.markConnected();
+        const listener = vi.fn();
+        const off = connectionStore.onReconnect(listener);
+        const { stream, fire } = resyncStream();
+        const offA = trackStreamHealth(stream, "resync-a");
+        const offB = trackStreamHealth(stream, "resync-b");
+
+        fire();
+        await Promise.resolve();
+
+        expect(listener).toHaveBeenCalledOnce();
+        offA();
+        offB();
+        off();
+    });
+
+    it("a throwing reconnect listener does not stop the others", async () => {
+        const bad = connectionStore.onReconnect(() => {
+            throw new Error("boom");
+        });
+        const good = vi.fn();
+        const off = connectionStore.onReconnect(good);
+
+        connectionStore.requestResync();
+        await Promise.resolve();
+
+        expect(good).toHaveBeenCalledOnce();
+        bad();
+        off();
+    });
+});
+
 describe("connectionStore.releaseSource", () => {
     it("does not report a disconnect or schedule a ping when the last source is released", () => {
         connectionStore.markConnected();

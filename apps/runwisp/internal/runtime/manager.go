@@ -390,6 +390,7 @@ func (m *defaultTaskManager) RemoveTask(taskName string) {
 		return
 	}
 	ts.removed = true
+	ts.cancelPendingRetries()
 
 	// Drop anything still queued and wake the drain goroutine so it returns.
 	// Queued runs were already persisted as 'pending'; finalize them here so a

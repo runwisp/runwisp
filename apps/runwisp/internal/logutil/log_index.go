@@ -155,6 +155,10 @@ func ReadLineRange(logPath string, from, limit int64) (lines []LogLineRecord, fi
 		return nil, firstAvailable, totalLines, nil
 	}
 
+	// Either starting directly in the current segment, or continuing into it
+	// right after the .prev segment ended, which lines up at RotatedLines
+	// (see rotateTail) even when .prev yielded nothing.
+	currentStart := startLine
 	if prevExists && startLine < meta.RotatedLines {
 		lines, err = readSegmentRange(prevPath, meta.PrevStart, startLine, limit)
 		if err != nil {
@@ -163,13 +167,6 @@ func ReadLineRange(logPath string, from, limit int64) (lines []LogLineRecord, fi
 		if int64(len(lines)) >= limit {
 			return lines, firstAvailable, totalLines, nil
 		}
-	}
-
-	// Either starting directly in the current segment, or continuing into it
-	// right after the .prev segment ended (which lines up exactly at
-	// RotatedLines by construction — see rotateTail).
-	currentStart := startLine
-	if len(lines) > 0 {
 		currentStart = meta.RotatedLines
 	}
 
