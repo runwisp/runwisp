@@ -232,6 +232,24 @@ func TestAppStreamHandler_ResyncAfterPingWhenCursorUnsatisfiable(t *testing.T) {
 	require.Zero(t, msgs[1].ID, "resync is outside the event sequence, like ping")
 }
 
+// Notifications ride the stream without ids or replay, so any resume while
+// they are on (a reconnect or a cross-tab leader handoff) may have missed one:
+// the client is told to resync even when the event ring covers its cursor.
+func TestAppStreamHandler_ResumeWithNotificationsResyncs(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+	s.notifyHub = inapp.NewHub(32)
+	s.appEvents = newAppEventLog(fakeclock.New(time.Unix(0, 0)).Now)
+	s.appEvents.ingest(events.Event{Type: events.EventRunCreated, Data: events.RunEvent{Run: &model.Run{ID: ulid.Make().String()}}})
+
+	msgs := collectStreamMessages(t, s, &AppStreamInput{LastEventID: "1"})
+	require.GreaterOrEqual(t, len(msgs), 2)
+	require.IsType(t, ResyncEvent{}, msgs[1].Data)
+
+	for _, m := range collectStreamMessages(t, s, &AppStreamInput{}) {
+		require.NotEqual(t, ResyncEvent{}, m.Data, "a fresh client seeds over REST, no resync")
+	}
+}
+
 func TestAppStreamHandler_NoResyncForSatisfiableCursor(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 	s.appEvents = newAppEventLog(fakeclock.New(time.Unix(0, 0)).Now)

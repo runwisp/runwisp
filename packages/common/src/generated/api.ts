@@ -167,7 +167,7 @@ export interface paths {
         };
         /**
          * Stream live application events
-         * @description Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, task-list changes (a schedule paused or resumed, a service stopped or started, a reload applied), and in-app notifications. Each event carries an id that grows within a daemon run and never repeats across restarts; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed. If the cursor cannot be satisfied (the daemon restarted, or more events passed than the replay buffer holds), a resync event follows the first ping: events were lost, so refetch state over REST. Ping and resync carry no id.
+         * @description Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, task-list changes (a schedule paused or resumed, a service stopped or started, a reload applied), and in-app notifications. Each event carries an id that grows within a daemon run and never repeats across restarts; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed. If the cursor cannot be satisfied (the daemon restarted, or more events passed than the replay buffer holds), or in-app notifications are on (they are not replayed), a resync event follows the first ping: events were lost, so refetch state over REST. Ping and resync carry no id.
          */
         get: operations["streamAppEvents"];
         put?: never;

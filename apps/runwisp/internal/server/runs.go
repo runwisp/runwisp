@@ -458,7 +458,7 @@ func (srv *Server) registerAppStreamSSE(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/events/stream",
 		Summary:     "Stream live application events",
-		Description: "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, task-list changes (a schedule paused or resumed, a service stopped or started, a reload applied), and in-app notifications. Each event carries an id that grows within a daemon run and never repeats across restarts; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed. If the cursor cannot be satisfied (the daemon restarted, or more events passed than the replay buffer holds), a resync event follows the first ping: events were lost, so refetch state over REST. Ping and resync carry no id.",
+		Description: "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, task-list changes (a schedule paused or resumed, a service stopped or started, a reload applied), and in-app notifications. Each event carries an id that grows within a daemon run and never repeats across restarts; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed. If the cursor cannot be satisfied (the daemon restarted, or more events passed than the replay buffer holds), or in-app notifications are on (they are not replayed), a resync event follows the first ping: events were lost, so refetch state over REST. Ping and resync carry no id.",
 		Tags:        []string{"Runs"},
 		Errors:      []int{http.StatusServiceUnavailable},
 		Middlewares: srv.streamGate(api, nil),
@@ -504,7 +504,8 @@ func (srv *Server) appStreamHandler(ctx context.Context, input *AppStreamInput, 
 		notifyCh = nsub.Channel()
 	}
 
-	replay, sub, unsub := srv.appEvents.subscribe(resolveResumeID(input.LastEventID, input.LastEventQuery))
+	resumeID := resolveResumeID(input.LastEventID, input.LastEventQuery)
+	replay, sub, unsub := srv.appEvents.subscribe(resumeID)
 	defer unsub()
 
 	// Flush response headers immediately so SSE clients (e.g. EventSource
@@ -515,10 +516,12 @@ func (srv *Server) appStreamHandler(ctx context.Context, input *AppStreamInput, 
 		return
 	}
 
-	// The client's cursor is gone (daemon restarted, or the gap outgrew the
-	// ring): it lost events no replay can restore and must refetch its state.
+	// The client lost events no replay can restore and must refetch its state:
+	// its cursor is gone (daemon restarted, or the gap outgrew the ring), or it
+	// is resuming while notifications are on, which ride the stream without ids
+	// or replay (a cross-tab leader handoff never looks like a disconnect).
 	// No id, like ping, so it never moves the browser's lastEventId.
-	if sub.resync {
+	if sub.resync || (resumeID > 0 && notifyCh != nil) {
 		if err := send(sse.Message{Data: ResyncEvent{}}); err != nil {
 			return
 		}
