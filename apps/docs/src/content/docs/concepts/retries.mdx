@@ -69,6 +69,9 @@ retry_backoff  = "exponential"   # waits 10s, 20s, 40s, 80s
 
 No wait is ever longer than 5 minutes, whatever the backoff.
 
+Stopping the task while a retry is waiting cancels that retry and ends the
+chain. So does a reload that removes the task.
+
 ### Retries in the history
 
 Every attempt is its own run, with its own exit code and log. The history
