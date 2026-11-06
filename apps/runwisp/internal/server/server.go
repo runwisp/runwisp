@@ -209,7 +209,7 @@ func New(opts Options) (*Server, error) {
 	s.auth.SetViewerPassword(opts.ViewerPassword)
 	s.auth.SetAPITokens(opts.APITokens, opts.ViewerAPITokens)
 
-	s.appEvents = newAppEventLog()
+	s.appEvents = newAppEventLog(time.Now)
 	// Single consumer for the app-event SSE stream: subscribe to exactly the
 	// forwarded types (not SubscribeAll, so hot log.line/log.region events
 	// never touch this path). Permanent for the daemon's lifetime.

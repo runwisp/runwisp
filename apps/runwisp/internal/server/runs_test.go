@@ -14,7 +14,9 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/inapp"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil/fakeclock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestSSEWriteTimeoutCoversPingInterval guards against sse.WriteTimeout
@@ -188,4 +190,57 @@ func TestAppStreamHandler_SubscribedBeforeInitialPing(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond, "run.created published right after the initial ping never reached the stream")
 	cancel()
 	<-done
+}
+
+// collectStreamMessages runs appStreamHandler against s with the given cursor
+// and returns what it sent once it has had time to go quiet.
+func collectStreamMessages(t *testing.T, s *Server, input *AppStreamInput) []sse.Message {
+	t.Helper()
+	var mu sync.Mutex
+	var messages []sse.Message
+	send := func(msg sse.Message) error {
+		mu.Lock()
+		messages = append(messages, msg)
+		mu.Unlock()
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		s.appStreamHandler(ctx, input, send)
+		close(done)
+	}()
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	<-done
+	mu.Lock()
+	defer mu.Unlock()
+	return messages
+}
+
+func TestAppStreamHandler_ResyncAfterPingWhenCursorUnsatisfiable(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+	boot := time.Date(2026, 11, 6, 10, 0, 0, 0, time.UTC)
+	s.appEvents = newAppEventLog(fakeclock.New(boot).Now)
+	s.appEvents.ingest(events.Event{Type: events.EventRunCreated, Data: events.RunEvent{Run: &model.Run{ID: ulid.Make().String()}}})
+
+	// A cursor from a previous boot (ids used to restart at 1).
+	msgs := collectStreamMessages(t, s, &AppStreamInput{LastEventID: "5000"})
+	require.GreaterOrEqual(t, len(msgs), 2)
+	require.IsType(t, PingEvent{}, msgs[0].Data)
+	require.IsType(t, ResyncEvent{}, msgs[1].Data)
+	require.Zero(t, msgs[1].ID, "resync is outside the event sequence, like ping")
+}
+
+func TestAppStreamHandler_NoResyncForSatisfiableCursor(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+	s.appEvents = newAppEventLog(fakeclock.New(time.Unix(0, 0)).Now)
+	for range 3 {
+		s.appEvents.ingest(events.Event{Type: events.EventRunCreated, Data: events.RunEvent{Run: &model.Run{ID: ulid.Make().String()}}})
+	}
+	for _, input := range []*AppStreamInput{{}, {LastEventID: "1"}, {LastEventQuery: "3"}} {
+		for _, m := range collectStreamMessages(t, s, input) {
+			require.NotEqual(t, ResyncEvent{}, m.Data, "cursor %+v", input)
+		}
+	}
 }
