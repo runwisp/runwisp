@@ -20,6 +20,7 @@ import (
 
 	"log/slog"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
@@ -382,11 +383,14 @@ type outputMatcher struct {
 }
 
 // match reports the pattern text matched, but only for the first match: one
-// is enough to decide the outcome, so later lines are not checked.
+// is enough to decide the outcome, so later lines are not checked. Patterns see
+// the text without terminal escape codes (what the operator reads); the log
+// keeps the original.
 func (m *outputMatcher) match(text string) (*regexp.Regexp, bool) {
 	if len(m.res) == 0 || m.matched.Load() != nil {
 		return nil, false
 	}
+	text = ansi.Strip(text)
 	for _, re := range m.res {
 		if re.MatchString(text) && m.matched.CompareAndSwap(nil, re) {
 			return re, true

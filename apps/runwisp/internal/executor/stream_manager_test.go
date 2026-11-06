@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -228,4 +229,22 @@ func TestStreamManager_OutputPatternMatchesLinesTheLogDropped(t *testing.T) {
 	require.NoError(t, w.Close())
 
 	assert.NotEmpty(t, matcher.pattern(), "the FATAL line was dropped from the log but must still match")
+}
+
+// TestStreamToFile_OutputPatternIgnoresColorCodes asserts a `^ERROR` pattern
+// matches a coloured line, while the log keeps the original escape codes.
+func TestStreamToFile_OutputPatternIgnoresColorCodes(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "test.log")
+	w, err := NewLogWriter(LogWriterOpts{LogPath: logPath})
+	require.NoError(t, err)
+
+	sm := &RoutingExecutor{eventBus: events.NewEventBus(), clock: time.Now}
+	matcher := &outputMatcher{res: []*regexp.Regexp{regexp.MustCompile(`^ERROR`)}}
+	sm.streamToFile(strings.NewReader("\x1b[31mERROR disk full\x1b[0m\n"), w, &model.Task{Name: "t"}, &model.Run{ID: "r1"}, matcher, logutil.StreamStdout)
+	require.NoError(t, w.Close())
+
+	assert.Equal(t, "^ERROR", matcher.pattern())
+	raw, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "\x1b[31mERROR", "the log must keep the original colour codes")
 }
