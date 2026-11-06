@@ -5,6 +5,7 @@ package notify
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -120,4 +121,51 @@ func TestHTTPProvider_RateLimitZeroDelayFallsBackToNormalBackoff(t *testing.T) {
 
 	require.NoError(t, p.Post(context.Background(), srv.URL, "application/json", []byte("{}"), nil))
 	assert.EqualValues(t, 2, hits.Load())
+}
+
+// TestHTTPProvider_RedirectThatDropsThePostIsAFailure guards against a 301/302
+// (say an http:// notifier URL that redirects to https://) being followed as a
+// body-less retry: the endpoint answers that with 200, so the delivery used to
+// read as a success although the notification never arrived.
+func TestHTTPProvider_RedirectThatDropsThePostIsAFailure(t *testing.T) {
+	var landed atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		landed.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	p := &HTTPProvider{
+		Client:  &http.Client{Timeout: 2 * time.Second},
+		Backoff: BackoffConfig{InitialInterval: time.Millisecond, MaxInterval: time.Millisecond, MaxElapsedTime: time.Second, Multiplier: 1},
+	}
+
+	err := p.Post(context.Background(), redirector.URL, "application/json", []byte("{}"), nil)
+	require.Error(t, err, "a redirect that drops the POST must not count as delivered")
+	assert.Contains(t, err.Error(), target.URL, "the error should name where it redirected")
+	assert.Zero(t, landed.Load(), "the redirect target must not be hit without the body")
+}
+
+// TestHTTPProvider_PostSurvivesMethodPreservingRedirect keeps 307/308, which
+// replay the POST and body, working.
+func TestHTTPProvider_PostSurvivesMethodPreservingRedirect(t *testing.T) {
+	var got atomic.Value
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got.Store(r.Method + " " + string(b))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusPermanentRedirect)
+	}))
+	defer redirector.Close()
+
+	p := NewHTTPProvider()
+	require.NoError(t, p.Post(context.Background(), redirector.URL, "application/json", []byte("{}"), nil))
+	assert.Equal(t, "POST {}", got.Load())
 }
