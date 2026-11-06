@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-11-06
+
 ### Fixed
 
 - A run stopped or timed out before its process started is recorded as stopped or timed out instead of failed, so `retry` doesn't run it again.
@@ -1191,7 +1193,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.9.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.9.1...main
+[1.9.1]: https://github.com/runwisp/runwisp/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/runwisp/runwisp/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/runwisp/runwisp/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/runwisp/runwisp/compare/v1.7.0...v1.7.1
