@@ -59,6 +59,8 @@ type Run struct {
 	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 	StdoutLines     *int64            `json:"stdout_lines"`
 	StderrLines     *int64            `json:"stderr_lines"`
+	Pgid            int64             `json:"pgid"`
+	ProcessStart    string            `json:"process_start"`
 }
 
 type TaskBootID struct {

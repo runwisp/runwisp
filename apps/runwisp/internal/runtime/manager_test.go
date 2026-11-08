@@ -598,26 +598,26 @@ func TestTriggerRunReturnsIndependentSnapshot(t *testing.T) {
 // deadline-triggered ForceKill.
 type stuckExecutor struct {
 	testutil.NoExecutorHooks
-	onStarted     func(runID string, forceKill func())
+	onStarted     func(runID string, proc *executor.Process)
 	startedCh     chan struct{}
 	forceKilledCh chan struct{}
 	startOnce     sync.Once
 	killOnce      sync.Once
 }
 
-func (s *stuckExecutor) SetOnProcessStarted(cb func(runID string, forceKill func())) {
+func (s *stuckExecutor) SetOnProcessStarted(cb func(runID string, proc *executor.Process)) {
 	s.onStarted = cb
 }
 
 func (s *stuckExecutor) Execute(_ context.Context, _ *model.Task, run *model.Run) *executor.ExecuteResult {
 	released := make(chan struct{})
 	if s.onStarted != nil {
-		s.onStarted(run.ID, func() {
+		s.onStarted(run.ID, &executor.Process{ForceKill: func() {
 			s.killOnce.Do(func() {
 				close(s.forceKilledCh)
 				close(released)
 			})
-		})
+		}})
 	}
 	s.startOnce.Do(func() { close(s.startedCh) })
 	select {

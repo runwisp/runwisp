@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `[storage] max_size` no longer deletes all finished runs when the logs of active runs and stray files alone exceed it. It keeps the history and logs a warning instead.
 - Deleting more than 32,766 selected runs at once works instead of failing.
 - The web UI catches up after the daemon restarts, after a long disconnect, and when another tab takes over the live connection, instead of missing runs and notifications from the gap. The live event stream sends a new `resync` event when a client must refetch its state.
+- After the daemon is killed outside a service manager (`kill -9` from a shell), the next start stops the runs it left running, using each task's `stop_signal` and `graceful_stop`, and notes this in the run's log. The next firing no longer starts a second copy next to them.
 
 ## [1.9.1] - 2026-11-06
 

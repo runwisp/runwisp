@@ -13,7 +13,7 @@ UPDATE runs SET execution_id = ?, task_name = ?, status = ?,
   end_reason = ?, exit_code = ?, started_at = ?, ended_at = ?, triggered_by = ?,
   created_at = ?, retry_attempt = ?, retry_of_run_id = ?, instance_index = ?,
   params_json = ?, is_failure = ?, peak_memory_bytes = ?, cpu_time_ms = ?,
-  stdout_lines = ?, stderr_lines = ?
+  stdout_lines = ?, stderr_lines = ?, pgid = ?, process_start = ?
 WHERE id = ?;
 
 -- name: GetRun :one
@@ -266,6 +266,9 @@ SELECT
      AND deleted_at IS NULL
    ORDER BY ended_at DESC LIMIT 1) AS ended_at
 FROM runs WHERE deleted_at IS NULL;
+
+-- name: GetRunningRuns :many
+SELECT * FROM runs WHERE status = 'running' AND ended_at IS NULL AND deleted_at IS NULL;
 
 -- name: MarkCrashedRuns :execrows
 -- Boot-time crash recovery marks these orphans is_failure=1 using the default

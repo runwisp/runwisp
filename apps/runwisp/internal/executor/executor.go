@@ -41,7 +41,7 @@ type Executor interface {
 	Execute(ctx context.Context, task *model.Task, run *model.Run) *ExecuteResult
 	SetRunWatcher(watcher RunWatcher)
 	SetRunUpdateCallback(callback func(*model.Run))
-	SetOnProcessStarted(callback func(runID string, forceKill func()))
+	SetOnProcessStarted(callback func(runID string, proc *Process))
 }
 
 type ExecuteResult struct {
@@ -88,7 +88,7 @@ func (r *ExecuteResult) EndReason() model.EndReason {
 type RoutingExecutor struct {
 	logDir           string
 	onUpdate         func(*model.Run)
-	onProcessStarted func(runID string, forceKill func())
+	onProcessStarted func(runID string, proc *Process)
 	watcher          RunWatcher
 	eventBus         *events.Bus
 	backends         map[string]Backend
@@ -206,9 +206,10 @@ func (r *RoutingExecutor) SetRunUpdateCallback(callback func(*model.Run)) {
 
 // SetOnProcessStarted registers a hook fired immediately after a backend
 // successfully starts a process. The hook receives the run ID and the
-// process's ForceKill closure (when present), letting the manager wire a
-// daemon-shutdown SIGKILL path.
-func (r *RoutingExecutor) SetOnProcessStarted(callback func(runID string, forceKill func())) {
+// started process: its ForceKill closure (when present) lets the manager wire
+// a daemon-shutdown SIGKILL path, and its Pid is recorded on the run so a
+// daemon booting after a crash can kill the group left behind.
+func (r *RoutingExecutor) SetOnProcessStarted(callback func(runID string, proc *Process)) {
 	r.onProcessStarted = callback
 }
 
@@ -257,7 +258,7 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	}
 	startedAt := r.clock()
 	if r.onProcessStarted != nil {
-		r.onProcessStarted(run.ID, proc.ForceKill)
+		r.onProcessStarted(run.ID, proc)
 	}
 	stopWatcher := r.startWatcher(task, run, writer, killer)
 	stopSampling := r.track(task, run, proc)

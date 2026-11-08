@@ -56,3 +56,23 @@ func TestFromProcContainerRestartChangesIdentity(t *testing.T) {
 func TestFromProcReadError(t *testing.T) {
 	assert.Empty(t, fromProc(func(string) ([]byte, error) { return nil, errors.New("boom") }))
 }
+
+func TestProcessFromProc(t *testing.T) {
+	const bootPath, initStat, jobStat = "/proc/sys/kernel/random/boot_id", "/proc/1/stat", "/proc/42/stat"
+	job := "42 (sh) S 1 42 42 0 -1 4194560 100 200 0 0 5 6 7 8 20 0 1 0 777 1000 50 1\n"
+	cases := []struct {
+		name  string
+		files map[string]string
+		want  string
+	}{
+		{"boot and start time", map[string]string{bootPath: "abc", initStat: statLine, jobStat: job}, "abc/4242#777"},
+		{"gone process is unknown", map[string]string{bootPath: "abc", initStat: statLine}, ""},
+		{"no boot id is unknown", map[string]string{jobStat: job}, ""},
+		{"malformed stat is unknown", map[string]string{bootPath: "abc", jobStat: "garbage"}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, processFromProc(fakeFS(tc.files), 42))
+		})
+	}
+}
