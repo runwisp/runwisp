@@ -55,6 +55,9 @@ type RunRepository interface {
 	DeleteRun(ctx context.Context, id string) error
 	SelectOldRuns(ctx context.Context, task *model.Task) ([]model.Run, error)
 	DeleteRunsByIDs(ctx context.Context, ids []string) error
+	// GetRunningRuns returns the runs still marked running. At boot, before
+	// MarkCrashedRuns, these are the previous daemon's in-flight runs.
+	GetRunningRuns(ctx context.Context) ([]model.Run, error)
 	MarkCrashedRuns(ctx context.Context) (int64, error)
 	GetPendingRuns(ctx context.Context) ([]model.Run, error)
 	GetRunSummary(ctx context.Context) (*model.RunSummary, error)
@@ -493,6 +496,14 @@ func (db *SQLiteDatabase) SelectOldRuns(ctx context.Context, task *model.Task) (
 	}
 
 	return slices.AppendSeq(make([]model.Run, 0, len(uniqueRuns)), maps.Values(uniqueRuns)), nil
+}
+
+func (db *SQLiteDatabase) GetRunningRuns(ctx context.Context) ([]model.Run, error) {
+	rows, err := db.q.GetRunningRuns(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return runsFromRows(rows), nil
 }
 
 // MarkCrashedRuns flags runs that never completed (e.g., after a crash).

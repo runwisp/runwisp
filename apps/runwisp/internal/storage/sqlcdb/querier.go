@@ -47,6 +47,7 @@ type Querier interface {
 	// `failures` policy, resolved at termination) rather than a hardcoded end_reason
 	// set, so this metric can never drift from the rest of the failure readouts.
 	GetRunSummary(ctx context.Context) (GetRunSummaryRow, error)
+	GetRunningRuns(ctx context.Context) ([]Run, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	GetTaskBootID(ctx context.Context, taskName string) (string, error)

@@ -186,6 +186,12 @@ type Run struct {
 	// the executor result just before End, which folds it into the persisted
 	// IsFailure bit; never stored or serialized.
 	OutputMatched bool `json:"-"`
+	// Pgid is the process group the run's process leads and ProcessStart that
+	// leader's boot-qualified start time (bootid.Process), recorded once the
+	// process is up. A daemon booting after a crash uses them to kill a group
+	// the dead daemon left running. Zero/empty for backends without one.
+	Pgid         int    `json:"-"`
+	ProcessStart string `json:"-"`
 }
 
 // Duration is EndedAt minus StartedAt; ok is false until the run has both

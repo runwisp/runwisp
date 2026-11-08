@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -389,4 +390,17 @@ func TestCalculateTotalLines_ReturnsScanErrors(t *testing.T) {
 func TestReadLineRange_ReturnsCountError(t *testing.T) {
 	_, _, _, err := ReadLineRange(t.TempDir(), 0, 10)
 	assert.Error(t, err)
+}
+
+func TestAppendSystemLineReadsBackAsSystem(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "task.log")
+	require.NoError(t, os.WriteFile(logPath, []byte("working\n"), 0o644))
+
+	require.NoError(t, AppendSystemLine(logPath, time.Now(), "stopped"))
+
+	lines, _, total, err := ReadLineRange(logPath, 0, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	assert.Equal(t, LogLineRecord{LineNum: 1, Stream: StreamSystem, Text: "stopped"}, lines[1])
+	assert.Error(t, AppendSystemLine(filepath.Join(t.TempDir(), "gone.log"), time.Now(), "x"), "must not create a missing log")
 }

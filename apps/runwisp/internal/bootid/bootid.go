@@ -7,11 +7,34 @@
 // Current returns a string that stays the same for the life of one boot and
 // changes on the next, or "" when the platform exposes no boot identity (the
 // caller then falls back to firing on every daemon start).
+//
+// Process names one process the same way: it changes when the pid is reused,
+// so a pid recorded before a crash can be checked against what holds it now.
 package bootid
 
 import (
+	"strconv"
 	"strings"
 )
+
+// qualify joins a boot identity and a process start time, or returns "" when
+// either is unknown (an unknown identity must never match).
+func qualify(boot, start string) string {
+	if boot == "" || start == "" {
+		return ""
+	}
+	return boot + "#" + start
+}
+
+// processFromProc is the Linux Process: the boot identity plus the start time
+// (in clock ticks since boot) from /proc/<pid>/stat.
+func processFromProc(readFile func(string) ([]byte, error), pid int) string {
+	stat, err := readFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return ""
+	}
+	return qualify(fromProc(readFile), statStartTime(string(stat)))
+}
 
 // fromProc builds the Linux boot identity from the kernel boot_id and the start
 // time of PID 1.

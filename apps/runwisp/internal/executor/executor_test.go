@@ -649,14 +649,14 @@ func TestRoutingExecutor_SetOnProcessStarted_ReceivesCall(t *testing.T) {
 	e := newTestExecutor(t, Options{})
 
 	gotID := ""
-	e.SetOnProcessStarted(func(runID string, _ func()) {
+	e.SetOnProcessStarted(func(runID string, _ *Process) {
 		gotID = runID
 	})
 
 	// Manually invoke the registered hook — startBackend would call it in
 	// production, but we cover the registration wiring here.
 	require.NotNil(t, e.onProcessStarted)
-	e.onProcessStarted("r1", func() {})
+	e.onProcessStarted("r1", &Process{})
 	assert.Equal(t, "r1", gotID)
 }
 

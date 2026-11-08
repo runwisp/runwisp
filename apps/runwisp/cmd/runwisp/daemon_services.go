@@ -12,6 +12,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/procstat"
@@ -82,6 +84,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db *storage.SQLi
 		initWarnings = append(initWarnings, fmt.Sprintf(format, args...))
 	}
 
+	stopOrphanedRuns(ctx, db, cfg.Config.Tasks, f.LogDir(), cfg.Config.Daemon.ShutdownTimeout)
 	crashed, err := markCrashedRunsWithRetry(ctx, db)
 	if err != nil {
 		return nil, fmt.Errorf("crash recovery failed; refusing to start with unresolved in-flight runs: %w", err)
@@ -450,6 +453,43 @@ func topoStartOrder(tasksMap map[string]*model.Task) []*model.Task {
 		visit(s)
 	}
 	return ordered
+}
+
+// stopOrphanedRuns stops the process groups of runs the previous daemon left
+// running. A daemon killed outside a service manager (kill -9 from a shell)
+// takes nothing with it: each run leads its own process group, so a job that
+// isn't writing output keeps going. Left alive, it would run on next to the
+// copy the next firing starts, which on_overlap can't see. Runs here are about
+// to be marked crashed, so their processes go too, like under systemd's
+// KillMode=mixed, but through each task's own stop ladder. The groups stop in
+// parallel and each grace window is capped at limit, so boot waits at most
+// that long. Each stopped run gets a line in its own log, so the run page
+// shows it outlived the crash. Best effort: a failed query only skips this.
+func stopOrphanedRuns(ctx context.Context, db storage.RunRepository, tasks []model.Task, logDir string, limit time.Duration) {
+	runs, err := db.GetRunningRuns(ctx)
+	if err != nil {
+		slog.Warn("Failed to query runs left running by the previous daemon; their processes are not stopped", "err", err)
+		return
+	}
+	byName := make(map[string]*model.Task, len(tasks))
+	for i := range tasks {
+		byName[tasks[i].Name] = &tasks[i]
+	}
+	var wg sync.WaitGroup
+	for _, r := range runs {
+		wg.Go(func() {
+			if !executor.StopOrphanGroup(r.Pgid, r.ProcessStart, byName[r.TaskName], limit) {
+				return
+			}
+			slog.Warn("Stopped processes left running by the previous daemon", "task", r.TaskName, "run", r.ID, "pgid", r.Pgid)
+			logPath := logutil.ResolveRunLogPath(logDir, r.TaskName, r.ID, r.CreatedAt)
+			msg := "RunWisp restarted after a crash and found this run still going, so it stopped the run's processes."
+			if err := logutil.AppendSystemLine(logPath, time.Now(), msg); err != nil {
+				slog.Warn("Failed to note the stopped processes in the run log", "run", r.ID, "err", err)
+			}
+		})
+	}
+	wg.Wait()
 }
 
 // markCrashedRunsWithRetry marks crash-orphaned runs terminal, retrying a

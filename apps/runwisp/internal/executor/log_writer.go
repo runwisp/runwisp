@@ -395,9 +395,7 @@ func (w *LogWriter) ensureIndexBackfill() {
 }
 
 func (w *LogWriter) writeSystemLine(msg string) {
-	line := fmt.Sprintf("[%s] [SYSTEM] %s\n",
-		w.now().Format("2006-01-02 15:04:05"), msg)
-	n, err := w.file.Write([]byte(line))
+	n, err := w.file.WriteString(logutil.SystemLine(w.now(), msg))
 	if err != nil {
 		slog.Warn("Failed to write system log line", "err", err)
 		return

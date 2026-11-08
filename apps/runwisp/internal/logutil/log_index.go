@@ -8,9 +8,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 )
 
 const (
@@ -73,6 +75,23 @@ func ParseStreamPrefix(line string) (stream, text string) {
 		return StreamSystem, rest
 	}
 	return StreamStdout, trimmed
+}
+
+// SystemLine formats msg as a run log's system line, the form
+// ParseStreamPrefix reads back as StreamSystem.
+func SystemLine(now time.Time, msg string) string {
+	return fmt.Sprintf("[%s] [SYSTEM] %s\n", now.Format("2006-01-02 15:04:05"), msg)
+}
+
+// AppendSystemLine appends a system line to a run log no LogWriter has open,
+// such as one left behind by a daemon that crashed mid-run.
+func AppendSystemLine(logPath string, now time.Time, msg string) error {
+	f, err := os.OpenFile(logPath, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return err
+	}
+	_, err = f.WriteString(SystemLine(now, msg))
+	return errors.Join(err, f.Close())
 }
 
 // stripSystemPrefix peels an optional "[<ts>] " prefix followed by "[SYSTEM] ".
