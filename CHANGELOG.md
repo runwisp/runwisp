@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-11-08
+
 ### Changed
 
 - A negative `warn_after`, `restart_delay` or `graceful_stop` in `[defaults]` is rejected with an error naming `[defaults]` instead of loading and being ignored.
@@ -1212,7 +1214,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.9.1...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.9.2...main
+[1.9.2]: https://github.com/runwisp/runwisp/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/runwisp/runwisp/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/runwisp/runwisp/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/runwisp/runwisp/compare/v1.7.1...v1.8.0
