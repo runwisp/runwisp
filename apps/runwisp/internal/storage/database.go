@@ -272,7 +272,12 @@ func (db *SQLiteDatabase) DeleteRun(ctx context.Context, id string) error {
 	return db.q.DeleteRun(ctx, id)
 }
 
-// DeleteRunsByIDs hard-deletes the given rows in a single batch. Used by
+// deleteRunsChunk is how many ids one DELETE ... IN (...) binds. SQLite caps
+// bind variables per statement (32766 by default); a backlog bigger than that
+// would fail every attempt and never be deleted, so it goes in chunks.
+const deleteRunsChunk = 10000
+
+// DeleteRunsByIDs hard-deletes the given rows in a single transaction. Used by
 // retention/purge callers as the second half of a select-then-delete
 // sequence: they must remove the on-disk log files for these rows first, so
 // a crash between the two steps leaves an orphan row (harmless) rather than
@@ -281,7 +286,18 @@ func (db *SQLiteDatabase) DeleteRunsByIDs(ctx context.Context, ids []string) err
 	if len(ids) == 0 {
 		return nil
 	}
-	return db.q.DeleteRunsByIDs(ctx, ids)
+	tx, err := db.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	qtx := db.q.WithTx(tx)
+	for chunk := range slices.Chunk(ids, deleteRunsChunk) {
+		if err := qtx.DeleteRunsByIDs(ctx, chunk); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // RunRef is the minimum identifying tuple needed to resolve a run's log path
@@ -336,15 +352,29 @@ func (db *SQLiteDatabase) SoftDeleteRuns(ctx context.Context, sel model.RunSelec
 		}
 		return runRefsFrom(rows), nil
 	}
-	rows, err := db.q.SoftDeleteRunsByIDs(ctx, sqlcdb.SoftDeleteRunsByIDsParams{
-		DeletedAt:   &deletedAt,
-		StatusPhase: model.PhaseEnded,
-		Ids:         sel.IDs,
-	})
+	// Chunked like DeleteRunsByIDs, in one transaction so the batch is all or nothing.
+	tx, err := db.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	return runRefsFrom(rows), nil
+	defer func() { _ = tx.Rollback() }()
+	qtx := db.q.WithTx(tx)
+	var refs []RunRef
+	for chunk := range slices.Chunk(sel.IDs, deleteRunsChunk) {
+		rows, err := qtx.SoftDeleteRunsByIDs(ctx, sqlcdb.SoftDeleteRunsByIDsParams{
+			DeletedAt:   &deletedAt,
+			StatusPhase: model.PhaseEnded,
+			Ids:         chunk,
+		})
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, runRefsFrom(rows)...)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return refs, nil
 }
 
 // RestoreRuns clears deleted_at for every soft-deleted run matched by sel

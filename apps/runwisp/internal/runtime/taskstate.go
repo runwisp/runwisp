@@ -62,6 +62,13 @@ type taskState struct {
 	// drain. Guarded by m.mu.
 	queueDraining bool
 
+	// retryStop is closed by StopTask and RemoveTask to cancel the retries
+	// waiting out their delay, then reset to nil. A run captures the current
+	// channel when it starts (see retryStopChan), so a stop that lands any time
+	// after that, even between the run ending and its retry being scheduled,
+	// cancels the retry. Guarded by m.mu.
+	retryStop chan struct{}
+
 	// bookkeepingStop latches when the daemon, not the operator, stops a
 	// service's supervisor: RemoveTask stopping it while it drains, or a reload
 	// turning the service into a plain task. UpsertTask's revival branch clears
@@ -71,6 +78,25 @@ type taskState struct {
 	// error anywhere. Cleared by StopService/RestartServiceInstances too, since
 	// either makes the stop state operator-driven from then on.
 	bookkeepingStop bool
+}
+
+// retryStopChan returns the channel that StopTask or RemoveTask will close to
+// cancel retries of runs started now, creating it on first use. Caller holds
+// m.mu.
+func (ts *taskState) retryStopChan() chan struct{} {
+	if ts.retryStop == nil {
+		ts.retryStop = make(chan struct{})
+	}
+	return ts.retryStop
+}
+
+// cancelPendingRetries wakes every retry waiting on this task and ends its
+// chain. Caller holds m.mu.
+func (ts *taskState) cancelPendingRetries() {
+	if ts.retryStop != nil {
+		close(ts.retryStop)
+		ts.retryStop = nil
+	}
 }
 
 // concurrencyAction describes what the caller should do after evaluating a

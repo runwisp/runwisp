@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
@@ -39,6 +40,21 @@ func validateDefaults(d *Defaults) error {
 	}
 	if err := validateRestartAttempts("defaults.restart_attempts", d.RestartAttempts); err != nil {
 		return err
+	}
+	// warn_after and restart_delay are inherited by only one kind of unit (and
+	// a negative warn_after not at all), so a bad value would otherwise load
+	// without a word; graceful_stop is checked here so the error names [defaults].
+	for _, f := range []struct {
+		key string
+		d   time.Duration
+	}{
+		{"warn_after", d.WarnAfter},
+		{"restart_delay", model.OrDefault(d.RestartDelay, 0)},
+		{"graceful_stop", model.OrDefault(d.GracefulStop, 0)},
+	} {
+		if f.d < 0 {
+			return fmt.Errorf("invalid defaults.%s: must be zero or a positive duration", f.key)
+		}
 	}
 	if d.Jitter < 0 {
 		return fmt.Errorf("invalid defaults.jitter: must be zero or a positive duration")

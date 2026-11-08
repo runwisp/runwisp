@@ -400,6 +400,9 @@ type RunUpdatedEvent RunEventBody
 type RunDeletedSSEEvent events.RunDeletedEvent
 type PingEvent struct{}
 
+// ResyncEvent tells a reconnecting client its resume cursor cannot be satisfied.
+type ResyncEvent struct{}
+
 // SystemSampleSSEEvent is the periodic resource snapshot for the app event
 // stream. Mirrors events.SystemSampleEvent; aliased so huma/sse's reverse-type
 // lookup maps it to the `system` event name.

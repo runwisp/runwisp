@@ -4,6 +4,7 @@
 package storage
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -352,6 +353,31 @@ func TestDeleteOldRunsByCount(t *testing.T) {
 	count, err = db.CountRunsFiltered(ctx, model.RunFilter{TaskName: "task1"})
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count)
+}
+
+// A purge of a big soft-deleted backlog (or a first retention pass over many
+// tasks) hands DeleteRunsByIDs more ids than SQLite accepts bind variables for.
+// It must still delete the rows rather than fail on every pass.
+func TestDeleteRunsByIDsBeyondSQLiteVariableLimit(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	var ids []string
+	for range 3 {
+		run := &model.Run{ID: ulid.Make().String(), TaskName: "t", Status: model.PhaseEnded, TriggeredBy: model.TriggeredByAPI, CreatedAt: time.Now()}
+		require.NoError(t, db.CreateRun(ctx, run))
+		ids = append(ids, run.ID)
+	}
+	for i := range 40000 {
+		ids = append(ids, fmt.Sprintf("absent-%d", i))
+	}
+
+	require.NoError(t, db.DeleteRunsByIDs(ctx, ids))
+
+	count, err := db.CountRunsFiltered(ctx, model.RunFilter{TaskName: "t"})
+	require.NoError(t, err)
+	assert.Zero(t, count)
 }
 
 func TestMarkCrashedRuns(t *testing.T) {

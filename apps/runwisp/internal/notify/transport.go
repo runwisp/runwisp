@@ -6,6 +6,7 @@ package notify
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -53,7 +54,10 @@ func (p *HTTPProvider) doHTTPRequest(ctx context.Context, url, contentType strin
 			req.Header.Add(k, v)
 		}
 	}
-	resp, err := p.Client.Do(req)
+	// A copy, so the redirect policy holds whatever Client was injected.
+	client := *p.Client
+	client.CheckRedirect = replayPostRedirect
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -62,12 +66,29 @@ func (p *HTTPProvider) doHTTPRequest(ctx context.Context, url, contentType strin
 	return p.checkHTTPResponse(ctx, resp.StatusCode, resp.Header, respBody)
 }
 
+// replayPostRedirect follows only the redirects that resend the POST and its
+// body (307, 308). net/http turns a 301/302/303 into a body-less GET, which
+// the endpoint typically answers 200 (an http:// URL that redirects to https://),
+// so the notification would be lost while the delivery read as a success. Those
+// are left unfollowed and surface as a permanent error from checkHTTPResponse.
+func replayPostRedirect(req *http.Request, via []*http.Request) error {
+	if c := req.Response.StatusCode; c != http.StatusTemporaryRedirect && c != http.StatusPermanentRedirect {
+		return http.ErrUseLastResponse
+	}
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	return nil
+}
+
 func (p *HTTPProvider) checkHTTPResponse(ctx context.Context, statusCode int, header http.Header, body []byte) error {
 	switch {
 	case statusCode >= 200 && statusCode < 300:
 		return nil
 	case statusCode == http.StatusTooManyRequests:
 		return p.handleRateLimit(ctx, statusCode, header, body)
+	case statusCode >= 300 && statusCode < 400:
+		return Permanent(fmt.Errorf("permanent: status=%d redirected to %q; set the notifier's url to the final address", statusCode, header.Get("Location")))
 	case IsPermanentHTTPStatus(statusCode):
 		return Permanent(fmt.Errorf("permanent: status=%d body=%s", statusCode, truncateBody(body)))
 	default:

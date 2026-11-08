@@ -475,6 +475,8 @@ failures = ['+output:ERROR']
 - The first match ends the run as `failed`. The log shows which pattern matched.
 - Lines are checked after [`secrets`](#secrets) are masked, so they look the
   same as in the log.
+- Patterns match the text without colour codes, so `^ERROR` also matches a red
+  `ERROR` line. The log keeps the codes.
 - Wrap the token in single quotes. Inside double quotes, TOML reads `\` as an
   escape: `"output:\d"` is a config error, and `"output:\bfail"` quietly turns
   `\b` into a backspace character.

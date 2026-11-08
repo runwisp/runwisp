@@ -84,15 +84,31 @@ function createConnectionStore() {
         stalledSources.clear();
         cancelRetry();
         stopTick();
-        if (wasDown) {
-            for (const listener of reconnectListeners) {
-                try {
-                    listener();
-                } catch (err) {
-                    logger.warn("reconnect listener threw", err);
-                }
+        if (wasDown) notifyReconnect();
+    }
+
+    function notifyReconnect() {
+        for (const listener of reconnectListeners) {
+            try {
+                listener();
+            } catch (err) {
+                logger.warn("reconnect listener threw", err);
             }
         }
+    }
+
+    // The server said our resume cursor is gone (daemon restarted, or the gap
+    // outran its replay buffer), so events were lost without the connection
+    // ever looking down. Refresh exactly as a reconnect does. Every store that
+    // tracks the stream hears the same event, so coalesce to one refresh.
+    let resyncQueued = false;
+    function requestResync() {
+        if (resyncQueued) return;
+        resyncQueued = true;
+        queueMicrotask(() => {
+            resyncQueued = false;
+            notifyReconnect();
+        });
     }
 
     function markDisconnected(error?: unknown) {
@@ -242,6 +258,7 @@ function createConnectionStore() {
         releaseSource,
         retryNow: attemptReconnect,
         onReconnect,
+        requestResync,
     };
 }
 
@@ -272,7 +289,9 @@ export const connectionStore = createConnectionStore();
  * Mirror a live stream's health into {@link connectionStore} under `id`: open
  * reports the source up, a stall reports it stalled, and an error reports it
  * down. A 401 is an expired session on a reachable daemon, not a lost
- * connection, so it routes to the login flow instead. Returns the unsubscribe.
+ * connection, so it routes to the login flow instead. A `resync` event (the
+ * server could not honour our resume cursor) refreshes state like a reconnect.
+ * Returns the unsubscribe.
  */
 export function trackStreamHealth(events: AppEventStream, id: string): () => void {
     const offs = [
@@ -288,6 +307,9 @@ export function trackStreamHealth(events: AppEventStream, id: string): () => voi
         }),
         events.onStall(() => {
             connectionStore.reportSourceStalled(id);
+        }),
+        events.subscribe("resync", () => {
+            connectionStore.requestResync();
         }),
     ];
     return () => {

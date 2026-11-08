@@ -47,6 +47,7 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	// Under the manager lock: GetActiveRuns takes an RLock and copies these same
 	// run fields, so writing them unlocked races with a concurrent snapshot.
 	m.mu.Lock()
+	retryStop := m.taskStateFor(task.Name).retryStopChan()
 	run.Status = model.PhaseRunning
 	run.StartedAt = &active.StartedAt
 	if task.Kind.IsService() {
@@ -70,6 +71,7 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	result := m.executor.Execute(ctx, task, run)
 	stopWarn()
 
+	task = m.exitDefinition(task)
 	nextRestartAttempt, giveUp := m.recordRunOutcome(task, run, active, result)
 	// Advance the jitter gate now the run is retired from active and the
 	// manager lock is released — recordRunOutcome unlocks before returning, so
@@ -77,8 +79,26 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	// for runs the gate never triggered.
 	m.gate.onComplete(run.ID)
 	if !giveUp {
-		m.scheduleFollowup(task, run, nextRestartAttempt)
+		m.scheduleFollowup(task, run, nextRestartAttempt, retryStop)
 	}
+}
+
+// exitDefinition returns the definition to judge a run's exit by. A reload that
+// changed only live settings of a running service (restart policy and delay,
+// start-retry budget, ...) does not recycle it, so the instance still holds the
+// definition it spawned under; its restart decision must come from the one now
+// in force. Anything else, or a task no longer registered, keeps the captured
+// definition.
+func (m *defaultTaskManager) exitDefinition(task *model.Task) *model.Task {
+	if !task.Kind.IsService() {
+		return task
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if ts, ok := m.tasks[task.Name]; ok && ts.task.Kind.IsService() && !ts.task.SpawnDiffers(task) {
+		return ts.task
+	}
+	return task
 }
 
 // armLongRunningWarning schedules the one-shot long_running event for a task
@@ -252,9 +272,11 @@ func (m *defaultTaskManager) reapRetiredTaskState(task *model.Task, ts *taskStat
 // policy after a run has ended. Station-triggered task runs never retry locally —
 // the control plane owns their retry lifecycle. Services are the exception: the
 // local supervisor keeps their instances alive no matter who started them.
+// retryStop is closed when the operator stops or a reload removes the task, which
+// ends a retry still waiting out its delay.
 // Service FATAL runs never reach this method — the caller guards on the FATAL
 // flag returned by recordRunOutcome.
-func (m *defaultTaskManager) scheduleFollowup(task *model.Task, run *model.Run, nextRestartAttempt int) {
+func (m *defaultTaskManager) scheduleFollowup(task *model.Task, run *model.Run, nextRestartAttempt int, retryStop <-chan struct{}) {
 	if run.TriggeredBy == model.TriggeredByStation && !task.Kind.IsService() {
 		return
 	}
@@ -272,7 +294,7 @@ func (m *defaultTaskManager) scheduleFollowup(task *model.Task, run *model.Run, 
 		go func() {
 			defer crashguard.Guard()
 			defer m.wg.Done()
-			m.scheduleRetry(task, copiedRun)
+			m.scheduleRetry(task, copiedRun, retryStop)
 		}()
 	}
 }
@@ -377,7 +399,8 @@ func WaitIdle(ctx context.Context, r interface{ GetActiveRunCount(string) int },
 }
 
 // StopTask cancels every active run of a non-service task and discards
-// anything still queued, so nothing starts back up right behind the stop. The
+// anything still queued and every retry still waiting out its delay, so nothing
+// starts back up right behind the stop. The
 // cron schedule is untouched. Returns an error for an unknown task or a service
 // (use StopService for those). Idempotent, mirroring StopService.
 // Cancelled runs end with ReasonStopped, which is outside retry eligibility
@@ -397,6 +420,7 @@ func (m *defaultTaskManager) StopTask(taskName string) error {
 	if ts.task.Kind.IsService() {
 		return fmt.Errorf(errTaskIsServiceFmt, taskName)
 	}
+	ts.cancelPendingRetries()
 	for _, ar := range ts.active {
 		ar.Cancel()
 	}
