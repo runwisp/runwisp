@@ -136,6 +136,30 @@ func HasEntries(doc []byte) bool {
 	return false
 }
 
+// EntryNames lists the entries doc declares a top-level [tasks.NAME] or
+// [services.NAME] table for, in document order: the names ExtractBlocks can
+// cut. A child table ([tasks.x.env]) names no new entry.
+func EntryNames(doc []byte) []string {
+	var names []string
+	for _, ln := range scanTOMLLines(string(doc)) {
+		if !ln.Code {
+			continue
+		}
+		raw, array, ok := tableHeader(ln.Text)
+		if !ok || array {
+			continue
+		}
+		segs, ok := splitDottedKey(raw)
+		if !ok || len(segs) != 2 {
+			continue
+		}
+		if slices.Contains(entryTables, segs[0]) && !slices.Contains(names, segs[1]) {
+			names = append(names, segs[1])
+		}
+	}
+	return names
+}
+
 // blockSpan is one entry's byte range in a document.
 type blockSpan struct {
 	name, table string

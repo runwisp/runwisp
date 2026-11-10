@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `import --write` adds to `runwisp.d/imported.toml` instead of replacing it, so you can import a few jobs at a time or from several sources. A job staged under the same name is replaced, and the summary lists what was kept and replaced.
+- `import systemd` ends with the exact `systemctl disable --now` command for the imported units, and `service install` names systemd units still enabled under the name of a task.
+- The import summary says how many jobs need review and names the ones that stop the config from loading. A refused `--write` names them too, with the file they came from.
+- `import systemd` notes `OnFailure=`, `Condition…=`, `SuccessExitStatus=`, `Nice=` and output sent to a file, instead of dropping them silently. The note for a unit with several commands lists the ones left out.
+
+### Fixed
+
+- `import systemd` applies drop-ins (`NAME.timer.d/*.conf`, what `systemctl edit` writes), so an overridden schedule or environment is imported as systemd runs it.
+- `import systemd` reads every systemd time span, such as `1d`, `1w` and `1h 30min`, which made `systemd-tmpfiles-clean.timer` fail to import.
+- `import systemd` maps `TimeoutStartSec=` on a `Type=oneshot` unit to `timeout`.
+- `import systemd` flags a `.service` that a `.timer` starts, pointing at the timer, instead of quietly turning it into a run-at-boot task.
+- `import systemd` skips a `NAME.d` drop-in directory matched by a glob instead of failing.
+- `import` no longer creates a `.runwisp` data directory in the working directory.
+
 ## [1.9.2] - 2026-11-08
 
 ### Changed

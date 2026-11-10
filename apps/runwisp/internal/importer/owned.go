@@ -38,8 +38,8 @@ type OwnedEntry struct {
 }
 
 // OwnedFrom snapshots the tasks and services a config defines, skipping staged
-// ones: the staging file is about to be rewritten wholesale, so what it
-// currently holds reserves nothing.
+// ones: a staged entry the import names again is replaced in the staging file
+// (configedit.Stage), so what it currently holds reserves nothing.
 //
 // Cron-sourced tasks are *kept*. An import doesn't rewrite a crontab, so the
 // name is genuinely taken — and when the incoming job is the same job (which it

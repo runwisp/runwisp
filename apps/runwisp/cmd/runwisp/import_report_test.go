@@ -206,17 +206,19 @@ func scheduleColumn(line, schedule string) int {
 // that want "the actually-colored one" alongside plainStyles.
 func colorStyles() importStyles { return newImportStyles() }
 
-// TestImportFooterLineDistinguishesLoadFailureFromTODO covers the two phrasings.
-// Blocking does not imply won't-load: a program with no command emits `run = ""`
-// and the load fails, while an unresolved %(ENV_x)s emits a fine run line that
-// loads and then runs the wrong thing.
-func TestImportFooterLineDistinguishesLoadFailureFromTODO(t *testing.T) {
-	res := parseCronForReport(t, "99 99 * * * /bin/bad\n")
+// TestImportFooterLineNamesOnlyRowsThatCantLoad: the verdict used to say
+// "N items need a fix before this config loads" for every blocked row, though
+// only one of them stopped the load, and "carry a # TODO" for notes that left
+// no `# TODO` in the TOML. A blocked row needs review; only the rows that
+// actually fail to load are called out, by name.
+func TestImportFooterLineNamesOnlyRowsThatCantLoad(t *testing.T) {
+	res := parseCronForReport(t, "99 99 * * * /bin/bad\n0 4 * * * /bin/mail%body\n0 3 * * * /bin/good\n")
+	unloadable := unloadableItems(res)
+	require.Len(t, unloadable, 1)
 
-	assert.Equal(t, "1 item needs a fix before this config loads.",
-		importFooterLine(res, assert.AnError))
-	assert.Equal(t, "1 item carries a # TODO — fix it before you rely on it.",
-		importFooterLine(res, nil))
+	assert.Equal(t, "2 items need review; "+unloadable[0].Name+" can't load until fixed, so this config won't either.",
+		importFooterLine(res, unloadable))
+	assert.Equal(t, "2 items need review.", importFooterLine(res, nil))
 
 	clean := parseCronForReport(t, "0 3 * * * /bin/good\n")
 	assert.Empty(t, importFooterLine(clean, nil), "nothing blocked, nothing to say")

@@ -146,7 +146,7 @@ func TestImportDryRunStillReportsABrokenJob(t *testing.T) {
 		"99 99 * * * /bin/bad\n", importOpts{write: true})
 	require.NoError(t, err)
 
-	assert.Contains(t, stderr, "1 item needs a fix before this config loads.")
+	assert.Contains(t, stderr, "1 item needs review; bad can't load until fixed, so this config won't either.")
 	assert.Contains(t, stderr, "cron expression 99 99 * * * didn't parse")
 	assert.Contains(t, stderr, "Nothing was written.")
 }

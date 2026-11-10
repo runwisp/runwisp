@@ -52,47 +52,67 @@ type importSource struct {
 	// the old scheduler off, both are running the same jobs. That is the most
 	// expensive thing this command can fail to mention — a backup that runs twice
 	// at 3am costs real money, and nothing else in the output implies cron stopped.
-	stillRuns []string
+	// It is given the result so it can name the exact units to turn off.
+	stillRuns func(*importer.Result) []string
+}
+
+// fixedLines is a stillRuns that says the same thing whatever was imported.
+func fixedLines(lines ...string) func(*importer.Result) []string {
+	return func(*importer.Result) []string { return lines }
 }
 
 var (
 	sourceCrontab = importSource{
 		label: "crontab",
-		stillRuns: []string{
+		stillRuns: fixedLines(
 			"cron still runs these jobs. Comment them out (`crontab -e`, or move the",
-			"file out of /etc/cron.d) before starting RunWisp, or each one runs twice.",
-		},
+			"file out of /etc/cron.d) before RunWisp runs them, or each one runs twice.",
+		),
 	}
 	sourceAnacrontab = importSource{
 		label: "anacrontab",
-		stillRuns: []string{
+		stillRuns: fixedLines(
 			"anacron still runs these jobs. Retire it (`sudo runwisp takeover` does, or",
-			"`systemctl mask --now anacron.timer anacron.service`) before starting",
-			"RunWisp, or each one runs twice.",
-		},
+			"`systemctl mask --now anacron.timer anacron.service`) before RunWisp runs",
+			"them, or each one runs twice.",
+		),
 	}
 	sourceSupervisord = importSource{
 		label: "supervisord config",
-		stillRuns: []string{
-			"supervisord still manages these programs. Stop them there before starting",
-			"RunWisp, or each one runs twice.",
-		},
+		stillRuns: fixedLines(
+			"supervisord still manages these programs. Stop them there before RunWisp",
+			"runs them, or each one runs twice.",
+		),
 	}
 	sourceOfelia = importSource{
 		label: "Ofelia config",
-		stillRuns: []string{
+		stillRuns: fixedLines(
 			"Ofelia still runs these jobs. Stop it (`docker compose stop ofelia`) before",
-			"starting RunWisp, or each one runs twice.",
-		},
+			"RunWisp runs them, or each one runs twice.",
+		),
 	}
-	sourceSystemd = importSource{
-		label: "systemd unit",
-		stillRuns: []string{
-			"systemd still runs these units. Disable each one (`systemctl disable --now",
-			"<unit>`) before starting RunWisp, or each one runs twice.",
-		},
-	}
+	sourceSystemd = importSource{label: "systemd units", stillRuns: systemdStillRuns}
 )
+
+// systemdStillRuns names the units to disable: the timer for a timer import,
+// since a timer-run service is static and can't be disabled itself, and the
+// service otherwise. A unit read from stdin has no name to give.
+func systemdStillRuns(res *importer.Result) []string {
+	var units []string
+	for _, it := range res.Items() {
+		if it.Name != "" && (strings.HasSuffix(it.Source, ".timer") || strings.HasSuffix(it.Source, ".service")) {
+			units = append(units, it.Source)
+		}
+	}
+	if len(units) == 0 {
+		units = []string{"<unit>"}
+	}
+	return []string{
+		"systemd still runs these units. Disable them before RunWisp runs them, or",
+		"each one runs twice:",
+		"  sudo systemctl disable --now " + strings.Join(units, " "),
+	}
+}
 
 // importReport is everything the summary renders: the parsed result, what it was
 // parsed from, and whether the generated config actually loads. validationErr
@@ -102,6 +122,10 @@ type importReport struct {
 	res           *importer.Result
 	source        importSource
 	validationErr error
+	// unloadable are the rows whose own TOML fails to load, found only when
+	// validationErr is set. Empty with validationErr set means no single row is
+	// to blame, so the raw error is the only clue.
+	unloadable []importer.Item
 }
 
 // writeStillRuns prints the "the old scheduler is still running these" warning.
@@ -112,12 +136,13 @@ type importReport struct {
 // warn about yet — and in the first, the operator has a nearer problem on screen.
 func (rep importReport) writeStillRuns(w io.Writer, st importStyles) {
 	tasks, services := rep.emitted()
-	if rep.validationErr != nil || tasks+services == 0 || len(rep.source.stillRuns) == 0 {
+	if rep.validationErr != nil || tasks+services == 0 || rep.source.stillRuns == nil {
 		return
 	}
+	lines := rep.source.stillRuns(rep.res)
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "%s %s\n", st.attn.Render("!"), rep.source.stillRuns[0])
-	for _, line := range rep.source.stillRuns[1:] {
+	fmt.Fprintf(w, "%s %s\n", st.attn.Render("!"), lines[0])
+	for _, line := range lines[1:] {
 		fmt.Fprintf(w, "  %s\n", line)
 	}
 }
@@ -130,10 +155,17 @@ func (rep importReport) emitted() (tasks, services int) {
 	return t.Tasks, t.Services
 }
 
-// blockingRows counts the jobs that need a human. It also decides whether the
-// epilogue's raw config.Load dump would tell the operator anything they haven't
-// already been told in the terms of their own file.
-func (rep importReport) blockingRows() int { return rep.res.Tally().Blocked }
+// writeLoadError prints config.Load's own words for why the config doesn't
+// load, unless the verdict already named the rows to blame, in which case the
+// rows' notes say it in the terms of the operator's own file.
+func (rep importReport) writeLoadError(w io.Writer, st importStyles) bool {
+	if rep.validationErr == nil || len(rep.unloadable) > 0 {
+		return false
+	}
+	fmt.Fprintf(w, "%s the generated config didn't validate yet:\n  %s\n",
+		st.attn.Render("!"), rep.validationErr.Error())
+	return true
+}
 
 // printImportSummary writes the human-friendly overview to stderr: the counts, a
 // row per job with the command that will run, the file-level notes, the verdict,
@@ -151,7 +183,7 @@ func printImportSummary(w io.Writer, rep importReport, opts importOpts, epilogue
 	items := rep.res.Items()
 
 	if opts.quiet {
-		if rep.blockingRows() == 0 && rep.validationErr == nil {
+		if rep.res.Tally().Blocked == 0 && rep.validationErr == nil {
 			return
 		}
 		items = onlyBlocking(items)
@@ -166,7 +198,7 @@ func printImportSummary(w io.Writer, rep importReport, opts importOpts, epilogue
 	if !opts.quiet {
 		writeLines(w, importNoteLines(rep.res.Notes(), width, st))
 	}
-	if footer := importFooterLine(rep.res, rep.validationErr); footer != "" {
+	if footer := importFooterLine(rep.res, rep.unloadable); footer != "" {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, footer)
 	}
@@ -189,16 +221,11 @@ func writeLines(w io.Writer, lines []string) {
 func singleFileEpilogue(rep importReport, target string) func(io.Writer, importStyles) {
 	return func(w io.Writer, st importStyles) {
 		if rep.validationErr != nil {
-			// When the rows above already carry the parser's own words for what's
-			// wrong, repeating config.Load's error is noise. With nothing flagged,
-			// it's the only clue there is.
-			if rep.blockingRows() > 0 {
+			if rep.writeLoadError(w, st) {
+				fmt.Fprintln(w, "Fix that, then re-run `runwisp validate`.")
+			} else {
 				fmt.Fprintln(w, "Fix the items above, then re-run `runwisp validate`.")
-				return
 			}
-			fmt.Fprintf(w, "%s the generated config didn't validate yet:\n  %s\n",
-				st.attn.Render("!"), rep.validationErr.Error())
-			fmt.Fprintln(w, "Fix that, then re-run `runwisp validate`.")
 			return
 		}
 		if target != "" {
@@ -243,6 +270,7 @@ func (m wiringMood) line(outcome configedit.RootOutcome, rootPath string) string
 func twoTierEpilogue(rep importReport, staged configedit.StageResult, layout configedit.Layout) func(io.Writer, importStyles) {
 	return func(w io.Writer, st importStyles) {
 		fmt.Fprintf(w, "Staged %s in %s\n", pluralizeCounts(rep.emitted()), staged.StagingPath)
+		writeStagingMerge(w, staged, false)
 		fmt.Fprintln(w, moodDid.line(staged.Root, layout.RootPath))
 
 		fmt.Fprintln(w)
@@ -252,6 +280,23 @@ func twoTierEpilogue(rep importReport, staged configedit.StageResult, layout con
 		fmt.Fprintf(w, "They show as %s: imported, not yet native. Graduate one into\n", st.dim.Render("staged"))
 		fmt.Fprintf(w, "%s when you want to own it:\n", filepath.Base(layout.RootPath))
 		fmt.Fprintln(w, "  runwisp promote <name>")
+	}
+}
+
+// writeStagingMerge says what happened to the entries earlier imports staged:
+// kept alongside this one, or replaced because this import uses their name.
+func writeStagingMerge(w io.Writer, res configedit.StageResult, dryRun bool) {
+	kept, replaced := "Kept", "Replaced"
+	if dryRun {
+		kept, replaced = "Would keep", "Would replace"
+	}
+	if len(res.Kept) > 0 {
+		fmt.Fprintf(w, "%s %s from earlier imports: %s. Delete a block from %s to drop it.\n",
+			kept, textutil.Count(len(res.Kept), "entry", "entries"), strings.Join(res.Kept, ", "),
+			filepath.Base(res.StagingPath))
+	}
+	if len(res.Replaced) > 0 {
+		fmt.Fprintf(w, "%s the staged copy of %s.\n", replaced, strings.Join(res.Replaced, ", "))
 	}
 }
 
@@ -279,6 +324,7 @@ func singleFilePlanEpilogue(rep importReport, target string, wouldOverwrite bool
 func twoTierPlanEpilogue(rep importReport, plan configedit.StageResult, layout configedit.Layout) func(io.Writer, importStyles) {
 	return func(w io.Writer, st importStyles) {
 		fmt.Fprintf(w, "Would stage %s in %s\n", pluralizeCounts(rep.emitted()), plan.StagingPath)
+		writeStagingMerge(w, plan, true)
 		fmt.Fprintln(w, moodWould.line(plan.Root, layout.RootPath))
 
 		if plan.PreLoadErr != nil {
@@ -304,10 +350,9 @@ func twoTierPlanEpilogue(rep importReport, plan configedit.StageResult, layout c
 // above didn't already explain it, and then the promise that makes --dry-run
 // worth typing.
 func planTail(w io.Writer, st importStyles, rep importReport) {
-	if rep.validationErr != nil && rep.blockingRows() == 0 {
+	if rep.validationErr != nil && len(rep.unloadable) == 0 {
 		fmt.Fprintln(w)
-		fmt.Fprintf(w, "%s the generated config didn't validate yet:\n  %s\n",
-			st.attn.Render("!"), rep.validationErr.Error())
+		rep.writeLoadError(w, st)
 	}
 	rep.writeStillRuns(w, st)
 	fmt.Fprintln(w)
