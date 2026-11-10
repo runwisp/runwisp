@@ -152,6 +152,13 @@ describe("formatRelativeTime", () => {
         expect(formatRelativeTime(date, new Date("2024-01-01T15:00:00Z"))).toBe("3 hours ago");
     });
 
+    it("truncates each unit like formatRelativeCompact", () => {
+        expect(formatRelativeTime(at(-(21 * 3600 + 50 * 60)), now)).toBe("21 hours ago");
+        expect(formatRelativeCompact(at(-(21 * 3600 + 50 * 60)), now)).toBe("21h");
+        expect(formatRelativeTime(at(59.6), now)).toBe("in 59 seconds");
+        expect(formatRelativeTime(at(90), now)).toBe("in 1 minute");
+    });
+
     it("always shows a number by default", () => {
         expect(formatRelativeTime(at(0), now)).toBe("in 0 seconds");
         expect(formatRelativeTime(at(-86_400), now)).toBe("1 day ago");
