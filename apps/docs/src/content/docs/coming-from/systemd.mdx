@@ -24,6 +24,10 @@ runwisp validate
 A bare unit name such as `myapp.service` also works: it is looked up where
 systemd keeps units.
 
+Drop-ins are applied the way systemd applies them: every `NAME.service.d/*.conf`
+next to the unit and in `/etc/systemd/system`, `/run/systemd/system` and
+`/usr/lib/systemd/system`. That includes the overrides `systemctl edit` writes.
+
 Given `tempoledger.service`:
 
 ```ini
@@ -73,16 +77,22 @@ in the [CLI reference](/reference/cli/#runwisp-import).
 ## Disable the unit
 
 The import doesn't stop or disable anything. If systemd and RunWisp both run
-the same process, you get two copies fighting over ports or queues. Disable the
-unit before starting it under RunWisp:
+the same process, you get two copies fighting over ports or queues. The summary
+ends with the command that disables the units you imported. Run it before
+RunWisp starts them:
 
 ```bash
 sudo systemctl disable --now myapp.service
 ```
 
 `--now` stops it immediately; `disable` keeps it from starting on boot. You can
-move a few units at a time, but never leave one enabled in both. There is no
-`takeover` for systemd units.
+move a few units at a time, but never leave one enabled in both.
+`runwisp service install` lists units that are still enabled under the name of
+a task. There is no `takeover` for systemd units.
+
+To go back, re-enable the units with `sudo systemctl enable --now NAME`, delete
+their blocks from `runwisp.d/imported.toml` (or `runwisp.toml`, once promoted),
+and run `runwisp reload`.
 
 ## How the pieces map
 
@@ -96,6 +106,8 @@ move a few units at a time, but never leave one enabled in both. There is no
 | `Environment`        | [`env`](/configuration/services/#env)                                             | Every line is kept.                                                                                                      |
 | `EnvironmentFile`    | [`env_file`](/configuration/services/#env_file)                                   | Only the first file. A `-` file that doesn't exist is left out.                                                          |
 | `TimeoutStopSec`     | [`graceful_stop`](/configuration/services/#graceful_stop)                         | `0` (no timeout) is left out with a note.                                                                                |
+| `TimeoutStartSec`    | [`timeout`](/configuration/tasks/#timeout)                                        | `Type=oneshot` only. On other types it only bounds startup and is dropped.                                               |
+| `StandardOutput`     | _(not needed)_                                                                    | Output goes to the run's log. A `file:` or `append:` target gets a note.                                                 |
 | `Restart`            | [`restart`](/configuration/services/#restart)                                     | See below.                                                                                                               |
 | `KillSignal`         | [`stop_signal`](/configuration/services/#stop_signal)                             |                                                                                                                          |
 | `[Unit] Description` | [`description`](/configuration/services/#description)                             |                                                                                                                          |
@@ -145,7 +157,7 @@ timer, not the service: `sudo systemctl disable --now backup.timer`.
 | systemd                                  | runwisp.toml                                                  | Notes                                                                                     |
 | ---------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `OnCalendar`                             | [`cron`](/configuration/tasks/#cron)                          | `weekly` is Monday. A trailing zone becomes [`timezone`](/configuration/tasks/#timezone). |
-| `OnUnitActiveSec`, `OnUnitInactiveSec`   | `cron = "@every …"`                                           | Counted from the last scheduled run, not from when the unit ran.                          |
+| `OnUnitActiveSec`, `OnUnitInactiveSec`   | `cron = "@every …"`                                           | Counted from the last scheduled run, not from when the unit ran. `1d` becomes `24h`.      |
 | `OnBootSec`, `OnStartupSec`              | [`run_on_start = "boot"`](/configuration/tasks/#run_on_start) | The delay is dropped.                                                                     |
 | `Persistent=true`                        | _(default)_                                                   | Without it, the import sets [`catch_up = 0`](/configuration/tasks/#catch_up).             |
 | `RandomizedDelaySec`                     | [`jitter`](/configuration/tasks/#jitter)                      | The closest match, with a note.                                                           |
@@ -183,8 +195,13 @@ unit's row.
   more access than the unit allowed. If that matters, use a container or a
   restricted user.
 - **Socket activation.** Not supported. The program must open its own port.
-- **Template units.** `%i`, `%I`, `%n`, and similar are not filled in. Replace
-  them in the `run` line.
+- **Template units.** `%i`, `%I`, `%n`, `%T`, and similar are not filled in.
+  Replace them in the `run` line.
+- **A service a timer starts.** Import the `.timer`. The `.service` on its own
+  runs once per boot, or all the time, instead of on the timer's schedule.
+- **`OnFailure=` and `Condition…=`.** Dropped with a note. Use a
+  [notification route](/notifications/) to hear about failures, and put a
+  condition into the `run` line.
 
 ## Learn more
 

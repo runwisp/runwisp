@@ -915,3 +915,27 @@ func TestStationInstall_TokenGoesToDropInOnly(t *testing.T) {
 	assert.NotContains(t, dry.String(), "s3cret-token")
 	assert.Contains(t, dry.String(), "0600 drop-in")
 }
+
+// unitStates is a Runner that answers `systemctl is-enabled UNIT` from a map.
+type unitStates map[string]string
+
+func (u unitStates) Run(_ context.Context, _ string, args ...string) ([]byte, []byte, error) {
+	if state, ok := u[args[len(args)-1]]; ok {
+		return []byte(state + "\n"), nil, nil
+	}
+	return nil, []byte("Failed to get unit file state"), errors.New("exit status 1")
+}
+
+// After `service install`, imported timers left enabled ran alongside RunWisp
+// with nothing saying so; only cron got a note.
+func TestStillEnabledUnits(t *testing.T) {
+	tasks := []model.Task{
+		{Name: "backup", Kind: model.KindTask},
+		{Name: "web", Kind: model.KindService},
+		{Name: "cleanup", Kind: model.KindTask},
+		{Name: "gone", Kind: model.KindTask},
+		{Name: "fromcron", Kind: model.KindTask, Source: model.SourceCron},
+	}
+	run := unitStates{"backup.timer": "enabled", "web.service": "enabled", "cleanup.timer": "disabled", "fromcron.timer": "enabled"}
+	assert.Equal(t, []string{"backup.timer", "web.service"}, stillEnabledUnits(context.Background(), run, tasks))
+}

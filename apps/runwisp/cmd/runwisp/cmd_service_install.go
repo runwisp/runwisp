@@ -10,12 +10,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 	"github.com/spf13/cobra"
 )
 
@@ -166,6 +168,7 @@ func installService(cmd *cobra.Command, f Flags, req installRequest) (installed 
 	}
 	ensureServiceEnv(cmd, installer, opts, env)
 	printCronStillOwnsNote(cmd, f, deps, installer, opts)
+	printSystemdStillEnabledNote(cmd.OutOrStdout(), deps.Cmd, opts.Config)
 	return true, nil
 }
 
@@ -344,6 +347,53 @@ func printCronStillOwnsNote(cmd *cobra.Command, f Flags, deps autostart.Deps, in
 		"\nNote: %s is still running, and owns %d cron job(s) on this box.\n"+
 			"      Run '%s' to hand them to RunWisp.\n",
 		plan.Evidence.CronUnit, plan.Evidence.Scan.Jobs, sudoRunwisp("takeover"))
+}
+
+// printSystemdStillEnabledNote is the systemd half of printCronStillOwnsNote:
+// `import systemd` copies a unit without disabling it, so once RunWisp runs,
+// a timer left enabled fires the same job twice. The import summary prints the
+// disable command; this is the reminder at the moment RunWisp starts running.
+func printSystemdStillEnabledNote(out io.Writer, run autostart.Runner, configPath string) {
+	if runtime.GOOS != "linux" {
+		return
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return
+	}
+	units := stillEnabledUnits(context.Background(), run, cfg.Tasks)
+	if len(units) == 0 {
+		return
+	}
+	fmt.Fprintf(out, "\nNote: %s %s still enabled in systemd, under the name of a task RunWisp runs.\n"+
+		"      If you imported them, disable them or each job runs twice:\n"+
+		"        sudo systemctl disable --now %s\n",
+		strings.Join(units, ", "), textutil.Pluralize(len(units), "is", "are"), strings.Join(units, " "))
+}
+
+// stillEnabledUnits returns the systemd units enabled under a task's name:
+// NAME.timer for a task, NAME.service for a service. A crontab-read task came
+// from cron, not systemd, so it is left out.
+//
+// ponytail: matches by name and checks the system manager only, so a task
+// renamed on import (backup-2) or a user unit goes unnoticed. Record each
+// staged task's unit if that turns out to matter.
+func stillEnabledUnits(ctx context.Context, run autostart.Runner, tasks []model.Task) []string {
+	var units []string
+	for _, t := range tasks {
+		if t.Source == model.SourceCron {
+			continue
+		}
+		unit := t.Name + ".timer"
+		if t.Kind.IsService() {
+			unit = t.Name + ".service"
+		}
+		stdout, _, _ := run.Run(ctx, "systemctl", "is-enabled", unit)
+		if strings.TrimSpace(string(stdout)) == "enabled" {
+			units = append(units, unit)
+		}
+	}
+	return units
 }
 
 // inspectServiceInstall serves --print and --dry-run: both answer "what
