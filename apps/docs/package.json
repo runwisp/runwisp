@@ -11,10 +11,10 @@
         "@astrojs/starlight": "^0.42.10",
         "@astrojs/svelte": "^9.1.2",
         "@runwisp/ui": "workspace:*",
-        "astro": "^7.4.7",
+        "astro": "^7.4.8",
         "js-yaml": "^4.3.2",
         "sharp": "^0.35.5",
-        "starlight-openapi": "^0.27.0",
+        "starlight-openapi": "^0.27.1",
         "svelte": "^5.57.3"
     },
     "devDependencies": {
