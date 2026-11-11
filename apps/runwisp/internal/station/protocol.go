@@ -200,6 +200,7 @@ func NewServiceStatusMessage(snapshot model.ServiceSnapshot) protocol.ServiceSta
 			State:        protocol.ServiceInstanceState(inst.State),
 			StartedAt:    inst.StartedAt,
 			RestartCount: inst.RestartCount,
+			StartFails:   inst.StartFails,
 			LastExitCode: inst.LastExitCode,
 		}
 		if inst.Pid != 0 {

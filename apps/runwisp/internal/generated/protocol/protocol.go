@@ -252,8 +252,14 @@ type ServiceInstanceSnapshot struct {
 	Pid *int `json:"pid,omitzero"`
 	// When the current run of this slot started, when live.
 	StartedAt *time.Time `json:"startedAt,omitzero"`
-	// Consecutive-restart counter for this slot since its last healthy run.
+	// Exits of this slot since its last healthy run. Operator stops and
+	// restarts count too, so it is not a crash signal; use startFails.
 	RestartCount int `json:"restartCount"`
+	// Failed starts of this slot in a row since its last healthy run: exits
+	// before the instance became healthy, not counting operator stops and
+	// restarts. The slot goes fatal once this passes the service's restart
+	// attempts. Always sent; absent only from daemons that predate it.
+	StartFails int `json:"startFails"`
 	// Exit code of this slot's most recent terminated run, when known.
 	LastExitCode *int `json:"lastExitCode,omitzero"`
 }

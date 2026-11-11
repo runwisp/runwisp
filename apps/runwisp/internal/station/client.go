@@ -66,6 +66,10 @@ type Dependencies struct {
 	// RequestRestart asks the daemon to restart its own process when station
 	// sends agent:restart. nil rejects the command (e.g. not service-managed).
 	RequestRestart func() error
+	// CanRestart reports why RequestRestart would refuse, or nil when it would
+	// restart. Advertised at connect as the "restart" capability. nil means
+	// no precondition beyond RequestRestart being set.
+	CanRestart func() error
 	// SystemStats, when set, returns a live host snapshot the heartbeat
 	// piggybacks for the control plane's per-runner metrics view. nil sends a
 	// plain ping (the station falls back to identity-only runner info).
@@ -182,6 +186,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		Uploader:       uploader,
 		Tracker:        tracker,
 		RequestRestart: deps.RequestRestart,
+		CanRestart:     deps.CanRestart,
 	})
 
 	client.sessions = &sessionRunner{
@@ -290,6 +295,15 @@ func (client *Client) runConnectionAttempt(ctx context.Context) (bool, error) {
 	return stable, sessionErr
 }
 
+// advertisedCapabilities is the X-Runner-Capabilities header: the execution
+// backends, plus whether an agent:restart would be honoured, so the station
+// can explain a restart it can't do instead of sending one that is refused.
+// Fields are only ever added here (old stations ignore unknown keys).
+type advertisedCapabilities struct {
+	executor.Availability
+	Restart executor.BackendStatus `json:"restart"`
+}
+
 func (client *Client) dialWebSocket(ctx context.Context) (*websocket.Conn, error) {
 	headers := http.Header{}
 	headers.Set("Authorization", fmt.Sprintf("Bearer %s", client.config.StationToken))
@@ -297,7 +311,8 @@ func (client *Client) dialWebSocket(ctx context.Context) (*websocket.Conn, error
 	headers.Set("X-Runner-Fingerprint", client.config.Fingerprint)
 	avail := client.handler.liveAvailability()
 	client.advertisedConfig.Store(avail.Config.Available)
-	if capJSON, err := json.Marshal(avail); err == nil {
+	caps := advertisedCapabilities{Availability: avail, Restart: client.handler.restartStatus()}
+	if capJSON, err := json.Marshal(caps); err == nil {
 		headers.Set("X-Runner-Capabilities", string(capJSON))
 	}
 	// Advertise the station→daemon message types this daemon understands so the

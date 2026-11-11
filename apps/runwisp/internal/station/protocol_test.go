@@ -157,7 +157,7 @@ func TestNewServiceStatusMessage(t *testing.T) {
 		Instances: []model.ServiceInstanceStatus{
 			{Index: 0, State: model.ServiceInstanceRunning, Pid: 42, RestartCount: 1},
 			// Second instance carries an exit code but no pid.
-			{Index: 1, State: "fatal", RestartCount: 4, LastExitCode: &exit},
+			{Index: 1, State: "fatal", RestartCount: 4, StartFails: 3, LastExitCode: &exit},
 		},
 	}
 
@@ -177,4 +177,11 @@ func TestNewServiceStatusMessage(t *testing.T) {
 	assert.Nil(t, msg.Instances[0].LastExitCode)
 	assert.Equal(t, 137, *msg.Instances[1].LastExitCode)
 	assert.Equal(t, 4, msg.Instances[1].RestartCount)
+	assert.Equal(t, 3, msg.Instances[1].StartFails)
+
+	// startFails goes on the wire even at 0: the station reads its absence as
+	// a daemon too old to report it.
+	b, err := json.Marshal(msg.Instances[0])
+	require.NoError(t, err)
+	assert.Contains(t, string(b), `"startFails":0`)
 }
