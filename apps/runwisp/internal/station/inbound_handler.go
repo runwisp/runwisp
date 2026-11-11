@@ -34,6 +34,9 @@ type InboundHandler struct {
 	// requestRestart asks the daemon to restart its own process. nil (or a
 	// daemon that isn't service-managed) means agent:restart is rejected.
 	requestRestart func() error
+	// canRestart reports why requestRestart would refuse; nil means no
+	// precondition beyond requestRestart being set.
+	canRestart func() error
 
 	// mu guards logListeners. RWMutex because IsLogListener is on the per-log-
 	// line read path (frequent), while listen/stop mutations are rare.
@@ -54,6 +57,7 @@ type InboundHandlerDeps struct {
 	Uploader        *LogUploader
 	Tracker         *ExecutionTracker
 	RequestRestart  func() error
+	CanRestart      func() error
 }
 
 func NewInboundHandler(deps InboundHandlerDeps) *InboundHandler {
@@ -67,6 +71,7 @@ func NewInboundHandler(deps InboundHandlerDeps) *InboundHandler {
 		uploader:        deps.Uploader,
 		tracker:         deps.Tracker,
 		requestRestart:  deps.RequestRestart,
+		canRestart:      deps.CanRestart,
 		logListeners:    make(map[string]struct{}),
 	}
 }
@@ -82,13 +87,29 @@ func (h *InboundHandler) liveAvailability() executor.Availability {
 	return avail
 }
 
+// restartStatus is the "restart" capability advertised at connect: whether
+// HandleAgentRestart would restart the daemon, and why not.
+func (h *InboundHandler) restartStatus() executor.BackendStatus {
+	if h.requestRestart == nil {
+		return executor.BackendStatus{Reason: errAgentNotServiceManaged}
+	}
+	if h.canRestart != nil {
+		if err := h.canRestart(); err != nil {
+			return executor.BackendStatus{Reason: err.Error()}
+		}
+	}
+	return executor.BackendStatus{Available: true}
+}
+
+const errAgentNotServiceManaged = "agent is not service-managed; cannot restart remotely"
+
 // HandleAgentRestart asks the daemon to restart its own process. It is only
 // honoured when the daemon runs under a service manager (systemd/launchd) that
 // will bring it back — otherwise restarting would just stop the agent for
 // good, so we reject it with a clear conflict the dashboard can surface.
 func (h *InboundHandler) HandleAgentRestart() error {
 	if h.requestRestart == nil {
-		return &StationError{Kind: StationErrorKindConflict, Message: "agent is not service-managed; cannot restart remotely"}
+		return &StationError{Kind: StationErrorKindConflict, Message: errAgentNotServiceManaged}
 	}
 	if err := h.requestRestart(); err != nil {
 		return &StationError{Kind: StationErrorKindConflict, Message: err.Error()}

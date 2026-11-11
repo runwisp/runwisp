@@ -590,7 +590,16 @@ components:
           description: When the current run of this slot started, when live.
         restartCount:
           type: integer
-          description: Consecutive-restart counter for this slot since its last healthy run.
+          description: |
+            Exits of this slot since its last healthy run. Operator stops and
+            restarts count too, so it is not a crash signal; use startFails.
+        startFails:
+          type: integer
+          description: |
+            Failed starts of this slot in a row since its last healthy run: exits
+            before the instance became healthy, not counting operator stops and
+            restarts. The slot goes fatal once this passes the service's restart
+            attempts. Always sent; absent only from daemons that predate it.
         lastExitCode:
           type: integer
           nullable: true
@@ -599,6 +608,7 @@ components:
         - index
         - state
         - restartCount
+        - startFails
 
     ServiceStatusMessage:
       type: object

@@ -165,6 +165,14 @@ func TestRestartServiceInstancesCancelsAll(t *testing.T) {
 	// Each of the three instances is cancelled and refilled; six starts total
 	// proves the refills happened.
 	started.waitFor(t, 6)
+
+	// An operator restart is not a failed start: the station reads startFails
+	// as the crash signal, so it must stay 0 here.
+	snap, ok := jm.ServiceSnapshot("svc")
+	require.True(t, ok)
+	for _, inst := range snap.Instances {
+		assert.Zero(t, inst.StartFails, "instance %d", inst.Index)
+	}
 }
 
 // TestRestartServiceInstancesRespawnsOnFailurePolicy is the regression test for

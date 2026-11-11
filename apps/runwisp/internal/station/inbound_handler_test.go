@@ -5,6 +5,7 @@ package station
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -441,6 +442,46 @@ func TestDecodeInboundMessage_AuthResult(t *testing.T) {
 	require.True(t, ok)
 	assert.True(t, message.Success)
 	assert.Equal(t, "conn-1", message.ConnectionID)
+}
+
+func TestInboundHandler_RestartStatus(t *testing.T) {
+	deps := func(req, can func() error) InboundHandlerDeps {
+		return InboundHandlerDeps{
+			LogDir:          "/tmp/logs",
+			QueueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+			RequestRestart:  req,
+			CanRestart:      can,
+		}
+	}
+	ok := func() error { return nil }
+
+	st := NewInboundHandler(deps(nil, nil)).restartStatus()
+	assert.False(t, st.Available)
+	assert.Equal(t, errAgentNotServiceManaged, st.Reason)
+
+	st = NewInboundHandler(deps(ok, func() error { return errors.New("not managed by a service manager") })).restartStatus()
+	assert.False(t, st.Available)
+	assert.Equal(t, "not managed by a service manager", st.Reason)
+
+	st = NewInboundHandler(deps(ok, ok)).restartStatus()
+	assert.True(t, st.Available)
+	assert.Empty(t, st.Reason)
+
+	assert.True(t, NewInboundHandler(deps(ok, nil)).restartStatus().Available)
+}
+
+// The capabilities header keeps the backends at the top level (old stations
+// decode only those) and adds "restart" beside them.
+func TestAdvertisedCapabilities_JSON(t *testing.T) {
+	b, err := json.Marshal(advertisedCapabilities{
+		Availability: executor.Availability{Shell: executor.BackendStatus{Available: true}},
+		Restart:      executor.BackendStatus{Reason: "restart it manually"},
+	})
+	require.NoError(t, err)
+	var got map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(b, &got))
+	assert.JSONEq(t, `{"available":true}`, string(got["shell"]))
+	assert.JSONEq(t, `{"available":false,"reason":"restart it manually"}`, string(got["restart"]))
 }
 
 func TestInboundHandler_HandleAgentRestart(t *testing.T) {
