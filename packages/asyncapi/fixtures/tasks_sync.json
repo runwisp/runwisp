@@ -1,0 +1,85 @@
+{
+  "type": "tasks:sync",
+  "id": "d7",
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "hash": "9b1c4e7f20a3d5c8",
+    "tasks": [
+      {
+        "name": "backup",
+        "kind": "task",
+        "group": "db",
+        "description": "Nightly dump",
+        "enabled": true,
+        "spec": {
+          "type": "shell",
+          "script": "pg_dump app > /backups/app.sql",
+          "shell": "/bin/bash",
+          "workingDir": "/srv/app"
+        },
+        "timeoutMs": 3600000,
+        "options": {
+          "env": {
+            "PGHOST": "localhost"
+          },
+          "gracefulStopMs": 10000,
+          "logMaxBytes": 10485760,
+          "logOnFull": "drop_old",
+          "failures": [
+            "+timeout"
+          ]
+        },
+        "maxConcurrent": 1,
+        "onOverlap": "skip",
+        "restartPolicy": "never",
+        "maxRetries": 2,
+        "retryDelayMs": 60000,
+        "retryBackoff": "exponential",
+        "schedules": [
+          {
+            "cron": "0 3 * * *",
+            "timezone": "Europe/Bratislava",
+            "enabled": true
+          }
+        ],
+        "jitterMs": 30000,
+        "catchUp": "latest",
+        "params": {
+          "TARGET": {
+            "kind": "env",
+            "type": "string",
+            "required": true,
+            "default": "full",
+            "choices": [
+              "full",
+              "schema"
+            ],
+            "allowCustom": true,
+            "description": "What to dump"
+          }
+        }
+      },
+      {
+        "name": "web",
+        "kind": "service",
+        "enabled": true,
+        "spec": {
+          "type": "shell",
+          "script": "node server.js"
+        },
+        "service": {
+          "instances": 2,
+          "autostart": true,
+          "restartDelayMs": 1000,
+          "restartBackoff": "exponential",
+          "backoffResetAfterMs": 60000
+        },
+        "compose": {
+          "file": "compose.yaml",
+          "projectName": "shop",
+          "service": "web"
+        }
+      }
+    ]
+  }
+}

@@ -1036,7 +1036,7 @@ components:
         state: { $ref: "#/components/schemas/ServiceInstanceState" }
         pid: { type: integer, nullable: true }
         startedAt: { type: string, format: date-time, nullable: true }
-        restartCount: { type: integer, description: Exits since the last healthy run, operator actions included. }
+        restartCount: { type: integer, description: "Exits since the last healthy run, operator actions included." }
         startFails: { type: integer, description: Failed starts in a row since the last healthy run. }
         lastExitCode: { type: integer, nullable: true }
       required: [index, state, restartCount, startFails]

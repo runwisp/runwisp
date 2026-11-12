@@ -1,0 +1,11 @@
+{
+  "type": "execution:stop",
+  "id": "s23",
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "executionId": "ex_01JC8Y5T",
+    "reason": "stopped from the dashboard",
+    "gracefulStopMs": 10000,
+    "force": true
+  }
+}

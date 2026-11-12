@@ -1,0 +1,27 @@
+{
+  "type": "service:status",
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "taskId": "station-tsk_01JC8Y7W",
+    "state": "degraded",
+    "desiredInstances": 2,
+    "runningInstances": 1,
+    "instances": [
+      {
+        "index": 0,
+        "state": "running",
+        "pid": 4242,
+        "startedAt": "2026-11-12T09:58:00Z",
+        "restartCount": 0,
+        "startFails": 0
+      },
+      {
+        "index": 1,
+        "state": "restarting",
+        "restartCount": 3,
+        "startFails": 2,
+        "lastExitCode": 137
+      }
+    ]
+  }
+}

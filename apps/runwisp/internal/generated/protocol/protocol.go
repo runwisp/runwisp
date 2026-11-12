@@ -657,7 +657,7 @@ type ServiceInstance struct {
 	State     ServiceInstanceState `json:"state"`
 	Pid       *int                 `json:"pid,omitzero"`
 	StartedAt *time.Time           `json:"startedAt,omitzero"`
-	// Exits since the last healthy run
+	// Exits since the last healthy run, operator actions included.
 	RestartCount int `json:"restartCount"`
 	// Failed starts in a row since the last healthy run.
 	StartFails   int  `json:"startFails"`

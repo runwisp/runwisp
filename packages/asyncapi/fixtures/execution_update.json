@@ -1,0 +1,23 @@
+{
+  "type": "execution:update",
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "seq": 42,
+    "executionId": "ex_01JC8Y5T",
+    "status": "finished",
+    "startedAt": "2026-11-12T03:00:00Z",
+    "finishedAt": "2026-11-12T03:04:12Z",
+    "reason": "failed",
+    "isFailure": true,
+    "exitCode": 1,
+    "usage": {
+      "peakMemoryBytes": 104857600,
+      "cpuTimeMs": 5230
+    },
+    "log": {
+      "key": "logs/2026-11/ex_01JC8Y5T.log.gz",
+      "bytes": 20480,
+      "chunks": 3
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "type": "agent:update",
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "agent": {
+      "version": "1.12.0",
+      "os": "linux",
+      "arch": "amd64",
+      "host": "db-01",
+      "name": "Primary database"
+    },
+    "features": {
+      "exec.config": {
+        "available": false,
+        "reason": "no local tasks configured"
+      }
+    },
+    "labels": {
+      "region": "eu"
+    },
+    "maxConcurrent": 4
+  }
+}

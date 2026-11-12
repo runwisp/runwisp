@@ -1,0 +1,12 @@
+{
+  "type": "agent:stats",
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "cpuUsage": 12.5,
+    "memUsage": 41.2,
+    "memTotalBytes": 8589934592,
+    "memUsedBytes": 3539053052,
+    "cpuCores": 4,
+    "uptimeMs": 86400000
+  }
+}

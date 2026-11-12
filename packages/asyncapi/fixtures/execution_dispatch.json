@@ -1,0 +1,38 @@
+{
+  "type": "execution:dispatch",
+  "id": "s22",
+  "requires": [
+    "exec.shell"
+  ],
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "executionId": "ex_01JC8Y5T",
+    "task": {
+      "id": "tsk_01JC8Y6V",
+      "name": "backup"
+    },
+    "attempt": 2,
+    "priority": 5,
+    "spec": {
+      "type": "shell",
+      "script": "pg_dump app > /backups/app.sql",
+      "shell": "/bin/bash",
+      "workingDir": "/srv/app"
+    },
+    "inputs": {
+      "TARGET": "schema"
+    },
+    "timeoutMs": 3600000,
+    "options": {
+      "env": {
+        "PGHOST": "db.internal"
+      },
+      "gracefulStopMs": 5000,
+      "failures": [
+        "+timeout"
+      ]
+    },
+    "logStream": true,
+    "notAfter": "2026-11-12T10:00:00Z"
+  }
+}

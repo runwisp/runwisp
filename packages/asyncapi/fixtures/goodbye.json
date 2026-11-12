@@ -1,0 +1,10 @@
+{
+  "type": "goodbye",
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "code": "draining",
+    "message": "station restarting",
+    "retry": true,
+    "retryAfterMs": 30000
+  }
+}
