@@ -189,14 +189,10 @@ func notificationFromSqlcdb(s sqlcdb.Notification) (*Notification, error) {
 }
 
 // pendingLogUploadFromRow maps a sqlcdb.PendingLogUpload row to the public
-// model.PendingLogUpload shape. The two structs differ only in field naming
-// (sqlc emits UploadUrl from the snake-cased column; the domain type uses
-// the Go-idiomatic UploadURL).
+// model.PendingLogUpload shape.
 func pendingLogUploadFromRow(s sqlcdb.PendingLogUpload) model.PendingLogUpload {
 	return model.PendingLogUpload{
 		ExecutionID: s.ExecutionID,
-		UploadURL:   s.UploadUrl,
-		LogPath:     s.LogPath,
 		InsertedAt:  s.InsertedAtUnix,
 	}
 }

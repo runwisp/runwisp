@@ -79,8 +79,8 @@ type RunRepository interface {
 	Close() error
 }
 
-// PendingLogUploadRepository persists dispatch metadata so the daemon can
-// resume terminal log archival after a crash.
+// PendingLogUploadRepository records the station executions whose log still
+// has to be archived, so archival resumes after a crash or a reconnect.
 type PendingLogUploadRepository interface {
 	UpsertPendingLogUpload(ctx context.Context, rec model.PendingLogUpload) error
 	DeletePendingLogUpload(ctx context.Context, executionID string) error
@@ -575,8 +575,6 @@ func (db *SQLiteDatabase) ShrinkMemory(ctx context.Context) error {
 func (db *SQLiteDatabase) UpsertPendingLogUpload(ctx context.Context, rec model.PendingLogUpload) error {
 	return db.q.UpsertPendingLogUpload(ctx, sqlcdb.UpsertPendingLogUploadParams{
 		ExecutionID:    rec.ExecutionID,
-		UploadUrl:      rec.UploadURL,
-		LogPath:        rec.LogPath,
 		InsertedAtUnix: rec.InsertedAt,
 	})
 }

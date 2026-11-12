@@ -4,6 +4,7 @@
 package storage
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -913,23 +914,18 @@ func TestUpsertPendingLogUpload(t *testing.T) {
 	db := setupFullTestDB(t)
 	defer db.Close()
 
-	rec := model.PendingLogUpload{
-		ExecutionID: "exec-upsert-1",
-		UploadURL:   "https://example.com/upload/1",
-		LogPath:     "/var/log/run1.log",
-		InsertedAt:  1234567890,
-	}
+	rec := model.PendingLogUpload{ExecutionID: "exec-upsert-1", InsertedAt: 1234567890}
 
 	require.NoError(t, db.UpsertPendingLogUpload(ctx, rec))
 
-	// Upsert again with updated URL — must not error and must update.
-	rec.UploadURL = "https://example.com/upload/1-updated"
+	// Upsert again with a new time: must not error and must update.
+	rec.InsertedAt = 1234567999
 	require.NoError(t, db.UpsertPendingLogUpload(ctx, rec))
 
 	uploads, err := db.ListPendingLogUploads(ctx)
 	require.NoError(t, err)
 	require.Len(t, uploads, 1)
-	assert.Equal(t, "https://example.com/upload/1-updated", uploads[0].UploadURL)
+	assert.Equal(t, int64(1234567999), uploads[0].InsertedAt)
 }
 
 func TestDeletePendingLogUpload(t *testing.T) {
@@ -937,12 +933,7 @@ func TestDeletePendingLogUpload(t *testing.T) {
 	db := setupFullTestDB(t)
 	defer db.Close()
 
-	rec := model.PendingLogUpload{
-		ExecutionID: "exec-delete-1",
-		UploadURL:   "https://example.com/upload/del",
-		LogPath:     "/var/log/rundel.log",
-		InsertedAt:  111,
-	}
+	rec := model.PendingLogUpload{ExecutionID: "exec-delete-1", InsertedAt: 111}
 	require.NoError(t, db.UpsertPendingLogUpload(ctx, rec))
 
 	require.NoError(t, db.DeletePendingLogUpload(ctx, "exec-delete-1"))
@@ -968,8 +959,6 @@ func TestListPendingLogUploads(t *testing.T) {
 	for i := range 3 {
 		rec := model.PendingLogUpload{
 			ExecutionID: ulid.Make().String(),
-			UploadURL:   "https://example.com/" + ulid.Make().String(),
-			LogPath:     "/var/log/run.log",
 			InsertedAt:  int64(i),
 		}
 		require.NoError(t, db.UpsertPendingLogUpload(ctx, rec))
@@ -1149,8 +1138,6 @@ func TestSQLiteDatabase_ErrorPathsAfterClose(t *testing.T) {
 
 	assert.Error(t, db.UpsertPendingLogUpload(ctx, model.PendingLogUpload{
 		ExecutionID: "ext",
-		UploadURL:   "https://example.com",
-		LogPath:     "/tmp/log",
 		InsertedAt:  time.Now().Unix(),
 	}))
 	assert.Error(t, db.DeletePendingLogUpload(ctx, "ext"))
@@ -1251,4 +1238,50 @@ func TestCreateRun_RejectsDuplicateLiveExecutionID(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.CreateRun(ctx, mk()),
 		"execution_id must be reusable after the prior run is soft-deleted")
+}
+
+func TestStationOutbox_SeqSurvivesAckAndReopen(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "runwisp.db")
+	db, err := New(path)
+	require.NoError(t, err)
+
+	last, err := db.OutboxLastSeq(ctx)
+	require.NoError(t, err)
+	assert.Zero(t, last, "a fresh install has assigned no seq")
+
+	seqA, err := db.AppendOutboxUpdate(ctx, "e1", false, []byte(`{"a":1}`))
+	require.NoError(t, err)
+	seqB, err := db.AppendOutboxUpdate(ctx, "e1", true, []byte(`{"a":2}`))
+	require.NoError(t, err)
+	seqC, err := db.AppendOutboxUpdate(ctx, "e2", false, []byte(`{"a":3}`))
+	require.NoError(t, err)
+	assert.Equal(t, []int64{1, 2, 3}, []int64{seqA, seqB, seqC})
+
+	execs, err := db.ListOutboxExecutions(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []OutboxExecution{{ExecutionID: "e1", Finished: true}, {ExecutionID: "e2"}}, execs)
+
+	after1, err := db.ListOutboxUpdates(ctx, 1, 10)
+	require.NoError(t, err)
+	require.Len(t, after1, 2)
+	assert.Equal(t, int64(2), after1[0].Seq)
+	assert.Equal(t, `{"a":2}`, string(after1[0].Payload))
+
+	// The station acks everything; the seq counter must not fall back.
+	require.NoError(t, db.AckOutboxUpdates(ctx, 3))
+	rest, err := db.ListOutboxUpdates(ctx, 0, 10)
+	require.NoError(t, err)
+	assert.Empty(t, rest)
+	require.NoError(t, db.Close())
+
+	db, err = New(path)
+	require.NoError(t, err)
+	defer db.Close()
+	last, err = db.OutboxLastSeq(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), last)
+	s4, err := db.AppendOutboxUpdate(ctx, "e3", false, []byte(`{}`))
+	require.NoError(t, err)
+	assert.Equal(t, int64(4), s4, "seq keeps growing across ack and restart")
 }

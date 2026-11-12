@@ -3,12 +3,11 @@
 
 package model
 
-// PendingLogUpload records a dispatch that handed the daemon a signed PUT URL
-// for terminal log archival. The row is removed on a successful upload; the
-// crash-recovery sweep at startup retries any rows still present.
+// PendingLogUpload records a station execution whose log still has to be
+// archived. The row is removed once the archive is uploaded (or the station
+// declines it); the daemon retries the rows still present after every
+// reconnect, so a crash or an unreachable station never loses the log.
 type PendingLogUpload struct {
 	ExecutionID string
-	UploadURL   string
-	LogPath     string
 	InsertedAt  int64
 }

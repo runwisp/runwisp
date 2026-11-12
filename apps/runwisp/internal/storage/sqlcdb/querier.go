@@ -18,6 +18,7 @@ type Querier interface {
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	CreateRun(ctx context.Context, arg CreateRunParams) error
+	DeleteOutboxUpdatesThrough(ctx context.Context, seq int64) error
 	DeletePendingLogUpload(ctx context.Context, executionID string) error
 	DeleteRun(ctx context.Context, id string) error
 	DeleteRunsByIDs(ctx context.Context, ids []string) error
@@ -54,8 +55,13 @@ type Querier interface {
 	InsertNotification(ctx context.Context, arg InsertNotificationParams) error
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
+	InsertOutboxUpdate(ctx context.Context, arg InsertOutboxUpdateParams) (int64, error)
+	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+	// SPDX-License-Identifier: GPL-3.0-or-later
 	ListNotifications(ctx context.Context, limit int64) ([]Notification, error)
 	ListNotificationsBefore(ctx context.Context, arg ListNotificationsBeforeParams) ([]Notification, error)
+	ListOutboxExecutions(ctx context.Context) ([]ListOutboxExecutionsRow, error)
+	ListOutboxUpdates(ctx context.Context, arg ListOutboxUpdatesParams) ([]StationOutbox, error)
 	ListPausedTaskSchedules(ctx context.Context) ([]ListPausedTaskSchedulesRow, error)
 	ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload, error)
 	MarkAllNotificationsRead(ctx context.Context, readAt *time.Time) error

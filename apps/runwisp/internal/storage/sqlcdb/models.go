@@ -33,8 +33,6 @@ type Notification struct {
 
 type PendingLogUpload struct {
 	ExecutionID    string `json:"execution_id"`
-	UploadUrl      string `json:"upload_url"`
-	LogPath        string `json:"log_path"`
 	InsertedAtUnix int64  `json:"inserted_at_unix"`
 }
 
@@ -59,6 +57,13 @@ type Run struct {
 	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 	StdoutLines     *int64            `json:"stdout_lines"`
 	StderrLines     *int64            `json:"stderr_lines"`
+}
+
+type StationOutbox struct {
+	Seq         int64  `json:"seq"`
+	ExecutionID string `json:"execution_id"`
+	Finished    int64  `json:"finished"`
+	Payload     string `json:"payload"`
 }
 
 type TaskBootID struct {
