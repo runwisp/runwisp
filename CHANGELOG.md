@@ -7,15 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- `[daemon] allow_station_upgrade` lets a connected Station upgrade the daemon to a RunWisp release and restart it. Off by default.
-- A Station can replace the daemon's runner token. The daemon stores the new token before it confirms, and a token you configure yourself still wins.
-
-### Changed
-
-- `runwisp station` needs a Station that speaks protocol v1. With an older Station it logs that the Station is too old and tries again every five minutes.
-
 ## [1.8.0] - 2026-10-26
 
 ### Added
