@@ -39,8 +39,8 @@ type PongMessage struct {
 }
 
 // Dispatches an execution to a daemon.
-// For "fan-out" distribution on cluster runners, the control plane sends
-// this message to every connected node simultaneously.
+// For "fan-out" distribution, the control plane dispatches a separate
+// execution, with its own id, to each connected daemon of the runner.
 type ExecutionDispatchMessage struct {
 	Type            string            `json:"type"`
 	ProtocolVersion int               `json:"protocolVersion,omitzero"`
@@ -90,8 +90,11 @@ var LogOnFullValues = []LogOnFull{LogOnFullDropNew, LogOnFullDropOld, LogOnFullK
 
 // Optional per-run execution knobs the station control plane carries through
 // dispatch and the daemon overlays onto the dynamically-built station task
-// (`buildDynamicStationTask`). Every field is optional; an omitted field
-// means "use the daemon default". Knobs not modelled here (stop signal,
+// (`buildDynamicStationTask`), or, for a `config` script, onto that run of
+// the TOML task, together with `timeout` (an env that differs from the
+// TOML's needs allow_station_dispatch). Every field is optional; an
+// omitted field means "use the daemon default" (for a `config` script, the
+// TOML value). Knobs not modelled here (stop signal,
 // success exit codes, run-as user) are not honored by the daemon and so
 // are intentionally absent — adding them would be dead surface.
 type ExecutionTaskConfig struct {
@@ -186,7 +189,9 @@ var RestartBackoffValues = []RestartBackoff{RestartBackoffConstant, RestartBacko
 type ServiceApplyPayload struct {
 	TaskID   string `json:"taskId"`
 	TaskName string `json:"taskName"`
-	// ExecutionDef JSON, same shape as ExecutionPayload.script.
+	// ExecutionDef JSON, same shape as ExecutionPayload.script. `null`
+	// (sent for a service synced from the daemon's config whose command
+	// the operator did not override) keeps the daemon's own command.
 	Script json.RawMessage `json:"script"`
 	// Desired number of always-running instances.
 	Instances int `json:"instances"`
@@ -247,8 +252,14 @@ type ServiceInstanceSnapshot struct {
 	Pid *int `json:"pid,omitzero"`
 	// When the current run of this slot started, when live.
 	StartedAt *time.Time `json:"startedAt,omitzero"`
-	// Consecutive-restart counter for this slot since its last healthy run.
+	// Exits of this slot since its last healthy run. Operator stops and
+	// restarts count too, so it is not a crash signal; use startFails.
 	RestartCount int `json:"restartCount"`
+	// Failed starts of this slot in a row since its last healthy run: exits
+	// before the instance became healthy, not counting operator stops and
+	// restarts. The slot goes fatal once this passes the service's restart
+	// attempts. Always sent; absent only from daemons that predate it.
+	StartFails int `json:"startFails"`
 	// Exit code of this slot's most recent terminated run, when known.
 	LastExitCode *int `json:"lastExitCode,omitzero"`
 }
@@ -336,6 +347,16 @@ type LogChunkUrlsMessage struct {
 	ExecutionID     string   `json:"executionId"`
 	FromSeq         int      `json:"fromSeq"`
 	Urls            []string `json:"urls"`
+	// Optional fresh signed PUT URL for the terminal log archive,
+	// replacing the dispatch's `logUploadUrl` (and any earlier
+	// refresh), so a long run's archive key and signature stay current.
+	// Honoured only together with `archivePath`; omitted means keep the
+	// current one.
+	ArchiveURL string `json:"archiveUrl,omitzero"`
+	// Storage object key matching `archiveUrl`; the daemon echoes it as
+	// `logPath` on the terminal `execution:update` instead of the
+	// dispatch's `logPath`. Honoured only together with `archiveUrl`.
+	ArchivePath string `json:"archivePath,omitzero"`
 }
 
 type LogStopMessage struct {
@@ -426,6 +447,22 @@ type ExecutionAckMessage struct {
 	ProtocolVersion int    `json:"protocolVersion,omitzero"`
 	SentAt          string `json:"sentAt,omitzero"`
 	ExecutionID     string `json:"executionId"`
+}
+
+// Daemon → station. Sent once per connection, after auth and before any
+// other message, listing every execution the daemon still owns: running,
+// accepted for dispatch but not yet running, ended with its terminal
+// `execution:update` not yet sent, or with an `execution:update` buffered
+// for delivery on this connection. The station should treat executions
+// it tracks as active on this runner, acknowledged on an earlier
+// connection, and absent from executionIds as lost by the daemon (e.g.
+// a daemon restart without its state). Executions acknowledged on this
+// connection are never in the list. Old daemons never send this.
+type ExecutionInventoryMessage struct {
+	Type            string   `json:"type"`
+	ProtocolVersion int      `json:"protocolVersion,omitzero"`
+	SentAt          string   `json:"sentAt,omitzero"`
+	ExecutionIds    []string `json:"executionIds"`
 }
 
 type ExecutionUpdateMessage struct {

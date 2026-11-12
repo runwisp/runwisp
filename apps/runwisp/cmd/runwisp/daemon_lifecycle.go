@@ -57,6 +57,7 @@ func startStationClient(
 			slog.Info("Station connected")
 		},
 		RequestRestart: func() error { return requestSelfRestart(cfg.Config.Daemon.AllowStationDispatch, fatalCh) },
+		CanRestart:     func() error { return selfRestartBlocker(cfg.Config.Daemon.AllowStationDispatch) },
 		SystemStats:    srv.SystemStats,
 		InstanceName:   srv.InstanceName,
 		Timezone:       srv.Timezone,
@@ -97,15 +98,25 @@ var errRestartRequested = errors.New("restart requested by station; exiting so t
 // restarting the daemon process is at least as sensitive as the ad-hoc task
 // execution that flag already gates.
 func requestSelfRestart(allowStationDispatch bool, fatalCh chan<- error) error {
+	if err := selfRestartBlocker(allowStationDispatch); err != nil {
+		return err
+	}
+	slog.Info("restarting agent on station request; service manager will bring it back")
+	if err := exitNonZero(fatalCh, errRestartRequested); err != nil {
+		return fmt.Errorf("signal self for restart: %w", err)
+	}
+	return nil
+}
+
+// selfRestartBlocker says why requestSelfRestart would refuse, or nil when it
+// would restart. The station client advertises it at connect, so the
+// dashboard can explain a restart it can't do instead of sending one.
+func selfRestartBlocker(allowStationDispatch bool) error {
 	if !allowStationDispatch {
 		return errors.New("station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)")
 	}
 	if !autostart.RunningUnderServiceManager() {
 		return errors.New("daemon is not managed by a service manager; restart it manually")
-	}
-	slog.Info("restarting agent on station request; service manager will bring it back")
-	if err := exitNonZero(fatalCh, errRestartRequested); err != nil {
-		return fmt.Errorf("signal self for restart: %w", err)
 	}
 	return nil
 }

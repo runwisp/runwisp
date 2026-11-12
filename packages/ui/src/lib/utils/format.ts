@@ -23,7 +23,11 @@ export interface RelativeTimeOptions {
     numeric?: Intl.RelativeTimeFormatNumeric;
 }
 
-/** "N units ago" / "in N units" for `date` relative to `now`. */
+/**
+ * "N units ago" / "in N units" for `date` relative to `now`. Each unit is
+ * truncated, not rounded, so it agrees with formatRelativeCompact: 21h50m
+ * reads "21 hours ago" in both.
+ */
 export function formatRelativeTime(
     date: string | number | Date,
     now: Date = new Date(),
@@ -33,11 +37,11 @@ export function formatRelativeTime(
     let delta = (new Date(date).getTime() - now.getTime()) / 1000;
     for (const [amount, unit] of RELATIVE_DIVISIONS) {
         if (Math.abs(delta) < amount) {
-            return format.format(Math.round(delta), unit);
+            return format.format(Math.trunc(delta), unit);
         }
         delta /= amount;
     }
-    return format.format(Math.round(delta), "years");
+    return format.format(Math.trunc(delta), "years");
 }
 
 /**

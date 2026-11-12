@@ -209,3 +209,29 @@ func TestLogStream_OnlyForStreamDispatches(t *testing.T) {
 	_, ok := u.StopStream(context.Background(), "exec-1")
 	assert.False(t, ok)
 }
+
+// TestOnChunkUrlsRefreshesArchive checks a chunk URL batch carrying a fresh
+// archive URL/key replaces the pending upload in memory and in storage, and
+// that a batch without them (or without a pending upload) changes nothing.
+func TestOnChunkUrlsRefreshesArchive(t *testing.T) {
+	repo := newFakePendingRepo()
+	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
+	require.NoError(t, u.RegisterDispatch(context.Background(), "exec-1", "https://upload/old", "org/2026-10/exec-1.log.gz", true))
+
+	u.OnChunkUrls(protocol.LogChunkUrlsMessage{ExecutionID: "exec-1", Urls: []string{"https://chunk/0"}})
+	entry, _ := u.lookup("exec-1")
+	assert.Equal(t, "https://upload/old", entry.uploadURL)
+
+	u.OnChunkUrls(protocol.LogChunkUrlsMessage{ExecutionID: "exec-1", ArchiveURL: "https://upload/new", ArchivePath: "org/2026-11/exec-1.log.gz"})
+	entry, _ = u.lookup("exec-1")
+	assert.Equal(t, "https://upload/new", entry.uploadURL)
+	assert.Equal(t, "org/2026-11/exec-1.log.gz", entry.logPath)
+	assert.True(t, entry.stream)
+	assert.Equal(t, "https://upload/new", repo.rows["exec-1"].UploadURL)
+	assert.Equal(t, "org/2026-11/exec-1.log.gz", repo.rows["exec-1"].LogPath)
+
+	u.OnChunkUrls(protocol.LogChunkUrlsMessage{ExecutionID: "exec-gone", ArchiveURL: "https://upload/x", ArchivePath: "x"})
+	_, ok := u.lookup("exec-gone")
+	assert.False(t, ok)
+	assert.NotContains(t, repo.rows, "exec-gone")
+}

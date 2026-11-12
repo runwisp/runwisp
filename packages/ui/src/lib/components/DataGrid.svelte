@@ -204,9 +204,12 @@
         ? ''
         : 'rounded-[4px] border border-outline bg-surface-raised shadow-sm'} {className}"
 >
+    <!-- A sticky header needs the page as its scroll parent, so it only gets its
+         own horizontal scroller on phones, where a wide table would otherwise
+         push the whole page sideways. -->
     <div
         class="relative min-h-0 flex-1 rounded-[4px] {wrapperClass ??
-            (stickyHeader ? '' : 'overflow-x-auto')}"
+            (stickyHeader ? 'max-md:overflow-x-auto' : 'overflow-x-auto')}"
     >
         {#if loading}
             <div
@@ -259,7 +262,7 @@
                                 <button
                                     onclick={() => handleSort(String(column.key))}
                                     class="
-                                        inline-flex items-center gap-1 group-hover:text-on-surface
+                                        inline-flex items-center gap-1 uppercase group-hover:text-on-surface
                                         {sorted ? 'text-on-surface' : ''}
                                     "
                                 >
@@ -378,7 +381,8 @@
         </div>
     {/if}
 
-    {#if paginate}
+    <!-- Nothing to page through when every row fits the smallest page size. -->
+    {#if paginate && totalItems > Math.min(pageSize, ...(pageSizeOptions ?? [pageSize]))}
         <div class="border-t border-outline p-3">
             <Pagination
                 {page}

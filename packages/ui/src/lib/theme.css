@@ -174,6 +174,7 @@
     --color-primary-soft: var(--rw-primary-soft);
     --color-primary-soft-text: var(--rw-primary-soft-text);
     /* Danger */
+    --color-danger: var(--rw-danger);
     --color-danger-surface: var(--rw-danger);
     --color-danger-hover: var(--rw-danger-hover);
     --color-danger-active: var(--rw-danger-active);
@@ -181,12 +182,14 @@
     --color-danger-soft: var(--rw-danger-soft);
     --color-danger-soft-text: var(--rw-danger-soft-text);
     /* Success */
+    --color-success: var(--rw-success);
     --color-success-surface: var(--rw-success);
     --color-success-hover: var(--rw-success-hover);
     --color-on-success: var(--rw-on-success);
     --color-success-soft: var(--rw-success-soft);
     --color-success-soft-text: var(--rw-success-soft-text);
     /* Warning */
+    --color-warning: var(--rw-warning);
     --color-warning-surface: var(--rw-warning);
     --color-warning-hover: var(--rw-warning-hover);
     --color-on-warning: var(--rw-on-warning);

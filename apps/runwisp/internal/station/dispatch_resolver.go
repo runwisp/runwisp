@@ -6,27 +6,30 @@ package station
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // resolveDispatchTask resolves a dispatch to a runnable task name: one of this
 // daemon's TOML-defined tasks for a config execution, otherwise an ephemeral
-// task synthesized from the inline definition.
-func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.ExecutionPayload) (string, error) {
+// task synthesized from the inline definition. For a TOML task it also returns
+// the run's overlay of the control plane's overrides (configOverlay).
+func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.ExecutionPayload) (string, func(*model.Task), error) {
 	execDef, err := h.parseAvailableDef(dispatch.Script)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	if cfg, ok := execDef.(*model.ConfigExecution); ok {
 		// Config type means "resolve from this daemon's local tasks".
 		task, exists := h.taskManager.GetTask(cfg.TaskName)
 		if !exists {
-			return "", &StationError{Kind: StationErrorKindConflict, Message: fmt.Sprintf("config task '%s' not found", cfg.TaskName)}
+			return "", nil, &StationError{Kind: StationErrorKindConflict, Message: fmt.Sprintf("config task '%s' not found", cfg.TaskName)}
 		}
 		// The control plane is an out-of-scheduler trigger like the REST surface,
 		// so it honors the same gates via the same rule (model.Task.CheckTrigger).
@@ -37,22 +40,26 @@ func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.ExecutionPayload
 		// just over HTTP.
 		switch task.CheckTrigger() {
 		case model.TriggerBlockedService:
-			return "", &StationError{
+			return "", nil, &StationError{
 				Kind:    StationErrorKindConflict,
 				Message: fmt.Sprintf("config task '%s' is a service and cannot be triggered by the control plane", cfg.TaskName),
 			}
 		case model.TriggerBlockedManualDisabled:
-			return "", &StationError{
+			return "", nil, &StationError{
 				Kind:    StationErrorKindConflict,
 				Message: fmt.Sprintf("config task '%s' has manual_trigger disabled and cannot be triggered by the control plane", cfg.TaskName),
 			}
 		}
-		return cfg.TaskName, nil
+		overlay, err := h.configOverlay(task, dispatch)
+		if err != nil {
+			return "", nil, err
+		}
+		return cfg.TaskName, overlay, nil
 	}
 
 	task, err := buildDynamicStationTask(dispatch, execDef)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	// sanitizeStationTaskName only prefixes "station-"; the rest of the name is
 	// peer-supplied, so an inline dispatch can land on a locally-defined task
@@ -61,13 +68,44 @@ func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.ExecutionPayload
 	// violating "run= comes from disk only". resolveServiceTarget guards the
 	// service path the same way.
 	if existing, ok := h.taskManager.GetTask(task.Name); ok && !existing.Ephemeral {
-		return "", &StationError{
+		return "", nil, &StationError{
 			Kind:    StationErrorKindConflict,
 			Message: fmt.Sprintf("task %q is defined locally; an inline station execution cannot overwrite it", task.Name),
 		}
 	}
 	h.taskManager.UpsertTask(task)
-	return task.Name, nil
+	return task.Name, nil, nil
+}
+
+// configOverlay applies the control plane's overrides of a TOML task to one
+// run: the taskConfig knobs (failures, env, graceful stop, log cap) and the
+// timeout. The task's own definition is untouched, so the TOML's schedules and
+// local triggers keep running it as written. A station that predates
+// overrides echoes the TOML's own synced values back, which the overlay
+// re-applies unchanged; env goes through the same allow_station_dispatch gate
+// as a service's only when it differs from the TOML's, so that echo never
+// trips it. An invalid list rejects the dispatch here, before a run exists.
+func (h *InboundHandler) configOverlay(task *model.Task, dispatch *protocol.ExecutionPayload) (func(*model.Task), error) {
+	cfg, timeoutMs := dispatch.TaskConfig, dispatch.Timeout
+	if cfg == nil && timeoutMs <= 0 {
+		return nil, nil
+	}
+	if cfg != nil && len(cfg.Env) > 0 && !maps.Equal(cfg.Env, task.Env) {
+		if err := h.checkEnvOverrideAllowed(task, cfg); err != nil {
+			return nil, err
+		}
+	}
+	probe := *task
+	if err := applyStationTaskConfig(&probe, cfg); err != nil {
+		return nil, err
+	}
+	return func(t *model.Task) {
+		_ = applyStationTaskConfig(t, cfg) // validated on the probe above
+		if timeoutMs > 0 {
+			d := time.Duration(timeoutMs) * time.Millisecond
+			t.Timeout = &d
+		}
+	}, nil
 }
 
 // parseAvailableDef parses a peer-supplied execution definition and rejects
@@ -99,9 +137,13 @@ func buildDynamicStationTask(dispatch *protocol.ExecutionPayload, execDef model.
 	}
 
 	task := &model.Task{
-		Name:          taskName,
-		ExecutionDef:  execDef,
-		MaxConcurrent: 1,
+		Name:         taskName,
+		ExecutionDef: execDef,
+		// The station already enforced the task's and the runner's concurrency
+		// limits before it dispatched, so the daemon must not add a second
+		// limit of its own: a cap of 1 here queued every overlapping dispatch
+		// locally while the station's deadline for it kept counting.
+		MaxConcurrent: config.MaxConcurrentCap,
 		OnOverlap:     model.PolicyQueue,
 		// MaxQueued is left unset: MaxQueuedValue bounds the queue at the same
 		// default a TOML queue task gets.
