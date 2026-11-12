@@ -10,146 +10,637 @@ import (
 	"time"
 )
 
-type ExecutionStatus string
+// Every frame. The message payload is `data`.
+type Envelope struct {
+	// Message name, e.g. `execution:dispatch`.
+	Type string `json:"type"`
+	// Set on commands only. The receiver answers with one `result` whose replyTo is this id.
+	ID string `json:"id,omitzero"`
+	// Set on `result` and on `log:lines`. The command this answers.
+	ReplyTo string `json:"replyTo,omitzero"`
+	// Features the receiver must have to act on this command. A receiver
+	// missing any of them answers `unsupported` without acting.
+	Requires []string `json:"requires,omitzero"`
+	// Sender's clock. Informational.
+	SentAt string `json:"sentAt,omitzero"`
+	// The payload, per message type. May be absent when empty.
+	Data json.RawMessage `json:"data,omitzero"`
+}
+
+// No payload.
+type Empty struct {
+}
+
+type Hello struct {
+	// Stable id of this daemon install. Several installs may share one runner token.
+	InstanceID string     `json:"instanceId"`
+	Agent      *AgentInfo `json:"agent"`
+	// Optional features this daemon understands, by name, with whether
+	// each can be used right now. A name that's absent is not understood.
+	// v1.0 names: exec.shell, exec.container, exec.compose, exec.http,
+	// exec.config, agent.restart, agent.upgrade. Everything else in this
+	// spec is baseline and has no feature name.
+	Features map[string]*FeatureStatus `json:"features"`
+	// Operator-set labels (`[daemon] labels`). May be empty.
+	Labels map[string]string `json:"labels"`
+	// Runs this daemon will hold at once. 0 = no local limit.
+	MaxConcurrent int `json:"maxConcurrent"`
+	// Hash of the task catalog the daemon would send in tasks:sync.
+	TasksHash string `json:"tasksHash"`
+	// Highest execution:update seq this install has ever assigned (0 = none).
+	LastSeq int64 `json:"lastSeq"`
+	// Every execution the daemon still owns: accepted and not yet
+	// running, running, or finished with an update not yet acked. An
+	// execution the station believes active on this install and absent
+	// here was lost by the daemon.
+	Executions []InventoryEntry `json:"executions"`
+}
+
+type AgentInfo struct {
+	// Daemon version, e.g. 1.10.0.
+	Version string `json:"version"`
+	// linux, darwin, windows, ...
+	Os string `json:"os"`
+	// amd64, arm64, ...
+	Arch string `json:"arch"`
+	// Hostname.
+	Host string `json:"host"`
+	// `[daemon] name` display label; empty when unset.
+	Name string `json:"name,omitzero"`
+}
+
+type FeatureStatus struct {
+	Available bool `json:"available"`
+	// Why it's unavailable, for an operator to read.
+	Reason string `json:"reason,omitzero"`
+}
+
+type InventoryEntry struct {
+	ExecutionID string          `json:"executionId"`
+	Status      ExecutionStatus `json:"status"`
+}
+
+type Welcome struct {
+	ConnectionID string `json:"connectionId"`
+	// Optional features this station understands. Empty in v1.0.
+	Features  []string   `json:"features"`
+	Heartbeat *Heartbeat `json:"heartbeat"`
+	// How often to send agent:stats. 0 = don't.
+	StatsIntervalMs int `json:"statsIntervalMs"`
+	// Largest frame the station accepts. The daemon splits or truncates to stay under it.
+	MaxFrameBytes int `json:"maxFrameBytes"`
+	// False means send tasks:sync now.
+	TasksHashKnown bool `json:"tasksHashKnown"`
+}
+
+type Heartbeat struct {
+	IntervalMs int `json:"intervalMs"`
+	TimeoutMs  int `json:"timeoutMs"`
+}
+
+type Goodbye struct {
+	Code    GoodbyeCode `json:"code"`
+	Message string      `json:"message,omitzero"`
+	// Authoritative. False: don't reconnect until the daemon's station
+	// settings change (or it restarts). True: reconnect after
+	// retryAfterMs, plus normal jitter.
+	Retry bool `json:"retry"`
+	// Wait at least this long before reconnecting. For `draining` the
+	// daemon waits a random time in [0, retryAfterMs] so a fleet spreads out.
+	RetryAfterMs int `json:"retryAfterMs,omitzero"`
+}
+
+// Open. Act on `retry`/`retryAfterMs`, not on the code.
+type GoodbyeCode string
 
 const (
-	ExecutionStatusRunning   ExecutionStatus = "running"
-	ExecutionStatusSucceeded ExecutionStatus = "succeeded"
-	ExecutionStatusFailed    ExecutionStatus = "failed"
-	ExecutionStatusStopped   ExecutionStatus = "stopped"
-	ExecutionStatusTimeout   ExecutionStatus = "timeout"
-	ExecutionStatusSkipped   ExecutionStatus = "skipped"
+	GoodbyeCodeUnauthorized        GoodbyeCode = "unauthorized"
+	GoodbyeCodeRevoked             GoodbyeCode = "revoked"
+	GoodbyeCodeDisabled            GoodbyeCode = "disabled"
+	GoodbyeCodeLimitReached        GoodbyeCode = "limit_reached"
+	GoodbyeCodeUnsupportedProtocol GoodbyeCode = "unsupported_protocol"
+	GoodbyeCodeOverloaded          GoodbyeCode = "overloaded"
+	GoodbyeCodeDraining            GoodbyeCode = "draining"
+	GoodbyeCodeDuplicateInstance   GoodbyeCode = "duplicate_instance"
+	GoodbyeCodeShutdown            GoodbyeCode = "shutdown"
+	GoodbyeCodeProtocolError       GoodbyeCode = "protocol_error"
 )
 
-var ExecutionStatusValues = []ExecutionStatus{ExecutionStatusRunning, ExecutionStatusSucceeded, ExecutionStatusFailed, ExecutionStatusStopped, ExecutionStatusTimeout, ExecutionStatusSkipped}
+var GoodbyeCodeValues = []GoodbyeCode{GoodbyeCodeUnauthorized, GoodbyeCodeRevoked, GoodbyeCodeDisabled, GoodbyeCodeLimitReached, GoodbyeCodeUnsupportedProtocol, GoodbyeCodeOverloaded, GoodbyeCodeDraining, GoodbyeCodeDuplicateInstance, GoodbyeCodeShutdown, GoodbyeCodeProtocolError}
 
-type AuthResultMessage struct {
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
-	Success         bool   `json:"success"`
-	ConnectionID    string `json:"connectionId,omitzero"`
-	Error           string `json:"error,omitzero"`
+// Command-specific result fields sit next to `ok` and `error` in the same
+// object (see the *Result schemas).
+type Result struct {
+	Ok    bool       `json:"ok"`
+	Error *ErrorInfo `json:"error,omitzero"`
 }
 
-type PongMessage struct {
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
+type ErrorInfo struct {
+	Code    ErrorCode `json:"code"`
+	Message string    `json:"message"`
+	// Authoritative, so a code added later is still handled right.
+	Retryable    bool `json:"retryable"`
+	RetryAfterMs int  `json:"retryAfterMs,omitzero"`
 }
 
-// Dispatches an execution to a daemon.
-// For "fan-out" distribution, the control plane dispatches a separate
-// execution, with its own id, to each connected daemon of the runner.
-type ExecutionDispatchMessage struct {
-	Type            string            `json:"type"`
-	ProtocolVersion int               `json:"protocolVersion,omitzero"`
-	SentAt          string            `json:"sentAt,omitzero"`
-	Execution       *ExecutionPayload `json:"execution"`
-}
-
-type ExecutionPayload struct {
-	TaskID      string               `json:"taskId"`
-	TaskName    string               `json:"taskName"`
-	ExecutionID string               `json:"executionId"`
-	Priority    int                  `json:"priority"`
-	InputValues map[string]string    `json:"inputValues"`
-	Script      json.RawMessage      `json:"script"`
-	Timeout     int                  `json:"timeout"`
-	TaskConfig  *ExecutionTaskConfig `json:"taskConfig,omitzero"`
-	// Signed PUT URL the daemon uses to upload the gzipped terminal log
-	// archive. Optional: omitted (or empty) means archival is disabled for
-	// this dispatch (transient station-side issuance error); the daemon keeps
-	// the local file and skips upload.
-	LogUploadURL string `json:"logUploadUrl,omitzero"`
-	// Storage object key the daemon must echo back as `logPath` on the
-	// terminal `execution:update` message after a successful upload.
-	// Format `{orgId}/{yyyy-mm}/{executionId}.log.gz`. Optional: omitted
-	// (or empty) whenever `logUploadUrl` is.
-	LogPath string `json:"logPath,omitzero"`
-	// Ask the daemon to also upload the log incrementally while the run
-	// is going, so a run whose daemon dies mid-way still leaves its log
-	// behind. The daemon fetches upload URLs with log:chunkUrlsRequest and
-	// PUTs each new slice of the log file as one gzip member. Honoured
-	// only together with `logUploadUrl`; the terminal archive is uploaded
-	// as usual. The station sends it only to daemons that advertise
-	// `log:chunkUrls`.
-	LogStream bool `json:"logStream,omitzero"`
-}
-
-// What the daemon does when log output exceeds logMaxSize.
-type LogOnFull string
+// Open. `invalid` malformed; `unauthorized`; `forbidden` refused by local
+// policy; `not_found`; `conflict`; `unsupported` unknown command or
+// missing required feature; `unavailable` backend missing; `busy` at
+// capacity; `expired` notAfter passed; `internal`.
+type ErrorCode string
 
 const (
-	LogOnFullDropNew LogOnFull = "drop_new"
-	LogOnFullDropOld LogOnFull = "drop_old"
-	LogOnFullKill    LogOnFull = "kill"
+	ErrorCodeInvalid      ErrorCode = "invalid"
+	ErrorCodeUnauthorized ErrorCode = "unauthorized"
+	ErrorCodeForbidden    ErrorCode = "forbidden"
+	ErrorCodeNotFound     ErrorCode = "not_found"
+	ErrorCodeConflict     ErrorCode = "conflict"
+	ErrorCodeUnsupported  ErrorCode = "unsupported"
+	ErrorCodeUnavailable  ErrorCode = "unavailable"
+	ErrorCodeBusy         ErrorCode = "busy"
+	ErrorCodeExpired      ErrorCode = "expired"
+	ErrorCodeInternal     ErrorCode = "internal"
 )
 
-var LogOnFullValues = []LogOnFull{LogOnFullDropNew, LogOnFullDropOld, LogOnFullKill}
+var ErrorCodeValues = []ErrorCode{ErrorCodeInvalid, ErrorCodeUnauthorized, ErrorCodeForbidden, ErrorCodeNotFound, ErrorCodeConflict, ErrorCodeUnsupported, ErrorCodeUnavailable, ErrorCodeBusy, ErrorCodeExpired, ErrorCodeInternal}
 
-// Optional per-run execution knobs the station control plane carries through
-// dispatch and the daemon overlays onto the dynamically-built station task
-// (`buildDynamicStationTask`), or, for a `config` script, onto that run of
-// the TOML task, together with `timeout` (an env that differs from the
-// TOML's needs allow_station_dispatch). Every field is optional; an
-// omitted field means "use the daemon default" (for a `config` script, the
-// TOML value). Knobs not modelled here (stop signal,
-// success exit codes, run-as user) are not honored by the daemon and so
-// are intentionally absent — adding them would be dead surface.
-type ExecutionTaskConfig struct {
-	// Environment variables overlaid on the run's process env, beneath
-	// the daemon's own env_file/secrets layers. This is the only way a
-	// station-dispatched shell run can set process env.
+type Ack struct {
+	Seq int64 `json:"seq"`
+}
+
+// Any field set replaces the current value.
+type SessionUpdate struct {
+	Heartbeat *Heartbeat `json:"heartbeat,omitzero"`
+	// null = leave as is, 0 = stop sending agent:stats.
+	StatsIntervalMs *int `json:"statsIntervalMs,omitzero"`
+}
+
+// Fields set replace what hello said.
+type AgentUpdate struct {
+	Agent         *AgentInfo                `json:"agent,omitzero"`
+	Features      map[string]*FeatureStatus `json:"features,omitzero"`
+	Labels        map[string]string         `json:"labels,omitzero"`
+	MaxConcurrent *int                      `json:"maxConcurrent,omitzero"`
+}
+
+type AgentStats struct {
+	// Percent, 0-100.
+	CpuUsage float64 `json:"cpuUsage,omitzero"`
+	// Percent, 0-100.
+	MemUsage      float64 `json:"memUsage,omitzero"`
+	MemTotalBytes int64   `json:"memTotalBytes,omitzero"`
+	MemUsedBytes  int64   `json:"memUsedBytes,omitzero"`
+	CpuCores      int     `json:"cpuCores,omitzero"`
+	// Daemon process uptime.
+	UptimeMs int64 `json:"uptimeMs,omitzero"`
+}
+
+// Install release `version` from the daemon's own built-in release source
+// (never a station-supplied location), verify it, replace the binary and
+// restart. The result is sent before the restart. Refused with
+// `forbidden` unless the operator allowed it locally.
+type AgentUpgrade struct {
+	// Release tag, e.g. v1.10.2.
+	Version string `json:"version"`
+}
+
+// Replace the runner token. The daemon stores it durably before
+// answering ok; the station may revoke the old token after that.
+type AgentCredentials struct {
+	Token string `json:"token"`
+}
+
+type TasksSync struct {
+	Hash  string           `json:"hash"`
+	Tasks []TaskDefinition `json:"tasks"`
+}
+
+// Fields of the `result` answering tasks:sync.
+type TasksSyncResult struct {
+	Added   int `json:"added,omitzero"`
+	Updated int `json:"updated,omitzero"`
+	// Tasks marked out of sync.
+	Removed int `json:"removed,omitzero"`
+	Total   int `json:"total,omitzero"`
+}
+
+type TaskDefinition struct {
+	Name          string        `json:"name"`
+	Kind          TaskKind      `json:"kind"`
+	Group         string        `json:"group,omitzero"`
+	Description   string        `json:"description,omitzero"`
+	Enabled       bool          `json:"enabled"`
+	Spec          ExecutionSpec `json:"spec"`
+	TimeoutMs     int           `json:"timeoutMs,omitzero"`
+	Options       *RunOptions   `json:"options,omitzero"`
+	MaxConcurrent int           `json:"maxConcurrent,omitzero"`
+	OnOverlap     OverlapPolicy `json:"onOverlap,omitzero"`
+	// never, on_failure, always.
+	RestartPolicy string         `json:"restartPolicy,omitzero"`
+	MaxRetries    int            `json:"maxRetries,omitzero"`
+	RetryDelayMs  int            `json:"retryDelayMs,omitzero"`
+	RetryBackoff  Backoff        `json:"retryBackoff,omitzero"`
+	Schedules     []TaskSchedule `json:"schedules,omitzero"`
+	// null = not set locally; 0 = explicitly no jitter.
+	JitterMs *int `json:"jitterMs,omitzero"`
+	// skip, latest, all.
+	CatchUp        string                `json:"catchUp,omitzero"`
+	MaxCatchUpRuns int                   `json:"maxCatchUpRuns,omitzero"`
+	Params         map[string]*TaskParam `json:"params,omitzero"`
+	Service        *ServiceSettings      `json:"service,omitzero"`
+	Compose        *ComposeRef           `json:"compose,omitzero"`
+}
+
+type TaskKind string
+
+const (
+	TaskKindTask    TaskKind = "task"
+	TaskKindService TaskKind = "service"
+)
+
+var TaskKindValues = []TaskKind{TaskKindTask, TaskKindService}
+
+type OverlapPolicy string
+
+const (
+	OverlapPolicyQueue OverlapPolicy = "queue"
+	OverlapPolicySkip  OverlapPolicy = "skip"
+	OverlapPolicyKill  OverlapPolicy = "kill"
+)
+
+var OverlapPolicyValues = []OverlapPolicy{OverlapPolicyQueue, OverlapPolicySkip, OverlapPolicyKill}
+
+type Backoff string
+
+const (
+	BackoffConstant    Backoff = "constant"
+	BackoffLinear      Backoff = "linear"
+	BackoffExponential Backoff = "exponential"
+)
+
+var BackoffValues = []Backoff{BackoffConstant, BackoffLinear, BackoffExponential}
+
+type TaskSchedule struct {
+	Cron string `json:"cron"`
+	// IANA zone.
+	Timezone string `json:"timezone"`
+	Enabled  bool   `json:"enabled"`
+}
+
+type TaskParam struct {
+	// env, arg, ...
+	Kind        string   `json:"kind,omitzero"`
+	Type        string   `json:"type,omitzero"`
+	Required    bool     `json:"required,omitzero"`
+	Default     *string  `json:"default,omitzero"`
+	Choices     []string `json:"choices,omitzero"`
+	AllowCustom bool     `json:"allowCustom,omitzero"`
+	Description string   `json:"description,omitzero"`
+}
+
+type ServiceSettings struct {
+	Instances           int     `json:"instances,omitzero"`
+	Autostart           bool    `json:"autostart,omitzero"`
+	RestartDelayMs      int     `json:"restartDelayMs,omitzero"`
+	RestartBackoff      Backoff `json:"restartBackoff,omitzero"`
+	BackoffResetAfterMs int     `json:"backoffResetAfterMs,omitzero"`
+}
+
+type ComposeRef struct {
+	File        string `json:"file"`
+	ProjectName string `json:"projectName"`
+	Service     string `json:"service,omitzero"`
+}
+
+// What to run. Discriminated by `type`; type X needs feature `exec.X`,
+// so a sender puts `exec.X` in `requires`. Unknown types are refused
+// with `unsupported`.
+type ExecutionSpec = json.RawMessage
+
+type ShellSpec struct {
+	Type   string `json:"type"`
+	Script string `json:"script"`
+	// Absolute interpreter path; empty = /bin/sh.
+	Shell      string `json:"shell,omitzero"`
+	WorkingDir string `json:"workingDir,omitzero"`
+	// 3 or 4 octal digits.
+	Umask string `json:"umask,omitzero"`
+	// inherit (default) or clean.
+	EnvBase string `json:"envBase,omitzero"`
+}
+
+type ContainerSpec struct {
+	Type      string            `json:"type"`
+	Script    string            `json:"script"`
+	BaseImage string            `json:"baseImage,omitzero"`
+	Blocks    []DockerfileBlock `json:"blocks,omitzero"`
+	Env       []KeyValue        `json:"env,omitzero"`
+	Volumes   []VolumeMount     `json:"volumes,omitzero"`
+	Ports     []PortMapping     `json:"ports,omitzero"`
+	// Raw Dockerfile; overrides baseImage and blocks.
+	Dockerfile string `json:"dockerfile,omitzero"`
+}
+
+type DockerfileBlock struct {
+	Label      string `json:"label"`
+	Dockerfile string `json:"dockerfile"`
+	Enabled    bool   `json:"enabled"`
+}
+
+type VolumeMount struct {
+	Host      string `json:"host"`
+	Container string `json:"container"`
+	Readonly  bool   `json:"readonly,omitzero"`
+}
+
+type PortMapping struct {
+	Host      int    `json:"host"`
+	Container int    `json:"container"`
+	Protocol  string `json:"protocol,omitzero"`
+}
+
+type KeyValue struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type ComposeSpec struct {
+	Type        string `json:"type"`
+	File        string `json:"file"`
+	ProjectName string `json:"projectName"`
+	Service     string `json:"service,omitzero"`
+	// run, stack or exec.
+	Mode       string   `json:"mode"`
+	Profiles   []string `json:"profiles,omitzero"`
+	EnvFile    []string `json:"envFile,omitzero"`
+	WorkingDir string   `json:"workingDir,omitzero"`
+	WithDeps   bool     `json:"withDeps,omitzero"`
+	// missing, always or never.
+	Pull         string `json:"pull,omitzero"`
+	ServicePorts bool   `json:"servicePorts,omitzero"`
+	Command      string `json:"command,omitzero"`
+}
+
+type HTTPSpec struct {
+	Type    string     `json:"type"`
+	Method  string     `json:"method"`
+	URL     string     `json:"url"`
+	Headers []KeyValue `json:"headers,omitzero"`
+	Body    *HTTPBody  `json:"body,omitzero"`
+}
+
+type HTTPBody struct {
+	Kind   string     `json:"kind"`
+	Json   string     `json:"json,omitzero"`
+	Fields []KeyValue `json:"fields,omitzero"`
+}
+
+// Run the daemon's own task `taskName`. The dispatch's timeoutMs and
+// options apply to this run only; an env that differs from the task's
+// own needs the task's allow_station_dispatch.
+type ConfigSpec struct {
+	Type     string `json:"type"`
+	TaskName string `json:"taskName"`
+}
+
+// Per-run knobs. An unset field means the daemon default (for a config spec, the task's own value).
+type RunOptions struct {
 	Env map[string]string `json:"env,omitzero"`
-	// Window between SIGTERM and SIGKILL when a run is stopped, in
-	// milliseconds (mirrors `timeout`'s unit). 0/omitted uses the daemon
-	// default.
-	GracefulStop int `json:"gracefulStop,omitzero"`
-	// Per-run log size cap in bytes. 0/omitted uses the daemon default.
-	LogMaxSize int `json:"logMaxSize,omitzero"`
-	// What the daemon does when log output exceeds logMaxSize.
-	LogOnFull LogOnFull `json:"logOnFull,omitzero"`
-	// The task's `failures` policy, in runwisp.toml `failures` syntax: reason
-	// names, exit codes or ranges, and `output:<regex>` patterns. A bare list
-	// replaces the built-in default set; a list of `+`/`-` tokens adjusts it.
-	// Omitted or empty uses the built-in default. An invalid list rejects the
-	// dispatch. Add-only field; old daemons ignore it and classify with the
-	// default.
+	// SIGTERM to SIGKILL window.
+	GracefulStopMs int   `json:"gracefulStopMs,omitzero"`
+	LogMaxBytes    int64 `json:"logMaxBytes,omitzero"`
+	// drop_new, drop_old or kill.
+	LogOnFull string `json:"logOnFull,omitzero"`
+	// The task's `failures` policy in runwisp.toml syntax. Invalid = refused with `invalid`.
 	Failures []string `json:"failures,omitzero"`
 }
 
-type ExecutionStopMessage struct {
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
-	ExecutionID     string `json:"executionId"`
-	Reason          string `json:"reason"`
+// Idempotent by executionId: a repeat gets ok again without a second
+// run. Rejections: not_found (no such config task), forbidden (local
+// policy), unavailable (backend missing), busy (retryable), expired.
+type ExecutionDispatch struct {
+	ExecutionID string            `json:"executionId"`
+	Task        *TaskRef          `json:"task"`
+	Attempt     int               `json:"attempt,omitzero"`
+	Priority    int               `json:"priority,omitzero"`
+	Spec        ExecutionSpec     `json:"spec"`
+	Inputs      map[string]string `json:"inputs,omitzero"`
+	// 0 = no timeout (config spec - the task's own).
+	TimeoutMs int         `json:"timeoutMs,omitzero"`
+	Options   *RunOptions `json:"options,omitzero"`
+	// Upload the log in chunks while running (upload:request purpose log.chunk).
+	LogStream bool `json:"logStream,omitzero"`
+	// Refuse with `expired` instead of starting after this time.
+	NotAfter *time.Time `json:"notAfter,omitzero"`
 }
 
-// State of a single service instance slot as reported by the daemon
-// supervisor. `running` = live; `restarting` = exited and awaiting the
-// next backoff respawn; `stopped` = not being refilled, because it was
-// operator-stopped or its restart policy won't respawn it;
-// `fatal` = the supervisor gave up on the slot. Consumers must tolerate
-// unknown values (forward-compat).
-type ServiceInstanceState string
+type TaskRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type ExecutionStop struct {
+	ExecutionID string `json:"executionId"`
+	Reason      string `json:"reason,omitzero"`
+	// Overrides the run's own window. 0 = keep it.
+	GracefulStopMs int `json:"gracefulStopMs,omitzero"`
+	// Kill now.
+	Force bool `json:"force,omitzero"`
+}
+
+// CLOSED. accepted (not started yet), running, finished.
+type ExecutionStatus string
 
 const (
-	ServiceInstanceStateRunning    ServiceInstanceState = "running"
-	ServiceInstanceStateRestarting ServiceInstanceState = "restarting"
-	ServiceInstanceStateStopped    ServiceInstanceState = "stopped"
-	ServiceInstanceStateFatal      ServiceInstanceState = "fatal"
+	ExecutionStatusAccepted ExecutionStatus = "accepted"
+	ExecutionStatusRunning  ExecutionStatus = "running"
+	ExecutionStatusFinished ExecutionStatus = "finished"
 )
 
-var ServiceInstanceStateValues = []ServiceInstanceState{ServiceInstanceStateRunning, ServiceInstanceStateRestarting, ServiceInstanceStateStopped, ServiceInstanceStateFatal}
+var ExecutionStatusValues = []ExecutionStatus{ExecutionStatusAccepted, ExecutionStatusRunning, ExecutionStatusFinished}
 
-// Roll-up state of a whole service. `running` = all desired instances
-// live; `degraded` = some but not all live; `stopped` = operator-stopped,
-// or every instance exited cleanly and its restart policy won't respawn
-// it; `fatal` = no instance is live or respawning, and at least one gave
-// up or exited on a failure. Consumers must tolerate unknown values
-// (forward-compat).
+// A finished execution gets one update with status finished, and,
+// after its log archive is uploaded, a second finished update carrying
+// `log`. Both are sequenced and acked.
+type ExecutionUpdate struct {
+	Seq         int64           `json:"seq"`
+	ExecutionID string          `json:"executionId"`
+	Status      ExecutionStatus `json:"status"`
+	StartedAt   *time.Time      `json:"startedAt,omitzero"`
+	FinishedAt  *time.Time      `json:"finishedAt,omitzero"`
+	// Open. Set when finished: succeeded, failed, stopped, timeout,
+	// crashed, skipped, log_overflow, queue_full, dst_skipped,
+	// daemon_stopped, missed, start_failed, unhealthy, ... A receiver
+	// that doesn't know the value uses isFailure.
+	Reason string `json:"reason,omitzero"`
+	// Set when finished. Whether the run counts as failed under its failures policy.
+	IsFailure *bool           `json:"isFailure,omitzero"`
+	ExitCode  *int            `json:"exitCode,omitzero"`
+	Usage     *ExecutionUsage `json:"usage,omitzero"`
+	Log       *LogArchive     `json:"log,omitzero"`
+}
+
+type ExecutionUsage struct {
+	PeakMemoryBytes *int64 `json:"peakMemoryBytes,omitzero"`
+	CpuTimeMs       *int64 `json:"cpuTimeMs,omitzero"`
+}
+
+type LogArchive struct {
+	// The key of the upload:request target used.
+	Key string `json:"key"`
+	// Gzipped size.
+	Bytes int64 `json:"bytes"`
+	// Log chunks uploaded (seq 0..chunks-1); null = unknown.
+	Chunks *int `json:"chunks,omitzero"`
+}
+
+// Streams log:lines (replyTo = this command's id) from fromLine on, then,
+// with follow, live lines with no gap or overlap. Ends with a result
+// (LogSubscribeResult): when limit lines were sent, when the run finished
+// and all lines were sent, or after log:unsubscribe.
+type LogSubscribe struct {
+	ExecutionID string `json:"executionId"`
+	// First absolute line; 0 = start.
+	FromLine int64 `json:"fromLine"`
+	Follow   bool  `json:"follow"`
+	// 0 = no limit.
+	Limit int64 `json:"limit,omitzero"`
+}
+
+type LogSubscribeResult struct {
+	NextLine int64 `json:"nextLine,omitzero"`
+	// The run is finished and every line was sent.
+	Eof bool `json:"eof,omitzero"`
+}
+
+type LogUnsubscribe struct {
+	// The log:subscribe command's id.
+	Subscription string `json:"subscription"`
+}
+
+type LogLines struct {
+	Lines []LogLine `json:"lines"`
+	Gap   *LogGap   `json:"gap,omitzero"`
+}
+
+// Lines [from, to) were dropped under backpressure; replay them if needed.
+type LogGap struct {
+	From int64 `json:"from"`
+	To   int64 `json:"to"`
+}
+
+type LogLine struct {
+	// Absolute line index.
+	N int64 `json:"n"`
+	// Unix ms; 0 = unknown.
+	Ts     int64     `json:"ts,omitzero"`
+	Stream LogStream `json:"stream"`
+	// No trailing newline.
+	Text string `json:"text"`
+	// Continues an oversized split line.
+	Continued bool `json:"continued,omitzero"`
+}
+
+type LogStream string
+
+const (
+	LogStreamStdout LogStream = "stdout"
+	LogStreamStderr LogStream = "stderr"
+	LogStreamSystem LogStream = "system"
+)
+
+var LogStreamValues = []LogStream{LogStreamStdout, LogStreamStderr, LogStreamSystem}
+
+type LogSearch struct {
+	ExecutionID string `json:"executionId"`
+	Query       string `json:"query"`
+	// RE2.
+	Regex         bool  `json:"regex,omitzero"`
+	CaseSensitive bool  `json:"caseSensitive,omitzero"`
+	FromLine      int64 `json:"fromLine,omitzero"`
+	Limit         int64 `json:"limit,omitzero"`
+}
+
+type LogSearchResult struct {
+	Hits      []LogLine `json:"hits"`
+	NextLine  int64     `json:"nextLine,omitzero"`
+	Exhausted bool      `json:"exhausted"`
+}
+
+type UploadRequest struct {
+	ExecutionID string        `json:"executionId"`
+	Purpose     UploadPurpose `json:"purpose"`
+	// First chunk seq (log.chunk).
+	FromSeq int `json:"fromSeq,omitzero"`
+	// Targets wanted (log.chunk).
+	Count int `json:"count,omitzero"`
+}
+
+// Open; an unknown purpose is answered `unsupported`.
+type UploadPurpose string
+
+const (
+	UploadPurposeLogArchive UploadPurpose = "log.archive"
+	UploadPurposeLogChunk   UploadPurpose = "log.chunk"
+)
+
+var UploadPurposeValues = []UploadPurpose{UploadPurposeLogArchive, UploadPurposeLogChunk}
+
+// Fewer targets than asked for means a cap was reached; stop chunking.
+type UploadRequestResult struct {
+	Uploads []UploadTarget `json:"uploads"`
+}
+
+type UploadTarget struct {
+	Seq    int    `json:"seq,omitzero"`
+	URL    string `json:"url"`
+	Method string `json:"method"`
+	// Send exactly these headers with the upload.
+	Headers   map[string]string `json:"headers,omitzero"`
+	Key       string            `json:"key"`
+	ExpiresAt time.Time         `json:"expiresAt,omitzero"`
+}
+
+// Idempotent upsert of a service. Re-sent after reconnect. spec null
+// keeps the daemon's own command for a service from its config.
+type ServiceApply struct {
+	TaskID   string `json:"taskId"`
+	TaskName string `json:"taskName"`
+	// null (or absent) keeps the daemon's own command.
+	Spec     ExecutionSpec    `json:"spec,omitzero"`
+	Settings *ServiceSettings `json:"settings"`
+	Options  *RunOptions      `json:"options,omitzero"`
+}
+
+type ServiceControl struct {
+	TaskID string        `json:"taskId"`
+	Action ServiceAction `json:"action"`
+}
+
+type ServiceAction string
+
+const (
+	ServiceActionStart   ServiceAction = "start"
+	ServiceActionStop    ServiceAction = "stop"
+	ServiceActionRestart ServiceAction = "restart"
+)
+
+var ServiceActionValues = []ServiceAction{ServiceActionStart, ServiceActionStop, ServiceActionRestart}
+
+type ServiceRemove struct {
+	TaskID string `json:"taskId"`
+}
+
+// Sent on change and after welcome. Lives as long as the connection.
+type ServiceStatus struct {
+	TaskID           string            `json:"taskId"`
+	State            ServiceState      `json:"state"`
+	DesiredInstances int               `json:"desiredInstances"`
+	RunningInstances int               `json:"runningInstances"`
+	Instances        []ServiceInstance `json:"instances"`
+}
+
+// Open. running, degraded, stopped, fatal.
 type ServiceState string
 
 const (
@@ -161,419 +652,26 @@ const (
 
 var ServiceStateValues = []ServiceState{ServiceStateRunning, ServiceStateDegraded, ServiceStateStopped, ServiceStateFatal}
 
-// Station → daemon. Declares (or re-declares) a service's desired state on
-// the runner. Idempotent: the daemon upserts a kind=service task and, when
-// `autostart` is true, brings instances up to `instances`. Re-sent when a
-// runner reconnects so desired state converges after downtime. Gated by
-// the `service:apply` protocol-feature token — old daemons never receive
-// it. Duration knobs are milliseconds (mirrors execution timeout), which
-// the daemon converts to its native nanosecond Duration fields.
-type ServiceApplyMessage struct {
-	Type            string               `json:"type"`
-	ProtocolVersion int                  `json:"protocolVersion,omitzero"`
-	SentAt          string               `json:"sentAt,omitzero"`
-	Service         *ServiceApplyPayload `json:"service"`
-}
-
-// Backoff curve between consecutive restarts. Omitted uses the daemon default.
-type RestartBackoff string
-
-const (
-	RestartBackoffConstant    RestartBackoff = "constant"
-	RestartBackoffLinear      RestartBackoff = "linear"
-	RestartBackoffExponential RestartBackoff = "exponential"
-)
-
-var RestartBackoffValues = []RestartBackoff{RestartBackoffConstant, RestartBackoffLinear, RestartBackoffExponential}
-
-type ServiceApplyPayload struct {
-	TaskID   string `json:"taskId"`
-	TaskName string `json:"taskName"`
-	// ExecutionDef JSON, same shape as ExecutionPayload.script. `null`
-	// (sent for a service synced from the daemon's config whose command
-	// the operator did not override) keeps the daemon's own command.
-	Script json.RawMessage `json:"script"`
-	// Desired number of always-running instances.
-	Instances int `json:"instances"`
-	// When true, the daemon starts instances on apply (and on reconnect).
-	// When false, the service is declared but left stopped until an
-	// operator start.
-	Autostart bool `json:"autostart,omitzero"`
-	// Base delay before each restart, in milliseconds. 0/omitted uses the daemon default.
-	RestartDelay int `json:"restartDelay,omitzero"`
-	// Backoff curve between consecutive restarts. Omitted uses the daemon default.
-	RestartBackoff RestartBackoff `json:"restartBackoff,omitzero"`
-	// An instance that runs at least this long (milliseconds) resets its
-	// consecutive-restart counter. 0/omitted uses the daemon default.
-	BackoffResetAfter int                  `json:"backoffResetAfter,omitzero"`
-	TaskConfig        *ExecutionTaskConfig `json:"taskConfig,omitzero"`
-}
-
-type Action string
-
-const (
-	ActionStart   Action = "start"
-	ActionStop    Action = "stop"
-	ActionRestart Action = "restart"
-)
-
-var ActionValues = []Action{ActionStart, ActionStop, ActionRestart}
-
-// Station → daemon. An operator action against a declared service. Maps to
-// the daemon's StartServiceInstances / StopService /
-// RestartServiceInstances. Gated by the `service:control` feature token.
-type ServiceControlMessage struct {
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
-	TaskID          string `json:"taskId"`
-	Action          Action `json:"action"`
-}
-
-// Station → daemon. Tears down a previously declared service on the runner:
-// the daemon cancels its instances and drops the kind=service task. Maps to
-// the daemon's RemoveTask. Without this, a station-declared service (and its
-// supervisor goroutines) would live until daemon restart, since reconcile
-// only ever removes TOML-registry tasks. Gated by the `service:remove`
-// protocol-feature token — old daemons never receive it.
-type ServiceRemoveMessage struct {
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
-	TaskID          string `json:"taskId"`
-}
-
-// State of one instance slot, reported in ServiceStatusMessage.
-type ServiceInstanceSnapshot struct {
-	// Instance slot index in [0, desiredInstances).
-	Index int                  `json:"index"`
-	State ServiceInstanceState `json:"state"`
-	// OS process id of the live instance, when known.
-	Pid *int `json:"pid,omitzero"`
-	// When the current run of this slot started, when live.
-	StartedAt *time.Time `json:"startedAt,omitzero"`
-	// Exits of this slot since its last healthy run. Operator stops and
-	// restarts count too, so it is not a crash signal; use startFails.
+type ServiceInstance struct {
+	Index     int                  `json:"index"`
+	State     ServiceInstanceState `json:"state"`
+	Pid       *int                 `json:"pid,omitzero"`
+	StartedAt *time.Time           `json:"startedAt,omitzero"`
+	// Exits since the last healthy run
 	RestartCount int `json:"restartCount"`
-	// Failed starts of this slot in a row since its last healthy run: exits
-	// before the instance became healthy, not counting operator stops and
-	// restarts. The slot goes fatal once this passes the service's restart
-	// attempts. Always sent; absent only from daemons that predate it.
-	StartFails int `json:"startFails"`
-	// Exit code of this slot's most recent terminated run, when known.
+	// Failed starts in a row since the last healthy run.
+	StartFails   int  `json:"startFails"`
 	LastExitCode *int `json:"lastExitCode,omitzero"`
 }
 
-// Daemon → station. A full per-service snapshot of the supervisor's state.
-// Sent on change and on a slow heartbeat — never per log line. Station keeps
-// only the latest snapshot in memory, never per-instance rows. Additive:
-// old station ignores it; new station tolerates its absence.
-type ServiceStatusMessage struct {
-	Type             string                    `json:"type"`
-	ProtocolVersion  int                       `json:"protocolVersion,omitzero"`
-	SentAt           string                    `json:"sentAt,omitzero"`
-	TaskID           string                    `json:"taskId"`
-	State            ServiceState              `json:"state"`
-	DesiredInstances int                       `json:"desiredInstances"`
-	RunningInstances int                       `json:"runningInstances"`
-	Instances        []ServiceInstanceSnapshot `json:"instances"`
-}
-
-// Station → daemon. Requests a bounded historical page of log lines for an
-// execution. The daemon replies with one or more log:replayChunk messages
-// whose final flag marks the end of the page.
-type LogReplayRequestMessage struct {
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
-	RequestID       string `json:"requestId"`
-	ExecutionID     string `json:"executionId"`
-	FromLine        int64  `json:"fromLine"`
-	Limit           int64  `json:"limit"`
-}
-
-// Station → daemon. Greps one execution's on-disk log for lines matching a
-// query and replies with a single log:searchChunk. A gated station→daemon
-// type (X-Runner-Protocol-Features "log:searchRequest"): station only sends
-// it to daemons that advertise support, since an old daemon would drop it
-// and the search would time out. Scope is one execution's live/recent log
-// on disk — archived (rotated/uploaded) lines are not searchable here.
-type LogSearchRequestMessage struct {
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
-	RequestID       string `json:"requestId"`
-	ExecutionID     string `json:"executionId"`
-	// Substring (or RE2 regex when regex=true) to match.
-	Query string `json:"query"`
-	// Treat query as an RE2 regular expression.
-	Regex bool `json:"regex,omitzero"`
-	// Match case-sensitively (default is case-insensitive).
-	CaseSensitive bool `json:"caseSensitive,omitzero"`
-	// Max hits to return in the reply chunk.
-	Limit int64 `json:"limit,omitzero"`
-	// Resume cursor: the first absolute line to scan (0 scans the whole
-	// log). Pass a previous chunk's nextLine to continue mid-run without
-	// re-emitting prior hits.
-	FromLine int64 `json:"fromLine,omitzero"`
-}
-
-type LogListenMessage struct {
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
-	ExecutionID     string `json:"executionId"`
-}
-
-// Daemon → station. Asks for signed PUT URLs for the incremental log
-// chunks of a running `logStream` execution, starting at sequence number
-// fromSeq. The station answers with log:chunkUrls.
-type LogChunkUrlsRequestMessage struct {
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
-	ExecutionID     string `json:"executionId"`
-	FromSeq         int    `json:"fromSeq"`
-}
-
-// Station → daemon. Signed PUT URLs for log chunks fromSeq,
-// fromSeq+1, ... of a running `logStream` execution. Fewer URLs than
-// usual (or none) means the station reached its per-execution chunk cap:
-// stop streaming and rely on the terminal archive.
-type LogChunkUrlsMessage struct {
-	Type            string   `json:"type"`
-	ProtocolVersion int      `json:"protocolVersion,omitzero"`
-	SentAt          string   `json:"sentAt,omitzero"`
-	ExecutionID     string   `json:"executionId"`
-	FromSeq         int      `json:"fromSeq"`
-	Urls            []string `json:"urls"`
-	// Optional fresh signed PUT URL for the terminal log archive,
-	// replacing the dispatch's `logUploadUrl` (and any earlier
-	// refresh), so a long run's archive key and signature stay current.
-	// Honoured only together with `archivePath`; omitted means keep the
-	// current one.
-	ArchiveURL string `json:"archiveUrl,omitzero"`
-	// Storage object key matching `archiveUrl`; the daemon echoes it as
-	// `logPath` on the terminal `execution:update` instead of the
-	// dispatch's `logPath`. Honoured only together with `archiveUrl`.
-	ArchivePath string `json:"archivePath,omitzero"`
-}
-
-type LogStopMessage struct {
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
-	ExecutionID     string `json:"executionId"`
-}
-
-// Station → daemon. Asks the daemon to gracefully restart its own process (re-exec the agent binary), e.g. after a config change or to recover a wedged agent. Carries no execution scope; it acts on the agent itself.
-type AgentRestartMessage struct {
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
-}
-
-// The `error` frame, sent in both directions with an identical shape:
-// station→daemon and daemon→station. Receivers treat unrecognized codes as
-// connection-scoped diagnostics (log + metric, never a state flip).
-type ProtocolErrorMessage struct {
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
-	// Canonical values: AUTH_ERROR, VALIDATION_ERROR, CONFLICT_ERROR,
-	// TRANSIENT_ERROR, UNKNOWN_EXECUTION. Kept as a free-form string on
-	// the wire so old peers emitting other codes still decode; receivers
-	// treat unrecognized codes as connection-scoped diagnostics.
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	RequestID string `json:"requestId,omitzero"`
-	// Execution this error pertains to, when applicable. Empty (old peers
-	// always omit it) means the error is connection-scoped and must not
-	// flip any execution's state.
-	ExecutionID string `json:"executionId,omitzero"`
-}
-
-type PingMessage struct {
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
-	ID              string `json:"id,omitzero"`
-	// Optional live system snapshot piggybacked on the heartbeat so the
-	// control plane can show a runner's CPU/memory/identity without a
-	// dedicated message or any DB write (station stores only the latest
-	// snapshot in memory). Add-only field; old daemons omit it and old
-	// station ignores it.
-	SystemStats *SystemStatsInfo `json:"systemStats,omitzero"`
-}
-
-// A single live system-resource + identity snapshot for the runner host.
-// Mirrors the daemon's local /api/system payload. Volatile fields
-// (cpuUsage/memUsage/mem*) reflect the instant the heartbeat was built.
-type SystemStatsInfo struct {
-	// CPU usage percentage (0-100).
-	CpuUsage float64 `json:"cpuUsage,omitzero"`
-	// Memory usage percentage (0-100).
-	MemUsage float64 `json:"memUsage,omitzero"`
-	// Total memory in bytes.
-	MemTotal int64 `json:"memTotal,omitzero"`
-	// Used memory in bytes.
-	MemUsed int64 `json:"memUsed,omitzero"`
-	// Number of CPU cores.
-	CpuCores int `json:"cpuCores,omitzero"`
-	// Human-readable daemon uptime.
-	Uptime string `json:"uptime,omitzero"`
-	// RunWisp daemon version.
-	Version string `json:"version,omitzero"`
-	// Hostname of the runner machine.
-	Host string `json:"host,omitzero"`
-	// The daemon's `[daemon] name` display label, read per heartbeat so a
-	// config reload shows up on the next ping. Empty when unset (show the
-	// fingerprint instead). Add-only field; old daemons omit it.
-	InstanceName string `json:"instanceName,omitzero"`
-	// Operating system (e.g. linux, darwin, windows).
-	Os string `json:"os,omitzero"`
-	// CPU architecture (e.g. amd64, arm64).
-	Arch string `json:"arch,omitzero"`
-}
-
-// Daemon → station. Sent immediately after an execution:dispatch passes
-// validation (before the run is registered or triggered). Confirms
-// receipt so the control plane can stop re-dispatching. A duplicate
-// dispatch for an execution the daemon already knows is re-acked
-// without starting a second run. Old daemons never send this; the
-// station treats execution:update(running) as an implicit ack.
-type ExecutionAckMessage struct {
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
-	ExecutionID     string `json:"executionId"`
-}
-
-// Daemon → station. Sent once per connection, after auth and before any
-// other message, listing every execution the daemon still owns: running,
-// accepted for dispatch but not yet running, ended with its terminal
-// `execution:update` not yet sent, or with an `execution:update` buffered
-// for delivery on this connection. The station should treat executions
-// it tracks as active on this runner, acknowledged on an earlier
-// connection, and absent from executionIds as lost by the daemon (e.g.
-// a daemon restart without its state). Executions acknowledged on this
-// connection are never in the list. Old daemons never send this.
-type ExecutionInventoryMessage struct {
-	Type            string   `json:"type"`
-	ProtocolVersion int      `json:"protocolVersion,omitzero"`
-	SentAt          string   `json:"sentAt,omitzero"`
-	ExecutionIds    []string `json:"executionIds"`
-}
-
-type ExecutionUpdateMessage struct {
-	Type            string          `json:"type"`
-	ProtocolVersion int             `json:"protocolVersion,omitzero"`
-	SentAt          string          `json:"sentAt,omitzero"`
-	ExecutionID     string          `json:"executionId"`
-	Status          ExecutionStatus `json:"status"`
-	ExitCode        *int            `json:"exitCode,omitzero"`
-	StartedAt       *time.Time      `json:"startedAt,omitzero"`
-	FinishedAt      *time.Time      `json:"finishedAt,omitzero"`
-	// Echoed storage object key from `ExecutionPayload.logPath`, set only on
-	// terminal updates after a successful upload.
-	LogPath *string `json:"logPath,omitzero"`
-	// Gzipped byte count of the uploaded archive. Set only on terminal
-	// updates after a successful upload.
-	LogSize *int64 `json:"logSize,omitzero"`
-	// Number of incremental log chunks uploaded for a `logStream`
-	// dispatch (sequence numbers 0..logChunks-1), so the station can drop
-	// them once the archive is in. Set (zero included) only on the
-	// terminal update that carries `logPath` of a `logStream` dispatch;
-	// absent means the daemon doesn't know (e.g. an archive recovered
-	// after a restart).
-	LogChunks *int `json:"logChunks,omitzero"`
-	// Whether the run counts as a failure under the task's `failures`
-	// policy. Set only on terminal updates. A non-zero exit the policy
-	// excludes reports status `failed` with isFailure false. Add-only
-	// field; old daemons omit it.
-	IsFailure *bool `json:"isFailure,omitzero"`
-	// Highest resident memory of the run's process group, in bytes. Set
-	// only on terminal updates of shell runs that were measured.
-	PeakMemoryBytes *int64 `json:"peakMemoryBytes,omitzero"`
-	// User plus system CPU time of the run's processes, in milliseconds.
-	// Set only on terminal updates of shell runs that were measured.
-	CpuTimeMs *int64 `json:"cpuTimeMs,omitzero"`
-}
-
-type Stream string
+// Open. running, restarting, stopped, fatal.
+type ServiceInstanceState string
 
 const (
-	StreamStdout Stream = "stdout"
-	StreamStderr Stream = "stderr"
-	StreamSystem Stream = "system"
+	ServiceInstanceStateRunning    ServiceInstanceState = "running"
+	ServiceInstanceStateRestarting ServiceInstanceState = "restarting"
+	ServiceInstanceStateStopped    ServiceInstanceState = "stopped"
+	ServiceInstanceStateFatal      ServiceInstanceState = "fatal"
 )
 
-var StreamValues = []Stream{StreamStdout, StreamStderr, StreamSystem}
-
-// A single log line published or replayed by the daemon.
-type LogLineEntry struct {
-	// Absolute, monotonically increasing line index.
-	N int64 `json:"n"`
-	// Unix milliseconds. 0 if unavailable.
-	Ts     int64  `json:"ts,omitzero"`
-	Stream Stream `json:"stream"`
-	// Line content WITHOUT trailing newline and without on-disk prefix.
-	Text string `json:"text"`
-	// True if this segment continues an oversized split line.
-	Continued bool `json:"continued,omitzero"`
-}
-
-// Daemon → station. Pushed live for any execution with an active log:listen
-// subscription. Each message carries exactly one absolute-numbered line.
-type LogLineMessage struct {
-	LogLineEntry
-	Type            string `json:"type"`
-	ProtocolVersion int    `json:"protocolVersion,omitzero"`
-	SentAt          string `json:"sentAt,omitzero"`
-	ExecutionID     string `json:"executionId"`
-}
-
-// Daemon → station. A coalesced batch of live log lines for one execution
-// with an active log:listen subscription — the same per-line payload as
-// log:line, but grouped so a burst of output ships as one frame instead
-// of one frame per line (fewer WS frames, bus publishes, and SSE writes
-// on the hot path). Lines are in ascending `n` order. An additive
-// daemon→station type: old station never receives it, and a daemon may still
-// send single log:line frames — a receiver must handle both.
-type LogLinesMessage struct {
-	Type            string         `json:"type"`
-	ProtocolVersion int            `json:"protocolVersion,omitzero"`
-	SentAt          string         `json:"sentAt,omitzero"`
-	ExecutionID     string         `json:"executionId"`
-	Lines           []LogLineEntry `json:"lines"`
-}
-
-// Daemon → station. One page of historical log lines in reply to a
-// log:replayRequest. A reply may span multiple chunks; final=true marks
-// the last chunk.
-type LogReplayChunkMessage struct {
-	Type            string         `json:"type"`
-	ProtocolVersion int            `json:"protocolVersion,omitzero"`
-	SentAt          string         `json:"sentAt,omitzero"`
-	RequestID       string         `json:"requestId"`
-	ExecutionID     string         `json:"executionId"`
-	Lines           []LogLineEntry `json:"lines"`
-	Final           bool           `json:"final"`
-}
-
-// Daemon → station. The single reply to a log:searchRequest. hits are
-// ordered by ascending line number within the execution. exhausted=true
-// means the daemon scanned the whole on-disk log; when false, nextLine
-// carries the resume cursor (pass it back as fromLine to page on).
-type LogSearchChunkMessage struct {
-	Type            string         `json:"type"`
-	ProtocolVersion int            `json:"protocolVersion,omitzero"`
-	SentAt          string         `json:"sentAt,omitzero"`
-	RequestID       string         `json:"requestId"`
-	ExecutionID     string         `json:"executionId"`
-	Hits            []LogLineEntry `json:"hits"`
-	// First absolute line still to scan when exhausted=false; 0 and
-	// exhausted=true means the scan is complete.
-	NextLine  int64 `json:"nextLine,omitzero"`
-	Exhausted bool  `json:"exhausted"`
-}
+var ServiceInstanceStateValues = []ServiceInstanceState{ServiceInstanceStateRunning, ServiceInstanceStateRestarting, ServiceInstanceStateStopped, ServiceInstanceStateFatal}

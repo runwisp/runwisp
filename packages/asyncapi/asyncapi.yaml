@@ -1,1240 +1,1048 @@
 # =============================================================================
-# FORWARD-COMPATIBILITY CONTRACT — read before changing this file.
+# RunWisp station protocol v1: COMPATIBILITY CONTRACT. Read before editing.
 #
-# Daemons ship from a separate repo and upgrade independently of the station.
-# Old daemons and new daemons are in the field at the same time, and new station
-# features must keep working against old daemons. These rules keep the wire
-# evolvable. Breaking one strands executions or kills sessions in the field.
+# Daemons ship separately from stations and stay in the field for years. A
+# daemon built against v1.0 of this file must keep working against every later
+# station, and a later daemon against every v1 station. So v1 only ever grows:
 #
-#   1. ADDING FIELDS to an existing message is safe — both sides decode
-#      leniently (Go encoding/json ignores unknown fields; the daemon's
-#      decodeStrict only rejects trailing JSON, never unknown fields). NEVER
-#      remove, rename, retype, or repurpose an existing field.
-#
-#   2. ADDING daemon→station message TYPES is safe: station's Hub forwards an
-#      unknown inbound type to a metric + drop, never tearing down the session.
-#
-#   3. ADDING station→daemon message TYPES is safe to *send* (old daemons ignore
-#      an unknown type cleanly — no error frame, session survives). But if the
-#      station DEPENDS on the daemon acting on the new type, it MUST treat the
-#      type as "gated": only send it to daemons that advertise support, and
-#      fall back otherwise. Daemons advertise the set of station→daemon types
-#      they handle in the `X-Runner-Protocol-Features` auth header (a JSON
-#      array, derived from the daemon's inbound decoder map). An absent header
-#      means "baseline only" (an old daemon).
-#
-#   4. ENUMS: receivers must tolerate unknown values and treat them
-#      conservatively — NEVER map an unrecognized value onto a semantically
-#      loaded zero value. A future ExecutionStatus sent to old station must not
-#      silently decode as "running" (iota 0) and strand the row.
-#
-#   5. The `protocolVersion` envelope integer is a RESERVED protocol
-#      major-version hook. It is present on every message and currently always 2
-#      (ProtocolVersion). Receivers IGNORE values they don't recognize — do not
-#      repurpose it as a feature flag; feature negotiation is the
-#      `X-Runner-Protocol-Features` header (rule 3).
-#
-#   6. Regenerate Go/TS types from this file; never hand-edit generated output.
-#
-# The station-side companion to this contract is docs/PROTOCOL-COMPAT.md in the
-# runwisp-station repo.
+#   1. Never remove, rename, retype or repurpose a message, field, feature
+#      name, error code or enum value. Deprecate by no longer sending it; keep
+#      accepting it.
+#   2. Adding an optional field is safe: receivers ignore fields they don't
+#      know. A field the receiver MUST honour (a limit, a security setting)
+#      belongs to a feature; the sender puts that feature in the envelope's
+#      `requires` whenever it sets the field.
+#   3. Adding a message type is safe: receivers ignore types they don't know,
+#      except that an unknown COMMAND (an envelope with an `id`) is answered
+#      with a `result` carrying error code `unsupported`. A sender that depends
+#      on a new command checks the peer's features first.
+#   4. Enums are open unless marked CLOSED. Receivers tolerate unknown values
+#      of an open enum by falling back to the closed field next to it (e.g. an
+#      unknown execution `reason` falls back to `isFailure`). CLOSED enums
+#      never grow.
+#   5. The major version is the WebSocket subprotocol (`runwisp.v1`). There is
+#      no version number inside messages. A v2 would be offered next to v1.
+#   6. Regenerate Go/TS types from this file; never hand-edit the output.
 # =============================================================================
 asyncapi: 2.6.0
 info:
-  title: RunWisp Protocol
-  version: 2.0.0
+  title: RunWisp station protocol
+  version: 1.0.0
   description: |
-    WebSocket protocol between RunWisp daemons and the control plane.
+    WebSocket protocol between a RunWisp daemon and a station. The daemon
+    always dials out; nothing dials the daemon.
 
-    Forward-compatibility is a hard requirement: old and new daemons run in the
-    field simultaneously and upgrade independently of the station. See the
-    FORWARD-COMPATIBILITY CONTRACT comment block at the top of this file (and
-    docs/PROTOCOL-COMPAT.md in runwisp-station) before evolving any message.
+    ## Transport
 
-    Negotiation: at WS auth a daemon advertises the station→daemon message types
-    it understands via the `X-Runner-Protocol-Features` header (JSON array). The
-    station gates any feature it depends the daemon acting on, falling back when a
-    type is absent. An absent header means an old daemon (baseline types only).
+    The daemon opens a WebSocket to `/api/v1/runner/ws` with
+    `Authorization: Bearer <runner token>` and
+    `Sec-WebSocket-Protocol: runwisp.v1`. A station that answers without
+    selecting `runwisp.v1` doesn't speak this protocol. Text frames carry one
+    JSON message each. Binary frames are reserved and ignored.
+
+    ## Envelope
+
+    Every frame is an `Envelope`; the message's payload is its `data`.
+    A frame with an `id` is a COMMAND and gets exactly one `result` with
+    `replyTo` set to that id (a log subscription first streams `log:lines`
+    frames with the same `replyTo`, then ends with its `result`). Ids are
+    unique per sender per connection.
+
+    ## Session
+
+    1. daemon -> `hello` (first frame, nothing else before it)
+    2. station -> `welcome`, or `goodbye` and close
+    3. daemon resends every unacknowledged `execution:update`, sends
+       `service:status` for each service, and `tasks:sync` when
+       `welcome.tasksHashKnown` is false.
+
+    Either side may send `goodbye` and close at any time. Liveness: the daemon
+    sends `ping` every `welcome.heartbeat.intervalMs`; the station answers
+    `pong`. A side that hears nothing for `heartbeat.timeoutMs` closes.
+
+    ## Delivery
+
+    `execution:update` carries `seq`, increasing per daemon install and kept
+    across restarts. The daemon stores each update before sending it and
+    deletes it once the station's `ack` covers its seq. The station acks only
+    after applying the update durably. Applying an update is idempotent, so
+    resends are harmless.
+
+    ## Conventions
+
+    Durations are integer milliseconds (`...Ms`), sizes integer bytes, times
+    RFC 3339 UTC strings, ids opaque strings up to 128 bytes. Log text is
+    valid UTF-8 (invalid bytes become U+FFFD). Arrays are `[]`, never `null`.
 
 defaultContentType: application/json
 
 channels:
   stationToDaemon:
-    description: Messages sent from station to the daemon
+    description: Frames the station sends.
     publish:
       message:
         oneOf:
-          - $ref: "#/components/messages/authResult"
+          - $ref: "#/components/messages/welcome"
+          - $ref: "#/components/messages/goodbye"
           - $ref: "#/components/messages/pong"
+          - $ref: "#/components/messages/result"
+          - $ref: "#/components/messages/ack"
+          - $ref: "#/components/messages/sessionUpdate"
           - $ref: "#/components/messages/executionDispatch"
           - $ref: "#/components/messages/executionStop"
-          - $ref: "#/components/messages/logReplayRequest"
-          - $ref: "#/components/messages/logSearchRequest"
-          - $ref: "#/components/messages/logListen"
-          - $ref: "#/components/messages/logStop"
-          - $ref: "#/components/messages/logChunkUrls"
-          - $ref: "#/components/messages/agentRestart"
+          - $ref: "#/components/messages/logSubscribe"
+          - $ref: "#/components/messages/logUnsubscribe"
+          - $ref: "#/components/messages/logSearch"
           - $ref: "#/components/messages/serviceApply"
           - $ref: "#/components/messages/serviceControl"
           - $ref: "#/components/messages/serviceRemove"
-          - $ref: "#/components/messages/errorStationToDaemon"
+          - $ref: "#/components/messages/agentRestart"
+          - $ref: "#/components/messages/agentUpgrade"
+          - $ref: "#/components/messages/agentCredentials"
 
   daemonToStation:
-    description: Messages sent from the daemon to station
+    description: Frames the daemon sends.
     subscribe:
       message:
         oneOf:
+          - $ref: "#/components/messages/hello"
+          - $ref: "#/components/messages/goodbye"
           - $ref: "#/components/messages/ping"
-          - $ref: "#/components/messages/executionAck"
+          - $ref: "#/components/messages/result"
+          - $ref: "#/components/messages/agentUpdate"
+          - $ref: "#/components/messages/agentStats"
+          - $ref: "#/components/messages/tasksSync"
           - $ref: "#/components/messages/executionUpdate"
-          - $ref: "#/components/messages/executionInventory"
-          - $ref: "#/components/messages/logLine"
           - $ref: "#/components/messages/logLines"
-          - $ref: "#/components/messages/logReplayChunk"
-          - $ref: "#/components/messages/logSearchChunk"
-          - $ref: "#/components/messages/logChunkUrlsRequest"
+          - $ref: "#/components/messages/uploadRequest"
           - $ref: "#/components/messages/serviceStatus"
-          - $ref: "#/components/messages/errorDaemonToStation"
 
 components:
   messages:
-    authResult:
-      name: auth:result
-      payload:
-        $ref: "#/components/schemas/AuthResultMessage"
-
-    pong:
-      name: pong
-      payload:
-        $ref: "#/components/schemas/PongMessage"
-
-    executionDispatch:
-      name: execution:dispatch
-      payload:
-        $ref: "#/components/schemas/ExecutionDispatchMessage"
-
-    executionStop:
-      name: execution:stop
-      payload:
-        $ref: "#/components/schemas/ExecutionStopMessage"
-
-    logReplayRequest:
-      name: log:replayRequest
-      payload:
-        $ref: "#/components/schemas/LogReplayRequestMessage"
-
-    logSearchRequest:
-      name: log:searchRequest
-      payload:
-        $ref: "#/components/schemas/LogSearchRequestMessage"
-
-    logListen:
-      name: log:listen
-      payload:
-        $ref: "#/components/schemas/LogListenMessage"
-
-    logStop:
-      name: log:stop
-      payload:
-        $ref: "#/components/schemas/LogStopMessage"
-
-    logChunkUrls:
-      name: log:chunkUrls
-      payload:
-        $ref: "#/components/schemas/LogChunkUrlsMessage"
-
-    agentRestart:
-      name: agent:restart
-      payload:
-        $ref: "#/components/schemas/AgentRestartMessage"
-
-    serviceApply:
-      name: service:apply
-      payload:
-        $ref: "#/components/schemas/ServiceApplyMessage"
-
-    serviceControl:
-      name: service:control
-      payload:
-        $ref: "#/components/schemas/ServiceControlMessage"
-
-    serviceRemove:
-      name: service:remove
-      payload:
-        $ref: "#/components/schemas/ServiceRemoveMessage"
-
-    errorStationToDaemon:
-      name: error
-      payload:
-        $ref: "#/components/schemas/ProtocolErrorMessage"
-
+    # --- session -------------------------------------------------------------
+    hello:
+      name: hello
+      summary: daemon -> station. First frame; identity, features, inventory.
+      payload: { $ref: "#/components/schemas/Hello" }
+    welcome:
+      name: welcome
+      summary: station -> daemon. Accepts the session and sets its parameters.
+      payload: { $ref: "#/components/schemas/Welcome" }
+    goodbye:
+      name: goodbye
+      summary: Either side, just before closing. Says whether and when to come back.
+      payload: { $ref: "#/components/schemas/Goodbye" }
     ping:
       name: ping
-      payload:
-        $ref: "#/components/schemas/PingMessage"
+      summary: daemon -> station. Heartbeat. No data.
+      payload: { $ref: "#/components/schemas/Empty" }
+    pong:
+      name: pong
+      summary: station -> daemon. Heartbeat reply. No data.
+      payload: { $ref: "#/components/schemas/Empty" }
+    result:
+      name: result
+      summary: The single reply to a command; `replyTo` names it.
+      payload: { $ref: "#/components/schemas/Result" }
+    ack:
+      name: ack
+      summary: station -> daemon. Every execution:update up to seq is applied.
+      payload: { $ref: "#/components/schemas/Ack" }
+    sessionUpdate:
+      name: session:update
+      summary: station -> daemon, command. Changes session parameters.
+      payload: { $ref: "#/components/schemas/SessionUpdate" }
 
-    executionAck:
-      name: execution:ack
-      payload:
-        $ref: "#/components/schemas/ExecutionAckMessage"
+    # --- agent ---------------------------------------------------------------
+    agentUpdate:
+      name: agent:update
+      summary: daemon -> station. Identity or features changed mid-session.
+      payload: { $ref: "#/components/schemas/AgentUpdate" }
+    agentStats:
+      name: agent:stats
+      summary: daemon -> station. Host snapshot, every welcome.statsIntervalMs.
+      payload: { $ref: "#/components/schemas/AgentStats" }
+    agentRestart:
+      name: agent:restart
+      summary: station -> daemon, command. Restart the daemon process. Feature agent.restart.
+      payload: { $ref: "#/components/schemas/Empty" }
+    agentUpgrade:
+      name: agent:upgrade
+      summary: station -> daemon, command. Install a release and restart. Feature agent.upgrade.
+      payload: { $ref: "#/components/schemas/AgentUpgrade" }
+    agentCredentials:
+      name: agent:credentials
+      summary: station -> daemon, command. Replace the runner token.
+      payload: { $ref: "#/components/schemas/AgentCredentials" }
 
+    # --- tasks ---------------------------------------------------------------
+    tasksSync:
+      name: tasks:sync
+      summary: daemon -> station, command. The daemon's whole task catalog.
+      payload: { $ref: "#/components/schemas/TasksSync" }
+
+    # --- executions ----------------------------------------------------------
+    executionDispatch:
+      name: execution:dispatch
+      summary: station -> daemon, command. Run one execution. Result ok = accepted.
+      payload: { $ref: "#/components/schemas/ExecutionDispatch" }
+    executionStop:
+      name: execution:stop
+      summary: station -> daemon, command. Stop a running execution.
+      payload: { $ref: "#/components/schemas/ExecutionStop" }
     executionUpdate:
       name: execution:update
-      payload:
-        $ref: "#/components/schemas/ExecutionUpdateMessage"
+      summary: daemon -> station. Sequenced, stored until acked.
+      payload: { $ref: "#/components/schemas/ExecutionUpdate" }
 
-    executionInventory:
-      name: execution:inventory
-      payload:
-        $ref: "#/components/schemas/ExecutionInventoryMessage"
-
-    logLine:
-      name: log:line
-      payload:
-        $ref: "#/components/schemas/LogLineMessage"
-
+    # --- logs ----------------------------------------------------------------
+    logSubscribe:
+      name: log:subscribe
+      summary: station -> daemon, command. Stream an execution's log lines.
+      payload: { $ref: "#/components/schemas/LogSubscribe" }
+    logUnsubscribe:
+      name: log:unsubscribe
+      summary: station -> daemon. End a subscription; the daemon sends its result.
+      payload: { $ref: "#/components/schemas/LogUnsubscribe" }
     logLines:
       name: log:lines
-      payload:
-        $ref: "#/components/schemas/LogLinesMessage"
+      summary: daemon -> station. Lines for the subscription named in replyTo.
+      payload: { $ref: "#/components/schemas/LogLines" }
+    logSearch:
+      name: log:search
+      summary: station -> daemon, command. Grep one execution's log.
+      payload: { $ref: "#/components/schemas/LogSearch" }
+    uploadRequest:
+      name: upload:request
+      summary: daemon -> station, command. Signed upload targets.
+      payload: { $ref: "#/components/schemas/UploadRequest" }
 
-    logReplayChunk:
-      name: log:replayChunk
-      payload:
-        $ref: "#/components/schemas/LogReplayChunkMessage"
-
-    logSearchChunk:
-      name: log:searchChunk
-      payload:
-        $ref: "#/components/schemas/LogSearchChunkMessage"
-
-    logChunkUrlsRequest:
-      name: log:chunkUrlsRequest
-      payload:
-        $ref: "#/components/schemas/LogChunkUrlsRequestMessage"
-
+    # --- services ------------------------------------------------------------
+    serviceApply:
+      name: service:apply
+      summary: station -> daemon, command. Declare a service's desired state.
+      payload: { $ref: "#/components/schemas/ServiceApply" }
+    serviceControl:
+      name: service:control
+      summary: station -> daemon, command. Start, stop or restart a service.
+      payload: { $ref: "#/components/schemas/ServiceControl" }
+    serviceRemove:
+      name: service:remove
+      summary: station -> daemon, command. Tear a declared service down.
+      payload: { $ref: "#/components/schemas/ServiceRemove" }
     serviceStatus:
       name: service:status
-      payload:
-        $ref: "#/components/schemas/ServiceStatusMessage"
-
-    errorDaemonToStation:
-      name: error
-      payload:
-        $ref: "#/components/schemas/ProtocolErrorMessage"
+      summary: daemon -> station. Snapshot of one service; latest wins.
+      payload: { $ref: "#/components/schemas/ServiceStatus" }
 
   schemas:
-    ExecutionStatus:
-      $id: ExecutionStatus
+    # =========================================================================
+    # Envelope and session
+    # =========================================================================
+    Envelope:
+      type: object
+      description: Every frame. The message payload is `data`.
+      properties:
+        type:
+          type: string
+          description: Message name, e.g. `execution:dispatch`.
+        id:
+          type: string
+          description: Set on commands only. The receiver answers with one `result` whose replyTo is this id.
+        replyTo:
+          type: string
+          description: Set on `result` and on `log:lines`. The command this answers.
+        requires:
+          type: array
+          items: { type: string }
+          description: |
+            Features the receiver must have to act on this command. A receiver
+            missing any of them answers `unsupported` without acting.
+        sentAt:
+          type: string
+          format: date-time
+          description: Sender's clock. Informational.
+        data:
+          type: object
+          description: The payload, per message type. May be absent when empty.
+      required: [type]
+
+    Empty:
+      type: object
+      description: No payload.
+
+    Hello:
+      type: object
+      properties:
+        instanceId:
+          type: string
+          description: Stable id of this daemon install. Several installs may share one runner token.
+        agent: { $ref: "#/components/schemas/AgentInfo" }
+        features:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/FeatureStatus" }
+          description: |
+            Optional features this daemon understands, by name, with whether
+            each can be used right now. A name that's absent is not understood.
+            v1.0 names: exec.shell, exec.container, exec.compose, exec.http,
+            exec.config, agent.restart, agent.upgrade. Everything else in this
+            spec is baseline and has no feature name.
+        labels:
+          type: object
+          additionalProperties: { type: string }
+          description: Operator-set labels (`[daemon] labels`). May be empty.
+        maxConcurrent:
+          type: integer
+          description: Runs this daemon will hold at once. 0 = no local limit.
+        tasksHash:
+          type: string
+          description: Hash of the task catalog the daemon would send in tasks:sync.
+        lastSeq:
+          type: integer
+          format: int64
+          description: Highest execution:update seq this install has ever assigned (0 = none).
+        executions:
+          type: array
+          items: { $ref: "#/components/schemas/InventoryEntry" }
+          description: |
+            Every execution the daemon still owns: accepted and not yet
+            running, running, or finished with an update not yet acked. An
+            execution the station believes active on this install and absent
+            here was lost by the daemon.
+      required: [instanceId, agent, features, labels, maxConcurrent, tasksHash, lastSeq, executions]
+
+    AgentInfo:
+      type: object
+      properties:
+        version: { type: string, description: "Daemon version, e.g. 1.10.0." }
+        os: { type: string, description: "linux, darwin, windows, ..." }
+        arch: { type: string, description: "amd64, arm64, ..." }
+        host: { type: string, description: Hostname. }
+        name: { type: string, description: "`[daemon] name` display label; empty when unset." }
+      required: [version, os, arch, host]
+
+    FeatureStatus:
+      type: object
+      properties:
+        available: { type: boolean }
+        reason:
+          type: string
+          description: Why it's unavailable, for an operator to read.
+      required: [available]
+
+    InventoryEntry:
+      type: object
+      properties:
+        executionId: { type: string }
+        status: { $ref: "#/components/schemas/ExecutionStatus" }
+      required: [executionId, status]
+
+    Welcome:
+      type: object
+      properties:
+        connectionId: { type: string }
+        features:
+          type: array
+          items: { type: string }
+          description: Optional features this station understands. Empty in v1.0.
+        heartbeat: { $ref: "#/components/schemas/Heartbeat" }
+        statsIntervalMs:
+          type: integer
+          description: How often to send agent:stats. 0 = don't.
+        maxFrameBytes:
+          type: integer
+          description: Largest frame the station accepts. The daemon splits or truncates to stay under it.
+        tasksHashKnown:
+          type: boolean
+          description: False means send tasks:sync now.
+      required: [connectionId, features, heartbeat, statsIntervalMs, maxFrameBytes, tasksHashKnown]
+
+    Heartbeat:
+      type: object
+      properties:
+        intervalMs: { type: integer, minimum: 1000 }
+        timeoutMs: { type: integer, minimum: 1000 }
+      required: [intervalMs, timeoutMs]
+
+    Goodbye:
+      type: object
+      properties:
+        code: { $ref: "#/components/schemas/GoodbyeCode" }
+        message: { type: string }
+        retry:
+          type: boolean
+          description: |
+            Authoritative. False: don't reconnect until the daemon's station
+            settings change (or it restarts). True: reconnect after
+            retryAfterMs, plus normal jitter.
+        retryAfterMs:
+          type: integer
+          description: |
+            Wait at least this long before reconnecting. For `draining` the
+            daemon waits a random time in [0, retryAfterMs] so a fleet spreads out.
+      required: [code, retry]
+
+    GoodbyeCode:
+      $id: GoodbyeCode
       type: string
+      description: Open. Act on `retry`/`retryAfterMs`, not on the code.
       enum:
-        - running
-        - succeeded
-        - failed
-        - stopped
-        - timeout
-        - skipped
+        - unauthorized
+        - revoked
+        - disabled
+        - limit_reached
+        - unsupported_protocol
+        - overloaded
+        - draining
+        - duplicate_instance
+        - shutdown
+        - protocol_error
 
-    AuthResultMessage:
-      type: object
-      properties:
-        type:
-          type: string
-          const: auth:result
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        success:
-          type: boolean
-        connectionId:
-          type: string
-        error:
-          type: string
-      required:
-        - type
-        - success
-
-    PongMessage:
-      type: object
-      properties:
-        type:
-          type: string
-          const: pong
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-      required:
-        - type
-
-    ExecutionDispatchMessage:
+    Result:
       type: object
       description: |
-        Dispatches an execution to a daemon.
-        For "fan-out" distribution, the control plane dispatches a separate
-        execution, with its own id, to each connected daemon of the runner.
+        Command-specific result fields sit next to `ok` and `error` in the same
+        object (see the *Result schemas).
       properties:
-        type:
-          type: string
-          const: execution:dispatch
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        execution:
-          $ref: "#/components/schemas/ExecutionPayload"
-      required:
-        - type
-        - execution
+        ok: { type: boolean }
+        error: { $ref: "#/components/schemas/ErrorInfo" }
+      required: [ok]
 
-    ExecutionPayload:
+    ErrorInfo:
       type: object
       properties:
-        taskId:
-          type: string
-        taskName:
-          type: string
-        executionId:
-          type: string
-        priority:
-          type: integer
-        inputValues:
-          type: object
-          additionalProperties:
-            type: string
-        script:
-          type: object
-        timeout:
-          type: integer
-        taskConfig:
-          $ref: "#/components/schemas/ExecutionTaskConfig"
-        logUploadUrl:
-          type: string
-          description: |
-            Signed PUT URL the daemon uses to upload the gzipped terminal log
-            archive. Optional: omitted (or empty) means archival is disabled for
-            this dispatch (transient station-side issuance error); the daemon keeps
-            the local file and skips upload.
-        logPath:
-          type: string
-          description: |
-            Storage object key the daemon must echo back as `logPath` on the
-            terminal `execution:update` message after a successful upload.
-            Format `{orgId}/{yyyy-mm}/{executionId}.log.gz`. Optional: omitted
-            (or empty) whenever `logUploadUrl` is.
-        logStream:
+        code: { $ref: "#/components/schemas/ErrorCode" }
+        message: { type: string }
+        retryable:
           type: boolean
-          description: |
-            Ask the daemon to also upload the log incrementally while the run
-            is going, so a run whose daemon dies mid-way still leaves its log
-            behind. The daemon fetches upload URLs with log:chunkUrlsRequest and
-            PUTs each new slice of the log file as one gzip member. Honoured
-            only together with `logUploadUrl`; the terminal archive is uploaded
-            as usual. The station sends it only to daemons that advertise
-            `log:chunkUrls`.
-      required:
-        - taskId
-        - taskName
-        - executionId
-        - priority
-        - inputValues
-        - script
-        - timeout
+          description: Authoritative, so a code added later is still handled right.
+        retryAfterMs: { type: integer }
+      required: [code, message, retryable]
 
-    ExecutionTaskConfig:
+    ErrorCode:
+      $id: ErrorCode
+      type: string
+      description: |
+        Open. `invalid` malformed; `unauthorized`; `forbidden` refused by local
+        policy; `not_found`; `conflict`; `unsupported` unknown command or
+        missing required feature; `unavailable` backend missing; `busy` at
+        capacity; `expired` notAfter passed; `internal`.
+      enum:
+        - invalid
+        - unauthorized
+        - forbidden
+        - not_found
+        - conflict
+        - unsupported
+        - unavailable
+        - busy
+        - expired
+        - internal
+
+    Ack:
+      type: object
+      properties:
+        seq: { type: integer, format: int64 }
+      required: [seq]
+
+    SessionUpdate:
+      type: object
+      description: Any field set replaces the current value.
+      properties:
+        heartbeat: { $ref: "#/components/schemas/Heartbeat" }
+        statsIntervalMs:
+          type: integer
+          nullable: true
+          description: null = leave as is, 0 = stop sending agent:stats.
+
+    # =========================================================================
+    # Agent
+    # =========================================================================
+    AgentUpdate:
+      type: object
+      description: Fields set replace what hello said.
+      properties:
+        agent: { $ref: "#/components/schemas/AgentInfo" }
+        features:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/FeatureStatus" }
+        labels:
+          type: object
+          additionalProperties: { type: string }
+        maxConcurrent: { type: integer, nullable: true }
+
+    AgentStats:
+      type: object
+      properties:
+        cpuUsage: { type: number, description: "Percent, 0-100." }
+        memUsage: { type: number, description: "Percent, 0-100." }
+        memTotalBytes: { type: integer, format: int64 }
+        memUsedBytes: { type: integer, format: int64 }
+        cpuCores: { type: integer }
+        uptimeMs: { type: integer, format: int64, description: Daemon process uptime. }
+
+    AgentUpgrade:
       type: object
       description: |
-        Optional per-run execution knobs the station control plane carries through
-        dispatch and the daemon overlays onto the dynamically-built station task
-        (`buildDynamicStationTask`), or, for a `config` script, onto that run of
-        the TOML task, together with `timeout` (an env that differs from the
-        TOML's needs allow_station_dispatch). Every field is optional; an
-        omitted field means "use the daemon default" (for a `config` script, the
-        TOML value). Knobs not modelled here (stop signal,
-        success exit codes, run-as user) are not honored by the daemon and so
-        are intentionally absent — adding them would be dead surface.
+        Install release `version` from the daemon's own built-in release source
+        (never a station-supplied location), verify it, replace the binary and
+        restart. The result is sent before the restart. Refused with
+        `forbidden` unless the operator allowed it locally.
+      properties:
+        version: { type: string, description: "Release tag, e.g. v1.10.2." }
+      required: [version]
+
+    AgentCredentials:
+      type: object
+      description: |
+        Replace the runner token. The daemon stores it durably before
+        answering ok; the station may revoke the old token after that.
+      properties:
+        token: { type: string }
+      required: [token]
+
+    # =========================================================================
+    # Tasks
+    # =========================================================================
+    TasksSync:
+      type: object
+      properties:
+        hash: { type: string }
+        tasks:
+          type: array
+          items: { $ref: "#/components/schemas/TaskDefinition" }
+      required: [hash, tasks]
+
+    TasksSyncResult:
+      type: object
+      description: Fields of the `result` answering tasks:sync.
+      properties:
+        added: { type: integer }
+        updated: { type: integer }
+        removed: { type: integer, description: Tasks marked out of sync. }
+        total: { type: integer }
+
+    TaskDefinition:
+      type: object
+      properties:
+        name: { type: string }
+        kind: { $ref: "#/components/schemas/TaskKind" }
+        group: { type: string }
+        description: { type: string }
+        enabled: { type: boolean }
+        spec: { $ref: "#/components/schemas/ExecutionSpec" }
+        timeoutMs: { type: integer }
+        options: { $ref: "#/components/schemas/RunOptions" }
+        maxConcurrent: { type: integer }
+        onOverlap: { $ref: "#/components/schemas/OverlapPolicy" }
+        restartPolicy: { type: string, description: "never, on_failure, always." }
+        maxRetries: { type: integer }
+        retryDelayMs: { type: integer }
+        retryBackoff: { $ref: "#/components/schemas/Backoff" }
+        schedules:
+          type: array
+          items: { $ref: "#/components/schemas/TaskSchedule" }
+        jitterMs:
+          type: integer
+          nullable: true
+          description: null = not set locally; 0 = explicitly no jitter.
+        catchUp: { type: string, description: "skip, latest, all." }
+        maxCatchUpRuns: { type: integer }
+        params:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/TaskParam" }
+        service: { $ref: "#/components/schemas/ServiceSettings" }
+        compose: { $ref: "#/components/schemas/ComposeRef" }
+      required: [name, kind, enabled, spec]
+
+    TaskKind:
+      $id: TaskKind
+      type: string
+      enum: [task, service]
+
+    OverlapPolicy:
+      $id: OverlapPolicy
+      type: string
+      enum: [queue, skip, kill]
+
+    Backoff:
+      $id: Backoff
+      type: string
+      enum: [constant, linear, exponential]
+
+    TaskSchedule:
+      type: object
+      properties:
+        cron: { type: string }
+        timezone: { type: string, description: IANA zone. }
+        enabled: { type: boolean }
+      required: [cron, timezone, enabled]
+
+    TaskParam:
+      type: object
+      properties:
+        kind: { type: string, description: "env, arg, ..." }
+        type: { type: string }
+        required: { type: boolean }
+        default: { type: string, nullable: true }
+        choices:
+          type: array
+          items: { type: string }
+        allowCustom: { type: boolean }
+        description: { type: string }
+
+    ServiceSettings:
+      type: object
+      properties:
+        instances: { type: integer, minimum: 1 }
+        autostart: { type: boolean }
+        restartDelayMs: { type: integer }
+        restartBackoff: { $ref: "#/components/schemas/Backoff" }
+        backoffResetAfterMs: { type: integer }
+
+    ComposeRef:
+      type: object
+      properties:
+        file: { type: string }
+        projectName: { type: string }
+        service: { type: string }
+      required: [file, projectName]
+
+    # =========================================================================
+    # Execution specs (the `spec` union, discriminated by `type`)
+    # =========================================================================
+    ExecutionSpec:
+      description: |
+        What to run. Discriminated by `type`; type X needs feature `exec.X`,
+        so a sender puts `exec.X` in `requires`. Unknown types are refused
+        with `unsupported`.
+      oneOf:
+        - $ref: "#/components/schemas/ShellSpec"
+        - $ref: "#/components/schemas/ContainerSpec"
+        - $ref: "#/components/schemas/ComposeSpec"
+        - $ref: "#/components/schemas/HTTPSpec"
+        - $ref: "#/components/schemas/ConfigSpec"
+
+    ShellSpec:
+      type: object
+      properties:
+        type: { type: string, const: shell }
+        script: { type: string }
+        shell: { type: string, description: "Absolute interpreter path; empty = /bin/sh." }
+        workingDir: { type: string }
+        umask: { type: string, description: 3 or 4 octal digits. }
+        envBase: { type: string, description: "inherit (default) or clean." }
+      required: [type, script]
+
+    ContainerSpec:
+      type: object
+      properties:
+        type: { type: string, const: container }
+        script: { type: string }
+        baseImage: { type: string }
+        blocks:
+          type: array
+          items: { $ref: "#/components/schemas/DockerfileBlock" }
+        env:
+          type: array
+          items: { $ref: "#/components/schemas/KeyValue" }
+        volumes:
+          type: array
+          items: { $ref: "#/components/schemas/VolumeMount" }
+        ports:
+          type: array
+          items: { $ref: "#/components/schemas/PortMapping" }
+        dockerfile: { type: string, description: Raw Dockerfile; overrides baseImage and blocks. }
+      required: [type, script]
+
+    DockerfileBlock:
+      type: object
+      properties:
+        label: { type: string }
+        dockerfile: { type: string }
+        enabled: { type: boolean }
+      required: [label, dockerfile, enabled]
+
+    VolumeMount:
+      type: object
+      properties:
+        host: { type: string }
+        container: { type: string }
+        readonly: { type: boolean }
+      required: [host, container]
+
+    PortMapping:
+      type: object
+      properties:
+        host: { type: integer }
+        container: { type: integer }
+        protocol: { type: string }
+      required: [host, container]
+
+    KeyValue:
+      type: object
+      properties:
+        key: { type: string }
+        value: { type: string }
+      required: [key, value]
+
+    ComposeSpec:
+      type: object
+      properties:
+        type: { type: string, const: compose }
+        file: { type: string }
+        projectName: { type: string }
+        service: { type: string }
+        mode: { type: string, description: "run, stack or exec." }
+        profiles:
+          type: array
+          items: { type: string }
+        envFile:
+          type: array
+          items: { type: string }
+        workingDir: { type: string }
+        withDeps: { type: boolean }
+        pull: { type: string, description: "missing, always or never." }
+        servicePorts: { type: boolean }
+        command: { type: string }
+      required: [type, file, projectName, mode]
+
+    HTTPSpec:
+      type: object
+      properties:
+        type: { type: string, const: http }
+        method: { type: string }
+        url: { type: string }
+        headers:
+          type: array
+          items: { $ref: "#/components/schemas/KeyValue" }
+        body: { $ref: "#/components/schemas/HTTPBody" }
+      required: [type, method, url]
+
+    HTTPBody:
+      type: object
+      properties:
+        kind: { type: string }
+        json: { type: string }
+        fields:
+          type: array
+          items: { $ref: "#/components/schemas/KeyValue" }
+      required: [kind]
+
+    ConfigSpec:
+      type: object
+      description: |
+        Run the daemon's own task `taskName`. The dispatch's timeoutMs and
+        options apply to this run only; an env that differs from the task's
+        own needs the task's allow_station_dispatch.
+      properties:
+        type: { type: string, const: config }
+        taskName: { type: string }
+      required: [type, taskName]
+
+    # =========================================================================
+    # Executions
+    # =========================================================================
+    RunOptions:
+      type: object
+      description: Per-run knobs. An unset field means the daemon default (for a config spec, the task's own value).
       properties:
         env:
           type: object
-          additionalProperties:
-            type: string
-          description: |
-            Environment variables overlaid on the run's process env, beneath
-            the daemon's own env_file/secrets layers. This is the only way a
-            station-dispatched shell run can set process env.
-        gracefulStop:
-          type: integer
-          description: |
-            Window between SIGTERM and SIGKILL when a run is stopped, in
-            milliseconds (mirrors `timeout`'s unit). 0/omitted uses the daemon
-            default.
-        logMaxSize:
-          type: integer
-          description: Per-run log size cap in bytes. 0/omitted uses the daemon default.
-        logOnFull:
-          type: string
-          enum:
-            - drop_new
-            - drop_old
-            - kill
-          description: What the daemon does when log output exceeds logMaxSize.
+          additionalProperties: { type: string }
+        gracefulStopMs: { type: integer, description: SIGTERM to SIGKILL window. }
+        logMaxBytes: { type: integer, format: int64 }
+        logOnFull: { type: string, description: "drop_new, drop_old or kill." }
         failures:
           type: array
-          items:
-            type: string
-          description: |
-            The task's `failures` policy, in runwisp.toml `failures` syntax: reason
-            names, exit codes or ranges, and `output:<regex>` patterns. A bare list
-            replaces the built-in default set; a list of `+`/`-` tokens adjusts it.
-            Omitted or empty uses the built-in default. An invalid list rejects the
-            dispatch. Add-only field; old daemons ignore it and classify with the
-            default.
+          items: { type: string }
+          description: The task's `failures` policy in runwisp.toml syntax. Invalid = refused with `invalid`.
 
-    ExecutionStopMessage:
+    ExecutionDispatch:
       type: object
+      description: |
+        Idempotent by executionId: a repeat gets ok again without a second
+        run. Rejections: not_found (no such config task), forbidden (local
+        policy), unavailable (backend missing), busy (retryable), expired.
       properties:
-        type:
-          type: string
-          const: execution:stop
-        protocolVersion:
-          type: integer
-        sentAt:
+        executionId: { type: string }
+        task: { $ref: "#/components/schemas/TaskRef" }
+        attempt: { type: integer }
+        priority: { type: integer }
+        spec: { $ref: "#/components/schemas/ExecutionSpec" }
+        inputs:
+          type: object
+          additionalProperties: { type: string }
+        timeoutMs: { type: integer, description: 0 = no timeout (config spec - the task's own). }
+        options: { $ref: "#/components/schemas/RunOptions" }
+        logStream:
+          type: boolean
+          description: Upload the log in chunks while running (upload:request purpose log.chunk).
+        notAfter:
           type: string
           format: date-time
-        executionId:
-          type: string
+          nullable: true
+          description: Refuse with `expired` instead of starting after this time.
+      required: [executionId, task, spec]
+
+    TaskRef:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+      required: [id, name]
+
+    ExecutionStop:
+      type: object
+      properties:
+        executionId: { type: string }
+        reason: { type: string }
+        gracefulStopMs:
+          type: integer
+          description: Overrides the run's own window. 0 = keep it.
+        force: { type: boolean, description: Kill now. }
+      required: [executionId]
+
+    ExecutionStatus:
+      $id: ExecutionStatus
+      type: string
+      description: CLOSED. accepted (not started yet), running, finished.
+      enum: [accepted, running, finished]
+
+    ExecutionUpdate:
+      type: object
+      description: |
+        A finished execution gets one update with status finished, and,
+        after its log archive is uploaded, a second finished update carrying
+        `log`. Both are sequenced and acked.
+      properties:
+        seq: { type: integer, format: int64 }
+        executionId: { type: string }
+        status: { $ref: "#/components/schemas/ExecutionStatus" }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
         reason:
           type: string
-      required:
-        - type
-        - executionId
-        - reason
+          description: |
+            Open. Set when finished: succeeded, failed, stopped, timeout,
+            crashed, skipped, log_overflow, queue_full, dst_skipped,
+            daemon_stopped, missed, start_failed, unhealthy, ... A receiver
+            that doesn't know the value uses isFailure.
+        isFailure:
+          type: boolean
+          nullable: true
+          description: Set when finished. Whether the run counts as failed under its failures policy.
+        exitCode: { type: integer, nullable: true }
+        usage: { $ref: "#/components/schemas/ExecutionUsage" }
+        log: { $ref: "#/components/schemas/LogArchive" }
+      required: [seq, executionId, status]
 
-    ServiceInstanceState:
-      $id: ServiceInstanceState
-      type: string
+    ExecutionUsage:
+      type: object
+      properties:
+        peakMemoryBytes: { type: integer, format: int64, nullable: true }
+        cpuTimeMs: { type: integer, format: int64, nullable: true }
+
+    LogArchive:
+      type: object
+      properties:
+        key: { type: string, description: The key of the upload:request target used. }
+        bytes: { type: integer, format: int64, description: Gzipped size. }
+        chunks:
+          type: integer
+          nullable: true
+          description: Log chunks uploaded (seq 0..chunks-1); null = unknown.
+      required: [key, bytes]
+
+    # =========================================================================
+    # Logs
+    # =========================================================================
+    LogSubscribe:
+      type: object
       description: |
-        State of a single service instance slot as reported by the daemon
-        supervisor. `running` = live; `restarting` = exited and awaiting the
-        next backoff respawn; `stopped` = not being refilled, because it was
-        operator-stopped or its restart policy won't respawn it;
-        `fatal` = the supervisor gave up on the slot. Consumers must tolerate
-        unknown values (forward-compat).
-      enum:
-        - running
-        - restarting
-        - stopped
-        - fatal
+        Streams log:lines (replyTo = this command's id) from fromLine on, then,
+        with follow, live lines with no gap or overlap. Ends with a result
+        (LogSubscribeResult): when limit lines were sent, when the run finished
+        and all lines were sent, or after log:unsubscribe.
+      properties:
+        executionId: { type: string }
+        fromLine: { type: integer, format: int64, description: First absolute line; 0 = start. }
+        follow: { type: boolean }
+        limit: { type: integer, format: int64, description: 0 = no limit. }
+      required: [executionId, fromLine, follow]
+
+    LogSubscribeResult:
+      type: object
+      properties:
+        nextLine: { type: integer, format: int64 }
+        eof: { type: boolean, description: The run is finished and every line was sent. }
+
+    LogUnsubscribe:
+      type: object
+      properties:
+        subscription: { type: string, description: The log:subscribe command's id. }
+      required: [subscription]
+
+    LogLines:
+      type: object
+      properties:
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/LogLine" }
+        gap: { $ref: "#/components/schemas/LogGap" }
+      required: [lines]
+
+    LogGap:
+      type: object
+      description: Lines [from, to) were dropped under backpressure; replay them if needed.
+      properties:
+        from: { type: integer, format: int64 }
+        to: { type: integer, format: int64 }
+      required: [from, to]
+
+    LogLine:
+      type: object
+      properties:
+        n: { type: integer, format: int64, description: Absolute line index. }
+        ts: { type: integer, format: int64, description: Unix ms; 0 = unknown. }
+        stream: { $ref: "#/components/schemas/LogStream" }
+        text: { type: string, description: No trailing newline. }
+        continued: { type: boolean, description: Continues an oversized split line. }
+      required: [n, stream, text]
+
+    LogStream:
+      $id: LogStream
+      type: string
+      enum: [stdout, stderr, system]
+
+    LogSearch:
+      type: object
+      properties:
+        executionId: { type: string }
+        query: { type: string }
+        regex: { type: boolean, description: RE2. }
+        caseSensitive: { type: boolean }
+        fromLine: { type: integer, format: int64 }
+        limit: { type: integer, format: int64 }
+      required: [executionId, query]
+
+    LogSearchResult:
+      type: object
+      properties:
+        hits:
+          type: array
+          items: { $ref: "#/components/schemas/LogLine" }
+        nextLine: { type: integer, format: int64 }
+        exhausted: { type: boolean }
+      required: [hits, exhausted]
+
+    UploadRequest:
+      type: object
+      properties:
+        executionId: { type: string }
+        purpose: { $ref: "#/components/schemas/UploadPurpose" }
+        fromSeq: { type: integer, description: First chunk seq (log.chunk). }
+        count: { type: integer, description: Targets wanted (log.chunk). }
+      required: [executionId, purpose]
+
+    UploadPurpose:
+      $id: UploadPurpose
+      type: string
+      description: Open; an unknown purpose is answered `unsupported`.
+      enum: [log.archive, log.chunk]
+
+    UploadRequestResult:
+      type: object
+      description: Fewer targets than asked for means a cap was reached; stop chunking.
+      properties:
+        uploads:
+          type: array
+          items: { $ref: "#/components/schemas/UploadTarget" }
+      required: [uploads]
+
+    UploadTarget:
+      type: object
+      properties:
+        seq: { type: integer }
+        url: { type: string }
+        method: { type: string }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+          description: Send exactly these headers with the upload.
+        key: { type: string }
+        expiresAt: { type: string, format: date-time }
+      required: [url, method, key]
+
+    # =========================================================================
+    # Services
+    # =========================================================================
+    ServiceApply:
+      type: object
+      description: |
+        Idempotent upsert of a service. Re-sent after reconnect. spec null
+        keeps the daemon's own command for a service from its config.
+      properties:
+        taskId: { type: string }
+        taskName: { type: string }
+        spec:
+          $ref: "#/components/schemas/ExecutionSpec"
+          description: null (or absent) keeps the daemon's own command.
+        settings: { $ref: "#/components/schemas/ServiceSettings" }
+        options: { $ref: "#/components/schemas/RunOptions" }
+      required: [taskId, taskName, settings]
+
+    ServiceControl:
+      type: object
+      properties:
+        taskId: { type: string }
+        action: { $ref: "#/components/schemas/ServiceAction" }
+      required: [taskId, action]
+
+    ServiceAction:
+      $id: ServiceAction
+      type: string
+      enum: [start, stop, restart]
+
+    ServiceRemove:
+      type: object
+      properties:
+        taskId: { type: string }
+      required: [taskId]
+
+    ServiceStatus:
+      type: object
+      description: Sent on change and after welcome. Lives as long as the connection.
+      properties:
+        taskId: { type: string }
+        state: { $ref: "#/components/schemas/ServiceState" }
+        desiredInstances: { type: integer }
+        runningInstances: { type: integer }
+        instances:
+          type: array
+          items: { $ref: "#/components/schemas/ServiceInstance" }
+      required: [taskId, state, desiredInstances, runningInstances, instances]
 
     ServiceState:
       $id: ServiceState
       type: string
-      description: |
-        Roll-up state of a whole service. `running` = all desired instances
-        live; `degraded` = some but not all live; `stopped` = operator-stopped,
-        or every instance exited cleanly and its restart policy won't respawn
-        it; `fatal` = no instance is live or respawning, and at least one gave
-        up or exited on a failure. Consumers must tolerate unknown values
-        (forward-compat).
-      enum:
-        - running
-        - degraded
-        - stopped
-        - fatal
+      description: Open. running, degraded, stopped, fatal.
+      enum: [running, degraded, stopped, fatal]
 
-    ServiceApplyMessage:
-      type: object
-      description: |
-        Station → daemon. Declares (or re-declares) a service's desired state on
-        the runner. Idempotent: the daemon upserts a kind=service task and, when
-        `autostart` is true, brings instances up to `instances`. Re-sent when a
-        runner reconnects so desired state converges after downtime. Gated by
-        the `service:apply` protocol-feature token — old daemons never receive
-        it. Duration knobs are milliseconds (mirrors execution timeout), which
-        the daemon converts to its native nanosecond Duration fields.
-      properties:
-        type:
-          type: string
-          const: service:apply
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        service:
-          $ref: "#/components/schemas/ServiceApplyPayload"
-      required:
-        - type
-        - service
-
-    ServiceApplyPayload:
+    ServiceInstance:
       type: object
       properties:
-        taskId:
-          type: string
-        taskName:
-          type: string
-        script:
-          type: object
-          nullable: true
-          description: |
-            ExecutionDef JSON, same shape as ExecutionPayload.script. `null`
-            (sent for a service synced from the daemon's config whose command
-            the operator did not override) keeps the daemon's own command.
-        instances:
-          type: integer
-          minimum: 1
-          description: Desired number of always-running instances.
-        autostart:
-          type: boolean
-          description: |
-            When true, the daemon starts instances on apply (and on reconnect).
-            When false, the service is declared but left stopped until an
-            operator start.
-        restartDelay:
-          type: integer
-          description: Base delay before each restart, in milliseconds. 0/omitted uses the daemon default.
-        restartBackoff:
-          type: string
-          enum:
-            - constant
-            - linear
-            - exponential
-          description: Backoff curve between consecutive restarts. Omitted uses the daemon default.
-        backoffResetAfter:
-          type: integer
-          description: |
-            An instance that runs at least this long (milliseconds) resets its
-            consecutive-restart counter. 0/omitted uses the daemon default.
-        taskConfig:
-          $ref: "#/components/schemas/ExecutionTaskConfig"
-      required:
-        - taskId
-        - taskName
-        - script
-        - instances
+        index: { type: integer }
+        state: { $ref: "#/components/schemas/ServiceInstanceState" }
+        pid: { type: integer, nullable: true }
+        startedAt: { type: string, format: date-time, nullable: true }
+        restartCount: { type: integer, description: Exits since the last healthy run, operator actions included. }
+        startFails: { type: integer, description: Failed starts in a row since the last healthy run. }
+        lastExitCode: { type: integer, nullable: true }
+      required: [index, state, restartCount, startFails]
 
-    ServiceControlMessage:
-      type: object
-      description: |
-        Station → daemon. An operator action against a declared service. Maps to
-        the daemon's StartServiceInstances / StopService /
-        RestartServiceInstances. Gated by the `service:control` feature token.
-      properties:
-        type:
-          type: string
-          const: service:control
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        taskId:
-          type: string
-        action:
-          type: string
-          enum:
-            - start
-            - stop
-            - restart
-      required:
-        - type
-        - taskId
-        - action
-
-    ServiceRemoveMessage:
-      type: object
-      description: |
-        Station → daemon. Tears down a previously declared service on the runner:
-        the daemon cancels its instances and drops the kind=service task. Maps to
-        the daemon's RemoveTask. Without this, a station-declared service (and its
-        supervisor goroutines) would live until daemon restart, since reconcile
-        only ever removes TOML-registry tasks. Gated by the `service:remove`
-        protocol-feature token — old daemons never receive it.
-      properties:
-        type:
-          type: string
-          const: service:remove
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        taskId:
-          type: string
-      required:
-        - type
-        - taskId
-
-    ServiceInstanceSnapshot:
-      type: object
-      description: State of one instance slot, reported in ServiceStatusMessage.
-      properties:
-        index:
-          type: integer
-          description: Instance slot index in [0, desiredInstances).
-        state:
-          $ref: "#/components/schemas/ServiceInstanceState"
-        pid:
-          type: integer
-          nullable: true
-          description: OS process id of the live instance, when known.
-        startedAt:
-          type: string
-          format: date-time
-          nullable: true
-          description: When the current run of this slot started, when live.
-        restartCount:
-          type: integer
-          description: |
-            Exits of this slot since its last healthy run. Operator stops and
-            restarts count too, so it is not a crash signal; use startFails.
-        startFails:
-          type: integer
-          description: |
-            Failed starts of this slot in a row since its last healthy run: exits
-            before the instance became healthy, not counting operator stops and
-            restarts. The slot goes fatal once this passes the service's restart
-            attempts. Always sent; absent only from daemons that predate it.
-        lastExitCode:
-          type: integer
-          nullable: true
-          description: Exit code of this slot's most recent terminated run, when known.
-      required:
-        - index
-        - state
-        - restartCount
-        - startFails
-
-    ServiceStatusMessage:
-      type: object
-      description: |
-        Daemon → station. A full per-service snapshot of the supervisor's state.
-        Sent on change and on a slow heartbeat — never per log line. Station keeps
-        only the latest snapshot in memory, never per-instance rows. Additive:
-        old station ignores it; new station tolerates its absence.
-      properties:
-        type:
-          type: string
-          const: service:status
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        taskId:
-          type: string
-        state:
-          $ref: "#/components/schemas/ServiceState"
-        desiredInstances:
-          type: integer
-        runningInstances:
-          type: integer
-        instances:
-          type: array
-          items:
-            $ref: "#/components/schemas/ServiceInstanceSnapshot"
-      required:
-        - type
-        - taskId
-        - state
-        - desiredInstances
-        - runningInstances
-        - instances
-
-    LogReplayRequestMessage:
-      type: object
-      description: |
-        Station → daemon. Requests a bounded historical page of log lines for an
-        execution. The daemon replies with one or more log:replayChunk messages
-        whose final flag marks the end of the page.
-      properties:
-        type:
-          type: string
-          const: log:replayRequest
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        requestId:
-          type: string
-        executionId:
-          type: string
-        fromLine:
-          type: integer
-          format: int64
-        limit:
-          type: integer
-          format: int64
-          minimum: 0
-      required:
-        - type
-        - requestId
-        - executionId
-        - fromLine
-        - limit
-
-    LogSearchRequestMessage:
-      type: object
-      description: |
-        Station → daemon. Greps one execution's on-disk log for lines matching a
-        query and replies with a single log:searchChunk. A gated station→daemon
-        type (X-Runner-Protocol-Features "log:searchRequest"): station only sends
-        it to daemons that advertise support, since an old daemon would drop it
-        and the search would time out. Scope is one execution's live/recent log
-        on disk — archived (rotated/uploaded) lines are not searchable here.
-      properties:
-        type:
-          type: string
-          const: log:searchRequest
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        requestId:
-          type: string
-        executionId:
-          type: string
-        query:
-          type: string
-          description: Substring (or RE2 regex when regex=true) to match.
-        regex:
-          type: boolean
-          description: Treat query as an RE2 regular expression.
-        caseSensitive:
-          type: boolean
-          description: Match case-sensitively (default is case-insensitive).
-        limit:
-          type: integer
-          format: int64
-          minimum: 0
-          description: Max hits to return in the reply chunk.
-        fromLine:
-          type: integer
-          format: int64
-          description: |
-            Resume cursor: the first absolute line to scan (0 scans the whole
-            log). Pass a previous chunk's nextLine to continue mid-run without
-            re-emitting prior hits.
-      required:
-        - type
-        - requestId
-        - executionId
-        - query
-
-    LogListenMessage:
-      type: object
-      properties:
-        type:
-          type: string
-          const: log:listen
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        executionId:
-          type: string
-      required:
-        - type
-        - executionId
-
-    LogChunkUrlsRequestMessage:
-      type: object
-      description: |
-        Daemon → station. Asks for signed PUT URLs for the incremental log
-        chunks of a running `logStream` execution, starting at sequence number
-        fromSeq. The station answers with log:chunkUrls.
-      properties:
-        type:
-          type: string
-          const: log:chunkUrlsRequest
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        executionId:
-          type: string
-        fromSeq:
-          type: integer
-          minimum: 0
-      required:
-        - type
-        - executionId
-        - fromSeq
-
-    LogChunkUrlsMessage:
-      type: object
-      description: |
-        Station → daemon. Signed PUT URLs for log chunks fromSeq,
-        fromSeq+1, ... of a running `logStream` execution. Fewer URLs than
-        usual (or none) means the station reached its per-execution chunk cap:
-        stop streaming and rely on the terminal archive.
-      properties:
-        type:
-          type: string
-          const: log:chunkUrls
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        executionId:
-          type: string
-        fromSeq:
-          type: integer
-          minimum: 0
-        urls:
-          type: array
-          items:
-            type: string
-        archiveUrl:
-          type: string
-          description: |
-            Optional fresh signed PUT URL for the terminal log archive,
-            replacing the dispatch's `logUploadUrl` (and any earlier
-            refresh), so a long run's archive key and signature stay current.
-            Honoured only together with `archivePath`; omitted means keep the
-            current one.
-        archivePath:
-          type: string
-          description: |
-            Storage object key matching `archiveUrl`; the daemon echoes it as
-            `logPath` on the terminal `execution:update` instead of the
-            dispatch's `logPath`. Honoured only together with `archiveUrl`.
-      required:
-        - type
-        - executionId
-        - fromSeq
-        - urls
-
-    LogStopMessage:
-      type: object
-      properties:
-        type:
-          type: string
-          const: log:stop
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        executionId:
-          type: string
-      required:
-        - type
-        - executionId
-
-    AgentRestartMessage:
-      type: object
-      description: >
-        Station → daemon. Asks the daemon to gracefully restart its own process
-        (re-exec the agent binary), e.g. after a config change or to recover a
-        wedged agent. Carries no execution scope; it acts on the agent itself.
-      properties:
-        type:
-          type: string
-          const: agent:restart
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-      required:
-        - type
-
-    ProtocolErrorMessage:
-      type: object
-      description: |
-        The `error` frame, sent in both directions with an identical shape:
-        station→daemon and daemon→station. Receivers treat unrecognized codes as
-        connection-scoped diagnostics (log + metric, never a state flip).
-      properties:
-        type:
-          type: string
-          const: error
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        code:
-          type: string
-          description: |
-            Canonical values: AUTH_ERROR, VALIDATION_ERROR, CONFLICT_ERROR,
-            TRANSIENT_ERROR, UNKNOWN_EXECUTION. Kept as a free-form string on
-            the wire so old peers emitting other codes still decode; receivers
-            treat unrecognized codes as connection-scoped diagnostics.
-        message:
-          type: string
-        requestId:
-          type: string
-        executionId:
-          type: string
-          description: |
-            Execution this error pertains to, when applicable. Empty (old peers
-            always omit it) means the error is connection-scoped and must not
-            flip any execution's state.
-      required:
-        - type
-        - code
-        - message
-
-    PingMessage:
-      type: object
-      properties:
-        type:
-          type: string
-          const: ping
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        id:
-          type: string
-        systemStats:
-          $ref: "#/components/schemas/SystemStatsInfo"
-          description: |
-            Optional live system snapshot piggybacked on the heartbeat so the
-            control plane can show a runner's CPU/memory/identity without a
-            dedicated message or any DB write (station stores only the latest
-            snapshot in memory). Add-only field; old daemons omit it and old
-            station ignores it.
-      required:
-        - type
-
-    SystemStatsInfo:
-      type: object
-      description: |
-        A single live system-resource + identity snapshot for the runner host.
-        Mirrors the daemon's local /api/system payload. Volatile fields
-        (cpuUsage/memUsage/mem*) reflect the instant the heartbeat was built.
-      properties:
-        cpuUsage:
-          type: number
-          description: CPU usage percentage (0-100).
-        memUsage:
-          type: number
-          description: Memory usage percentage (0-100).
-        memTotal:
-          type: integer
-          format: int64
-          description: Total memory in bytes.
-        memUsed:
-          type: integer
-          format: int64
-          description: Used memory in bytes.
-        cpuCores:
-          type: integer
-          description: Number of CPU cores.
-        uptime:
-          type: string
-          description: Human-readable daemon uptime.
-        version:
-          type: string
-          description: RunWisp daemon version.
-        host:
-          type: string
-          description: Hostname of the runner machine.
-        instanceName:
-          type: string
-          description: |
-            The daemon's `[daemon] name` display label, read per heartbeat so a
-            config reload shows up on the next ping. Empty when unset (show the
-            fingerprint instead). Add-only field; old daemons omit it.
-        os:
-          type: string
-          description: Operating system (e.g. linux, darwin, windows).
-        arch:
-          type: string
-          description: CPU architecture (e.g. amd64, arm64).
-
-    ExecutionAckMessage:
-      type: object
-      description: |
-        Daemon → station. Sent immediately after an execution:dispatch passes
-        validation (before the run is registered or triggered). Confirms
-        receipt so the control plane can stop re-dispatching. A duplicate
-        dispatch for an execution the daemon already knows is re-acked
-        without starting a second run. Old daemons never send this; the
-        station treats execution:update(running) as an implicit ack.
-      properties:
-        type:
-          type: string
-          const: execution:ack
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        executionId:
-          type: string
-      required:
-        - type
-        - executionId
-
-    ExecutionInventoryMessage:
-      type: object
-      description: |
-        Daemon → station. Sent once per connection, after auth and before any
-        other message, listing every execution the daemon still owns: running,
-        accepted for dispatch but not yet running, ended with its terminal
-        `execution:update` not yet sent, or with an `execution:update` buffered
-        for delivery on this connection. The station should treat executions
-        it tracks as active on this runner, acknowledged on an earlier
-        connection, and absent from executionIds as lost by the daemon (e.g.
-        a daemon restart without its state). Executions acknowledged on this
-        connection are never in the list. Old daemons never send this.
-      properties:
-        type:
-          type: string
-          const: execution:inventory
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        executionIds:
-          type: array
-          items:
-            type: string
-      required:
-        - type
-        - executionIds
-
-    ExecutionUpdateMessage:
-      type: object
-      properties:
-        type:
-          type: string
-          const: "execution:update"
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        executionId:
-          type: string
-        status:
-          $ref: "#/components/schemas/ExecutionStatus"
-        exitCode:
-          type: integer
-          nullable: true
-        startedAt:
-          type: string
-          format: date-time
-          nullable: true
-        finishedAt:
-          type: string
-          format: date-time
-          nullable: true
-        logPath:
-          type: string
-          nullable: true
-          description: |
-            Echoed storage object key from `ExecutionPayload.logPath`, set only on
-            terminal updates after a successful upload.
-        logSize:
-          type: integer
-          format: int64
-          nullable: true
-          minimum: 0
-          description: |
-            Gzipped byte count of the uploaded archive. Set only on terminal
-            updates after a successful upload.
-        logChunks:
-          type: integer
-          nullable: true
-          minimum: 0
-          description: |
-            Number of incremental log chunks uploaded for a `logStream`
-            dispatch (sequence numbers 0..logChunks-1), so the station can drop
-            them once the archive is in. Set (zero included) only on the
-            terminal update that carries `logPath` of a `logStream` dispatch;
-            absent means the daemon doesn't know (e.g. an archive recovered
-            after a restart).
-        isFailure:
-          type: boolean
-          nullable: true
-          description: |
-            Whether the run counts as a failure under the task's `failures`
-            policy. Set only on terminal updates. A non-zero exit the policy
-            excludes reports status `failed` with isFailure false. Add-only
-            field; old daemons omit it.
-        peakMemoryBytes:
-          type: integer
-          format: int64
-          nullable: true
-          minimum: 0
-          description: |
-            Highest resident memory of the run's process group, in bytes. Set
-            only on terminal updates of shell runs that were measured.
-        cpuTimeMs:
-          type: integer
-          format: int64
-          nullable: true
-          minimum: 0
-          description: |
-            User plus system CPU time of the run's processes, in milliseconds.
-            Set only on terminal updates of shell runs that were measured.
-      required:
-        - type
-        - executionId
-        - status
-
-    LogLineEntry:
-      type: object
-      description: A single log line published or replayed by the daemon.
-      properties:
-        n:
-          type: integer
-          format: int64
-          description: Absolute, monotonically increasing line index.
-        ts:
-          type: integer
-          format: int64
-          description: Unix milliseconds. 0 if unavailable.
-        stream:
-          type: string
-          enum: [stdout, stderr, system]
-        text:
-          type: string
-          description: Line content WITHOUT trailing newline and without on-disk prefix.
-        continued:
-          type: boolean
-          description: True if this segment continues an oversized split line.
-      required:
-        - n
-        - stream
-        - text
-
-    LogLineMessage:
-      description: |
-        Daemon → station. Pushed live for any execution with an active log:listen
-        subscription. Each message carries exactly one absolute-numbered line.
-      allOf:
-        - $ref: "#/components/schemas/LogLineEntry"
-        - type: object
-          properties:
-            type:
-              type: string
-              const: log:line
-            protocolVersion:
-              type: integer
-            sentAt:
-              type: string
-              format: date-time
-            executionId:
-              type: string
-          required:
-            - type
-            - executionId
-
-    LogLinesMessage:
-      type: object
-      description: |
-        Daemon → station. A coalesced batch of live log lines for one execution
-        with an active log:listen subscription — the same per-line payload as
-        log:line, but grouped so a burst of output ships as one frame instead
-        of one frame per line (fewer WS frames, bus publishes, and SSE writes
-        on the hot path). Lines are in ascending `n` order. An additive
-        daemon→station type: old station never receives it, and a daemon may still
-        send single log:line frames — a receiver must handle both.
-      properties:
-        type:
-          type: string
-          const: log:lines
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        executionId:
-          type: string
-        lines:
-          type: array
-          items:
-            $ref: "#/components/schemas/LogLineEntry"
-      required:
-        - type
-        - executionId
-        - lines
-
-    LogReplayChunkMessage:
-      type: object
-      description: |
-        Daemon → station. One page of historical log lines in reply to a
-        log:replayRequest. A reply may span multiple chunks; final=true marks
-        the last chunk.
-      properties:
-        type:
-          type: string
-          const: log:replayChunk
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        requestId:
-          type: string
-        executionId:
-          type: string
-        lines:
-          type: array
-          items:
-            $ref: "#/components/schemas/LogLineEntry"
-        final:
-          type: boolean
-      required:
-        - type
-        - requestId
-        - executionId
-        - lines
-        - final
-
-    LogSearchChunkMessage:
-      type: object
-      description: |
-        Daemon → station. The single reply to a log:searchRequest. hits are
-        ordered by ascending line number within the execution. exhausted=true
-        means the daemon scanned the whole on-disk log; when false, nextLine
-        carries the resume cursor (pass it back as fromLine to page on).
-      properties:
-        type:
-          type: string
-          const: log:searchChunk
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        requestId:
-          type: string
-        executionId:
-          type: string
-        hits:
-          type: array
-          items:
-            $ref: "#/components/schemas/LogLineEntry"
-        nextLine:
-          type: integer
-          format: int64
-          description: |
-            First absolute line still to scan when exhausted=false; 0 and
-            exhausted=true means the scan is complete.
-        exhausted:
-          type: boolean
-      required:
-        - type
-        - requestId
-        - executionId
-        - hits
-        - exhausted
+    ServiceInstanceState:
+      $id: ServiceInstanceState
+      type: string
+      description: Open. running, restarting, stopped, fatal.
+      enum: [running, restarting, stopped, fatal]

@@ -87,10 +87,16 @@ function objectToZod(schema) {
 
 function typeToZod(schema, isDate = false) {
     if (!schema) return "z.unknown()";
+    if (schema.oneOf) {
+        return `z.union([${schema.oneOf.map((sub) => typeToZod(sub)).join(", ")}])`;
+    }
     if (schema.allOf) return objectToZod(schema);
     if (schema.const) return `z.literal(${JSON.stringify(schema.const)})`;
-    if (schema.enum)
+    // Only CLOSED enums are validated: an open one must accept values a
+    // newer peer adds (compatibility rule 4).
+    if (schema.enum && schema.description?.startsWith("CLOSED"))
         return `z.enum([${schema.enum.map((value) => JSON.stringify(value)).join(", ")}])`;
+    if (schema.enum) return "z.string()";
     if (schema.type === "string") {
         if (schema.format === "date-time") {
             return isDate ? "z.coerce.date()" : "z.string()";
@@ -102,48 +108,41 @@ function typeToZod(schema, isDate = false) {
     }
     if (schema.type === "boolean") return "z.boolean()";
     if (schema.type === "object") return objectToZod(schema);
+    if (schema.type === "array") return `z.array(${typeToZod(schema.items)})`;
     return "z.unknown()";
 }
 
 async function generateZod(resolved) {
-    const inboundMessages =
-        resolved.channels.daemonToStation.subscribe.message.oneOf.map(
-            (msg) => msg.payload,
-        );
-    const outboundMessages =
-        resolved.channels.stationToDaemon.publish.message.oneOf.map(
-            (msg) => msg.payload,
-        );
+    const entries = (messages) =>
+        messages
+            .map((msg) => `  ${JSON.stringify(msg.name)}: ${typeToZod(msg.payload)}`)
+            .join(",\n");
+    const daemonToStation =
+        resolved.channels.daemonToStation.subscribe.message.oneOf;
+    const stationToDaemon =
+        resolved.channels.stationToDaemon.publish.message.oneOf;
 
-    const inboundZodObjs = inboundMessages.map((msg) => typeToZod(msg));
-    const outboundZodObjs = outboundMessages.map((msg) => typeToZod(msg));
-
-    let outCode = `// Generated from asyncapi.yaml
+    const outCode = `// Generated from asyncapi.yaml
 import { z } from "zod";
 
-export const PROTOCOL_VERSION = 2;
+/** WebSocket subprotocol a v1 daemon offers and a v1 station selects. */
+export const SUBPROTOCOL = "runwisp.v1";
 
-export const inboundDaemonMessageSchema = z.discriminatedUnion("type", [
-  ${inboundZodObjs.join(",\n  ")}
-]);
+/** Every frame; the message payload is \`data\`, validated per type below. */
+export const envelopeSchema = ${typeToZod(resolved.components.schemas.Envelope)};
 
-export type InboundDaemonMessage = z.infer<typeof inboundDaemonMessageSchema>;
+export type Envelope = z.infer<typeof envelopeSchema>;
 
-export const outboundDaemonMessageSchema = z.discriminatedUnion("type", [
-  ${outboundZodObjs.join(",\n  ")}
-]);
+/** Payload (\`data\`) schemas of the frames a daemon sends, by type. */
+export const daemonToStationSchemas = {
+${entries(daemonToStation)}
+};
 
-export type OutboundDaemonMessage = z.infer<typeof outboundDaemonMessageSchema>;
+/** Payload (\`data\`) schemas of the frames a station sends, by type. */
+export const stationToDaemonSchemas = {
+${entries(stationToDaemon)}
+};
 `;
-
-    outCode = outCode.replaceAll(
-        "protocolVersion: z.number().int().optional()",
-        "protocolVersion: z.literal(PROTOCOL_VERSION).optional()",
-    );
-    outCode = outCode.replaceAll(
-        '"protocolVersion": z.number().int().optional()',
-        '"protocolVersion": z.literal(PROTOCOL_VERSION).optional()',
-    );
 
     writeFileSync(tsOutputFile, outCode);
 }
