@@ -33,7 +33,7 @@ of asking runs the same reload:
 
 A daemon started with `runwisp station` reloads the same way. The Station
 schedules the tasks there, so no local cron entries change; after the reload the
-daemon sends the new task list to the Station.
+daemon sends the new task list to the Station over its open connection.
 
 ## A bad config changes nothing
 
@@ -80,6 +80,7 @@ A reload that changes any of these is rejected:
 - [`metrics_enabled`](/configuration/daemon/#metrics_enabled) and
   [`metrics_listen`](/configuration/daemon/#metrics_listen).
 - [`allow_station_dispatch`](/configuration/daemon/#allow_station_dispatch).
+- [`allow_station_upgrade`](/configuration/daemon/#allow_station_upgrade).
 
 The bind address and port are [command-line flags](/reference/cli/#global-options),
 and `RUNWISP_*` environment variables are read at startup. Both change only on a

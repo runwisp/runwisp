@@ -634,6 +634,12 @@ scheduling locally. Needs `RUNWISP_STATION_TOKEN`. Flags: `--token`, `--url`,
 `--env-file` (default `.env`), `--no-tui`. `runwisp demo --station` takes the
 same flags.
 
+- The daemon speaks Station protocol v1. A Station too old for it is logged as
+  such and retried every five minutes until it is upgraded.
+- The Station can replace the token. The daemon stores the new token in its
+  database and uses it from then on. Configuring a different token than the one
+  it replaced makes the daemon use yours again.
+
 ### `runwisp completion`
 
 ```bash

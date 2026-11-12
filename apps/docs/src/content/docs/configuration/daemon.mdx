@@ -7,7 +7,8 @@ description: "Daemon-wide settings: name, shutdown_timeout, timezone, external_u
 
 `[daemon]` holds settings for the whole daemon. The table is optional.
 [`runwisp reload`](/operations/reload/) applies a change to any key except the
-TLS, metrics, and `allow_station_dispatch` ones, which need `runwisp restart`.
+TLS, metrics, `allow_station_dispatch`, and `allow_station_upgrade` ones, which
+need `runwisp restart`.
 
 The config path, data directory, and listen address are
 [command-line flags](/reference/cli/#global-options), because they are needed
@@ -275,6 +276,28 @@ trigger tasks defined in `runwisp.toml`.
 ```toml title="runwisp.toml"
 [daemon]
 allow_station_dispatch = true
+```
+
+### `allow_station_upgrade`
+
+**type**: `boolean` **default**: `false` **since**: `1.9`
+
+Lets the connected Station upgrade this daemon to a RunWisp release. The daemon
+downloads the release from GitHub, the same place `runwisp upgrade` uses (never
+from an address the Station names), checks its SHA-256 checksum, replaces its
+binary, and restarts.
+
+It works only when all of these hold. Otherwise the Station shows you why:
+
+- The binary is an official release that RunWisp replaces itself, installed by
+  the install script or from the `tar.gz`. Homebrew, npm, and Linux package
+  installs are upgraded by their package manager.
+- The daemon runs under a service manager (systemd or launchd), which starts the
+  new binary after the restart.
+
+```toml title="runwisp.toml"
+[daemon]
+allow_station_upgrade = true
 ```
 
 ### `include`
