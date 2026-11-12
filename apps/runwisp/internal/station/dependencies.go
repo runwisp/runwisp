@@ -5,6 +5,7 @@ package station
 
 import (
 	"context"
+	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
@@ -16,7 +17,7 @@ import (
 // Method contracts are documented on the runtime implementation.
 type TaskRunner interface {
 	GetTask(taskName string) (*model.Task, bool)
-	// ListServiceTasks feeds tasks.sync, so station-declared services (never
+	// ListServiceTasks feeds tasks:sync, so station-declared services (never
 	// in the TOML) are reported as live on this runner.
 	ListServiceTasks() []*model.Task
 	UpsertTask(task *model.Task)
@@ -25,7 +26,7 @@ type TaskRunner interface {
 	// the TOML registry, so it has no reconcile-driven removal path.
 	RemoveTask(taskName string)
 	TriggerRunWithOptions(taskName string, options runtime.TriggerRunOptions) (*model.Run, error)
-	TerminateRunByExecutionID(executionID string) error
+	StopRunByExecutionID(executionID string, grace time.Duration, force bool) error
 	StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error
 	StartService(taskName string) error
 	StopService(taskName string) error

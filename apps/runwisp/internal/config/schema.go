@@ -261,8 +261,11 @@ type NotificationRoute struct {
 type Daemon struct {
 	Name                 string
 	AllowStationDispatch bool
-	ShutdownTimeout      time.Duration
-	ExternalURL          string
+	// AllowStationUpgrade lets the station upgrade this daemon to a release
+	// (agent:upgrade). Default false.
+	AllowStationUpgrade bool
+	ShutdownTimeout     time.Duration
+	ExternalURL         string
 	// CheckUpdates gates the daemon's outbound poll of concierge.runwisp.com for
 	// a newer release (surfaced as a Web UI / TUI indicator, never auto-applied).
 	// Default true; set false to keep the daemon fully offline.

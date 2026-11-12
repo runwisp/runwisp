@@ -10,64 +10,51 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
-	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/station/logarchive"
 )
 
 const (
 	// logStreamInterval is how often a logStream run's new output is shipped.
-	// A run that ends sooner never streams: its terminal archive covers it.
+	// A run that ends sooner never streams: its archive covers it.
 	logStreamInterval = 5 * time.Second
 	// logChunkMaxBytes caps one chunk's raw size; a firehose ships several
-	// chunks per tick instead of one huge PUT.
+	// chunks per tick instead of one huge upload.
 	logChunkMaxBytes = 4 << 20
-	// logChunkURLLowWater triggers the next log:chunkUrlsRequest while enough
-	// URLs remain to cover the round trip.
-	logChunkURLLowWater = 10
-	// logChunkRequestRetry re-asks for URLs when a request went unanswered
-	// (e.g. it was dropped during a reconnect).
+	// logChunkBatch is how many chunk targets one upload:request asks for.
+	logChunkBatch = 20
+	// logChunkRequestRetry spaces out asking again after a request failed
+	// (typically while disconnected).
 	logChunkRequestRetry = 30 * time.Second
 	logChunkPutTimeout   = 30 * time.Second
 )
 
-// chunkStream is one logStream run's incremental upload state. The file and
-// offset are owned by the stream goroutine (and by StopStream once that
-// goroutine is gone); mu guards what the inbound log:chunkUrls handler touches.
+// chunkStream is one logStream run's incremental upload. It is owned by its
+// stream goroutine, and by StopStream once that goroutine is gone.
 type chunkStream struct {
 	executionID string
 	path        string
-	send        func(any) error
 	file        *os.File
 	off         int64
 	stop        chan struct{}
 	done        chan struct{}
 
-	mu          sync.Mutex
-	urls        []string // signed PUT URLs for chunks seq, seq+1, ...
-	seq         int      // next chunk to upload == chunks uploaded so far
-	requestedAt time.Time
-	capped      bool // the station handed out its last URL, or a PUT was refused
+	targets  []protocol.UploadTarget // for chunks seq, seq+1, ...
+	seq      int                     // next chunk to upload == chunks uploaded so far
+	failedAt time.Time               // last failed upload:request
+	capped   bool                    // the station handed out its last target, or refused one
 }
 
 // StartStream begins shipping a running execution's log in chunks when its
 // dispatch asked for logStream. A no-op otherwise, or when already streaming.
-func (u *LogUploader) StartStream(ctx context.Context, executionID, logFilePath string, send func(any) error) {
-	entry, ok := u.lookup(executionID)
-	if !ok || !entry.stream {
+func (u *LogUploader) StartStream(ctx context.Context, executionID, logFilePath string) {
+	if !u.wantsStream(executionID) {
 		return
 	}
-	s := &chunkStream{
-		executionID: executionID,
-		path:        logFilePath,
-		send:        send,
-		stop:        make(chan struct{}),
-		done:        make(chan struct{}),
-	}
+	s := &chunkStream{executionID: executionID, path: logFilePath, stop: make(chan struct{}), done: make(chan struct{})}
 	u.mu.Lock()
 	if _, running := u.streams[executionID]; running {
 		u.mu.Unlock()
@@ -75,8 +62,6 @@ func (u *LogUploader) StartStream(ctx context.Context, executionID, logFilePath 
 	}
 	u.streams[executionID] = s
 	u.mu.Unlock()
-
-	s.requestURLs()
 	go u.runStream(ctx, s)
 }
 
@@ -98,76 +83,30 @@ func (u *LogUploader) runStream(ctx context.Context, s *chunkStream) {
 }
 
 // StopStream ends executionID's stream and returns how many chunks were
-// uploaded; ok is false when the run never streamed. A stream that already
-// shipped something ships its tail too, so the chunks alone hold the whole log
-// should the terminal archive fail.
-func (u *LogUploader) StopStream(ctx context.Context, executionID string) (chunks int, ok bool) {
+// uploaded, nil when the run never streamed. A stream that already shipped
+// something ships its tail too, so the chunks alone hold the whole log should
+// the archive fail.
+func (u *LogUploader) StopStream(ctx context.Context, executionID string) *int {
 	u.mu.Lock()
 	s, ok := u.streams[executionID]
 	delete(u.streams, executionID)
 	u.mu.Unlock()
 	if !ok {
-		return 0, false
+		return nil
 	}
 	close(s.stop)
 	<-s.done
-	if s.uploaded() > 0 {
+	if s.seq > 0 {
 		u.flushChunks(ctx, s, true)
 	}
 	if s.file != nil {
 		_ = s.file.Close()
 	}
-	return s.uploaded(), true
+	return new(s.seq)
 }
 
-// OnChunkUrls appends the station's URL batch to the matching stream. A batch
-// that doesn't continue where the stream's URLs end is stale and dropped; an
-// empty one means the station's per-execution cap was reached.
-func (u *LogUploader) OnChunkUrls(message protocol.LogChunkUrlsMessage) {
-	if message.ArchiveURL != "" && message.ArchivePath != "" {
-		u.refreshArchive(message.ExecutionID, message.ArchiveURL, message.ArchivePath)
-	}
-	u.mu.Lock()
-	s, ok := u.streams[message.ExecutionID]
-	u.mu.Unlock()
-	if !ok {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if message.FromSeq != s.seq+len(s.urls) {
-		return
-	}
-	s.urls = append(s.urls, message.Urls...)
-	s.requestedAt = time.Time{}
-	if len(message.Urls) == 0 {
-		s.capped = true
-	}
-}
-
-// refreshArchive swaps a pending upload's archive URL and key for the fresh
-// pair the station minted with a chunk URL batch (the key embeds the month, so
-// a long run outlives the dispatch's), persisting it so crash recovery uses the
-// fresh pair too. No-op when the execution has no pending upload.
-func (u *LogUploader) refreshArchive(executionID, uploadURL, logPath string) {
-	u.mu.Lock()
-	entry, ok := u.pending[executionID]
-	if ok {
-		entry.uploadURL, entry.logPath = uploadURL, logPath
-		u.pending[executionID] = entry
-	}
-	u.mu.Unlock()
-	if !ok || u.repo == nil {
-		return
-	}
-	rec := model.PendingLogUpload{ExecutionID: executionID, UploadURL: uploadURL, LogPath: logPath, InsertedAt: u.now().Unix()}
-	if err := u.repo.UpsertPendingLogUpload(context.Background(), rec); err != nil {
-		slog.Warn("failed to persist refreshed log archive URL", "executionId", executionID, "err", err)
-	}
-}
-
-// flushChunks uploads everything new in the log file, one chunk per URL. A
-// failed PUT leaves the offset alone so the next tick retries the same seq.
+// flushChunks uploads everything new in the log file, one chunk per target.
+// A failed upload leaves the offset alone so the next tick retries the seq.
 func (u *LogUploader) flushChunks(ctx context.Context, s *chunkStream, final bool) {
 	for {
 		data, rotated, err := s.next(final)
@@ -184,27 +123,23 @@ func (u *LogUploader) flushChunks(ctx context.Context, s *chunkStream, final boo
 			s.file, s.off = nil, 0
 			continue
 		}
-		url, ok := s.nextURL()
+		target, ok := u.nextTarget(ctx, s)
 		if !ok {
 			return
 		}
 		putCtx, cancel := context.WithTimeout(ctx, logChunkPutTimeout)
-		_, err = logarchive.PutChunk(putCtx, u.httpClient, url, data, u.insecure)
+		_, err = logarchive.PutChunk(putCtx, u.httpClient, logarchive.Target{URL: target.URL, Method: target.Method, Headers: target.Headers}, data, u.insecure)
 		cancel()
 		if err != nil {
 			if _, perm := errors.AsType[*logarchive.PermanentError](err); perm {
-				s.mu.Lock()
-				s.capped, s.urls = true, nil
-				s.mu.Unlock()
+				s.capped, s.targets = true, nil
 			}
 			slog.Warn("log chunk upload failed", "executionId", s.executionID, "err", err)
 			return
 		}
 		s.off += int64(len(data))
-		s.mu.Lock()
 		s.seq++
-		s.urls = s.urls[1:]
-		s.mu.Unlock()
+		s.targets = s.targets[1:]
 	}
 }
 
@@ -240,40 +175,24 @@ func (s *chunkStream) next(final bool) ([]byte, bool, error) {
 	return buf, rotated, nil
 }
 
-// nextURL returns the URL for the next chunk, asking for more when running low.
-func (s *chunkStream) nextURL() (string, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.urls) <= logChunkURLLowWater {
-		s.requestURLsLocked()
+// nextTarget returns the target for the next chunk, asking the station for a
+// batch when none is left. Fewer targets than asked means the station's cap
+// for this execution is reached: the stream uses what it got, then stops.
+func (u *LogUploader) nextTarget(ctx context.Context, s *chunkStream) (protocol.UploadTarget, bool) {
+	if len(s.targets) == 0 && !s.capped && time.Since(s.failedAt) >= logChunkRequestRetry {
+		res, err := u.request(ctx, protocol.UploadRequest{ExecutionID: s.executionID, Purpose: protocol.UploadPurposeLogChunk, FromSeq: s.seq, Count: logChunkBatch})
+		switch se, isStation := errors.AsType[*StationError](err); {
+		case err == nil:
+			s.targets = res.Uploads
+			s.capped = len(res.Uploads) < logChunkBatch
+		case isStation && !se.Retryable:
+			s.capped = true
+		default:
+			s.failedAt = time.Now()
+		}
 	}
-	if len(s.urls) == 0 {
-		return "", false
+	if len(s.targets) == 0 {
+		return protocol.UploadTarget{}, false
 	}
-	return s.urls[0], true
-}
-
-func (s *chunkStream) requestURLs() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.requestURLsLocked()
-}
-
-// requestURLsLocked sends one log:chunkUrlsRequest unless the station capped
-// the stream or a request is still outstanding. A send that fails (no session)
-// leaves nothing outstanding, so the next chunk asks again.
-func (s *chunkStream) requestURLsLocked() {
-	if s.capped || (!s.requestedAt.IsZero() && time.Since(s.requestedAt) < logChunkRequestRetry) {
-		return
-	}
-	if err := s.send(NewLogChunkUrlsRequestMessage(s.executionID, s.seq+len(s.urls))); err != nil {
-		return
-	}
-	s.requestedAt = time.Now()
-}
-
-func (s *chunkStream) uploaded() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.seq
+	return s.targets[0], true
 }

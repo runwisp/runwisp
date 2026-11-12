@@ -4,198 +4,99 @@
 package station
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"maps"
-	"slices"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
-// ErrUnsupportedMessageType is returned by DecodeInboundMessage when the
-// envelope's type is not in inboundDecoders. It is deliberately distinct from a
-// decode failure of a *known* type: an unsupported type is a forward-compat
-// event (station sent a message this daemon version doesn't implement yet), not a
-// protocol violation. The session survives and no error frame is sent — see
-// sessionRunner.handleInboundPayload and the forward-compat contract at the top
-// of packages/asyncapi/asyncapi.yaml.
-var ErrUnsupportedMessageType = errors.New("unsupported message type")
+// Subprotocol is the WebSocket subprotocol this daemon speaks; it is the
+// protocol's only version number.
+const Subprotocol = "runwisp.v1"
 
-const ProtocolVersion = 2
+// Message types this daemon sends or acts on.
+const (
+	typeHello            = "hello"
+	typeWelcome          = "welcome"
+	typeGoodbye          = "goodbye"
+	typePing             = "ping"
+	typePong             = "pong"
+	typeResult           = "result"
+	typeAck              = "ack"
+	typeSessionUpdate    = "session:update"
+	typeAgentUpdate      = "agent:update"
+	typeAgentStats       = "agent:stats"
+	typeAgentRestart     = "agent:restart"
+	typeAgentUpgrade     = "agent:upgrade"
+	typeAgentCredentials = "agent:credentials"
+	typeTasksSync        = "tasks:sync"
+	typeExecDispatch     = "execution:dispatch"
+	typeExecStop         = "execution:stop"
+	typeExecUpdate       = "execution:update"
+	typeLogSubscribe     = "log:subscribe"
+	typeLogUnsubscribe   = "log:unsubscribe"
+	typeLogLines         = "log:lines"
+	typeLogSearch        = "log:search"
+	typeUploadRequest    = "upload:request"
+	typeServiceApply     = "service:apply"
+	typeServiceControl   = "service:control"
+	typeServiceRemove    = "service:remove"
+	typeServiceStatus    = "service:status"
+)
 
-func newEnvelopeFields() (int, string) {
-	return ProtocolVersion, time.Now().UTC().Format(time.RFC3339Nano)
-}
-
-// NewPingMessage builds a heartbeat frame. stats, when non-nil, piggybacks a
-// live system snapshot so the control plane can surface the runner's
-// CPU/memory/identity without a dedicated message (add-only field; old station
-// ignores it).
-func NewPingMessage(stats *protocol.SystemStatsInfo) protocol.PingMessage {
-	v, s := newEnvelopeFields()
-	return protocol.PingMessage{Type: "ping", ProtocolVersion: v, SentAt: s, SystemStats: stats}
-}
-
-// makeSystemStatsProvider adapts the daemon's model-typed stats source into the
-// wire-typed provider the heartbeat loop calls, stamping the live instance name
-// when instanceName is wired. Returns nil when no stats source is wired so the
-// session sends plain pings.
-func makeSystemStatsProvider(fn func() model.SystemStats, instanceName func() string) func() *protocol.SystemStatsInfo {
-	if fn == nil {
-		return nil
-	}
-	return func() *protocol.SystemStatsInfo {
-		info := toProtocolSystemStats(fn())
-		if instanceName != nil {
-			info.InstanceName = instanceName()
+// encodeFrame builds one envelope. data may be nil for an empty payload.
+func encodeFrame(typ, id, replyTo string, data any) ([]byte, error) {
+	env := protocol.Envelope{Type: typ, ID: id, ReplyTo: replyTo, SentAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	if data != nil {
+		raw, err := json.Marshal(data)
+		if err != nil {
+			return nil, fmt.Errorf("encode %s: %w", typ, err)
 		}
-		return info
+		env.Data = raw
 	}
+	return json.Marshal(env)
 }
 
-// toProtocolSystemStats maps the daemon's internal stats snapshot onto the wire
-// type. Identity-only fields the station already learns at auth (name) or that
-// could leak a local path (workDir) are intentionally dropped.
-func toProtocolSystemStats(s model.SystemStats) *protocol.SystemStatsInfo {
-	return &protocol.SystemStatsInfo{
-		CpuUsage: s.CPUUsage,
-		MemUsage: s.MemUsage,
-		MemTotal: int64(s.MemTotal),
-		MemUsed:  int64(s.MemUsed),
-		CpuCores: s.CPUCores,
-		Uptime:   s.Uptime,
-		Version:  s.Version,
-		Host:     s.Host,
-		Os:       s.OS,
-		Arch:     s.Arch,
+// decodeData decodes an envelope's payload. Unknown fields are ignored (the
+// protocol only grows); an absent payload decodes to T's zero value.
+func decodeData[T any](env protocol.Envelope) (T, error) {
+	var out T
+	if len(env.Data) == 0 || string(env.Data) == "null" {
+		return out, nil
 	}
+	if err := json.Unmarshal(env.Data, &out); err != nil {
+		return out, newError(protocol.ErrorCodeInvalid, "malformed %s: %v", env.Type, err)
+	}
+	return out, nil
 }
 
-func NewExecutionUpdateMessage(executionID string, status protocol.ExecutionStatus, exitCode *int, startedAt, finishedAt *time.Time) protocol.ExecutionUpdateMessage {
-	v, s := newEnvelopeFields()
-	return protocol.ExecutionUpdateMessage{
-		Type:            "execution:update",
-		ProtocolVersion: v,
-		SentAt:          s,
-		ExecutionID:     executionID,
-		Status:          status,
-		ExitCode:        exitCode,
-		StartedAt:       startedAt,
-		FinishedAt:      finishedAt,
+// resultData is a result's payload: ok, error, and the command's own result
+// fields (a struct, or nil) flattened next to them.
+func resultData(fields any, err error) (json.RawMessage, error) {
+	if err != nil {
+		return json.Marshal(protocol.Result{Ok: false, Error: errorInfo(err)})
 	}
+	obj := map[string]json.RawMessage{}
+	if fields != nil {
+		raw, mErr := json.Marshal(fields)
+		if mErr != nil {
+			return nil, mErr
+		}
+		if mErr := json.Unmarshal(raw, &obj); mErr != nil {
+			return nil, fmt.Errorf("result fields must be an object: %w", mErr)
+		}
+	}
+	obj["ok"] = json.RawMessage("true")
+	return json.Marshal(obj)
 }
 
-// NewExecutionInventoryMessage lists the executions the daemon still owns,
-// sent once per connection before any other message.
-func NewExecutionInventoryMessage(executionIDs []string) protocol.ExecutionInventoryMessage {
-	v, s := newEnvelopeFields()
-	return protocol.ExecutionInventoryMessage{
-		Type:            "execution:inventory",
-		ProtocolVersion: v,
-		SentAt:          s,
-		ExecutionIds:    executionIDs,
-	}
-}
-
-// NewLogLinesMessage builds a coalesced batch of live line events for one
-// execution, so a burst ships as a single frame. lines must be in ascending n
-// order.
-func NewLogLinesMessage(executionID string, lines []protocol.LogLineEntry) protocol.LogLinesMessage {
-	v, s := newEnvelopeFields()
-	return protocol.LogLinesMessage{
-		Type:            "log:lines",
-		ProtocolVersion: v,
-		SentAt:          s,
-		ExecutionID:     executionID,
-		Lines:           lines,
-	}
-}
-
-// NewLogChunkUrlsRequestMessage asks the station for signed PUT URLs for an
-// execution's incremental log chunks, starting at fromSeq.
-func NewLogChunkUrlsRequestMessage(executionID string, fromSeq int) protocol.LogChunkUrlsRequestMessage {
-	v, s := newEnvelopeFields()
-	return protocol.LogChunkUrlsRequestMessage{
-		Type:            "log:chunkUrlsRequest",
-		ProtocolVersion: v,
-		SentAt:          s,
-		ExecutionID:     executionID,
-		FromSeq:         fromSeq,
-	}
-}
-
-// NewLogReplayChunkMessage builds one page of historical lines for a
-// log:replayRequest reply. final=true marks the last chunk in the reply set.
-func NewLogReplayChunkMessage(requestID, executionID string, lines []protocol.LogLineEntry, final bool) protocol.LogReplayChunkMessage {
-	v, s := newEnvelopeFields()
-	return protocol.LogReplayChunkMessage{
-		Type:            "log:replayChunk",
-		ProtocolVersion: v,
-		SentAt:          s,
-		RequestID:       requestID,
-		ExecutionID:     executionID,
-		Lines:           lines,
-		Final:           final,
-	}
-}
-
-// NewLogSearchChunkMessage builds the single reply to a log:searchRequest.
-// exhausted=true means the whole on-disk log was scanned; otherwise nextLine
-// carries the resume cursor.
-func NewLogSearchChunkMessage(requestID, executionID string, hits []protocol.LogLineEntry, nextLine int64, exhausted bool) protocol.LogSearchChunkMessage {
-	v, s := newEnvelopeFields()
-	return protocol.LogSearchChunkMessage{
-		Type:            "log:searchChunk",
-		ProtocolVersion: v,
-		SentAt:          s,
-		RequestID:       requestID,
-		ExecutionID:     executionID,
-		Hits:            hits,
-		NextLine:        nextLine,
-		Exhausted:       exhausted,
-	}
-}
-
-func NewProtocolErrorMessage(code, message, requestID, executionID string) protocol.ProtocolErrorMessage {
-	v, s := newEnvelopeFields()
-	return protocol.ProtocolErrorMessage{
-		Type:            "error",
-		ProtocolVersion: v,
-		SentAt:          s,
-		Code:            code,
-		Message:         message,
-		RequestID:       requestID,
-		ExecutionID:     executionID,
-	}
-}
-
-// NewExecutionAckMessage confirms receipt of an execution:dispatch. Sent as
-// soon as the dispatch passes validation, before the run is triggered, so the
-// control plane can stop re-dispatching.
-func NewExecutionAckMessage(executionID string) protocol.ExecutionAckMessage {
-	v, s := newEnvelopeFields()
-	return protocol.ExecutionAckMessage{
-		Type:            "execution:ack",
-		ProtocolVersion: v,
-		SentAt:          s,
-		ExecutionID:     executionID,
-	}
-}
-
-// NewServiceStatusMessage builds a daemon→station snapshot of a supervised
-// service: its rollup state, desired/running counts, and per-instance slots.
-// Sent on every instance lifecycle change so the control plane surfaces the
-// latest view without a dedicated poll (additive daemon→station message; old
-// station ignores it).
-func NewServiceStatusMessage(snapshot model.ServiceSnapshot) protocol.ServiceStatusMessage {
-	v, s := newEnvelopeFields()
-	instances := make([]protocol.ServiceInstanceSnapshot, 0, len(snapshot.Instances))
+// newServiceStatus builds a service:status snapshot of a supervised service.
+func newServiceStatus(snapshot model.ServiceSnapshot) protocol.ServiceStatus {
+	instances := make([]protocol.ServiceInstance, 0, len(snapshot.Instances))
 	for _, inst := range snapshot.Instances {
-		item := protocol.ServiceInstanceSnapshot{
+		item := protocol.ServiceInstance{
 			Index:        inst.Index,
 			State:        protocol.ServiceInstanceState(inst.State),
 			StartedAt:    inst.StartedAt,
@@ -208,10 +109,7 @@ func NewServiceStatusMessage(snapshot model.ServiceSnapshot) protocol.ServiceSta
 		}
 		instances = append(instances, item)
 	}
-	return protocol.ServiceStatusMessage{
-		Type:             "service:status",
-		ProtocolVersion:  v,
-		SentAt:           s,
+	return protocol.ServiceStatus{
 		TaskID:           snapshot.TaskName,
 		State:            protocol.ServiceState(snapshot.State),
 		DesiredInstances: snapshot.DesiredInstances,
@@ -220,76 +118,14 @@ func NewServiceStatusMessage(snapshot model.ServiceSnapshot) protocol.ServiceSta
 	}
 }
 
-func decodeAs[T any](payload []byte) (any, error) {
-	var msg T
-	if err := decodeStrict(payload, &msg); err != nil {
-		return nil, err
+// toAgentStats maps the daemon's host snapshot onto agent:stats.
+func toAgentStats(s model.SystemStats, uptime time.Duration) protocol.AgentStats {
+	return protocol.AgentStats{
+		CpuUsage:      s.CPUUsage,
+		MemUsage:      s.MemUsage,
+		MemTotalBytes: int64(s.MemTotal),
+		MemUsedBytes:  int64(s.MemUsed),
+		CpuCores:      s.CPUCores,
+		UptimeMs:      uptime.Milliseconds(),
 	}
-	return msg, nil
-}
-
-var inboundDecoders = map[string]func([]byte) (any, error){
-	"auth:result":        decodeAs[protocol.AuthResultMessage],
-	"execution:dispatch": decodeAs[protocol.ExecutionDispatchMessage],
-	"execution:stop":     decodeAs[protocol.ExecutionStopMessage],
-	"pong":               decodeAs[protocol.PongMessage],
-	"log:replayRequest":  decodeAs[protocol.LogReplayRequestMessage],
-	"log:searchRequest":  decodeAs[protocol.LogSearchRequestMessage],
-	"log:listen":         decodeAs[protocol.LogListenMessage],
-	"log:stop":           decodeAs[protocol.LogStopMessage],
-	"log:chunkUrls":      decodeAs[protocol.LogChunkUrlsMessage],
-	"agent:restart":      decodeAs[protocol.AgentRestartMessage],
-	"service:apply":      decodeAs[protocol.ServiceApplyMessage],
-	"service:control":    decodeAs[protocol.ServiceControlMessage],
-	"service:remove":     decodeAs[protocol.ServiceRemoveMessage],
-	"error":              decodeAs[protocol.ProtocolErrorMessage],
-}
-
-// supportedInboundTypes returns the sorted set of station→daemon message types
-// this daemon understands — exactly the keys of inboundDecoders. It is what the
-// daemon advertises in the X-Runner-Protocol-Features auth header so the station
-// can gate behavior-dependent features it must fall back on for older daemons.
-// Deriving it from inboundDecoders (rather than a hand-kept list) guarantees the
-// advertisement can never drift from what handleInboundPayload actually handles.
-func supportedInboundTypes() []string {
-	types := slices.Sorted(maps.Keys(inboundDecoders))
-	return types
-}
-
-func DecodeInboundMessage(payload []byte) (any, error) {
-	messageType, err := decodeMessageType(payload)
-	if err != nil {
-		return nil, fmt.Errorf("decode envelope: %w", err)
-	}
-	decoder, ok := inboundDecoders[messageType]
-	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrUnsupportedMessageType, messageType)
-	}
-	return decoder(payload)
-}
-
-func decodeStrict(payload []byte, target any) error {
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-
-	if decoder.More() {
-		return fmt.Errorf("unexpected trailing JSON payload")
-	}
-
-	return nil
-}
-
-func decodeMessageType(payload []byte) (string, error) {
-	var envelope struct {
-		Type string `json:"type"`
-	}
-
-	if err := json.Unmarshal(payload, &envelope); err != nil {
-		return "", err
-	}
-
-	return envelope.Type, nil
 }

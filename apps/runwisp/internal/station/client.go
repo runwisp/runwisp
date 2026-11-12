@@ -6,14 +6,16 @@ package station
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/backoff"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
@@ -25,36 +27,30 @@ import (
 )
 
 const (
-	authReadTimeout         = 20 * time.Second
-	heartbeatInterval       = 5 * time.Second
-	heartbeatSilenceTimeout = 15 * time.Second
-	watchdogInterval        = 2 * time.Second
-	writeTimeout            = 5 * time.Second
-	// serviceStatusResendInterval re-pushes every service's supervisor snapshot on
-	// this cadence so the control plane's view survives its snapshot TTL (90s) for
-	// a stable service that produces no lifecycle events. Kept well under that TTL.
-	serviceStatusResendInterval = 30 * time.Second
-	outboundMessageBufferSize   = 256
-	maxPendingExecutionUpdates  = 2048
-	// statsEveryNHeartbeats throttles the systemStats piggyback: a full host
-	// snapshot (cpu/mem/identity) rides only every Nth heartbeat, not every one.
-	// Liveness is governed by the watchdog + lastReceived, not by stats, so the
-	// 5s ping stays frequent while the ~30s stats cadence (N=6) keeps the
-	// control plane's per-runner view fresh without a state write every 5s per
-	// runner. The first heartbeat of a session always carries stats.
-	statsEveryNHeartbeats = 6
+	// handshakeTimeout bounds writing hello and waiting for welcome.
+	handshakeTimeout = 20 * time.Second
+	// stationTooOldRetry is how long the daemon waits before trying again a
+	// station that doesn't speak this protocol: it won't until it's upgraded.
+	stationTooOldRetry = 5 * time.Minute
+	// tasksSyncTimeout bounds one tasks:sync round trip.
+	tasksSyncTimeout = 30 * time.Second
 )
 
-const maxInboundMessageSize int64 = 4 * 1024 * 1024 // 4 MiB
+// errStationTooOld ends a connection attempt to a station that didn't select
+// the runwisp.v1 subprotocol.
+var errStationTooOld = errors.New("station too old for this daemon: it does not speak protocol " + Subprotocol)
 
 type Dependencies struct {
 	TaskManager       TaskRunner
 	RunRepo           ExternalRunGetter
 	PendingUploadRepo storage.PendingLogUploadRepository
-	EventBus          EventSubscriber
-	// LocalTasks is the daemon's TOML-defined task set. The client re-reads it
-	// on every sync rather than caching it once, so a `runwisp reload` is
-	// reflected on the next reconnect.
+	Outbox            storage.StationOutboxRepository
+	// Credentials persists a token the station rotates in (agent:credentials).
+	// nil refuses rotation.
+	Credentials CredentialStore
+	EventBus    EventSubscriber
+	// LocalTasks is the daemon's TOML-defined task set, re-read on every
+	// sync so a `runwisp reload` is reflected.
 	LocalTasks   *runtime.TaskRegistry
 	LogDir       string
 	Availability executor.Availability
@@ -63,80 +59,54 @@ type Dependencies struct {
 	// reloads), the zone synced schedules default to. nil or an unloadable name
 	// falls back to UTC.
 	Timezone func() string
-	// RequestRestart asks the daemon to restart its own process when station
-	// sends agent:restart. nil rejects the command (e.g. not service-managed).
+	// RequestRestart restarts the daemon process (agent:restart). nil means
+	// the daemon can't restart itself.
 	RequestRestart func() error
-	// CanRestart reports why RequestRestart would refuse, or nil when it would
-	// restart. Advertised at connect as the "restart" capability. nil means
-	// no precondition beyond RequestRestart being set.
+	// CanRestart reports why agent:restart would be refused, or nil when it
+	// would restart. Advertised as feature agent.restart.
 	CanRestart func() error
-	// SystemStats, when set, returns a live host snapshot the heartbeat
-	// piggybacks for the control plane's per-runner metrics view. nil sends a
-	// plain ping (the station falls back to identity-only runner info).
+	// Upgrade installs the given release tag over the running binary
+	// (agent:upgrade) and returns the restart that switches onto it, run once
+	// the result is on the wire.
+	Upgrade func(ctx context.Context, tag string) (restart func(), err error)
+	// CanUpgrade reports why agent:upgrade would be refused, or nil when it
+	// would upgrade. Advertised as feature agent.upgrade. nil (with Upgrade
+	// nil) means upgrades are unsupported.
+	CanUpgrade func() error
+	// SystemStats returns a live host snapshot for agent:stats.
 	SystemStats func() model.SystemStats
-	// InstanceName, when set, returns the live [daemon] name the heartbeat
-	// snapshot carries. Only read when SystemStats is set.
+	// InstanceName returns the live [daemon] name, reported in hello.
 	InstanceName func() string
-	// Now is the wall-clock source used by sub-components that persist
-	// timestamps (currently only the log uploader). Production wires
-	// time.Now; tests inject a fixed clock for deterministic fixtures.
+	// Now is the wall-clock source for persisted timestamps and notAfter.
+	// Production wires time.Now; tests inject a fixed clock.
 	Now func() time.Time
 }
 
 type Client struct {
-	config  Config
-	runRepo ExternalRunGetter
+	config Config
+	deps   Dependencies
 
-	syncClient  *TaskSyncClient
-	taskManager TaskRunner
-	localTasks  *runtime.TaskRegistry
-	onConnected func()
-	handler     *InboundHandler
-	tracker     *ExecutionTracker
-	uploader    *LogUploader
-	bridge      *EventBridge
-	sessions    *sessionRunner
+	handler  *InboundHandler
+	tracker  *ExecutionTracker
+	outbox   *outbox
+	uploader *LogUploader
+	bridge   *EventBridge
+	// startedAt marks the daemon's start for agent:stats uptime.
+	startedAt time.Time
 
-	conn *connectionManager
+	mu       sync.Mutex
+	session  *session // the session past welcome; nil while disconnected
+	token    string
+	everSeen bool // a session reached welcome at least once
 
-	eventBus EventSubscriber
-	// syncMu serialises task syncs (connect-time and reload-triggered) so a
-	// stale snapshot can never land after a newer one. lastSyncID is the
-	// payload hash of the last successful sync, guarded by syncMu.
+	// syncMu serialises task syncs so a stale catalog never lands after a
+	// newer one. syncedHash is the catalog the station has, guarded by syncMu.
 	syncMu     sync.Mutex
-	lastSyncID string
-	timezone   func() string
+	syncedHash string
 	warnedZone string // last invalid daemon zone already warned about; guarded by syncMu
-	resyncCh   chan struct{}
-	// advertisedConfig is the Config availability the current (or last)
-	// session's dial header carried. The Station learns capabilities only at
-	// dial, so a reload that flips it forces a re-dial (see
-	// endSessionIfCapabilitiesChanged).
-	advertisedConfig atomic.Bool
-}
-
-type wsSession struct {
-	conn         *websocket.Conn
-	outbound     chan []byte
-	lastReceived atomic.Int64
-	// closed is set once sessionRunner.run's loops have all exited (in
-	// particular writeLoop, the only reader of outbound). connectionManager
-	// only detaches the session after run() returns to its caller, which
-	// leaves a window where it is still attached but nothing will ever drain
-	// outbound again; sendMessage consults this field directly so a send
-	// racing that window fails loudly instead of reporting success into a
-	// channel with no reader.
-	closed atomic.Bool
-	// ended is closed by end to make sessionRunner.run tear the session down
-	// on the daemon's own initiative; the client then re-dials as after any
-	// clean close.
-	ended   chan struct{}
-	endOnce sync.Once
-}
-
-// end asks the session's run loop to close the session. Idempotent.
-func (s *wsSession) end() {
-	s.endOnce.Do(func() { close(s.ended) })
+	reloadCh   chan struct{}
+	// upgradeMu lets one agent:upgrade run at a time.
+	upgradeMu sync.Mutex
 }
 
 func NewClient(cfg Config, deps Dependencies) (*Client, error) {
@@ -149,117 +119,80 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 	if deps.EventBus == nil {
 		return nil, fmt.Errorf("station client requires event bus")
 	}
-
-	tracker := NewExecutionTracker()
-	connMgr := newConnectionManager(tracker)
-
-	uploader := NewLogUploader(deps.PendingUploadRepo, deps.RunRepo, deps.LogDir, deps.Now)
-	uploader.TrustHost(logarchive.HostPort(cfg.BaseURL))
-	if cfg.AllowInsecure {
-		uploader.AllowInsecure()
+	if deps.Outbox == nil {
+		return nil, fmt.Errorf("station client requires an outbox")
+	}
+	if deps.Now == nil {
+		deps.Now = time.Now
 	}
 
 	client := &Client{
-		config:      cfg,
-		runRepo:     deps.RunRepo,
-		syncClient:  NewTaskSyncClient(cfg.TaskSyncURL(), requestTimeout),
-		taskManager: deps.TaskManager,
-		localTasks:  deps.LocalTasks,
-		onConnected: deps.OnConnected,
-		tracker:     tracker,
-		uploader:    uploader,
-		conn:        connMgr,
-		eventBus:    deps.EventBus,
-		timezone:    deps.Timezone,
-		resyncCh:    make(chan struct{}, 1),
+		config:    cfg,
+		deps:      deps,
+		tracker:   NewExecutionTracker(),
+		outbox:    newOutbox(deps.Outbox),
+		startedAt: deps.Now(),
+		token:     cfg.StationToken,
+		reloadCh:  make(chan struct{}, 1),
 	}
-
+	client.uploader = NewLogUploader(deps.PendingUploadRepo, deps.RunRepo, deps.LogDir, deps.Now, client.requestUploads)
+	client.uploader.TrustHost(logarchive.HostPort(cfg.BaseURL))
+	if cfg.AllowInsecure {
+		client.uploader.AllowInsecure()
+	}
 	client.handler = NewInboundHandler(InboundHandlerDeps{
 		TaskManager:  deps.TaskManager,
 		RunRepo:      deps.RunRepo,
 		LogDir:       deps.LogDir,
 		Availability: deps.Availability,
 		LocalTasks:   deps.LocalTasks,
-		QueueExecUpdate: func(update protocol.ExecutionUpdateMessage) {
-			client.tracker.QueueUpdate(update, connMgr.sendIfReady)
-		},
-		Uploader:       uploader,
-		Tracker:        tracker,
-		RequestRestart: deps.RequestRestart,
-		CanRestart:     deps.CanRestart,
+		AppendUpdate: client.outbox.append,
+		Uploader:     client.uploader,
+		Tracker:      client.tracker,
+		Now:          deps.Now,
 	})
-
-	client.sessions = &sessionRunner{
-		handler:     client.handler,
-		systemStats: makeSystemStatsProvider(deps.SystemStats, deps.InstanceName),
-	}
-
-	client.bridge = NewEventBridge(
-		deps.EventBus,
-		client.handler,
-		client.tracker,
-		connMgr.sendIfReady,
-	)
+	client.bridge = NewEventBridge(client)
 	slog.Info("station integration enabled", "baseURL", cfg.BaseURL.String(), "fingerprint", cfg.Fingerprint)
-
 	return client, nil
 }
 
-// RecoverArchiveBacklog re-runs uploads for executions whose dispatch was
-// persisted but never archived (typically after a daemon crash mid-run).
-// On success the resulting terminal `execution:update` is queued for
-// delivery once the station session is up. Safe to call before Run.
+// RecoverArchiveBacklog runs at boot, before Run. Every execution still
+// waiting for its log archive whose run already ended (typically it ended
+// while the daemon was down, or the daemon crashed before reporting it) gets
+// its finished update stored again; the station applies it idempotently. The
+// archives themselves upload after the next welcome.
 func (client *Client) RecoverArchiveBacklog(ctx context.Context) {
-	client.uploader.RecoverOrphans(ctx, func(executionID string, result LogUploaderResult) {
-		// Build a synthetic terminal update from the run record, then
-		// overlay the recovered logPath/logSize. We re-fetch via the
-		// run repo to get the canonical end_reason/exit_code.
-		run, err := client.runRepo.GetRunByExecutionID(ctx, executionID)
-		if err != nil || run == nil {
-			return
+	for _, executionID := range client.uploader.LoadPending(ctx) {
+		run, err := client.deps.RunRepo.GetRunByExecutionID(ctx, executionID)
+		if err != nil || run == nil || !run.Status.IsTerminal() {
+			continue
 		}
-		update := mapRunToExecutionUpdate(run)
-		if update == nil {
-			return
-		}
-		update.LogPath = &result.LogPath
-		update.LogSize = &result.LogSize
-		client.tracker.QueueUpdate(*update, client.conn.sendIfReady)
-	})
+		client.outbox.append(executionUpdate(run))
+	}
 }
 
 func (client *Client) Run(ctx context.Context) error {
 	client.bridge.Start(ctx)
 	defer client.bridge.Shutdown()
-	defer client.startResync(ctx)()
+	defer client.watchReloads(ctx)()
 
 	backoff := newReconnectBackoff()
-
 	for {
 		if ctx.Err() != nil {
 			return nil
 		}
-
-		resetBackoff, err := client.runConnectionAttempt(ctx)
-		if err != nil {
-			if isHardAuthError(err) {
-				slog.Error("station integration stopped due to hard auth error", "error", err.Error())
-				return err
-			}
-			slog.Warn("station connection attempt ended", "error", err.Error())
-		}
-
-		if resetBackoff {
-			backoff.Reset()
-		}
-
+		stable, err := client.connectOnce(ctx)
 		if ctx.Err() != nil {
 			return nil
 		}
+		if stable {
+			backoff.Reset()
+		}
 
-		delay := backoff.Next()
-		slog.Info("reconnecting", "delay", delay.String())
-
+		delay, err := reconnectDelay(err, backoff)
+		if err != nil {
+			return err
+		}
 		select {
 		case <-ctx.Done():
 			return nil
@@ -268,98 +201,192 @@ func (client *Client) Run(ctx context.Context) error {
 	}
 }
 
-func (client *Client) runConnectionAttempt(ctx context.Context) (bool, error) {
-	connection, err := client.dialWebSocket(ctx)
+// reconnectDelay is how long to wait after a session ended with err, or the
+// error that stops the client for good.
+func reconnectDelay(err error, retry *backoff.Exponential) (time.Duration, error) {
+	goodbye, isGoodbye := errors.AsType[*goodbyeError](err)
+	switch {
+	case isGoodbye && !goodbye.Retry:
+		slog.Error("station ended the session and asked this daemon not to reconnect; the station integration is stopped until the daemon restarts",
+			"code", goodbye.Code, "message", goodbye.Message)
+		return 0, err
+	case isGoodbye:
+		delay := goodbye.delay()
+		if delay == 0 {
+			delay = retry.Next()
+		}
+		slog.Info("station ended the session", "code", goodbye.Code, "message", goodbye.Message, "reconnectIn", delay.String())
+		return delay, nil
+	case errors.Is(err, errStationTooOld):
+		slog.Error("station too old for this daemon: it does not speak protocol "+Subprotocol+"; upgrade the station", "retryIn", stationTooOldRetry.String())
+		return stationTooOldRetry, nil
+	}
+	if err != nil {
+		slog.Warn("station connection attempt ended", "error", err.Error())
+	}
+	delay := retry.Next()
+	slog.Info("reconnecting", "delay", delay.String())
+	return delay, nil
+}
+
+// connectOnce dials, says hello, and runs the session the station accepts
+// until it ends. stable reports the session lasted long enough to reset the
+// reconnect backoff: a peer that drops every session at once would otherwise
+// turn the exponential curve into a tight loop.
+func (client *Client) connectOnce(ctx context.Context) (stable bool, err error) {
+	conn, err := client.dial(ctx)
 	if err != nil {
 		return false, err
 	}
+	if conn.Subprotocol() != Subprotocol {
+		_ = conn.Close(websocket.StatusPolicyViolation, "unsupported protocol")
+		return false, errStationTooOld
+	}
+	conn.SetReadLimit(maxInboundFrameBytes)
 
-	if err := client.authenticate(ctx, connection); err != nil {
-		closeConnection(connection, "auth failed")
+	hello := client.buildHello(ctx)
+	welcome, err := handshake(ctx, conn, hello)
+	if err != nil {
+		_ = conn.Close(websocket.StatusNormalClosure, "")
 		return false, err
 	}
 
-	if err := client.syncTasks(ctx); err != nil {
-		closeConnection(connection, "task sync failed")
-		return false, err
+	client.syncMu.Lock()
+	if welcome.TasksHashKnown {
+		client.syncedHash = hello.TasksHash
+	} else {
+		client.syncedHash = ""
 	}
+	client.syncMu.Unlock()
 
-	// Only reset the reconnect backoff if the session actually stayed up. A peer
-	// that resets the connection immediately after sync would otherwise reset
-	// backoff on every attempt, turning the exponential curve into a tight
-	// reconnect loop that hammers a flapping control plane. startSession blocks
-	// until the session ends, so its wall-clock span is the session's lifetime.
-	sessionStart := time.Now()
-	sessionErr := client.startSession(ctx, connection)
-	stable := time.Since(sessionStart) >= minStableSessionDuration
-	return stable, sessionErr
+	sess := newSession(ctx, client, conn, welcome, hello)
+	start := time.Now()
+	err = sess.run(ctx)
+	return time.Since(start) >= minStableSessionDuration, err
 }
 
-// advertisedCapabilities is the X-Runner-Capabilities header: the execution
-// backends, plus whether an agent:restart would be honoured, so the station
-// can explain a restart it can't do instead of sending one that is refused.
-// Fields are only ever added here (old stations ignore unknown keys).
-type advertisedCapabilities struct {
-	executor.Availability
-	Restart executor.BackendStatus `json:"restart"`
-}
-
-func (client *Client) dialWebSocket(ctx context.Context) (*websocket.Conn, error) {
+func (client *Client) dial(ctx context.Context) (*websocket.Conn, error) {
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", client.config.StationToken))
-	headers.Set("X-Runner-Agent-Version", client.config.AgentVersion)
-	headers.Set("X-Runner-Fingerprint", client.config.Fingerprint)
-	avail := client.handler.liveAvailability()
-	client.advertisedConfig.Store(avail.Config.Available)
-	caps := advertisedCapabilities{Availability: avail, Restart: client.handler.restartStatus()}
-	if capJSON, err := json.Marshal(caps); err == nil {
-		headers.Set("X-Runner-Capabilities", string(capJSON))
-	}
-	// Advertise the station→daemon message types this daemon understands so the
-	// station can gate features that depend on the daemon acting (and fall back
-	// for older daemons that lack the type). Derived from inboundDecoders so it
-	// can never drift from what we actually handle. See the forward-compat
-	// contract atop packages/asyncapi/asyncapi.yaml.
-	if featJSON, err := json.Marshal(supportedInboundTypes()); err == nil {
-		headers.Set("X-Runner-Protocol-Features", string(featJSON))
-	}
-
-	dialCtx, cancelDial := context.WithTimeout(ctx, requestTimeout)
-	defer cancelDial()
-
-	connection, _, err := websocket.Dial(dialCtx, client.config.WebSocketURL(), &websocket.DialOptions{
-		HTTPHeader: headers,
+	headers.Set("Authorization", "Bearer "+client.currentToken())
+	dialCtx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+	conn, _, err := websocket.Dial(dialCtx, client.config.WebSocketURL(), &websocket.DialOptions{
+		HTTPHeader:   headers,
+		Subprotocols: []string{Subprotocol},
 	})
 	if err != nil {
-		return nil, &StationError{Kind: StationErrorKindTransient, Message: "websocket dial failed", Err: err}
+		return nil, fmt.Errorf("websocket dial failed: %w", err)
 	}
-	return connection, nil
+	return conn, nil
 }
 
-func (client *Client) authenticate(ctx context.Context, connection *websocket.Conn) error {
-	authResult, err := readAuthResult(ctx, connection)
+// handshake sends hello and waits for the station's welcome. A goodbye comes
+// back as a *goodbyeError.
+func handshake(ctx context.Context, conn *websocket.Conn, hello protocol.Hello) (protocol.Welcome, error) {
+	hsCtx, cancel := context.WithTimeout(ctx, handshakeTimeout)
+	defer cancel()
+	frame, err := encodeFrame(typeHello, "", "", hello)
 	if err != nil {
-		return err
+		return protocol.Welcome{}, err
 	}
-
-	if !authResult.Success {
-		return &StationError{Kind: StationErrorKindAuth, Message: authResult.Error}
+	if err := conn.Write(hsCtx, websocket.MessageText, frame); err != nil {
+		return protocol.Welcome{}, fmt.Errorf("send hello: %w", err)
 	}
-
-	return nil
+	for {
+		_, payload, err := conn.Read(hsCtx)
+		if err != nil {
+			return protocol.Welcome{}, fmt.Errorf("wait for welcome: %w", err)
+		}
+		var env protocol.Envelope
+		if err := json.Unmarshal(payload, &env); err != nil {
+			return protocol.Welcome{}, fmt.Errorf("malformed frame before welcome: %w", err)
+		}
+		switch env.Type {
+		case typeWelcome:
+			return decodeData[protocol.Welcome](env)
+		case typeGoodbye:
+			g, err := decodeData[protocol.Goodbye](env)
+			if err != nil {
+				return protocol.Welcome{}, err
+			}
+			return protocol.Welcome{}, &goodbyeError{g}
+		default:
+			// Nothing else may precede welcome; skip it rather than guess.
+			slog.Debug("ignoring frame before welcome", "type", env.Type)
+		}
+	}
 }
 
-// startResync re-syncs the task list when the live task set changes (a
-// `runwisp reload` publishes tasks.changed), so the Station sees edits without
-// a reconnect. It runs whether or not a session is attached: the sync is a
-// separate token-authenticated HTTP call, and a failure here is only logged
-// because the next connect syncs the then-current set anyway. Returns the stop
-// func.
-func (client *Client) startResync(ctx context.Context) (stop func()) {
-	unsubscribe := client.eventBus.Subscribe(events.EventTasksChanged, func(events.Event) {
+// buildHello describes this daemon: identity, features, catalog hash and
+// every execution it still owns.
+func (client *Client) buildHello(ctx context.Context) protocol.Hello {
+	_, hash := client.taskCatalog()
+	return protocol.Hello{
+		InstanceID:    client.config.Fingerprint,
+		Agent:         client.agentInfo(),
+		Features:      client.features(),
+		Labels:        map[string]string{},
+		MaxConcurrent: 0,
+		TasksHash:     hash,
+		LastSeq:       client.outbox.lastSeq(ctx),
+		Executions:    client.tracker.Inventory(client.outbox.executions(ctx)),
+	}
+}
+
+// attach makes sess the session live sends go to.
+func (client *Client) attach(sess *session) {
+	client.mu.Lock()
+	first := !client.everSeen
+	client.session, client.everSeen = sess, true
+	client.mu.Unlock()
+	if first && client.deps.OnConnected != nil {
+		client.deps.OnConnected()
+	}
+}
+
+func (client *Client) detach(sess *session) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.session == sess {
+		client.session = nil
+	}
+}
+
+// current returns the attached session, nil while disconnected.
+func (client *Client) current() *session {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return client.session
+}
+
+func (client *Client) currentToken() string {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return client.token
+}
+
+// requestUploads asks the station for upload targets over the attached
+// session. It fails at once while disconnected; the caller retries later.
+func (client *Client) requestUploads(ctx context.Context, req protocol.UploadRequest) (protocol.UploadRequestResult, error) {
+	sess := client.current()
+	if sess == nil {
+		return protocol.UploadRequestResult{}, &StationError{Code: protocol.ErrorCodeUnavailable, Message: "not connected to the station", Retryable: true}
+	}
+	env, err := sess.command(ctx, typeUploadRequest, req)
+	if err != nil {
+		return protocol.UploadRequestResult{}, err
+	}
+	return decodeResult[protocol.UploadRequestResult](env)
+}
+
+// watchReloads reacts to tasks.changed (a `runwisp reload`, or a service
+// starting or stopping): it re-syncs the catalog when its hash changed and
+// tells the station about changed features or name. Returns the stop func.
+func (client *Client) watchReloads(ctx context.Context) (stop func()) {
+	unsubscribe := client.deps.EventBus.Subscribe(events.EventTasksChanged, func(events.Event) {
 		select {
-		case client.resyncCh <- struct{}{}:
-		default: // a resync is already pending; it will read the latest set
+		case client.reloadCh <- struct{}{}:
+		default: // one is already pending; it reads the latest state
 		}
 	})
 	loopCtx, cancel := context.WithCancel(ctx)
@@ -369,11 +396,11 @@ func (client *Client) startResync(ctx context.Context) (stop func()) {
 			select {
 			case <-loopCtx.Done():
 				return
-			case <-client.resyncCh:
-				if err := client.resyncIfChanged(loopCtx); err != nil && loopCtx.Err() == nil {
-					slog.Warn("task resync failed; the next reconnect will retry", "error", err.Error())
+			case <-client.reloadCh:
+				if sess := client.current(); sess != nil {
+					sess.sendAgentUpdateIfChanged()
+					client.syncTasks(sess, false)
 				}
-				client.endSessionIfCapabilitiesChanged()
 			}
 		}
 	}()
@@ -383,207 +410,107 @@ func (client *Client) startResync(ctx context.Context) (stop func()) {
 	}
 }
 
-// resyncIfChanged syncs only when the task payload differs from the last one
-// the Station accepted: tasks.changed also fires on service start/stop, which
-// the payload doesn't carry.
-func (client *Client) resyncIfChanged(ctx context.Context) error {
+// syncTasks sends tasks:sync when the catalog differs from the one the station
+// has (or always, with force). A failure is only logged: the next hello
+// carries the hash again and the station asks for the catalog then.
+func (client *Client) syncTasks(sess *session, force bool) {
 	client.syncMu.Lock()
 	defer client.syncMu.Unlock()
-	if id := buildTaskSyncID(buildSyncTasks(client.snapshotForSync(), client.daemonZone())); id == client.lastSyncID {
-		return nil
-	}
-	return client.syncTasksLocked(ctx)
-}
-
-// endSessionIfCapabilitiesChanged ends the current session when the live
-// Config availability no longer matches what its dial header advertised (a
-// reload added the first TOML task or removed the last one), so the client
-// re-dials with a fresh X-Runner-Capabilities header. Called after every
-// tasks.changed and right after a session attaches, so a reload landing
-// between dial and attach is caught too.
-func (client *Client) endSessionIfCapabilitiesChanged() {
-	live := client.handler.liveAvailability().Config.Available
-	if live == client.advertisedConfig.Load() {
+	defs, hash := client.taskCatalogLocked()
+	if !force && hash == client.syncedHash {
 		return
 	}
-	if client.conn.endSession() {
-		slog.Info("task set changed config dispatch availability; reconnecting to re-advertise it", "configAvailable", live)
+	ctx, cancel := context.WithTimeout(sess.ctx, tasksSyncTimeout)
+	defer cancel()
+	env, err := sess.command(ctx, typeTasksSync, protocol.TasksSync{Hash: hash, Tasks: defs})
+	if err == nil {
+		var summary protocol.TasksSyncResult
+		if summary, err = decodeResult[protocol.TasksSyncResult](env); err == nil {
+			client.syncedHash = hash
+			slog.Info("task catalog synced", "added", summary.Added, "updated", summary.Updated, "removed", summary.Removed, "total", summary.Total)
+			return
+		}
+	}
+	if sess.ctx.Err() == nil {
+		slog.Warn("task sync failed; the next reconnect retries", "error", err.Error())
 	}
 }
 
-func (client *Client) syncTasks(ctx context.Context) error {
+// taskCatalog returns the tasks:sync rows and their hash.
+func (client *Client) taskCatalog() ([]protocol.TaskDefinition, string) {
 	client.syncMu.Lock()
 	defer client.syncMu.Unlock()
-	return client.syncTasksLocked(ctx)
+	return client.taskCatalogLocked()
 }
 
-func (client *Client) syncTasksLocked(ctx context.Context) error {
-	snapshot, zone := client.snapshotForSync(), client.daemonZone()
-	syncCtx, cancelSync := context.WithTimeout(ctx, requestTimeout)
-	syncResult, syncErr := client.syncClient.SyncTasks(syncCtx, client.config.StationToken, snapshot, zone)
-	cancelSync()
-	if syncErr != nil {
-		return syncErr
-	}
-	client.lastSyncID = buildTaskSyncID(buildSyncTasks(snapshot, zone))
-
-	slog.Info(
-		"task snapshot synced",
-		"added", syncResult.Summary.Added,
-		"updated", syncResult.Summary.Updated,
-		"markedOutOfSync", syncResult.Summary.MarkedOutOfSync,
-		"total", syncResult.Summary.Total,
-	)
-	return nil
+func (client *Client) taskCatalogLocked() ([]protocol.TaskDefinition, string) {
+	defs := buildTaskDefinitions(client.snapshotForSync(), client.daemonZone())
+	return defs, tasksHash(defs)
 }
 
 // daemonZone is the zone tasks without their own timezone are synced in. The
-// Station loads it with time.LoadLocation, so an empty or unloadable name (never
-// produced by config load, which resolves the host zone to an IANA name) falls
-// back to UTC, with one warning per distinct bad value. Callers hold syncMu.
+// station loads it with time.LoadLocation, so an empty or unloadable name
+// (never produced by config load, which resolves the host zone to an IANA
+// name) falls back to UTC, with one warning per distinct bad value. Callers
+// hold syncMu.
 func (client *Client) daemonZone() string {
-	if client.timezone == nil {
+	if client.deps.Timezone == nil {
 		return "UTC"
 	}
-	name := client.timezone()
+	name := client.deps.Timezone()
 	if _, err := time.LoadLocation(name); err == nil && name != "" && name != "Local" {
 		return name
 	}
 	if client.warnedZone != name {
 		client.warnedZone = name
-		slog.Warn("daemon timezone is not an IANA name the Station can load; syncing schedules in UTC", "timezone", name)
+		slog.Warn("daemon timezone is not an IANA name the station can load; syncing schedules in UTC", "timezone", name)
 	}
 	return "UTC"
 }
 
-// snapshotForSync builds the task set reported in tasks.sync: the TOML-loaded
-// local tasks plus every daemon-supervised service the task manager currently
-// holds that the TOML doesn't already cover. The extras are station-declared
-// services (registered at runtime via service:apply, named "station-<id>");
-// folding them in tells the station they are live on this runner, which gates
-// their deletion. Run-to-completion tasks the manager also holds (e.g. an
-// ad-hoc inline station dispatch) are deliberately excluded by the
-// ListServiceTasks filter — those are one-shot executions, never a live task
-// on this runner, and reporting them would misrepresent them as persistent.
-// A cold-start's first sync runs before any service:apply has landed, so a
-// freshly declared service is confirmed on the next sync (reconnect or TOML
-// reload), not this one — the task manager retains it across reconnects.
+// snapshotForSync builds the task set reported in tasks:sync: the TOML tasks
+// plus every supervised service the task manager holds that the TOML doesn't
+// cover. The extras are station-declared services (service:apply, named
+// "station-<id>"); reporting them tells the station they are live here, which
+// gates their deletion. One-shot station executions are left out by the
+// ListServiceTasks filter: they are never a live task on this runner.
 func (client *Client) snapshotForSync() map[string]*model.Task {
 	snapshot := map[string]*model.Task{}
-	if client.localTasks != nil {
-		for name, task := range client.localTasks.Snapshot() {
-			if task == nil {
-				continue
+	if client.deps.LocalTasks != nil {
+		for name, task := range client.deps.LocalTasks.Snapshot() {
+			if task != nil {
+				snapshot[name] = task
 			}
-			snapshot[name] = task
 		}
 	}
-	for _, svc := range client.taskManager.ListServiceTasks() {
+	for _, svc := range client.deps.TaskManager.ListServiceTasks() {
 		if svc == nil {
 			continue
 		}
-		if _, ok := snapshot[svc.Name]; ok {
-			continue // TOML already covers it with its richer definition.
+		if _, ok := snapshot[svc.Name]; !ok {
+			snapshot[svc.Name] = svc
 		}
-		snapshot[svc.Name] = svc
 	}
 	return snapshot
 }
 
-func (client *Client) startSession(ctx context.Context, connection *websocket.Conn) error {
-	session := &wsSession{
-		conn:     connection,
-		outbound: make(chan []byte, outboundMessageBufferSize),
-		ended:    make(chan struct{}),
-	}
-	session.lastReceived.Store(time.Now().UnixMilli())
+// goodbyeError ends a session the station closed with goodbye.
+type goodbyeError struct{ protocol.Goodbye }
 
-	// Inventory goes first, before attachSession lets live updates and the
-	// buffered flush onto this session: everything it lists was owned before
-	// this connection, so the station can crash any earlier-acked execution
-	// that is missing. RecoverArchiveBacklog has already buffered recovered
-	// terminal updates, so those executions are listed too.
-	if err := sendMessage(session, NewExecutionInventoryMessage(client.tracker.Inventory())); err != nil {
-		slog.Warn("failed to queue execution inventory", "err", err)
-	}
-
-	isFirstConnect := client.conn.attachSession(session)
-	client.endSessionIfCapabilitiesChanged()
-
-	// Clear stale log listeners from a previous session. This is a safety net
-	// in case the previous session's teardown was interrupted by a panic.
-	client.handler.ClearLogListeners()
-	if isFirstConnect && client.onConnected != nil {
-		client.onConnected()
-	}
-	client.conn.flushPendingUpdates()
-	// Immediately re-seed the control plane's service view on (re)connect: a
-	// stable service emits no lifecycle event to trigger a fresh snapshot, so
-	// without this the view stays empty until the first resend-ticker tick.
-	client.bridge.EmitAllServiceStatus()
-
-	sessionErr := client.sessions.run(ctx, session)
-	client.conn.detachSession()
-	client.handler.ClearLogListeners()
-	if sessionErr != nil {
-		return &StationError{Kind: StationErrorKindTransient, Message: "connection lost", Err: sessionErr}
-	}
-	return nil
+func (g *goodbyeError) Error() string {
+	return fmt.Sprintf("station said goodbye: %s: %s", g.Code, g.Message)
 }
 
-func closeConnection(conn *websocket.Conn, reason string) {
-	if closeErr := conn.Close(websocket.StatusPolicyViolation, reason); closeErr != nil {
-		slog.Warn("Failed to close connection", "err", closeErr)
+// delay is how long to wait before reconnecting: retryAfterMs plus jitter, or
+// for draining a random time in [0, retryAfterMs] so a fleet spreads out. 0
+// means the station named no wait; the normal backoff applies.
+func (g *goodbyeError) delay() time.Duration {
+	after := time.Duration(g.RetryAfterMs) * time.Millisecond
+	if after <= 0 {
+		return 0
 	}
-}
-
-func sendMessage(session *wsSession, message any) error {
-	if session.closed.Load() {
-		return &StationError{Kind: StationErrorKindTransient, Message: "session closed"}
+	if g.Code == protocol.GoodbyeCodeDraining {
+		return rand.N(after + 1)
 	}
-
-	payload, err := json.Marshal(message)
-	if err != nil {
-		return &StationError{Kind: StationErrorKindValidation, Message: "failed to encode outbound message", Err: err}
-	}
-
-	select {
-	case session.outbound <- payload:
-		return nil
-	default:
-		return &StationError{Kind: StationErrorKindTransient, Message: "outbound websocket queue is full"}
-	}
-}
-
-func readAuthResult(ctx context.Context, connection *websocket.Conn) (protocol.AuthResultMessage, error) {
-	readCtx, cancel := context.WithTimeout(ctx, authReadTimeout)
-	defer cancel()
-
-	_, payload, err := connection.Read(readCtx)
-	if err != nil {
-		return protocol.AuthResultMessage{}, &StationError{
-			Kind:    StationErrorKindTransient,
-			Message: "failed to read auth result",
-			Err:     err,
-		}
-	}
-
-	message, err := DecodeInboundMessage(payload)
-	if err != nil {
-		return protocol.AuthResultMessage{}, &StationError{
-			Kind:    StationErrorKindValidation,
-			Message: "failed to parse auth result",
-			Err:     err,
-		}
-	}
-
-	authResult, ok := message.(protocol.AuthResultMessage)
-	if !ok {
-		return protocol.AuthResultMessage{}, &StationError{
-			Kind:    StationErrorKindValidation,
-			Message: "first websocket message must be auth:result",
-		}
-	}
-
-	return authResult, nil
+	return after + rand.N(time.Duration(float64(after)*reconnectJitterFraction)+1)
 }

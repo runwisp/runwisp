@@ -538,6 +538,8 @@ func CheckNonReloadable(old, updated *config.Config) error {
 		return nonReloadableErr("[daemon] metrics")
 	case o.AllowStationDispatch != n.AllowStationDispatch:
 		return nonReloadableErr("[daemon] allow_station_dispatch")
+	case o.AllowStationUpgrade != n.AllowStationUpgrade:
+		return nonReloadableErr("[daemon] allow_station_upgrade")
 	case !reflect.DeepEqual(o, n):
 		return nonReloadableErr("[daemon]")
 	}

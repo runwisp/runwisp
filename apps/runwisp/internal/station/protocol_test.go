@@ -6,182 +6,116 @@ package station
 import (
 	"encoding/json"
 	"errors"
-	"sort"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestDecodeStrict_TrailingDataIsRejected(t *testing.T) {
-	// decoder.More() must surface trailing JSON payloads as an error so the
-	// peer can't smuggle a second envelope into a single frame.
-	var msg protocol.PongMessage
-	err := decodeStrict([]byte(`{"type":"pong"}{"extra":1}`), &msg)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "trailing")
-}
-
-func TestDecodeStrict_InvalidJSON(t *testing.T) {
-	var msg protocol.PongMessage
-	err := decodeStrict([]byte(`{not json`), &msg)
-	require.Error(t, err)
-}
-
-func TestDecodeStrict_ValidJSON(t *testing.T) {
-	var msg protocol.PongMessage
-	err := decodeStrict([]byte(`{"type":"pong"}`), &msg)
-	require.NoError(t, err)
-	assert.Equal(t, "pong", msg.Type)
-}
-
-func TestDecodeInboundMessage_UnsupportedType(t *testing.T) {
-	_, err := DecodeInboundMessage([]byte(`{"type":"never:gonna:happen"}`))
-	require.Error(t, err)
-	// Must be the typed sentinel, not a generic decode failure — the caller
-	// keys off errors.Is to ignore the frame cleanly instead of tearing the
-	// session down or replying VALIDATION_ERROR.
-	assert.True(t, errors.Is(err, ErrUnsupportedMessageType), "want ErrUnsupportedMessageType, got %v", err)
-	assert.Contains(t, err.Error(), "never:gonna:happen", "error should name the offending type")
-}
-
-// Adding fields to an existing station→daemon message must stay safe: the daemon
-// decodes a known type with extra unknown fields without error (it does NOT use
-// DisallowUnknownFields — only decodeStrict's trailing-JSON check). This locks
-// rule 1 of the forward-compat contract. If a future regen or refactor turns on
-// strict field checking, this test fails loudly.
-func TestDecodeInboundMessage_UnknownFieldsTolerated(t *testing.T) {
-	msg, err := DecodeInboundMessage([]byte(`{"type":"execution:stop","executionId":"e1","reason":"manual","futureField":{"nested":true}}`))
-	require.NoError(t, err)
-	stop, ok := msg.(protocol.ExecutionStopMessage)
-	require.True(t, ok)
-	assert.Equal(t, "e1", stop.ExecutionID)
-	assert.Equal(t, "manual", stop.Reason)
-}
-
-// The feature set advertised at auth (X-Runner-Protocol-Features) must equal
-// the inbound decoder keys exactly — that equivalence is the whole point of
-// deriving it from inboundDecoders, so the daemon never advertises a type it
-// can't handle (or omits one it can). If a decoder is added/removed without the
-// advertisement following, this fails.
-func TestSupportedInboundTypes_MatchesDecoders(t *testing.T) {
-	got := supportedInboundTypes()
-	want := make([]string, 0, len(inboundDecoders))
-	for k := range inboundDecoders {
-		want = append(want, k)
+func enumStrings[T ~string](vals []T) []string {
+	out := make([]string, len(vals))
+	for i, v := range vals {
+		out[i] = string(v)
 	}
-	assert.ElementsMatch(t, want, got)
-	// And it must be sorted (stable header value across reconnects).
-	assert.True(t, sort.StringsAreSorted(got), "advertised feature set must be sorted, got %v", got)
+	return out
 }
 
-func TestDecodeInboundMessage_MalformedEnvelope(t *testing.T) {
-	_, err := DecodeInboundMessage([]byte(`{`))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "envelope")
+// The wire enums are mirrored by hand against the daemon's model constants;
+// nothing generated links them. A rename on one side alone would send values
+// the station can't map, so these pin each pair.
+func TestProtocolEnumsMatchModel(t *testing.T) {
+	assert.ElementsMatch(t,
+		[]string{string(model.BackoffConstant), string(model.BackoffLinear), string(model.BackoffExponential)},
+		enumStrings(protocol.BackoffValues))
+	assert.ElementsMatch(t,
+		[]string{string(model.PolicyQueue), string(model.PolicySkip), string(model.PolicyKill)},
+		enumStrings(protocol.OverlapPolicyValues))
+	assert.ElementsMatch(t,
+		[]string{model.ServiceRunning, model.ServiceDegraded, model.ServiceStopped, model.ServiceFatal},
+		enumStrings(protocol.ServiceStateValues))
+	assert.ElementsMatch(t,
+		[]string{model.ServiceInstanceRunning, model.ServiceInstanceRestarting, model.ServiceInstanceStopped, model.ServiceInstanceFatal},
+		enumStrings(protocol.ServiceInstanceStateValues))
+	assert.ElementsMatch(t,
+		[]string{logutil.StreamStdout, logutil.StreamStderr, logutil.StreamSystem},
+		enumStrings(protocol.LogStreamValues))
 }
 
-func TestDecodeInboundMessage_KnownTypeRoundtrips(t *testing.T) {
-	msg, err := DecodeInboundMessage([]byte(`{"type":"pong"}`))
+func TestResultData_FlattensFieldsNextToOk(t *testing.T) {
+	raw, err := resultData(protocol.LogSubscribeResult{NextLine: 7, Eof: true}, nil)
 	require.NoError(t, err)
-	pong, ok := msg.(protocol.PongMessage)
+	assert.JSONEq(t, `{"ok":true,"nextLine":7,"eof":true}`, string(raw))
+
+	raw, err = resultData(nil, nil)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"ok":true}`, string(raw))
+}
+
+func TestResultData_ErrorCarriesCodeAndRetryable(t *testing.T) {
+	raw, err := resultData(nil, newError(protocol.ErrorCodeNotFound, "execution %s not found", "e1"))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"ok":false,"error":{"code":"not_found","message":"execution e1 not found","retryable":false}}`, string(raw))
+
+	// Anything that isn't a StationError is an internal, retryable failure.
+	raw, err = resultData(nil, errors.New("disk on fire"))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"ok":false,"error":{"code":"internal","message":"disk on fire","retryable":true}}`, string(raw))
+}
+
+func TestDecodeResult_MapsRefusalToStationError(t *testing.T) {
+	env := protocol.Envelope{Type: "result", Data: json.RawMessage(`{"ok":false,"error":{"code":"busy","message":"later","retryable":true}}`)}
+	_, err := decodeResult[protocol.UploadRequestResult](env)
+	se, ok := errors.AsType[*StationError](err)
 	require.True(t, ok)
-	assert.Equal(t, "pong", pong.Type)
-}
+	assert.Equal(t, protocol.ErrorCodeBusy, se.Code)
+	assert.True(t, se.Retryable)
 
-// sentAt is the peer's clock and informational only: a value that isn't
-// RFC 3339 must not reject the whole frame (an auth:result failing to decode
-// would drop the session into a reconnect loop).
-func TestDecodeInboundMessage_TolerantSentAt(t *testing.T) {
-	msg, err := DecodeInboundMessage([]byte(`{"type":"auth:result","success":true,"sentAt":"2026-10-10 12:00:00"}`))
+	env.Data = json.RawMessage(`{"ok":true,"uploads":[{"url":"https://u","method":"PUT","key":"k"}]}`)
+	res, err := decodeResult[protocol.UploadRequestResult](env)
 	require.NoError(t, err)
-	res, ok := msg.(protocol.AuthResultMessage)
-	require.True(t, ok)
-	assert.True(t, res.Success)
+	require.Len(t, res.Uploads, 1)
+	assert.Equal(t, "k", res.Uploads[0].Key)
 }
 
-func TestPingMessage_OmitsEmptySystemStats(t *testing.T) {
-	out, err := json.Marshal(NewPingMessage(nil))
-	require.NoError(t, err)
-	assert.Contains(t, string(out), `"type":"ping"`)
-	// A plain ping must not carry an empty systemStats object — the field is
-	// add-only and omitted when no snapshot is attached.
-	assert.NotContains(t, string(out), "systemStats")
+func TestExecutionUpdate_FinishedCarriesOutcome(t *testing.T) {
+	started := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	ended := started.Add(time.Minute)
+	reason := model.ReasonTimeout
+	run := &model.Run{ExecutionID: new("e1"), Status: model.PhaseEnded, EndReason: &reason, IsFailure: true, ExitCode: -1, StartedAt: &started, EndedAt: &ended}
+
+	u := executionUpdate(run)
+	require.NotNil(t, u)
+	assert.Equal(t, protocol.ExecutionStatusFinished, u.Status)
+	assert.Equal(t, "timeout", u.Reason, "the reason goes out as the daemon's EndReason")
+	assert.Equal(t, new(true), u.IsFailure)
+	assert.Equal(t, new(-1), u.ExitCode)
+	assert.Equal(t, &ended, u.FinishedAt)
+
+	run.Status, run.EndReason = model.PhaseRunning, nil
+	u = executionUpdate(run)
+	assert.Equal(t, protocol.ExecutionStatusRunning, u.Status)
+	assert.Nil(t, u.IsFailure)
+
+	assert.Nil(t, executionUpdate(&model.Run{Status: model.PhaseRunning}), "a local run has no update")
 }
 
-func TestNewPingMessage_CarriesSystemStats(t *testing.T) {
-	provider := makeSystemStatsProvider(func() model.SystemStats {
-		return model.SystemStats{
-			CPUUsage: 12.5, MemUsage: 40, MemTotal: 16 << 30, MemUsed: 6 << 30,
-			CPUCores: 8, Uptime: "1h", Version: "1.2.3", Host: "box",
-			OS: "linux", Arch: "amd64", Name: "runwisp", WorkDir: "/secret/path",
-		}
-	}, func() string { return "storage-nas" })
-	ping := NewPingMessage(provider())
-	require.NotNil(t, ping.SystemStats)
-	assert.Equal(t, 12.5, ping.SystemStats.CpuUsage)
-	assert.Equal(t, int64(16<<30), ping.SystemStats.MemTotal)
-	assert.Equal(t, "linux", ping.SystemStats.Os)
-	assert.Equal(t, "amd64", ping.SystemStats.Arch)
-	assert.Equal(t, 8, ping.SystemStats.CpuCores)
-	assert.Equal(t, "storage-nas", ping.SystemStats.InstanceName)
+func TestTracker_InventoryCoversLiveAndUnacked(t *testing.T) {
+	tr := NewExecutionTracker()
+	require.True(t, tr.Reserve("accepted"))
+	require.True(t, tr.Reserve("running"))
+	tr.TrackRunning("running")
+	assert.False(t, tr.Reserve("running"), "a known execution can't be reserved twice")
 
-	// Identity-only / path-leaking fields are intentionally not on the wire.
-	out, err := json.Marshal(ping)
-	require.NoError(t, err)
-	assert.NotContains(t, string(out), "/secret/path")
-}
-
-func TestMakeSystemStatsProvider_NilSource(t *testing.T) {
-	assert.Nil(t, makeSystemStatsProvider(nil, nil))
-}
-
-func TestNewExecutionAckMessage(t *testing.T) {
-	ack := NewExecutionAckMessage("exec-123")
-	assert.Equal(t, "execution:ack", ack.Type)
-	assert.Equal(t, "exec-123", ack.ExecutionID)
-	// Envelope fields are populated (version + timestamp), not left zero.
-	assert.NotZero(t, ack.ProtocolVersion)
-	assert.NotEmpty(t, ack.SentAt)
-}
-
-func TestNewServiceStatusMessage(t *testing.T) {
-	exit := 137
-	snapshot := model.ServiceSnapshot{
-		TaskName:         "station-svc",
-		State:            model.ServiceRunning,
-		DesiredInstances: 3,
-		RunningInstances: 2,
-		Instances: []model.ServiceInstanceStatus{
-			{Index: 0, State: model.ServiceInstanceRunning, Pid: 42, RestartCount: 1},
-			// Second instance carries an exit code but no pid.
-			{Index: 1, State: "fatal", RestartCount: 4, StartFails: 3, LastExitCode: &exit},
-		},
-	}
-
-	msg := NewServiceStatusMessage(snapshot)
-	assert.Equal(t, "service:status", msg.Type)
-	assert.Equal(t, "station-svc", msg.TaskID)
-	assert.Equal(t, protocol.ServiceStateRunning, msg.State)
-	assert.Equal(t, 3, msg.DesiredInstances)
-	assert.Equal(t, 2, msg.RunningInstances)
-
-	require.Len(t, msg.Instances, 2)
-	assert.Equal(t, 0, msg.Instances[0].Index)
-	assert.Equal(t, protocol.ServiceInstanceStateRunning, msg.Instances[0].State)
-	assert.Equal(t, 42, *msg.Instances[0].Pid)
-	// pid/lastExitCode unset on the wire when the daemon reports none.
-	assert.Nil(t, msg.Instances[1].Pid)
-	assert.Nil(t, msg.Instances[0].LastExitCode)
-	assert.Equal(t, 137, *msg.Instances[1].LastExitCode)
-	assert.Equal(t, 4, msg.Instances[1].RestartCount)
-	assert.Equal(t, 3, msg.Instances[1].StartFails)
-
-	// startFails goes on the wire even at 0: the station reads its absence as
-	// a daemon too old to report it.
-	b, err := json.Marshal(msg.Instances[0])
-	require.NoError(t, err)
-	assert.Contains(t, string(b), `"startFails":0`)
+	inv := tr.Inventory([]storage.OutboxExecution{{ExecutionID: "done"}, {ExecutionID: "running"}})
+	assert.Equal(t, []protocol.InventoryEntry{
+		{ExecutionID: "accepted", Status: protocol.ExecutionStatusAccepted},
+		{ExecutionID: "done", Status: protocol.ExecutionStatusFinished},
+		{ExecutionID: "running", Status: protocol.ExecutionStatusRunning},
+	}, inv)
+	assert.NotNil(t, NewExecutionTracker().Inventory(nil), "an empty inventory is [] on the wire")
 }

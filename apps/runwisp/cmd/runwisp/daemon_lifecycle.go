@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	goruntime "runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -26,6 +28,8 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/station"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/update"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/version"
 )
 
 // startStationClient creates and runs the station client in a background goroutine.
@@ -48,6 +52,8 @@ func startStationClient(
 		TaskManager:       svc.TaskManager,
 		RunRepo:           svc.DB,
 		PendingUploadRepo: svc.DB,
+		Outbox:            svc.DB,
+		Credentials:       svc.DB,
 		EventBus:          svc.EventBus,
 		LocalTasks:        svc.Tasks,
 		LogDir:            flags.LogDir(),
@@ -58,9 +64,13 @@ func startStationClient(
 		},
 		RequestRestart: func() error { return requestSelfRestart(cfg.Config.Daemon.AllowStationDispatch, fatalCh) },
 		CanRestart:     func() error { return selfRestartBlocker(cfg.Config.Daemon.AllowStationDispatch) },
-		SystemStats:    srv.SystemStats,
-		InstanceName:   srv.InstanceName,
-		Timezone:       srv.Timezone,
+		Upgrade: func(ctx context.Context, tag string) (func(), error) {
+			return stationUpgrade(ctx, tag, fatalCh)
+		},
+		CanUpgrade:   func() error { return stationUpgradeBlocker(cfg.Config.Daemon.AllowStationUpgrade) },
+		SystemStats:  srv.SystemStats,
+		InstanceName: srv.InstanceName,
+		Timezone:     srv.Timezone,
 	})
 	if clientErr != nil {
 		slog.Error("Failed to create station client", "err", clientErr)
@@ -119,6 +129,56 @@ func selfRestartBlocker(allowStationDispatch bool) error {
 		return errors.New("daemon is not managed by a service manager; restart it manually")
 	}
 	return nil
+}
+
+// errUpgradeRestart is the exit cause after a station agent:upgrade replaced
+// the binary; non-zero so the service manager starts the new one.
+var errUpgradeRestart = errors.New("upgraded by the station; exiting so the service manager starts the new release")
+
+// stationUpgradeBlocker says why a station agent:upgrade would be refused, or
+// nil when it would upgrade: the operator must opt in, the binary must be a
+// release RunWisp replaces itself (not a package manager's), and a service
+// manager must be there to start the new one.
+func stationUpgradeBlocker(allowStationUpgrade bool) error {
+	if !allowStationUpgrade {
+		return errors.New("station upgrades disabled (set [daemon] allow_station_upgrade = true to enable)")
+	}
+	if !isReleaseBuild(version.Version) {
+		return errors.New("this runwisp was built from source")
+	}
+	exe, err := update.Executable()
+	if err != nil {
+		return err
+	}
+	argv, refusal := update.Method(update.InstallSource(), exe, os.Geteuid() == 0)
+	switch {
+	case refusal != "":
+		first, _, _ := strings.Cut(refusal, "\n")
+		return errors.New(first)
+	case argv != nil:
+		return fmt.Errorf("installed through a package manager; upgrade it with %s", strings.Join(argv, " "))
+	case !autostart.RunningUnderServiceManager():
+		return errors.New("daemon is not managed by a service manager; upgrade it with runwisp upgrade")
+	}
+	return nil
+}
+
+// stationUpgrade replaces the binary with release tag and returns the restart
+// onto it, which the station client runs once its result is sent.
+func stationUpgrade(ctx context.Context, tag string, fatalCh chan<- error) (func(), error) {
+	exe, err := update.Executable()
+	if err != nil {
+		return nil, err
+	}
+	if err := update.SelfReplace(ctx, upgradeHTTP, update.ReleasesURL, tag, goruntime.GOOS, goruntime.GOARCH, exe); err != nil {
+		return nil, err
+	}
+	slog.Info("upgraded on station request; restarting onto the new release", "version", tag)
+	return func() {
+		if err := exitNonZero(fatalCh, errUpgradeRestart); err != nil {
+			slog.Error("failed to restart after the upgrade; run runwisp restart", "err", err)
+		}
+	}, nil
 }
 
 const (

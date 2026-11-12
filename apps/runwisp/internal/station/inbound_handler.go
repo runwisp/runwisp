@@ -8,7 +8,6 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
@@ -18,8 +17,8 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
-// InboundHandler processes inbound WebSocket messages, encapsulating
-// domain logic for execution dispatch, stop, and log operations.
+// InboundHandler carries out the station's execution and service commands
+// against the task manager.
 type InboundHandler struct {
 	taskManager  TaskRunner
 	runRepo      ExternalRunGetter
@@ -27,52 +26,43 @@ type InboundHandler struct {
 	availability executor.Availability
 	// localTasks, when set, makes Config availability live (see
 	// liveAvailability); nil keeps the boot-time value.
-	localTasks      *runtime.TaskRegistry
-	queueExecUpdate func(protocol.ExecutionUpdateMessage)
-	uploader        *LogUploader
-	tracker         *ExecutionTracker
-	// requestRestart asks the daemon to restart its own process. nil (or a
-	// daemon that isn't service-managed) means agent:restart is rejected.
-	requestRestart func() error
-	// canRestart reports why requestRestart would refuse; nil means no
-	// precondition beyond requestRestart being set.
-	canRestart func() error
-
-	// mu guards logListeners. RWMutex because IsLogListener is on the per-log-
-	// line read path (frequent), while listen/stop mutations are rare.
-	mu           sync.RWMutex
-	logListeners map[string]struct{}
+	localTasks *runtime.TaskRegistry
+	// appendUpdate stores an execution update for delivery (the outbox).
+	appendUpdate func(*protocol.ExecutionUpdate)
+	uploader     *LogUploader
+	tracker      *ExecutionTracker
+	now          func() time.Time
 }
 
 // InboundHandlerDeps bundles the collaborators an InboundHandler needs.
-// RequestRestart may be nil (a daemon not under a service manager), in which
-// case agent:restart is rejected.
 type InboundHandlerDeps struct {
-	TaskManager     TaskRunner
-	RunRepo         ExternalRunGetter
-	LogDir          string
-	Availability    executor.Availability
-	LocalTasks      *runtime.TaskRegistry
-	QueueExecUpdate func(protocol.ExecutionUpdateMessage)
-	Uploader        *LogUploader
-	Tracker         *ExecutionTracker
-	RequestRestart  func() error
-	CanRestart      func() error
+	TaskManager  TaskRunner
+	RunRepo      ExternalRunGetter
+	LogDir       string
+	Availability executor.Availability
+	LocalTasks   *runtime.TaskRegistry
+	AppendUpdate func(*protocol.ExecutionUpdate)
+	Uploader     *LogUploader
+	Tracker      *ExecutionTracker
+	// Now defaults to time.Now; it decides whether a dispatch's notAfter passed.
+	Now func() time.Time
 }
 
 func NewInboundHandler(deps InboundHandlerDeps) *InboundHandler {
+	now := deps.Now
+	if now == nil {
+		now = time.Now
+	}
 	return &InboundHandler{
-		taskManager:     deps.TaskManager,
-		runRepo:         deps.RunRepo,
-		logDir:          deps.LogDir,
-		availability:    deps.Availability,
-		localTasks:      deps.LocalTasks,
-		queueExecUpdate: deps.QueueExecUpdate,
-		uploader:        deps.Uploader,
-		tracker:         deps.Tracker,
-		requestRestart:  deps.RequestRestart,
-		canRestart:      deps.CanRestart,
-		logListeners:    make(map[string]struct{}),
+		taskManager:  deps.TaskManager,
+		runRepo:      deps.RunRepo,
+		logDir:       deps.LogDir,
+		availability: deps.Availability,
+		localTasks:   deps.LocalTasks,
+		appendUpdate: deps.AppendUpdate,
+		uploader:     deps.Uploader,
+		tracker:      deps.Tracker,
+		now:          now,
 	}
 }
 
@@ -87,92 +77,59 @@ func (h *InboundHandler) liveAvailability() executor.Availability {
 	return avail
 }
 
-// restartStatus is the "restart" capability advertised at connect: whether
-// HandleAgentRestart would restart the daemon, and why not.
-func (h *InboundHandler) restartStatus() executor.BackendStatus {
-	if h.requestRestart == nil {
-		return executor.BackendStatus{Reason: errAgentNotServiceManaged}
-	}
-	if h.canRestart != nil {
-		if err := h.canRestart(); err != nil {
-			return executor.BackendStatus{Reason: err.Error()}
-		}
-	}
-	return executor.BackendStatus{Available: true}
-}
-
-const errAgentNotServiceManaged = "agent is not service-managed; cannot restart remotely"
-
-// HandleAgentRestart asks the daemon to restart its own process. It is only
-// honoured when the daemon runs under a service manager (systemd/launchd) that
-// will bring it back — otherwise restarting would just stop the agent for
-// good, so we reject it with a clear conflict the dashboard can surface.
-func (h *InboundHandler) HandleAgentRestart() error {
-	if h.requestRestart == nil {
-		return &StationError{Kind: StationErrorKindConflict, Message: errAgentNotServiceManaged}
-	}
-	if err := h.requestRestart(); err != nil {
-		return &StationError{Kind: StationErrorKindConflict, Message: err.Error()}
-	}
-	slog.Info("agent restart requested by station")
-	return nil
-}
-
-// HandleExecutionDispatch validates and triggers a dispatched execution.
-// ack is invoked exactly once as soon as the dispatch is accepted (valid and
-// either fresh or a recognized duplicate), before the run is triggered —
-// the control plane uses it to stop re-dispatching.
-func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message protocol.ExecutionDispatchMessage, ack func()) error {
-	executionID, err := requireExecutionID(message.Execution.ExecutionID)
+// HandleExecutionDispatch accepts and triggers a dispatched execution. A nil
+// error is the acceptance; the run's progress follows as execution updates.
+func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, d protocol.ExecutionDispatch) error {
+	executionID, err := requireExecutionID(d.ExecutionID)
 	if err != nil {
 		return err
 	}
 
-	// Idempotent re-dispatch guard: the control plane re-publishes a dispatch
-	// when its ack deadline lapses (e.g. the ack was lost in a hub restart).
-	// If we already know this execution, re-ack without starting a second run;
-	// if it already finished, re-queue its terminal update so the station can
-	// reconcile a lost terminal report.
+	// Idempotent re-dispatch: the station re-sends a dispatch whose result it
+	// never got. A known execution is accepted again without a second run.
 	if h.isDuplicateDispatch(ctx, executionID) {
-		slog.Info("duplicate execution dispatch re-acked", "executionId", executionID)
-		if ack != nil {
-			ack()
-		}
+		slog.Info("duplicate execution dispatch accepted again", "executionId", executionID)
 		return nil
 	}
-
-	if ack != nil {
-		ack()
+	if d.NotAfter != nil && h.now().After(*d.NotAfter) {
+		h.tracker.Release(executionID)
+		return newError(protocol.ErrorCodeExpired, "dispatch arrived after its notAfter (%s)", d.NotAfter.UTC().Format(time.RFC3339))
 	}
 
-	// Persist the signed PUT URL + key BEFORE we trigger the run. A crash
-	// after trigger but before persistence would lose the upload metadata
-	// and orphan the local log file with no way to archive it.
-	if err := h.uploader.RegisterDispatch(ctx, executionID, message.Execution.LogUploadURL, message.Execution.LogPath, message.Execution.LogStream); err != nil {
-		slog.Warn("failed to register dispatch for log archival", "executionId", executionID, "err", err)
+	// Record the pending archive BEFORE the run starts: a crash after the
+	// trigger would otherwise leave a log nobody uploads.
+	if err := h.uploader.RegisterDispatch(ctx, executionID, d.LogStream); err != nil {
+		slog.Warn("failed to record the execution's log for archival", "executionId", executionID, "err", err)
 	}
 
-	taskName, overlay, resolveErr := h.resolveDispatchTask(message.Execution)
-	if resolveErr != nil {
-		h.releaseReservation(executionID)
-		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, new(-1), nil, new(time.Now().UTC())))
+	taskName, overlay, err := h.resolveDispatchTask(d)
+	if err != nil {
+		h.tracker.Release(executionID)
 		h.uploader.forget(ctx, executionID)
-		return resolveErr
+		return err
 	}
 
-	// TOML-defined tasks resolve InputValues against their declared params;
+	// TOML-defined tasks resolve inputs against their declared params;
 	// buildDynamicStationTask declares an env-kind param per key for inline
-	// ad-hoc executions, so both paths resolve the same way here.
-	run, triggerErr := h.taskManager.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
+	// executions, so both paths resolve the same way here.
+	run, err := h.taskManager.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
 		TriggeredBy: model.TriggeredByStation,
 		ExecutionID: executionID,
 		// The protocol carries plain string values (no explicit-omit state), so
 		// every supplied key is a present value; absent keys use the default.
-		Params:  model.PointerValues(message.Execution.InputValues),
+		Params:  model.PointerValues(d.Inputs),
 		Overlay: overlay,
 	})
-	if triggerErr != nil {
-		return h.handleTriggerError(ctx, executionID, run, triggerErr)
+	if err != nil {
+		if run != nil {
+			// The run exists and already ended (skipped, queue full); its
+			// finished update tells the station why.
+			slog.Info("dispatched execution ended before it started", "executionId", executionID, "reason", err)
+			return nil
+		}
+		h.tracker.Release(executionID)
+		h.uploader.forget(ctx, executionID)
+		return newError(protocol.ErrorCodeConflict, "%s", err.Error())
 	}
 
 	slog.Info("execution dispatched", "executionId", executionID, "task", taskName)
@@ -181,199 +138,57 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 
 // isDuplicateDispatch reports whether the daemon already knows the execution.
 // It atomically reserves the executionId: a failed reservation means another
-// dispatch for the same id is already reserved (accepted, not yet running) or
-// running — a duplicate. A fresh reservation is held by the caller until the run
-// terminates (tracker.Remove) or the dispatch is rejected before a run exists
-// (releaseReservation on the failure paths). The persisted-run lookup is the
-// fallback for a daemon restart that lost the in-memory reservation; for a
-// terminal run the stored update is re-queued so a control plane that missed the
-// original report converges instead of re-running the task.
+// dispatch for the same id is accepted or running. A fresh reservation is held
+// until the run finishes (tracker.Remove) or the dispatch is rejected
+// (tracker.Release). The persisted-run lookup covers a daemon restart that lost
+// the in-memory reservation; a finished run's update is stored again so a
+// station that lost track of it converges instead of re-running the task.
 func (h *InboundHandler) isDuplicateDispatch(ctx context.Context, executionID string) bool {
 	if !h.tracker.Reserve(executionID) {
 		return true
 	}
-
 	run, err := h.runRepo.GetRunByExecutionID(ctx, executionID)
 	if err != nil || run == nil {
 		return false
 	}
 	if run.Status.IsTerminal() {
-		if update := mapRunToExecutionUpdate(run); update != nil {
-			h.queueExecUpdate(*update)
-		}
+		h.appendUpdate(executionUpdate(run))
 	}
-	// A run already exists, so this dispatch won't create one — drop the
-	// reservation we just took so the id doesn't leak.
-	h.releaseReservation(executionID)
+	// A run already exists, so this dispatch won't create one.
+	h.tracker.Release(executionID)
 	return true
 }
 
-// releaseReservation drops a dispatch reservation when no run was created.
-func (h *InboundHandler) releaseReservation(executionID string) {
-	h.tracker.Release(executionID)
-}
-
-func (h *InboundHandler) handleTriggerError(ctx context.Context, executionID string, run *model.Run, triggerErr error) error {
-	// No run will drive this execution to terminal, so free the reservation.
-	// When run != nil its row is already persisted, so the runRepo fallback in
-	// isDuplicateDispatch still dedups a later re-dispatch.
-	h.releaseReservation(executionID)
-	if run != nil {
-		finishedAt := run.EndedAt
-		if finishedAt == nil {
-			finishedAt = new(time.Now().UTC())
-		}
-		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, new(run.ExitCode), run.StartedAt, finishedAt))
-	} else {
-		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, new(-1), nil, new(time.Now().UTC())))
-	}
-	h.uploader.forget(ctx, executionID)
-	return &StationError{Kind: StationErrorKindConflict, Message: triggerErr.Error()}
-}
-
-func (h *InboundHandler) HandleExecutionStop(ctx context.Context, message protocol.ExecutionStopMessage) error {
-	executionID, err := requireExecutionID(message.ExecutionID)
+// HandleExecutionStop stops a running execution. Stopping one that already
+// finished succeeds: the station's wish already holds.
+func (h *InboundHandler) HandleExecutionStop(ctx context.Context, stop protocol.ExecutionStop) error {
+	executionID, err := requireExecutionID(stop.ExecutionID)
 	if err != nil {
 		return err
 	}
-
-	if err := h.taskManager.TerminateRunByExecutionID(executionID); err == nil {
+	grace := time.Duration(stop.GracefulStopMs) * time.Millisecond
+	if err := h.taskManager.StopRunByExecutionID(executionID, grace, stop.Force); err == nil {
 		return nil
 	}
 
 	run, runErr := h.runRepo.GetRunByExecutionID(ctx, executionID)
 	if runErr != nil {
 		if errors.Is(runErr, storage.ErrNotFound) {
-			return &StationError{Kind: StationErrorKindUnknownExecution, Message: "execution not found"}
+			return newError(protocol.ErrorCodeNotFound, "execution not found")
 		}
-		return &StationError{Kind: StationErrorKindTransient, Message: "failed to inspect execution for stop", Err: runErr}
+		return &StationError{Code: protocol.ErrorCodeInternal, Message: "failed to inspect execution for stop", Retryable: true, Err: runErr}
 	}
-
 	if run.Status.IsTerminal() {
 		return nil
 	}
-
-	return &StationError{Kind: StationErrorKindConflict, Message: "execution is not currently running"}
-}
-
-// HandleLogReplayRequest reads a bounded historical page of lines and returns
-// it as a single LogReplayChunkMessage. final is true when no more lines
-// remain beyond this page or the run has terminated.
-func (h *InboundHandler) HandleLogReplayRequest(ctx context.Context, message protocol.LogReplayRequestMessage) (protocol.LogReplayChunkMessage, error) {
-	executionID, err := requireExecutionID(message.ExecutionID)
-	if err != nil {
-		return NewLogReplayChunkMessage(message.RequestID, message.ExecutionID, nil, true), err
-	}
-
-	run, err := h.runRepo.GetRunByExecutionID(ctx, executionID)
-	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			// Unknown execution ≠ end of log: a viewer can attach before the
-			// dispatch reaches this daemon (row just inserted station-side).
-			// Claiming final here made the station SSE handler end the stream
-			// as "terminal, fully read" on a run that hadn't even started.
-			// Genuinely finished runs never get here — the station's
-			// already-terminal guard answers those from the archive.
-			return NewLogReplayChunkMessage(message.RequestID, executionID, nil, false), nil
-		}
-		return NewLogReplayChunkMessage(message.RequestID, executionID, nil, true),
-			&StationError{Kind: StationErrorKindTransient, Message: "failed to query execution logs", Err: err}
-	}
-
-	lines, final, readErr := readExecutionLogReplay(run, h.logDir, message.FromLine, message.Limit)
-	if readErr != nil {
-		return NewLogReplayChunkMessage(message.RequestID, executionID, nil, true),
-			&StationError{Kind: StationErrorKindTransient, Message: "failed to read execution logs", Err: readErr}
-	}
-
-	return NewLogReplayChunkMessage(message.RequestID, executionID, lines, final), nil
-}
-
-// HandleLogSearchRequest greps one execution's on-disk log and returns the
-// matching lines as a single LogSearchChunkMessage. Like replay, an unknown
-// execution is not an error — it yields no hits with exhausted=true (nothing on
-// disk to scan). Mirrors HandleLogReplayRequest's resolution and error mapping.
-func (h *InboundHandler) HandleLogSearchRequest(ctx context.Context, message protocol.LogSearchRequestMessage) (protocol.LogSearchChunkMessage, error) {
-	executionID, err := requireExecutionID(message.ExecutionID)
-	if err != nil {
-		return NewLogSearchChunkMessage(message.RequestID, message.ExecutionID, nil, 0, true), err
-	}
-
-	run, err := h.runRepo.GetRunByExecutionID(ctx, executionID)
-	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			return NewLogSearchChunkMessage(message.RequestID, executionID, nil, 0, true), nil
-		}
-		return NewLogSearchChunkMessage(message.RequestID, executionID, nil, 0, true),
-			&StationError{Kind: StationErrorKindTransient, Message: "failed to query execution logs", Err: err}
-	}
-
-	hits, nextLine, exhausted, searchErr := searchExecutionLog(ctx, run, h.logDir, logSearchParams{
-		query:         message.Query,
-		regex:         message.Regex,
-		caseSensitive: message.CaseSensitive,
-		limit:         message.Limit,
-		fromLine:      message.FromLine,
-	})
-	if searchErr != nil {
-		return NewLogSearchChunkMessage(message.RequestID, executionID, nil, 0, true), searchErr
-	}
-
-	return NewLogSearchChunkMessage(message.RequestID, executionID, hits, nextLine, exhausted), nil
-}
-
-// HandleLogListen marks an execution for live log:line push events. Idempotent
-// — repeated calls keep a single subscription. Tracker-side memory cost is
-// O(set entry); the EventBridge does the actual fan-out + drop-on-full.
-func (h *InboundHandler) HandleLogListen(message protocol.LogListenMessage) error {
-	executionID, err := requireExecutionID(message.ExecutionID)
-	if err != nil {
-		return err
-	}
-
-	h.mu.Lock()
-	h.logListeners[executionID] = struct{}{}
-	h.mu.Unlock()
-
-	return nil
-}
-
-func (h *InboundHandler) HandleLogStop(message protocol.LogStopMessage) {
-	executionID := strings.TrimSpace(message.ExecutionID)
-	if executionID == "" {
-		return
-	}
-	h.RemoveLogListener(executionID)
+	return newError(protocol.ErrorCodeConflict, "execution is not running yet")
 }
 
 // requireExecutionID trims raw and rejects an empty id.
 func requireExecutionID(raw string) (string, error) {
 	id := strings.TrimSpace(raw)
 	if id == "" {
-		return "", &StationError{Kind: StationErrorKindValidation, Message: "executionId is required"}
+		return "", newError(protocol.ErrorCodeInvalid, "executionId is required")
 	}
 	return id, nil
-}
-
-// IsLogListener reports whether the given execution has an active subscription.
-func (h *InboundHandler) IsLogListener(executionID string) bool {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	_, ok := h.logListeners[executionID]
-	return ok
-}
-
-// RemoveLogListener removes a log listener (terminal-status cleanup or
-// log:stop). A no-op when the listener doesn't exist.
-func (h *InboundHandler) RemoveLogListener(executionID string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	delete(h.logListeners, executionID)
-}
-
-// ClearLogListeners removes all active log listeners (e.g. on reconnect).
-func (h *InboundHandler) ClearLogListeners() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.logListeners = make(map[string]struct{})
 }

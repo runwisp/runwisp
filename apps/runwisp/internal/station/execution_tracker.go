@@ -4,211 +4,130 @@
 package station
 
 import (
-	"maps"
+	"cmp"
 	"slices"
 	"sync"
-	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
-type activeExecution struct {
-	StartedAt *time.Time
-}
-
-// ExecutionTracker manages active station executions and buffers pending
-// status updates that could not be sent while disconnected.
+// ExecutionTracker holds the station executions this daemon accepted and that
+// haven't finished yet. Finished ones live on in the outbox until acked.
 type ExecutionTracker struct {
-	mu               sync.Mutex
-	activeExecutions map[string]activeExecution
-	// reserved holds executionIds accepted for dispatch but not yet running.
-	// It closes the window between accepting a dispatch and the run reaching
-	// PhaseRunning (when TrackRunning records it): without it a duplicate
-	// dispatch arriving in that window would start a second run, because the
-	// run row is persisted asynchronously and carries no unique constraint.
+	mu sync.Mutex
+	// reserved holds executions accepted for dispatch but not yet running. It
+	// closes the window between accepting a dispatch and the run reaching
+	// PhaseRunning: without it a duplicate dispatch arriving in that window
+	// would start a second run, because the run row is persisted
+	// asynchronously and carries no unique constraint.
 	reserved map[string]struct{}
-	// finishing holds executionIds whose run ended (Remove) but whose
-	// terminal update is not yet sent or buffered: the event bridge removes
-	// the run, then queues the terminal update from a separate goroutine.
-	// Without it Inventory would miss the execution in that window and the
-	// station would crash a run that actually finished.
-	finishing               map[string]struct{}
-	pendingExecutionUpdates []protocol.ExecutionUpdateMessage
+	running  map[string]struct{}
 }
 
 func NewExecutionTracker() *ExecutionTracker {
-	return &ExecutionTracker{
-		activeExecutions: make(map[string]activeExecution),
-		reserved:         make(map[string]struct{}),
-		finishing:        make(map[string]struct{}),
-	}
+	return &ExecutionTracker{reserved: map[string]struct{}{}, running: map[string]struct{}{}}
 }
 
 // Reserve atomically claims executionID for a dispatch about to start. It
-// returns false if the id is already reserved or running — i.e. a duplicate
-// dispatch — so the caller re-acks without starting a second run. Pair a
-// successful Reserve with Release if the dispatch is rejected before a run is
-// created; Remove frees the reservation when the run reaches a terminal state.
+// returns false if the id is already reserved or running, i.e. a duplicate
+// dispatch. Pair a successful Reserve with Release if the dispatch is
+// rejected before a run exists; Remove frees it when the run finishes.
 func (t *ExecutionTracker) Reserve(executionID string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if _, running := t.activeExecutions[executionID]; running {
+	if _, ok := t.running[executionID]; ok {
 		return false
 	}
-	if _, reserved := t.reserved[executionID]; reserved {
+	if _, ok := t.reserved[executionID]; ok {
 		return false
 	}
 	t.reserved[executionID] = struct{}{}
 	return true
 }
 
-// Release drops a reservation taken by Reserve when the dispatch never produced
-// a run (validation or trigger failure), so a legitimate re-dispatch can retry.
+// Release drops a reservation whose dispatch never produced a run.
 func (t *ExecutionTracker) Release(executionID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.reserved, executionID)
 }
 
-func (t *ExecutionTracker) TrackRunning(executionID string, startedAt *time.Time) {
+func (t *ExecutionTracker) TrackRunning(executionID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.activeExecutions[executionID] = activeExecution{StartedAt: startedAt}
+	t.running[executionID] = struct{}{}
+}
+
+// Known reports whether executionID is accepted or running.
+func (t *ExecutionTracker) Known(executionID string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, reserved := t.reserved[executionID]
+	_, running := t.running[executionID]
+	return reserved || running
 }
 
 func (t *ExecutionTracker) Remove(executionID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	delete(t.activeExecutions, executionID)
+	delete(t.running, executionID)
 	delete(t.reserved, executionID)
-	t.finishing[executionID] = struct{}{}
 }
 
-func (t *ExecutionTracker) QueueUpdate(update protocol.ExecutionUpdateMessage, trySend func(any) error) {
-	if trySend == nil || trySend(update) != nil {
-		t.bufferUpdate(update)
-	}
-	if update.Status != protocol.ExecutionStatusRunning {
-		t.mu.Lock()
-		delete(t.finishing, update.ExecutionID)
-		t.mu.Unlock()
-	}
-}
-
-// Inventory lists every execution the daemon still owns: running, reserved,
-// ended with its terminal update not yet queued, or with an update buffered
-// for delivery. Sent to the station on connect so it can crash executions the
-// daemon has lost. Never nil, so it marshals as a JSON array.
-func (t *ExecutionTracker) Inventory() []string {
+// Inventory lists every execution the daemon still owns for hello: accepted,
+// running, or finished with an update the station hasn't acked (inOutbox).
+// Never nil, so it marshals as a JSON array.
+func (t *ExecutionTracker) Inventory(inOutbox []storage.OutboxExecution) []protocol.InventoryEntry {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	ids := map[string]struct{}{}
-	for id := range t.activeExecutions {
-		ids[id] = struct{}{}
-	}
+	byID := map[string]protocol.ExecutionStatus{}
 	for id := range t.reserved {
-		ids[id] = struct{}{}
+		byID[id] = protocol.ExecutionStatusAccepted
 	}
-	for id := range t.finishing {
-		ids[id] = struct{}{}
+	for id := range t.running {
+		byID[id] = protocol.ExecutionStatusRunning
 	}
-	for _, update := range t.pendingExecutionUpdates {
-		ids[update.ExecutionID] = struct{}{}
+	t.mu.Unlock()
+	for _, e := range inOutbox {
+		if _, live := byID[e.ExecutionID]; !live {
+			// The terminal update is stored before the run leaves the tracker,
+			// so an outboxed execution that isn't live has finished.
+			byID[e.ExecutionID] = protocol.ExecutionStatusFinished
+		}
 	}
-	out := slices.AppendSeq(make([]string, 0, len(ids)), maps.Keys(ids))
-	slices.Sort(out)
+	out := make([]protocol.InventoryEntry, 0, len(byID))
+	for id, status := range byID {
+		out = append(out, protocol.InventoryEntry{ExecutionID: id, Status: status})
+	}
+	slices.SortFunc(out, func(a, b protocol.InventoryEntry) int { return cmp.Compare(a.ExecutionID, b.ExecutionID) })
 	return out
 }
 
-func (t *ExecutionTracker) bufferUpdate(update protocol.ExecutionUpdateMessage) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if len(t.pendingExecutionUpdates) >= maxPendingExecutionUpdates {
-		copy(t.pendingExecutionUpdates, t.pendingExecutionUpdates[1:])
-		t.pendingExecutionUpdates = t.pendingExecutionUpdates[:maxPendingExecutionUpdates-1]
-	}
-	t.pendingExecutionUpdates = append(t.pendingExecutionUpdates, update)
-}
-
-func (t *ExecutionTracker) FlushPending(send func(any) error) {
-	t.mu.Lock()
-	runningSnapshots := make([]protocol.ExecutionUpdateMessage, 0, len(t.activeExecutions))
-	for executionID, active := range t.activeExecutions {
-		runningSnapshots = append(runningSnapshots, NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusRunning, nil, active.StartedAt, nil))
-	}
-	// Copy into a fresh slice rather than appending onto pendingExecutionUpdates:
-	// append may reuse that slice's backing array, and resetting the field to
-	// [:0] keeps that array live, so a concurrent bufferUpdate would write into
-	// slots this goroutine iterates over after the unlock. Set the source to nil
-	// so the two slices share no storage.
-	pending := make([]protocol.ExecutionUpdateMessage, 0, len(t.pendingExecutionUpdates)+len(runningSnapshots))
-	pending = append(pending, t.pendingExecutionUpdates...)
-	pending = append(pending, runningSnapshots...)
-	t.pendingExecutionUpdates = nil
-	t.mu.Unlock()
-
-	for i, update := range pending {
-		if err := send(update); err != nil {
-			t.mu.Lock()
-			t.pendingExecutionUpdates = append(t.pendingExecutionUpdates, pending[i:]...)
-			t.mu.Unlock()
-			return
-		}
-	}
-}
-
-// terminalReasonMap maps every terminal EndReason to the wire status the station
-// understands. It must stay exhaustive over model's EndReason set: a run only
-// carries an EndReason once it has ended, so any reason reaching here is
-// terminal and must yield a terminal update — otherwise the station tracks the
-// execution as running forever. The protocol's status vocabulary is narrower
-// than the daemon's reasons, so the never-executed/interrupted reasons collapse
-// onto the closest fit: "skipped" for a run that never started because the
-// concurrency/schedule policy said not to (never ran, not a failure), stopped
-// for interruptions, and err for everything that did not complete successfully.
-var terminalReasonMap = map[model.EndReason]protocol.ExecutionStatus{
-	model.ReasonSuccess:       protocol.ExecutionStatusSucceeded,
-	model.ReasonStopped:       protocol.ExecutionStatusStopped,
-	model.ReasonTimeout:       protocol.ExecutionStatusTimeout,
-	model.ReasonFailed:        protocol.ExecutionStatusFailed,
-	model.ReasonCrashed:       protocol.ExecutionStatusFailed,
-	model.ReasonLogOverflow:   protocol.ExecutionStatusFailed,
-	model.ReasonStartFailed:   protocol.ExecutionStatusFailed,
-	model.ReasonUnhealthy:     protocol.ExecutionStatusFailed,
-	model.ReasonDaemonStopped: protocol.ExecutionStatusStopped,
-	model.ReasonSkipped:       protocol.ExecutionStatusSkipped,
-	model.ReasonQueueFull:     protocol.ExecutionStatusFailed,
-	model.ReasonDSTSkipped:    protocol.ExecutionStatusSkipped,
-	model.ReasonMissed:        protocol.ExecutionStatusSkipped,
-}
-
-func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {
+// executionUpdate maps a station run onto its execution:update (without seq,
+// which the outbox assigns). It returns nil for a run with no execution id or
+// one that is neither running nor ended. reason is the run's EndReason as is;
+// the station falls back to isFailure for a reason it doesn't know.
+func executionUpdate(run *model.Run) *protocol.ExecutionUpdate {
 	if run == nil || run.ExecutionID == nil {
 		return nil
 	}
-
-	executionID := *run.ExecutionID
-	if run.Status == model.PhaseRunning {
-		return new(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusRunning, nil, run.StartedAt, nil))
-	}
-
-	if run.EndReason == nil {
+	update := &protocol.ExecutionUpdate{ExecutionID: *run.ExecutionID, StartedAt: run.StartedAt}
+	switch {
+	case run.Status == model.PhaseRunning:
+		update.Status = protocol.ExecutionStatusRunning
+		return update
+	case run.Status.IsTerminal() && run.EndReason != nil:
+	default:
 		return nil
 	}
-	status, ok := terminalReasonMap[*run.EndReason]
-	if !ok {
-		// Fail safe: a terminal reason not yet in the map (e.g. one added later)
-		// must still report terminally rather than silently dropping the update
-		// and stranding the execution as "running" on the station.
-		status = protocol.ExecutionStatusFailed
-	}
-	update := NewExecutionUpdateMessage(executionID, status, new(run.ExitCode), run.StartedAt, run.EndedAt)
-	// The runtime sets IsFailure (run.End) and the resource totals before it
-	// publishes the terminal event or persists the row, so both the live bridge
-	// and the storage re-map paths see them here.
+	update.Status = protocol.ExecutionStatusFinished
+	update.FinishedAt = run.EndedAt
+	update.Reason = string(*run.EndReason)
 	update.IsFailure = new(run.IsFailure)
-	update.PeakMemoryBytes = run.PeakMemoryBytes
-	update.CpuTimeMs = run.CPUTimeMs
-	return &update
+	update.ExitCode = new(run.ExitCode)
+	if run.PeakMemoryBytes != nil || run.CPUTimeMs != nil {
+		update.Usage = &protocol.ExecutionUsage{PeakMemoryBytes: run.PeakMemoryBytes, CpuTimeMs: run.CPUTimeMs}
+	}
+	return update
 }

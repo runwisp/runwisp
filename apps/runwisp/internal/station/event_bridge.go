@@ -5,286 +5,91 @@ package station
 
 import (
 	"context"
-	"sync"
-	"time"
-
-	"log/slog"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
-	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
-const (
-	// logBatchWindow is how long live log lines are coalesced before the batch
-	// is flushed as one log:lines frame. Sub-100ms keeps the live tail feeling
-	// instant while collapsing a burst into a single frame/publish/SSE write.
-	logBatchWindow = 50 * time.Millisecond
-	// logBatchMaxLines caps a single batch so a firehose run flushes on size
-	// (bounding frame memory) instead of waiting for the window.
-	logBatchMaxLines = 128
-)
-
-// EventBridge subscribes to runtime events and forwards execution status
-// and log lines to the station connection.
+// EventBridge turns runtime events into station traffic: execution updates
+// into the outbox, service lifecycle changes into service:status.
 type EventBridge struct {
-	eventBus      EventSubscriber
-	handler       *InboundHandler
-	tracker       *ExecutionTracker
-	sendReady     func(any) error
+	client        *Client
 	unsubscribers []func()
-
-	// pendingLogs coalesces live log lines per execution between flushes.
-	batchMu     sync.Mutex
-	pendingLogs map[string][]protocol.LogLineEntry
 }
 
-func NewEventBridge(
-	eventBus EventSubscriber,
-	handler *InboundHandler,
-	tracker *ExecutionTracker,
-	sendReady func(any) error,
-) *EventBridge {
-	return &EventBridge{
-		eventBus:    eventBus,
-		handler:     handler,
-		tracker:     tracker,
-		sendReady:   sendReady,
-		pendingLogs: make(map[string][]protocol.LogLineEntry),
-	}
+func NewEventBridge(client *Client) *EventBridge {
+	return &EventBridge{client: client}
 }
 
-// Start registers event listeners on the event bus. ctx is threaded into log
-// archival so in-flight uploads abort when the daemon shuts down.
+// Start subscribes to the run lifecycle. ctx bounds log archival, so in-flight
+// uploads abort when the daemon shuts down.
 func (b *EventBridge) Start(ctx context.Context) {
+	handle := func(e events.Event) { b.handleRunEvent(ctx, e) }
+	bus := b.client.deps.EventBus
 	b.unsubscribers = append(b.unsubscribers,
-		b.eventBus.Subscribe(events.EventRunStarted, func(e events.Event) { b.handleRunEvent(ctx, e) }),
-		b.eventBus.Subscribe(events.EventRunCompleted, func(e events.Event) { b.handleRunEvent(ctx, e) }),
-		b.eventBus.Subscribe(events.EventRunFailed, func(e events.Event) { b.handleRunEvent(ctx, e) }),
-		b.eventBus.Subscribe(events.EventLogLine, b.handleLogLineEvent),
+		bus.Subscribe(events.EventRunStarted, handle),
+		bus.Subscribe(events.EventRunCompleted, handle),
+		bus.Subscribe(events.EventRunFailed, handle),
 	)
-	go b.flushLogBatchesLoop(ctx)
-	// A service emits a status snapshot only on an instance lifecycle change, so a
-	// stable always-on service falls silent for as long as it keeps running — long
-	// past the control plane's snapshot TTL, which then shows the service as having
-	// no live status. Re-push all snapshots on a ticker so the view stays fresh;
-	// sendReady is a no-op while no session is attached.
-	go b.resendServiceStatusLoop(ctx)
-}
-
-// resendServiceStatusLoop periodically re-pushes every service's supervisor
-// snapshot until ctx is cancelled (daemon shutdown).
-func (b *EventBridge) resendServiceStatusLoop(ctx context.Context) {
-	defer crashguard.Guard()
-	ticker := time.NewTicker(serviceStatusResendInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			b.EmitAllServiceStatus()
-		}
-	}
 }
 
 // Shutdown removes all event subscriptions.
 func (b *EventBridge) Shutdown() {
 	for _, unsubscribe := range b.unsubscribers {
-		if unsubscribe != nil {
-			unsubscribe()
-		}
+		unsubscribe()
 	}
 	b.unsubscribers = nil
 }
 
+// handleRunEvent runs on the publisher's goroutine (the bus is synchronous),
+// so the finished update is stored before the run leaves the tracker: hello's
+// inventory never misses an execution in between.
 func (b *EventBridge) handleRunEvent(ctx context.Context, event events.Event) {
 	runEvent, ok := event.Data.(events.RunEvent)
 	if !ok || runEvent.Run == nil {
 		return
 	}
-
 	run := runEvent.Run
 
-	// Service-instance lifecycle changes (start / exit / supervisor restart)
-	// carry no station execution id: they refresh the service's status snapshot
-	// rather than flip an execution row. Station keeps only the latest snapshot
-	// (no per-instance rows), mirroring the system-stats heartbeat pattern.
-	// Non-service local runs return ok=false from ServiceSnapshot and no-op.
+	// A service instance's lifecycle (start, exit, supervisor restart) has no
+	// execution id: it changes the service's status, not an execution.
 	if run.ExecutionID == nil {
-		b.emitServiceStatus(run.TaskName)
+		if sess := b.client.current(); sess != nil {
+			sess.serviceChanged(run.TaskName)
+		}
 		return
 	}
-	executionID := *run.ExecutionID
-	update := mapRunToExecutionUpdate(run)
+	update := executionUpdate(run)
 	if update == nil {
 		return
 	}
-
-	terminal := run.Status.IsTerminal()
+	executionID := *run.ExecutionID
+	b.client.outbox.append(update)
 
 	if run.Status == model.PhaseRunning {
-		b.tracker.TrackRunning(executionID, run.StartedAt)
-		logFilePath := logutil.ResolveRunLogPath(b.handler.logDir, run.TaskName, run.ID, run.CreatedAt)
-		b.handler.uploader.StartStream(ctx, executionID, logFilePath, b.sendReady)
-	}
-	if terminal {
-		b.tracker.Remove(executionID)
-	}
-
-	if !terminal {
-		b.tracker.QueueUpdate(*update, b.sendReady)
+		b.client.tracker.TrackRunning(executionID)
+		logFilePath := logutil.ResolveRunLogPath(b.client.deps.LogDir, run.TaskName, run.ID, run.CreatedAt)
+		b.client.uploader.StartStream(ctx, executionID, logFilePath)
 		return
 	}
-
-	// Terminal path (off the publishing goroutine so the runtime's `execute`
-	// returns promptly and frees the concurrency slot): report the terminal
-	// state immediately, then archive and late-attach the coordinates.
-	go b.finalizeRun(ctx, run, *update, executionID)
+	b.client.tracker.Remove(executionID)
+	// Off the publisher's goroutine: the upload can take a while, and the
+	// runtime's execute must return to free the concurrency slot.
+	go b.finalizeRun(ctx, run)
 }
 
-// finalizeRun sends the terminal update immediately (no logPath) so the
-// station flips the row the moment the process exits, then runs the archive
-// upload (gzip + signed PUT, up to 90s) and queues a second identical
-// terminal update carrying logPath/logSize. The second update loses the
-// station's guarded terminal race by design; the statewriter late-attaches
-// its archive coordinates to the already-terminal row.
-func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run, update protocol.ExecutionUpdateMessage, executionID string) {
+// finalizeRun archives a finished run's log and stores a second finished
+// update carrying the archive. The station keeps the first one's outcome and
+// attaches the log.
+func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run) {
 	defer crashguard.Guard()
-	// Ship the still-coalescing tail before the terminal update: viewers close
-	// the live stream on terminal, so lines sent after it never reach them.
-	b.flushLogBatch(executionID)
-	b.tracker.QueueUpdate(update, b.sendReady)
-
 	// Stop streaming before the archive removes the log file it tails.
-	chunks, streamed := b.handler.uploader.StopStream(ctx, executionID)
-	logFilePath := logutil.ResolveRunLogPath(b.handler.logDir, run.TaskName, run.ID, run.CreatedAt)
-	result, err := b.handler.uploader.Archive(ctx, executionID, logFilePath)
-	switch {
-	case err != nil:
-		slog.Warn("log archival failed; archive coordinates not reported", "executionId", executionID, "err", err)
-	case result != nil:
-		update.LogPath = &result.LogPath
-		update.LogSize = &result.LogSize
-		if streamed {
-			// Sent even when zero: it tells the station there is nothing to
-			// clean up rather than leaving it to look.
-			update.LogChunks = &chunks
-		}
-		b.tracker.QueueUpdate(update, b.sendReady)
+	chunks := b.client.uploader.StopStream(ctx, *run.ExecutionID)
+	if archived := b.client.uploader.Archive(ctx, run, chunks); archived != nil {
+		update := executionUpdate(run)
+		update.Log = archived
+		b.client.outbox.append(update)
 	}
-
-	b.handler.RemoveLogListener(executionID)
-}
-
-// EmitAllServiceStatus pushes the current supervisor snapshot for every
-// registered service. Called on each (re)connect (for an immediate refresh) and
-// on the resend ticker, so the control plane's view survives its snapshot TTL
-// for a service that produces no lifecycle events. Best-effort like
-// emitServiceStatus: sendReady drops while no session is attached.
-func (b *EventBridge) EmitAllServiceStatus() {
-	for _, svc := range b.handler.taskManager.ListServiceTasks() {
-		if svc == nil {
-			continue
-		}
-		b.emitServiceStatus(svc.Name)
-	}
-}
-
-// emitServiceStatus pushes the current supervisor snapshot for a service task
-// to the station. A no-op for unknown / non-service tasks. Best-effort: a full
-// outbound queue drops the snapshot rather than blocking the supervisor — the
-// next lifecycle change or resend-ticker tick corrects the view.
-func (b *EventBridge) emitServiceStatus(taskName string) {
-	snapshot, ok := b.handler.taskManager.ServiceSnapshot(taskName)
-	if !ok {
-		return
-	}
-	_ = b.sendReady(NewServiceStatusMessage(snapshot))
-}
-
-func (b *EventBridge) handleLogLineEvent(event events.Event) {
-	logEvent, ok := event.Data.(events.LogLineEvent)
-	if !ok || logEvent.ExecutionID == "" {
-		return
-	}
-	if !b.handler.IsLogListener(logEvent.ExecutionID) {
-		return
-	}
-	item := protocol.LogLineEntry{
-		N:         logEvent.LineNum,
-		Ts:        logEvent.Timestamp,
-		Stream:    protocol.Stream(logEvent.Stream),
-		Text:      logEvent.Text,
-		Continued: logEvent.Continued,
-	}
-	execID := logEvent.ExecutionID
-
-	var full []protocol.LogLineEntry
-	b.batchMu.Lock()
-	b.pendingLogs[execID] = append(b.pendingLogs[execID], item)
-	if len(b.pendingLogs[execID]) >= logBatchMaxLines {
-		full = b.pendingLogs[execID]
-		delete(b.pendingLogs, execID)
-	}
-	b.batchMu.Unlock()
-
-	// Flush on a full batch immediately (bounds frame size under a firehose);
-	// otherwise the window loop ships it within logBatchWindow.
-	if full != nil {
-		b.sendLogBatch(execID, full)
-	}
-}
-
-// flushLogBatchesLoop ships coalesced log batches every logBatchWindow until
-// the session context is cancelled. Mirrors the heartbeat/watchdog loop shape.
-func (b *EventBridge) flushLogBatchesLoop(ctx context.Context) {
-	ticker := time.NewTicker(logBatchWindow)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			b.flushLogBatches()
-		}
-	}
-}
-
-// flushLogBatches drains every pending per-execution buffer into one log:lines
-// frame each. Snapshots under the lock, sends after releasing it so a slow
-// send never blocks the executor goroutine appending new lines.
-func (b *EventBridge) flushLogBatches() {
-	b.batchMu.Lock()
-	if len(b.pendingLogs) == 0 {
-		b.batchMu.Unlock()
-		return
-	}
-	batches := b.pendingLogs
-	b.pendingLogs = make(map[string][]protocol.LogLineEntry)
-	b.batchMu.Unlock()
-
-	for execID, lines := range batches {
-		b.sendLogBatch(execID, lines)
-	}
-}
-
-// flushLogBatch ships execID's pending lines now instead of on the next window.
-func (b *EventBridge) flushLogBatch(execID string) {
-	b.batchMu.Lock()
-	lines := b.pendingLogs[execID]
-	delete(b.pendingLogs, execID)
-	b.batchMu.Unlock()
-	if len(lines) > 0 {
-		b.sendLogBatch(execID, lines)
-	}
-}
-
-// sendLogBatch pushes one coalesced frame. Best-effort: a full outbound queue
-// drops the batch rather than blocking the run, and the viewer backfills the
-// gap via log:replayRequest.
-func (b *EventBridge) sendLogBatch(execID string, lines []protocol.LogLineEntry) {
-	_ = b.sendReady(NewLogLinesMessage(execID, lines))
 }

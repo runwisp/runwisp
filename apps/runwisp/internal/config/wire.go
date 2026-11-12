@@ -890,6 +890,7 @@ func (w *storageWire) toStorage() (Storage, error) {
 type daemonWire struct {
 	Name                 string `toml:"name,omitempty"`
 	AllowStationDispatch bool   `toml:"allow_station_dispatch,omitempty"`
+	AllowStationUpgrade  bool   `toml:"allow_station_upgrade,omitempty"`
 	ShutdownTimeout      string `toml:"shutdown_timeout,omitempty"`
 	ExternalURL          string `toml:"external_url,omitempty"`
 	// CheckUpdates is a pointer so an omitted key (nil → default true) is
@@ -958,6 +959,7 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 	return Daemon{
 		Name:                 strings.TrimSpace(w.Name),
 		AllowStationDispatch: w.AllowStationDispatch,
+		AllowStationUpgrade:  w.AllowStationUpgrade,
 		ShutdownTimeout:      shutdown,
 		ExternalURL:          externalURL,
 		CheckUpdates:         checkUpdates,
