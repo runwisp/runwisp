@@ -1311,16 +1311,16 @@ func TestGetActiveRunCount_KnownTaskWithNoActiveIsZero(t *testing.T) {
 	assert.Equal(t, 0, jm.GetActiveRunCount("idle"))
 }
 
-func TestTerminateRunByExecutionID_NotFound(t *testing.T) {
+func TestStopRunByExecutionID_NotFound(t *testing.T) {
 	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
-	err := jm.TerminateRunByExecutionID("unknown-ext-id")
+	err := jm.StopRunByExecutionID("unknown-ext-id", 0, false)
 	assert.Error(t, err)
 }
 
-// TestTerminateRunByExecutionID_MatchesActiveRun exercises the positive
+// TestStopRunByExecutionID_MatchesActiveRun exercises the positive
 // path: a run triggered with an ExecutionID is cancelled by passing the
-// same external ID into TerminateRunByExecutionID.
-func TestTerminateRunByExecutionID_MatchesActiveRun(t *testing.T) {
+// same external ID into StopRunByExecutionID.
+func TestStopRunByExecutionID_MatchesActiveRun(t *testing.T) {
 	jm, exec, _ := newGatedManager(t)
 
 	task := testTask("task1", model.PolicySkip, 1)
@@ -1333,7 +1333,7 @@ func TestTerminateRunByExecutionID_MatchesActiveRun(t *testing.T) {
 	require.NoError(t, err)
 
 	exec.WaitStarted(t) // the run is active and holds its external ID
-	require.NoError(t, jm.TerminateRunByExecutionID("ext-123"))
+	require.NoError(t, jm.StopRunByExecutionID("ext-123", 0, false))
 }
 
 func TestStopService_TaskNotFound(t *testing.T) {

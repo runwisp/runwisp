@@ -154,10 +154,8 @@ func New(opts Options) *RoutingExecutor {
 	// HTTP and the code-executing types require the dispatch opt-in.
 	if !opts.StationDispatchEnabled {
 		const reason = "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)"
-		avail.HTTP = BackendStatus{Available: false, Reason: reason}
-		avail.Shell = BackendStatus{Available: false, Reason: reason}
-		avail.Container = BackendStatus{Available: false, Reason: reason}
-		avail.Compose = BackendStatus{Available: false, Reason: reason}
+		disabled := BackendStatus{Available: false, Reason: reason, Policy: true}
+		avail.HTTP, avail.Shell, avail.Container, avail.Compose = disabled, disabled, disabled, disabled
 	} else {
 		// Container and compose report available even without Docker: both
 		// backends probe lazily, so a missing engine surfaces at run time.
