@@ -866,7 +866,7 @@ components:
         and all lines were sent, or after log:unsubscribe.
       properties:
         executionId: { type: string }
-        fromLine: { type: integer, format: int64, description: First absolute line; 0 = start. }
+        fromLine: { type: integer, format: int64, description: "First absolute line; 0 = start; negative = the last -fromLine lines (a tail)." }
         follow: { type: boolean }
         limit: { type: integer, format: int64, description: 0 = no limit. }
       required: [executionId, fromLine, follow]

@@ -60,11 +60,12 @@ func (s *session) streamLog(ctx context.Context, id string, req protocol.LogSubs
 		cancel()
 	}()
 
+	path := logutil.ResolveRunLogPath(s.client.deps.LogDir, run.TaskName, run.ID, run.CreatedAt)
 	sub := &logSubscription{
 		sess:    s,
 		replyTo: id,
-		path:    logutil.ResolveRunLogPath(s.client.deps.LogDir, run.TaskName, run.ID, run.CreatedAt),
-		next:    max(req.FromLine, 0),
+		path:    path,
+		next:    startLine(path, req.FromLine),
 		limit:   req.Limit,
 		budget:  s.maxFrameBytes() / 2,
 	}
@@ -94,6 +95,19 @@ func (s *session) streamLog(ctx context.Context, id string, req protocol.LogSubs
 		return sub.end(ended && caughtUp), nil
 	}
 	return sub.tail(ctx, live, finished), nil
+}
+
+// startLine resolves a subscription's fromLine: a negative one asks for a
+// tail, the last -fromLine lines on disk.
+func startLine(path string, from int64) int64 {
+	if from >= 0 {
+		return from
+	}
+	_, first, total, err := logutil.ReadLineRange(path, 0, 1)
+	if err != nil {
+		return 0
+	}
+	return logutil.ResolveStartLine(from, first, total)
 }
 
 // followRun subscribes to a run's live lines and its end.

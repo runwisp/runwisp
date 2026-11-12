@@ -134,6 +134,21 @@ func TestLogSubscribe_LimitWithoutFollow(t *testing.T) {
 	assert.Equal(t, protocol.LogSubscribeResult{NextLine: 4}, res)
 }
 
+// A negative fromLine asks for a tail: the last -fromLine lines on disk.
+func TestLogSubscribe_NegativeFromLineIsATail(t *testing.T) {
+	st := stationtest.New(t)
+	h := newHarness(t, st, nil)
+	log := newRunLog(t, h, "e1")
+	log.write(t, 0, 6, nil)
+	h.start(t)
+
+	id := st.Command(t, "log:subscribe", protocol.LogSubscribe{ExecutionID: "e1", FromLine: -2})
+	assert.Equal(t, []int64{4, 5}, lineNumbers(collectLines(t, st, id, 2)))
+	var res protocol.LogSubscribeResult
+	require.True(t, st.Result(t, id, &res).Ok)
+	assert.Equal(t, int64(6), res.NextLine)
+}
+
 func TestLogSubscribe_UnsubscribeEndsWithResult(t *testing.T) {
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)

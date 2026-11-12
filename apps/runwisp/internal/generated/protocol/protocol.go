@@ -500,7 +500,7 @@ type LogArchive struct {
 // and all lines were sent, or after log:unsubscribe.
 type LogSubscribe struct {
 	ExecutionID string `json:"executionId"`
-	// First absolute line; 0 = start.
+	// First absolute line; 0 = start; negative = the last -fromLine lines (a tail).
 	FromLine int64 `json:"fromLine"`
 	Follow   bool  `json:"follow"`
 	// 0 = no limit.
