@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Package logarchive uploads a single gzipped log file to a signed PUT URL
-// supplied by the control plane in the dispatch payload. It is intentionally
-// stateless: callers track which executions still need archiving.
+// Package logarchive uploads gzipped logs to the signed upload targets a
+// station hands out. It is intentionally stateless: callers track which
+// executions still need archiving.
 package logarchive
 
 import (
@@ -26,24 +26,29 @@ import (
 // MaxAttempts caps the retries on transient PUT failures.
 const MaxAttempts = 3
 
-// Archive gzips logFilePath and PUTs it to uploadURL. Returns the gzipped
+// Target is where one upload goes: the station's signed URL, the method and
+// the headers to send with it.
+type Target struct {
+	URL     string
+	Method  string
+	Headers map[string]string
+}
+
+// Archive gzips logFilePath and uploads it to target. Returns the gzipped
 // byte count on success. Retries up to MaxAttempts on network errors and
 // 5xx responses with exponential backoff. allowInsecure (local testing only)
 // also accepts http:// upload URLs; pair it with SafeClient(true).
-func Archive(ctx context.Context, client *http.Client, uploadURL, logFilePath string, allowInsecure bool) (int64, error) {
+func Archive(ctx context.Context, client *http.Client, target Target, logFilePath string, allowInsecure bool) (int64, error) {
 	if client == nil {
 		client = SafeClient(allowInsecure, "")
 	}
-	if uploadURL == "" {
-		return 0, errors.New("logarchive: empty upload URL")
-	}
-	// The URL originates from the (untrusted) control-plane peer. Reject
-	// non-https and internal targets before touching the disk so the daemon
-	// cannot be used as an SSRF egress toward internal services.
-	if err := validateUploadURL(uploadURL, allowInsecure); err != nil {
+	// The target comes from the (untrusted) station peer. Reject non-https
+	// and internal targets before touching the disk so the daemon cannot be
+	// used as an SSRF egress toward internal services.
+	if err := validateTarget(target, allowInsecure); err != nil {
 		return 0, &PermanentError{StatusCode: 0, Status: err.Error()}
 	}
-	return archive(ctx, client, uploadURL, logFilePath, uploadRetryDelays)
+	return archive(ctx, client, target, logFilePath, uploadRetryDelays)
 }
 
 // uploadRetryDelays are the waits between upload attempts: 2s, then 4s.
@@ -52,8 +57,8 @@ var uploadRetryDelays = [MaxAttempts - 1]time.Duration{2 * time.Second, 4 * time
 // archive performs the gzip + retrying PUT without URL validation, waiting
 // delays between attempts. Split out of Archive so transport tests can
 // exercise the mechanics against a loopback test server, which
-// validateUploadURL rejects, without real-time waits.
-func archive(ctx context.Context, client *http.Client, uploadURL, logFilePath string, delays [MaxAttempts - 1]time.Duration) (int64, error) {
+// validateTarget rejects, without real-time waits.
+func archive(ctx context.Context, client *http.Client, target Target, logFilePath string, delays [MaxAttempts - 1]time.Duration) (int64, error) {
 	compressed, size, err := gzipFile(logFilePath)
 	if err != nil {
 		return 0, err
@@ -61,7 +66,7 @@ func archive(ctx context.Context, client *http.Client, uploadURL, logFilePath st
 	defer compressed.Close()
 
 	for attempt := 0; ; attempt++ {
-		err = putOnce(ctx, client, uploadURL, compressed, size)
+		err = putOnce(ctx, client, target, compressed, size)
 		if err == nil {
 			return size, nil
 		}
@@ -82,22 +87,22 @@ func archive(ctx context.Context, client *http.Client, uploadURL, logFilePath st
 	}
 }
 
-// PutChunk gzips data as one member and PUTs it to uploadURL once, returning
+// PutChunk gzips data as one member and uploads it to target once, returning
 // the gzipped byte count. No retries: the incremental log streamer retries the
 // same chunk on its next tick, by which time it may have grown. A 4xx comes
 // back as *PermanentError.
-func PutChunk(ctx context.Context, client *http.Client, uploadURL string, data []byte, allowInsecure bool) (int64, error) {
+func PutChunk(ctx context.Context, client *http.Client, target Target, data []byte, allowInsecure bool) (int64, error) {
 	if client == nil {
 		client = SafeClient(allowInsecure, "")
 	}
-	if err := validateUploadURL(uploadURL, allowInsecure); err != nil {
+	if err := validateTarget(target, allowInsecure); err != nil {
 		return 0, &PermanentError{StatusCode: 0, Status: err.Error()}
 	}
-	return putChunk(ctx, client, uploadURL, data)
+	return putChunk(ctx, client, target, data)
 }
 
 // putChunk is PutChunk without URL validation, for loopback transport tests.
-func putChunk(ctx context.Context, client *http.Client, uploadURL string, data []byte) (int64, error) {
+func putChunk(ctx context.Context, client *http.Client, target Target, data []byte) (int64, error) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	if _, err := gz.Write(data); err != nil {
@@ -107,7 +112,7 @@ func putChunk(ctx context.Context, client *http.Client, uploadURL string, data [
 		return 0, fmt.Errorf("logarchive: close gzip writer: %w", err)
 	}
 	size := int64(buf.Len())
-	if err := putOnce(ctx, client, uploadURL, bytes.NewReader(buf.Bytes()), size); err != nil {
+	if err := putOnce(ctx, client, target, bytes.NewReader(buf.Bytes()), size); err != nil {
 		return 0, err
 	}
 	return size, nil
@@ -155,21 +160,24 @@ func gzipFile(path string) (*os.File, int64, error) {
 	return tmp, info.Size(), nil
 }
 
-func putOnce(ctx context.Context, client *http.Client, uploadURL string, compressed io.ReaderAt, size int64) error {
+func putOnce(ctx context.Context, client *http.Client, target Target, compressed io.ReaderAt, size int64) error {
 	body := io.NopCloser(io.NewSectionReader(compressed, 0, size))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, body)
+	req, err := http.NewRequestWithContext(ctx, strings.ToUpper(target.Method), target.URL, body)
 	if err != nil {
-		return fmt.Errorf("build PUT request: %w", err)
+		// The error may echo the signed URL, a bearer credential.
+		return errors.New("logarchive: can't build the upload request")
 	}
-	// The body is gzip-compressed, but advertise it as gzip-encoded text rather
-	// than an application/gzip blob: the upload target stores and replays these
-	// headers, so a browser fetching the archive back transparently decompresses
-	// it and renders the log as plain text. (Content-Type/Content-Encoding are
-	// not part of the upload URL's signature, so setting them here does not
-	// break it.)
-	req.Header.Set("Content-Encoding", "gzip")
-	req.Header.Set("Content-Type", "text/plain; charset=utf-8")
-	req.Header.Set("Content-Length", fmt.Sprintf("%d", size))
+	// The target's headers are sent exactly as given: they can be part of
+	// what the URL's signature covers. A target that names none gets the
+	// body described as gzip-encoded text, so a browser fetching the archive
+	// back decompresses it and renders the log as plain text.
+	if len(target.Headers) == 0 {
+		req.Header.Set("Content-Encoding", "gzip")
+		req.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	}
+	for k, v := range target.Headers {
+		req.Header.Set(k, v)
+	}
 	req.ContentLength = size
 
 	resp, err := client.Do(req)
@@ -179,7 +187,7 @@ func putOnce(ctx context.Context, client *http.Client, uploadURL string, compres
 			// A signed upload URL is a bearer credential. net/http includes the
 			// complete URL in url.Error, so unwrap only the transport cause before
 			// the error reaches daemon logs.
-			return fmt.Errorf("logarchive: PUT request failed: %w", urlErr.Err)
+			return fmt.Errorf("logarchive: upload request failed: %w", urlErr.Err)
 		}
 		return err
 	}
@@ -197,7 +205,7 @@ func putOnce(ctx context.Context, client *http.Client, uploadURL string, compres
 	return fmt.Errorf("upload failed: %s", resp.Status)
 }
 
-// PermanentError signals a non-retryable PUT response (4xx).
+// PermanentError signals a non-retryable upload response (4xx).
 type PermanentError struct {
 	StatusCode int
 	Status     string
@@ -207,13 +215,19 @@ func (e *PermanentError) Error() string {
 	return fmt.Sprintf("logarchive: permanent failure: %s", e.Status)
 }
 
-// validateUploadURL rejects any upload target that isn't an https URL with a
-// host (http is also accepted when allowInsecure). Scheme/host are checked
+// validateTarget rejects an upload target whose method isn't PUT or POST or
+// whose URL isn't https with a host (http is also accepted when
+// allowInsecure). Scheme/host are checked
 // offline here; the resolved IPs (including IP-literal hosts and DNS-rebind
 // targets) are rejected at connect time by SafeClient's dialer, so the daemon
 // never PUTs to an internal address.
-func validateUploadURL(rawURL string, allowInsecure bool) error {
-	parsed, err := url.Parse(rawURL)
+func validateTarget(target Target, allowInsecure bool) error {
+	switch strings.ToUpper(target.Method) {
+	case http.MethodPut, http.MethodPost:
+	default:
+		return fmt.Errorf("logarchive: upload method must be PUT or POST, got %q", target.Method)
+	}
+	parsed, err := url.Parse(target.URL)
 	if err != nil {
 		// url.Parse may echo a signed URL, including its query credentials.
 		return errors.New("logarchive: invalid upload URL")

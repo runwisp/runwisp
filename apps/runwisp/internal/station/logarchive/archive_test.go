@@ -50,7 +50,7 @@ func TestArchiveSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	size, err := archive(context.Background(), srv.Client(), srv.URL, logPath, noDelays)
+	size, err := archive(context.Background(), srv.Client(), put(srv.URL), logPath, noDelays)
 	if err != nil {
 		t.Fatalf("archive: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestArchiveRetriesOn5xx(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := archive(context.Background(), srv.Client(), srv.URL, logPath, noDelays); err != nil {
+	if _, err := archive(context.Background(), srv.Client(), put(srv.URL), logPath, noDelays); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
 	if got := attempts.Load(); got != 2 {
@@ -131,7 +131,7 @@ func TestArchiveGivesUpAfterMaxAttempts(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := archive(context.Background(), srv.Client(), srv.URL, logPath, noDelays)
+	_, err := archive(context.Background(), srv.Client(), put(srv.URL), logPath, noDelays)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "upload failed after 3 attempts")
 	assert.Equal(t, int32(MaxAttempts), attempts.Load())
@@ -146,7 +146,7 @@ func TestArchivePermanentError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := archive(context.Background(), srv.Client(), srv.URL, logPath, noDelays)
+	_, err := archive(context.Background(), srv.Client(), put(srv.URL), logPath, noDelays)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -161,12 +161,12 @@ func TestArchivePermanentError(t *testing.T) {
 
 func TestArchiveEmptyURL(t *testing.T) {
 	logPath := writeLog(t, "x")
-	if _, err := Archive(context.Background(), nil, "", logPath, false); err == nil {
+	if _, err := Archive(context.Background(), nil, put(""), logPath, false); err == nil {
 		t.Fatal("expected error")
 	}
 }
 
-func TestValidateUploadURL(t *testing.T) {
+func TestValidateTarget(t *testing.T) {
 	cases := []struct {
 		name    string
 		url     string
@@ -181,12 +181,12 @@ func TestValidateUploadURL(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			err := validateUploadURL(c.url, false)
+			err := validateTarget(put(c.url), false)
 			if c.wantErr && err == nil {
-				t.Fatalf("validateUploadURL(%q) = nil, want error", c.url)
+				t.Fatalf("validateTarget(%q) = nil, want error", c.url)
 			}
 			if !c.wantErr && err != nil {
-				t.Fatalf("validateUploadURL(%q) = %v, want nil", c.url, err)
+				t.Fatalf("validateTarget(%q) = %v, want nil", c.url, err)
 			}
 		})
 	}
@@ -196,7 +196,7 @@ func TestArchiveRejectsNonHTTPSURL(t *testing.T) {
 	logPath := writeLog(t, "secret log data")
 	// A non-https URL is rejected as a permanent failure before any network
 	// call, so the daemon can't be used as a plaintext SSRF egress.
-	_, err := Archive(context.Background(), nil, "http://169.254.169.254/steal", logPath, false)
+	_, err := Archive(context.Background(), nil, put("http://169.254.169.254/steal"), logPath, false)
 	if err == nil {
 		t.Fatal("expected error for non-https URL")
 	}
@@ -215,14 +215,14 @@ func TestArchiveAllowInsecureReachesLoopbackHTTP(t *testing.T) {
 
 	// A local dev stack's object storage is plain http on a private address:
 	// hardened by default, reachable only with the insecure opt-in.
-	_, err := Archive(context.Background(), nil, srv.URL+"/key", logPath, false)
+	_, err := Archive(context.Background(), nil, put(srv.URL+"/key"), logPath, false)
 	require.Error(t, err)
-	_, err = Archive(context.Background(), nil, srv.URL+"/key", logPath, true)
+	_, err = Archive(context.Background(), nil, put(srv.URL+"/key"), logPath, true)
 	require.NoError(t, err)
 }
 
 func TestArchiveInvalidSignedURLDoesNotEchoCredentials(t *testing.T) {
-	_, err := Archive(context.Background(), nil, "https://upload.example/%zz?token=secret", "/does/not/exist", false)
+	_, err := Archive(context.Background(), nil, put("https://upload.example/%zz?token=secret"), "/does/not/exist", false)
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "token")
 	assert.NotContains(t, err.Error(), "secret")
@@ -237,7 +237,7 @@ func TestPutOnceDoesNotEchoSignedURLOnTransportError(t *testing.T) {
 	require.NoError(t, err)
 
 	client := &http.Client{Transport: errorRoundTripper{err: errors.New("dial failed")}}
-	err = putOnce(context.Background(), client, "https://upload.example/put?X-Amz-Signature=secret", compressed, 4)
+	err = putOnce(context.Background(), client, put("https://upload.example/put?X-Amz-Signature=secret"), compressed, 4)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "dial failed")
 	assert.NotContains(t, err.Error(), "X-Amz-Signature")
@@ -332,3 +332,30 @@ func TestPermanentError_Error(t *testing.T) {
 
 // noDelays retries immediately so tests don't wait out the real 2s/4s delays.
 var noDelays [MaxAttempts - 1]time.Duration
+
+func put(url string) Target { return Target{URL: url, Method: http.MethodPut} }
+
+func TestArchiveSendsTargetMethodAndHeadersExactly(t *testing.T) {
+	var gotMethod, gotEncoding, gotType, gotCustom string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotEncoding = r.Header.Get("Content-Encoding")
+		gotType = r.Header.Get("Content-Type")
+		gotCustom = r.Header.Get("X-Upload-Token")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	target := Target{URL: srv.URL, Method: "post", Headers: map[string]string{"X-Upload-Token": "abc", "Content-Type": "application/gzip"}}
+	_, err := archive(context.Background(), srv.Client(), target, writeLog(t, "line\n"), noDelays)
+	require.NoError(t, err)
+	assert.Equal(t, http.MethodPost, gotMethod)
+	assert.Equal(t, "abc", gotCustom)
+	assert.Equal(t, "application/gzip", gotType)
+	assert.Empty(t, gotEncoding, "a target with headers gets exactly those headers")
+}
+
+func TestValidateTargetRejectsOtherMethods(t *testing.T) {
+	err := validateTarget(Target{URL: "https://uploads.example.com/key", Method: "DELETE"}, false)
+	require.Error(t, err)
+}
