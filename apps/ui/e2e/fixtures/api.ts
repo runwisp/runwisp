@@ -105,10 +105,12 @@ export async function getLatestRun(
     return body.items[0];
 }
 
-/** Poll the API until the run reaches the terminal `ended` phase. */
+/** Poll the API until the run reaches the terminal `ended` phase. A 404 right
+ * after a trigger only means persistence hasn't caught up yet (it is async), so
+ * it keeps polling instead of failing the way `getRun` would. */
 export async function waitForRunEnded(
     page: Page,
-    taskName: string,
+    _taskName: string,
     runId: string,
     token: string,
     timeout = 20_000,
@@ -117,7 +119,12 @@ export async function waitForRunEnded(
     await expect
         .poll(
             async () => {
-                latest = await getRun(page, taskName, runId, token);
+                const response = await page.request.get(`/api/runs/${runId}`, {
+                    headers: authHeaders(token),
+                });
+                if (response.status() === 404) return "not persisted yet";
+                expect(response.status(), `get run ${runId}`).toBe(200);
+                latest = (await response.json()) as Run;
                 return latest.status;
             },
             { timeout, message: `run ${runId} should reach ended` },
