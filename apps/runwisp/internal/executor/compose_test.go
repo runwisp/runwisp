@@ -621,6 +621,21 @@ func TestComposeBackend_Available_FalseWhenAbsent(t *testing.T) {
 	assert.False(t, b.available(context.Background()))
 }
 
+func TestComposeBackend_ProbeNeedsAnEngine(t *testing.T) {
+	dir := t.TempDir()
+	// The CLI answers `compose version`; `docker version` fails until the
+	// engine file exists, like a CLI with no daemon behind it.
+	installDockerShimScript(t, dir, "#!/bin/sh\n[ \"$1\" = compose ] && exit 0\n[ -e "+dir+"/engine ]\n")
+	b := &ComposeBackend{dockerCmd: "docker"}
+
+	err := b.Probe(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no Docker or Podman engine reachable")
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "engine"), nil, 0o600))
+	assert.NoError(t, b.Probe(t.Context()))
+}
+
 // TestComposeBackend_ProcessGroupSIGTERMReapsChildren mirrors the ShellBackend
 // process-group test: the shim spawns a long-lived child and waits on it.
 // Cancelling the context must SIGTERM the whole group so both the docker shim

@@ -107,14 +107,14 @@ run = "echo hi"
 		cfg, err := Load(path)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"172.16.0.0/12"}, cfg.Daemon.TrustedProxies, "Load alone ignores the env var")
-		require.NoError(t, ApplyTrustedProxiesEnv(cfg))
+		require.NoError(t, ApplyDaemonEnv(cfg))
 		assert.Equal(t, []string{"192.168.1.1/32", "10.0.0.0/8"}, cfg.Daemon.TrustedProxies,
 			"a reload must see the env list, not a TOML edit that can't take effect")
 
 		t.Setenv("RUNWISP_TRUSTED_PROXIES", "0.0.0.0/0")
 		_, err = Load(path)
 		require.NoError(t, err, "a bad env value must not fail commands that only read the config")
-		err = ApplyTrustedProxiesEnv(cfg)
+		err = ApplyDaemonEnv(cfg)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "RUNWISP_TRUSTED_PROXIES")
 	})

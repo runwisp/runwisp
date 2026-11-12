@@ -272,6 +272,8 @@ trigger tasks defined in `runwisp.toml`.
 - Ad-hoc runs never change your task definitions. They are logged and stored
   like any other run.
 - They run with the daemon's privileges. Enable this only if you need it.
+- The `RUNWISP_ALLOW_STATION_DISPATCH` env var (`true` or `false`) overrides
+  this key.
 
 ```toml title="runwisp.toml"
 [daemon]

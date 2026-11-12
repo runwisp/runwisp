@@ -36,8 +36,10 @@ type Target struct {
 
 // Archive gzips logFilePath and uploads it to target. Returns the gzipped
 // byte count on success. Retries up to MaxAttempts on network errors and
-// 5xx responses with exponential backoff. allowInsecure (local testing only)
-// also accepts http:// upload URLs; pair it with SafeClient(true).
+// 5xx responses with exponential backoff. allowInsecure also accepts http://
+// upload URLs; pair it with SafeClient(true). Plain http:// sends the runner
+// token and every command unencrypted: fine on a network you trust
+// (localhost, your LAN, a VPN like Tailscale); use HTTPS anywhere else.
 func Archive(ctx context.Context, client *http.Client, target Target, logFilePath string, allowInsecure bool) (int64, error) {
 	if client == nil {
 		client = SafeClient(allowInsecure, "")
@@ -253,9 +255,8 @@ func rejectInternalIP(ip net.IP) error {
 // SafeClient returns the hardened http.Client used for peer-supplied uploads:
 // it refuses to follow redirects (a signed upload URL that 302s to an internal
 // host is a red flag) and re-validates every resolved IP at connect time to
-// defeat DNS rebinding. allowInsecure (RUNWISP_STATION_ALLOW_INSECURE, local
-// testing only) drops the IP check so a dev stack's private upload target is
-// reachable; redirects stay refused. trustedHost ("host:port", see HostPort),
+// defeat DNS rebinding. allowInsecure (RUNWISP_STATION_ALLOW_INSECURE) drops
+// the IP check so a private upload target is reachable; redirects stay refused. trustedHost ("host:port", see HostPort),
 // when non-empty, is exempt from the IP check: it is the configured Station,
 // which the daemon already trusts with a bearer-authenticated WebSocket, so a
 // Station on a LAN or Tailscale address can still receive archives. Every

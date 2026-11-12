@@ -37,8 +37,10 @@ cp "$entrypoint" "$work/bin/docker-entrypoint.sh"
 cp "$here/../runwisp.toml" "$work/share/runwisp/runwisp.toml"
 entrypoint="$work/bin/docker-entrypoint.sh"
 
-# Stub binary: echoes its own argv so we can assert on the exec'd command.
-printf '#!/bin/sh\necho "ARGV: runwisp $*"\n' >"$work/bin/runwisp"
+# Stub binary: echoes its own argv and RUNWISP_HOST so we can assert on the
+# exec'd command.
+# shellcheck disable=SC2016 # the stub expands these, not this script
+printf '#!/bin/sh\necho "ARGV: runwisp $*"\necho "HOST: ${RUNWISP_HOST:-}"\n' >"$work/bin/runwisp"
 # Stub mountpoint: a directory counts as mounted when it's listed in $work/mounts.
 cat >"$work/bin/mountpoint" <<EOF
 #!/bin/sh
@@ -81,7 +83,7 @@ expect() {
 	# the entrypoint reads, then apply the case's own assignments.
 	set +e
 	out=$(
-		unset RUNWISP_PASSWORD RUNWISP_AUTH RUNWISP_CONFIG RUNWISP_DATA RUNWISP_SOCKET
+		unset RUNWISP_PASSWORD RUNWISP_AUTH RUNWISP_CONFIG RUNWISP_DATA RUNWISP_SOCKET RUNWISP_HOST
 		# shellcheck disable=SC2086 # deliberate word splitting of the env list
 		eval export $env_args 2>/dev/null || true
 		# shellcheck disable=SC2086 # ENTRYPOINT_SH may be "busybox sh"
@@ -124,7 +126,6 @@ data="RUNWISP_DATA=$work/data"
 for argv in \
 	"runwisp daemon" \
 	"daemon" \
-	"runwisp station" \
 	"runwisp restart" \
 	"runwisp demo" \
 	"runwisp"; do
@@ -250,6 +251,30 @@ if [ "$(id -u)" -ne 0 ]; then
 		-- "$auth" "RUNWISP_CONFIG=$readonly_dir/runwisp.toml" "$data" -- runwisp daemon
 	chmod 755 "$readonly_dir"
 fi
+
+# ---------------------------------------------------------------------------
+# Station mode: no password and no runwisp.toml needed. Without a password the
+# Web UI binds loopback only; with one (or auth off) the image's host stands.
+# ---------------------------------------------------------------------------
+nocfg="RUNWISP_CONFIG=$work/nope.toml"
+expect "station: no password, no config" 0 "ARGV: runwisp station" \
+	-- "$nocfg" "$data" -- runwisp station
+expect "station: no password binds loopback" 0 "HOST: 127.0.0.1" \
+	-- "$nocfg" "$data" "RUNWISP_HOST=0.0.0.0" -- station
+expect "station: a password keeps the image's host" 0 "HOST: 0.0.0.0" \
+	-- "RUNWISP_PASSWORD=hunter2" "$nocfg" "$data" "RUNWISP_HOST=0.0.0.0" -- runwisp station
+expect "station: auth off keeps the image's host" 0 "HOST: 0.0.0.0" \
+	-- "$auth" "$nocfg" "$data" "RUNWISP_HOST=0.0.0.0" -- runwisp station
+expect "station: an existing config is still used" 0 "ARGV: runwisp station" \
+	-- "$cfg" "$data" -- runwisp station
+expect "station: a config directory is still an error" 1 "is a directory" \
+	-- "RUNWISP_CONFIG=$config_dir" "$data" -- runwisp station
+station_mount="$work/station-mount"
+mkdir -p "$station_mount"
+echo "$station_mount" >>"$work/mounts"
+expect "station: no starter is written" 0 "ARGV: runwisp station" \
+	-- "RUNWISP_CONFIG=$station_mount/runwisp.toml" "$data" -- runwisp station
+check "station: nothing written into the config mount" test ! -e "$station_mount/runwisp.toml"
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

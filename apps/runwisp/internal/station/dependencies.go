@@ -10,6 +10,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // TaskRunner is the slice of runtime.TaskManager the station integration
@@ -40,6 +41,10 @@ type ExternalRunGetter interface {
 	// GetRunByExecutionID returns the run tagged with the supplied
 	// station-side execution id, or storage.ErrNotFound if no such run exists.
 	GetRunByExecutionID(ctx context.Context, executionID string) (*model.Run, error)
+	// GetRun returns the run with the given id, or storage.ErrNotFound.
+	GetRun(ctx context.Context, id string) (*model.Run, error)
+	// QueryRuns lists runs matching q, newest first by default.
+	QueryRuns(ctx context.Context, q storage.RunQuery) ([]model.Run, error)
 }
 
 // EventSubscriber is the subset of the in-process event hub the station bridge

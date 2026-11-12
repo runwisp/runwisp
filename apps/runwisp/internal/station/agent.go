@@ -19,6 +19,7 @@ import (
 const (
 	featureAgentRestart = "agent.restart"
 	featureAgentUpgrade = "agent.upgrade"
+	featureServiceLogs  = "service.logs"
 )
 
 // execTypes maps each execution spec type to its feature name.
@@ -39,7 +40,7 @@ func featureForExecType(execType string) (name string, known bool) {
 
 // features reports every optional feature and whether it can be used now.
 func (client *Client) features() map[string]*protocol.FeatureStatus {
-	out := make(map[string]*protocol.FeatureStatus, len(execTypes)+2)
+	out := make(map[string]*protocol.FeatureStatus, len(execTypes)+3)
 	avail := client.handler.liveAvailability()
 	for execType, name := range execTypes {
 		status := avail.ForType(execType)
@@ -47,6 +48,7 @@ func (client *Client) features() map[string]*protocol.FeatureStatus {
 	}
 	out[featureAgentRestart] = featureStatus(client.restartBlocker())
 	out[featureAgentUpgrade] = featureStatus(client.upgradeBlocker())
+	out[featureServiceLogs] = featureStatus(nil)
 	return out
 }
 

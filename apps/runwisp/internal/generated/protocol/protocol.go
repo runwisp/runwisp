@@ -38,8 +38,9 @@ type Hello struct {
 	// Optional features this daemon understands, by name, with whether
 	// each can be used right now. A name that's absent is not understood.
 	// v1.0 names: exec.shell, exec.container, exec.compose, exec.http,
-	// exec.config, agent.restart, agent.upgrade. Everything else in this
-	// spec is baseline and has no feature name.
+	// exec.config, agent.restart, agent.upgrade. Added since v1.0:
+	// service.logs. Everything else in this spec is baseline and has no
+	// feature name.
 	Features map[string]*FeatureStatus `json:"features"`
 	// Operator-set labels (`[daemon] labels`). May be empty.
 	Labels map[string]string `json:"labels"`
@@ -521,6 +522,9 @@ type LogUnsubscribe struct {
 type LogLines struct {
 	Lines []LogLine `json:"lines"`
 	Gap   *LogGap   `json:"gap,omitzero"`
+	// Set on service:logs streams: the daemon run these lines belong to.
+	// Line numbers restart at 0 in each run.
+	RunID string `json:"runId,omitzero"`
 }
 
 // Lines [from, to) were dropped under backpressure; replay them if needed.
@@ -615,6 +619,22 @@ type ServiceApply struct {
 type ServiceControl struct {
 	TaskID string        `json:"taskId"`
 	Action ServiceAction `json:"action"`
+}
+
+// Streams log:lines (replyTo = this command's id) for one service
+// instance, like log:subscribe, each frame carrying its runId. A negative
+// fromLine tails the instance's output, reaching back into earlier runs
+// when the latest run is shorter. With follow it continues into each new
+// run of the instance and ends only on log:unsubscribe. Ends with a
+// result (LogSubscribeResult).
+type ServiceLogs struct {
+	// The service, as in service:control.
+	TaskID string `json:"taskId"`
+	// 0-based instance slot.
+	Instance int `json:"instance"`
+	// First line of the newest run; 0 = start; negative = the last -fromLine lines (a tail).
+	FromLine int64 `json:"fromLine"`
+	Follow   bool  `json:"follow"`
 }
 
 type ServiceAction string

@@ -54,7 +54,10 @@ type Dependencies struct {
 	LocalTasks   *runtime.TaskRegistry
 	LogDir       string
 	Availability executor.Availability
-	OnConnected  func()
+	// ProbeAvailability is Availability with the container engines checked
+	// (executor.RoutingExecutor.ProbedAvailability); nil keeps Availability.
+	ProbeAvailability func(ctx context.Context) executor.Availability
+	OnConnected       func()
 	// Timezone returns the live [daemon] timezone (an IANA name, kept current by
 	// reloads), the zone synced schedules default to. nil or an unloadable name
 	// falls back to UTC.
@@ -234,6 +237,7 @@ func reconnectDelay(err error, retry *backoff.Exponential) (time.Duration, error
 // reconnect backoff: a peer that drops every session at once would otherwise
 // turn the exponential curve into a tight loop.
 func (client *Client) connectOnce(ctx context.Context) (stable bool, err error) {
+	client.probeAvailability(ctx)
 	conn, err := client.dial(ctx)
 	if err != nil {
 		return false, err
@@ -315,6 +319,22 @@ func handshake(ctx context.Context, conn *websocket.Conn, hello protocol.Hello) 
 			slog.Debug("ignoring frame before welcome", "type", env.Type)
 		}
 	}
+}
+
+// availabilityProbeTimeout bounds the container engine checks before hello.
+const availabilityProbeTimeout = 2 * time.Second
+
+// probeAvailability re-checks the container engines, so hello reports
+// exec.container and exec.compose unavailable on a host without Docker.
+// ponytail: probed only on connect; an engine that starts or stops mid-session
+// shows at the next reconnect. Re-probe on a timer if that proves too stale.
+func (client *Client) probeAvailability(ctx context.Context) {
+	if client.deps.ProbeAvailability == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, availabilityProbeTimeout)
+	defer cancel()
+	client.handler.setAvailability(client.deps.ProbeAvailability(ctx))
 }
 
 // buildHello describes this daemon: identity, features, catalog hash and

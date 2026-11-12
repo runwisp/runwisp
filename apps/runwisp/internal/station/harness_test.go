@@ -6,6 +6,7 @@ package station
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// memRuns is a run store keyed by execution id.
+// memRuns is a run store keyed by run id.
 type memRuns struct {
 	mu   sync.Mutex
 	runs map[string]*model.Run
@@ -30,17 +31,42 @@ func (m *memRuns) put(run *model.Run) {
 	if m.runs == nil {
 		m.runs = map[string]*model.Run{}
 	}
-	m.runs[*run.ExecutionID] = run
+	m.runs[run.ID] = run
+}
+
+func (m *memRuns) find(match func(*model.Run) bool) (*model.Run, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, run := range m.runs {
+		if match(run) {
+			copied := *run
+			return &copied, nil
+		}
+	}
+	return nil, storage.ErrNotFound
 }
 
 func (m *memRuns) GetRunByExecutionID(_ context.Context, id string) (*model.Run, error) {
+	return m.find(func(r *model.Run) bool { return r.ExecutionID != nil && *r.ExecutionID == id })
+}
+
+func (m *memRuns) GetRun(_ context.Context, id string) (*model.Run, error) {
+	return m.find(func(r *model.Run) bool { return r.ID == id })
+}
+
+// QueryRuns honours the task name filter and paging, newest first.
+func (m *memRuns) QueryRuns(_ context.Context, q storage.RunQuery) ([]model.Run, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if run, ok := m.runs[id]; ok {
-		copied := *run
-		return &copied, nil
+	var out []model.Run
+	for _, run := range m.runs {
+		if q.Filter.TaskName == "" || run.TaskName == q.Filter.TaskName {
+			out = append(out, *run)
+		}
 	}
-	return nil, storage.ErrNotFound
+	slices.SortFunc(out, func(a, b model.Run) int { return b.CreatedAt.Compare(a.CreatedAt) })
+	out = out[min(q.Offset, len(out)):]
+	return out[:min(q.Limit, len(out))], nil
 }
 
 // harness is a station client wired to a scripted station, an in-memory run

@@ -192,7 +192,7 @@ func loadConfig(src config.Source, stationEnabled bool) (*config.Config, error) 
 	if stationEnabled {
 		cfg := &config.Config{}
 		config.ApplyDefaults(cfg)
-		if perr := config.ApplyTrustedProxiesEnv(cfg); perr != nil {
+		if perr := config.ApplyDaemonEnv(cfg); perr != nil {
 			return nil, perr
 		}
 		return cfg, nil

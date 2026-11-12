@@ -110,13 +110,21 @@ func applyTLSEnvOverride(cfg *Config) error {
 	return nil
 }
 
-// ApplyTrustedProxiesEnv lets RUNWISP_TRUSTED_PROXIES (comma-separated)
-// override [daemon] trusted_proxies. Only the daemon calls it, at boot and on
-// every reload, so a reload sees no trusted_proxies change while the env var
-// pins the list. It stays out of Load so a stray value in the operator's shell
-// can't fail `validate`, `list`, `import` and the other commands that never
-// serve HTTP.
-func ApplyTrustedProxiesEnv(cfg *Config) error {
+// ApplyDaemonEnv applies the env overrides only the daemon reads:
+// RUNWISP_TRUSTED_PROXIES (comma-separated) for [daemon] trusted_proxies and
+// RUNWISP_ALLOW_STATION_DISPATCH for [daemon] allow_station_dispatch. The
+// daemon calls it at boot and on every reload, so a reload sees no change to
+// either while an env var pins it (allow_station_dispatch isn't reloadable).
+// It stays out of Load so a stray value in the operator's shell can't fail
+// `validate`, `list`, `import` and the other commands that never serve.
+func ApplyDaemonEnv(cfg *Config) error {
+	if raw := strings.TrimSpace(os.Getenv("RUNWISP_ALLOW_STATION_DISPATCH")); raw != "" {
+		on, err := strconv.ParseBool(raw)
+		if err != nil {
+			return fmt.Errorf("invalid RUNWISP_ALLOW_STATION_DISPATCH %q: must be true or false", raw)
+		}
+		cfg.Daemon.AllowStationDispatch = on
+	}
 	raw := strings.TrimSpace(os.Getenv("RUNWISP_TRUSTED_PROXIES"))
 	if raw == "" {
 		return nil

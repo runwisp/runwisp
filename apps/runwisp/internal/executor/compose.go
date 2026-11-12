@@ -6,6 +6,7 @@ package executor
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -125,6 +126,21 @@ func (b *ComposeBackend) available(ctx context.Context) bool {
 	return b.avail
 }
 
+var errComposeCLIMissing = errors.New("docker compose unavailable: install Docker (with the compose plugin) or check that `docker compose version` succeeds")
+
+// Probe checks what a compose run needs: the CLI, and an engine it reaches.
+// `docker compose version` alone succeeds without one, so `docker version`,
+// which fails when the server is unreachable, checks the engine.
+func (b *ComposeBackend) Probe(ctx context.Context) error {
+	if !b.available(ctx) {
+		return errComposeCLIMissing
+	}
+	if exec.CommandContext(ctx, b.dockerCmd, "version").Run() != nil {
+		return errors.New("docker compose unavailable: no Docker or Podman engine reachable (mount /var/run/docker.sock or set DOCKER_HOST)")
+	}
+	return nil
+}
+
 // withOwnProject fills in the project of RunWisp's own container for a unit
 // with no compose file, and returns any other unit unchanged.
 func (b *ComposeBackend) withOwnProject(ctx context.Context, ce *model.ComposeExecution) (*model.ComposeExecution, error) {
@@ -164,7 +180,7 @@ func (b *ComposeBackend) resolve(ctx context.Context, def model.ExecutionDef) (*
 		return nil, fmt.Errorf("compose execution missing file path")
 	}
 	if !b.available(ctx) {
-		return nil, fmt.Errorf("docker compose unavailable: install Docker (with the compose plugin) or check that `docker compose version` succeeds")
+		return nil, errComposeCLIMissing
 	}
 	return b.withOwnProject(ctx, ce)
 }

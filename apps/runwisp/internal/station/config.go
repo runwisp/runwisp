@@ -30,7 +30,9 @@ type Config struct {
 	Fingerprint     string
 	// AllowInsecure mirrors RUNWISP_STATION_ALLOW_INSECURE=true: besides an
 	// http:// station URL it lets log archives go to http:// and private-IP
-	// upload URLs (a Station on a local dev stack). Local testing only.
+	// upload URLs. Plain http:// sends the runner token and every command
+	// unencrypted: fine on a network you trust (localhost, your LAN, a VPN like
+	// Tailscale); use HTTPS anywhere else.
 	AllowInsecure bool
 }
 
@@ -68,7 +70,7 @@ func LoadConfig(agentVersion, tokenOverride, urlOverride, fingerprint string) (C
 		if !allowInsecure {
 			return Config{}, fmt.Errorf("insecure http:// station URL rejected; set RUNWISP_STATION_ALLOW_INSECURE=true to allow")
 		}
-		slog.Warn("RUNWISP_STATION_ALLOW_INSECURE=true: control-plane traffic (bearer token, dispatch frames) runs over plaintext with no TLS — a network attacker can read the token and inject task dispatches; never use this outside local testing",
+		slog.Warn("RUNWISP_STATION_ALLOW_INSECURE=true: Plain http:// sends the runner token and every command unencrypted: fine on a network you trust (localhost, your LAN, a VPN like Tailscale); use HTTPS anywhere else.",
 			"url", baseURL.Redacted())
 	}
 

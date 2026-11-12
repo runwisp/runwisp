@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -579,6 +580,35 @@ func TestRoutingExecutor_Availability_ContainerGatedOnDispatch(t *testing.T) {
 
 	enabled := newTestExecutor(t, Options{StationDispatchEnabled: true, Docker: &recordingBackend{}})
 	assert.True(t, enabled.Availability().Container.Available)
+}
+
+// probingBackend is a backend whose engine check returns err.
+type probingBackend struct {
+	recordingBackend
+	err    error
+	probed atomic.Int32
+}
+
+func (b *probingBackend) Probe(context.Context) error {
+	b.probed.Add(1)
+	return b.err
+}
+
+func TestRoutingExecutor_ProbedAvailability(t *testing.T) {
+	docker := &probingBackend{err: errors.New("docker backend unavailable: no Docker or Podman daemon found")}
+	compose := &probingBackend{}
+	e := newTestExecutor(t, Options{StationDispatchEnabled: true, Docker: docker, Compose: compose})
+
+	avail := e.ProbedAvailability(t.Context())
+	assert.Equal(t, BackendStatus{Reason: "docker backend unavailable: no Docker or Podman daemon found"}, avail.Container)
+	assert.Equal(t, BackendStatus{Available: true}, avail.Compose)
+	assert.True(t, e.Availability().Container.Available, "probing doesn't change the policy view")
+
+	// A type the policy refuses isn't probed and keeps its policy reason.
+	off := &probingBackend{}
+	disabled := newTestExecutor(t, Options{Docker: off, Compose: off})
+	assert.Contains(t, disabled.ProbedAvailability(t.Context()).Container.Reason, "allow_station_dispatch")
+	assert.Zero(t, off.probed.Load())
 }
 
 func TestRoutingExecutor_Availability_HasLocalTasks(t *testing.T) {

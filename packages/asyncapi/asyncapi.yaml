@@ -96,6 +96,7 @@ channels:
           - $ref: "#/components/messages/serviceApply"
           - $ref: "#/components/messages/serviceControl"
           - $ref: "#/components/messages/serviceRemove"
+          - $ref: "#/components/messages/serviceLogs"
           - $ref: "#/components/messages/agentRestart"
           - $ref: "#/components/messages/agentUpgrade"
           - $ref: "#/components/messages/agentCredentials"
@@ -202,7 +203,7 @@ components:
       payload: { $ref: "#/components/schemas/LogSubscribe" }
     logUnsubscribe:
       name: log:unsubscribe
-      summary: station -> daemon. End a subscription; the daemon sends its result.
+      summary: station -> daemon. End a log:subscribe or service:logs subscription; the daemon sends its result.
       payload: { $ref: "#/components/schemas/LogUnsubscribe" }
     logLines:
       name: log:lines
@@ -230,6 +231,10 @@ components:
       name: service:remove
       summary: station -> daemon, command. Tear a declared service down.
       payload: { $ref: "#/components/schemas/ServiceRemove" }
+    serviceLogs:
+      name: service:logs
+      summary: station -> daemon, command. Stream a service instance's output across its runs. Feature service.logs.
+      payload: { $ref: "#/components/schemas/ServiceLogs" }
     serviceStatus:
       name: service:status
       summary: daemon -> station. Snapshot of one service; latest wins.
@@ -285,8 +290,9 @@ components:
             Optional features this daemon understands, by name, with whether
             each can be used right now. A name that's absent is not understood.
             v1.0 names: exec.shell, exec.container, exec.compose, exec.http,
-            exec.config, agent.restart, agent.upgrade. Everything else in this
-            spec is baseline and has no feature name.
+            exec.config, agent.restart, agent.upgrade. Added since v1.0:
+            service.logs. Everything else in this spec is baseline and has no
+            feature name.
         labels:
           type: object
           additionalProperties: { type: string }
@@ -890,6 +896,11 @@ components:
           type: array
           items: { $ref: "#/components/schemas/LogLine" }
         gap: { $ref: "#/components/schemas/LogGap" }
+        runId:
+          type: string
+          description: |
+            Set on service:logs streams: the daemon run these lines belong to.
+            Line numbers restart at 0 in each run.
       required: [lines]
 
     LogGap:
@@ -998,6 +1009,22 @@ components:
         taskId: { type: string }
         action: { $ref: "#/components/schemas/ServiceAction" }
       required: [taskId, action]
+
+    ServiceLogs:
+      type: object
+      description: |
+        Streams log:lines (replyTo = this command's id) for one service
+        instance, like log:subscribe, each frame carrying its runId. A negative
+        fromLine tails the instance's output, reaching back into earlier runs
+        when the latest run is shorter. With follow it continues into each new
+        run of the instance and ends only on log:unsubscribe. Ends with a
+        result (LogSubscribeResult).
+      properties:
+        taskId: { type: string, description: "The service, as in service:control." }
+        instance: { type: integer, description: 0-based instance slot. }
+        fromLine: { type: integer, format: int64, description: "First line of the newest run; 0 = start; negative = the last -fromLine lines (a tail)." }
+        follow: { type: boolean }
+      required: [taskId, instance, fromLine, follow]
 
     ServiceAction:
       $id: ServiceAction

@@ -39,6 +39,12 @@ func newRunLog(t *testing.T, h *harness, executionID string) *runLog {
 	t.Helper()
 	run := finishedRun(executionID, "job")
 	run.Status, run.EndReason, run.EndedAt = model.PhaseRunning, nil, nil
+	return openRunLog(t, h, run)
+}
+
+// openRunLog stores run and opens its log for writing.
+func openRunLog(t *testing.T, h *harness, run *model.Run) *runLog {
+	t.Helper()
 	h.runs.put(run)
 	path := logutil.ResolveRunLogPath(h.logDir, run.TaskName, run.ID, run.CreatedAt)
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
@@ -57,7 +63,7 @@ func (l *runLog) write(t *testing.T, from, to int64, publish func(n int64) bool)
 		require.NoError(t, err)
 		require.Equal(t, n, got)
 		if publish != nil && publish(n) {
-			l.bus.Publish(events.EventLogLine, events.LogLineEvent{TaskName: l.run.TaskName, RunID: l.run.ID, ExecutionID: *l.run.ExecutionID, LineNum: n, Text: text, Stream: logutil.StreamStdout})
+			l.bus.Publish(events.EventLogLine, events.LogLineEvent{TaskName: l.run.TaskName, RunID: l.run.ID, LineNum: n, Text: text, Stream: logutil.StreamStdout})
 		}
 	}
 }
@@ -359,5 +365,94 @@ func TestLogStream_ChunksUseRequestedTargetsUntilCapped(t *testing.T) {
 	target.mu.Unlock()
 	if s.file != nil {
 		_ = s.file.Close()
+	}
+}
+
+// serviceRunLog is a running run of instance 0 of service "web", created at
+// minute m, with lines lines already written.
+func serviceRunLog(t *testing.T, h *harness, id string, instance, m int, lines int64) *runLog {
+	t.Helper()
+	created := time.Date(2026, 3, 4, 5, m, 0, 0, time.UTC)
+	l := openRunLog(t, h, &model.Run{ID: id, TaskName: "web", InstanceIndex: instance, Status: model.PhaseRunning, CreatedAt: created, StartedAt: &created})
+	l.write(t, 0, lines, nil)
+	return l
+}
+
+// end finishes a service run the way the runtime does: stored, then published.
+func (l *runLog) end(h *harness) {
+	ended := *l.run
+	ended.Status = model.PhaseEnded
+	h.runs.put(&ended)
+	publishRun(h.bus, events.EventRunCompleted, &ended)
+}
+
+// collectRunLines gathers service:logs frames for id until they hold n lines,
+// as "runId:n".
+func collectRunLines(t *testing.T, st *stationtest.Station, id string, n int) []string {
+	t.Helper()
+	var got []string
+	for len(got) < n {
+		frame := st.Wait(t, "log:lines", func(e protocol.Envelope) bool { return e.ReplyTo == id })
+		var batch protocol.LogLines
+		require.NoError(t, json.Unmarshal(frame.Data, &batch))
+		for _, l := range batch.Lines {
+			got = append(got, fmt.Sprintf("%s:%d", batch.RunID, l.N))
+		}
+	}
+	return got
+}
+
+func newServiceHarness(t *testing.T) (*stationtest.Station, *harness) {
+	t.Helper()
+	st := stationtest.New(t)
+	h := newHarness(t, st, nil)
+	h.runner.tasks["web"] = &model.Task{Name: "web", Kind: model.KindService, Instances: 2}
+	return st, h
+}
+
+func TestServiceLogs_TailReachesIntoThePreviousRun(t *testing.T) {
+	st, h := newServiceHarness(t)
+	serviceRunLog(t, h, "r1", 0, 1, 5).end(h)
+	serviceRunLog(t, h, "other", 1, 2, 9) // instance 1: not ours
+	serviceRunLog(t, h, "r2", 0, 3, 2)
+	h.start(t)
+
+	id := st.Command(t, "service:logs", protocol.ServiceLogs{TaskID: "web", Instance: 0, FromLine: -4})
+	assert.Equal(t, []string{"r1:3", "r1:4", "r2:0", "r2:1"}, collectRunLines(t, st, id, 4))
+	var res protocol.LogSubscribeResult
+	require.True(t, st.Result(t, id, &res).Ok)
+	assert.Equal(t, protocol.LogSubscribeResult{NextLine: 2}, res)
+}
+
+func TestServiceLogs_FollowContinuesIntoTheNextRunUntilUnsubscribe(t *testing.T) {
+	st, h := newServiceHarness(t)
+	r1 := serviceRunLog(t, h, "r1", 0, 1, 2)
+	h.start(t)
+
+	id := st.Command(t, "service:logs", protocol.ServiceLogs{TaskID: "web", Instance: 0, FromLine: 0, Follow: true})
+	assert.Equal(t, []string{"r1:0", "r1:1"}, collectRunLines(t, st, id, 2))
+
+	r1.end(h)
+	r2 := serviceRunLog(t, h, "r2", 0, 2, 0)
+	publishRun(h.bus, events.EventRunStarted, r2.run)
+	r2.write(t, 0, 3, func(int64) bool { return true })
+	assert.Equal(t, []string{"r2:0", "r2:1", "r2:2"}, collectRunLines(t, st, id, 3))
+
+	st.Send(t, "log:unsubscribe", "", protocol.LogUnsubscribe{Subscription: id})
+	var res protocol.LogSubscribeResult
+	require.True(t, st.Result(t, id, &res).Ok)
+	assert.Equal(t, protocol.LogSubscribeResult{NextLine: 3}, res)
+}
+
+func TestServiceLogs_UnknownOrNonService(t *testing.T) {
+	st, h := newServiceHarness(t)
+	h.runner.tasks["job"] = &model.Task{Name: "job"}
+	h.start(t)
+
+	for taskID, code := range map[string]protocol.ErrorCode{"nope": protocol.ErrorCodeNotFound, "job": protocol.ErrorCodeConflict} {
+		id := st.Command(t, "service:logs", protocol.ServiceLogs{TaskID: taskID, Follow: true})
+		res := st.Result(t, id, nil)
+		require.NotNil(t, res.Error, taskID)
+		assert.Equal(t, code, res.Error.Code, taskID)
 	}
 }

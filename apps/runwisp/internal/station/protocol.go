@@ -44,6 +44,7 @@ const (
 	typeServiceControl   = "service:control"
 	typeServiceRemove    = "service:remove"
 	typeServiceStatus    = "service:status"
+	typeServiceLogs      = "service:logs"
 )
 
 // encodeFrame builds one envelope. data may be nil for an empty payload.

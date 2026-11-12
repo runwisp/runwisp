@@ -35,7 +35,7 @@ func (s FileSource) Load() (*Config, error) {
 	if err := AssertPrivilegedConfigTrust(cfg, string(s)); err != nil {
 		return nil, err
 	}
-	return cfg, ApplyTrustedProxiesEnv(cfg)
+	return cfg, ApplyDaemonEnv(cfg)
 }
 
 // DocumentSource is the config an attached app supplies as JSON (see
@@ -78,5 +78,5 @@ func (s *DocumentSource) Load() (*Config, error) {
 	if err := assertIncludesTrusted(cfg, os.Geteuid()); err != nil {
 		return nil, err
 	}
-	return cfg, ApplyTrustedProxiesEnv(cfg)
+	return cfg, ApplyDaemonEnv(cfg)
 }

@@ -38,7 +38,28 @@ func TestSession_HelloDescribesTheDaemon(t *testing.T) {
 	assert.False(t, hello.Features["exec.container"].Available)
 	assert.False(t, hello.Features["agent.restart"].Available)
 	assert.False(t, hello.Features["agent.upgrade"].Available)
-	assert.Len(t, hello.Features, 7)
+	assert.Equal(t, &protocol.FeatureStatus{Available: true}, hello.Features["service.logs"])
+	assert.Len(t, hello.Features, 8)
+}
+
+// Container engines are probed before hello: a host without Docker reports
+// exec.container unavailable with the reason, and dispatch follows suit.
+func TestSession_HelloReportsProbedContainerEngines(t *testing.T) {
+	st := stationtest.New(t)
+	h := newHarness(t, st, nil)
+	h.client.deps.ProbeAvailability = func(context.Context) executor.Availability {
+		return executor.Availability{
+			Shell:     executor.BackendStatus{Available: true},
+			Container: executor.BackendStatus{Reason: "docker backend unavailable: no Docker or Podman daemon found"},
+			Compose:   executor.BackendStatus{Available: true},
+		}
+	}
+	h.run(t)
+
+	hello := stationtest.Decode[protocol.Hello](t, st, "hello", nil)
+	assert.Equal(t, &protocol.FeatureStatus{Reason: "docker backend unavailable: no Docker or Podman daemon found"}, hello.Features["exec.container"])
+	assert.Equal(t, &protocol.FeatureStatus{Available: true}, hello.Features["exec.compose"])
+	assert.False(t, h.client.handler.liveAvailability().Container.Available)
 }
 
 func TestSession_StationWithoutV1IsTooOld(t *testing.T) {

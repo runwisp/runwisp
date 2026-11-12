@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
@@ -23,6 +24,7 @@ type InboundHandler struct {
 	taskManager  TaskRunner
 	runRepo      ExternalRunGetter
 	logDir       string
+	availMu      sync.Mutex // guards availability, re-probed on each connect
 	availability executor.Availability
 	// localTasks, when set, makes Config availability live (see
 	// liveAvailability); nil keeps the boot-time value.
@@ -66,11 +68,20 @@ func NewInboundHandler(deps InboundHandlerDeps) *InboundHandler {
 	}
 }
 
+func (h *InboundHandler) setAvailability(avail executor.Availability) {
+	h.availMu.Lock()
+	h.availability = avail
+	h.availMu.Unlock()
+}
+
 // liveAvailability is the boot-time availability with Config recomputed from
 // the current TOML task set, which a reload can grow from or shrink to empty.
-// The other types stay fixed at boot by allow_station_dispatch.
+// The other types are fixed at boot by allow_station_dispatch, except that
+// container and compose are re-probed on each connect (setAvailability).
 func (h *InboundHandler) liveAvailability() executor.Availability {
+	h.availMu.Lock()
 	avail := h.availability
+	h.availMu.Unlock()
 	if h.localTasks != nil {
 		avail.Config = executor.ConfigStatus(h.localTasks.Len() > 0)
 	}

@@ -259,7 +259,9 @@ type NotificationRoute struct {
 // self-signed HTTPS on a non-loopback bind). TLSCert/TLSKey, when both set,
 // take precedence over auto self-signing on any bind.
 type Daemon struct {
-	Name                 string
+	Name string
+	// AllowStationDispatch lets the station run ad-hoc work here. Default
+	// false; RUNWISP_ALLOW_STATION_DISPATCH overrides it (ApplyDaemonEnv).
 	AllowStationDispatch bool
 	// AllowStationUpgrade lets the station upgrade this daemon to a release
 	// (agent:upgrade). Default false.
@@ -285,7 +287,7 @@ type Daemon struct {
 	TLSCert        string
 	TLSKey         string
 	// TrustedProxies is the CIDR allowlist for X-Forwarded-For. The daemon replaces it
-	// with RUNWISP_TRUSTED_PROXIES when set (ApplyTrustedProxiesEnv).
+	// with RUNWISP_TRUSTED_PROXIES when set (ApplyDaemonEnv).
 	TrustedProxies []string
 }
 

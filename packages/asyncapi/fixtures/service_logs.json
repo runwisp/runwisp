@@ -1,0 +1,11 @@
+{
+  "type": "service:logs",
+  "id": "s31",
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "taskId": "tsk_01JC8Y7W",
+    "instance": 0,
+    "fromLine": -200,
+    "follow": true
+  }
+}

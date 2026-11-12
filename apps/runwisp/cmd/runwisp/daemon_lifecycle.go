@@ -58,6 +58,7 @@ func startStationClient(
 		LocalTasks:        svc.Tasks,
 		LogDir:            flags.LogDir(),
 		Availability:      svc.Executor.Availability(),
+		ProbeAvailability: svc.Executor.ProbedAvailability,
 		Now:               time.Now,
 		OnConnected: func() {
 			slog.Info("Station connected")
