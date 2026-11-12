@@ -163,9 +163,13 @@
                     {/if}
                 </span>
             </span>
+            <!-- Level with the first line, beside the readout. -->
+            {@render usageBars("mt-1 self-start")}
             <span
-                class="shrink-0 self-start pt-0.5 font-mono text-[11.5px] text-on-surface-faint tabular-nums"
-                title={retry ?? undefined}
+                class="shrink-0 self-start pt-0.5 font-mono text-[11.5px] {READOUT_COLOR[
+                    durationLevel
+                ]} tabular-nums"
+                title={readoutTitle}
             >
                 {runRowReadout(run, dstatus)}
             </span>
@@ -195,41 +199,7 @@
                     <span class="font-mono text-2xs text-on-surface-faint">{suffix}</span>
                 {/if}
             </span>
-            {#if usage !== undefined && (amounts || lines !== undefined)}
-                <!-- Fixed slots, CPU over RAM over lines printed, so a run
-                     missing one (a non-shell backend has no CPU/RAM) keeps the
-                     others aligned with its neighbours. -->
-                <span
-                    class="flex w-6 shrink-0 cursor-help flex-col gap-0.5"
-                    title={barsTitle}
-                    data-testid="run-usage-bars"
-                >
-                    {#if usage && amounts}
-                        {@render bar(
-                            amounts.cpu,
-                            usage.max.cpu,
-                            usageLevel(amounts.cpu, usage.usual.cpu, "cpu"),
-                        )}
-                        {@render bar(
-                            amounts.ram,
-                            usage.max.ram,
-                            usageLevel(amounts.ram, usage.usual.ram, "ram"),
-                        )}
-                    {:else}
-                        <span class="block h-[3px]"></span>
-                        <span class="block h-[3px]"></span>
-                    {/if}
-                    {#if output && lines !== undefined}
-                        {@render bar(
-                            lines,
-                            output.max,
-                            output.band && outputUnusual(lines, output.band) ? 1 : 0,
-                        )}
-                    {/if}
-                </span>
-            {:else if usage !== undefined}
-                <span class="w-6 shrink-0" aria-hidden="true"></span>
-            {/if}
+            {@render usageBars("")}
             <span
                 class="shrink-0 font-mono text-[11.5px] {READOUT_COLOR[durationLevel]} tabular-nums"
                 title={readoutTitle}
@@ -256,6 +226,44 @@
         aria-hidden="true"
     ></div>
 </button>
+
+{#snippet usageBars(align: string)}
+    {#if usage !== undefined && (amounts || lines !== undefined)}
+        <!-- Fixed slots, CPU over RAM over lines printed, so a run
+             missing one (a non-shell backend has no CPU/RAM) keeps the
+             others aligned with its neighbours. -->
+        <span
+            class="flex w-6 shrink-0 cursor-help flex-col gap-0.5 {align}"
+            title={barsTitle}
+            data-testid="run-usage-bars"
+        >
+            {#if usage && amounts}
+                {@render bar(
+                    amounts.cpu,
+                    usage.max.cpu,
+                    usageLevel(amounts.cpu, usage.usual.cpu, "cpu"),
+                )}
+                {@render bar(
+                    amounts.ram,
+                    usage.max.ram,
+                    usageLevel(amounts.ram, usage.usual.ram, "ram"),
+                )}
+            {:else}
+                <span class="block h-[3px]"></span>
+                <span class="block h-[3px]"></span>
+            {/if}
+            {#if output && lines !== undefined}
+                {@render bar(
+                    lines,
+                    output.max,
+                    output.band && outputUnusual(lines, output.band) ? 1 : 0,
+                )}
+            {/if}
+        </span>
+    {:else if usage !== undefined}
+        <span class="w-6 shrink-0" aria-hidden="true"></span>
+    {/if}
+{/snippet}
 
 {#snippet bar(value: number, max: number, level: 0 | 1 | 2)}
     <span class="block h-[3px] overflow-hidden rounded-[1px] bg-outline-faint">

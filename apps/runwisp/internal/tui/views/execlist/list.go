@@ -298,16 +298,15 @@ func (e *ExecList) rowPrefix(runID string) string {
 	return checkboxEmpty + " "
 }
 
-// rowBaselines are what a scoped list judges each run's vitals against: the
-// task's usual duration, CPU and RAM, and its usual output band. nil when
-// unknown.
+// rowBaselines are what the list judges a run's vitals against: its task's
+// usual duration, CPU and RAM, and its usual output band. nil when unknown.
 type rowBaselines struct {
 	duration *time.Duration
 	usage    *uikit.RunUsage
 	output   *uikit.OutputBand
 }
 
-func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidths, usual rowBaselines) string {
+func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidths, baselines map[string]rowBaselines) string {
 	bg, fg, bold := uikit.ColorBg, uikit.ColorText, false
 	isCursor := e.focused && rowIdx == e.cursor
 	isHovered := rowIdx == e.hoveredRow && !isCursor
@@ -322,6 +321,7 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	if item == nil {
 		return rowStyle.Render("  " + padCell("loading…", cw.rowWidth()-2))
 	}
+	usual := baselines[item.Run.TaskName]
 	cpu, mem := usageCells(&item.Run, usual.usage, isCursor)
 	return rowStyle.Render(e.rowPrefix(item.Run.ID)+padCell(e.firstCell(item.Run, cw), cw.first)+" ") +
 		statusCell(item.Run.DisplayStatus(), cw.status, rowStyle) +
@@ -457,17 +457,7 @@ func trailingCells(cw colWidths, style lipgloss.Style, cells ...cell) string {
 
 func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, contentW int, cw colWidths, sb scrollbarRender) {
 	end := min(e.Scroll+vpH, n)
-	var usual rowBaselines
-	// Only a scoped list has one task's runs to judge a duration against.
-	if cw.scoped && cw.duration > 0 {
-		usual.duration = e.window.UsualDuration()
-	}
-	if cw.cpu > 0 || cw.mem > 0 {
-		usual.usage = e.window.UsualUsage()
-	}
-	if cw.output > 0 {
-		usual.output = e.window.UsualOutput()
-	}
+	usual := e.window.Baselines()
 	// contentW is w when no scrollbar shows and w-1 when it does; the scrollbar
 	// glyph is exactly one cell. So a row padded to contentW plus the scrollbar
 	// is already exactly w cells — no second PadLine pass needed. Skipping it

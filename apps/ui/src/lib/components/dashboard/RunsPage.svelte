@@ -79,6 +79,7 @@
             onBulkRerun={selection.handleBulkRerun}
             {getInstanceCount}
             motion={live.source.motion}
+            usageBars
             folded={rail.listFolded}
             onToggleFold={rail.collapsible ? rail.toggleList : undefined}
         />
