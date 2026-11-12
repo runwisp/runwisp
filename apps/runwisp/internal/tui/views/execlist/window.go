@@ -298,53 +298,33 @@ func (w *ExecWindow) ApplyFetch(items []uikit.ExecListItem, offset, total int) {
 	w.rebuildIDSet()
 }
 
-// UsualUsage is the median usage of the loaded runs, the baseline the list
-// colors each run's CPU and RAM against; nil when none was measured. Like the
+// Baselines is each task's usual run over the loaded runs, keyed by task name:
+// what the list colors a run's DURATION, CPU, RAM and OUTPUT against. Home
+// mixes tasks, so every run is judged against its own task's runs. Like the
 // web UI it judges against the runs on hand rather than a server aggregate.
-func (w *ExecWindow) UsualUsage() *uikit.RunUsage {
+func (w *ExecWindow) Baselines() map[string]rowBaselines {
 	w.mu.Lock()
-	runs := make([]model.Run, len(w.items))
+	byTask := make(map[string][]model.Run)
 	for i := range w.items {
-		runs[i] = w.items[i].Run
+		run := w.items[i].Run
+		byTask[run.TaskName] = append(byTask[run.TaskName], run)
 	}
 	w.mu.Unlock()
-	u, ok := uikit.UsualUsage(runs)
-	if !ok {
-		return nil
+	out := make(map[string]rowBaselines, len(byTask))
+	for task, runs := range byTask {
+		var b rowBaselines
+		if d, ok := uikit.UsualDuration(runs); ok {
+			b.duration = &d
+		}
+		if u, ok := uikit.UsualUsage(runs); ok {
+			b.usage = &u
+		}
+		if o, ok := uikit.UsualOutput(runs); ok {
+			b.output = &o
+		}
+		out[task] = b
 	}
-	return &u
-}
-
-// UsualDuration is the median wall time of the loaded runs, the baseline the
-// list colors each run's DURATION against; nil when none has finished.
-func (w *ExecWindow) UsualDuration() *time.Duration {
-	w.mu.Lock()
-	runs := make([]model.Run, len(w.items))
-	for i := range w.items {
-		runs[i] = w.items[i].Run
-	}
-	w.mu.Unlock()
-	d, ok := uikit.UsualDuration(runs)
-	if !ok {
-		return nil
-	}
-	return &d
-}
-
-// UsualOutput is the output band of the loaded runs, the baseline the list
-// colors each run's OUTPUT against; nil until enough runs have line counts.
-func (w *ExecWindow) UsualOutput() *uikit.OutputBand {
-	w.mu.Lock()
-	runs := make([]model.Run, len(w.items))
-	for i := range w.items {
-		runs[i] = w.items[i].Run
-	}
-	w.mu.Unlock()
-	b, ok := uikit.UsualOutput(runs)
-	if !ok {
-		return nil
-	}
-	return &b
+	return out
 }
 
 // UpsertRun handles a real-time SSE event. New runs are prepended.

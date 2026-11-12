@@ -279,6 +279,48 @@ export function runOutputScale(
     return { max: Math.max(...lines), band: outputBand(runs) };
 }
 
+/** What a task's runs are judged against: its usage and output scales and its usual duration in ms. */
+export interface TaskRunScales {
+    usage: RunUsageScale | undefined;
+    output: OutputScale | undefined;
+    durationUsual: number | undefined;
+}
+
+type ScaledRun = Pick<
+    Run,
+    | "taskName"
+    | "status"
+    | "cpuTimeMs"
+    | "peakMemoryBytes"
+    | "stdoutLines"
+    | "stderrLines"
+    | "startedAt"
+    | "endedAt"
+>;
+
+/**
+ * Each task's scales over the runs given, keyed by task name, so a list that
+ * mixes tasks judges every run against its own task's runs. Mirrors the TUI's
+ * ExecWindow.Baselines.
+ */
+export function runScalesByTask(runs: readonly ScaledRun[]): Map<string, TaskRunScales> {
+    const byTask = new Map<string, ScaledRun[]>();
+    for (const run of runs) {
+        const group = byTask.get(run.taskName) ?? [];
+        group.push(run);
+        byTask.set(run.taskName, group);
+    }
+    const scales = new Map<string, TaskRunScales>();
+    for (const [task, taskRuns] of byTask) {
+        scales.set(task, {
+            usage: runUsageScale(taskRuns),
+            output: runOutputScale(taskRuns),
+            durationUsual: usualDuration(taskRuns),
+        });
+    }
+    return scales;
+}
+
 const compactNumber = new Intl.NumberFormat("en", {
     notation: "compact",
     maximumFractionDigits: 1,

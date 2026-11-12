@@ -45,7 +45,9 @@ A mark after a task's name shows its state: `●` running, `✗` last run failed
 - **Web UI**: the address. <kbd>Enter</kbd> copies it.
 - **Password**: shown only when the daemon generated the password.
     <kbd>Enter</kbd> copies it.
-- **Recent activity**: the latest runs across all tasks.
+- **Recent activity**: the latest runs across all tasks. On a terminal at
+  least 143 columns wide, it also shows CPU, RAM and OUTPUT. Each run is colored
+  against its own task, as in [Task detail](#task-detail).
 
 Press <kbd>n</kbd> to open the notifications panel. If some tasks come from
 crontabs that cron still runs, the header shows how many are
@@ -66,6 +68,11 @@ form if the task has [parameters](/concepts/parameters/). Restart, Start and
 Stop ask first too.
 
 ![TUI task detail for healthcheck-api: header with task name, cron schedule, next-fire countdown, and Run Now button; run history table below showing status, start time, duration, and trigger columns.](../../../assets/screenshots/tui-task-detail.png)
+
+Each run shows its duration, CPU time, peak memory, and how many lines it
+printed. Duration, CPU and RAM turn amber or red when the run used much more
+than the task usually does. OUTPUT turns amber when it printed far more or far
+less than usual.
 
 - <kbd>f</kbd> filters the runs by status. A banner shows while a filter is active.
 - <kbd>i</kbd> shows the task's full definition and recent health.

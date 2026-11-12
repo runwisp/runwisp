@@ -10,12 +10,14 @@ package execlist
 // proportional band via taskColIdeal and then absorbs every spare cell once the
 // fixed columns have reached their caps. In a list scoped to one task the
 // first column is the absolute start time instead, capped like the others, so
-// the table stays compact rather than stretching across the pane, and CPU and
-// RAM columns follow DURATION, then OUTPUT.
+// the table stays compact rather than stretching across the pane. CPU, RAM and
+// OUTPUT follow DURATION.
 //
-// When the pane is too narrow for every floor, TRIGGER drops first, then
-// OUTPUT, RAM, CPU and DURATION, so the remaining columns stay readable instead of every
-// header truncating ("DURATI", "TRIGG").
+// When a scoped list is too narrow for every floor, TRIGGER drops first, then
+// OUTPUT, RAM, CPU and DURATION, so the remaining columns stay readable instead
+// of every header truncating ("DURATI", "TRIGG"). Home shows CPU, RAM and
+// OUTPUT only once every column fits at its cap, so they go first there and a
+// narrower Home keeps its plain table.
 const (
 	// Floors: below these a column is dropped (TRIGGER, DURATION) or, for the
 	// columns that always show, truncates rather than shrinking further. Each
@@ -56,7 +58,7 @@ const (
 // colWidths holds the resolved width of every execution-table column for a
 // given content width. Field order mirrors the on-screen left-to-right order.
 // A zero started, duration, cpu, mem, output or trigger means the column is
-// hidden; cpu, mem and output only ever show in a scoped list.
+// hidden.
 type colWidths struct {
 	// scoped marks a list showing one task's runs: the task name would only
 	// repeat, so the first column shows each run's absolute start time.
@@ -113,6 +115,14 @@ func computeColWidths(contentW, timeW int) colWidths {
 			scoped: true, first: w[0], status: w[1], started: w[2],
 			duration: at(w, 3), cpu: at(w, 4), mem: at(w, 5), output: at(w, 6), trigger: at(w, 7),
 		}
+	}
+	// Home: CPU, RAM and OUTPUT join only when every column fits at its cap,
+	// TASK at its ideal, which takes a terminal about 143 cells wide.
+	wide := colWidths{first: taskColIdeal, status: statusColW, started: startedColCap, duration: durationColCap,
+		cpu: usageColCap, mem: usageColCap, output: outputColCap, trigger: triggerColCap}
+	if spare := contentW - wide.rowWidth(); spare >= 0 {
+		wide.first += spare
+		return wide
 	}
 	w := fitColumns(contentW,
 		[]int{taskColMin, statusColW, startedColMin, durationColMin, triggerColMin},

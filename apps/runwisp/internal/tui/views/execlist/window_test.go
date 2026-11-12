@@ -693,3 +693,24 @@ func TestUpdateVisibleTimes(t *testing.T) {
 		}
 	})
 }
+
+func TestBaselines_PerTask(t *testing.T) {
+	ok := model.ReasonSuccess
+	usage := func(task string, cpuMs int64) uikit.ExecListItem {
+		mem := int64(20 << 20)
+		return uikit.ExecListItem{Run: model.Run{TaskName: task, Status: model.PhaseEnded, EndReason: &ok, CPUTimeMs: &cpuMs, PeakMemoryBytes: &mem}}
+	}
+	w := NewExecWindow(nil)
+	w.ApplyFetch([]uikit.ExecListItem{
+		usage("light", 2_000), usage("heavy", 60_000), usage("light", 2_000), usage("heavy", 60_000), usage("light", 30_000),
+	}, 0, 5)
+
+	got := w.Baselines()
+	if got["light"].usage.CPUMs != 2_000 || got["heavy"].usage.CPUMs != 60_000 {
+		t.Fatalf("expected each task's own median CPU, got light %d, heavy %d", got["light"].usage.CPUMs, got["heavy"].usage.CPUMs)
+	}
+	// 30s is unusual for the light task even though the heavy one dwarfs it.
+	if c, _ := usageCells(&w.Item(4).Run, got["light"].usage, false); c.fg != uikit.ColorError {
+		t.Errorf("expected a 30s run flagged against its own task's 2s, got %v", c.fg)
+	}
+}

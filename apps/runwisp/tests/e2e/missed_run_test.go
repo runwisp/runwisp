@@ -35,6 +35,13 @@ func TestMissedRunDetectedAndAlertedOnRestart(t *testing.T) {
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
+	// The task ticks every minute. A boundary crossed between stopping the
+	// first daemon and booting the second is a genuine second gap, so start
+	// the clock-sensitive part just after a boundary with room to finish.
+	if sec := time.Now().Second(); sec >= 40 {
+		time.Sleep(time.Duration(61-sec) * time.Second)
+	}
+
 	// Zero-config notifications: with no [notify] block the daemon wires the
 	// default in-app catch-all, which now includes run.missed. This is the
 	// product promise — a missed scheduled run reaches whoever already gets

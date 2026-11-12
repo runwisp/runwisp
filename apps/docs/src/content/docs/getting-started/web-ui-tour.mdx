@@ -56,7 +56,9 @@ wrong attempts are covered in [Authentication](/operations/auth/).
 
 ## All runs (`/runs`)
 
-Recent runs across every task, newest first.
+Recent runs across every task, newest first. Each run has the same CPU, memory
+and output bars as a [task's run history](#task-detail-tasksid), judged against
+its own task.
 
 <Screenshot
     name="web-ui-runs"
@@ -101,8 +103,9 @@ task is doing and what comes next, with the task's actions next to it:
 including its `run` command and environment.
 
 Below are the task's run history and the log of the selected run. Each run in
-the history has two small bars for its CPU time and memory, red when the run
-used much more than the task usually does. The selected run's header has the
+the history has three small bars for its CPU time, memory, and lines printed.
+A bar or the duration turns amber or red when the run used much more than the
+task usually does, or printed far more or far less. The selected run's header has the
 actions for that run: **Stop run** while it is running, **Download log**, and
 delete. Facts that don't fit on its line move into the ⋯ menu.
 
