@@ -5,6 +5,7 @@ package station
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
@@ -53,23 +54,41 @@ func (b *EventBridge) handleRunEvent(ctx context.Context, event events.Event) {
 	}
 	run := runEvent.Run
 
-	// A service instance's lifecycle (start, exit, supervisor restart) has no
-	// execution id: it changes the service's status, not an execution.
-	if run.ExecutionID == nil {
+	// A service instance's run (start, exit, supervisor restart) is an
+	// execution the daemon started itself, known to the station by its run id;
+	// it changes the service's status too. Any other run no dispatch created
+	// (a local CLI run) stays off the station.
+	service := run.ExecutionID == nil
+	if service {
+		if !b.client.handler.isServiceRun(run) {
+			return
+		}
 		if sess := b.client.current(); sess != nil {
 			sess.serviceChanged(run.TaskName)
 		}
-		return
 	}
 	update := executionUpdate(run)
 	if update == nil {
 		return
 	}
-	executionID := *run.ExecutionID
+	executionID := update.ExecutionID
+	running := run.Status == model.PhaseRunning
+	if running {
+		// Tracked first: RetryPending leaves a live execution's log alone.
+		b.client.tracker.TrackRunning(executionID)
+	}
+	if service {
+		// Recorded before the update, like a dispatch's (see
+		// HandleExecutionDispatch). A service runs for long, so its log always
+		// streams; the station refuses the chunks when its log storage mode
+		// doesn't want them.
+		if err := b.client.uploader.RegisterDispatch(ctx, executionID, true); err != nil {
+			slog.Warn("failed to record the service run's log for archival", "executionId", executionID, "err", err)
+		}
+	}
 	b.client.outbox.append(update)
 
-	if run.Status == model.PhaseRunning {
-		b.client.tracker.TrackRunning(executionID)
+	if running {
 		logFilePath := logutil.ResolveRunLogPath(b.client.deps.LogDir, run.TaskName, run.ID, run.CreatedAt)
 		b.client.uploader.StartStream(ctx, executionID, logFilePath)
 		return
@@ -86,7 +105,7 @@ func (b *EventBridge) handleRunEvent(ctx context.Context, event events.Event) {
 func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run) {
 	defer crashguard.Guard()
 	// Stop streaming before the archive removes the log file it tails.
-	chunks := b.client.uploader.StopStream(ctx, *run.ExecutionID)
+	chunks := b.client.uploader.StopStream(ctx, executionIDOf(run))
 	if archived := b.client.uploader.Archive(ctx, run, chunks); archived != nil {
 		update := executionUpdate(run)
 		update.Log = archived

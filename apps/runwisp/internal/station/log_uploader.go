@@ -122,10 +122,10 @@ func (u *LogUploader) LoadPending(ctx context.Context) []string {
 // failed and stays pending for RetryPending. chunks is how many log chunks
 // were uploaded, nil when unknown.
 func (u *LogUploader) Archive(ctx context.Context, run *model.Run, chunks *int) *protocol.LogArchive {
-	if run == nil || run.ExecutionID == nil {
+	if run == nil {
 		return nil
 	}
-	executionID := *run.ExecutionID
+	executionID := executionIDOf(run)
 	if !u.begin(executionID) {
 		return nil
 	}
@@ -171,12 +171,14 @@ func (u *LogUploader) Archive(ctx context.Context, run *model.Run, chunks *int) 
 }
 
 // RetryPending uploads the archives still pending for finished runs, after a
-// welcome. emit stores each run's finished update with its archive.
-func (u *LogUploader) RetryPending(ctx context.Context, emit func(*protocol.ExecutionUpdate)) {
+// welcome; live reports the executions still accepted or running, whose runs
+// may not even be stored yet. emit stores each run's finished update with its
+// archive.
+func (u *LogUploader) RetryPending(ctx context.Context, live func(executionID string) bool, emit func(*protocol.ExecutionUpdate)) {
 	u.mu.Lock()
 	ids := make([]string, 0, len(u.pending))
 	for id := range u.pending {
-		if !u.archiving[id] && u.streams[id] == nil {
+		if !u.archiving[id] && u.streams[id] == nil && !live(id) {
 			ids = append(ids, id)
 		}
 	}
@@ -192,7 +194,8 @@ func (u *LogUploader) RetryPending(ctx context.Context, emit func(*protocol.Exec
 }
 
 func (u *LogUploader) retry(ctx context.Context, id string, emit func(*protocol.ExecutionUpdate)) {
-	run, err := u.runRepo.GetRunByExecutionID(ctx, id)
+	// Every pending id is the daemon's own: a dispatch's, or a service run's.
+	run, err := findExecutionRun(ctx, u.runRepo, id, func(*model.Run) bool { return true })
 	if errors.Is(err, storage.ErrNotFound) {
 		slog.Info("dropping pending log archive: run not found", "executionId", id)
 		u.forget(ctx, id)
@@ -223,6 +226,14 @@ func (u *LogUploader) end(executionID string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	delete(u.archiving, executionID)
+}
+
+// isPending reports whether executionID's log still waits to be archived.
+func (u *LogUploader) isPending(executionID string) bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	_, ok := u.pending[executionID]
+	return ok
 }
 
 func (u *LogUploader) wantsStream(executionID string) bool {

@@ -166,7 +166,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 // archives themselves upload after the next welcome.
 func (client *Client) RecoverArchiveBacklog(ctx context.Context) {
 	for _, executionID := range client.uploader.LoadPending(ctx) {
-		run, err := client.deps.RunRepo.GetRunByExecutionID(ctx, executionID)
+		run, err := client.handler.findRun(ctx, executionID)
 		if err != nil || run == nil || !run.Status.IsTerminal() {
 			continue
 		}

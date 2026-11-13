@@ -71,13 +71,6 @@ var commands = map[string]command{
 		}
 		return s.streamLog(ctx, env.ID, sub)
 	}},
-	typeServiceLogs: {async: true, run: func(ctx context.Context, s *session, env protocol.Envelope) (any, error) {
-		req, err := decodeData[protocol.ServiceLogs](env)
-		if err != nil {
-			return nil, err
-		}
-		return s.streamServiceLogs(ctx, env.ID, req)
-	}},
 	typeLogSearch: {async: true, run: func(ctx context.Context, s *session, env protocol.Envelope) (any, error) {
 		q, err := decodeData[protocol.LogSearch](env)
 		if err != nil {

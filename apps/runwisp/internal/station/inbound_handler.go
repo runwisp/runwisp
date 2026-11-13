@@ -182,7 +182,7 @@ func (h *InboundHandler) HandleExecutionStop(ctx context.Context, stop protocol.
 		return nil
 	}
 
-	run, runErr := h.runRepo.GetRunByExecutionID(ctx, executionID)
+	run, runErr := h.findRun(ctx, executionID)
 	if runErr != nil {
 		if errors.Is(runErr, storage.ErrNotFound) {
 			return newError(protocol.ErrorCodeNotFound, "execution not found")
@@ -193,6 +193,24 @@ func (h *InboundHandler) HandleExecutionStop(ctx context.Context, stop protocol.
 		return nil
 	}
 	return newError(protocol.ErrorCodeConflict, "execution is not running yet")
+}
+
+// findRun returns the run of a station execution, dispatched or a service
+// instance's (see findExecutionRun).
+func (h *InboundHandler) findRun(ctx context.Context, executionID string) (*model.Run, error) {
+	return findExecutionRun(ctx, h.runRepo, executionID, h.isServiceRun)
+}
+
+// isServiceRun reports whether run, which no dispatch created, is a service
+// instance's run the station hears of. The tracker and the pending archive
+// keep knowing one whose service was since removed, or not yet re-declared
+// after a daemon restart.
+func (h *InboundHandler) isServiceRun(run *model.Run) bool {
+	if h.tracker.Known(run.ID) || h.uploader.isPending(run.ID) {
+		return true
+	}
+	task, ok := h.taskManager.GetTask(run.TaskName)
+	return ok && task.Kind.IsService()
 }
 
 // requireExecutionID trims raw and rejects an empty id.

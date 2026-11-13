@@ -38,8 +38,7 @@ func TestSession_HelloDescribesTheDaemon(t *testing.T) {
 	assert.False(t, hello.Features["exec.container"].Available)
 	assert.False(t, hello.Features["agent.restart"].Available)
 	assert.False(t, hello.Features["agent.upgrade"].Available)
-	assert.Equal(t, &protocol.FeatureStatus{Available: true}, hello.Features["service.logs"])
-	assert.Len(t, hello.Features, 8)
+	assert.Len(t, hello.Features, 7)
 }
 
 // Container engines are probed before hello: a host without Docker reports
@@ -164,14 +163,15 @@ func TestSession_ServiceStatusAfterWelcome(t *testing.T) {
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)
 	h.runner.tasks["web"] = &model.Task{Name: "web", Kind: model.KindService, Run: "serve"}
-	h.runner.snapshot = model.ServiceSnapshot{TaskName: "web", State: model.ServiceRunning, DesiredInstances: 1, RunningInstances: 1}
+	h.runner.snapshot = model.ServiceSnapshot{TaskName: "web", State: model.ServiceRunning, DesiredInstances: 1, RunningInstances: 1,
+		Instances: []model.ServiceInstanceStatus{{Index: 0, State: model.ServiceInstanceRunning, RunID: "r1"}}}
 	h.runner.snapshotOK = true
 	h.start(t)
 
 	status := stationtest.Decode[protocol.ServiceStatus](t, st, "service:status", nil)
 	assert.Equal(t, "web", status.TaskID)
 	assert.Equal(t, protocol.ServiceStateRunning, status.State)
-	assert.Equal(t, []protocol.ServiceInstance{}, status.Instances)
+	assert.Equal(t, []protocol.ServiceInstance{{Index: 0, State: protocol.ServiceInstanceStateRunning, ExecutionID: "r1"}}, status.Instances)
 }
 
 func TestSession_StatsFollowSessionUpdate(t *testing.T) {

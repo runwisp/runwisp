@@ -185,7 +185,7 @@ func (s *session) afterWelcome() {
 	defer crashguard.Guard()
 	s.sendAgentUpdateIfChanged()
 	s.client.syncTasks(s, false)
-	s.client.uploader.RetryPending(s.ctx, s.client.outbox.append)
+	s.client.uploader.RetryPending(s.ctx, s.client.tracker.Known, s.client.outbox.append)
 }
 
 // sayGoodbye tells the station the daemon is shutting down, so it marks the

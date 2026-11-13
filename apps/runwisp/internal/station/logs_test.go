@@ -368,8 +368,9 @@ func TestLogStream_ChunksUseRequestedTargetsUntilCapped(t *testing.T) {
 	}
 }
 
-// serviceRunLog is a running run of instance 0 of service "web", created at
-// minute m, with lines lines already written.
+// serviceRunLog is a running run of an instance of service "web", created at
+// minute m, with lines lines already written. No dispatch created it, so it
+// has no execution id: the station knows it by its run id.
 func serviceRunLog(t *testing.T, h *harness, id string, instance, m int, lines int64) *runLog {
 	t.Helper()
 	created := time.Date(2026, 3, 4, 5, m, 0, 0, time.UTC)
@@ -378,81 +379,44 @@ func serviceRunLog(t *testing.T, h *harness, id string, instance, m int, lines i
 	return l
 }
 
-// end finishes a service run the way the runtime does: stored, then published.
-func (l *runLog) end(h *harness) {
-	ended := *l.run
-	ended.Status = model.PhaseEnded
-	h.runs.put(&ended)
-	publishRun(h.bus, events.EventRunCompleted, &ended)
-}
-
-// collectRunLines gathers service:logs frames for id until they hold n lines,
-// as "runId:n".
-func collectRunLines(t *testing.T, st *stationtest.Station, id string, n int) []string {
-	t.Helper()
-	var got []string
-	for len(got) < n {
-		frame := st.Wait(t, "log:lines", func(e protocol.Envelope) bool { return e.ReplyTo == id })
-		var batch protocol.LogLines
-		require.NoError(t, json.Unmarshal(frame.Data, &batch))
-		for _, l := range batch.Lines {
-			got = append(got, fmt.Sprintf("%s:%d", batch.RunID, l.N))
-		}
-	}
-	return got
-}
-
 func newServiceHarness(t *testing.T) (*stationtest.Station, *harness) {
 	t.Helper()
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)
 	h.runner.tasks["web"] = &model.Task{Name: "web", Kind: model.KindService, Instances: 2}
+	h.runner.tasks["job"] = &model.Task{Name: "job"}
 	return st, h
 }
 
-func TestServiceLogs_TailReachesIntoThePreviousRun(t *testing.T) {
+// A service instance's run is an execution named by its run id, task and
+// instance; a local run of an ordinary task stays off the station.
+func TestServiceRun_ReportedAsExecution(t *testing.T) {
 	st, h := newServiceHarness(t)
-	serviceRunLog(t, h, "r1", 0, 1, 5).end(h)
-	serviceRunLog(t, h, "other", 1, 2, 9) // instance 1: not ours
-	serviceRunLog(t, h, "r2", 0, 3, 2)
 	h.start(t)
 
-	id := st.Command(t, "service:logs", protocol.ServiceLogs{TaskID: "web", Instance: 0, FromLine: -4})
-	assert.Equal(t, []string{"r1:3", "r1:4", "r2:0", "r2:1"}, collectRunLines(t, st, id, 4))
-	var res protocol.LogSubscribeResult
-	require.True(t, st.Result(t, id, &res).Ok)
-	assert.Equal(t, protocol.LogSubscribeResult{NextLine: 2}, res)
+	started := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+	publishRun(h.bus, events.EventRunStarted, &model.Run{ID: "cli-run", TaskName: "job", Status: model.PhaseRunning, StartedAt: &started})
+	publishRun(h.bus, events.EventRunStarted, &model.Run{ID: "r1", TaskName: "web", InstanceIndex: 1, Status: model.PhaseRunning, StartedAt: &started})
+
+	up := stationtest.Decode[protocol.ExecutionUpdate](t, st, "execution:update", nil)
+	assert.Equal(t, protocol.ExecutionUpdate{Seq: 1, ExecutionID: "r1", TaskID: "web", Instance: new(1), Status: protocol.ExecutionStatusRunning, StartedAt: &started}, up)
+	assert.Equal(t, 1, st.Count("execution:update"), "the CLI run is not reported")
+	assert.True(t, h.client.tracker.Known("r1"))
+	assert.True(t, h.client.uploader.isPending("r1"), "its log is archived when it ends")
 }
 
-func TestServiceLogs_FollowContinuesIntoTheNextRunUntilUnsubscribe(t *testing.T) {
+func TestLogSubscribe_ServiceRunByRunID(t *testing.T) {
 	st, h := newServiceHarness(t)
-	r1 := serviceRunLog(t, h, "r1", 0, 1, 2)
+	serviceRunLog(t, h, "r1", 0, 1, 3)
+	h.runs.put(&model.Run{ID: "cli-run", TaskName: "job", Status: model.PhaseRunning})
 	h.start(t)
 
-	id := st.Command(t, "service:logs", protocol.ServiceLogs{TaskID: "web", Instance: 0, FromLine: 0, Follow: true})
-	assert.Equal(t, []string{"r1:0", "r1:1"}, collectRunLines(t, st, id, 2))
+	id := st.Command(t, "log:subscribe", protocol.LogSubscribe{ExecutionID: "r1", Limit: 3})
+	assert.Equal(t, []int64{0, 1, 2}, lineNumbers(collectLines(t, st, id, 3)))
+	require.True(t, st.Result(t, id, nil).Ok)
 
-	r1.end(h)
-	r2 := serviceRunLog(t, h, "r2", 0, 2, 0)
-	publishRun(h.bus, events.EventRunStarted, r2.run)
-	r2.write(t, 0, 3, func(int64) bool { return true })
-	assert.Equal(t, []string{"r2:0", "r2:1", "r2:2"}, collectRunLines(t, st, id, 3))
-
-	st.Send(t, "log:unsubscribe", "", protocol.LogUnsubscribe{Subscription: id})
-	var res protocol.LogSubscribeResult
-	require.True(t, st.Result(t, id, &res).Ok)
-	assert.Equal(t, protocol.LogSubscribeResult{NextLine: 3}, res)
-}
-
-func TestServiceLogs_UnknownOrNonService(t *testing.T) {
-	st, h := newServiceHarness(t)
-	h.runner.tasks["job"] = &model.Task{Name: "job"}
-	h.start(t)
-
-	for taskID, code := range map[string]protocol.ErrorCode{"nope": protocol.ErrorCodeNotFound, "job": protocol.ErrorCodeConflict} {
-		id := st.Command(t, "service:logs", protocol.ServiceLogs{TaskID: taskID, Follow: true})
-		res := st.Result(t, id, nil)
-		require.NotNil(t, res.Error, taskID)
-		assert.Equal(t, code, res.Error.Code, taskID)
-	}
+	id = st.Command(t, "log:subscribe", protocol.LogSubscribe{ExecutionID: "cli-run"})
+	res := st.Result(t, id, nil)
+	require.NotNil(t, res.Error, "a run no dispatch created is a service's or nobody's")
+	assert.Equal(t, protocol.ErrorCodeNotFound, res.Error.Code)
 }

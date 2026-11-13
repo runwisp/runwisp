@@ -41,6 +41,9 @@ type ServiceInstanceStatus struct {
 	// healthy run; the slot goes FATAL once it passes restart_attempts.
 	StartFails   int  `json:"startFails" doc:"Failed starts in a row since the instance last ran healthy; it gives up once this passes restartAttempts"`
 	LastExitCode *int `json:"lastExitCode,omitempty" doc:"Exit code of the instance's latest run; absent until one has exited since the daemon started"`
+	// RunID is the instance's current run, else its latest ended one; "" when
+	// it has had none since the daemon started. Reported to the station only.
+	RunID string `json:"-"`
 }
 
 // ResourceUsage is the live CPU and memory use of a task's running processes,

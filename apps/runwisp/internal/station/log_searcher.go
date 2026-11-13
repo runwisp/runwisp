@@ -45,7 +45,7 @@ func (client *Client) lookupRun(ctx context.Context, executionID string) (*model
 	if err != nil {
 		return nil, err
 	}
-	run, err := client.deps.RunRepo.GetRunByExecutionID(ctx, id)
+	run, err := client.handler.findRun(ctx, id)
 	switch {
 	case err == nil && run != nil:
 		return run, nil

@@ -101,7 +101,9 @@ func TestExecutionUpdate_FinishedCarriesOutcome(t *testing.T) {
 	assert.Equal(t, protocol.ExecutionStatusRunning, u.Status)
 	assert.Nil(t, u.IsFailure)
 
-	assert.Nil(t, executionUpdate(&model.Run{Status: model.PhaseRunning}), "a local run has no update")
+	u = executionUpdate(&model.Run{ID: "r1", TaskName: "web", InstanceIndex: 2, Status: model.PhaseRunning})
+	assert.Equal(t, &protocol.ExecutionUpdate{ExecutionID: "r1", TaskID: "web", Instance: new(2), Status: protocol.ExecutionStatusRunning}, u,
+		"a service instance's run goes by its run id, naming its task and instance")
 }
 
 func TestTracker_InventoryCoversLiveAndUnacked(t *testing.T) {

@@ -222,6 +222,7 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 		nextRestartAttempt, serviceFatal = ts.supervisor.RecordExit(
 			run.InstanceIndex, runDuration, startRetries, failedStart)
 		ts.supervisor.SetLastExitCode(run.InstanceIndex, exitCode)
+		ts.supervisor.SetLastRun(run.InstanceIndex, run.ID)
 		if serviceFatal {
 			fatalAttempts = ts.supervisor.StartFails(run.InstanceIndex)
 		} else {
@@ -441,7 +442,8 @@ func (m *defaultTaskManager) TerminateRun(runID string) error {
 }
 
 // StopRunByExecutionID cancels a running run bound to an external execution
-// ID. force kills its process at once; a positive grace kills it once grace
+// ID, or a service instance's run by its own run ID (the id the station knows
+// it by; the supervisor restarts the instance per its policy). force kills its process at once; a positive grace kills it once grace
 // has passed, when that comes before the end of its own graceful-stop window.
 func (m *defaultTaskManager) StopRunByExecutionID(executionID string, grace time.Duration, force bool) error {
 	m.mu.Lock()
@@ -449,7 +451,7 @@ func (m *defaultTaskManager) StopRunByExecutionID(executionID string, grace time
 
 	for _, ts := range m.allTaskStates() {
 		for _, ar := range ts.active {
-			if ar.Run.ExecutionID == nil || *ar.Run.ExecutionID != executionID {
+			if !matchesExecution(ts.task, ar.Run, executionID) {
 				continue
 			}
 			ar.Cancel()
@@ -463,6 +465,13 @@ func (m *defaultTaskManager) StopRunByExecutionID(executionID string, grace time
 		}
 	}
 	return fmt.Errorf("run not found for external execution id: %s", executionID)
+}
+
+func matchesExecution(task *model.Task, run *model.Run, executionID string) bool {
+	if run.ExecutionID != nil {
+		return *run.ExecutionID == executionID
+	}
+	return task.Kind.IsService() && run.ID == executionID
 }
 
 // forceKillIfActive kills ar's process if the run is still active. A run stays

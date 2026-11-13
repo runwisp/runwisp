@@ -5,6 +5,8 @@ package station
 
 import (
 	"cmp"
+	"context"
+	"errors"
 	"slices"
 	"sync"
 
@@ -69,6 +71,24 @@ func (t *ExecutionTracker) Known(executionID string) bool {
 	return reserved || running
 }
 
+// findExecutionRun returns the run of a station execution: the run dispatched
+// under that id, else, when isService accepts it, the service instance's run
+// with that run id (see executionIDOf). Neither is storage.ErrNotFound.
+func findExecutionRun(ctx context.Context, runs ExternalRunGetter, id string, isService func(*model.Run) bool) (*model.Run, error) {
+	run, err := runs.GetRunByExecutionID(ctx, id)
+	if !errors.Is(err, storage.ErrNotFound) {
+		return run, err
+	}
+	run, err = runs.GetRun(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if run.ExecutionID != nil || !isService(run) {
+		return nil, storage.ErrNotFound
+	}
+	return run, nil
+}
+
 func (t *ExecutionTracker) Remove(executionID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -104,15 +124,31 @@ func (t *ExecutionTracker) Inventory(inOutbox []storage.OutboxExecution) []proto
 	return out
 }
 
-// executionUpdate maps a station run onto its execution:update (without seq,
-// which the outbox assigns). It returns nil for a run with no execution id or
-// one that is neither running nor ended. reason is the run's EndReason as is;
+// executionIDOf is the id the station knows run by: its dispatch's execution
+// id, or, for a service instance's run (which the daemon starts itself), the
+// run's own id.
+func executionIDOf(run *model.Run) string {
+	if run.ExecutionID != nil {
+		return *run.ExecutionID
+	}
+	return run.ID
+}
+
+// executionUpdate maps a run the station hears of (a dispatched one, or a
+// service instance's) onto its execution:update (without seq, which the
+// outbox assigns). A service instance's run also names its task and instance,
+// so the station can record a run it never dispatched. It returns nil for a
+// run that is neither running nor ended. reason is the run's EndReason as is;
 // the station falls back to isFailure for a reason it doesn't know.
 func executionUpdate(run *model.Run) *protocol.ExecutionUpdate {
-	if run == nil || run.ExecutionID == nil {
+	if run == nil {
 		return nil
 	}
-	update := &protocol.ExecutionUpdate{ExecutionID: *run.ExecutionID, StartedAt: run.StartedAt}
+	update := &protocol.ExecutionUpdate{ExecutionID: executionIDOf(run), StartedAt: run.StartedAt}
+	if run.ExecutionID == nil {
+		update.TaskID = run.TaskName
+		update.Instance = new(run.InstanceIndex)
+	}
 	switch {
 	case run.Status == model.PhaseRunning:
 		update.Status = protocol.ExecutionStatusRunning

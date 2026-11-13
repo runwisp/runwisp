@@ -44,7 +44,6 @@ const (
 	typeServiceControl   = "service:control"
 	typeServiceRemove    = "service:remove"
 	typeServiceStatus    = "service:status"
-	typeServiceLogs      = "service:logs"
 )
 
 // encodeFrame builds one envelope. data may be nil for an empty payload.
@@ -104,6 +103,8 @@ func newServiceStatus(snapshot model.ServiceSnapshot) protocol.ServiceStatus {
 			RestartCount: inst.RestartCount,
 			StartFails:   inst.StartFails,
 			LastExitCode: inst.LastExitCode,
+			// A service run's execution id is its run id (executionIDOf).
+			ExecutionID: inst.RunID,
 		}
 		if inst.Pid != 0 {
 			item.Pid = &inst.Pid

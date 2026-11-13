@@ -48,7 +48,6 @@ var payloadTypes = map[string]func() any{
 	"service:control":    func() any { return &protocol.ServiceControl{} },
 	"service:remove":     func() any { return &protocol.ServiceRemove{} },
 	"service:status":     func() any { return &protocol.ServiceStatus{} },
-	"service:logs":       func() any { return &protocol.ServiceLogs{} },
 }
 
 // TestFixturesCoverTheSpec: every message the spec names has a fixture and a

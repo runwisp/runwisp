@@ -45,6 +45,10 @@ type slotState struct {
 	// lastExit is the exit code of the slot's most recent run, nil until one
 	// has exited. Reported so the UI can say why an instance is down.
 	lastExit *int
+	// lastRun is the id of the slot's most recent ended run, "" until one
+	// has ended. Reported so the station can link an instance that is down
+	// to the run that left it so.
+	lastRun string
 }
 
 // wasHealthy reports whether the slot's current run has proven healthy: its
@@ -350,6 +354,13 @@ func (s *Supervisor) StartFails(idx int) int { return s.slot(idx).startFails }
 
 // SetLastExitCode records the exit code of the slot's run that just ended.
 func (s *Supervisor) SetLastExitCode(idx, code int) { s.mutateSlot(idx).lastExit = &code }
+
+// SetLastRun records the id of the slot's run that just ended.
+func (s *Supervisor) SetLastRun(idx int, runID string) { s.mutateSlot(idx).lastRun = runID }
+
+// LastRun returns the id of the slot's most recent ended run, "" when none
+// has ended since the daemon started.
+func (s *Supervisor) LastRun(idx int) string { return s.slot(idx).lastRun }
 
 // LastExitCode returns the exit code of the slot's most recent run, nil when
 // none has exited since the daemon started.

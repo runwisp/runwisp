@@ -30,7 +30,6 @@ const (
 type logSubscription struct {
 	sess    *session
 	replyTo string
-	runID   string // set on service:logs streams, echoed in every frame
 	path    string
 	next    int64 // the next line to send
 	limit   int64 // 0 = none
@@ -53,7 +52,7 @@ func (s *session) streamLog(ctx context.Context, id string, req protocol.LogSubs
 	}
 	ctx, done := s.track(ctx, id)
 	defer done()
-	return s.streamRun(ctx, id, run, req.FromLine, req.Limit, req.Follow, ""), nil
+	return s.streamRun(ctx, id, run, req.FromLine, req.Limit, req.Follow), nil
 }
 
 // track registers subscription id so log:unsubscribe can cancel it; done
@@ -72,13 +71,12 @@ func (s *session) track(ctx context.Context, id string) (_ context.Context, done
 }
 
 // streamRun streams one run's log for subscription id: from, limit and follow
-// as in log:subscribe; runID, when set, goes on every frame.
-func (s *session) streamRun(ctx context.Context, id string, run *model.Run, from, limit int64, follow bool, runID string) protocol.LogSubscribeResult {
+// as in log:subscribe.
+func (s *session) streamRun(ctx context.Context, id string, run *model.Run, from, limit int64, follow bool) protocol.LogSubscribeResult {
 	path := logutil.ResolveRunLogPath(s.client.deps.LogDir, run.TaskName, run.ID, run.CreatedAt)
 	sub := &logSubscription{
 		sess:    s,
 		replyTo: id,
-		runID:   runID,
 		path:    path,
 		next:    startLine(path, from),
 		limit:   limit,
@@ -273,7 +271,7 @@ func (sub *logSubscription) gap(to int64) {
 	if !sub.flush() {
 		return
 	}
-	_ = sub.sess.send(typeLogLines, "", sub.replyTo, protocol.LogLines{Lines: []protocol.LogLine{}, Gap: &protocol.LogGap{From: sub.next, To: to}, RunID: sub.runID}, false)
+	_ = sub.sess.send(typeLogLines, "", sub.replyTo, protocol.LogLines{Lines: []protocol.LogLine{}, Gap: &protocol.LogGap{From: sub.next, To: to}}, false)
 	sub.next = to
 }
 
@@ -281,7 +279,7 @@ func (sub *logSubscription) flush() bool {
 	if len(sub.batch) == 0 {
 		return true
 	}
-	err := sub.sess.send(typeLogLines, "", sub.replyTo, protocol.LogLines{Lines: sub.batch, RunID: sub.runID}, false)
+	err := sub.sess.send(typeLogLines, "", sub.replyTo, protocol.LogLines{Lines: sub.batch}, false)
 	sub.batch, sub.size = nil, 0
 	return err == nil
 }
