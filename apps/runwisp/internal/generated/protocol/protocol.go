@@ -38,9 +38,8 @@ type Hello struct {
 	// Optional features this daemon understands, by name, with whether
 	// each can be used right now. A name that's absent is not understood.
 	// v1.0 names: exec.shell, exec.container, exec.compose, exec.http,
-	// exec.config, agent.restart, agent.upgrade. Added since v1.0:
-	// service.logs. Everything else in this spec is baseline and has no
-	// feature name.
+	// exec.config, agent.restart, agent.upgrade. Everything else in
+	// this spec is baseline and has no feature name.
 	Features map[string]*FeatureStatus `json:"features"`
 	// Operator-set labels (`[daemon] labels`). May be empty.
 	Labels map[string]string `json:"labels"`
@@ -463,12 +462,21 @@ var ExecutionStatusValues = []ExecutionStatus{ExecutionStatusAccepted, Execution
 // A finished execution gets one update with status finished, and,
 // after its log archive is uploaded, a second finished update carrying
 // `log`. Both are sequenced and acked.
+//
+// A service instance's run is an execution the daemon starts itself: its
+// executionId is the daemon's run id, and every update of it carries
+// taskId and instance, so the station records the run from whichever
+// update it sees first.
 type ExecutionUpdate struct {
-	Seq         int64           `json:"seq"`
-	ExecutionID string          `json:"executionId"`
-	Status      ExecutionStatus `json:"status"`
-	StartedAt   *time.Time      `json:"startedAt,omitzero"`
-	FinishedAt  *time.Time      `json:"finishedAt,omitzero"`
+	Seq         int64  `json:"seq"`
+	ExecutionID string `json:"executionId"`
+	// Set on a service instance's run. The service, as in service:status.
+	TaskID string `json:"taskId,omitzero"`
+	// Set on a service instance's run. 0-based instance slot.
+	Instance   *int            `json:"instance,omitzero"`
+	Status     ExecutionStatus `json:"status"`
+	StartedAt  *time.Time      `json:"startedAt,omitzero"`
+	FinishedAt *time.Time      `json:"finishedAt,omitzero"`
 	// Open. Set when finished: succeeded, failed, stopped, timeout,
 	// crashed, skipped, log_overflow, queue_full, dst_skipped,
 	// daemon_stopped, missed, start_failed, unhealthy, ... A receiver
@@ -522,9 +530,6 @@ type LogUnsubscribe struct {
 type LogLines struct {
 	Lines []LogLine `json:"lines"`
 	Gap   *LogGap   `json:"gap,omitzero"`
-	// Set on service:logs streams: the daemon run these lines belong to.
-	// Line numbers restart at 0 in each run.
-	RunID string `json:"runId,omitzero"`
 }
 
 // Lines [from, to) were dropped under backpressure; replay them if needed.
@@ -621,22 +626,6 @@ type ServiceControl struct {
 	Action ServiceAction `json:"action"`
 }
 
-// Streams log:lines (replyTo = this command's id) for one service
-// instance, like log:subscribe, each frame carrying its runId. A negative
-// fromLine tails the instance's output, reaching back into earlier runs
-// when the latest run is shorter. With follow it continues into each new
-// run of the instance and ends only on log:unsubscribe. Ends with a
-// result (LogSubscribeResult).
-type ServiceLogs struct {
-	// The service, as in service:control.
-	TaskID string `json:"taskId"`
-	// 0-based instance slot.
-	Instance int `json:"instance"`
-	// First line of the newest run; 0 = start; negative = the last -fromLine lines (a tail).
-	FromLine int64 `json:"fromLine"`
-	Follow   bool  `json:"follow"`
-}
-
 type ServiceAction string
 
 const (
@@ -682,6 +671,8 @@ type ServiceInstance struct {
 	// Failed starts in a row since the last healthy run.
 	StartFails   int  `json:"startFails"`
 	LastExitCode *int `json:"lastExitCode,omitzero"`
+	// The slot's current or latest run, as in execution:update. Absent before its first run.
+	ExecutionID string `json:"executionId,omitzero"`
 }
 
 // Open. running, restarting, stopped, fatal.

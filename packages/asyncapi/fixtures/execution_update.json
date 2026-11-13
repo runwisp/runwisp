@@ -3,7 +3,9 @@
   "sentAt": "2026-11-12T10:00:00.123Z",
   "data": {
     "seq": 42,
-    "executionId": "ex_01JC8Y5T",
+    "executionId": "01JC8Y9A2B3C4D5E6F7G8H9J0K",
+    "taskId": "web",
+    "instance": 1,
     "status": "finished",
     "startedAt": "2026-11-12T03:00:00Z",
     "finishedAt": "2026-11-12T03:04:12Z",
@@ -15,7 +17,7 @@
       "cpuTimeMs": 5230
     },
     "log": {
-      "key": "logs/2026-11/ex_01JC8Y5T.log.gz",
+      "key": "logs/2026-11/01JC8Y9A2B3C4D5E6F7G8H9J0K.log.gz",
       "bytes": 20480,
       "chunks": 3
     }

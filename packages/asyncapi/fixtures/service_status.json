@@ -13,14 +13,16 @@
         "pid": 4242,
         "startedAt": "2026-11-12T09:58:00Z",
         "restartCount": 0,
-        "startFails": 0
+        "startFails": 0,
+        "executionId": "01JC8Y9A2B3C4D5E6F7G8H9J0K"
       },
       {
         "index": 1,
         "state": "restarting",
         "restartCount": 3,
         "startFails": 2,
-        "lastExitCode": 137
+        "lastExitCode": 137,
+        "executionId": "01JC8Y9B2B3C4D5E6F7G8H9J0K"
       }
     ]
   }
