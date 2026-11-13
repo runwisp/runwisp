@@ -10,12 +10,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 	"github.com/spf13/cobra"
 )
 
@@ -166,6 +168,7 @@ func installService(cmd *cobra.Command, f Flags, req installRequest) (installed 
 	}
 	ensureServiceEnv(cmd, installer, opts, env)
 	printCronStillOwnsNote(cmd, f, deps, installer, opts)
+	printSystemdStillEnabledNote(cmd.OutOrStdout(), deps.Cmd, opts.Config)
 	return true, nil
 }
 
@@ -346,6 +349,53 @@ func printCronStillOwnsNote(cmd *cobra.Command, f Flags, deps autostart.Deps, in
 		plan.Evidence.CronUnit, plan.Evidence.Scan.Jobs, sudoRunwisp("takeover"))
 }
 
+// printSystemdStillEnabledNote is the systemd half of printCronStillOwnsNote:
+// `import systemd` copies a unit without disabling it, so once RunWisp runs,
+// a timer left enabled fires the same job twice. The import summary prints the
+// disable command; this is the reminder at the moment RunWisp starts running.
+func printSystemdStillEnabledNote(out io.Writer, run autostart.Runner, configPath string) {
+	if runtime.GOOS != "linux" {
+		return
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return
+	}
+	units := stillEnabledUnits(context.Background(), run, cfg.Tasks)
+	if len(units) == 0 {
+		return
+	}
+	fmt.Fprintf(out, "\nNote: %s %s still enabled in systemd, under the name of a task RunWisp runs.\n"+
+		"      If you imported them, disable them or each job runs twice:\n"+
+		"        sudo systemctl disable --now %s\n",
+		strings.Join(units, ", "), textutil.Pluralize(len(units), "is", "are"), strings.Join(units, " "))
+}
+
+// stillEnabledUnits returns the systemd units enabled under a task's name:
+// NAME.timer for a task, NAME.service for a service. A crontab-read task came
+// from cron, not systemd, so it is left out.
+//
+// ponytail: matches by name and checks the system manager only, so a task
+// renamed on import (backup-2) or a user unit goes unnoticed. Record each
+// staged task's unit if that turns out to matter.
+func stillEnabledUnits(ctx context.Context, run autostart.Runner, tasks []model.Task) []string {
+	var units []string
+	for _, t := range tasks {
+		if t.Source == model.SourceCron {
+			continue
+		}
+		unit := t.Name + ".timer"
+		if t.Kind.IsService() {
+			unit = t.Name + ".service"
+		}
+		stdout, _, _ := run.Run(ctx, "systemctl", "is-enabled", unit)
+		if strings.TrimSpace(string(stdout)) == "enabled" {
+			units = append(units, unit)
+		}
+	}
+	return units
+}
+
 // inspectServiceInstall serves --print and --dry-run: both answer "what
 // would this install produce" and return without touching disk.
 //
@@ -410,22 +460,35 @@ func inspectServiceInstall(cmd *cobra.Command, installer autostart.Installer, op
 // treats an untrusted config as an error and `takeover` reports it as a plan
 // blocker, so the caller decides. See assertTrustedIfSystem.
 func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags, systemWide bool, binaryOverride string) (autostart.InstallOptions, error) {
+	opts, _, err := resolveServiceOptionsTolerant(cmd, deps, f, systemWide, binaryOverride, false)
+	return opts, err
+}
+
+// resolveServiceOptionsTolerant is resolveServiceOptions for a caller that can
+// report a refused binary path instead of dying on it, as `takeover --dry-run`
+// does with its plan. With tolerate set, a binary that is not durable comes back
+// as binaryErr alongside options built around the rejected path, so the rest of
+// the plan can still be worked out and shown.
+func resolveServiceOptionsTolerant(cmd *cobra.Command, deps autostart.Deps, f Flags, systemWide bool, binaryOverride string, tolerate bool) (opts autostart.InstallOptions, binaryErr, err error) {
 	binary, err := resolveUnitBinary(cmd.ErrOrStderr(), deps, binaryOverride)
 	if err != nil {
-		return autostart.InstallOptions{}, err
+		if !tolerate || binary == "" {
+			return autostart.InstallOptions{}, nil, err
+		}
+		binaryErr = err
 	}
 
 	dataDir, err := resolveServiceDataDir(cmd, deps, f, systemWide)
 	if err != nil {
-		return autostart.InstallOptions{}, err
+		return autostart.InstallOptions{}, nil, err
 	}
 
 	configPath, err := resolveServiceConfigPath(cmd, deps, f, systemWide)
 	if err != nil {
-		return autostart.InstallOptions{}, err
+		return autostart.InstallOptions{}, nil, err
 	}
 
-	opts := autostart.InstallOptions{
+	opts = autostart.InstallOptions{
 		Binary:      binary,
 		Config:      configPath,
 		DataDir:     dataDir,
@@ -439,7 +502,7 @@ func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags, sys
 	if systemWide && binaryOverride == "" {
 		useRootOwnedBinary(&opts)
 	}
-	return opts, nil
+	return opts, binaryErr, nil
 }
 
 // systemBinaryPath is where a system install keeps its root-owned copy of the
@@ -460,8 +523,10 @@ func useRootOwnedBinary(opts *autostart.InstallOptions) {
 // resolveUnitBinary resolves the durable binary path to bake into the unit —
 // either an explicit --binary override or this process's own executable. Shared
 // with the first-run cutover, which builds its InstallOptions without cobra.
-// Any non-fatal warning (a path under /tmp, a symlink that may not survive an
-// upgrade) goes to stderr rather than blocking the install.
+// Any non-fatal warning (a symlink that may not survive an upgrade) goes to
+// stderr rather than blocking the install. A refused path (under /tmp, not
+// executable) returns the error together with the rejected candidate, which a
+// caller that only wants the refusal ignores.
 func resolveUnitBinary(stderr io.Writer, deps autostart.Deps, override string) (string, error) {
 	opts := autostart.ResolveBinaryOptions{HomeDir: deps.Home}
 	exe := override
@@ -484,7 +549,7 @@ func resolveUnitBinary(stderr io.Writer, deps autostart.Deps, override string) (
 	opts.ExecutablePath = exe
 	binary, warning, err := autostart.ResolveBinary(opts)
 	if err != nil {
-		return "", &userFacingError{
+		return exe, &userFacingError{
 			title:   "binary path is not durable",
 			details: err.Error(),
 		}

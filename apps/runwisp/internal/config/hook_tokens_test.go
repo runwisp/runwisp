@@ -13,8 +13,8 @@ import (
 )
 
 var (
-	validHookToken = strings.Repeat("a", minHookTokenLength)
-	otherHookToken = strings.Repeat("b", minHookTokenLength)
+	validHookToken = strings.Repeat("a", minTokenLength)
+	otherHookToken = strings.Repeat("b", minTokenLength)
 )
 
 // Short and long form mix in one list; ${VAR} expands inside the table too.

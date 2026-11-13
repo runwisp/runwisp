@@ -30,8 +30,9 @@ var serviceUninstallCmd = &cobra.Command{
 	Use:   "uninstall",
 	Short: "Remove the autostart unit/plist (data dir is preserved)",
 	Long: `Symmetric counterpart of 'runwisp service install': stops the service,
-disables autostart, and deletes the managed unit/plist. The data dir is
-preserved by default.
+disables autostart, and deletes the managed unit/plist and the drop-ins
+RunWisp saved beside it. The config and data dir are preserved by default, and
+their paths are printed.
 
 With no flags this finds whichever unit is installed — the system-wide
 service or a per-user one. Pass --local to pin the per-user unit when both
@@ -77,7 +78,8 @@ func runServiceUninstall(cmd *cobra.Command, f Flags) error {
 
 	out := cmd.OutOrStdout()
 	var impact uninstallImpact
-	if hasServiceUnit(installer, f, systemWide) {
+	hadUnit := hasServiceUnit(installer, f, systemWide)
+	if hadUnit {
 		impact = computeUninstallImpact(f.CfgFile)
 		impact.print(out)
 	}
@@ -90,7 +92,30 @@ func runServiceUninstall(cmd *cobra.Command, f Flags) error {
 		return err
 	}
 	impact.restoreCron(out)
+	if hadUnit {
+		printLeftInPlace(out, f.CfgFile, f.DataDir, uopts.Purge)
+	}
 	return nil
+}
+
+// printLeftInPlace names what an uninstall deliberately keeps, so the operator
+// knows what to delete once they are sure: the config and, unless --purge took
+// it, the data dir with the run history.
+func printLeftInPlace(out io.Writer, cfgPath, dataDir string, purged bool) {
+	var left []string
+	for _, p := range []struct {
+		label, path string
+		skip        bool
+	}{{"config:", cfgPath, false}, {"data:", dataDir, purged}} {
+		if _, err := os.Stat(p.path); err == nil && !p.skip {
+			left = append(left, fmt.Sprintf("  %-8s %s", p.label, p.path))
+		}
+	}
+	if len(left) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "\nLeft in place, delete it yourself when you no longer need it:")
+	fmt.Fprintln(out, strings.Join(left, "\n"))
 }
 
 // hasServiceUnit reports whether there is a unit to uninstall, so a no-op

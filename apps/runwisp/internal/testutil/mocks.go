@@ -86,6 +86,11 @@ func (m *MockRunRepository) DeleteRunsByIDs(ctx context.Context, ids []string) e
 	return args.Error(0)
 }
 
+func (m *MockRunRepository) GetRunningRuns(ctx context.Context) ([]model.Run, error) {
+	args := m.Called(ctx)
+	return args.Get(0).([]model.Run), args.Error(1)
+}
+
 func (m *MockRunRepository) MarkCrashedRuns(ctx context.Context) (int64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(int64), args.Error(1)
@@ -173,9 +178,9 @@ func (m *MockRunRepository) Close() error {
 // fake executor that has nothing to do with the run manager's callbacks.
 type NoExecutorHooks struct{}
 
-func (NoExecutorHooks) SetRunWatcher(executor.RunWatcher)                        {}
-func (NoExecutorHooks) SetRunUpdateCallback(func(*model.Run))                    {}
-func (NoExecutorHooks) SetOnProcessStarted(func(runID string, forceKill func())) {}
+func (NoExecutorHooks) SetRunWatcher(executor.RunWatcher)                              {}
+func (NoExecutorHooks) SetRunUpdateCallback(func(*model.Run))                          {}
+func (NoExecutorHooks) SetOnProcessStarted(func(runID string, proc *executor.Process)) {}
 
 // MockExecutor is a testify mock for executor.Executor.
 type MockExecutor struct {

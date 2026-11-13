@@ -131,6 +131,8 @@ type Options struct {
 	SessionKey          []byte                                // session-token HMAC key (auth.DeriveSessionKey, in-memory)
 	NoAuth              bool                                  // RUNWISP_AUTH=off: serve all /api/* routes over TCP without CHAP or a session token
 	TrustedProxies      []string                              // [daemon] trusted_proxies as config resolved it (RUNWISP_TRUSTED_PROXIES applied)
+	APITokens           []string                              // [daemon] api_tokens: static bearer tokens with operator rights
+	ViewerAPITokens     []string                              // [daemon] viewer_api_tokens: static bearer tokens, read-only
 	OnSignedInVisit     func(baseURL string)                  // Called with the validated base URL of each browser password sign-in (optional; never with NoAuth)
 	DetectedExternalURL func() string                         // Per-request Web UI address learned from sign-ins, reported by /api/daemon when external_url is unset (optional)
 	DaemonInfo          *model.DaemonInfo                     // Static identity/config info for /api/daemon
@@ -205,8 +207,9 @@ func New(opts Options) (*Server, error) {
 		return nil, fmt.Errorf("init auth service: %w", err)
 	}
 	s.auth.SetViewerPassword(opts.ViewerPassword)
+	s.auth.SetAPITokens(opts.APITokens, opts.ViewerAPITokens)
 
-	s.appEvents = newAppEventLog()
+	s.appEvents = newAppEventLog(time.Now)
 	// Single consumer for the app-event SSE stream: subscribe to exactly the
 	// forwarded types (not SubscribeAll, so hot log.line/log.region events
 	// never touch this path). Permanent for the daemon's lifetime.

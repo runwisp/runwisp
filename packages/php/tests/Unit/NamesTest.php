@@ -20,6 +20,17 @@ final class NamesTest extends TestCase
         self::assertSame(100, strlen(Names::slug(str_repeat('x', 150))));
     }
 
+    public function testValidIsWhatNeedsNoSlug(): void
+    {
+        self::assertTrue(Names::valid('nightly-reports'));
+        self::assertTrue(Names::valid('emails:send.v2_x'));
+        self::assertTrue(Names::valid(str_repeat('x', 100)));
+        self::assertFalse(Names::valid(''));
+        self::assertFalse(Names::valid(str_repeat('x', 101)));
+        self::assertFalse(Names::valid('Email the daily sales digest (production only)'));
+        self::assertFalse(Names::valid("backup\n"));
+    }
+
     public function testClaimRenamesACollisionAndWarns(): void
     {
         $warnings = [];

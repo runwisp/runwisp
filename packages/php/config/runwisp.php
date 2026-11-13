@@ -5,34 +5,44 @@
 
 declare(strict_types=1);
 
-// RunWisp for `php artisan runwisp:work`. A null key falls back to the
-// RUNWISP_* env var the runwisp CLI reads, then to RunWisp's default.
+// RunWisp for `php artisan runwisp:work`. A null key falls back to RunWisp's
+// default. The env() calls are read when Laravel loads its config, so they
+// keep working after `php artisan config:cache`.
 return [
     // Which app this is: copies of one app share a RunWisp. Default: the
     // `name` in composer.json.
-    'app' => null,
+    'app' => env('RUNWISP_APP'),
 
-    // Database, run logs and socket. Default: RUNWISP_DATA, else storage/runwisp.
-    'data' => null,
+    // Database, run logs and socket. Default: storage/runwisp.
+    'data' => env('RUNWISP_DATA'),
 
-    // Web UI port. Default: RUNWISP_PORT, else 9477 or the next free port.
-    'port' => null,
+    // Web UI port. Default: 9477 or the next free port.
+    'port' => env('RUNWISP_PORT'),
 
-    // Web UI bind address. Default: RUNWISP_HOST, else 127.0.0.1.
-    'host' => null,
+    // Web UI bind address. Default: 127.0.0.1.
+    'host' => env('RUNWISP_HOST'),
 
-    // Web UI password. Default: RUNWISP_PASSWORD, else a new one on each start.
-    'password' => null,
+    // Web UI password. Default: a new one on each start.
+    'password' => env('RUNWISP_PASSWORD'),
 
-    // false turns the login off, like RUNWISP_AUTH=off.
-    'auth' => null,
+    // false turns the login off. Default: on, off with RUNWISP_AUTH=off.
+    'auth' => env('RUNWISP_AUTH') === 'off' ? false : null,
 
-    // Path to the runwisp binary. Default: RUNWISP_BINARY, else the one
-    // Composer downloaded, else runwisp on PATH.
-    'binary' => null,
+    // Path to the runwisp binary. Default: the one Composer downloaded, else
+    // runwisp on PATH.
+    'binary' => env('RUNWISP_BINARY'),
 
     // The rest of a runwisp.toml, with the same keys: notifiers, route,
-    // defaults, daemon, storage, and shell tasks. A scheduled task's own keys,
-    // such as retry_attempts, go in #[RunWisp\Task] on its command or job.
-    'config' => [],
+    // defaults, daemon, storage, services, and shell tasks. A scheduled task's
+    // own keys, such as retry_attempts, go in #[RunWisp\Task] on its command
+    // or job.
+    'config' => [
+        // A queue worker that RunWisp keeps running and restarts:
+        // 'services' => [
+        //     'queue-worker' => [
+        //         'run' => 'php artisan queue:work --sleep=3 --tries=3 --max-time=3600',
+        //         'restart_delay' => '5s',
+        //     ],
+        // ],
+    ],
 ];

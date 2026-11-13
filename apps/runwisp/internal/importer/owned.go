@@ -38,8 +38,8 @@ type OwnedEntry struct {
 }
 
 // OwnedFrom snapshots the tasks and services a config defines, skipping staged
-// ones: the staging file is about to be rewritten wholesale, so what it
-// currently holds reserves nothing.
+// ones: a staged entry the import names again is replaced in the staging file
+// (configedit.Stage), so what it currently holds reserves nothing.
 //
 // Cron-sourced tasks are *kept*. An import doesn't rewrite a crontab, so the
 // name is genuinely taken — and when the incoming job is the same job (which it
@@ -110,10 +110,14 @@ func (n *namer) unique(base string) string { return n.dd.uniqueIn(base, n.suffix
 // job never gets, which is the silent drop this design exists to prevent.
 //
 // line is the 1-based source line, or 0 for a source that isn't line-oriented.
-func (n *namer) resolve(source, base string, id OwnedEntry, line int) (ref itemRef, name string, skip bool) {
+//
+// legacy are the name and identity an older RunWisp gave the same job (see
+// legacyCronName and splitLeadingCd). A task an upgrade's predecessor imported
+// under them is this job too, so it skips rather than running twice.
+func (n *namer) resolve(source, base string, id OwnedEntry, line int, legacy ...namedEntry) (ref itemRef, name string, skip bool) {
 	ref = n.res.addItemAt(source, line)
 	existing, reserved := n.owned[base]
-	if reserved && sameEntry(existing, id) {
+	if reserved && sameEntry(existing, id) || n.ownsAny(legacy) {
 		ref.note(NoteAlreadyDefined, "already defined in runwisp.toml with the same command")
 		return ref, "", true
 	}
@@ -128,6 +132,22 @@ func (n *namer) resolve(source, base string, id OwnedEntry, line int) (ref itemR
 			"another job in this import already took the name \""+base+"\" — imported this one as \""+name+"\".")
 	}
 	return ref, name, false
+}
+
+// namedEntry is an entry together with the name it would be owned under.
+type namedEntry struct {
+	name string
+	id   OwnedEntry
+}
+
+// ownsAny reports whether the live config owns any of entries, by name and identity.
+func (n *namer) ownsAny(entries []namedEntry) bool {
+	for _, e := range entries {
+		if existing, ok := n.owned[e.name]; ok && sameEntry(existing, e.id) {
+			return true
+		}
+	}
+	return false
 }
 
 // sameEntry reports whether an imported entry is the same job the live config

@@ -257,14 +257,16 @@ export function call(
     timeoutMs = 10_000,
 ): Promise<Response> {
     return new Promise((resolvePromise, reject) => {
+        let answering = false;
+        // The daemon dying mid-answer must not leave the call hanging.
+        const hungUp = (cause?: Error) => {
+            reject(new Error(`RunWisp hung up during ${method} ${path}`, { cause }));
+        };
         const req = request(
             { socketPath: socket, method, path, headers: { host: "runwisp" } },
             (res) => {
+                answering = true;
                 const chunks: Buffer[] = [];
-                // The daemon dying mid-answer must not leave the call hanging.
-                const hungUp = (cause?: Error) => {
-                    reject(new Error(`RunWisp hung up during ${method} ${path}`, { cause }));
-                };
                 res.on("error", hungUp);
                 res.on("close", () => {
                     if (!res.complete) hungUp();
@@ -282,7 +284,11 @@ export function call(
                 });
             },
         );
-        req.on("error", reject);
+        // A reset mid-answer reaches the request before the response closes.
+        req.on("error", (err) => {
+            if (answering && field(err, "code") === "ECONNRESET") hungUp(err);
+            else reject(err);
+        });
         req.setTimeout(timeoutMs, () => {
             req.destroy(new Error(`RunWisp did not answer ${method} ${path} in time`));
         });

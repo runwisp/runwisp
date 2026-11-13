@@ -6,11 +6,13 @@
 package e2e
 
 import (
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,4 +65,29 @@ func TestCLIStopRestart(t *testing.T) {
 		"stop", "--data", daemon.dataDir, "--config", configPath)
 	require.NoError(t, err, "stop with no daemon should exit 0: %s", out)
 	require.Contains(t, out, "nothing to stop")
+}
+
+// TestCLIRestartKeepsTheFoundDataDir: from an app's root, `runwisp restart`
+// finds the daemon in storage/runwisp without --data. The daemon it spawns must
+// come back in that dir; it used to start over in an empty ./.runwisp.
+func TestCLIRestartKeepsTheFoundDataDir(t *testing.T) {
+	t.Parallel()
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	appRoot := testutil.ShortTempDir(t)
+	configPath := writeE2EConfig(t, appRoot)
+	dataDir := filepath.Join(appRoot, "storage", "runwisp")
+	daemon := startDaemonOn(t, appRoot, binaryPath, configPath, dataDir, reserveTCPPort(t))
+	t.Cleanup(func() {
+		_, _ = runCLI(t, appRoot, binaryPath, "stop", "--data", dataDir, "--config", configPath)
+		_, _ = runCLI(t, appRoot, binaryPath, "stop", "--config", configPath)
+	})
+
+	out, err := runCLI(t, appRoot, binaryPath, "restart", "--config", configPath, "--port", strconv.Itoa(daemon.port))
+	require.NoError(t, err, "restart should succeed: %s", out)
+	require.True(t, daemon.waitForExit(processExitTimeout), "old daemon should exit on restart")
+
+	require.FileExists(t, filepath.Join(dataDir, "daemon.pid"), "the fresh daemon runs in the dir restart found")
+	require.NoFileExists(t, filepath.Join(appRoot, ".runwisp", "daemon.pid"))
 }

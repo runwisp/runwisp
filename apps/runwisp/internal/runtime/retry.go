@@ -13,7 +13,8 @@ import (
 )
 
 // scheduleRetry waits for the retry delay and triggers a new run.
-func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Run) {
+// stop is closed if the operator stops the task or a reload removes it first.
+func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Run, stop <-chan struct{}) {
 	if m.isShutdown.Load() {
 		return
 	}
@@ -21,7 +22,7 @@ func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Ru
 	delay := retry.ComputeRetryDelay(task, failedRun.RetryAttempt)
 	slog.Info("Scheduling retry", "attempt", failedRun.RetryAttempt+1, "max", task.RetryAttempts, "task", task.Name, "delay", delay)
 
-	if !m.waitForDelay(delay) {
+	if !m.waitForDelay(delay, stop) {
 		return
 	}
 
@@ -52,7 +53,7 @@ func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *mode
 	}
 
 	delay := retry.RestartDelay(task, attempt, previousRun.EndReason)
-	if delay > 0 && !m.waitForDelay(delay) {
+	if delay > 0 && !m.waitForDelay(delay, nil) {
 		return
 	}
 
@@ -96,16 +97,24 @@ func (m *defaultTaskManager) isServiceStopped(taskName string) bool {
 	return ts.supervisor.IsStopped()
 }
 
-// waitForDelay sleeps for the given duration, returning false if the daemon
-// shuts down before the timer fires. It watches shutdownCtx, which is cancelled
+// waitForDelay sleeps for the given duration, returning false if stop (nil for
+// none) is closed or the daemon shuts down before the timer fires. It watches shutdownCtx, which is cancelled
 // at the very start of ShutdownWithDeadline — before the wg drain — so a parked
 // wait never deadlocks the drain (see defaultTaskManager.shutdownCtx).
-func (m *defaultTaskManager) waitForDelay(delay time.Duration) bool {
+func (m *defaultTaskManager) waitForDelay(delay time.Duration, stop <-chan struct{}) bool {
+	// Checked first so a stop wins over an already-expired (or zero) delay.
+	select {
+	case <-stop:
+		return false
+	default:
+	}
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	select {
 	case <-timer.C:
 		return true
+	case <-stop:
+		return false
 	case <-m.shutdownCtx.Done():
 		return false
 	}

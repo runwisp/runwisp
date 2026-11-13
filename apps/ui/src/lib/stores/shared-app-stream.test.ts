@@ -508,6 +508,25 @@ describe("SharedAppStream", () => {
         expect(received[0]?.[1]).toBe("42");
     });
 
+    it("delivers the id-less resync event to the leader and to followers", () => {
+        const { makeTab } = makeWorld();
+        const leaderTab = makeTab();
+        const followerTab = makeTab();
+        const leaderGot = vi.fn();
+        const followerGot = vi.fn();
+
+        leaderTab.stream.subscribe("resync", leaderGot);
+        followerTab.stream.subscribe("resync", followerGot);
+
+        const es = leaderTab.leaderES();
+        es?.open();
+        es?.fire("resync", {});
+
+        expect(leaderGot).toHaveBeenCalledOnce();
+        expect(followerGot).toHaveBeenCalledOnce();
+        expect(followerGot.mock.calls[0]?.[1]).toBeUndefined();
+    });
+
     it("ignores malformed bus messages", () => {
         const { makeTab, bus } = makeWorld();
         const leaderTab = makeTab();

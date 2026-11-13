@@ -95,3 +95,12 @@ func TestAnacrontabOddPeriodAndBadLines(t *testing.T) {
 		t.Fatalf("want 1 period note and 2 unparseable lines, got %+v", notes)
 	}
 }
+
+// anacron hands the command to sh untouched: '%' is not crond's end-of-command
+// marker there, so `date +%F` has to survive the import.
+func TestAnacrontabPercentIsLiteral(t *testing.T) {
+	res := parseAnacron(t, "1 5 backup tar czf /b/$(date +%F).tgz /home\n")
+	out := res.TOML()
+	mustContain(t, out, `run = "tar czf /b/$(date +%F).tgz /home"`)
+	mustNotContain(t, out, "stdin")
+}

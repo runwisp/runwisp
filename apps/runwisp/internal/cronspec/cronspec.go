@@ -14,7 +14,6 @@
 package cronspec
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -29,29 +28,28 @@ import (
 // (6-field: second minute hour dom month dow) plus descriptors like @hourly,
 // @daily, and @every 1h30m. SecondOptional (not Second) keeps 5-field specs
 // valid: they fire at :00. DowOrDom keeps vixie's rule that a restricted
-// day-of-month and day-of-week are ORed (go-cron ANDs them by default).
-// Extended adds the Quartz-style day specials: L, L-3, LW and 15W in
+// day-of-month and day-of-week are ORed (go-cron ANDs them by default), and
+// StepWildcard keeps a stepped star (*/2) counting as unrestricted there.
+// LenientSteps accepts a step at or above its range size (*/60, 7/2) as vixie
+// and robfig/cron did. StrictDays rejects a day of month none of the months
+// has (0 0 30 2 *). Extended adds the Quartz-style day specials: L, L-3, LW and 15W in
 // day-of-month, FRI#3 and FRI#L in day-of-week.
-const parseOptions = cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor | cron.DowOrDom | cron.Extended
+const parseOptions = cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor | cron.DowOrDom | cron.Extended |
+	cron.LenientSteps | cron.StrictDays | cron.StepWildcard
 
 // NewParser returns a parser for the RunWisp cron grammar.
 func NewParser() cron.ScheduleParser {
 	return specParser{inner: cron.NewParser(parseOptions)}
 }
 
-// specParser is go-cron's parser plus the vixie behaviours it only offers
-// behind options that are still in review upstream (each such patch names the
-// PR that replaces it), plus the rejections, day-of-week wrap and DST-gap
-// recovery RunWisp's documented grammar needs on top.
+// specParser is go-cron's parser plus the rejections, day-of-week wrap and
+// DST-gap recovery RunWisp's documented grammar needs on top.
 type specParser struct {
 	inner cron.Parser
 }
 
 func (p specParser) Parse(spec string) (cron.Schedule, error) {
-	if err := rangeStartAboveMax(spec); err != nil {
-		return nil, err
-	}
-	sched, err := p.inner.Parse(p.lenientSteps(wrappedDowRanges(spec)))
+	sched, err := p.inner.Parse(wrappedDowRanges(spec))
 	if err != nil {
 		return nil, err
 	}
@@ -63,9 +61,9 @@ func (p specParser) Parse(spec string) (cron.Schedule, error) {
 			strings.Join(fieldsAfterTZ(spec), " "))
 	}
 	if s, ok := sched.(*cron.SpecSchedule); ok {
-		markStarDays(s, spec)
 		if neverFires(s) {
-			return nil, errors.New("schedule never fires (the day of month does not exist in the given months)")
+			body := fieldsAfterTZ(spec)
+			return nil, fmt.Errorf("day of month %q never occurs in month %q", body[len(body)-3], body[len(body)-2])
 		}
 		return dstGapSchedule{inner: s}, nil
 	}
@@ -85,32 +83,6 @@ func fractionalEvery(spec string) error {
 	}
 	if d, err := time.ParseDuration(body[1]); err == nil && d%time.Second != 0 {
 		return fmt.Errorf("@every %s: the interval must be a whole number of seconds", body[1])
-	}
-	return nil
-}
-
-// fieldMax is each field's highest value, in 6-field order (day-of-week 7 is
-// Sunday).
-var fieldMax = [6]int{59, 59, 23, 31, 12, 7}
-
-// rangeStartAboveMax rejects a range whose start is past its field's maximum
-// ("30-2" in the hour field). go-cron reads any start above the end as a
-// wrap-around and only bounds-checks the end, so it would accept these and fire
-// on folded-over values.
-func rangeStartAboveMax(spec string) error {
-	body := fieldsAfterTZ(spec)
-	if len(body) != 5 && len(body) != 6 {
-		return nil
-	}
-	for i, field := range body {
-		pos := i + 6 - len(body)
-		for _, term := range strings.Split(field, ",") {
-			base, _, _ := strings.Cut(term, "/")
-			lo, _, isRange := strings.Cut(base, "-")
-			if n, err := strconv.Atoi(lo); err == nil && isRange && n > fieldMax[pos] {
-				return fmt.Errorf("beginning of range (%d) above maximum (%d): %q", n, fieldMax[pos], term)
-			}
-		}
 	}
 	return nil
 }
@@ -240,76 +212,18 @@ func (d dstGapSchedule) next(from time.Time) (time.Time, bool) {
 	}
 }
 
-// fieldMin is each field's lowest value, in 6-field order.
-var fieldMin = [6]string{"0", "0", "0", "1", "1", "0"}
-
-// lenientSteps rewrites every step at or above its range size (*/60, 7/2) to the
-// range start, which is all such a step ever selects. go-cron rejects these;
-// vixie cron and robfig/cron accepted them, so configs that load today must keep
-// loading. go-cron itself decides which terms are oversized: a term qualifies
-// when it fails to parse but parses once its step is dropped.
-//
-// Replace with cron.LenientSteps once netresearch/go-cron#419 lands.
-func (p specParser) lenientSteps(spec string) string {
-	fields := strings.Fields(spec)
-	body := fieldsAfterTZ(spec)
-	if len(body) != 5 && len(body) != 6 {
-		return spec
-	}
-	offset := len(fields) - len(body)
-	for i, field := range body {
-		pos := i + 6 - len(body)
-		terms := strings.Split(field, ",")
-		for j, term := range terms {
-			terms[j] = p.lenientTerm(pos, term)
-		}
-		fields[offset+i] = strings.Join(terms, ",")
-	}
-	return strings.Join(fields, " ")
-}
-
-// lenientTerm returns term's range start when its step is oversized for field
-// pos (6-field order), else term unchanged.
-func (p specParser) lenientTerm(pos int, term string) string {
-	base, step, ok := strings.Cut(term, "/")
-	if n, err := strconv.Atoi(step); !ok || err != nil || n < 1 {
-		return term
-	}
-	// L-3/2 and FRI#3/2 are not oversized steps; leave them for go-cron to reject.
-	if strings.Contains(term, "#") || (pos == 3 && strings.ContainsAny(strings.ToUpper(term), "LW")) {
-		return term
-	}
-	if p.probe(pos, term) == nil || p.probe(pos, base) != nil {
-		return term
-	}
-	lo, _, _ := strings.Cut(base, "-")
-	if lo == "*" || lo == "?" {
-		return fieldMin[pos]
-	}
-	return lo
-}
-
-// probe parses term alone in field pos of an otherwise all-star 6-field spec.
-func (p specParser) probe(pos int, term string) error {
-	six := []string{"*", "*", "*", "*", "*", "*"}
-	six[pos] = term
-	_, err := p.inner.Parse(strings.Join(six, " "))
-	return err
-}
-
 // daysIn is the longest each month gets, February counting its leap day.
 var daysIn = [13]uint{0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
 
-// neverFires reports a spec like "0 0 30 2 *" or "0 0 L-29 2 *" (also 30W),
-// which go-cron parses but never matches: the day of month exists in none of
-// the months, and day-of-week can't stand in for it because the two are ANDed
-// (one carries starBit). It reads the fields instead of asking Next, which
-// gives up after five years and so would also reject rare but real dates like
-// "0 9 25 12 */7".
+// neverFires reports a spec like "0 0 L-29 2 *" or "0 0 30W 2 *", which go-cron
+// parses but never matches: the day of month exists in none of the months, and
+// day-of-week can't stand in for it because the two are ANDed (one carries
+// starBit). StrictDays rejects plain days ("0 0 30 2 *") but skips any spec
+// with an L / W day, so this covers those.
 //
-// Replace with cron.StrictDays once netresearch/go-cron#421 lands.
+// Replace once go-cron's StrictDays checks day-of-month constraints.
 func neverFires(s *cron.SpecSchedule) bool {
-	if s.Dom&starBit != 0 || s.Dow&starBit == 0 {
+	if len(s.DomConstraints) == 0 || s.Dom&starBit != 0 || s.Dow&starBit == 0 {
 		return false
 	}
 	for month := uint(1); month <= 12; month++ {
@@ -344,33 +258,8 @@ func constraintFits(c cron.DomConstraint, monthDays uint) bool {
 }
 
 // starBit is go-cron's unexported "field was *" flag (spec.go). Under DowOrDom,
-// dayMatches ANDs day-of-month with day-of-week when either carries it, and ORs
-// them when neither does.
+// day-of-month and day-of-week are ANDed when either carries it.
 const starBit = 1 << 63
-
-// markStarDays restores vixie/cronie's day-matching rule for stepped stars.
-// Traditional cron sets DOM_STAR / DOW_STAR whenever the field's first character
-// is '*', so "*/2" still counts as unrestricted and "0 0 */2 * 1" means odd
-// days that are also Mondays. go-cron clears the flag for any step above 1,
-// which turns that into odd days OR Mondays. '?' is an alias for '*' and is
-// treated the same way.
-//
-// Replace with cron.StepWildcard once netresearch/go-cron#420 lands.
-func markStarDays(s *cron.SpecSchedule, spec string) {
-	body := fieldsAfterTZ(spec)
-	if len(body) != 5 && len(body) != 6 {
-		return
-	}
-	// Both sit at the same offset from the end of the 5-field and the
-	// seconds-prefixed 6-field form.
-	dom, dow := body[len(body)-3], body[len(body)-1]
-	if strings.HasPrefix(dom, "*") || strings.HasPrefix(dom, "?") {
-		s.Dom |= starBit
-	}
-	if strings.HasPrefix(dow, "*") || strings.HasPrefix(dow, "?") {
-		s.Dow |= starBit
-	}
-}
 
 // fieldsAfterTZ splits spec into fields, dropping a leading TZ= / CRON_TZ=
 // prefix the way go-cron does before it counts fields.

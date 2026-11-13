@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/bootid"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
@@ -174,28 +175,43 @@ func NewTaskManager(exec executor.Executor, bus *events.Bus, clock func() time.T
 
 // BindPersistenceHook wires persistence to both the manager and executor.
 // The executor's process-started callback lets the manager reach each active
-// run's ForceKill closure during shutdown.
+// run's ForceKill closure during shutdown and record its process group.
 func (m *defaultTaskManager) BindPersistenceHook(hook RunPersistenceHook) {
 	m.persistence.BindHook(hook)
 	m.executor.SetRunUpdateCallback(m.persistence.PersistExisting)
-	m.executor.SetOnProcessStarted(m.registerForceKill)
+	m.executor.SetOnProcessStarted(m.registerProcess)
 }
 
-// registerForceKill stores the executor's ForceKill closure on the matching
-// ActiveRun so the daemon shutdown coordinator can reach it later. Called
-// from the executor goroutine right after the backend starts the process.
-func (m *defaultTaskManager) registerForceKill(runID string, forceKill func()) {
-	if forceKill == nil {
+// registerProcess stores the executor's ForceKill closure on the matching
+// ActiveRun so the daemon shutdown coordinator can reach it later, and
+// persists the process group the run leads so a daemon booting after a crash
+// can stop it (see stopOrphanedRuns). Called from the executor goroutine right
+// after the backend starts the process.
+func (m *defaultTaskManager) registerProcess(runID string, proc *executor.Process) {
+	if proc.ForceKill == nil && proc.Pid <= 0 {
 		return
+	}
+	// Read before taking the lock: it's file I/O. "" (process already gone,
+	// unreadable) records nothing, so boot never kills on a guess.
+	var start string
+	if proc.Pid > 0 {
+		start = bootid.Process(proc.Pid)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, ts := range m.allTaskStates() {
 		for _, ar := range ts.active {
-			if ar.Run.ID == runID {
-				ar.ForceKill = forceKill
-				return
+			if ar.Run.ID != runID {
+				continue
 			}
+			if proc.ForceKill != nil {
+				ar.ForceKill = proc.ForceKill
+			}
+			if start != "" {
+				ar.Run.Pgid, ar.Run.ProcessStart = proc.Pid, start
+				m.persistence.PersistExisting(ar.Run)
+			}
+			return
 		}
 	}
 }
@@ -301,6 +317,9 @@ func (m *defaultTaskManager) upsertTaskLocked(task *model.Task) []*model.Run {
 			m.wg.Add(1)
 			go m.queueProcessLoop(ts)
 		}
+		// A reload may have raised max_concurrent while runs wait: the loop is
+		// parked against the old limit and only re-reads it when woken.
+		ts.cond.Broadcast()
 	} else if ts.cond != nil {
 		// This task just flipped off queue policy. queueProcessLoop re-checks the
 		// policy only around cond.Wait(), so without a signal it would park
@@ -390,6 +409,7 @@ func (m *defaultTaskManager) RemoveTask(taskName string) {
 		return
 	}
 	ts.removed = true
+	ts.cancelPendingRetries()
 
 	// Drop anything still queued and wake the drain goroutine so it returns.
 	// Queued runs were already persisted as 'pending'; finalize them here so a

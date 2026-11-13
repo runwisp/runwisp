@@ -289,6 +289,11 @@ type Daemon struct {
 	// TrustedProxies is the CIDR allowlist for X-Forwarded-For. The daemon replaces it
 	// with RUNWISP_TRUSTED_PROXIES when set (ApplyDaemonEnv).
 	TrustedProxies []string
+	// APITokens and ViewerAPITokens are static REST API bearer tokens: full
+	// operator access and read-only access. Applied live on reload. They are
+	// secrets: never logged or served over the API.
+	APITokens       []string
+	ViewerAPITokens []string
 }
 
 // Defaults provides fallback values applied to every task.

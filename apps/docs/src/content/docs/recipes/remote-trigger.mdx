@@ -52,8 +52,25 @@ runwisp run backup --detach                     # print the run ID and exit
 
 ## With curl
 
-When you can't install the binary, use the REST API. This script needs `curl`,
-`jq`, and `python3`:
+When you can't install the binary, use the REST API. The shortest way is an
+[API token](/operations/auth/#api-tokens) (since 1.9). Add one to the daemon's
+config, with the value in its environment:
+
+```toml title="runwisp.toml"
+[daemon]
+api_tokens = ["${RUNWISP_API_TOKEN}"]
+```
+
+Then trigger the task with one request:
+
+```bash
+curl -sSf -X POST "$RUNWISP_URL/api/tasks/backup/run?wait=true" \
+  -H "Authorization: Bearer $RUNWISP_API_TOKEN" | jq '{id, status, endReason, exitCode}'
+```
+
+### Logging in with the password
+
+Without a token, log in first. This script needs `curl`, `jq`, and `python3`:
 
 ```bash
 #!/usr/bin/env bash
@@ -89,6 +106,9 @@ jq '{id, status, endReason, exitCode}' <<<"$RUN"
   each time, or you'll hit the [rate limit](/operations/auth/#rate-limiting).
 
 ### Passing parameters
+
+The examples below send `$TOKEN`: an API token, or the session token from the
+login above.
 
 If the task declares [parameters](/concepts/parameters/), send their values in a
 [`params`](/configuration/tasks/#params) object:

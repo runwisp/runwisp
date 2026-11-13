@@ -17,6 +17,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/configedit"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -50,6 +51,8 @@ Add --dry-run to a saving import to see the summary and every file it would
 touch, without touching any of them.`,
 	SilenceErrors: true,
 	SilenceUsage:  true,
+	// An import reads and writes config files only, so it makes no data dir.
+	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error { return resolveFlags(cmd) },
 }
 
 var importCronCmd = &cobra.Command{
@@ -135,17 +138,18 @@ service. A .timer and the service it starts become one scheduled task.
 
 Pass unit names or files, or pipe one in. A bare name is looked up in
 /etc/systemd/system, /run/systemd/system, /usr/lib/systemd/system and
-~/.config/systemd/user:
+~/.config/systemd/user. Drop-ins (NAME.d/*.conf in those directories) are
+applied, as systemd applies them:
 
   runwisp import systemd backup.timer
   runwisp import systemd /etc/systemd/system/myapp.service
-  cat myapp.service | runwisp import systemd
-  runwisp import systemd /etc/systemd/system/*.service -o runwisp.toml
+  systemctl cat myapp.service | runwisp import systemd
+  runwisp import systemd /etc/systemd/system/*.timer -o runwisp.toml
 
 Anything RunWisp can't model — sandboxing, socket activation, Type=notify,
-multiple ExecStart lines — becomes an inline # TODO and a note, so nothing is
-silently dropped. It does not disable the units: run 'systemctl disable --now
-<unit>' yourself, or each job runs twice.`,
+multiple ExecStart lines — becomes a note on the unit's row, so nothing is
+silently dropped. It does not disable the units: the summary prints the
+'systemctl disable --now' command to run, or each job runs twice.`,
 	Args:          cobra.ArbitraryArgs,
 	SilenceErrors: true,
 	SilenceUsage:  true,
@@ -159,7 +163,7 @@ func init() {
 		c.Flags().StringVarP(&importFlags.output, "output", "o", "", "write the generated TOML to this file instead of stdout")
 		c.Flags().BoolVar(&importFlags.write, "write", false, "write to the --config path (default runwisp.toml)")
 		c.Flags().BoolVar(&importFlags.force, "force", false, "overwrite the target file without prompting")
-		c.Flags().BoolVar(&importFlags.quiet, "quiet", false, "suppress the summary on stderr")
+		c.Flags().BoolVar(&importFlags.quiet, "quiet", false, "print only the items that need a fix, and what to do next")
 		c.Flags().BoolVar(&importFlags.dryRun, "dry-run", false, "print the summary without writing anything")
 	}
 	importCronCmd.Flags().BoolVar(&importFlags.system, "system", false, "force system-crontab parsing (user column); --system=false forces per-user. Auto-detected when unset")
@@ -337,12 +341,11 @@ func runImportSystemd(stdout, stderr io.Writer, stdin *os.File, sources []string
 		if slices.Contains(sources, "-") {
 			return &userFacingError{title: "can't mix - (stdin) with file paths for systemd import"}
 		}
-		paths := make([]string, len(sources))
-		for i, src := range sources {
-			if paths[i], err = resolveSystemdUnit(stderr, src); err != nil {
-				return err
-			}
+		paths, perr := systemdUnitPaths(stderr, sources)
+		if perr != nil {
+			return perr
 		}
+		sdOpts.UnitDirs = systemdSearchDirs()
 		res, err = importer.ParseSystemdFiles(paths, sdOpts)
 	}
 	if err != nil {
@@ -356,6 +359,40 @@ func runImportSystemd(stdout, stderr io.Writer, stdin *os.File, sources []string
 // packages ship. A var so a test can describe a box.
 var systemdUnitDirs = []string{"/etc/systemd/system", "/run/systemd/system", "/usr/lib/systemd/system"}
 
+// systemdSearchDirs is systemdUnitDirs plus the operator's own user-unit dir:
+// where a bare name is looked up, and where a unit's drop-ins are read from.
+func systemdSearchDirs() []string {
+	dirs := slices.Clone(systemdUnitDirs)
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, ".config", "systemd", "user"))
+	}
+	return dirs
+}
+
+// systemdUnitPaths resolves each unit argument to its file. A drop-in dir is
+// skipped: a glob like backup.* matches backup.service.d, whose drop-ins are
+// read with the unit anyway.
+func systemdUnitPaths(stderr io.Writer, sources []string) ([]string, error) {
+	var paths []string
+	for _, src := range sources {
+		if isDropInDir(src) {
+			continue
+		}
+		path, err := resolveSystemdUnit(stderr, src)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
+}
+
+// isDropInDir reports whether arg is a unit's drop-in directory (NAME.d).
+func isDropInDir(arg string) bool {
+	fi, err := os.Stat(arg)
+	return err == nil && fi.IsDir() && strings.HasSuffix(filepath.Clean(arg), ".d")
+}
+
 // resolveSystemdUnit turns a bare unit name (`shop-digest.timer`) into the
 // file systemd loads it from, so the operator need not know where it lives. A
 // path, or a name that exists relative to the working directory, is used as
@@ -365,10 +402,7 @@ func resolveSystemdUnit(stderr io.Writer, arg string) (string, error) {
 	if strings.Contains(arg, "/") || fileExists(arg) {
 		return arg, nil
 	}
-	dirs := slices.Clone(systemdUnitDirs)
-	if home, err := os.UserHomeDir(); err == nil {
-		dirs = append(dirs, filepath.Join(home, ".config", "systemd", "user"))
-	}
+	dirs := systemdSearchDirs()
 	candidates := make([]string, len(dirs))
 	for i, d := range dirs {
 		candidates[i] = filepath.Join(d, arg)
@@ -494,12 +528,15 @@ func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, 
 	// moment it lands, just like a scaffolded one. It is a TOML comment.
 	toml := config.SchemaDirective + res.TOML()
 	rep := importReport{res: res, source: src, validationErr: validateGeneratedTOML(toml)}
+	if rep.validationErr != nil {
+		rep.unloadable = unloadableItems(res)
+	}
 
 	// --dry-run only has something to hold back when a write was going to happen.
 	// Plain stdout mode already writes nothing and already says so, so it keeps its
 	// own epilogue rather than growing a second way to phrase the same thing.
 	if opts.dryRun && (opts.write || opts.output != "") {
-		return printImportPlan(stderr, rep, f, opts)
+		return printImportPlan(stderr, rep, toml, f, opts)
 	}
 
 	// --write (without an explicit -o path) installs the import in the two-tier
@@ -536,7 +573,7 @@ func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, 
 // means writing both files and loading the result, which is the thing being
 // deferred. The one merge failure knowable up front — a root config that doesn't
 // load as it stands — is reported.
-func printImportPlan(stderr io.Writer, rep importReport, f Flags, opts importOpts) error {
+func printImportPlan(stderr io.Writer, rep importReport, toml string, f Flags, opts importOpts) error {
 	if opts.output != "" {
 		_, err := os.Stat(opts.output)
 		printImportSummary(stderr, rep, opts,
@@ -545,7 +582,7 @@ func printImportPlan(stderr io.Writer, rep importReport, f Flags, opts importOpt
 	}
 
 	layout := configedit.NewLayout(f.CfgFile)
-	plan, err := configedit.PlanStage(layout)
+	plan, err := configedit.PlanStage(layout, []byte(toml))
 	if err != nil {
 		return stageError(err, layout)
 	}
@@ -567,9 +604,8 @@ func stageImport(stderr io.Writer, rootPath, stagingContent string, rep importRe
 	if rep.validationErr != nil {
 		printImportSummary(stderr, rep, opts, func(io.Writer, importStyles) {})
 		return &userFacingError{
-			title: "the imported config would not load, so nothing was written",
-			details: rep.validationErr.Error() +
-				"\n\nFix that line in the source and re-run, or use -o FILE to get a standalone file you can edit by hand.",
+			title:   "the imported config would not load, so nothing was written",
+			details: rep.validationErr.Error() + "\n\n" + unloadableAdvice(rep.unloadable),
 		}
 	}
 	staged, err := configedit.Stage(configedit.StageRequest{
@@ -662,6 +698,37 @@ func confirmAndWrite(stderr io.Writer, stdin *os.File, target, toml string, opts
 		}
 	}
 	return nil
+}
+
+// unloadableItems finds the rows whose own TOML fails to load, so the verdict
+// can name the jobs keeping the whole config from loading instead of every row
+// that merely needs a look. Only called once the whole config has failed.
+func unloadableItems(res *importer.Result) []importer.Item {
+	var out []importer.Item
+	for _, it := range res.Items() {
+		if it.Name != "" && validateGeneratedTOML(config.SchemaDirective+res.BlockTOML(it.Name)) != nil {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// unloadableAdvice is what to do about a refused import: fix or leave out the
+// rows that don't load, named as the source called them.
+func unloadableAdvice(items []importer.Item) string {
+	const standalone = "or use -o FILE to get a standalone file you can edit by hand."
+	if len(items) == 0 {
+		return "Fix the source and re-run, " + standalone
+	}
+	names := make([]string, len(items))
+	for i, it := range items {
+		names[i] = it.Name
+		if it.Source != "" && it.Source != it.Name {
+			names[i] += " (" + it.Source + ")"
+		}
+	}
+	them := textutil.Pluralize(len(items), "it", "them")
+	return "Can't load: " + strings.Join(names, ", ") + ". Fix " + them + " in the source, or re-run without " + them + ", " + standalone
 }
 
 // validateGeneratedTOML round-trips the generated config through config.Load to

@@ -17,7 +17,7 @@ import (
 
 var reloadCmd = &cobra.Command{
 	Use:   "reload",
-	Short: "Reload runwisp.toml into the running daemon",
+	Short: "Reload runwisp.toml, or the app's config, into the running daemon",
 	Long: `Re-read runwisp.toml and apply it to the running daemon: add, change,
 and remove tasks, and apply daemon-wide settings ([notify], notifiers, routes,
 [storage], [daemon] including timezone) without a full restart.
@@ -32,6 +32,12 @@ Added tasks do not fire run_on_start and are not caught up for ticks they
 "missed" before existing — reload is not a restart. In-flight cron runs finish
 under the definition they started with.
 
+When an app supplies the config (an SDK worker such as
+"php artisan runwisp:work"), reload asks the app to read its config again from
+its code as it is now, so a deploy reaches the schedule without restarting the
+worker. If the app can't, for example because the deploy broke it, the reload
+is rejected with the app's error and the running config stays.
+
 This is equivalent to sending the daemon a SIGHUP.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -43,6 +49,9 @@ This is equivalent to sending the daemon a SIGHUP.`,
 // reload too — internal/cutover hands the held cron jobs to a daemon that was
 // already running, and the first-run flow has no *cobra.Command to hand it.
 func reloadRunningDaemon(ctx context.Context, f Flags, out io.Writer) error {
+	if err := otherUserDaemonError(f); err != nil {
+		return err
+	}
 	if !isDaemonRunning(f) {
 		fmt.Fprintf(out, "No daemon is running on data dir %s — nothing to reload.\n", absPathOrFallback(f.DataDir))
 		return nil

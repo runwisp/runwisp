@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 )
@@ -46,8 +47,9 @@ const (
 type StageRequest struct {
 	// Layout names the root and staging paths to write.
 	Layout Layout
-	// Staging is the full contents of the staging file. It is machine-owned, so
-	// it is overwritten without prompting.
+	// Staging is what this import contributes to the staging file. Entries
+	// already staged under other names are kept; one staged under a name this
+	// import also uses is replaced (see mergeStaging).
 	Staging []byte
 }
 
@@ -61,6 +63,9 @@ type StageResult struct {
 	// turns it into a *PreexistingError), so this matters to PlanStage, where it's
 	// the failure a real run would stop on.
 	PreLoadErr error
+	// Kept are the staged entries from earlier imports this one left in place;
+	// Replaced are the staged entries it overwrote because it uses their names.
+	Kept, Replaced []string
 }
 
 // ConflictError reports that the write made a config that used to load stop
@@ -91,9 +96,10 @@ type PreexistingError struct{ Err error }
 func (e *PreexistingError) Error() string { return "config already invalid: " + e.Err.Error() }
 func (e *PreexistingError) Unwrap() error { return e.Err }
 
-// Stage writes the staging file and makes sure the root config loads it: the
-// root is created from the two-tier scaffold when absent, or surgically wired
-// when it has no include list of its own. Both files go through one Txn, so a
+// Stage merges the import into the staging file (see mergeStaging) and makes
+// sure the root config loads it: the root is created from the two-tier
+// scaffold when absent, or surgically wired when it has no include list of its
+// own. Both files go through one Txn, so a
 // rejected write leaves the config exactly as it was rather than leaving staged
 // tasks that load nowhere.
 //
@@ -110,9 +116,13 @@ func Stage(req StageRequest) (StageResult, error) {
 	}
 	res.Root = plan.outcome
 	res.PreLoadErr = plan.preLoadErr
+	merged, err := mergeStaging(req.Layout.StagingPath, req.Staging, &res)
+	if err != nil {
+		return res, err
+	}
 
 	txn := New()
-	txn.Write(req.Layout.StagingPath, req.Staging, DefaultPerm)
+	txn.Write(req.Layout.StagingPath, merged, DefaultPerm)
 	if plan.bytes != nil {
 		txn.Write(req.Layout.RootPath, plan.bytes, DefaultPerm)
 	}
@@ -136,7 +146,7 @@ func Stage(req StageRequest) (StageResult, error) {
 // writing both files and calling config.Load on the result. It does surface the
 // root's current load error in PreLoadErr, which is the one failure a real run
 // would refuse on that's knowable in advance.
-func PlanStage(layout Layout) (StageResult, error) {
+func PlanStage(layout Layout, staging []byte) (StageResult, error) {
 	res := StageResult{StagingPath: layout.StagingPath}
 	plan, err := planRoot(layout.RootPath)
 	if err != nil {
@@ -144,7 +154,39 @@ func PlanStage(layout Layout) (StageResult, error) {
 	}
 	res.Root = plan.outcome
 	res.PreLoadErr = plan.preLoadErr
-	return res, nil
+	_, err = mergeStaging(layout.StagingPath, staging, &res)
+	return res, err
+}
+
+// mergeStaging is the staging file an import leaves behind: the incoming
+// content, followed by every entry already staged under a name the import
+// doesn't use. Imports from different sources, or of a few units at a time,
+// accumulate instead of each one deleting the last; re-importing a job under
+// its staged name replaces it. It records both lists on res.
+func mergeStaging(path string, incoming []byte, res *StageResult) ([]byte, error) {
+	old, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return incoming, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	fresh := EntryNames(incoming)
+	for _, name := range EntryNames(old) {
+		if slices.Contains(fresh, name) {
+			res.Replaced = append(res.Replaced, name)
+		} else {
+			res.Kept = append(res.Kept, name)
+		}
+	}
+	if len(res.Kept) == 0 {
+		return incoming, nil
+	}
+	_, blocks, err := ExtractBlocks(old, res.Kept)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	return AppendBlocks(incoming, blocks), nil
 }
 
 // rootPlan is what the root config should end up as.

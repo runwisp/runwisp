@@ -26,6 +26,9 @@ func runDefault(ctx context.Context, f Flags) error {
 	if client.HealthCheck(ctx) == nil {
 		return runTUIConnect(ctx, client, f, tui.DaemonAttached)
 	}
+	if err := otherUserDaemonError(f); err != nil {
+		return err
+	}
 
 	// Spawn a background daemon or handle port conflicts.
 	serviceInstalled, err := scaffoldIfMissing(f)
@@ -152,6 +155,10 @@ func launchConnectedTUI(ctx context.Context, client *apiclient.Client, mode tuiC
 
 	startupInfo := buildStartupInfoFromDaemon(info)
 	startupInfo.ListenURL = resolveTUIListenURL(info, mode)
+	// Loopback/socket only: a remote attach gets an error here, which reads as
+	// "not an app".
+	identity, _ := client.GetInstanceInfo(ctx)
+	startupInfo.AppConfig = isAppDaemon(identity)
 
 	if !mode.remote {
 		// Fetch the ephemeral password over the local socket so the TUI's

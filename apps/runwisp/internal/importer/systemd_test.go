@@ -328,3 +328,109 @@ func TestSystemdCommentInsideContinuationIsSkipped(t *testing.T) {
 	res := parseUnit(t, "[Service]\nExecStart=/bin/app \\\n  --port=3000 \\\n#  --inspect \\\n;  --trace \\\n  --verbose\n")
 	mustContain(t, res.TOML(), `run = "/bin/app --port=3000 --verbose"`)
 }
+
+// TestSystemdTimeSpan: systemd spells spans with days, weeks and spaces
+// (systemd-tmpfiles-clean.timer uses OnUnitActiveSec=1d). Those were written as
+// `@every 1d`, which doesn't load.
+func TestSystemdTimeSpan(t *testing.T) {
+	cases := []struct {
+		in, want string
+		ok       bool
+	}{
+		{"90", "1m30s", true},
+		{"5sec", "5s", true},
+		{"100min", "1h40m", true},
+		{"1h", "1h", true},
+		{"1d", "24h", true},
+		{"1w", "168h", true},
+		{"1h 30min", "1h30m", true},
+		{"1d 12h", "36h", true},
+		{"1.5h", "1h30m", true},
+		{"2min30s", "2m30s", true},
+		{"500ms", "500ms", true},
+		{"0", "0s", true},
+		{"infinity", "", false},
+		{"", "", false},
+		{"5 parsecs", "", false},
+		{"-1s", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := systemdTimeSpan(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("systemdTimeSpan(%q) = %q, %v; want %q, %v", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+func TestSystemdIntervalInDays(t *testing.T) {
+	res := parseUnit(t, "[Service]\nExecStart=/bin/clean\n[Timer]\nOnUnitActiveSec=1d\n")
+	mustContain(t, res.TOML(), `cron = "@every 24h"`)
+	if hasNoteKind(res, NoteCronUnparseable) {
+		t.Fatal("1d is a span RunWisp can read")
+	}
+}
+
+// TestSystemdMultiExecNamesTheRest: man-db.service's useful command is its
+// second ExecStart. The note has to show it, or a human must open the unit to
+// learn what wasn't imported.
+func TestSystemdMultiExecNamesTheRest(t *testing.T) {
+	res := parseUnit(t, "[Service]\nType=oneshot\nExecStart=+/usr/bin/install -d /var/cache/man\nExecStart=/usr/bin/mandb --quiet\n")
+	if n := findNote(t, res, NoteSystemdMultiExec); !strings.Contains(n.Message, "ExecStart=/usr/bin/mandb --quiet") {
+		t.Fatalf("note should name the other command: %s", n.Message)
+	}
+}
+
+func TestSystemdOneshotStartTimeoutIsTheRunTimeout(t *testing.T) {
+	res := parseUnit(t, "[Service]\nType=oneshot\nExecStart=/bin/job\nTimeoutStartSec=10min\n")
+	mustContain(t, res.TOML(), `timeout = "10m"`)
+
+	res = parseUnit(t, "[Service]\nExecStart=/bin/server\nTimeoutStartSec=10min\n")
+	mustNotContain(t, res.TOML(), "timeout =")
+}
+
+// TestSystemdDirectivesThatAffectFailuresAreNoted: these were dropped without a
+// word, though OnFailure= and SuccessExitStatus= decide what a failure looks like.
+func TestSystemdDirectivesThatAffectFailuresAreNoted(t *testing.T) {
+	res := parseUnit(t, `[Unit]
+OnFailure=alert@%n.service
+ConditionPathExists=/etc/letsencrypt
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/certbot renew
+SuccessExitStatus=2
+Nice=10
+StandardOutput=append:/var/log/certrenew.log
+`)
+	var msgs []string
+	for _, n := range res.Items()[0].Notes {
+		msgs = append(msgs, n.Message)
+	}
+	all := strings.Join(msgs, "\n")
+	for _, want := range []string{"OnFailure=alert@%n.service", "ConditionPathExists=/etc/letsencrypt",
+		"SuccessExitStatus", "Nice", "/var/log/certrenew.log"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("no note mentions %q:\n%s", want, all)
+		}
+	}
+	if strings.Contains(all, "After") {
+		t.Errorf("ordering directives don't matter to a task:\n%s", all)
+	}
+}
+
+func TestSystemdSpecifierNoteSaysWhatSystemdRan(t *testing.T) {
+	res := parseUnit(t, "[Service]\nExecStart=/bin/sh -c 'date +%T; echo 100%%'\n")
+	n := findNote(t, res, NoteSystemdTemplate)
+	if !strings.Contains(n.Message, "%T (/tmp)") {
+		t.Fatalf("note should say %%T is /tmp: %s", n.Message)
+	}
+}
+
+func TestSystemdExtraCalendarsAreSpelledOut(t *testing.T) {
+	res := parseUnit(t, "[Service]\nExecStart=/bin/sync\n[Timer]\nOnCalendar=*-*-* 04:00\nOnCalendar=Sat 12:00\n")
+	n := findNote(t, res, NoteSystemdTimerMultiCalendar)
+	if !strings.Contains(n.Message, `Sat 12:00 → cron = "0 12 * * 6"`) {
+		t.Fatalf("note should give the other schedule as cron: %s", n.Message)
+	}
+}

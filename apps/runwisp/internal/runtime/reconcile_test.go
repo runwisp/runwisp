@@ -33,6 +33,8 @@ func TestCheckNonReloadable_AcceptsLiveSettings(t *testing.T) {
 			ExternalURL:     "https://x",
 			CheckUpdates:    true,
 			TrustedProxies:  []string{"10.0.0.0/8"},
+			APITokens:       []string{"operator-token"},
+			ViewerAPITokens: []string{"viewer-token"},
 		},
 	}
 	assert.NoError(t, CheckNonReloadable(old, updated))
@@ -259,6 +261,54 @@ func TestReconcile_ChangedServiceIsStillRecycled(t *testing.T) {
 	assert.Empty(t, mgr.restarted, "reload must not use the operator-restart path")
 }
 
+// TestReconcile_ServiceChangeRecyclesOnlyWhenTheProcessIsAffected: a reload
+// bounces a running service only for a change that reaches the spawned process
+// (see model.Task.SpawnDiffers); anything the daemon reads live applies without
+// a restart.
+func TestReconcile_ServiceChangeRecyclesOnlyWhenTheProcessIsAffected(t *testing.T) {
+	cases := []struct {
+		name    string
+		mutate  func(*model.Task)
+		recycle bool
+	}{
+		{"description", func(t *model.Task) { t.Description = "new words" }, false},
+		{"group", func(t *model.Task) { t.Group = "infra" }, false},
+		{"keep_runs", func(t *model.Task) { t.KeepRuns = intPtr(5) }, false},
+		{"keep_for", func(t *model.Task) { t.KeepFor = time.Hour }, false},
+		{"warn_after", func(t *model.Task) { t.WarnAfter = durPtr(time.Minute) }, false},
+		{"restart", func(t *model.Task) { t.Restart = model.RestartNever }, false},
+		{"restart_delay", func(t *model.Task) { t.RestartDelay = durPtr(time.Minute) }, false},
+		{"healthy_after", func(t *model.Task) { t.HealthyAfter = durPtr(time.Minute) }, false},
+		{"manual_trigger", func(t *model.Task) { t.ManualTrigger = !t.ManualTrigger }, false},
+		{"run", func(t *model.Task) { t.Run = "worker --other" }, true},
+		{"shell", func(t *model.Task) { t.Shell = "/bin/bash" }, true},
+		{"working_dir", func(t *model.Task) { t.WorkingDir = "/srv" }, true},
+		{"env", func(t *model.Task) { t.Env = map[string]string{"A": "1"} }, true},
+		{"user", func(t *model.Task) { t.RunUser = "nobody" }, true},
+		{"instances", func(t *model.Task) { t.Instances = 3 }, true},
+		{"graceful_stop", func(t *model.Task) { t.GracefulStop = durPtr(time.Minute) }, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			before := &model.Task{Name: "worker", Kind: model.KindService, Run: "worker --loop", Instances: 1}
+			after := *before
+			tc.mutate(&after)
+
+			mgr, registry, diff, _ := applyDiff(taskSet(before), taskSet(&after))
+
+			require.Len(t, diff.Changed, 1)
+			assert.Equal(t, []string{"worker"}, mgr.upserted, "the new definition is always published")
+			assert.Equal(t, &after, registry.Snapshot()["worker"])
+			if tc.recycle {
+				assert.Equal(t, []string{"worker"}, mgr.recycled)
+			} else {
+				assert.Empty(t, mgr.recycled, "a change the process never sees must not restart it")
+			}
+			assert.Empty(t, mgr.restarted)
+		})
+	}
+}
+
 // TestReconcile_TaskToServiceKindFlipStartsNotRecycles is the reload-invariant
 // regression: when a plain cron/manual task is redefined as a service on reload,
 // the run that was in flight under the old non-service definition must finish
@@ -293,7 +343,7 @@ func TestReconcile_AutostartFlipOnStoppedServiceWarns(t *testing.T) {
 	_, _, diff, warnings := applyDiffWith(mgr, taskSet(before), taskSet(&after))
 
 	require.Len(t, diff.Changed, 1, "an autostart flip is a settings change")
-	assert.Equal(t, []string{"web"}, mgr.recycled, "a changed service still goes through recycle")
+	assert.Empty(t, mgr.recycled, "autostart is not read by a running process, so nothing is recycled")
 	require.Len(t, warnings, 1, "a stopped service whose autostart flipped on must be flagged")
 	assert.Contains(t, warnings[0], "runwisp restart web")
 	assert.Contains(t, warnings[0], "autostart=true")

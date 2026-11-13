@@ -377,7 +377,7 @@ func connectLocal(ctx context.Context, f Flags) (*apiclient.Client, error) {
 }
 
 func localUnreachableError(f Flags, err error) error {
-	return fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint(f))
+	return fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonUnreachableHint(f, err))
 }
 
 // controlError maps one target's dispatch error to a user-facing one.

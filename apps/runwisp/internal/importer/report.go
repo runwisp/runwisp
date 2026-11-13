@@ -77,6 +77,8 @@ const (
 	NoteSystemdTimerNoService
 	NoteSystemdTimerMultiCalendar
 	NoteSystemdTimerApprox
+	NoteSystemdStartedByTimer
+	NoteSystemdDropIns
 
 	// noteKindCount bounds the enum so TestNoteKindsAreTotal can walk it.
 	noteKindCount
@@ -257,6 +259,16 @@ var noteKindInfo = map[NoteKind]noteSeverity{
 		// A timer setting landed on the nearest RunWisp equivalent (an interval
 		// counted differently, a dropped boot delay, jitter). Worth knowing.
 		slug: "systemd-timer-approx", blocking: false, unsafeLive: false,
+	},
+	NoteSystemdStartedByTimer: {
+		// A timer starts this service, so imported alone it runs at boot (or for
+		// ever) instead of on the timer's schedule. The command is still right.
+		slug: "systemd-started-by-timer", blocking: true, unsafeLive: false,
+	},
+	NoteSystemdDropIns: {
+		// The unit's drop-ins were applied, as systemd applies them. Said so the
+		// operator can see their override was read.
+		slug: "systemd-drop-ins", blocking: false, unsafeLive: false,
 	},
 }
 

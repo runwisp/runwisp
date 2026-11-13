@@ -106,6 +106,7 @@ type Service struct {
 	launchTickets  *ttlStore
 	trustedProxies TrustedProxyChecker
 	viewer         atomic.Pointer[viewerSecret] // nil: no read-only password configured
+	apiTokens      atomic.Pointer[apiTokens]    // nil: no static API tokens configured
 }
 
 // viewerSecret is the optional read-only password and the key its tokens are
@@ -144,6 +145,45 @@ func (s *Service) SetViewerPassword(password string) {
 		return
 	}
 	s.viewer.Store(s.newViewerSecret(password))
+}
+
+// apiTokens holds SHA-256 digests of the static REST API tokens, so a request
+// is compared against fixed-length values whatever length the caller sends.
+type apiTokens struct {
+	operator, viewer [][sha256.Size]byte
+}
+
+// SetAPITokens replaces the static bearer tokens: operator tokens grant what a
+// password session does, viewer tokens are read-only. Empty lists disable them.
+// Safe to call while requests are being verified.
+func (s *Service) SetAPITokens(operator, viewer []string) {
+	digests := func(tokens []string) (out [][sha256.Size]byte) {
+		for _, t := range tokens {
+			if t != "" {
+				out = append(out, sha256.Sum256([]byte(t)))
+			}
+		}
+		return out
+	}
+	s.apiTokens.Store(&apiTokens{operator: digests(operator), viewer: digests(viewer)})
+}
+
+// matchAPIToken checks token against every configured digest, without stopping
+// at the first hit, so timing doesn't reveal which entry matched.
+func (s *Service) matchAPIToken(token string) (readOnly, ok bool) {
+	set := s.apiTokens.Load()
+	if set == nil || token == "" {
+		return false, false
+	}
+	sum := sha256.Sum256([]byte(token))
+	var op, view int
+	for _, d := range set.operator {
+		op |= subtle.ConstantTimeCompare(sum[:], d[:])
+	}
+	for _, d := range set.viewer {
+		view |= subtle.ConstantTimeCompare(sum[:], d[:])
+	}
+	return op == 0 && view == 1, op == 1 || view == 1
 }
 
 // MintViewerPassword returns the read-only password, generating a random one
@@ -215,9 +255,14 @@ func sign(key []byte, payload string) string {
 }
 
 // VerifyToken reports whether token was minted by this daemon and has not
-// expired, and whether it is a read-only (viewer) token. An empty token is
-// invalid, as is a viewer token while no viewer password is set.
+// expired, and whether it is a read-only (viewer) token. A static API token
+// (see SetAPITokens) is accepted as is; viewer API tokens are read-only. An
+// empty token is invalid, as is a viewer session token while no viewer
+// password is set.
 func (s *Service) VerifyToken(token string) (readOnly, ok bool) {
+	if readOnly, ok := s.matchAPIToken(token); ok {
+		return readOnly, true
+	}
 	expiry, ok := TokenExpiry(token)
 	if !ok || !time.Now().Before(expiry) {
 		return false, false
@@ -240,6 +285,15 @@ func IsViewerToken(token string) bool {
 	_, rest, _ := strings.Cut(token, ".")
 	role, _, ok := strings.Cut(rest, ".")
 	return ok && role == viewerRole
+}
+
+// LooksLikeSessionToken reports whether token has a session token's shape
+// ("<exp>.<mac>" or "<exp>.viewer.<mac>"), genuine or not. Static API tokens
+// may not have it, so the server can tell a failed API token from a stale
+// session without checking either.
+func LooksLikeSessionToken(token string) bool {
+	_, ok := TokenExpiry(token)
+	return ok
 }
 
 // TokenExpiry reads the expiry out of a session token without checking its

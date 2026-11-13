@@ -213,6 +213,33 @@ func TestEnforceMaxTotalSize_PrunesOldestTerminalRun(t *testing.T) {
 	repo.AssertCalled(t, "DeleteRun", mock.Anything, runID)
 }
 
+// When a running run's log and a file no run owns already exceed the cap,
+// deleting every finished run still can't get under it, so history must stay.
+func TestEnforceMaxTotalSize_KeepsHistoryWhenDeletingCannotReachCap(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	logDir := t.TempDir()
+	now := time.Now()
+
+	writeLog := func(id string, size int) {
+		logPath := logutil.ResolveRunLogPath(logDir, "task1", id, now)
+		require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
+		require.NoError(t, os.WriteFile(logPath, make([]byte, size), 0644))
+	}
+	active := model.Run{ID: ulid.Make().String(), TaskName: "task1", CreatedAt: now.Add(-2 * time.Hour), Status: model.PhaseRunning}
+	done := model.Run{ID: ulid.Make().String(), TaskName: "task1", CreatedAt: now.Add(-time.Hour), Status: model.PhaseEnded}
+	writeLog(active.ID, 500)
+	writeLog(done.ID, 100)
+	writeLog(ulid.Make().String(), 500) // unaccounted: no run row owns it
+
+	enforceQuery := storage.RunQuery{Limit: 100, SortField: storage.SortColumnCreatedAt, SortDirection: storage.SortAsc}
+	repo.On("QueryRuns", mock.Anything, enforceQuery).Return([]model.Run{active, done}, nil)
+
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 200, events.NewEventBus())
+	assert.Zero(t, cleaner.enforceMaxTotalSize(context.Background()))
+
+	repo.AssertNotCalled(t, "DeleteRun", mock.Anything, mock.Anything)
+}
+
 // TestCleanOldRuns_LogFileRemovedBeforeRowOnDeleteFailure proves cleanOldRuns
 // removes a run's log file unconditionally before attempting the row delete:
 // forcing DeleteRunsByIDs to fail must still leave the log file gone, while

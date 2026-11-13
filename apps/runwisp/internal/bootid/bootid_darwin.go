@@ -3,7 +3,11 @@
 
 package bootid
 
-import "golang.org/x/sys/unix"
+import (
+	"fmt"
+
+	"golang.org/x/sys/unix"
+)
 
 // Current returns this boot's identity: kern.bootsessionuuid, a UUID macOS
 // generates once per boot. (kern.boottime shifts when the clock is set, which
@@ -14,4 +18,15 @@ func Current() string {
 		return ""
 	}
 	return id
+}
+
+// Process returns the identity of process pid: the boot identity plus its
+// start time from kern.proc.pid, or "" when it doesn't exist.
+func Process(pid int) string {
+	k, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+	if err != nil || k.Proc.P_pid != int32(pid) {
+		return ""
+	}
+	t := k.Proc.P_starttime
+	return qualify(Current(), fmt.Sprintf("%d.%06d", t.Sec, t.Usec))
 }

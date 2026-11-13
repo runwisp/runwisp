@@ -33,8 +33,10 @@ php spark runwisp:work
 ```
 
 Keep it running the way you keep a queue worker running: a systemd unit, a
-Supervisor program or your container's command. On startup it prints where to
-find RunWisp:
+Supervisor program or your container's command. For systemd, use the unit in
+[Keep the worker running](/sdk/php/#keep-the-worker-running) with
+`php spark runwisp:work` and `php spark runwisp:reload`. On startup it prints
+where to find RunWisp:
 
 ```
 RunWisp dashboard: http://127.0.0.1:9477, password: vendor/bin/runwisp password --data writable/runwisp
@@ -172,6 +174,21 @@ php spark runwisp:check
 It exits with code 1 when RunWisp would reject the config, such as for a
 misspelled key, so you can run it in CI. See
 [Check your tasks](/sdk/php/#check-your-tasks).
+
+## Deploy
+
+**since**: `1.9`
+
+After each deploy:
+
+```bash
+php spark runwisp:reload
+```
+
+The running `runwisp:work` reads the tasks again, and RunWisp applies what
+changed. Runs in progress keep going. If the deploy broke the app, it exits
+with code 1 and PHP's error, and the tasks stay as they were. See
+[Deploy](/sdk/php/#deploy).
 
 ## Run a task by hand
 

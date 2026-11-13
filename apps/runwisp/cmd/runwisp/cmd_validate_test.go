@@ -242,3 +242,13 @@ cron = "0 3 * * *"
 	assert.Contains(t, out.String(), "! 3 tasks start at the same second")
 	assert.Contains(t, out.String(), "jitter")
 }
+
+func TestRunValidate_WithoutTomlPointsAtTheApp(t *testing.T) {
+	f := serveAppDaemon(t)
+
+	err := runValidate(&strings.Builder{}, f, validateOpts{})
+	var ufe *userFacingError
+	require.ErrorAs(t, err, &ufe)
+	assert.Contains(t, ufe.details, "php artisan runwisp:check")
+	assert.NotContains(t, ufe.title, "is not valid")
+}

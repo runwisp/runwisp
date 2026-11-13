@@ -53,6 +53,7 @@ final class RunWispBundle extends AbstractBundle
         $workArgs = [service('runwisp.schedules'), $settings, $config['config'] ?? [], '%kernel.project_dir%', '%kernel.environment%', '%kernel.debug%'];
         $services->set('runwisp.command.work', WorkCommand::class)->args($workArgs)->tag('console.command');
         $services->set('runwisp.command.check', CheckCommand::class)->args($workArgs)->tag('console.command');
+        $services->set('runwisp.command.reload', ReloadCommand::class)->args($workArgs)->tag('console.command');
         $services->set('runwisp.command.run', RunCommand::class)
             ->args([service('runwisp.schedules'), service('messenger.default_bus')->nullOnInvalid()])
             ->tag('console.command');

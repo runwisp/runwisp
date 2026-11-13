@@ -8,7 +8,8 @@
 # github-release and linux-repo jobs, so a green rehearsal means those steps
 # work with the real secrets and the real Pages project.
 #
-# Runs on PRs that touch the packaging (not from forks, which get no secrets),
+# Runs on PRs that touch the packaging (not from forks or Dependabot, which get no
+# Actions secrets),
 # and by hand: `gh workflow run linux-packages-rehearsal.yml [-f tag=v1.6.0]`.
 
 name: Linux packages rehearsal
@@ -36,7 +37,7 @@ concurrency:
 
 jobs:
   rehearse:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
     name: Package, publish to a preview, install
     runs-on: ubuntu-latest
     steps:

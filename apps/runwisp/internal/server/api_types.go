@@ -320,7 +320,7 @@ type AuthStatusOutput struct {
 type AuthStatusBody struct {
 	AuthRequired  bool `json:"authRequired" doc:"Whether authentication is required"`
 	Authenticated bool `json:"authenticated" doc:"Whether the current request is already authenticated via cookie"`
-	ReadOnly      bool `json:"readOnly" doc:"Whether the session was opened with the read-only password: it can view everything and change nothing"`
+	ReadOnly      bool `json:"readOnly" doc:"Whether the caller has read-only access (the read-only password or a viewer API token): it can view everything and change nothing"`
 }
 
 type AuthChallengeOutput struct {
@@ -399,6 +399,9 @@ type RunFailedEvent RunEventBody
 type RunUpdatedEvent RunEventBody
 type RunDeletedSSEEvent events.RunDeletedEvent
 type PingEvent struct{}
+
+// ResyncEvent tells a reconnecting client its resume cursor cannot be satisfied.
+type ResyncEvent struct{}
 
 // SystemSampleSSEEvent is the periodic resource snapshot for the app event
 // stream. Mirrors events.SystemSampleEvent; aliased so huma/sse's reverse-type

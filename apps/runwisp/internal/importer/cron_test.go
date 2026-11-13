@@ -1058,3 +1058,58 @@ func TestCronRedirectCommentAboveTheTask(t *testing.T) {
 	res := parseCron(t, "15 3 * * * /srv/app/backup.sh >> /var/log/app/backup.log 2>&1\n", CronOptions{})
 	mustContain(t, res.BlockTOML("backup"), "# Output goes to /var/log/app/backup.log")
 }
+
+// TestCronLeadingCdBecomesWorkingDir: a Laravel-style line cds itself, so the
+// task starts there instead of in `~`, and is named after the artisan command.
+func TestCronLeadingCdBecomesWorkingDir(t *testing.T) {
+	in := "* * * * * cd /var/www/parcel && php artisan payments:reconcile >> storage/logs/cron.log 2>&1\n" +
+		"0 * * * * cd /var/www/parcel && php artisan queue:prune\n"
+	out := parseCron(t, in, CronOptions{}).TOML()
+	mustContain(t, out, "[tasks.payments-reconcile]")
+	mustContain(t, out, "[tasks.queue-prune]")
+	mustContain(t, out, `working_dir = "/var/www/parcel"`)
+	mustContain(t, out, `run = "php artisan payments:reconcile >> storage/logs/cron.log 2>&1"`)
+	mustNotContain(t, out, `working_dir = "~"`)
+	mustNotContain(t, out, "cd /var/www/parcel")
+}
+
+// TestCronExistingSkipsAJobAnOlderReleaseImported: before the cd lift and the PHP
+// subcommand names, these lines were imported as `php` or with the cd still in
+// run. Re-importing them after an upgrade must not add the job a second time.
+func TestCronExistingSkipsAJobAnOlderReleaseImported(t *testing.T) {
+	for _, tc := range []struct{ name, line, owned, run string }{
+		{"cd and php", "* * * * * cd /var/www/parcel && php artisan payments:reconcile\n", "php", "cd /var/www/parcel && php artisan payments:reconcile"},
+		{"php only", "0 * * * * php artisan queue:prune\n", "php", "php artisan queue:prune"},
+		{"cd only", "30 2 * * * cd /srv && ./backup.sh\n", "backup", "cd /srv && ./backup.sh"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := CronOptions{Existing: Owned{tc.owned: {Kind: model.KindTask, Run: tc.run}}}
+			res := parseCron(t, tc.line, opts)
+			if tasks := res.Tally().Tasks; tasks != 0 {
+				t.Fatalf("expected the job to be skipped, got %d tasks:\n%s", tasks, res.TOML())
+			}
+			if !hasNoteKind(res, NoteAlreadyDefined) {
+				t.Fatalf("expected a skip note, got %+v", allNotes(res))
+			}
+		})
+	}
+}
+
+// TestCronExistingLegacyMatchNeedsTheSameJob: the old name alone is not enough.
+// A different command, account or crontab schedule is a different job and is
+// imported.
+func TestCronExistingLegacyMatchNeedsTheSameJob(t *testing.T) {
+	const line = "* * * * * cd /var/www/parcel && php artisan payments:reconcile\n"
+	const raw = "cd /var/www/parcel && php artisan payments:reconcile"
+	for name, owned := range map[string]OwnedEntry{
+		"other command": {Kind: model.KindTask, Run: "cd /var/www/parcel && php artisan payments:refund"},
+		"other user":    {Kind: model.KindTask, Run: raw, User: "deploy"},
+		"other cron":    {Kind: model.KindTask, Run: raw, Schedule: "0 3 * * *"},
+		"a service":     {Kind: model.KindService, Run: raw},
+	} {
+		t.Run(name, func(t *testing.T) {
+			res := parseCron(t, line, CronOptions{Existing: Owned{"php": owned}})
+			mustContain(t, res.TOML(), "[tasks.payments-reconcile]")
+		})
+	}
+}

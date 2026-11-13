@@ -37,6 +37,10 @@ class WorkCommand extends Command
             };
         };
         $units = ScheduleUnits::map($schedule, $this->laravel, static fn (string $message) => $log('warn', $message));
+        $cron = LeftoverCron::warning();
+        if ($cron !== null) {
+            $log('warn', $cron);
+        }
         $config = (array) $this->laravel->make('config')->get('runwisp', []);
         $options = array_filter([
             'app' => self::string($config['app'] ?? null),

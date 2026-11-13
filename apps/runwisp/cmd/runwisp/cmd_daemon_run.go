@@ -155,6 +155,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		updates:     updateChecker,
 		heartbeat:   pinger,
 		output:      output,
+		noAuth:      cfg.NoAuth,
 	}
 	reconciler, reloadFn := newReconciler(cfg, svc, src, configSnap, settings)
 	if mode == modeStandalone {
@@ -163,7 +164,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	}
 	doc, fromApp := src.(*config.DocumentSource)
 	if fromApp && reloadFn != nil {
-		serveAppConfig(svc.Apps, doc, reloadFn)
+		reloadFn = serveAppConfig(svc.Apps, doc, reloadFn)
 	}
 
 	srv, err := server.New(server.Options{
@@ -178,7 +179,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		DataDir:             absPathOrFallback(f.DataDir),
 		ConfigPath:          absPathOrFallback(f.CfgFile),
 		AppConfig:           fromApp,
-		SocketPath:          localAPISocketPath(f),
+		SocketPath:          daemonSocketPath(f),
 		LogDir:              f.LogDir(),
 		EventBus:            svc.EventBus,
 		Password:            cfg.Password,
@@ -187,6 +188,8 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		SessionKey:          cfg.SessionKey,
 		NoAuth:              cfg.NoAuth,
 		TrustedProxies:      cfg.Config.Daemon.TrustedProxies,
+		APITokens:           cfg.Config.Daemon.APITokens,
+		ViewerAPITokens:     cfg.Config.Daemon.ViewerAPITokens,
 		OnSignedInVisit:     svc.DetectedURL.Observe,
 		DetectedExternalURL: svc.DetectedURL.Load,
 		DaemonInfo:          daemonInfo,
@@ -212,6 +215,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	startupInfo := uikit.StartupInfo{
 		Version:    version.Version,
 		ConfigPath: absPathOrFallback(f.CfgFile),
+		AppConfig:  fromApp,
 		DataDir:    absPathOrFallback(f.DataDir),
 		DBPath:     f.DBPath(),
 		LogDir:     f.LogDir(),
@@ -583,7 +587,7 @@ func emitReadiness(rt *daemonRuntime, listenURL string, f Flags) {
 	// boot doesn't trip a spurious "health check did not pass" warning. A fatal
 	// bind error short-circuits the wait and flows through the shutdown path.
 	waitServerReady(rt, serverReadyTimeout)
-	client := apiclient.NewUnix(localAPISocketPath(f))
+	client := apiclient.NewUnix(daemonSocketPath(f))
 	if err := pollHealth(client, 3*time.Second); err != nil {
 		slog.Warn("health check did not pass during startup", "err", err)
 	}

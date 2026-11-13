@@ -26,6 +26,8 @@ func TestResolveBinary_Reject(t *testing.T) {
 		{"var-tmp", "/var/tmp/runwisp", "/var/tmp"},
 		{"dev-shm", "/dev/shm/runwisp", "/dev/shm"},
 		{"go-build", "/tmp/go-build123/abc/exe/runwisp", "go run"},
+		{"macos-private-tmp", "/private/tmp/runwisp", "/tmp"},
+		{"macos-private-var-tmp", "/private/var/tmp/runwisp", "/var/tmp"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -326,6 +328,9 @@ func TestTransientDataDirReason(t *testing.T) {
 		{"/var/tmp", "tmpwatch"},
 		{"/dev/shm/runwisp", "tmpfs"},
 		{"/dev/shm", "tmpfs"},
+		{"/private/tmp/runwisp", "wiped on reboot"},
+		{"/private/var/tmp", "tmpwatch"},
+		{"/private/etc/runwisp", ""},
 		{"/srv/runwisp", ""},
 	}
 	for _, tc := range cases {

@@ -267,14 +267,15 @@ runwisp.d/imported.toml   # written by the importer
   `runwisp.d/*.toml`. If you already have your own `include` list, `--write`
   doesn't change it; it prints the glob to add and writes nothing.
 - The importer only ever writes `runwisp.d/imported.toml`, so you can run it
-  again safely.
+  again safely. Each run adds to what is staged. A job staged under the same
+  name is replaced, and the summary lists what it kept and replaced.
 - A job your config already defines with the **same** command is skipped (`-`).
   A job with the same name but a **different** command is renamed (`backup`
   becomes `backup-2`).
 - Both files are written together. If anything fails, both are rolled back.
-- If the result wouldn't load (any `!` row), nothing is written and the
-  command exits non-zero. Fix the line and run it again, or use `-o` to get a
-  file you can edit by hand.
+- If the result wouldn't load, nothing is written and the command exits
+  non-zero, naming the jobs that don't load. Fix them and run it again, or use
+  `-o` to get a file you can edit by hand.
 
 Imported tasks show `"source": "staged"` in `runwisp list --json` and
 `runwisp status --json`. They run like any other task.
@@ -340,6 +341,10 @@ were written for cron:
 - Cron runs a job in the user's home directory. Without `working_dir = "~"`,
   the job would run in the directory the daemon started in, and relative paths
   would point somewhere else. `~` is the home of the user the task runs as.
+
+A job that starts with `cd DIR &&` gets `working_dir = "DIR"` instead, and the
+`cd` is dropped from `run`. This applies when `DIR` is a plain absolute or
+`~/` path.
 
 ### Catch-up and overlap
 

@@ -526,7 +526,7 @@ func TestExplain(t *testing.T) {
 
 	_, errs = Explain("0 3 30 2 *")
 	require.Len(t, errs, 1)
-	assert.Equal(t, FieldError{Field: "dayOfMonth", Value: "30", Message: "schedule never fires (the day of month does not exist in the given months)"}, errs[0])
+	assert.Equal(t, FieldError{Field: "dayOfMonth", Value: "30", Message: `day of month "30" never occurs in month "2"`}, errs[0])
 
 	for _, spec := range []string{"* * *", "@fortnightly", "@every 10ms", "@every 1500ms", "CRON_TZ=Nowhere/Land 0 3 * * *", ""} {
 		_, errs = Explain(spec)

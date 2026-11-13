@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -196,4 +197,38 @@ func TestRunListURLReadsTheDaemonNotTheLocalFile(t *testing.T) {
 	assert.Contains(t, out, "deploy")
 	assert.Contains(t, out, "0 4 * * *")
 	assert.NotContains(t, out, "hello", "the local runwisp.toml is not read")
+}
+
+// serveAppDaemon answers as a daemon whose config an app supplies, with one task.
+func serveAppDaemon(t *testing.T) Flags {
+	t.Helper()
+	mux := serveTasks(http.NewServeMux(), model.TaskResponse{
+		Task: model.Task{Name: "app:digest", Cron: "0 8 * * *", MaxConcurrent: 1, ManualTrigger: true},
+	})
+	mux.HandleFunc("/api/daemon/identity", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(model.InstanceInfo{ConfigSource: "app"})
+	})
+	f := serveStatusSocket(t, mux)
+	f.CfgFile = filepath.Join(t.TempDir(), "runwisp.toml") // never written: an app has none
+	return f
+}
+
+func TestRunList_WithoutTomlListsTheConnectedApp(t *testing.T) {
+	f := serveAppDaemon(t)
+
+	out := runListString(t, f)
+	assert.Contains(t, out, "Tasks from the connected app")
+	assert.Contains(t, out, "app:digest")
+
+	var buf bytes.Buffer
+	require.NoError(t, runList(t.Context(), &buf, f, remoteFlags{}, true))
+	assert.NotContains(t, buf.String(), "connected app", "--json stays a bare document")
+	assert.Contains(t, buf.String(), "app:digest")
+}
+
+func TestRunList_WithoutTomlOrDaemonStillFails(t *testing.T) {
+	f := Flags{DataDir: testutil.ShortTempDir(t), CfgFile: filepath.Join(t.TempDir(), "runwisp.toml")}
+	err := runList(t.Context(), &bytes.Buffer{}, f, remoteFlags{}, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to load")
 }

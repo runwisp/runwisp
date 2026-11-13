@@ -68,9 +68,14 @@ func maxBodySize(limit int64) func(http.Handler) http.Handler {
 	}
 }
 
-// ReadOnlySessionMessage is the 403 body a viewer session gets on any write. The
-// API client matches it to tell a read-only rejection from other 403s.
-const ReadOnlySessionMessage = "read-only session: this password can view but not change anything"
+// ReadOnlyMessagePrefix starts the 403 body of every read-only rejection. The
+// API client matches the prefix, not the whole body, so the wording can change
+// without a CLI or TUI on another version losing track of it (daemons before
+// 1.9 said "read-only session: ...").
+const ReadOnlyMessagePrefix = "read-only "
+
+// ReadOnlySessionMessage is the 403 body a viewer session gets on any write.
+const ReadOnlySessionMessage = ReadOnlyMessagePrefix + "access: this password or token can view but not change anything"
 
 // isSafeMethod reports whether method cannot change daemon state.
 func isSafeMethod(method string) bool {
@@ -87,27 +92,49 @@ func isSafeMethod(method string) bool {
 // already gated socket access; running CHAP on top would add no security and
 // would force the local CLI/TUI to keep a password around just to talk to the
 // daemon that owns its data dir.
+//
+// A bearer credential that can't be a session token can only be an API token
+// guess (config refuses API tokens shaped like a session token), so only those
+// count toward the apiTokens lockout. An expired browser cookie or a remote
+// CLI's stale session token never does, and a locked-out IP keeps its cookie
+// sessions and session tokens; CHAP login has its own limiter.
 func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
+	apiTokens := newFailureLimiter("API token")
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if IsLocalTrusted(r) {
+			if IsLocalTrusted(r) || authorizeRequest(authSvc, apiTokens, w, r) {
 				next.ServeHTTP(w, r)
-				return
 			}
-			readOnly, ok := authSvc.VerifyToken(auth.TokenFromRequest(r))
-			if !ok {
-				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
-				return
-			}
-			// A viewer session may look at everything and change nothing, so the
-			// check is the method, not a per-route list a new route could miss.
-			if readOnly && !isSafeMethod(r.Method) {
-				http.Error(w, ReadOnlySessionMessage, http.StatusForbidden)
-				return
-			}
-			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// authorizeRequest checks the request's session or API token and reports
+// whether it may proceed. When it may not, it has already written the 401,
+// 403 or 429.
+func authorizeRequest(authSvc *auth.Service, apiTokens *failureLimiter, w http.ResponseWriter, r *http.Request) bool {
+	// The cookie can carry an API token too (VerifyToken accepts it), so a
+	// guess counts whichever way it arrives.
+	token := auth.TokenFromRequest(r)
+	apiToken := token != "" && !auth.LooksLikeSessionToken(token)
+	if apiToken && apiTokens.refuse(w, r) {
+		return false
+	}
+	readOnly, ok := authSvc.VerifyToken(token)
+	if !ok {
+		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		if apiToken {
+			apiTokens.fail(w, r)
+		}
+		return false
+	}
+	// A viewer session may look at everything and change nothing, so the
+	// check is the method, not a per-route list a new route could miss.
+	if readOnly && !isSafeMethod(r.Method) {
+		http.Error(w, ReadOnlySessionMessage, http.StatusForbidden)
+		return false
+	}
+	return true
 }
 
 // signInBaseKey carries a browser auth request's Web UI base URL from

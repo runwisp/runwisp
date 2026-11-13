@@ -598,26 +598,26 @@ func TestTriggerRunReturnsIndependentSnapshot(t *testing.T) {
 // deadline-triggered ForceKill.
 type stuckExecutor struct {
 	testutil.NoExecutorHooks
-	onStarted     func(runID string, forceKill func())
+	onStarted     func(runID string, proc *executor.Process)
 	startedCh     chan struct{}
 	forceKilledCh chan struct{}
 	startOnce     sync.Once
 	killOnce      sync.Once
 }
 
-func (s *stuckExecutor) SetOnProcessStarted(cb func(runID string, forceKill func())) {
+func (s *stuckExecutor) SetOnProcessStarted(cb func(runID string, proc *executor.Process)) {
 	s.onStarted = cb
 }
 
 func (s *stuckExecutor) Execute(_ context.Context, _ *model.Task, run *model.Run) *executor.ExecuteResult {
 	released := make(chan struct{})
 	if s.onStarted != nil {
-		s.onStarted(run.ID, func() {
+		s.onStarted(run.ID, &executor.Process{ForceKill: func() {
 			s.killOnce.Do(func() {
 				close(s.forceKilledCh)
 				close(released)
 			})
-		})
+		}})
 	}
 	s.startOnce.Do(func() { close(s.startedCh) })
 	select {
@@ -702,7 +702,7 @@ func TestShutdownUnblocksParkedDelay(t *testing.T) {
 	jm.wg.Add(1)
 	go func() {
 		defer jm.wg.Done()
-		woke <- jm.waitForDelay(time.Hour)
+		woke <- jm.waitForDelay(time.Hour, nil)
 	}()
 
 	done := make(chan struct{})
@@ -1075,6 +1075,74 @@ func TestRetrySkippedForStationRun(t *testing.T) {
 	// to.
 	time.Sleep(100 * time.Millisecond)
 	assert.Equal(t, int32(1), calls.Load(), "station-triggered runs must not retry locally")
+}
+
+// awaitRetryEnds fails the test unless every goroutine the manager tracks (the
+// run itself and any parked retry wait) exits without a shutdown. A retry
+// parked in a one-hour delay only exits if something cancels it.
+func awaitRetryEnds(t *testing.T, jm *defaultTaskManager, why string) {
+	t.Helper()
+	drained := make(chan struct{})
+	go func() {
+		jm.wg.Wait()
+		close(drained)
+	}()
+	select {
+	case <-drained:
+	case <-time.After(2 * time.Second):
+		t.Fatal(why)
+	}
+}
+
+// failingRetryTask registers a task whose single run fails and schedules a
+// retry an hour out, and returns once that run has ended. The returned counter
+// is the number of executions so far.
+func failingRetryTask(t *testing.T, jm *defaultTaskManager, exec *testutil.MockExecutor, eb *events.Bus) *atomic.Int32 {
+	t.Helper()
+	task := &model.Task{
+		Name:          "task1",
+		Run:           "false",
+		MaxConcurrent: 1,
+		OnOverlap:     model.PolicySkip,
+		RetryAttempts: 3,
+		RetryDelay:    durPtr(time.Hour),
+	}
+	jm.UpsertTask(task)
+
+	calls := new(atomic.Int32)
+	exec.On("Execute", mock.Anything, task, mock.Anything).Run(func(mock.Arguments) {
+		calls.Add(1)
+	}).Return(&executor.ExecuteResult{ExitCode: 1})
+
+	failed := watchRuns(eb, events.EventRunFailed)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
+	require.NoError(t, err)
+	failed.waitFor(t, 1)
+	return calls
+}
+
+// TestStopTaskCancelsPendingRetry: stopping a task while a retry waits out its
+// delay must end the retry chain, not let it fire after the operator said stop.
+func TestStopTaskCancelsPendingRetry(t *testing.T) {
+	jm, exec, eb := newTestManager(t)
+	calls := failingRetryTask(t, jm, exec, eb)
+
+	require.NoError(t, jm.StopTask("task1"))
+
+	awaitRetryEnds(t, jm, "StopTask left the retry parked in its delay")
+	assert.Equal(t, int32(1), calls.Load(), "no retry may run after StopTask")
+}
+
+// TestRemoveTaskCancelsPendingRetry: a reload that removes a task must cancel
+// its pending retry, even if the same name is re-added before the delay ends.
+func TestRemoveTaskCancelsPendingRetry(t *testing.T) {
+	jm, exec, eb := newTestManager(t)
+	calls := failingRetryTask(t, jm, exec, eb)
+
+	jm.RemoveTask("task1")
+
+	awaitRetryEnds(t, jm, "RemoveTask left the retry parked in its delay")
+	assert.Equal(t, int32(1), calls.Load(), "no retry may run after RemoveTask")
 }
 
 // TestLoadPendingRunsResumed: a pending cron task with a free slot is
@@ -1858,6 +1926,32 @@ func TestServiceStopStatePublishesTasksChanged(t *testing.T) {
 	require.NoError(t, jm.StopService("svc"))
 	require.NoError(t, jm.RestartServiceInstances("svc"))
 	assert.Equal(t, int32(4), changed.Load(), "restarting a stopped service publishes")
+}
+
+// TestReloadRaisingMaxConcurrentDrainsQueue is the bug-first regression for a
+// reload that raises max_concurrent while runs sit in the queue: the drain loop
+// was parked on the old limit and nothing woke it, so free slots stayed empty
+// until some running run happened to end.
+func TestReloadRaisingMaxConcurrentDrainsQueue(t *testing.T) {
+	jm, exec, _ := newGatedManager(t)
+
+	jm.UpsertTask(testTask("task1", model.PolicyQueue, 1))
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
+	require.NoError(t, err)
+	exec.WaitStarted(t)
+	for range 2 {
+		queued, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
+		require.NoError(t, err)
+		require.Equal(t, model.PhasePending, queued.Status)
+	}
+
+	// Let the drain loop settle into its wait on the old limit.
+	time.Sleep(100 * time.Millisecond)
+	jm.UpsertTask(testTask("task1", model.PolicyQueue, 3))
+
+	exec.WaitStarted(t)
+	exec.WaitStarted(t)
+	assert.Equal(t, 3, jm.GetActiveRunCount("task1"))
 }
 
 // TestTriggerRunOverlay: a run's overlay reaches the executor, also when the

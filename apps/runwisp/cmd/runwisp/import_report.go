@@ -164,25 +164,31 @@ func noteLines(n importer.Note, width int, st importStyles, indent, hanging int)
 	return lines
 }
 
-// importFooterLine is the one-line verdict, or "" when nothing is blocked.
+// importFooterLine is the one-line verdict, or "" when nothing needs a look.
 //
-// It needs two phrasings because blocking does not imply won't-load: a program
-// with no `command=` emits `run = ""` and the load genuinely fails, while an
-// unresolved `%(ENV_x)s` emits a syntactically fine run line that loads and then
-// runs the wrong command. Demoting the second to a mere difference would bury
-// the scarier of the two, so the mark stays and the wording adapts.
-func importFooterLine(res *importer.Result, validationErr error) string {
-	blocked := res.Tally().Blocked
-	if blocked == 0 {
+// It says "review" rather than "fix" or "TODO" because a blocking note doesn't
+// always come with a `# TODO` in the TOML, and doesn't always stop the config
+// loading: an unresolved `%(ENV_x)s` loads fine and runs the wrong command. Only
+// the rows that really don't load (see unloadableItems) are called out as such,
+// by name, so the count never overstates what stops the load.
+func importFooterLine(res *importer.Result, unloadable []importer.Item) string {
+	var parts []string
+	if blocked := res.Tally().Blocked; blocked > 0 {
+		// "item", not "task": a blocked row may be a crontab line that never became a
+		// task at all, and it pairs with the epilogue's "Fix the items above".
+		parts = append(parts, textutil.Count(blocked, "item", "items")+" "+textutil.Pluralize(blocked, "needs", "need")+" review")
+	}
+	if len(unloadable) > 0 {
+		names := make([]string, len(unloadable))
+		for i, it := range unloadable {
+			names[i] = it.Name
+		}
+		parts = append(parts, strings.Join(names, ", ")+" can't load until fixed, so this config won't either")
+	}
+	if len(parts) == 0 {
 		return ""
 	}
-	// "item", not "task": a blocked row may be a crontab line that never became a
-	// task at all, and it pairs with the epilogue's "Fix the items above".
-	subject := textutil.Count(blocked, "item", "items")
-	if validationErr != nil {
-		return subject + " " + textutil.Pluralize(blocked, "needs", "need") + " a fix before this config loads."
-	}
-	return subject + " " + textutil.Pluralize(blocked, "carries", "carry") + " a # TODO — fix it before you rely on it."
+	return strings.Join(parts, "; ") + "."
 }
 
 // onlyBlocking keeps the rows that need a human. It is how --quiet silences the

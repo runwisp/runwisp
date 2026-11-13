@@ -679,14 +679,14 @@ func TestRoutingExecutor_SetOnProcessStarted_ReceivesCall(t *testing.T) {
 	e := newTestExecutor(t, Options{})
 
 	gotID := ""
-	e.SetOnProcessStarted(func(runID string, _ func()) {
+	e.SetOnProcessStarted(func(runID string, _ *Process) {
 		gotID = runID
 	})
 
 	// Manually invoke the registered hook — startBackend would call it in
 	// production, but we cover the registration wiring here.
 	require.NotNil(t, e.onProcessStarted)
-	e.onProcessStarted("r1", func() {})
+	e.onProcessStarted("r1", &Process{})
 	assert.Equal(t, "r1", gotID)
 }
 
@@ -739,4 +739,34 @@ func TestDaemonizeHint(t *testing.T) {
 	assert.Empty(t, daemonizeHint(svc, &ExecuteResult{ExitCode: 1}, time.Second), "a crash is shown as its exit code")
 	assert.Empty(t, daemonizeHint(svc, &ExecuteResult{Stopped: true}, time.Second), "the operator stopped it")
 	assert.Empty(t, daemonizeHint(&model.Task{HealthyAfter: &healthy}, &ExecuteResult{}, time.Second), "tasks may exit at once")
+}
+
+// TestExecuteCancelledBeforeStartIsStopped is the bug-first regression for a
+// run whose context ends before its process spawns (an operator stop, kill
+// overlap policy or shutdown landing in that window). exec.CommandContext
+// refuses to start, and the run used to be classified `failed`, which is
+// retry-eligible, instead of `stopped`.
+func TestExecuteCancelledBeforeStartIsStopped(t *testing.T) {
+	exec := New(Options{LogDir: t.TempDir(), EventBus: events.NewEventBus(), HasLocalTasks: true})
+	task := &model.Task{Name: "cancelled-early", Run: "echo never"}
+	run := &model.Run{ID: ulid.Make().String(), Status: model.PhaseRunning}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result := exec.Execute(ctx, task, run)
+
+	assert.Equal(t, model.ReasonStopped, result.EndReason())
+}
+
+// TestExecuteTimedOutBeforeStartIsTimeout: same window, deadline instead of cancel.
+func TestExecuteTimedOutBeforeStartIsTimeout(t *testing.T) {
+	exec := New(Options{LogDir: t.TempDir(), EventBus: events.NewEventBus(), HasLocalTasks: true})
+	task := &model.Task{Name: "timeout-early", Run: "echo never"}
+	run := &model.Run{ID: ulid.Make().String(), Status: model.PhaseRunning}
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	result := exec.Execute(ctx, task, run)
+
+	assert.Equal(t, model.ReasonTimeout, result.EndReason())
 }

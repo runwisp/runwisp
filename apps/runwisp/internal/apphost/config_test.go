@@ -271,3 +271,121 @@ func TestCloseHandsOverToTheNextCopy(t *testing.T) {
 	assert.Equal(t, "r1", second.next().Run)
 	<-started
 }
+
+// requestConfig runs h.RequestConfig in the background, for the test to play
+// the app's side.
+func requestConfig(h *Host) <-chan reloadAnswer {
+	done := make(chan reloadAnswer, 1)
+	go func() {
+		result, err := h.RequestConfig()
+		done <- reloadAnswer{result, err}
+	}()
+	return done
+}
+
+func TestRequestConfigAppliesTheAppsFreshConfig(t *testing.T) {
+	h := New()
+	acceptConfig(h, nil)
+	app := connect(t, h)
+	app.role()
+
+	done := requestConfig(h)
+	ask := app.next()
+	require.Equal(t, "reload", ask.Type)
+	require.NotEmpty(t, ask.Reload)
+
+	app.send(message{Type: "config", Doc: json.RawMessage(digestDoc), Reload: ask.Reload})
+	// The app takes on the new tasks on config_ok: the caller, who may start a
+	// run of one next, hears only after the app did.
+	select {
+	case <-done:
+		t.Fatal("the reload returned before the app heard config_ok")
+	case <-time.After(50 * time.Millisecond):
+	}
+	assert.Equal(t, "config_ok", app.next().Type, "the app hears the outcome too")
+	got := <-done
+	require.NoError(t, got.err)
+	assert.Equal(t, []string{"digest"}, got.result.Added)
+}
+
+func TestRequestConfigReportsARejectedConfig(t *testing.T) {
+	h := New()
+	acceptConfig(h, nil)
+	app := connect(t, h)
+	app.role()
+
+	done := requestConfig(h)
+	ask := app.next()
+	app.send(message{Type: "config", Doc: json.RawMessage(`{"tasks":{"digest":{"sdk":true,"bogus":1}}}`), Reload: ask.Reload})
+	assert.Equal(t, "config_error", app.next().Type)
+	assert.ErrorContains(t, (<-done).err, "bogus")
+}
+
+func TestRequestConfigReportsTheAppsError(t *testing.T) {
+	h := New()
+	acceptConfig(h, nil)
+	app := connect(t, h)
+	app.role()
+
+	done := requestConfig(h)
+	ask := app.next()
+	app.send(message{Type: "reload_error", Reload: ask.Reload, Error: `PHP Parse error: syntax error, unexpected token ";" in routes/console.php on line 56`})
+	err := (<-done).err
+	assert.ErrorContains(t, err, "the app could not read its config")
+	assert.ErrorContains(t, err, "routes/console.php on line 56")
+}
+
+func TestRequestConfigIgnoresConfigsThatAnswerNoReload(t *testing.T) {
+	h := New()
+	acceptConfig(h, nil)
+	app := connect(t, h)
+	app.role()
+
+	done := requestConfig(h)
+	ask := app.next()
+	// A config the app pushed on its own, not the answer.
+	app.send(message{Type: "config", Doc: json.RawMessage(`{}`)})
+	require.Equal(t, "config_ok", app.next().Type)
+	select {
+	case got := <-done:
+		t.Fatalf("answered by a config that wasn't the answer: %+v", got)
+	default:
+	}
+	app.send(message{Type: "config", Doc: json.RawMessage(digestDoc), Reload: ask.Reload})
+	app.next()
+	assert.Equal(t, []string{"digest"}, (<-done).result.Added)
+}
+
+func TestRequestConfigWithoutAnApp(t *testing.T) {
+	h := New()
+	acceptConfig(h, nil)
+	_, err := h.RequestConfig()
+	assert.ErrorContains(t, err, "no app is connected")
+}
+
+func TestRequestConfigFromAnAppThatDisconnects(t *testing.T) {
+	h := New()
+	acceptConfig(h, nil)
+	app := connect(t, h)
+	app.role()
+
+	done := requestConfig(h)
+	app.next()
+	_ = app.conn.Close()
+	assert.ErrorContains(t, (<-done).err, "disconnected")
+}
+
+func TestRequestConfigFromAnAppThatNeverAnswers(t *testing.T) {
+	h := New()
+	acceptConfig(h, nil)
+	app := connect(t, h)
+	app.role()
+	// An SDK that predates reload ignores the message: the wait runs out.
+	expired := make(chan time.Time, 1)
+	expired <- time.Time{}
+	h.after = func(time.Duration) <-chan time.Time { return expired }
+
+	done := requestConfig(h)
+	app.next()
+	assert.ErrorContains(t, (<-done).err, "restart it to apply changes")
+}

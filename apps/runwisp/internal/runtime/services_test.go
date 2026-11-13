@@ -650,6 +650,33 @@ func TestRecycleServiceInstances_CancelsRunningInstances(t *testing.T) {
 	started.waitFor(t, 6)
 }
 
+// TestServiceRestartPolicyEditAppliesToRunningInstance: a reload that only
+// changes restart policy does not recycle the service (see
+// TestReconcile_ServiceChangeRecyclesOnlyWhenTheProcessIsAffected), so the
+// instance already running must be judged by the policy now in force when it
+// exits, not by the one it was spawned under.
+func TestServiceRestartPolicyEditAppliesToRunningInstance(t *testing.T) {
+	djm, exec, eb := newGatedManager(t)
+
+	task := serviceTask("svc", 1)
+	djm.UpsertTask(task)
+
+	started := watchRuns(eb, events.EventRunStarted)
+	done := watchCompletions(eb)
+	require.NoError(t, djm.StartServiceInstances("svc", model.TriggeredByService))
+	started.waitFor(t, 1)
+
+	edited := *task
+	edited.Restart = model.RestartNever
+	djm.UpsertTask(&edited)
+
+	exec.ReleaseAll()
+	done.waitFor(t, 1)
+
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, 1, exec.Calls(), "restart = never now in force: the exited instance must stay down")
+}
+
 // TestServiceCleanExitBeforeHealthyGoesFatal: a service that daemonizes exits 0
 // at once, and restart = "always" used to bring it back forever with nothing to
 // say why. An exit 0 before healthy_after is a failed start, like a crash.

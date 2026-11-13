@@ -41,12 +41,23 @@ final class ScheduleUnits
             [$target, $method, $default, $own] = self::subject($event, $app->basePath(), $commands ??= self::commands($app));
             $task = Task::of($target, $method);
             // name() sets the description, which Laravel also fills itself: that is no name.
-            $named = is_string($event->description) && $event->description !== '' && $event->description !== $own ? $event->description : $task?->name;
-            if ($named === null && $target instanceof \Closure && $event instanceof CallbackEvent && $warn !== null) {
+            $description = is_string($event->description) && $event->description !== '' && $event->description !== $own ? $event->description : null;
+            // A description that is a task name is the ->name() usage; a sentence is only a description.
+            $isName = $description !== null && Names::valid($description);
+            $named = $isName ? $description : $task?->name;
+            $closure = $target instanceof \Closure && $event instanceof CallbackEvent;
+            if ($named === null && $description !== null && $closure) {
+                // A closure has no command or class to name it, and its sentence beats its file and line.
+                $named = $description;
+            }
+            if ($named === null && $closure && $warn !== null) {
                 $warn("runwisp: a scheduled closure at $default has no name, so its run history is lost when that line moves; name it with ->name() or #[RunWisp\\Task('name')]");
             }
             $name = $names->claim($named ?? $default);
-            $options = [...self::options($event), ...$task->options ?? []];
+            // Else a command's own description; a job's is only its class name, which names the task already.
+            $text = $isName ? null : $description;
+            $text ??= is_string($event->command) ? $own : null;
+            $options = [...self::options($event), ...($text === null || $text === '' ? [] : ['description' => $text]), ...$task->options ?? []];
             $units[$name] = [new Unit($name, $options, [PHP_BINARY, $app->basePath('artisan'), 'runwisp:run', $name]), $event];
         }
 

@@ -33,23 +33,19 @@ final class RunCommand extends Command
 
             return 1;
         }
+        $run = Run::current() ?? Run::manual($name);
         if (!$event->runsInMaintenanceMode() && $this->laravel->isDownForMaintenance()) {
-            $this->line('runwisp: skipped: the app is in maintenance mode');
-
-            return 0;
+            return $run->skip('the app is in maintenance mode');
         }
         if (!$event->filtersPass($this->laravel)) {
-            $this->line('runwisp: skipped: a when() or skip() filter said no');
-
-            return 0;
+            return $run->skip('a when(), skip() or between() filter said no');
         }
-        $run = Run::current() ?? Run::manual($name);
 
-        return $run->execute(fn (): int => self::runEvent($event, $this->laravel));
+        return $run->execute(fn (): int => self::runEvent($event, $this->laravel, $run));
     }
 
     /** Laravel's Event::run(), but a command's output goes to the run's log, not /dev/null. */
-    private static function runEvent(Event $event, Application $app): int
+    private static function runEvent(Event $event, Application $app, Run $run): int
     {
         if ($event instanceof CallbackEvent) {
             $event->run($app);
@@ -66,9 +62,7 @@ final class RunCommand extends Command
             $event->skippedBecauseOverlapping = true;
         }
         if ($event->skippedBecauseOverlapping) {
-            echo "runwisp: skipped: withoutOverlapping() found it still running\n";
-
-            return 0;
+            return $run->skip('withoutOverlapping() found it still running');
         }
 
         return (int) $event->exitCode;

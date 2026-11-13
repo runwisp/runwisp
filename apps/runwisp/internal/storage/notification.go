@@ -89,7 +89,11 @@ func (db *SQLiteDatabase) UpsertByFingerprint(ctx context.Context, n *Notificati
 	defer func() { _ = tx.Rollback() }()
 	qtx := db.q.WithTx(tx)
 
-	cutoff := n.LastOccurredAt.Add(-window)
+	// Rows are compared as TEXT, so every stored and bound timestamp is UTC
+	// (see utcPtr): the daemon hands in time.Now() in the host's zone.
+	createdAt := n.CreatedAt.UTC()
+	lastOccurredAt := n.LastOccurredAt.UTC()
+	cutoff := lastOccurredAt.Add(-window)
 	existing, err := qtx.SelectExistingForFingerprint(ctx, sqlcdb.SelectExistingForFingerprintParams{
 		Fingerprint:    n.Fingerprint,
 		LastOccurredAt: cutoff,
@@ -111,8 +115,8 @@ func (db *SQLiteDatabase) UpsertByFingerprint(ctx context.Context, n *Notificati
 			Body:            n.Body,
 			Count:           n.Count,
 			OccurrencesJson: occJSON,
-			CreatedAt:       n.CreatedAt,
-			LastOccurredAt:  n.LastOccurredAt,
+			CreatedAt:       createdAt,
+			LastOccurredAt:  lastOccurredAt,
 		}); err != nil {
 			return false, err
 		}
@@ -142,7 +146,7 @@ func (db *SQLiteDatabase) UpsertByFingerprint(ctx context.Context, n *Notificati
 	if err := qtx.UpdateNotificationCoalesced(ctx, sqlcdb.UpdateNotificationCoalescedParams{
 		Count:           newCount,
 		OccurrencesJson: mergedJSON,
-		LastOccurredAt:  n.LastOccurredAt,
+		LastOccurredAt:  lastOccurredAt,
 		Title:           n.Title,
 		Body:            n.Body,
 		RunID:           n.RunID,

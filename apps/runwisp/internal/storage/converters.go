@@ -36,6 +36,8 @@ func runFromRow(s sqlcdb.Run) model.Run {
 		CPUTimeMs:       s.CpuTimeMs,
 		StdoutLines:     s.StdoutLines,
 		StderrLines:     s.StderrLines,
+		Pgid:            int(s.Pgid),
+		ProcessStart:    s.ProcessStart,
 	}
 }
 
@@ -110,6 +112,8 @@ func runToUpdateParams(r *model.Run) sqlcdb.UpdateRunParams {
 		CpuTimeMs:       r.CPUTimeMs,
 		StdoutLines:     r.StdoutLines,
 		StderrLines:     r.StderrLines,
+		Pgid:            int64(r.Pgid),
+		ProcessStart:    r.ProcessStart,
 	}
 }
 

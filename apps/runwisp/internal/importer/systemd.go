@@ -8,9 +8,11 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -24,38 +26,28 @@ type SystemdOptions struct {
 	// Existing carries the entries the live config already defines, so a re-import
 	// skips a unit it already owns instead of colliding on the merged load.
 	Existing Owned
+	// UnitDirs are the directories systemd loads units from, highest priority
+	// first. A unit's drop-ins (NAME.d/*.conf) are read from each of them, as
+	// well as from the unit file's own directory: `systemctl edit` writes them
+	// under /etc even for a unit a package ships in /usr/lib.
+	UnitDirs []string
 }
 
 // ParseSystemdFiles converts one or more systemd `.service` and `.timer` unit
 // files into a *Result. Each file is one unit, named after its filename
-// (foo.service → foo). A timer and the service it starts become one scheduled
-// task named after the timer; a service also passed as an argument is not
-// imported a second time on its own.
+// (foo.service → foo), with its drop-ins applied. A timer and the service it
+// starts become one scheduled task named after the timer; a service also passed
+// as an argument is not imported a second time on its own.
 func ParseSystemdFiles(paths []string, opts SystemdOptions) (*Result, error) {
 	units := make([]systemdUnit, 0, len(paths))
 	started := map[string]bool{} // absolute paths of services some timer starts
 	for _, p := range paths {
-		sections, err := readSystemdFile(p)
+		u, svcPath, err := readSystemdArg(p, opts.UnitDirs)
 		if err != nil {
 			return nil, err
 		}
-		u := systemdUnit{sections: sections, name: systemdUnitName(p), source: filepath.Base(p)}
-		if timer := findSection(sections, "Timer"); timer != nil {
-			svcPath := systemdTimerService(p, timer)
-			u.timer = sections
-			u.sections, err = readSystemdFile(svcPath)
-			switch {
-			case errors.Is(err, fs.ErrNotExist):
-				u.missingService = "the timer starts " + filepath.Base(svcPath) + ", but " + svcPath +
-					" doesn't exist, so there is nothing to run. Add the run line by hand."
-			case err != nil:
-				return nil, err
-			case findSection(u.sections, "Service") == nil:
-				u.missingService = "the timer starts " + svcPath + ", which has no [Service] section, so there is nothing to run."
-			}
-			if abs, err := filepath.Abs(svcPath); err == nil {
-				started[abs] = true
-			}
+		if abs, err := filepath.Abs(svcPath); svcPath != "" && err == nil {
+			started[abs] = true
 		}
 		units = append(units, u)
 	}
@@ -69,6 +61,77 @@ func ParseSystemdFiles(paths []string, opts SystemdOptions) (*Result, error) {
 		importSystemdUnit(names, u)
 	}
 	return res, nil
+}
+
+// readSystemdArg reads one unit argument. A timer comes back with the service it
+// starts read in, and that service's path; a service comes back noting the
+// timer beside it that starts it, if any.
+func readSystemdArg(p string, dirs []string) (u systemdUnit, svcPath string, err error) {
+	sections, dropIns, err := readSystemdUnit(p, dirs)
+	if err != nil {
+		return u, "", err
+	}
+	u = systemdUnit{sections: sections, dropIns: dropIns, name: systemdUnitName(p), source: filepath.Base(p)}
+	timer := findSection(sections, "Timer")
+	if timer == nil {
+		if sibling := strings.TrimSuffix(p, ".service") + ".timer"; sibling != p {
+			if _, err := os.Stat(sibling); err == nil {
+				u.startedBy = filepath.Base(sibling)
+			}
+		}
+		return u, "", nil
+	}
+
+	svcPath = systemdTimerService(p, timer)
+	u.timer = sections
+	var svcDropIns []string
+	u.sections, svcDropIns, err = readSystemdUnit(svcPath, dirs)
+	u.dropIns = append(u.dropIns, svcDropIns...)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		u.missingService = "the timer starts " + filepath.Base(svcPath) + ", but " + svcPath +
+			" doesn't exist, so there is nothing to run. Add the run line by hand."
+	case err != nil:
+		return u, "", err
+	case findSection(u.sections, "Service") == nil:
+		u.missingService = "the timer starts " + svcPath + ", which has no [Service] section, so there is nothing to run."
+	}
+	return u, svcPath, nil
+}
+
+// readSystemdUnit reads a unit file with its drop-ins applied after it, the way
+// systemd assembles it: every NAME.d/*.conf across dirs and the file's own
+// directory, a file in an earlier dir masking one of the same name in a later
+// one, applied in filename order. It also returns the drop-ins it read.
+//
+// ponytail: reads NAME.d/ only, not a template's foo@.service.d/ or the
+// per-type service.d/ and timer.d/; `systemctl cat` piped in covers those.
+func readSystemdUnit(path string, dirs []string) (sections []systemdSection, dropIns []string, err error) {
+	sections, err = readSystemdFile(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if own := filepath.Dir(path); !slices.Contains(dirs, own) {
+		dirs = append(slices.Clone(dirs), own)
+	}
+	byName := map[string]string{}
+	for _, dir := range dirs {
+		matches, _ := filepath.Glob(filepath.Join(dir, filepath.Base(path)+".d", "*.conf"))
+		for _, m := range matches {
+			if _, masked := byName[filepath.Base(m)]; !masked {
+				byName[filepath.Base(m)] = m
+			}
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(byName)) {
+		extra, err := readSystemdFile(byName[name])
+		if err != nil {
+			return nil, nil, err
+		}
+		sections = append(sections, extra...)
+		dropIns = append(dropIns, byName[name])
+	}
+	return sections, dropIns, nil
 }
 
 // ParseSystemdReader converts a single unit read from r. A piped unit has no
@@ -133,12 +196,20 @@ type systemdSection struct {
 	kvs  []systemdKV
 }
 
+// all returns every value of key in order. An empty assignment resets the list,
+// as systemd does for ExecStart=, Environment=, OnCalendar= and the rest of its
+// list-valued directives: it is how a drop-in replaces rather than adds to one.
 func (s *systemdSection) all(key string) []string {
 	var out []string
 	for _, kv := range s.kvs {
-		if kv.key == key {
-			out = append(out, kv.value)
+		if kv.key != key {
+			continue
 		}
+		if kv.value == "" {
+			out = nil
+			continue
+		}
+		out = append(out, kv.value)
 	}
 	return out
 }
@@ -237,15 +308,21 @@ func classifySystemdLine(sections *[]systemdSection, cur *systemdSection, logica
 
 // --- mapper ---
 
-// findSection returns the last section with the given name, or nil. systemd
-// treats a directive from a later duplicate section as an override, so "last
-// wins" matches the reader that assembled the unit.
+// findSection returns every section with the given name merged into one, its
+// directives in file order, or nil when there is none. systemd reads a repeated
+// section (a drop-in's [Timer], or `systemctl cat` output) as more lines of the
+// same one, so a later directive overrides or extends an earlier one rather
+// than replacing the whole section.
 func findSection(sections []systemdSection, name string) *systemdSection {
 	var found *systemdSection
 	for i := range sections {
-		if sections[i].name == name {
-			found = &sections[i]
+		if sections[i].name != name {
+			continue
 		}
+		if found == nil {
+			found = &systemdSection{name: name}
+		}
+		found.kvs = append(found.kvs, sections[i].kvs...)
 	}
 	return found
 }
@@ -268,12 +345,11 @@ var systemdSandboxKeys = map[string]bool{
 // resource accounting, logging targets (captured automatically), and readiness
 // timing that has no bearing on how the command runs.
 var systemdCosmeticKeys = map[string]bool{
-	"RemainAfterExit": true, "StandardOutput": true, "StandardError": true,
-	"StandardInput": true, "SyslogIdentifier": true, "TimeoutStartSec": true,
+	"RemainAfterExit": true, "StandardInput": true, "SyslogIdentifier": true,
 	"RestartSec": true, "StartLimitInterval": true, "StartLimitIntervalSec": true,
-	"StartLimitBurst": true, "WatchdogSec": true, "SuccessExitStatus": true,
-	"Nice": true, "OOMScoreAdjust": true, "LimitNOFILE": true, "LimitNPROC": true,
-	"PIDFile": true, "GuessMainPID": true, "NotifyAccess": true,
+	"StartLimitBurst": true, "WatchdogSec": true, "OOMScoreAdjust": true,
+	"LimitNOFILE": true, "LimitNPROC": true, "PIDFile": true, "GuessMainPID": true,
+	"NotifyAccess": true,
 }
 
 // systemdUnit is one unit to import: a service, or a timer and the service it
@@ -284,7 +360,11 @@ type systemdUnit struct {
 	// missingService is the note for a timer whose service has no [Service]
 	// section to import, usually because the file isn't there.
 	missingService string
-	name, source   string
+	// dropIns are the drop-in files applied to the unit (and the timer's service).
+	dropIns []string
+	// startedBy is the sibling timer that starts a service imported on its own.
+	startedBy    string
+	name, source string
 }
 
 // importSystemdUnit maps one parsed unit onto a RunWisp task or service, opening
@@ -340,7 +420,20 @@ func importSystemdUnit(names *namer, u systemdUnit) {
 		ref.note(NoteSystemdOneshot,
 			"Type=oneshot → imported as a run-once-per-boot task (run_on_start = \"boot\").")
 	}
+	if u.startedBy != "" {
+		runs := "as an always-on service"
+		if kind == model.KindTask {
+			runs = "once per boot"
+		}
+		ref.note(NoteSystemdStartedByTimer,
+			u.startedBy+" starts this unit on a schedule, and imported on its own it runs "+runs+" instead. "+
+				"Import the timer (`runwisp import systemd "+u.startedBy+"`) to keep the schedule.")
+	}
+	if len(u.dropIns) > 0 {
+		ref.note(NoteSystemdDropIns, "applied the drop-ins "+strings.Join(u.dropIns, ", ")+".")
+	}
 	env := systemdApplyServiceKeys(&b, svc, ref, kind)
+	systemdNoteUnitKeys(ref, findSection(u.sections, "Unit"))
 
 	blocks := []block{b}
 	if eb, ok := envBlock(prefix+name+".env", env); ok {
@@ -529,7 +622,7 @@ func shellExecArg(arg string) string {
 	var out, lit strings.Builder
 	flush := func() {
 		if lit.Len() > 0 {
-			out.WriteString(shellWord(lit.String()))
+			out.WriteString(textutil.ShellWord(lit.String()))
 			lit.Reset()
 		}
 	}
@@ -556,25 +649,10 @@ func shellExecArg(arg string) string {
 	return out.String()
 }
 
-// shellWord leaves a word the shell reads literally as it is, and
-// single-quotes anything else.
-func shellWord(s string) string {
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.IndexByte("_-./:=,+@%^", c) >= 0) {
-			return textutil.ShellQuote(s)
-		}
-	}
-	return s
-}
-
 // systemdApplyRun sets the run line from ExecStart, flagging the cases RunWisp
 // can't carry over: no command, more than one command, and unfilled template
 // specifiers. Returns the command that will run.
 func systemdApplyRun(b *block, svc *systemdSection, ref itemRef, execStarts []string) string {
-	extraExec := len(svc.all("ExecStartPre")) + len(svc.all("ExecStartPost")) +
-		len(svc.all("ExecStop")) + len(svc.all("ExecStopPost")) + len(svc.all("ExecReload"))
-
 	if len(execStarts) == 0 {
 		b.setComment("run", tomlVerbatimString(""), "TODO: unit had no ExecStart.")
 		ref.note(NoteSystemdNoExecStart, "the [Service] had no ExecStart, so there is nothing to run.")
@@ -587,20 +665,69 @@ func systemdApplyRun(b *block, svc *systemdSection, ref itemRef, execStarts []st
 			"stripped a special ExecStart prefix (@, -, +, ! …) — it changed argv[0] or "+
 				"privileges in a way RunWisp doesn't reproduce. Review the run line.")
 	}
-	if strings.Contains(strings.ReplaceAll(execStarts[0], "%%", ""), "%") {
+	if specs := systemdSpecifiers(execStarts[0]); len(specs) > 0 {
 		ref.note(NoteSystemdTemplate,
-			"ExecStart uses systemd specifiers (%i, %n, %h …) RunWisp doesn't fill in. "+
-				"Replace them with concrete values in the run line.")
+			"ExecStart uses the systemd specifiers "+strings.Join(specs, ", ")+". systemd filled them in "+
+				"before running the command; RunWisp runs them as written. Replace each with the value you meant.")
 	}
 	b.set("run", tomlVerbatimString(run))
 
-	if len(execStarts) > 1 || extraExec > 0 {
+	if rest := systemdOtherCommands(svc, execStarts); len(rest) > 0 {
 		ref.note(NoteSystemdMultiExec,
-			"the unit ran more than one command (multiple ExecStart, or ExecStartPre/"+
-				"Post/ExecStop) — RunWisp runs a single command, so only the first "+
-				"ExecStart was imported. Fold the rest into the run script by hand.")
+			"the unit runs more than one command and RunWisp runs one, so only the first ExecStart was "+
+				"imported. Fold these into the run line by hand: "+strings.Join(rest, "; ")+".")
 	}
 	return run
+}
+
+// systemdOtherCommands lists the unit's commands besides the first ExecStart,
+// in the order systemd runs them, as "Key=command".
+func systemdOtherCommands(svc *systemdSection, execStarts []string) []string {
+	var rest []string
+	add := func(key string, cmds []string) {
+		for _, c := range cmds {
+			rest = append(rest, key+"="+c)
+		}
+	}
+	add("ExecStartPre", svc.all("ExecStartPre"))
+	add("ExecStart", execStarts[1:])
+	for _, key := range []string{"ExecStartPost", "ExecReload", "ExecStop", "ExecStopPost"} {
+		add(key, svc.all(key))
+	}
+	return rest
+}
+
+// systemdSpecifierMeanings are what the common specifiers become, so the note
+// can say what systemd actually ran.
+var systemdSpecifierMeanings = map[byte]string{
+	'T': "/tmp", 'V': "/var/tmp", 'n': "the full unit name", 'N': "the unit name",
+	'p': "the unit name prefix", 'i': "the instance name", 'I': "the instance name",
+	'h': "the user's home directory", 'u': "the user name", 'H': "the host name",
+}
+
+// systemdSpecifiers lists the %-specifiers in an ExecStart line once each, in
+// order, with what each one means when that is known ("%T (/tmp)"). `%%` is a
+// literal percent sign, not a specifier.
+func systemdSpecifiers(cmd string) []string {
+	var out []string
+	seen := map[byte]bool{}
+	for i := 0; i+1 < len(cmd); i++ {
+		if cmd[i] != '%' {
+			continue
+		}
+		c := cmd[i+1]
+		i++
+		if c == '%' || seen[c] || !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z') {
+			continue
+		}
+		seen[c] = true
+		spec := "%" + string(c)
+		if meaning, ok := systemdSpecifierMeanings[c]; ok {
+			spec += " (" + meaning + ")"
+		}
+		out = append(out, spec)
+	}
+	return out
 }
 
 // systemdApplyServiceKeys maps the [Service] directives RunWisp understands onto
@@ -610,19 +737,14 @@ func systemdApplyServiceKeys(b *block, svc *systemdSection, ref itemRef, kind mo
 	env := map[string]string{}
 	var dropped []string
 	var sawSandbox, sawSocket bool
-	gracefulStop := ""
+	gracefulStop, runTimeout := "", ""
 
 	for _, kv := range svc.kvs {
 		switch kv.key {
 		case "ExecStart", "ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecReload", "Type":
 			// handled in systemdApplyRun / systemdKind
 		case "WorkingDirectory":
-			b.set("working_dir", tomlString(kv.value))
-			if !filepath.IsAbs(kv.value) {
-				ref.note(NoteRelativeDirectory,
-					"WorkingDirectory="+kv.value+" is relative; RunWisp resolves working_dir "+
-						"against the runwisp.toml location.")
-			}
+			systemdApplyWorkingDir(b, ref, kv.value)
 		case "User":
 			// Group is folded in below, so skip a bare second write here.
 		case "Group":
@@ -635,6 +757,13 @@ func systemdApplyServiceKeys(b *block, svc *systemdSection, ref itemRef, kind mo
 		case "TimeoutStopSec", "TimeoutSec":
 			// A later value overrides an earlier one, even one RunWisp can't read.
 			gracefulStop = systemdStopTimeout(ref, kv.key, kv.value)
+			if kv.key == "TimeoutSec" {
+				runTimeout = kv.key + "=" + kv.value
+			}
+		case "TimeoutStartSec":
+			runTimeout = kv.key + "=" + kv.value
+		case "StandardOutput", "StandardError":
+			systemdNoteOutputFile(ref, kv.key, kv.value)
 		case "Restart":
 			// Behavior note handled after the loop (needs the resolved kind).
 		default:
@@ -654,6 +783,9 @@ func systemdApplyServiceKeys(b *block, svc *systemdSection, ref itemRef, kind mo
 	if gracefulStop != "" {
 		b.set("graceful_stop", tomlString(gracefulStop))
 	}
+	if runTimeout != "" && systemdKind(svc) == model.KindTask {
+		systemdApplyRunTimeout(b, ref, runTimeout)
+	}
 	systemdApplyUser(b, svc)
 	systemdApplyEnvFiles(b, svc, ref)
 	systemdApplyType(svc, ref)
@@ -662,10 +794,29 @@ func systemdApplyServiceKeys(b *block, svc *systemdSection, ref itemRef, kind mo
 	return env
 }
 
+func systemdApplyWorkingDir(b *block, ref itemRef, dir string) {
+	b.set("working_dir", tomlString(dir))
+	if !filepath.IsAbs(dir) {
+		ref.note(NoteRelativeDirectory,
+			"WorkingDirectory="+dir+" is relative; RunWisp resolves working_dir "+
+				"against the runwisp.toml location.")
+	}
+}
+
+// systemdNoteOutputFile notes a StandardOutput=/StandardError= that sent the
+// output to a file: RunWisp captures it in the run log instead.
+func systemdNoteOutputFile(ref itemRef, key, value string) {
+	to, path, ok := strings.Cut(value, ":")
+	if ok && (to == "file" || to == "append" || to == "truncate") {
+		ref.note(NoteOutputRedirected,
+			key+"="+value+": systemd wrote the output to "+path+"; RunWisp keeps it in the run's log instead.")
+	}
+}
+
 // systemdStopTimeout reads a TimeoutStopSec/TimeoutSec value as graceful_stop,
 // or "" (with a note) when there is nothing RunWisp can set.
 func systemdStopTimeout(ref itemRef, key, value string) string {
-	d, ok := systemdSeconds(value)
+	d, ok := systemdTimeSpan(value)
 	switch {
 	case ok && isZeroDuration(d):
 		// systemd's 0 means "wait forever"; RunWisp's 0s kills at once, and
@@ -680,6 +831,49 @@ func systemdStopTimeout(ref itemRef, key, value string) string {
 		ref.note(NoteKeyUnreadable,
 			key+"="+value+" isn't a duration RunWisp can read, so it was dropped.")
 		return ""
+	}
+}
+
+// systemdApplyRunTimeout maps a oneshot unit's TimeoutStartSec= (passed as
+// "Key=value") onto timeout: for Type=oneshot the start timeout bounds the whole
+// run. On any other type it only bounds startup, so the caller skips it. 0 and
+// infinity mean no limit, which is RunWisp's default.
+func systemdApplyRunTimeout(b *block, ref itemRef, setting string) {
+	_, value, _ := strings.Cut(setting, "=")
+	d, ok := systemdTimeSpan(value)
+	switch {
+	case ok && !isZeroDuration(d):
+		b.set("timeout", tomlString(d))
+	case !ok && !strings.EqualFold(strings.TrimSpace(value), "infinity"):
+		ref.note(NoteKeyUnreadable, setting+" isn't a duration RunWisp can read, so it was dropped.")
+	}
+}
+
+// systemdNoteUnitKeys notes the [Unit] directives that change what happens
+// around a run: a unit started when this one finishes, and conditions that made
+// systemd skip it. The rest of [Unit] (ordering, docs) has no bearing on the
+// task.
+func systemdNoteUnitKeys(ref itemRef, unit *systemdSection) {
+	if unit == nil {
+		return
+	}
+	var hooks, conditions []string
+	for _, kv := range unit.kvs {
+		switch {
+		case kv.value == "":
+		case kv.key == "OnFailure" || kv.key == "OnSuccess":
+			hooks = append(hooks, kv.key+"="+kv.value)
+		case strings.HasPrefix(kv.key, "Condition") || strings.HasPrefix(kv.key, "Assert"):
+			conditions = append(conditions, kv.key+"="+kv.value)
+		}
+	}
+	if len(hooks) > 0 {
+		ref.note(NoteKeysUnsupported, strings.Join(hooks, ", ")+" started another unit after a run; RunWisp doesn't. "+
+			"Use a notification route to hear about failures.")
+	}
+	if len(conditions) > 0 {
+		ref.note(NoteKeysUnsupported, strings.Join(conditions, ", ")+": systemd skipped the run when this didn't hold, "+
+			"RunWisp always runs it. Put the check in the run line if it matters.")
 	}
 }
 
@@ -805,27 +999,62 @@ func systemdApplyRestart(b *block, svc *systemdSection, ref itemRef, kind model.
 	}
 }
 
-// systemdSeconds turns a systemd time value into a RunWisp duration. It handles
-// the common forms — a bare integer (seconds) and a "s"/"sec"/"min"/"m" suffix —
-// and returns false for anything more exotic (compound spans, "infinity").
-func systemdSeconds(value string) (string, bool) {
+// systemdTimeUnits are the units systemd accepts in a time span, in seconds.
+// Case matters: "m" is a minute, "M" a month.
+var systemdTimeUnits = map[string]float64{
+	"": 1, "s": 1, "sec": 1, "second": 1, "seconds": 1,
+	"us": 1e-6, "µs": 1e-6, "usec": 1e-6, "ms": 1e-3, "msec": 1e-3,
+	"m": 60, "min": 60, "minute": 60, "minutes": 60,
+	"h": 3600, "hr": 3600, "hour": 3600, "hours": 3600,
+	"d": 86400, "day": 86400, "days": 86400,
+	"w": 604800, "week": 604800, "weeks": 604800,
+	"M": 2629800, "month": 2629800, "months": 2629800,
+	"y": 31557600, "year": 31557600, "years": 31557600,
+}
+
+// systemdTimeSpan turns a systemd time span ("90", "5min", "1d", "1h 30min",
+// "1.5h") into a RunWisp duration ("1m30s", "5m", "24h", "1h30m", "1h30m"). It
+// returns false for "infinity", an empty value, and anything systemd wouldn't
+// read either.
+func systemdTimeSpan(value string) (string, bool) {
 	v := strings.TrimSpace(value)
-	if v == "" || strings.EqualFold(v, "infinity") {
+	if v == "" {
 		return "", false
 	}
-	if n, err := strconv.Atoi(v); err == nil {
-		return strconv.Itoa(n) + "s", true
-	}
-	for _, suffix := range []struct{ systemd, runwisp string }{
-		{"sec", "s"}, {"s", "s"}, {"min", "m"}, {"m", "m"}, {"h", "h"},
-	} {
-		if num, ok := strings.CutSuffix(v, suffix.systemd); ok {
-			if n, err := strconv.Atoi(strings.TrimSpace(num)); err == nil {
-				return strconv.Itoa(n) + suffix.runwisp, true
-			}
+	isNum := func(r rune) bool { return r >= '0' && r <= '9' || r == '.' }
+	var total float64
+	for v != "" {
+		i := strings.IndexFunc(v, func(r rune) bool { return !isNum(r) })
+		if i < 0 {
+			i = len(v)
 		}
+		n, err := strconv.ParseFloat(v[:i], 64)
+		if err != nil {
+			return "", false
+		}
+		v = strings.TrimLeft(v[i:], " \t")
+		j := strings.IndexFunc(v, func(r rune) bool { return isNum(r) || r == ' ' || r == '\t' })
+		if j < 0 {
+			j = len(v)
+		}
+		unit, ok := systemdTimeUnits[v[:j]]
+		if !ok {
+			return "", false
+		}
+		total += n * unit
+		v = strings.TrimLeft(v[j:], " \t")
 	}
-	return "", false
+	d := time.Duration(total * float64(time.Second)).Round(time.Microsecond)
+	// time.Duration's own form, minus the zero units it always spells out:
+	// 24h0m0s → 24h, 1h30m0s → 1h30m.
+	str := d.String()
+	if strings.HasSuffix(str, "m0s") {
+		str = strings.TrimSuffix(str, "0s")
+	}
+	if strings.HasSuffix(str, "h0m") {
+		str = strings.TrimSuffix(str, "0m")
+	}
+	return str, true
 }
 
 func isZeroDuration(d string) bool {
@@ -835,12 +1064,17 @@ func isZeroDuration(d string) bool {
 
 // parseSystemdEnvInto parses one Environment= value — space-separated KEY=VALUE
 // assignments, values optionally quoted — into env. Multiple Environment= lines
-// accumulate because parseSystemdUnit preserves them and this merges each in.
+// accumulate because parseSystemdUnit preserves them and this merges each in;
+// an empty one resets the list, as in systemd.
 //
 // ponytail: handles the common quoting (a whole assignment or its value wrapped
 // in " or '); systemd's full C-escape grammar (\n, \x41, nested quotes) isn't
 // reproduced — a value that relies on it lands verbatim for the operator to fix.
 func parseSystemdEnvInto(env map[string]string, value string) {
+	if value == "" {
+		clear(env)
+		return
+	}
 	for _, tok := range splitSystemdEnv(value) {
 		tok = textutil.TrimMatchedQuotes(tok) // handles Environment="VAR=value with spaces"
 		eq := strings.IndexByte(tok, '=')

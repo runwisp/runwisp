@@ -82,7 +82,27 @@ func TestScheduleCollisionWarnings(t *testing.T) {
 		got := scheduleCollisionWarnings(collisionTasks("@hourly", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j"), loc, now)
 		require.Len(t, got, 1)
 		require.Contains(t, got[0], "10 tasks")
-		require.Contains(t, got[0], "h and 2 more;")
+		require.Contains(t, got[0], "a, b, c, d, e and 5 more;")
+	})
+
+	t.Run("a TOML fix is offered for TOML tasks", func(t *testing.T) {
+		got := scheduleCollisionWarnings(collisionTasks("0 3 * * *", "a", "b", "c"), loc, now)
+		require.Contains(t, got[0], `set jitter on them (e.g. jitter = "5m")`)
+	})
+
+	t.Run("SDK tasks are told to use their options", func(t *testing.T) {
+		tasks := collisionTasks("0 3 * * *", "a", "b", "c")
+		for i := range tasks {
+			tasks[i].ExecutionDef = &model.SDKExecution{}
+		}
+		got := scheduleCollisionWarnings(tasks, loc, now)
+		require.Len(t, got, 1)
+		require.Contains(t, got[0], "set `jitter` in each task's options")
+		require.NotContains(t, got[0], "5m")
+
+		tasks[2].ExecutionDef = &model.ShellExecution{}
+		got = scheduleCollisionWarnings(tasks, loc, now)
+		require.Contains(t, got[0], `jitter = "5m"`, "one task outside the SDK keeps the TOML hint")
 	})
 }
 

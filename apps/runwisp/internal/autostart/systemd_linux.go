@@ -524,6 +524,42 @@ func (s *systemdInstaller) dropInPath(systemWide bool, name string) string {
 	return filepath.Join(s.unitPath(systemWide)+".d", name)
 }
 
+// ownedDropIns are the drop-ins RunWisp itself writes into `<unit>.d/`. Uninstall
+// removes exactly these and leaves any other file an operator put there.
+var ownedDropIns = []string{passwordDropInName, EnvDropInName}
+
+// existingOwnedDropIns lists the RunWisp-written drop-ins present on disk.
+func (s *systemdInstaller) existingOwnedDropIns(systemWide bool) []string {
+	var found []string
+	for _, name := range ownedDropIns {
+		path := s.dropInPath(systemWide, name)
+		if _, err := s.deps.FS.Stat(path); err == nil {
+			found = append(found, path)
+		}
+	}
+	return found
+}
+
+// removeOwnedDropIns deletes the drop-ins RunWisp wrote, then the `<unit>.d/`
+// directory when that leaves it empty. A directory still holding someone else's
+// files stays, and is named so the operator knows why.
+func (s *systemdInstaller) removeOwnedDropIns(systemWide bool, out io.Writer) {
+	for _, path := range s.existingOwnedDropIns(systemWide) {
+		if err := s.deps.FS.Remove(path); err != nil {
+			fmt.Fprintf(out, "Warning: remove drop-in %s: %v\n", path, err)
+			continue
+		}
+		fmt.Fprintf(out, "Removed %s\n", path)
+	}
+	dir := s.unitPath(systemWide) + ".d"
+	switch err := s.deps.FS.Remove(dir); {
+	case err == nil:
+		fmt.Fprintf(out, "Removed %s\n", dir)
+	case !errors.Is(err, fs.ErrNotExist):
+		fmt.Fprintf(out, "Left %s in place: it holds files RunWisp did not write.\n", dir)
+	}
+}
+
 // SupportsPasswordDropIn implements Installer: systemd has a `<unit>.d/`
 // override directory to drop the password into.
 func (s *systemdInstaller) SupportsPasswordDropIn() bool {
@@ -678,6 +714,9 @@ func (s *systemdInstaller) computeUninstallPlan(_ context.Context, opts Uninstal
 			{Description: "Remove unit file\n       " + unitPath},
 			{Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, systemctlDaemonReload)},
 		}
+		if dropIns := s.existingOwnedDropIns(opts.System); len(dropIns) > 0 {
+			plan.Steps = append(plan.Steps, Step{Description: "Remove drop-ins\n       " + strings.Join(dropIns, "\n       ")})
+		}
 		if opts.System {
 			if _, err := s.deps.FS.Stat(cronFailsafePath()); err == nil {
 				plan.Steps = append(plan.Steps, Step{Description: "Remove failsafe unit\n       " + cronFailsafePath()})
@@ -748,6 +787,7 @@ func (s *systemdInstaller) applyUninstall(ctx context.Context, plan Plan, opts U
 		return fmt.Errorf("remove unit: %w", err)
 	}
 	fmt.Fprintf(out, "Removed %s\n", plan.UnitPath)
+	s.removeOwnedDropIns(opts.System, out)
 	if opts.System {
 		if err := s.deps.FS.Remove(cronFailsafePath()); err == nil {
 			fmt.Fprintf(out, "Removed %s\n", cronFailsafePath())

@@ -152,6 +152,11 @@ func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {
 
 // enforceMaxTotalSize deletes the oldest completed runs when the log directory
 // exceeds the configured storage cap. Returns the number of runs deleted.
+//
+// Only completed runs' files can be reclaimed. When the rest (active runs'
+// logs, files no run owns) already exceeds the cap, deleting every completed
+// run still would not get under it, so it deletes nothing and warns instead of
+// wiping history for no gain.
 func (cleaner *RetentionCleaner) enforceMaxTotalSize(ctx context.Context) int {
 	limit := cleaner.maxTotalSize.Load()
 	if limit <= 0 || cleaner.logDir == "" {
@@ -163,35 +168,74 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize(ctx context.Context) int {
 		return 0
 	}
 
+	deletable, deletableBytes, err := cleaner.deletableRuns(ctx)
+	if err != nil {
+		slog.Warn("Could not list runs to enforce storage.max_size", "err", err)
+		return 0
+	}
+	if totalSize-deletableBytes > limit {
+		slog.Warn("Log storage exceeds storage.max_size, but completed runs are not the cause; keeping them. "+
+			"Active runs' logs and files not attached to any run alone are over the limit: raise storage.max_size or remove the stray files",
+			"current", config.FormatByteSize(totalSize), "limit", config.FormatByteSize(limit),
+			"completed_runs", config.FormatByteSize(deletableBytes), "other", config.FormatByteSize(totalSize-deletableBytes))
+		return 0
+	}
+
 	slog.Warn("Log storage exceeds storage.max_size, purging oldest runs",
 		"current", config.FormatByteSize(totalSize), "limit", config.FormatByteSize(limit))
 
-	deleted := 0
-	offset := 0
-	for totalSize > limit {
-		runs, err := cleaner.db.QueryRuns(ctx, storage.RunQuery{
-			Limit:         100,
-			Offset:        offset,
-			SortField:     storage.SortColumnCreatedAt,
-			SortDirection: storage.SortAsc,
-		})
-		if err != nil || len(runs) == 0 {
-			break
-		}
-
-		n := cleaner.deleteRunBatch(ctx, runs, &totalSize, limit)
-		deleted += n
-
-		// No terminal runs found in this batch — advance past them
-		if n == 0 {
-			offset += len(runs)
-		}
-	}
-
+	deleted := cleaner.deleteRunBatch(ctx, deletable, &totalSize, limit)
 	if deleted > 0 {
 		slog.Info("Purged runs to enforce storage.max_size", "deleted", deleted)
 	}
 	return deleted
+}
+
+// deletableRuns lists the completed runs that still have log files on disk,
+// oldest first, and the bytes deleting all of them would free. Only the fields
+// deleteRunBatch reads are kept, so a long history stays cheap to hold.
+func (cleaner *RetentionCleaner) deletableRuns(ctx context.Context) ([]model.Run, int64, error) {
+	const pageSize = 100
+	var (
+		runs  []model.Run
+		bytes int64
+	)
+	for offset := 0; ; offset += pageSize {
+		page, err := cleaner.db.QueryRuns(ctx, storage.RunQuery{
+			Limit:         pageSize,
+			Offset:        offset,
+			SortField:     storage.SortColumnCreatedAt,
+			SortDirection: storage.SortAsc,
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+		for _, run := range page {
+			if !run.Status.IsTerminal() {
+				continue
+			}
+			if size := cleaner.runLogBytes(run); size > 0 {
+				runs = append(runs, model.Run{ID: run.ID, TaskName: run.TaskName, CreatedAt: run.CreatedAt, Status: run.Status})
+				bytes += size
+			}
+		}
+		if len(page) < pageSize {
+			return runs, bytes, nil
+		}
+	}
+}
+
+// runLogBytes is the size of a run's log, its meta file and the rotated-away
+// .prev segment: everything RemoveRunLogs deletes, and dirSize counted.
+func (cleaner *RetentionCleaner) runLogBytes(run model.Run) int64 {
+	logPath := logutil.ResolveRunLogPath(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
+	var total int64
+	for _, p := range []string{logPath, logutil.MetaPath(logPath), logutil.PrevPath(logPath)} {
+		if info, err := os.Stat(p); err == nil {
+			total += info.Size()
+		}
+	}
+	return total
 }
 
 // deleteRunBatch deletes terminal runs from runs until totalSize drops to or
@@ -202,19 +246,7 @@ func (cleaner *RetentionCleaner) deleteRunBatch(ctx context.Context, runs []mode
 		if !run.Status.IsTerminal() {
 			continue
 		}
-		logPath := logutil.ResolveRunLogPath(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
-		if info, statErr := os.Stat(logPath); statErr == nil {
-			*totalSize -= info.Size()
-		}
-		if info, statErr := os.Stat(logutil.MetaPath(logPath)); statErr == nil {
-			*totalSize -= info.Size()
-		}
-		// RemoveLogFiles also deletes the rotated-away .prev segment, and the
-		// initial dirSize counted it — subtract it too or the tracked total
-		// stays high and the loop over-deletes runs.
-		if info, statErr := os.Stat(logutil.PrevPath(logPath)); statErr == nil {
-			*totalSize -= info.Size()
-		}
+		*totalSize -= cleaner.runLogBytes(run)
 		logutil.RemoveRunLogs(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
 		if err := cleaner.db.DeleteRun(ctx, run.ID); err != nil {
 			slog.Warn("Failed to delete run during size enforcement", "id", run.ID, "err", err)

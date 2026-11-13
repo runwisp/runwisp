@@ -180,7 +180,7 @@ func TestRunImportCronInvalidGeneratesNote(t *testing.T) {
 	for _, want := range []string{
 		"! broken",
 		"didn't parse",
-		"needs a fix before this config loads",
+		"can't load until fixed",
 		"Fix the items above",
 	} {
 		if !strings.Contains(out, want) {
@@ -205,7 +205,7 @@ func TestRunImportCronQuietStillReportsBlocking(t *testing.T) {
 		t.Fatalf("runImportCron: %v", err)
 	}
 	out := stderr.String()
-	for _, want := range []string{"broken", "didn't parse", "needs a fix before this config loads"} {
+	for _, want := range []string{"broken", "didn't parse", "can't load until fixed"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("quiet mode must still report %q:\n%s", want, out)
 		}

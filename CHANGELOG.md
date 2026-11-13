@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.3] - 2026-11-12
+
+### Changed
+
+- `import --write` adds to `runwisp.d/imported.toml` instead of replacing it, so you can import a few jobs at a time or from several sources. A job staged under the same name is replaced, and the summary lists what was kept and replaced.
+- `import systemd` ends with the exact `systemctl disable --now` command for the imported units, and `service install` names systemd units still enabled under the name of a task.
+- The import summary says how many jobs need review and names the ones that stop the config from loading. A refused `--write` names them too, with the file they came from.
+- `import systemd` notes `OnFailure=`, `Condition…=`, `SuccessExitStatus=`, `Nice=` and output sent to a file, instead of dropping them silently. The note for a unit with several commands lists the ones left out.
+
+### Fixed
+
+- `import systemd` applies drop-ins (`NAME.timer.d/*.conf`, what `systemctl edit` writes), so an overridden schedule or environment is imported as systemd runs it.
+- `import systemd` reads every systemd time span, such as `1d`, `1w` and `1h 30min`, which made `systemd-tmpfiles-clean.timer` fail to import.
+- `import systemd` maps `TimeoutStartSec=` on a `Type=oneshot` unit to `timeout`.
+- `import systemd` flags a `.service` that a `.timer` starts, pointing at the timer, instead of quietly turning it into a run-at-boot task.
+- `import systemd` skips a `NAME.d` drop-in directory matched by a glob instead of failing.
+- `import` no longer creates a `.runwisp` data directory in the working directory.
+
+## [1.9.2] - 2026-11-08
+
+### Changed
+
+- A negative `warn_after`, `restart_delay` or `graceful_stop` in `[defaults]` is rejected with an error naming `[defaults]` instead of loading and being ignored.
+- A reload restarts a running service only when a change reaches its process (command, shell, working directory, environment, user, limits, instance count). Edits such as its description, retention or restart policy apply without a restart.
+- `failures` output patterns match the text without colour codes, so `^ERROR` also matches a coloured line.
+
+### Fixed
+
+- A `failures` output pattern also matches lines printed after the log reached `log_max_size`, so a run that printed the error past the cap is marked failed.
+- Retention and the trash purge delete more than 32,766 runs at once instead of failing on every pass.
+- A notifier URL that redirects with 301, 302 or 303 is reported as a failed delivery naming the new address, instead of counting as delivered while the message was lost. 307 and 308 redirects are still followed.
+- In-app notifications on a host outside UTC are kept for `keep_for` and grouped over the right window, instead of being shifted by the time zone offset.
+- The log viewer numbers lines correctly when the rotated `.prev` log file is empty.
+- Stopping a task, or removing it in a reload, cancels a retry still waiting out its delay.
+- `[storage] max_size` no longer deletes all finished runs when the logs of active runs and stray files alone exceed it. It keeps the history and logs a warning instead.
+- Deleting more than 32,766 selected runs at once works instead of failing.
+- The web UI catches up after the daemon restarts, after a long disconnect, and when another tab takes over the live connection, instead of missing runs and notifications from the gap. The live event stream sends a new `resync` event when a client must refetch its state.
+- After the daemon is killed outside a service manager (`kill -9` from a shell), the next start stops the runs it left running, using each task's `stop_signal` and `graceful_stop`, and notes this in the run's log. The next firing no longer starts a second copy next to them.
+
+## [1.9.1] - 2026-11-06
+
+### Fixed
+
+- A run stopped or timed out before its process started is recorded as stopped or timed out instead of failed, so `retry` doesn't run it again.
+- A reload that raises `max_concurrent` on an `on_overlap = "queue"` task starts the queued runs right away instead of waiting for a running one to finish.
+- `runwisp import cron` imports a `! test -x FILE || cmd` job as written instead of dropping it when FILE exists.
+- `runwisp import cron` keeps `%` as written in anacrontab commands. Only crontab lines treat it as a newline.
+- `sudo` hints that `runwisp` prints quote arguments containing spaces, so you can paste them as they are.
+
+### Security
+
+- The lockout after 20 rejected API or hook tokens no longer lets attempts through uncounted just under the limit, and it also counts API tokens sent in the session cookie.
+
+## [1.9.0] - 2026-11-04
+
+### Added
+
+- `runwisp reload` on a RunWisp an SDK app started asks the app to read its tasks again, so a deploy reaches the schedule without restarting the worker. The PHP SDK adds `runwisp:reload` for Laravel, Symfony and CodeIgniter (`php runwisp.php reload` for a plain script); a deploy that broke the app fails the reload with PHP's error and keeps the running schedule.
+- `runwisp:work` and `runwisp:check` in Laravel warn when a crontab still runs `schedule:run` or `schedule:work`, since that runs every scheduled task twice.
+- `[daemon] api_tokens` and `viewer_api_tokens` accept static bearer tokens for the REST API, full and read-only, so scripts and monitoring can call it without logging in. A reload applies changes.
+
+### Changed
+
+- A Laravel schedule entry whose `description()` is a sentence is now named after its command or job and keeps the sentence as its task description. Tasks that were named from such a description get new names, so their run history starts fresh.
+- `runwisp status`, `password`, `reload` and the other commands that talk to a daemon find an SDK app's daemon from the app's root, in `storage/runwisp`, `var/runwisp` or `writable/runwisp`, without `--data`.
+- When an app supplies the config, `runwisp list` shows the app's tasks, `runwisp validate` points to the app's own check command, and the TUI points to `runwisp status` for config warnings instead of `runwisp validate`.
+- The same-second warning lists at most 5 task names, and for SDK tasks says to set `jitter` in each task's options.
+- The PHP and JavaScript SDKs note "(listening on all interfaces)" in the dashboard line when the host is `0.0.0.0` or `::`, and `runwisp:check` prints warnings after the task list.
+- `runwisp import cron` names a PHP framework line such as `php artisan payments:reconcile` after its subcommand (`payments-reconcile`) instead of `php`, and turns a leading `cd DIR &&` into the task's `working_dir`.
+
+### Fixed
+
+- Runs that Laravel skips (`when()`, `skip()`, `between()`, maintenance mode, `withoutOverlapping()`) are recorded as skipped, not succeeded.
+- `config/runwisp.php` reads `RUNWISP_*` through `env()`, so the settings still apply after `php artisan config:cache`. If you published it before, republish it or wrap its values in `env()` the same way.
+- The JavaScript SDK reports a daemon that resets the connection mid-answer as "RunWisp hung up during ...", not a bare `read ECONNRESET`.
+- The PHP SDK reports a daemon that stops mid-answer as "RunWisp hung up during ...", instead of taking the cut-off body as the answer.
+- A command run as a user that cannot open the daemon's socket says the daemon belongs to another user and names `sudo -u <owner> runwisp ...`, instead of suggesting you start a second daemon.
+- `runwisp status` words the changed-config notice as an included or env file when an app supplies the config, since there is no `runwisp.toml`.
+- `runwisp takeover --dry-run` run from a binary under `/tmp` prints the whole plan and lists the binary path as the blocker, instead of stopping before the plan. It still exits non-zero.
+- On macOS, `runwisp service install` refuses a binary or data directory under `/tmp` or `/var/tmp` like it does on Linux, also when the path resolves to `/private/tmp`.
+- `runwisp service uninstall` removes the password and environment drop-ins it saved beside the systemd unit, and prints the config and data paths it leaves in place.
+
 ## [1.8.0] - 2026-10-26
 
 ### Added
@@ -1150,7 +1232,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.8.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.9.3...main
+[1.9.3]: https://github.com/runwisp/runwisp/compare/v1.9.2...v1.9.3
+[1.9.2]: https://github.com/runwisp/runwisp/compare/v1.9.1...v1.9.2
+[1.9.1]: https://github.com/runwisp/runwisp/compare/v1.9.0...v1.9.1
+[1.9.0]: https://github.com/runwisp/runwisp/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/runwisp/runwisp/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/runwisp/runwisp/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/runwisp/runwisp/compare/v1.6.0...v1.7.0

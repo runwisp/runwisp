@@ -35,7 +35,9 @@ func noopGuard(command string, stat func(string) (fs.FileInfo, error)) (reason s
 		return ifGuard(tokens[1:], stat)
 	}
 	t, next, ok := parseFileTest(tokens)
-	if !ok || next >= len(tokens) || tokens[next] != "||" {
+	// A negated test before `||` is no stock distro guard; it is imported as
+	// written and the guard decides at run time.
+	if !ok || t.negated || next >= len(tokens) || tokens[next] != "||" {
 		return "", false
 	}
 	if holds := t.eval(stat); holds {

@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -55,6 +56,8 @@ type takeoverHarness struct {
 	noCrontabs bool
 	// configBody, when non-empty, is written to cfgPath before the run.
 	configBody string
+	// binaryProblem makes the plan refuse the unit's binary path.
+	binaryProblem error
 
 	out bytes.Buffer
 }
@@ -95,7 +98,8 @@ func newTakeoverHarness(t *testing.T) *takeoverHarness {
 			Scan: func(_ []string, cfgPath string) config.CronScan {
 				return config.ScanCronSources([]string{filepath.Join(crontabs, "*")}, cfgPath)
 			},
-			Trusted: func(string) error { return nil },
+			Trusted:       func(string) error { return nil },
+			BinaryProblem: h.binaryProblem,
 			// The seam under test: fed by this package's real PID-file probe, so
 			// the sampling order is exercised end to end rather than assumed.
 			Preflight:     func(context.Context) (bool, error) { return false, nil },
@@ -204,6 +208,52 @@ func TestRunTakeover_DryRunPrintsThePlanAndWritesNothing(t *testing.T) {
 	assert.NoFileExists(t, h.cfgPath)
 	assert.Zero(t, h.inst.Installs())
 	assert.Zero(t, h.reloads)
+}
+
+// TestRunTakeover_DryRunWithUndurableBinaryPrintsThePlanThenFails: a binary under
+// /tmp used to abort before any plan existed. The dry run prints the plan, lists
+// the binary as a blocker, and exits non-zero so a script cannot read it as ready.
+func TestRunTakeover_DryRunWithUndurableBinaryPrintsThePlanThenFails(t *testing.T) {
+	h := newTakeoverHarness(t)
+	h.binaryProblem = errors.New("refusing to install service pointing at /tmp/runwisp")
+	takeoverOpts.DryRun = true
+
+	err := h.run(t, h.flags())
+	require.Error(t, err)
+
+	assert.Contains(t, h.out.String(), "Write "+h.cfgPath)
+	assert.Contains(t, err.Error(), "binary path is not durable")
+	assert.Contains(t, err.Error(), "/tmp/runwisp")
+	assert.Zero(t, h.inst.Installs())
+}
+
+// TestResolveServiceOptionsTolerant_ReportsAnUndurableBinary: a real install still
+// refuses a binary under /tmp, while the tolerant form hands the refusal back with
+// the rest of the options so a plan can be built around it.
+func TestResolveServiceOptionsTolerant_ReportsAnUndurableBinary(t *testing.T) {
+	restoreInstallOpts(t)
+	dir := durableTempDir(t)
+	tomlPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(tomlPath, []byte("[daemon]\n"), 0o600))
+	f := Flags{CfgFile: tomlPath, DataDir: dir}
+	cmd := installFlagsCmd(t, f, &bytes.Buffer{}, &bytes.Buffer{})
+	require.NoError(t, cmd.Flags().Set("data", dir))
+	require.NoError(t, cmd.Flags().Set("config", tomlPath))
+	deps := autostart.Deps{Home: t.TempDir(), User: "tester", Fingerprint: "fp", Prompter: &autostarttest.ScriptedPrompter{}}
+	// A literal /tmp path, not os.TempDir(): on macOS that is $TMPDIR under
+	// /var/folders, which ResolveBinary does not refuse. An explicit --binary skips
+	// the stat, so the file need not exist.
+	binary := "/tmp/runwisp-undurable"
+
+	_, err := resolveServiceOptions(cmd, deps, f, false, binary)
+	require.Error(t, err)
+
+	opts, binaryErr, err := resolveServiceOptionsTolerant(cmd, deps, f, false, binary, true)
+	require.NoError(t, err)
+	require.Error(t, binaryErr)
+	assert.Equal(t, binary, opts.Binary)
+	assert.Equal(t, tomlPath, opts.Config)
+	assert.Contains(t, binaryProblem(binaryErr).Error(), "refusing to install service pointing at "+binary)
 }
 
 // A declined prompt is not a failure: nothing has been written yet, so the box is

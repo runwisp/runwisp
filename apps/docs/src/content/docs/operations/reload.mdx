@@ -31,6 +31,11 @@ of asking runs the same reload:
 
 `runwisp status` and the TUI header show the same "config changed" notice.
 
+A RunWisp that an app started with the [PHP](/sdk/php/#deploy) or
+[JavaScript](/sdk/javascript/) SDK has no `runwisp.toml`. Its reload asks the
+app for its config as the app's code defines it now, and a reload the app
+can't answer is rejected like a bad file.
+
 A daemon started with `runwisp station` reloads the same way. The Station
 schedules the tasks there, so no local cron entries change; after the reload the
 daemon sends the new task list to the Station over its open connection.
@@ -101,7 +106,17 @@ to finish before the daemon stops. See
   [catch up](/configuration/tasks/#catch_up) on earlier ticks.
 - **Running runs finish under the old definition.** Changing or removing a task
   never kills a run that's already going. The next run uses the new definition.
+- **A running service restarts only when the change reaches its process.** A
+  new [`run`](/configuration/tasks/#run), `shell`, `working_dir`, `user`,
+  `umask`, `env`, `secrets`, `env_base`, `timeout`, `graceful_stop`,
+  `stop_signal`, `log_max_size`, `log_on_full`, `failures`, `health_check` or
+  [`instances`](/configuration/services/#instances) restarts it, and so does a
+  [`[defaults]`](/configuration/defaults/) change to any of them. Everything
+  else applies without a restart: `description`, `keep_runs`, notifications,
+  `restart` and its delay, and the rest. A restart policy change governs the
+  instance's next exit.
 - **Removed services are stopped.**
+- **Removed tasks lose their pending retries.**
 - **A stopped service stays stopped,** even if the new definition says
   [`autostart = true`](/configuration/services/#autostart). The reload prints a `!` warning about it. Start it with
   `runwisp start <service>`.

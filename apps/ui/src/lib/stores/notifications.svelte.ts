@@ -196,6 +196,8 @@ class NotificationStore {
             // a real network drop, or a cross-tab leader handoff, can drop
             // a notification permanently. Resync from REST, the same pattern
             // every sibling data source (runs-source, AsyncData) already uses.
+            // A handoff is not a disconnect: the server's resync event, sent on
+            // every resume while notifications are on, fires these listeners.
             connectionStore.onReconnect(() => {
                 void this.#resync();
             }),

@@ -129,6 +129,29 @@ func TestRunStatus_ConfigStaleWarns(t *testing.T) {
 	assert.Contains(t, buf.String(), "runwisp.toml has changed")
 }
 
+func TestRunStatus_ConfigStaleInAppModeNamesIncludedFiles(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/api/daemon", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(model.DaemonInfo{
+			Port: 9477, ConfigStale: true, ConfigWarnings: []string{"tasks a and b fire in the same second"},
+		})
+	})
+	mux.HandleFunc("/api/daemon/identity", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(model.InstanceInfo{ConfigSource: "app"})
+	})
+	f := serveStatusSocket(t, mux)
+
+	var buf bytes.Buffer
+	require.NoError(t, runStatus(t.Context(), &buf, f, remoteFlags{}, false))
+	out := buf.String()
+	assert.Contains(t, out, "An included or env file has changed")
+	assert.NotContains(t, out, "runwisp.toml")
+	assert.Contains(t, out, "! tasks a and b fire in the same second", "status is where app-mode warnings are read in full")
+}
+
 func TestRunStatus_ShowsWebUIAddressAndSource(t *testing.T) {
 	cases := map[string]struct {
 		info model.DaemonInfo

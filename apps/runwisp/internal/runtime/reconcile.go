@@ -371,8 +371,10 @@ func (r *Reconciler) applyAdded(task *model.Task) {
 
 // applyChanged swaps in the new definition. Already-running cron runs keep the
 // pointer they captured; new firings use the new one. A schedule/kind change
-// reschedules the cron entry; a changed service is recycled so the new command,
-// env, or instance count takes effect. It returns a non-fatal notice for the
+// reschedules the cron entry; a changed service is recycled only when the change
+// reaches its process (see model.Task.SpawnDiffers), so a new command, env, or
+// instance count takes effect and a new description does not restart anything.
+// It returns a non-fatal notice for the
 // reload result when the change deliberately does nothing an operator might have
 // expected (an autostart flip that reload does not act on).
 func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *model.Task) string {
@@ -395,9 +397,13 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 		return r.autostartFlipWarning(oldTask, newTask)
 	}
 	if oldTask.Kind.IsService() {
-		// A genuine service-definition change: bounce the running instances so
-		// the new command, env, or instance count takes effect.
-		r.recycleChangedService(newTask)
+		// Bounce the running instances only when the change reaches the spawned
+		// process (command, env, instance count, ...). Anything else, such as a
+		// description, retention or restart policy, is read from the live
+		// definition the line above published.
+		if oldTask.SpawnDiffers(newTask) {
+			r.recycleChangedService(newTask)
+		}
 		return r.autostartFlipWarning(oldTask, newTask)
 	}
 	// A task→service kind flip: the run in flight under the old non-service
@@ -559,6 +565,8 @@ func restartOnly(d config.Daemon) config.Daemon {
 	d.HeartbeatURL = ""
 	d.LogOutput = false
 	d.TrustedProxies = nil
+	d.APITokens = nil
+	d.ViewerAPITokens = nil
 	return d
 }
 

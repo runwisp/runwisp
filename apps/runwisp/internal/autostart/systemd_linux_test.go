@@ -724,6 +724,64 @@ func TestSystemdApplyUninstall_SystemWide(t *testing.T) {
 	assert.Zero(t, cmd.Remaining())
 }
 
+// uninstallWithDropIns installs a system unit plus the named drop-ins, uninstalls
+// it, and returns the fake disk and what the uninstall printed.
+func uninstallWithDropIns(t *testing.T, dropIns map[string]string) (*autostarttest.FakeFS, string) {
+	t.Helper()
+	inst, disk, cmd, _, binary := newFakeInstaller(t, false)
+	opts := defaultInstallOpts(binary)
+	opts.System = true
+	body, err := inst.renderUnit(opts)
+	require.NoError(t, err)
+	require.NoError(t, disk.WriteFile("/etc/systemd/system/runwisp.service", body, 0644))
+	for name, content := range dropIns {
+		require.NoError(t, disk.WriteFile("/etc/systemd/system/runwisp.service.d/"+name, []byte(content), 0600))
+	}
+	cmd.Expect("sudo", []string{"systemctl", "stop", "runwisp.service"}, nil, nil, nil)
+	cmd.Expect("sudo", []string{"systemctl", "disable", "runwisp.service"}, nil, nil, nil)
+	cmd.Expect("sudo", []string{"systemctl", "daemon-reload"}, nil, nil, nil)
+
+	plan, err := inst.computeUninstallPlan(context.Background(), UninstallOptions{System: true})
+	require.NoError(t, err)
+	out := &bytes.Buffer{}
+	require.NoError(t, inst.applyUninstall(context.Background(), plan, UninstallOptions{System: true}, out))
+	return disk, out.String()
+}
+
+// Uninstall takes away the drop-ins RunWisp wrote (the generated password, the
+// captured environment) and the directory they leave empty.
+func TestSystemdApplyUninstall_RemovesItsDropInsAndTheEmptyDirectory(t *testing.T) {
+	disk, out := uninstallWithDropIns(t, map[string]string{
+		"password.conf":    "[Service]\nEnvironment=RUNWISP_PASSWORD=x\n",
+		"runwisp-env.conf": "[Service]\n",
+	})
+
+	for _, p := range []string{
+		"/etc/systemd/system/runwisp.service.d/password.conf",
+		"/etc/systemd/system/runwisp.service.d/runwisp-env.conf",
+		"/etc/systemd/system/runwisp.service.d",
+	} {
+		_, err := disk.Stat(p)
+		assert.ErrorIs(t, err, fs.ErrNotExist, p)
+		assert.Contains(t, out, "Removed "+p)
+	}
+}
+
+// A file an operator added beside ours is not ours to delete, and keeps the
+// directory alive.
+func TestSystemdApplyUninstall_KeepsForeignDropIns(t *testing.T) {
+	disk, out := uninstallWithDropIns(t, map[string]string{
+		"password.conf": "[Service]\n",
+		"limits.conf":   "[Service]\nLimitNOFILE=4096\n",
+	})
+
+	_, err := disk.Stat("/etc/systemd/system/runwisp.service.d/password.conf")
+	assert.ErrorIs(t, err, fs.ErrNotExist)
+	_, err = disk.Stat("/etc/systemd/system/runwisp.service.d/limits.conf")
+	assert.NoError(t, err)
+	assert.Contains(t, out, "Left /etc/systemd/system/runwisp.service.d in place")
+}
+
 // The probes run as the calling user, without sudo: `takeover` run without
 // root used to ask for a password just to look at the units.
 func TestSystemdStatus_SystemWide_NoLingerRowAndSudoJournalHint(t *testing.T) {

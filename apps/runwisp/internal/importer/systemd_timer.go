@@ -295,8 +295,9 @@ func systemdApplyTimer(b *block, timer *systemdSection, ref itemRef) string {
 		schedule = systemdApplyCalendar(b, ref, k.calendars[0])
 		if len(k.calendars) > 1 {
 			ref.note(NoteSystemdTimerMultiCalendar,
-				"the timer has "+strconv.Itoa(len(k.calendars))+" OnCalendar= lines; RunWisp takes one cron, so only "+
-					k.calendars[0]+" was imported. Add a task per extra schedule by hand.")
+				"the timer has "+strconv.Itoa(len(k.calendars))+" OnCalendar= lines and a task takes one cron, so only "+
+					k.calendars[0]+" was imported. Copy this task once for each other schedule: "+
+					strings.Join(extraCalendars(k.calendars[1:]), "; ")+".")
 		}
 		if k.interval != "" {
 			k.droppedTriggers = append(k.droppedTriggers, k.interval)
@@ -323,6 +324,24 @@ func systemdApplyTimer(b *block, timer *systemdSection, ref itemRef) string {
 	}
 	systemdNoteTimerDropped(ref, k)
 	return schedule
+}
+
+// extraCalendars renders the OnCalendar= values beyond the first with the cron
+// each converts to, so the operator can paste them into copies of the task.
+func extraCalendars(calendars []string) []string {
+	out := make([]string, len(calendars))
+	for i, c := range calendars {
+		spec, tz, ok := onCalendarToCron(c)
+		switch {
+		case !ok:
+			out[i] = c + " (no cron form)"
+		case tz != "":
+			out[i] = c + ` → cron = "` + spec + `", timezone = "` + tz + `"`
+		default:
+			out[i] = c + ` → cron = "` + spec + `"`
+		}
+	}
+	return out
 }
 
 func systemdNoteTimerDropped(ref itemRef, k systemdTimerKeys) {
@@ -366,7 +385,7 @@ func systemdApplyCalendar(b *block, ref itemRef, calendar string) string {
 // OnUnitInactiveSec= (passed as "Key=value").
 func systemdApplyInterval(b *block, ref itemRef, interval string) string {
 	key, value, _ := strings.Cut(interval, "=")
-	d, ok := systemdSeconds(value)
+	d, ok := systemdTimeSpan(value)
 	spec := "@every " + d
 	if !ok || cronspec.Validate(spec, "") != nil {
 		b.setComment("cron", tomlString("@every "+value),
@@ -387,14 +406,13 @@ func systemdApplyRandomDelay(b *block, ref itemRef, value string) {
 	if value == "" {
 		return
 	}
-	d, ok := systemdSeconds(value)
+	d, ok := systemdTimeSpan(value)
 	switch {
 	case !ok:
 		ref.note(NoteKeyUnreadable, "RandomizedDelaySec="+value+" isn't a duration RunWisp can read, so it was dropped.")
 	case !isZeroDuration(d):
 		b.set("jitter", tomlString(d))
 		ref.note(NoteSystemdTimerApprox,
-			"RandomizedDelaySec="+value+" → jitter = \""+d+"\": RunWisp delays a start only while other "+
-				"jittered tasks are running, instead of by a random amount every time.")
+			"RandomizedDelaySec="+value+" → jitter = \""+d+"\", which staggers overlapping starts rather than delaying every run.")
 	}
 }

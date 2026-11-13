@@ -279,3 +279,10 @@ func TestResolveAuthMode_RejectsViewerPasswordWithAuthOff(t *testing.T) {
 		t.Fatal("expected error when RUNWISP_AUTH=off and RUNWISP_VIEWER_PASSWORD are both set")
 	}
 }
+
+func TestCheckAPITokensNeedAuth(t *testing.T) {
+	tokens := config.Daemon{ViewerAPITokens: []string{"view"}}
+	assert.Error(t, checkAPITokensNeedAuth(true, tokens))
+	assert.NoError(t, checkAPITokensNeedAuth(false, tokens))
+	assert.NoError(t, checkAPITokensNeedAuth(true, config.Daemon{}))
+}

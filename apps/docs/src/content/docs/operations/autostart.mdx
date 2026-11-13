@@ -257,8 +257,10 @@ sudo runwisp service uninstall           # keep the data directory
 sudo runwisp service uninstall --purge   # delete it too
 ```
 
-Uninstall stops the daemon, turns off autostart, and removes the unit. Your data
-directory (run history and logs) stays. If `takeover` retired cron, uninstall
+Uninstall stops the daemon, turns off autostart, and removes the unit and the
+password and environment drop-ins RunWisp saved beside it. Your config and data
+directory (run history and logs) stay, and uninstall prints their paths so you can
+delete them yourself. If `takeover` retired cron, uninstall
 gives it back, along with the jobs `promote` moved out of your crontabs. It
 lists the tasks and services that stop running before it asks.
 

@@ -4,6 +4,7 @@
 package storage
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -22,6 +23,29 @@ func newTerminalRun(taskName string) *model.Run {
 		TriggeredBy: model.TriggeredByAPI,
 		CreatedAt:   time.Now(),
 	}
+}
+
+// More explicit ids than SQLite accepts bind variables for must still be
+// soft-deleted, with the refs of every chunk returned.
+func TestSoftDeleteRunsByIDsBeyondSQLiteVariableLimit(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	first, last := newTerminalRun("task1"), newTerminalRun("task1")
+	require.NoError(t, db.CreateRun(ctx, first))
+	require.NoError(t, db.CreateRun(ctx, last))
+
+	ids := []string{first.ID}
+	for i := range 40000 {
+		ids = append(ids, fmt.Sprintf("absent-%d", i))
+	}
+	ids = append(ids, last.ID)
+
+	refs, err := db.SoftDeleteRuns(ctx, model.RunSelector{IDs: ids}, time.Now())
+	require.NoError(t, err)
+	require.Len(t, refs, 2)
+	assert.ElementsMatch(t, []string{first.ID, last.ID}, []string{refs[0].ID, refs[1].ID})
 }
 
 func TestSoftDeleteHidesRunFromReads(t *testing.T) {

@@ -55,6 +55,8 @@ type fixture struct {
 	allowSkipped bool
 	// scanBlocked seeds CronScan.Blocked, the pre-config refusals.
 	scanBlocked []string
+	// binaryProblem seeds Deps.BinaryProblem.
+	binaryProblem error
 }
 
 // build turns a fixture into a Cutover plus the installer it will talk to.
@@ -120,6 +122,7 @@ func (fx fixture) build(t *testing.T) (*Cutover, *autostartfake.Installer, strin
 			return writeWired(path, patterns)
 		},
 		AllowSkippedCronJobs: fx.allowSkipped,
+		BinaryProblem:        fx.binaryProblem,
 	})
 
 	return c, inst, cfgPath

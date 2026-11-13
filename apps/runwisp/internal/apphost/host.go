@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
@@ -48,6 +49,12 @@ const defaultHandoff = 10 * time.Second
 // the middle of a send; past this its connection is closed and its runs fail.
 const defaultWriteTimeout = 10 * time.Second
 
+// ReloadTimeout is how long RequestConfig waits for the app to read its config
+// afresh: an SDK boots the app in a new process for it, which a big app may
+// take seconds to do. It stays under apiclient.RequestTimeout, so `runwisp
+// reload` hears the outcome instead of timing out while the daemon still waits.
+const ReloadTimeout = 25 * time.Second
+
 // maxQueuedNotices bounds the overlap and missed messages waiting for a slow
 // app; past it they are dropped.
 const maxQueuedNotices = 64
@@ -68,12 +75,14 @@ const maxLine = 16 << 20
 // started), stop {run}, kill {run} (the run outlived its graceful_stop after
 // stop), overlap {task, at} (a firing on_overlap = "skip" dropped), missed
 // {task, at} (firings missed while the daemon was down, at the latest),
-// config_ok {result}, config_error {error, restart}.
+// config_ok {result}, config_error {error, restart}, reload {reload} (send
+// your config as your code defines it now; see RequestConfig).
 // App to daemon: output {run, stream, line, partial} (partial: no newline
-// after line), exit {run, code, reason} (reason: "skipped" when the app's own
-// overlap check skipped the run, which then records exit code -1), config
-// {doc}, leave (the app is shutting down for good, not restarting; see
-// Host.leave).
+// after line), exit {run, code, reason} (reason: "skipped" when the app
+// skipped the run itself, which then records exit code -1), config {doc,
+// reload} (reload: the id of the reload it answers, if any), reload_error
+// {reload, error} (the app could not read its config), leave (the app is
+// shutting down for good, not restarting; see Host.leave).
 //
 // A line that is JSON but doesn't fit this shape (a field of another type) is
 // skipped, so either side can be newer than the other.
@@ -96,6 +105,7 @@ type message struct {
 	Result  *model.ReloadResult `json:"result,omitempty"`
 	Error   string              `json:"error,omitempty"`
 	Restart bool                `json:"restart,omitempty"`
+	Reload  string              `json:"reload,omitempty"`
 }
 
 // Host tracks the connected apps and implements executor.Backend for sdk
@@ -103,6 +113,8 @@ type message struct {
 type Host struct {
 	after        func(time.Duration) <-chan time.Time
 	writeTimeout time.Duration
+	// reloads numbers the RequestConfig calls, so an answer finds its caller.
+	reloads atomic.Uint64
 
 	// config and reload are set by AcceptConfig on a daemon whose config an
 	// app supplies; nil otherwise.
@@ -349,8 +361,10 @@ func (h *Host) ServeConn(conn io.ReadWriteCloser, app string, pid int) {
 			go func() {
 				defer close(done)
 				<-prev
-				h.applyConfig(s, m.Doc)
+				h.applyConfig(s, m.Doc, m.Reload)
 			}()
+		case "reload_error":
+			s.answerReload(m.Reload, model.ReloadResult{}, fmt.Errorf("the app could not read its config:\n%s", m.Error))
 		case "leave":
 			h.leave(s)
 		default:
@@ -605,35 +619,67 @@ func (h *Host) active(stop <-chan struct{}) *session {
 	}
 }
 
-// applyConfig applies a config document from an app and tells it the outcome.
+// applyConfig applies a config document from an app and tells it the outcome,
+// and the RequestConfig caller waiting for it, if the document answers one.
 // Documents apply one at a time, each only if its sender is still active.
-func (h *Host) applyConfig(s *session, doc json.RawMessage) {
-	if err := s.send(h.configReply(s, doc)); err != nil {
+func (h *Host) applyConfig(s *session, doc json.RawMessage, reload string) {
+	result, err := h.applyDocument(s, doc)
+	reply := message{Type: "config_ok", Result: &result}
+	if err != nil {
+		reply = message{Type: "config_error", Error: err.Error(), Restart: errors.Is(err, runtime.ErrRestartRequired)}
+	}
+	// The app first: it takes on a reload's tasks once it hears config_ok, so
+	// a run the reload's caller starts next must reach it after that.
+	if err := s.send(reply); err != nil {
 		slog.Debug("Failed to answer an app's config", "err", err)
 	}
+	s.answerReload(reload, result, err)
 }
 
-// configReply applies doc if s is still the active copy and returns the answer.
-func (h *Host) configReply(s *session, doc json.RawMessage) message {
-	reply := message{Type: "config_error"}
+// applyDocument applies doc if s is still the active copy.
+func (h *Host) applyDocument(s *session, doc json.RawMessage) (model.ReloadResult, error) {
 	if h.reload == nil {
-		reply.Error = "this daemon reads its config from runwisp.toml, not from an app"
-		return reply
+		return model.ReloadResult{}, errors.New("this daemon reads its config from runwisp.toml, not from an app")
 	}
 	h.configMu.Lock()
 	defer h.configMu.Unlock()
 	if !h.isActive(s) {
-		reply.Error = "this copy of the app is on standby; the active copy's config applies"
-		return reply
+		return model.ReloadResult{}, errors.New("this copy of the app is on standby; the active copy's config applies")
 	}
 	h.config.Set(doc)
-	result, err := h.reload()
-	if err != nil {
-		reply.Error = err.Error()
-		reply.Restart = errors.Is(err, runtime.ErrRestartRequired)
-		return reply
+	return h.reload()
+}
+
+// RequestConfig is `runwisp reload` for a daemon whose config an app supplies:
+// it asks the active app for its config as the app's code defines it now, not
+// as it did when the app started, and applies it like any document the app
+// sends. An SDK reads it in a new process, so a deploy reaches the schedule
+// without restarting the app, and a deploy that broke the app is reported
+// here while the running config stays.
+func (h *Host) RequestConfig() (model.ReloadResult, error) {
+	h.mu.Lock()
+	var s *session
+	if len(h.sessions) > 0 {
+		s = h.sessions[0]
 	}
-	return message{Type: "config_ok", Result: &result}
+	h.mu.Unlock()
+	if s == nil {
+		return model.ReloadResult{}, errors.New("no app is connected, so there is no config to reload; start the app")
+	}
+	id := strconv.FormatUint(h.reloads.Add(1), 10)
+	answer := s.awaitReload(id)
+	defer s.forgetReload(id)
+	if err := s.send(message{Type: "reload", Reload: id}); err != nil {
+		return model.ReloadResult{}, fmt.Errorf("ask the app for its config: %w", err)
+	}
+	select {
+	case a := <-answer:
+		return a.result, a.err
+	case <-s.done:
+		return model.ReloadResult{}, errors.New("the app disconnected before it sent its config")
+	case <-h.after(ReloadTimeout):
+		return model.ReloadResult{}, fmt.Errorf("the app (pid %d) did not send its config within %s; restart it to apply changes (SDKs before 1.9 can't reload)", s.pid, ReloadTimeout)
+	}
 }
 
 func (h *Host) isActive(s *session) bool {
@@ -661,6 +707,8 @@ type session struct {
 	mu   sync.Mutex
 	runs map[string]*handlerRun
 	gone bool
+	// reloads are the RequestConfig calls waiting for this app, by id.
+	reloads map[string]chan reloadAnswer
 
 	// leaving is set, under Host.mu, once the app said it is shutting down;
 	// last when it was the last copy then.
@@ -671,7 +719,43 @@ func newSession(conn io.ReadWriteCloser, app string, pid int, writeTimeout time.
 	return &session{
 		conn: conn, app: app, pid: pid, enc: json.NewEncoder(conn), writeTimeout: writeTimeout,
 		notices: make(chan message, maxQueuedNotices), done: make(chan struct{}),
-		runs: map[string]*handlerRun{},
+		runs: map[string]*handlerRun{}, reloads: map[string]chan reloadAnswer{},
+	}
+}
+
+// reloadAnswer is how a reload the daemon asked an app for ended.
+type reloadAnswer struct {
+	result model.ReloadResult
+	err    error
+}
+
+// awaitReload registers a RequestConfig call waiting for the answer to id.
+func (s *session) awaitReload(id string) <-chan reloadAnswer {
+	c := make(chan reloadAnswer, 1)
+	s.mu.Lock()
+	s.reloads[id] = c
+	s.mu.Unlock()
+	return c
+}
+
+func (s *session) forgetReload(id string) {
+	s.mu.Lock()
+	delete(s.reloads, id)
+	s.mu.Unlock()
+}
+
+// answerReload hands the outcome of reload id to the call waiting for it. An
+// id nobody waits for (empty, or a call that timed out) is dropped.
+func (s *session) answerReload(id string, result model.ReloadResult, err error) {
+	if id == "" {
+		return
+	}
+	s.mu.Lock()
+	c := s.reloads[id]
+	delete(s.reloads, id)
+	s.mu.Unlock()
+	if c != nil {
+		c <- reloadAnswer{result, err}
 	}
 }
 

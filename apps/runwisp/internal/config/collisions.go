@@ -31,7 +31,7 @@ const (
 	// the start of the window; raise the cap if that ever hides a real pile-up.
 	collisionMaxFirings = 2016
 	// collisionNamesShown caps the task names listed in one warning.
-	collisionNamesShown = 8
+	collisionNamesShown = 5
 )
 
 // scheduleCollisionWarnings reports groups of collisionThreshold or more
@@ -42,7 +42,7 @@ const (
 // Each distinct group is reported once; a group wholly contained in a larger
 // one is dropped, since the larger warning already names it.
 func scheduleCollisionWarnings(tasks []model.Task, defaultLoc *time.Location, now time.Time) []string {
-	names, at := firingInstants(tasks, defaultLoc, now)
+	pending, at := firingInstants(tasks, defaultLoc, now)
 	groups := collisionGroups(at)
 	if len(groups) == 0 {
 		return nil
@@ -52,8 +52,11 @@ func scheduleCollisionWarnings(tasks []model.Task, defaultLoc *time.Location, no
 	// nobody reads. The biggest group (the earliest on a tie) names the worst.
 	g := slices.MaxFunc(groups, func(a, b *collisionGroup) int { return cmp.Compare(len(a.who), len(b.who)) })
 	listed := make([]string, 0, len(g.who))
+	allSDK := true
 	for _, idx := range g.who {
-		listed = append(listed, names[idx])
+		listed = append(listed, pending[idx].Name)
+		_, isSDK := pending[idx].ExecutionDef.(*model.SDKExecution)
+		allSDK = allSDK && isSDK
 	}
 	more := ""
 	if len(listed) > collisionNamesShown {
@@ -64,14 +67,20 @@ func scheduleCollisionWarnings(tasks []model.Task, defaultLoc *time.Location, no
 	if n := len(groups) - 1; n > 0 {
 		others = fmt.Sprintf(" (plus %d other %s of tasks that start together)", n, textutil.Pluralize(n, "group", "groups"))
 	}
+	// An SDK app has no TOML to write `jitter = "5m"` in: it sets the key in
+	// each task's options.
+	fix := `set jitter on them (e.g. jitter = "5m")`
+	if allSDK {
+		fix = "set `jitter` in each task's options"
+	}
 	return []string{fmt.Sprintf(
-		"%d tasks start at the same second: %s%s%s; set jitter on them (e.g. jitter = \"5m\") so they take turns instead of starting together",
-		len(g.who), strings.Join(listed, ", "), more, others)}
+		"%d tasks start at the same second: %s%s%s; %s so they take turns instead of starting together",
+		len(g.who), strings.Join(listed, ", "), more, others, fix)}
 }
 
-// firingInstants lists the un-jittered schedulable tasks (names, in config
-// order) and, per unix second, which of them fire then within the horizon.
-func firingInstants(tasks []model.Task, defaultLoc *time.Location, now time.Time) (names []string, at map[int64][]int) {
+// firingInstants lists the un-jittered schedulable tasks (in config order) and,
+// per unix second, which of them fire then within the horizon.
+func firingInstants(tasks []model.Task, defaultLoc *time.Location, now time.Time) (listed []*model.Task, at map[int64][]int) {
 	at = map[int64][]int{}
 	for i := range tasks {
 		task := &tasks[i]
@@ -86,13 +95,13 @@ func firingInstants(tasks []model.Task, defaultLoc *time.Location, now time.Time
 		if cronspec.IsFixedInterval(sched) {
 			continue // @every is phased by when the task is registered, not by the config.
 		}
-		idx := len(names)
-		names = append(names, task.Name)
+		idx := len(listed)
+		listed = append(listed, task)
 		for _, sec := range firingSeconds(sched, loc, now) {
 			at[sec] = append(at[sec], idx)
 		}
 	}
-	return names, at
+	return listed, at
 }
 
 // firingSeconds lists, as unix seconds, the ticks of sched within the horizon

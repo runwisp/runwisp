@@ -50,3 +50,27 @@ run = "/srv/app/web"
 	assert.Equal(t, "15 3 * * * /srv/app/backup.sh\n*/5 * * * * /usr/bin/curl -fsS http://127.0.0.1:8080/health\n", string(got))
 	assert.Contains(t, out.String(), "Restored 1 promoted crontab line.")
 }
+
+// Uninstall keeps the config and data dir on purpose, and says so, so an operator
+// who wants them gone knows what to delete.
+func TestPrintLeftInPlace_NamesConfigAndDataUnlessPurged(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(cfg, []byte("[daemon]\n"), 0o600))
+	data := filepath.Join(dir, "data")
+	require.NoError(t, os.Mkdir(data, 0o700))
+
+	var out bytes.Buffer
+	printLeftInPlace(&out, cfg, data, false)
+	assert.Contains(t, out.String(), cfg)
+	assert.Contains(t, out.String(), data)
+
+	out.Reset()
+	printLeftInPlace(&out, cfg, data, true)
+	assert.Contains(t, out.String(), cfg)
+	assert.NotContains(t, out.String(), data, "--purge already removed the data dir")
+
+	out.Reset()
+	printLeftInPlace(&out, filepath.Join(dir, "missing.toml"), filepath.Join(dir, "missing"), false)
+	assert.Empty(t, out.String())
+}

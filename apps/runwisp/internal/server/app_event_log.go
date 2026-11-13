@@ -5,6 +5,7 @@ package server
 
 import (
 	"sync"
+	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 )
@@ -33,6 +34,10 @@ type appSub struct {
 	ch         chan seqEvent
 	dead       chan struct{}
 	overflowed bool // guards the single close(dead); touched only under appEventLog.mu
+	// resync is set once at subscribe: the client's cursor cannot be satisfied
+	// (another boot, or evicted from the ring), so it lost events and must
+	// refetch state. Immutable afterwards.
+	resync bool
 }
 
 // appEventLog is the single bus consumer for the app-event SSE stream. It
@@ -47,8 +52,12 @@ type appEventLog struct {
 	subs map[*appSub]struct{}
 }
 
-func newAppEventLog() *appEventLog {
-	return &appEventLog{subs: make(map[*appSub]struct{})}
+// newAppEventLog seeds ids from the boot wall-clock in microseconds (now is
+// injected), so ids from different daemon boots never collide without any
+// persistence. ~1.8e15 today, far below JS's 2^53, and a boot would need to
+// emit more events than microseconds elapsed since the previous one to overlap.
+func newAppEventLog(now func() time.Time) *appEventLog {
+	return &appEventLog{seq: int(now().UnixMicro()), subs: make(map[*appSub]struct{})}
 }
 
 // ingest is the bus handler. It runs on the publisher's goroutine (the bus
@@ -99,6 +108,8 @@ func (l *appEventLog) ingest(ev events.Event) {
 // history via REST and wants live events only, NOT the whole ring dumped on it.
 // A reconnecting client passes the last id it saw (always >= 1, since the
 // browser only learns an id after receiving an id'd event), replaying past it.
+// If that cursor cannot be satisfied (sub.resync), the replay is whatever the
+// ring still holds and the caller must tell the client to refetch its state.
 //
 // unsub removes the subscriber under the lock and never closes sub.ch — after
 // removal ingest can no longer reach it, so there is no send-on-closed race.
@@ -106,7 +117,15 @@ func (l *appEventLog) subscribe(lastEventID int) (replay []seqEvent, sub *appSub
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	sub = &appSub{ch: make(chan seqEvent, appSubBufSize), dead: make(chan struct{})}
+
 	if lastEventID > 0 {
+		// Ids are contiguous, so the oldest retained one is seq-len(ring)+1
+		// (seq+1 when the ring is empty). The cursor is unsatisfiable when it
+		// is ahead of the head (another boot, or bogus) or more than one behind
+		// the oldest retained id (evicted): events were lost either way.
+		oldest := l.seq - len(l.ring) + 1
+		sub.resync = lastEventID > l.seq || lastEventID < oldest-1
 		for _, e := range l.ring {
 			if e.id > lastEventID {
 				replay = append(replay, e) // fresh slice; does not alias l.ring
@@ -114,7 +133,6 @@ func (l *appEventLog) subscribe(lastEventID int) (replay []seqEvent, sub *appSub
 		}
 	}
 
-	sub = &appSub{ch: make(chan seqEvent, appSubBufSize), dead: make(chan struct{})}
 	l.subs[sub] = struct{}{}
 
 	unsub = func() {

@@ -40,6 +40,10 @@ type Deps struct {
 	// host, port, scope. cmd/runwisp owns building it, since resolving it needs
 	// cobra's Flag().Changed to tell an explicit --data from a default.
 	Opts autostart.InstallOptions
+	// BinaryProblem is why Opts.Binary cannot go into a unit (a path under /tmp,
+	// say). Resolving the options still succeeds so a --dry-run can print the
+	// whole plan; the problem becomes a blocker in it. Nil when the binary is fine.
+	BinaryProblem error
 
 	GOOS string
 	Euid int

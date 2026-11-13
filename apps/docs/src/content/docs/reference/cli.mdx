@@ -30,6 +30,11 @@ These work on every command. A flag beats its environment variable.
 As root, `--config` defaults to `/etc/runwisp/runwisp.toml` and `--data` to
 `/var/lib/runwisp`, so `sudo runwisp reload` finds a daemon that root started.
 
+With neither `--data` nor `RUNWISP_DATA` set, and no daemon socket in the
+default, the commands that talk to a daemon also look in `storage/runwisp`,
+`var/runwisp` and `writable/runwisp`, the data directories the
+[PHP SDK](/sdk/php/) uses. `runwisp daemon` always uses the default.
+
 To move the data directory, stop the daemon and move the directory.
 
 ## Environment variables
@@ -522,8 +527,9 @@ overwriting.
 sudo runwisp service uninstall
 ```
 
-Stops the daemon, disables autostart, and removes the unit. Keeps the data
-directory. If `takeover` retired cron, this gives cron back. Before it asks, it
+Stops the daemon, disables autostart, and removes the unit and the drop-ins
+RunWisp saved beside it. Keeps the config and the data directory, and prints
+their paths. If `takeover` retired cron, this gives cron back. Before it asks, it
 lists the tasks and services in `runwisp.toml` that stop running. Crontab lines
 that `promote` commented out are uncommented, so cron runs those jobs again.
 
