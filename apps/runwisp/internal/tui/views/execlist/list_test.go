@@ -1022,16 +1022,16 @@ func TestOutputCell_FlagsRunOutsideBand(t *testing.T) {
 	}
 	silent := &uikit.OutputBand{}
 
-	if c := outputCell(new(printed(3)), silent, false); c.text != "3 lines" || c.fg != uikit.ColorWarning {
+	if c := outputCell(new(printed(3)), nil, silent, false); c.text != "3 lines" || c.fg != uikit.ColorWarning {
 		t.Errorf("expected a silent task's 3 lines flagged, got %+v", c)
 	}
-	if c := outputCell(new(printed(0)), silent, false); c.text != "none" || c.fg != uikit.ColorTextMuted {
+	if c := outputCell(new(printed(0)), nil, silent, false); c.text != "none" || c.fg != uikit.ColorTextMuted {
 		t.Errorf("expected a muted none, got %+v", c)
 	}
-	if c := outputCell(&model.Run{Status: model.PhaseEnded}, silent, false); c.text != "–" {
+	if c := outputCell(&model.Run{Status: model.PhaseEnded}, nil, silent, false); c.text != "–" {
 		t.Errorf("expected a dash for a run without counts, got %+v", c)
 	}
-	if c := outputCell(new(printed(3)), silent, true); c.fg != nil {
+	if c := outputCell(new(printed(3)), nil, silent, true); c.fg != nil {
 		t.Errorf("expected no colour on the cursor row, got %v", c.fg)
 	}
 }
@@ -1086,8 +1086,8 @@ func TestStatusLabel_FitsTheBadge(t *testing.T) {
 }
 
 // A running run has no stored CPU time or peak memory yet, so its cells show
-// the live sample instead of a dash.
-func TestUsageCells_RunningShowsLiveUsage(t *testing.T) {
+// the live sample instead of a dash, and OUTPUT the lines printed so far.
+func TestLiveCells_RunningShowsLiveUsageAndOutput(t *testing.T) {
 	run := model.Run{ID: "r1", Status: model.PhaseRunning}
 	live := map[string]model.ResourceUsage{"r1": {CPUPercent: 12.4, MemoryBytes: 48 << 20}}
 	c, m := usageCells(&run, live, nil, false)
@@ -1096,5 +1096,8 @@ func TestUsageCells_RunningShowsLiveUsage(t *testing.T) {
 	}
 	if c, _ := usageCells(&run, nil, nil, false); c.text != "–" {
 		t.Errorf("expected a dash without a sample, got %q", c.text)
+	}
+	if c := outputCell(&run, map[string]int64{"r1": 3}, nil, false); c.text != "3 lines" {
+		t.Errorf("expected the live line count, got %q", c.text)
 	}
 }

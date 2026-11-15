@@ -1841,6 +1841,14 @@
       "SystemSampleSSEEvent": {
         "additionalProperties": false,
         "properties": {
+          "outputLines": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "description": "Lines each running run has printed so far on stdout and stderr, keyed by run ID",
+            "type": "object"
+          },
           "runs": {
             "additionalProperties": {
               "$ref": "#/components/schemas/ResourceUsage"

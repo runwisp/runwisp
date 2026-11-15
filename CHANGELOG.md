@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- On a terminal 143 columns or wider, the TUI Home run list also shows CPU, RAM and OUTPUT, with live CPU and memory for running runs. Home and the Web UI's Runs page color each run against its own task's usual run, and the Runs page shows the CPU, RAM and output bars.
+- On a terminal 143 columns or wider, the TUI Home run list also shows CPU, RAM and OUTPUT, with live CPU, memory and output lines for running runs. Home and the Web UI's Runs page color each run against its own task's usual run, and the Runs page shows the CPU, RAM and output bars.
 
 ## [1.9.3] - 2026-11-12
 

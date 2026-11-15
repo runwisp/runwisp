@@ -43,9 +43,11 @@ type ExecList struct {
 	// instanceCount resolves a task's currently configured instance count so
 	// multi-instance services render a 1-based #N suffix. nil ⇒ no suffix.
 	instanceCount func(taskName string) int
-	// liveUsage is each running run's live CPU and memory use by run ID, from
-	// the latest system sample.
+	// liveUsage and liveLines are each running run's live CPU and memory use
+	// and the lines it has printed so far, by run ID, from the latest system
+	// sample.
 	liveUsage map[string]model.ResourceUsage
+	liveLines map[string]int64
 	// selected holds the run IDs explicitly toggled with space. selectAll
 	// overrides it: when set, the selection is "every run matching the active
 	// filter", rendered all-checked and acted on with a MatchAll selector. The
@@ -64,10 +66,10 @@ func (e *ExecList) SetInstanceCountLookup(fn func(taskName string) int) {
 	e.instanceCount = fn
 }
 
-// SetLiveUsage replaces the running runs' live CPU and memory use, keyed by
-// run ID, shown in their CPU and RAM cells.
-func (e *ExecList) SetLiveUsage(u map[string]model.ResourceUsage) {
-	e.liveUsage = u
+// SetLive replaces the running runs' live CPU and memory use and printed
+// line counts, keyed by run ID, shown in their CPU, RAM and OUTPUT cells.
+func (e *ExecList) SetLive(usage map[string]model.ResourceUsage, lines map[string]int64) {
+	e.liveUsage, e.liveLines = usage, lines
 }
 
 // SetSize updates the available dimensions.
@@ -335,7 +337,7 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	return rowStyle.Render(e.rowPrefix(item.Run.ID)+padCell(e.firstCell(item.Run, cw), cw.first)+" ") +
 		statusCell(item.Run.DisplayStatus(), cw.status, rowStyle) +
 		trailingCells(cw, rowStyle, cell{text: e.startedCell(item, cw)}, durationCell(item, usual.duration, isCursor),
-			cpu, mem, outputCell(&item.Run, usual.output, isCursor), cell{text: string(item.Run.TriggeredBy)})
+			cpu, mem, outputCell(&item.Run, e.liveLines, usual.output, isCursor), cell{text: string(item.Run.TriggeredBy)})
 }
 
 // durationCell is a run's DURATION cell, colored like CPU and RAM by how it
@@ -351,9 +353,13 @@ func durationCell(item *uikit.ExecListItem, usual *time.Duration, isCursor bool)
 
 // outputCell is a run's OUTPUT cell, its line count, in the warning colour
 // when the run printed far more or far less than the task usually does. The
-// cursor row keeps its own highlight colour.
-func outputCell(run *model.Run, band *uikit.OutputBand, isCursor bool) cell {
+// cursor row keeps its own highlight colour. A running run shows the lines it
+// has printed so far, uncolored like its DURATION.
+func outputCell(run *model.Run, live map[string]int64, band *uikit.OutputBand, isCursor bool) cell {
 	lines, ok := run.OutputLines()
+	if l, isLive := live[run.ID]; isLive && run.Status == model.PhaseRunning {
+		lines, ok, band = l, true, nil
+	}
 	var c cell
 	switch {
 	case !ok:

@@ -92,6 +92,8 @@ func (s *runService) GetTask(ctx context.Context, name string) (*model.TaskRespo
 
 func noUsage() map[string]model.ResourceUsage { return nil }
 
+func noOutputLines() map[string]int64 { return nil }
+
 // lastRuns looks up each task's last outcome (see RunRepository.LastRuns). A storage error only costs
 // the lastRun field: the task list itself must still load.
 func (s *runService) lastRuns(ctx context.Context, tasks []*model.Task) map[string]model.Run {

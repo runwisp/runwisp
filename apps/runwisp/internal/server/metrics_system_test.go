@@ -85,11 +85,12 @@ func TestBroadcastSample(t *testing.T) {
 	bus := events.NewEventBus()
 	stale := false
 	srv := &Server{
-		eventBus:    bus,
-		stats:       newStatsProvider(nil, time.Now()),
-		configStale: func() bool { return stale },
-		runUsage:    noUsage,
-		runService:  newRunService(nil, nil, nil, nil, bus),
+		eventBus:       bus,
+		stats:          newStatsProvider(nil, time.Now()),
+		configStale:    func() bool { return stale },
+		runUsage:       noUsage,
+		runOutputLines: noOutputLines,
+		runService:     newRunService(nil, nil, nil, nil, bus),
 	}
 	srv.configStaleLast = srv.configStale() // seed baseline like Start()
 
@@ -127,24 +128,28 @@ func TestBroadcastSample(t *testing.T) {
 	assert.False(t, lastStale)
 }
 
-// The system event carries live usage per run, so a run's detail header can
-// show its own CPU and memory rather than its task's total.
+// The system event carries live usage and printed lines per run, so a run's
+// detail header can show its own CPU and memory rather than its task's total,
+// and the TUI run list its output so far.
 func TestBroadcastSample_CarriesRunUsage(t *testing.T) {
 	bus := events.NewEventBus()
 	runs := map[string]model.ResourceUsage{"run1": {CPUPercent: 12, MemoryBytes: 48 << 20}}
+	lines := map[string]int64{"run1": 3}
 	srv := &Server{
-		eventBus:    bus,
-		stats:       newStatsProvider(nil, time.Now()),
-		runUsage:    func() map[string]model.ResourceUsage { return runs },
-		configStale: neverStale,
-		runService:  newRunService(nil, nil, nil, nil, bus),
+		eventBus:       bus,
+		stats:          newStatsProvider(nil, time.Now()),
+		runUsage:       func() map[string]model.ResourceUsage { return runs },
+		runOutputLines: func() map[string]int64 { return lines },
+		configStale:    neverStale,
+		runService:     newRunService(nil, nil, nil, nil, bus),
 	}
-	var got map[string]model.ResourceUsage
+	var got events.SystemSampleEvent
 	bus.Subscribe(events.EventSystemSample, func(e events.Event) {
 		if s, ok := e.Data.(events.SystemSampleEvent); ok {
-			got = s.Runs
+			got = s
 		}
 	})
 	srv.broadcastSample(model.MetricsSample{})
-	assert.Equal(t, runs, got)
+	assert.Equal(t, runs, got.Runs)
+	assert.Equal(t, lines, got.OutputLines)
 }
