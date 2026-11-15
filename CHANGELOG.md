@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - On a terminal 143 columns or wider, the TUI Home run list also shows CPU, RAM and OUTPUT, with live CPU, memory and output lines for running runs. Home and the Web UI's Runs page color each run against its own task's usual run, and the Runs page shows the CPU, RAM and output bars. Running runs in the Web UI's run lists show the same live values.
 
+### Fixed
+
+- The TUI redraws at most 60 times a second while following a busy log or event stream, instead of once per line, so it uses far less CPU.
+
 ## [1.9.3] - 2026-11-12
 
 ### Changed
