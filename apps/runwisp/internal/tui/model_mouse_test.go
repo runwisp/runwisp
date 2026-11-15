@@ -301,27 +301,52 @@ func TestHandleMouse_WheelDownPress(t *testing.T) {
 	}
 }
 
-// TestCoalesced_FirstEventRendersImmediately verifies the time-throttle: the
-// first wheel event after an idle gap paints at once (coalesce=false), while a
-// second event landing inside the window reuses the cached frame (coalesce=true)
-// and arms exactly one trailing rebuild.
-func TestCoalesced_FirstEventRendersImmediately(t *testing.T) {
+// TestCoalesced_BurstsRebuildOncePerWindow verifies the frame throttle in
+// Update: the first message after an idle gap paints at once (coalesce=false),
+// while a follow-up inside the window reuses the cached frame (coalesce=true)
+// and arms exactly one trailing rebuild. Streamed log lines go through it too,
+// otherwise a chatty run rebuilds the whole screen once per line.
+func TestCoalesced_BurstsRebuildOncePerWindow(t *testing.T) {
+	for name, msg := range map[string]tea.Msg{
+		"wheel":      tea.MouseWheelMsg{Button: tea.MouseWheelDown, X: 100, Y: 5},
+		"log line":   uikit.LogLineMsg{RunID: "r1"},
+		"daemon log": uikit.DaemonLogLineMsg{Line: "x"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := newTestModel(nil)
+			m.lastRenderAt = time.Now().Add(-time.Second) // simulate idle
+
+			first, _ := m.Update(msg)
+			fm := first.(Model)
+			if fm.coalesce {
+				t.Fatal("first event after idle must render immediately (coalesce=false)")
+			}
+
+			second, cmd := fm.Update(msg)
+			sm := second.(Model)
+			if !sm.coalesce {
+				t.Fatal("rapid follow-up event must reuse the cached frame (coalesce=true)")
+			}
+			if !sm.flushPending || cmd == nil {
+				t.Fatal("coalesced follow-up must arm a trailing rebuild tick")
+			}
+
+			flushed, _ := sm.Update(coalesceFlushMsg{})
+			if f := flushed.(Model); f.coalesce || f.flushPending {
+				t.Fatal("the trailing flush must rebuild the frame")
+			}
+		})
+	}
+}
+
+// TestCoalesced_KeyPressRendersImmediately: direct input never reuses a stale
+// frame, even mid-burst.
+func TestCoalesced_KeyPressRendersImmediately(t *testing.T) {
 	m := newTestModel(nil)
-	m.lastRenderAt = time.Now().Add(-time.Second) // simulate idle
-
-	first, _ := m.handleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown, X: 100, Y: 5})
-	fm := first.(Model)
-	if fm.coalesce {
-		t.Fatal("first event after idle must render immediately (coalesce=false)")
-	}
-
-	second, cmd := fm.handleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown, X: 100, Y: 5})
-	sm := second.(Model)
-	if !sm.coalesce {
-		t.Fatal("rapid follow-up event must reuse the cached frame (coalesce=true)")
-	}
-	if !sm.flushPending || cmd == nil {
-		t.Fatal("coalesced follow-up must arm a trailing rebuild tick")
+	m.lastRenderAt = time.Now()
+	next, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+	if next.(Model).coalesce {
+		t.Fatal("a key press must rebuild the frame")
 	}
 }
 

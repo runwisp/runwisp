@@ -12,10 +12,10 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/home"
 )
 
-// coalesceInterval bounds how often a burst of mouse motion/wheel events forces
-// a full view rebuild (~60fps). Bubble Tea rebuilds the view after every
-// message, so without this a trackpad flood rebuilds the whole screen dozens of
-// times per frame.
+// coalesceInterval bounds how often a burst of non-input messages (log lines,
+// SSE events, mouse motion/wheel) forces a full view rebuild (~60fps). Bubble
+// Tea rebuilds the view after every message, so without this a chatty log
+// stream or a trackpad flood rebuilds the whole screen many times per frame.
 const coalesceInterval = 16 * time.Millisecond
 
 // coalesceFlushMsg ends a coalesce window and forces the next frame to rebuild.
@@ -23,7 +23,7 @@ type coalesceFlushMsg struct{}
 
 // coalesced throttles full view rebuilds to ~60fps without adding input latency.
 // The first event after an idle gap (≥ coalesceInterval since the last frame)
-// rebuilds immediately, so a deliberate scroll notch paints at once. Events
+// rebuilds immediately, so a lone scroll notch or log line paints at once. Events
 // arriving inside that window reuse the cached frame and arm a single trailing
 // rebuild tick, so a momentum flood rebuilds ~60×/s instead of per-event. State
 // changes from every event are applied regardless; only the redundant rebuilds
@@ -62,10 +62,10 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		case tea.MouseWheelDown:
 			cmd = m.scrollWheelDown(x)
 		}
-		return m.coalesced(cmd)
+		return m, cmd
 	case tea.MouseMotionMsg:
-		// Hover-only — coalesce so a burst rebuilds at most once/window.
-		return m.coalesced(nil)
+		// Hover-only; Update coalesces the frame.
+		return m, nil
 	case tea.MouseClickMsg:
 		if msg.Button != tea.MouseLeft {
 			return m, nil

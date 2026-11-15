@@ -105,8 +105,9 @@ type Model struct {
 
 	mouse mouseState
 
-	// Frame coalescing: bursts of mouse motion/wheel events each trigger a full
-	// View() rebuild (Bubble Tea renders after every message). The first event
+	// Frame coalescing: Bubble Tea rebuilds the full View() after every message,
+	// so bursts (log lines, SSE events, mouse motion/wheel) are throttled; see
+	// Model.Update. The first event
 	// after an idle gap renders immediately (instant scroll feedback); events
 	// arriving within coalesceInterval of the last frame reuse the cached one and
 	// schedule a single trailing rebuild, so a flood rebuilds at ~60fps instead
