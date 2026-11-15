@@ -198,6 +198,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		UpdateStatus:        updateChecker.Status,
 		TaskUsage:           svc.Usage.TaskUsage,
 		RunUsage:            svc.Usage.RunUsage,
+		RunOutputLines:      svc.Executor.RunOutputLines,
 		DaemonLogBuffer:     logBuffer,
 		MetricsEnabled:      cfg.Config.Daemon.MetricsEnabled,
 		MetricsListen:       cfg.Config.Daemon.MetricsListen,

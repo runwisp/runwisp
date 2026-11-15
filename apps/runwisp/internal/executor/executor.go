@@ -96,6 +96,9 @@ type RoutingExecutor struct {
 	minFreeDisk      atomic.Int64 // swapped by SetMinFreeDisk on a config reload
 	clock            func() time.Time
 	sampler          *procstat.Sampler
+	// writers holds each executing run's log writer by run ID, so
+	// RunOutputLines can read how much a live run has printed.
+	writers sync.Map
 }
 
 type Options struct {
@@ -234,7 +237,9 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 		slog.Error("Run failed before it started", "task", task.Name, "run", run.ID, "err", err)
 		return &ExecuteResult{ExitCode: -1, Error: err}
 	}
+	r.writers.Store(run.ID, writer)
 	defer func() {
+		r.writers.Delete(run.ID)
 		if err := writer.Close(); err != nil {
 			slog.Warn("Failed to close run log writer", "task", task.Name, "run", run.ID, "err", err)
 		}
@@ -286,6 +291,18 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	}
 	result.PeakMemoryBytes, result.CPUTimeMs = runUsage(ru, peak, sampled)
 	return result
+}
+
+// RunOutputLines is how many lines each executing run has printed so far,
+// stdout and stderr together, keyed by run ID.
+func (r *RoutingExecutor) RunOutputLines() map[string]int64 {
+	out := make(map[string]int64)
+	r.writers.Range(func(id, w any) bool {
+		stdout, stderr := w.(*LogWriter).OutputLines()
+		out[id.(string)] = stdout + stderr
+		return true
+	})
+	return out
 }
 
 // track starts sampling the run's process group when the backend exposes one.

@@ -30,7 +30,7 @@
         runFilterParams,
         type RunsListFilters,
     } from "./run-filters.js";
-    import { instanceSuffix, runOutputScale, runUsageScale, usualDuration } from "./run-helpers.js";
+    import { instanceSuffix, runLiveLabel, runScalesByTask, type RunLive } from "./run-helpers.js";
     import { formatDateTime } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
@@ -55,6 +55,7 @@
         onBulkDelete,
         onBulkRerun,
         getInstanceCount = () => 1,
+        getLive = () => undefined,
         motion,
         outputSearch = false,
         outputQuery = "",
@@ -88,6 +89,9 @@
         // Resolves a task's currently configured instance count so multi-instance
         // services render a 1-based #N suffix. Defaults to single-instance.
         getInstanceCount?: (taskName: string) => number;
+        // A running run's live CPU, memory and lines printed so far, shown on
+        // its row beside the usage bars. Defaults to none.
+        getLive?: (runId: string) => RunLive | undefined;
         // Which runs arrived or were removed live moments ago: their rows animate
         // in or out. Page loads, scrolling and filtering never do.
         motion?: RunMotion;
@@ -104,9 +108,10 @@
         // True while a query is typed but its results aren't in yet (debounce
         // window or request in flight), the rail shows its searching shimmer.
         outputSearchPending?: boolean;
-        // Task rail only: three small bars per finished run, CPU time, RAM and
-        // lines printed, scaled to the largest loaded run and colored against
-        // the usual one. The duration readout is colored against the usual run too.
+        // Three small bars per finished run, CPU time, RAM and lines printed,
+        // scaled to its task's largest loaded run and colored against the task's
+        // usual one, so a list mixing tasks judges each run against its own task.
+        // The duration readout is colored against the usual run too.
         usageBars?: boolean;
         // Folds the list to a thin strip that still counts the runs, giving the
         // run detail the width. Omitted where the screen keeps the list open.
@@ -114,9 +119,7 @@
         onToggleFold?: (() => void) | undefined;
     } = $props();
 
-    const usageScale = $derived(usageBars ? runUsageScale(items) : undefined);
-    const outputScale = $derived(usageBars ? runOutputScale(items) : undefined);
-    const durationUsual = $derived(usageBars ? usualDuration(items) : undefined);
+    const scales = $derived(usageBars ? runScalesByTask(items) : undefined);
 
     // Task-rail rows are one dense line (44px); the cross-task /runs view adds
     // the task name on a second line (64px).
@@ -522,6 +525,7 @@
 {/snippet}
 
 {#snippet runRow(run: Run, match: RunOutputMatch | undefined)}
+    {@const scale = scales?.get(run.taskName)}
     <RunRow
         {run}
         active={selectedRunId === run.id}
@@ -531,9 +535,10 @@
         {outputQuery}
         {bulkActions}
         {selectionActive}
-        usage={usageBars ? (usageScale ?? null) : undefined}
-        output={outputScale}
-        {durationUsual}
+        usage={usageBars ? (scale?.usage ?? null) : undefined}
+        output={scale?.output}
+        durationUsual={scale?.durationUsual}
+        live={usageBars && run.status === "running" ? runLiveLabel(getLive(run.id)) : undefined}
         onselect={selectRun}
     />
 {/snippet}

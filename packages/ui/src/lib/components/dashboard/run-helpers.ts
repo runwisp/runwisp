@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { APIPaths, Run, RunStatus, Trigger } from "@runwisp/common";
+import type { APIPaths, ResourceUsage, Run, RunStatus, Trigger } from "@runwisp/common";
 import { formatBytes, formatDuration } from "../../utils/format.js";
 
 export interface RunVerdict {
@@ -119,6 +119,26 @@ export function runUsageLabel(run: Pick<Run, "peakMemoryBytes" | "cpuTimeMs">): 
     const parts: string[] = [];
     if (run.cpuTimeMs !== undefined) parts.push("CPU " + formatDuration(run.cpuTimeMs));
     if (run.peakMemoryBytes !== undefined) parts.push("RAM " + formatBytes(run.peakMemoryBytes));
+    return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+/** What a running run is doing right now, from the latest system sample. */
+export interface RunLive {
+    usage: ResourceUsage | undefined;
+    outputLines: number | undefined;
+}
+
+/** "CPU 12% · 48 MB · 3 lines" for a running run, undefined when nothing is known yet. */
+export function runLiveLabel(live: RunLive | undefined): string | undefined {
+    if (!live) return undefined;
+    const parts: string[] = [];
+    if (live.usage) {
+        parts.push(
+            `CPU ${String(Math.round(live.usage.cpuPercent))}%`,
+            formatBytes(live.usage.memoryBytes),
+        );
+    }
+    if (live.outputLines !== undefined) parts.push(formatLines(live.outputLines));
     return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
@@ -277,6 +297,48 @@ export function runOutputScale(
     const lines = runs.flatMap((run) => runOutputLines(run) ?? []);
     if (lines.length === 0) return undefined;
     return { max: Math.max(...lines), band: outputBand(runs) };
+}
+
+/** What a task's runs are judged against: its usage and output scales and its usual duration in ms. */
+export interface TaskRunScales {
+    usage: RunUsageScale | undefined;
+    output: OutputScale | undefined;
+    durationUsual: number | undefined;
+}
+
+type ScaledRun = Pick<
+    Run,
+    | "taskName"
+    | "status"
+    | "cpuTimeMs"
+    | "peakMemoryBytes"
+    | "stdoutLines"
+    | "stderrLines"
+    | "startedAt"
+    | "endedAt"
+>;
+
+/**
+ * Each task's scales over the runs given, keyed by task name, so a list that
+ * mixes tasks judges every run against its own task's runs. Mirrors the TUI's
+ * ExecWindow.Baselines.
+ */
+export function runScalesByTask(runs: readonly ScaledRun[]): Map<string, TaskRunScales> {
+    const byTask = new Map<string, ScaledRun[]>();
+    for (const run of runs) {
+        const group = byTask.get(run.taskName) ?? [];
+        group.push(run);
+        byTask.set(run.taskName, group);
+    }
+    const scales = new Map<string, TaskRunScales>();
+    for (const [task, taskRuns] of byTask) {
+        scales.set(task, {
+            usage: runUsageScale(taskRuns),
+            output: runOutputScale(taskRuns),
+            durationUsual: usualDuration(taskRuns),
+        });
+    }
+    return scales;
 }
 
 const compactNumber = new Intl.NumberFormat("en", {

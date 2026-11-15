@@ -596,7 +596,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 	t.Run("nil-item-renders-loading-placeholder", func(t *testing.T) {
 		l := buildList(5)
 		l.SetSize(80, 24)
-		text := l.buildRowText(nil, 0, computeColWidths(60, 0), rowBaselines{})
+		text := l.buildRowText(nil, 0, computeColWidths(60, 0), nil)
 		if !strings.Contains(text, "loading") {
 			t.Fatalf("expected loading placeholder, got %q", text)
 		}
@@ -609,7 +609,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		if item == nil {
 			t.Fatal("pre-condition: expected item at index 0")
 		}
-		text := l.buildRowText(item, 0, computeColWidths(60, 0), rowBaselines{})
+		text := l.buildRowText(item, 0, computeColWidths(60, 0), nil)
 		if !strings.Contains(text, "task") {
 			t.Fatalf("expected task name in row, got %q", text)
 		}
@@ -624,7 +624,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l.SetSize(80, 24)
 		l.SetFocused(true)
 		l.cursor = 2
-		text := l.buildRowText(l.window.Item(2), 2, computeColWidths(60, 0), rowBaselines{})
+		text := l.buildRowText(l.window.Item(2), 2, computeColWidths(60, 0), nil)
 		if !strings.Contains(text, "task") {
 			t.Fatalf("expected task name in cursor row, got %q", text)
 		}
@@ -634,7 +634,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := buildList(5)
 		l.SetSize(80, 24)
 		l.SetHovered(1)
-		text := l.buildRowText(l.window.Item(1), 1, computeColWidths(60, 0), rowBaselines{})
+		text := l.buildRowText(l.window.Item(1), 1, computeColWidths(60, 0), nil)
 		if !strings.Contains(text, "task") {
 			t.Fatalf("expected task name in hovered row, got %q", text)
 		}
@@ -648,7 +648,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := NewExecList(w)
 		l.SetInstanceCountLookup(func(string) int { return 3 })
 		l.SetSize(80, 24)
-		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0), rowBaselines{})
+		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0), nil)
 		// 0-based slot 2 → 1-based display #3.
 		if !strings.Contains(text, "task#3") {
 			t.Fatalf("expected task#3 in multi-instance row, got %q", text)
@@ -663,7 +663,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := NewExecList(w)
 		l.SetInstanceCountLookup(func(string) int { return 3 })
 		l.SetSize(80, 24)
-		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0), rowBaselines{})
+		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0), nil)
 		// Slot 0 of a multi-instance service must still be suffixed (#1).
 		if !strings.Contains(text, "task#1") {
 			t.Fatalf("expected task#1 for slot 0 of multi-instance service, got %q", text)
@@ -678,7 +678,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := NewExecList(w)
 		l.SetInstanceCountLookup(func(string) int { return 1 })
 		l.SetSize(80, 24)
-		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0), rowBaselines{})
+		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60, 0), nil)
 		if strings.Contains(text, "task#") {
 			t.Fatalf("expected no instance suffix for single-instance task, got %q", text)
 		}
@@ -697,7 +697,7 @@ func TestBuildRowText_BadgesShareOneWidth(t *testing.T) {
 	l.SetSize(80, 24)
 	cw := computeColWidths(80, 0)
 	for i := range 2 {
-		text := l.buildRowText(l.window.Item(i), i, cw, rowBaselines{})
+		text := l.buildRowText(l.window.Item(i), i, cw, nil)
 		if got := uikit.VisibleWidth(text); got != cw.rowWidth() {
 			t.Fatalf("row %d: width %d, want %d", i, got, cw.rowWidth())
 		}
@@ -720,7 +720,7 @@ func TestBuildRowText_TruncatedStatusKeepsColour(t *testing.T) {
 	l.SetSize(80, 24)
 	cw := computeColWidths(60, 0)
 	cw.status = 5
-	text := l.buildRowText(l.window.Item(0), 0, cw, rowBaselines{})
+	text := l.buildRowText(l.window.Item(0), 0, cw, nil)
 	// The label truncates to the 5-cell column minus the badge's padding.
 	want := uikit.StatusStyle("succeeded").Render(uikit.TruncateToWidth("success", 3))
 	if !strings.Contains(text, want) {
@@ -963,11 +963,18 @@ func TestView_ScopedListShowsRunUsage(t *testing.T) {
 		}
 	}
 
-	// Home mixes tasks, so it has no per-task baseline and no usage columns.
+	// Home keeps its plain table until the pane is wide enough for every column.
 	w.SetFilter("")
 	w.ApplyFetch([]uikit.ExecListItem{{Run: usage("usual", 2_000, 20<<20)}}, 0, 1)
 	if out := ansi.Strip(l.View()); strings.Contains(out, "CPU") || strings.Contains(out, "RAM") {
-		t.Errorf("unexpected usage columns on Home: %q", out)
+		t.Errorf("unexpected usage columns on a narrow Home: %q", out)
+	}
+	l.SetSize(120, 10)
+	out = ansi.Strip(l.View())
+	for _, want := range []string{" CPU ", " RAM ", " OUTPUT ", " 2s ", " 20 MB "} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q on a wide Home, got %q", want, out)
+		}
 	}
 }
 
@@ -976,12 +983,12 @@ func TestUsageCells_ColorByUsualRun(t *testing.T) {
 	run := model.Run{Status: model.PhaseEnded, CPUTimeMs: &cpu, PeakMemoryBytes: &mem}
 	usual := &uikit.RunUsage{CPUMs: 10_000, MemBytes: 16 << 20}
 
-	c, m := usageCells(&run, usual, false)
+	c, m := usageCells(&run, nil, usual, false)
 	if c.fg != uikit.ColorError || m.fg != nil {
 		t.Errorf("expected a 2x CPU run flagged and usual RAM left plain, got %v / %v", c.fg, m.fg)
 	}
 	// The cursor row keeps its own highlight colour.
-	if c, _ := usageCells(&run, usual, true); c.fg != nil {
+	if c, _ := usageCells(&run, nil, usual, true); c.fg != nil {
 		t.Errorf("expected no colour on the cursor row, got %v", c.fg)
 	}
 }
@@ -1015,17 +1022,39 @@ func TestOutputCell_FlagsRunOutsideBand(t *testing.T) {
 	}
 	silent := &uikit.OutputBand{}
 
-	if c := outputCell(new(printed(3)), silent, false); c.text != "3 lines" || c.fg != uikit.ColorWarning {
+	if c := outputCell(new(printed(3)), nil, silent, false); c.text != "3 lines" || c.fg != uikit.ColorWarning {
 		t.Errorf("expected a silent task's 3 lines flagged, got %+v", c)
 	}
-	if c := outputCell(new(printed(0)), silent, false); c.text != "none" || c.fg != uikit.ColorTextMuted {
+	if c := outputCell(new(printed(0)), nil, silent, false); c.text != "none" || c.fg != uikit.ColorTextMuted {
 		t.Errorf("expected a muted none, got %+v", c)
 	}
-	if c := outputCell(&model.Run{Status: model.PhaseEnded}, silent, false); c.text != "–" {
+	if c := outputCell(&model.Run{Status: model.PhaseEnded}, nil, silent, false); c.text != "–" {
 		t.Errorf("expected a dash for a run without counts, got %+v", c)
 	}
-	if c := outputCell(new(printed(3)), silent, true); c.fg != nil {
+	if c := outputCell(new(printed(3)), nil, silent, true); c.fg != nil {
 		t.Errorf("expected no colour on the cursor row, got %v", c.fg)
+	}
+}
+
+func TestComputeColWidths_HomeAddsUsageWhenWide(t *testing.T) {
+	cw := computeColWidths(114, 0)
+	if cw.cpu != usageColCap || cw.mem != usageColCap || cw.output != outputColCap || cw.first != taskColIdeal {
+		t.Fatalf("expected CPU, RAM and OUTPUT at their caps at 114 cells, got %+v", cw)
+	}
+	if got := cw.rowWidth(); got != 114 {
+		t.Fatalf("expected the row to fill 114 cells, got %d", got)
+	}
+	// One cell narrower, Home is the plain table again.
+	if cw := computeColWidths(113, 0); cw.cpu != 0 || cw.mem != 0 || cw.output != 0 || cw.trigger == 0 {
+		t.Fatalf("expected no usage columns at 113 cells, got %+v", cw)
+	}
+}
+
+// The main panel never grows past uikit.MaxContentWidth, so Home's wide table
+// must fit inside it next to the scrollbar or its usage columns never show.
+func TestComputeColWidths_HomeUsageFitsMaxContentWidth(t *testing.T) {
+	if cw := computeColWidths(uikit.MaxContentWidth-1, 0); cw.cpu == 0 || cw.mem == 0 || cw.output == 0 {
+		t.Fatalf("expected CPU, RAM and OUTPUT at the widest panel, got %+v", cw)
 	}
 }
 
@@ -1053,5 +1082,22 @@ func TestStatusLabel_FitsTheBadge(t *testing.T) {
 		if got := uikit.VisibleWidth(uikit.StatusLabel(string(r))); got > statusColW-2 {
 			t.Errorf("%s label is %d cells, the badge fits %d", r, got, statusColW-2)
 		}
+	}
+}
+
+// A running run has no stored CPU time or peak memory yet, so its cells show
+// the live sample instead of a dash, and OUTPUT the lines printed so far.
+func TestLiveCells_RunningShowsLiveUsageAndOutput(t *testing.T) {
+	run := model.Run{ID: "r1", Status: model.PhaseRunning}
+	live := map[string]model.ResourceUsage{"r1": {CPUPercent: 12.4, MemoryBytes: 48 << 20}}
+	c, m := usageCells(&run, live, nil, false)
+	if c.text != "12%" || m.text != "48 MB" {
+		t.Errorf("expected live 12%% / 48 MB, got %q / %q", c.text, m.text)
+	}
+	if c, _ := usageCells(&run, nil, nil, false); c.text != "–" {
+		t.Errorf("expected a dash without a sample, got %q", c.text)
+	}
+	if c := outputCell(&run, map[string]int64{"r1": 3}, nil, false); c.text != "3 lines" {
+		t.Errorf("expected the live line count, got %q", c.text)
 	}
 }

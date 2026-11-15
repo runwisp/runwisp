@@ -145,10 +145,11 @@ func (srv *Server) humaGetSystemStats(ctx context.Context, input *struct{}) (*Sy
 // server-side replacement for every dashboard polling /api/system + /api/daemon.
 func (srv *Server) broadcastSample(sample model.MetricsSample) {
 	srv.eventBus.Publish(events.EventSystemSample, events.SystemSampleEvent{
-		Sample: sample,
-		Uptime: formatUptime(time.Since(srv.stats.startTime)),
-		Tasks:  srv.runService.taskUsage(),
-		Runs:   srv.runUsage(),
+		Sample:      sample,
+		Uptime:      formatUptime(time.Since(srv.stats.startTime)),
+		Tasks:       srv.runService.taskUsage(),
+		Runs:        srv.runUsage(),
+		OutputLines: srv.runOutputLines(),
 	})
 
 	stale := srv.configStale()

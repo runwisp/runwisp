@@ -1637,6 +1637,10 @@ export interface components {
             state: "running" | "degraded" | "stopped" | "fatal";
         };
         SystemSampleSSEEvent: {
+            /** @description Lines each running run has printed so far on stdout and stderr, keyed by run ID */
+            outputLines?: {
+                [key: string]: number;
+            };
             /** @description Live CPU and memory use per running run, keyed by run ID; only measured shell runs appear */
             runs?: {
                 [key: string]: components["schemas"]["ResourceUsage"];

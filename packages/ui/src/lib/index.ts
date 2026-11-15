@@ -105,6 +105,8 @@ export {
     formatTriggeredByLabel,
     instanceSuffix,
     runUsageLabel,
+    runLiveLabel,
+    type RunLive,
     runUsageScale,
     usageLevel,
     type RunUsageScale,
