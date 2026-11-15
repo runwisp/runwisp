@@ -13,6 +13,7 @@ import {
     formatTriggeredByLabel,
     runRetryLabel,
     runUsageLabel,
+    runLiveLabel,
     runUsageScale,
     usageLevel,
     usualDuration,
@@ -141,6 +142,26 @@ describe("formatTriggeredByLabel", () => {
         expect(formatTriggeredByLabel("service")).toBe("Service");
         expect(formatTriggeredByLabel("startup")).toBe("Startup");
         expect(formatTriggeredByLabel("station")).toBe("Station");
+    });
+});
+
+describe("runLiveLabel", () => {
+    it("is undefined before the first sample", () => {
+        expect(runLiveLabel(undefined)).toBeUndefined();
+        expect(runLiveLabel({ usage: undefined, outputLines: undefined })).toBeUndefined();
+    });
+
+    it("joins live CPU, memory and lines printed so far", () => {
+        expect(
+            runLiveLabel({
+                usage: { cpuPercent: 12.4, memoryBytes: 48 * 1024 * 1024 },
+                outputLines: 3,
+            }),
+        ).toBe("CPU 12% · 48 MB · 3 lines");
+    });
+
+    it("shows lines alone for a run without CPU and memory", () => {
+        expect(runLiveLabel({ usage: undefined, outputLines: 0 })).toBe("0 lines");
     });
 });
 

@@ -300,6 +300,7 @@
                 onBulkDelete={selection.handleBulkDelete}
                 onBulkRerun={selection.handleBulkRerun}
                 getInstanceCount={() => instanceCount}
+                getLive={(id) => systemStore.runLive(id)}
                 motion={live.source.motion}
                 outputSearch
                 usageBars

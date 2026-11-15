@@ -275,6 +275,7 @@ export const systemEventSchema = z.object({
     uptime: z.string(),
     tasks: z.record(z.string(), resourceUsageSchema).optional(),
     runs: z.record(z.string(), resourceUsageSchema).optional(),
+    outputLines: z.record(z.string(), z.number()).optional(),
 });
 
 export const configStaleEventSchema = z.object({

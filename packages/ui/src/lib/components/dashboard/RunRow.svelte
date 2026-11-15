@@ -43,6 +43,7 @@
         usage,
         output,
         durationUsual,
+        live,
         onselect,
     }: {
         run: Run;
@@ -64,6 +65,8 @@
         output: OutputScale | undefined;
         /** The task's usual run duration in ms, undefined for none. */
         durationUsual: number | undefined;
+        /** A running run's live CPU, memory and lines printed so far, undefined for none. */
+        live: string | undefined;
         onselect: (runId: string) => void;
     } = $props();
 
@@ -156,6 +159,7 @@
                 >
                     <span class="truncate">{formatDateTime(startedAt)}</span>
                     <span class="shrink-0">· {formatTriggeredByLabel(run.triggeredBy)}</span>
+                    {#if live}{@render liveUsage("truncate", "· ")}{/if}
                     {#if retry}
                         <span class="shrink-0 rounded bg-surface-sunken px-1 font-mono"
                             >{retry}</span
@@ -187,16 +191,24 @@
                     class="font-mono text-[12.5px] font-semibold tracking-tight text-on-surface tabular-nums"
                     title={formatFullDateTime(startedAt)}
                 >
-                    {formatTimeHM(startedAt)} · {formatDayMonth(startedAt)}
+                    {formatTimeHM(startedAt)}{live ? "" : " · " + formatDayMonth(startedAt)}
                 </span>
-                <!-- With usage bars a tight rail drops the status word; the dot
-                     keeps its colour. -->
-                <span class="text-on-surface-faint {tight}">·</span>
-                <span class="font-mono text-[12.5px] font-semibold {config.color} {tight}"
-                    >{humanizeStatus(dstatus)}</span
-                >
+                {#if !live}
+                    <!-- With usage bars a tight rail drops the status word; the dot
+                         keeps its colour. -->
+                    <span class="text-on-surface-faint {tight}">·</span>
+                    <span class="font-mono text-[12.5px] font-semibold {config.color} {tight}"
+                        >{humanizeStatus(dstatus)}</span
+                    >
+                {/if}
                 {#if suffix}
                     <span class="font-mono text-2xs text-on-surface-faint">{suffix}</span>
+                {/if}
+                {#if live}
+                    <!-- A running run trades its date and status word (the
+                         pulsing dot and "live" readout say it) for what it is
+                         doing right now. -->
+                    {@render liveUsage("truncate text-2xs", "· ")}
                 {/if}
             </span>
             {@render usageBars("")}
@@ -263,6 +275,14 @@
     {:else if usage !== undefined}
         <span class="w-6 shrink-0" aria-hidden="true"></span>
     {/if}
+{/snippet}
+
+{#snippet liveUsage(cls: string, sep: string)}
+    <span
+        class="font-mono text-on-surface-faint tabular-nums {cls}"
+        title="Live CPU (100% = one core), memory and lines printed so far"
+        data-testid="run-row-live">{sep}{live}</span
+    >
 {/snippet}
 
 {#snippet bar(value: number, max: number, level: 0 | 1 | 2)}

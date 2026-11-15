@@ -30,7 +30,7 @@
         runFilterParams,
         type RunsListFilters,
     } from "./run-filters.js";
-    import { instanceSuffix, runScalesByTask } from "./run-helpers.js";
+    import { instanceSuffix, runLiveLabel, runScalesByTask, type RunLive } from "./run-helpers.js";
     import { formatDateTime } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
@@ -55,6 +55,7 @@
         onBulkDelete,
         onBulkRerun,
         getInstanceCount = () => 1,
+        getLive = () => undefined,
         motion,
         outputSearch = false,
         outputQuery = "",
@@ -88,6 +89,9 @@
         // Resolves a task's currently configured instance count so multi-instance
         // services render a 1-based #N suffix. Defaults to single-instance.
         getInstanceCount?: (taskName: string) => number;
+        // A running run's live CPU, memory and lines printed so far, shown on
+        // its row beside the usage bars. Defaults to none.
+        getLive?: (runId: string) => RunLive | undefined;
         // Which runs arrived or were removed live moments ago: their rows animate
         // in or out. Page loads, scrolling and filtering never do.
         motion?: RunMotion;
@@ -534,6 +538,7 @@
         usage={usageBars ? (scale?.usage ?? null) : undefined}
         output={scale?.output}
         durationUsual={scale?.durationUsual}
+        live={usageBars && run.status === "running" ? runLiveLabel(getLive(run.id)) : undefined}
         onselect={selectRun}
     />
 {/snippet}
