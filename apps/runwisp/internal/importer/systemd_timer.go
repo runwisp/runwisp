@@ -87,16 +87,18 @@ func systemdCalendarParts(tokens []string) (dow, date, clock string, ok bool) {
 		return "", "", "", false
 	}
 	dow, date, clock = "*", "*-*-*", "00:00:00"
+	seenDate, seenClock := false, false
 	for i, tok := range tokens {
+		// The weekday is tried first: "Mon-Fri" is a weekday range, not a date.
+		if d, isDow := systemdDow(tok); i == 0 && isDow {
+			dow = d
+			continue
+		}
 		switch {
-		case strings.Contains(tok, ":"):
-			clock = tok
-		case strings.ContainsAny(tok, "-~"):
-			date = tok
-		case i == 0:
-			if dow, ok = systemdDow(tok); !ok {
-				return "", "", "", false
-			}
+		case strings.Contains(tok, ":") && !seenClock:
+			clock, seenClock = tok, true
+		case strings.ContainsAny(tok, "-~") && !seenDate:
+			date, seenDate = tok, true
 		default:
 			return "", "", "", false
 		}
@@ -219,11 +221,14 @@ func systemdNumber(s string) (string, bool) {
 }
 
 // systemdDow converts a weekday list ("Mon", "Mon..Fri", "Sat,Sun") into cron
-// day-of-week numbers.
+// day-of-week numbers. systemd still reads "Mon-Fri" as a range too.
 func systemdDow(tok string) (string, bool) {
 	terms := strings.Split(tok, ",")
 	for i, term := range terms {
 		lo, hi, isRange := strings.Cut(term, "..")
+		if !isRange {
+			lo, hi, isRange = strings.Cut(term, "-")
+		}
 		a, ok := systemdWeekdays[strings.ToLower(lo)]
 		if !ok {
 			return "", false

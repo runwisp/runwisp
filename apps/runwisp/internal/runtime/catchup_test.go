@@ -189,6 +189,26 @@ func TestCountMissedTicks_DSTFallbackDuplicateNotDoubleCounted(t *testing.T) {
 	assert.Equal(t, 30, lastTick.In(loc).Minute())
 }
 
+// TestCountMissedTicks_DSTFallbackAnchorInsideRewoundHour: the daemon ran the
+// 02:00 and 02:30 CEST ticks live, then went down before the clock fell back.
+// The CET replays of those ticks are duplicates fireOnce would have recorded
+// as dst_skipped, so nothing was missed. Counting started with an empty
+// dedup set at the anchor, so both replays were reported (and re-run) as
+// missed ticks.
+func TestCountMissedTicks_DSTFallbackAnchorInsideRewoundHour(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Bratislava")
+	require.NoError(t, err)
+	sched, err := cronspec.NewParser().Parse("CRON_TZ=Europe/Bratislava 0,30 2 * * *")
+	require.NoError(t, err)
+
+	lastRun := time.Date(2026, 10, 25, 0, 30, 0, 0, time.UTC).In(loc) // 02:30 CEST, ran live
+	now := time.Date(2026, 10, 25, 2, 0, 0, 0, time.UTC).In(loc)      // 03:00 CET
+
+	got, _, truncated := countMissedTicks(sched, lastRun, now, 1000)
+	assert.False(t, truncated)
+	assert.Equal(t, 0, got, "02:00 CET and 02:30 CET replay ticks that already ran; none was missed")
+}
+
 func TestRunMissedTickCatchUp(t *testing.T) {
 	t.Run("policy=latest triggers one run", func(t *testing.T) {
 		db := newCatchupDB()

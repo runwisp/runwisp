@@ -66,6 +66,34 @@ func TestTriggerRunBasic(t *testing.T) {
 	exec.AssertExpectations(t)
 }
 
+// TestTerminalEventCarriesLogPath: notify reads the failed run's output tail
+// from the terminal event's LogPath (notifications only map run.started and
+// terminal events, never run.updated). The terminal event used to carry no
+// path, so every failure notification went out without its output excerpt.
+func TestTerminalEventCarriesLogPath(t *testing.T) {
+	jm, exec, eb := newTestManager(t)
+
+	task := testTask("task1", model.PolicySkip, 1)
+	jm.UpsertTask(task)
+	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 1, LogPath: "/logs/task1/run.log"})
+
+	got := make(chan string, 1)
+	eb.Subscribe(events.EventRunFailed, func(e events.Event) {
+		if re, ok := e.Data.(events.RunEvent); ok {
+			got <- re.LogPath
+		}
+	})
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
+	require.NoError(t, err)
+
+	select {
+	case p := <-got:
+		assert.Equal(t, "/logs/task1/run.log", p)
+	case <-time.After(5 * time.Second):
+		t.Fatal("no terminal event")
+	}
+}
+
 func TestTriggerRunResolvesAndPersistsParams(t *testing.T) {
 	jm, exec, eb := newTestManager(t)
 
