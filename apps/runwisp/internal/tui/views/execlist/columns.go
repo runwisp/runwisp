@@ -117,7 +117,7 @@ func computeColWidths(contentW, timeW int) colWidths {
 		}
 	}
 	// Home: CPU, RAM and OUTPUT join only when every column fits at its cap,
-	// TASK at its ideal, which takes a terminal about 143 cells wide.
+	// TASK at its ideal: 114 cells, plus the scrollbar, within uikit.MaxContentWidth.
 	wide := colWidths{first: taskColIdeal, status: statusColW, started: startedColCap, duration: durationColCap,
 		cpu: usageColCap, mem: usageColCap, output: outputColCap, trigger: triggerColCap}
 	if spare := contentW - wide.rowWidth(); spare >= 0 {

@@ -1050,6 +1050,14 @@ func TestComputeColWidths_HomeAddsUsageWhenWide(t *testing.T) {
 	}
 }
 
+// The main panel never grows past uikit.MaxContentWidth, so Home's wide table
+// must fit inside it next to the scrollbar or its usage columns never show.
+func TestComputeColWidths_HomeUsageFitsMaxContentWidth(t *testing.T) {
+	if cw := computeColWidths(uikit.MaxContentWidth-1, 0); cw.cpu == 0 || cw.mem == 0 || cw.output == 0 {
+		t.Fatalf("expected CPU, RAM and OUTPUT at the widest panel, got %+v", cw)
+	}
+}
+
 func TestComputeColWidths_ScopedDropsTriggerThenOutputThenUsage(t *testing.T) {
 	if cw := computeColWidths(89, timeColW); cw.cpu == 0 || cw.mem == 0 || cw.output == 0 || cw.trigger == 0 {
 		t.Fatalf("expected every column at 89 cells, got %+v", cw)
