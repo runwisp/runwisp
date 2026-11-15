@@ -174,6 +174,21 @@ func TestSupervisordProgramName(t *testing.T) {
 	mustContain(t, out, `run = "/bin/run --name web"`)
 }
 
+// TestSupervisordEscapedPercent: supervisord runs command=, environment= and
+// directory= through Python's % interpolation, so a literal percent must be
+// written %%, and the process sees a single %. Importing %% verbatim ran
+// `date +%%F` (printing "%F") instead of `date +%F`.
+func TestSupervisordEscapedPercent(t *testing.T) {
+	res := parseSup(t, "[program:web]\ncommand=/bin/sh -c 'date +%%F; echo 100%%'\n"+
+		"environment=FMT=\"%%Y\"\n")
+	out := res.TOML()
+	mustContain(t, out, `run = "/bin/sh -c 'date +%F; echo 100%'"`)
+	mustContain(t, out, `FMT = "%Y"`)
+	if hasNoteKind(res, NoteCommandExpansion) {
+		t.Fatalf("%%%% flagged as an unresolved expansion: %+v", allNotes(res))
+	}
+}
+
 func TestSupervisordUnresolvedExpansion(t *testing.T) {
 	res := parseSup(t, "[program:web]\ncommand=/bin/run --idx %(process_num)s\n")
 	if !hasBlockingNote(res, "%(...)s") {

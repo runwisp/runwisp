@@ -254,6 +254,14 @@ const catchupCountDisplayFloor = 1000
 func countMissedTicks(schedule cron.Schedule, lastRunTime, now time.Time, maxCount int) (count int, lastTick time.Time, truncated bool) {
 	fixedInterval := cronspec.IsFixedInterval(schedule)
 	var fired firedHour
+	if !fixedInterval {
+		// Seed with the ticks up to lastRunTime, as NextFirings does: when the
+		// daemon stopped inside a rewound hour, a replay after lastRunTime
+		// duplicates a tick that already fired before it.
+		for prev, next := lastRunTime.Add(-maxDSTRewind), schedule.Next(lastRunTime.Add(-maxDSTRewind)); next.After(prev) && !next.After(lastRunTime); prev, next = next, schedule.Next(next) {
+			fired.repeat(newWallSecond(next))
+		}
+	}
 	// A zero or non-advancing Next (a schedule that never fires, or one past its
 	// search horizon) ends the walk instead of spinning on the same tick.
 	for prev, next := lastRunTime, schedule.Next(lastRunTime); next.After(prev) && !next.After(now); prev, next = next, schedule.Next(next) {
