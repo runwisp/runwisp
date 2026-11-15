@@ -847,6 +847,7 @@ func (m *Model) handleSystemSample(evt apiclient.RunStreamEvent) {
 	m.info.TaskUsage = sample.Tasks
 	m.info.RunUsage = sample.Runs
 	m.infoView.SetTaskUsage(sample.Tasks)
+	m.execList.SetLiveUsage(sample.Runs)
 	if m.execView != nil {
 		m.execView.Usage = m.runUsage(m.execView.RunID())
 	}

@@ -983,12 +983,12 @@ func TestUsageCells_ColorByUsualRun(t *testing.T) {
 	run := model.Run{Status: model.PhaseEnded, CPUTimeMs: &cpu, PeakMemoryBytes: &mem}
 	usual := &uikit.RunUsage{CPUMs: 10_000, MemBytes: 16 << 20}
 
-	c, m := usageCells(&run, usual, false)
+	c, m := usageCells(&run, nil, usual, false)
 	if c.fg != uikit.ColorError || m.fg != nil {
 		t.Errorf("expected a 2x CPU run flagged and usual RAM left plain, got %v / %v", c.fg, m.fg)
 	}
 	// The cursor row keeps its own highlight colour.
-	if c, _ := usageCells(&run, usual, true); c.fg != nil {
+	if c, _ := usageCells(&run, nil, usual, true); c.fg != nil {
 		t.Errorf("expected no colour on the cursor row, got %v", c.fg)
 	}
 }
@@ -1082,5 +1082,19 @@ func TestStatusLabel_FitsTheBadge(t *testing.T) {
 		if got := uikit.VisibleWidth(uikit.StatusLabel(string(r))); got > statusColW-2 {
 			t.Errorf("%s label is %d cells, the badge fits %d", r, got, statusColW-2)
 		}
+	}
+}
+
+// A running run has no stored CPU time or peak memory yet, so its cells show
+// the live sample instead of a dash.
+func TestUsageCells_RunningShowsLiveUsage(t *testing.T) {
+	run := model.Run{ID: "r1", Status: model.PhaseRunning}
+	live := map[string]model.ResourceUsage{"r1": {CPUPercent: 12.4, MemoryBytes: 48 << 20}}
+	c, m := usageCells(&run, live, nil, false)
+	if c.text != "12%" || m.text != "48 MB" {
+		t.Errorf("expected live 12%% / 48 MB, got %q / %q", c.text, m.text)
+	}
+	if c, _ := usageCells(&run, nil, nil, false); c.text != "–" {
+		t.Errorf("expected a dash without a sample, got %q", c.text)
 	}
 }

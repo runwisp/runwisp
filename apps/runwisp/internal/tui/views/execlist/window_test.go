@@ -710,7 +710,7 @@ func TestBaselines_PerTask(t *testing.T) {
 		t.Fatalf("expected each task's own median CPU, got light %d, heavy %d", got["light"].usage.CPUMs, got["heavy"].usage.CPUMs)
 	}
 	// 30s is unusual for the light task even though the heavy one dwarfs it.
-	if c, _ := usageCells(&w.Item(4).Run, got["light"].usage, false); c.fg != uikit.ColorError {
+	if c, _ := usageCells(&w.Item(4).Run, nil, got["light"].usage, false); c.fg != uikit.ColorError {
 		t.Errorf("expected a 30s run flagged against its own task's 2s, got %v", c.fg)
 	}
 }

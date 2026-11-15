@@ -43,6 +43,9 @@ type ExecList struct {
 	// instanceCount resolves a task's currently configured instance count so
 	// multi-instance services render a 1-based #N suffix. nil ⇒ no suffix.
 	instanceCount func(taskName string) int
+	// liveUsage is each running run's live CPU and memory use by run ID, from
+	// the latest system sample.
+	liveUsage map[string]model.ResourceUsage
 	// selected holds the run IDs explicitly toggled with space. selectAll
 	// overrides it: when set, the selection is "every run matching the active
 	// filter", rendered all-checked and acted on with a MatchAll selector. The
@@ -59,6 +62,12 @@ func NewExecList(w *ExecWindow) ExecList {
 // whether a row's task name gets a #N instance suffix.
 func (e *ExecList) SetInstanceCountLookup(fn func(taskName string) int) {
 	e.instanceCount = fn
+}
+
+// SetLiveUsage replaces the running runs' live CPU and memory use, keyed by
+// run ID, shown in their CPU and RAM cells.
+func (e *ExecList) SetLiveUsage(u map[string]model.ResourceUsage) {
+	e.liveUsage = u
 }
 
 // SetSize updates the available dimensions.
@@ -322,7 +331,7 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 		return rowStyle.Render("  " + padCell("loading…", cw.rowWidth()-2))
 	}
 	usual := baselines[item.Run.TaskName]
-	cpu, mem := usageCells(&item.Run, usual.usage, isCursor)
+	cpu, mem := usageCells(&item.Run, e.liveUsage, usual.usage, isCursor)
 	return rowStyle.Render(e.rowPrefix(item.Run.ID)+padCell(e.firstCell(item.Run, cw), cw.first)+" ") +
 		statusCell(item.Run.DisplayStatus(), cw.status, rowStyle) +
 		trailingCells(cw, rowStyle, cell{text: e.startedCell(item, cw)}, durationCell(item, usual.duration, isCursor),
@@ -365,8 +374,12 @@ func outputCell(run *model.Run, band *uikit.OutputBand, isCursor bool) cell {
 
 // usageCells are a run's CPU and RAM cells, colored by how they compare with
 // the task's usual run so a heavy one stands out, like the web UI's usage bars.
-// The cursor row keeps its own highlight colour.
-func usageCells(run *model.Run, usual *uikit.RunUsage, isCursor bool) (cpu, mem cell) {
+// A running run shows its live CPU percent and resident memory instead,
+// uncolored like its DURATION. The cursor row keeps its own highlight colour.
+func usageCells(run *model.Run, live map[string]model.ResourceUsage, usual *uikit.RunUsage, isCursor bool) (cpu, mem cell) {
+	if l, ok := live[run.ID]; ok && run.Status == model.PhaseRunning {
+		return cell{text: fmt.Sprintf("%.0f%%", l.CPUPercent)}, cell{text: config.FormatByteSize(l.MemoryBytes)}
+	}
 	u, ok := uikit.MeasuredUsage(run)
 	if !ok {
 		if isCursor {
