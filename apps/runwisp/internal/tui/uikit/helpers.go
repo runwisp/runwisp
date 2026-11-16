@@ -20,8 +20,9 @@ const SidebarWidth = 28
 
 // MaxContentWidth bounds the main content panel on wide terminals so the table
 // and header don't stretch edge-to-edge. The panel is left-aligned against the
-// sidebar; any extra width is filled with the app background.
-const MaxContentWidth = 110
+// sidebar; any extra width is filled with the app background. It leaves room
+// for Home's widest table (CPU, RAM and OUTPUT included) plus its scrollbar.
+const MaxContentWidth = 115
 
 // OnBg is a style that draws fg text on a bg fill.
 func OnBg(bg, fg color.Color) lipgloss.Style {

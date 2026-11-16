@@ -32,12 +32,17 @@ func TestOnCalendarToCron(t *testing.T) {
 		{"*-*-* 02:00 Europe/Bratislava", "0 2 * * *", "Europe/Bratislava", true},
 		{"daily UTC", "0 0 * * *", "UTC", true},
 		{"Mon,Wed,Fri 08:00", "0 8 * * 1,3,5", "", true},
+		// systemd still reads "-" as a weekday range, for backwards compatibility.
+		{"Mon-Fri 09:00", "0 9 * * 1-5", "", true},
+		{"Mon-Fri *-*-* 09:00", "0 9 * * 1-5", "", true}, // was silently daily
+		{"Sat,Mon-Wed *-*-* 07:00", "0 7 * * 6,1-3", "", true},
 		{"*-*-* *:*:*", "* * * * * *", "", true},
 		{"03-15 12:00", "0 12 15 3 *", "", true},
 		{"2027-*-* 00:00", "", "", false},       // a year cron can't say
 		{"Mon *-*-01..07 00:00", "", "", false}, // systemd ANDs these, cron ORs
 		{"*-*-* 00:00:00.5", "", "", false},
 		{"every tuesday", "", "", false},
+		{"*-*-01 *-*-02 00:00", "", "", false}, // two dates
 		{"", "", "", false},
 	}
 	for _, tc := range cases {

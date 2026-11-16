@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -503,19 +504,28 @@ func TestStyleForStream_AllStreams(t *testing.T) {
 	assert.Equal(t, stdout, styleForStream("unknown", stdout, stderr, system))
 }
 
-// ---- trimTrailingRuneIfClipped ----
+// ---- trimTrailingCellIfClipped ----
 
 func TestTrimTrailingRuneIfClipped_NotClipped(t *testing.T) {
-	assert.Equal(t, "hello", trimTrailingRuneIfClipped("hello", false))
+	assert.Equal(t, "hello", trimTrailingCellIfClipped("hello", false))
 }
 
 func TestTrimTrailingRuneIfClipped_Clipped(t *testing.T) {
-	got := trimTrailingRuneIfClipped("hello", true)
+	got := trimTrailingCellIfClipped("hello", true)
 	assert.Equal(t, "hell", got)
 }
 
+// A decomposed accent (macOS filenames are NFD) ends the slice with a
+// zero-width combining mark: dropping only that rune freed no column, so the
+// "▸" indicator pushed the row one cell past the pane.
+func TestTrimTrailingRuneIfClipped_CombiningMarkFreesACell(t *testing.T) {
+	sliced, clipped := uikit.SliceLineColumns("cafe\u0301 menu", 0, 4)
+	got := trimTrailingCellIfClipped(sliced, clipped)
+	assert.Equal(t, 3, uikit.VisibleWidth(got))
+}
+
 func TestTrimTrailingRuneIfClipped_EmptyClipped(t *testing.T) {
-	got := trimTrailingRuneIfClipped("", true)
+	got := trimTrailingCellIfClipped("", true)
 	assert.Equal(t, "", got)
 }
 

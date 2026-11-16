@@ -78,7 +78,9 @@
             onBulkDelete={selection.handleBulkDelete}
             onBulkRerun={selection.handleBulkRerun}
             {getInstanceCount}
+            getLive={(id) => systemStore.runLive(id)}
             motion={live.source.motion}
+            usageBars
             folded={rail.listFolded}
             onToggleFold={rail.collapsible ? rail.toggleList : undefined}
         />

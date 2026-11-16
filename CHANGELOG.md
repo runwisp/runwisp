@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-15
+
+### Added
+
+- On a terminal 143 columns or wider, the TUI Home run list also shows CPU, RAM and OUTPUT, with live CPU, memory and output lines for running runs. Home and the Web UI's Runs page color each run against its own task's usual run, and the Runs page shows the CPU, RAM and output bars. Running runs in the Web UI's run lists show the same live values.
+
+### Fixed
+
+- The TUI redraws at most 60 times a second while following a busy log or event stream, instead of once per line, so it uses far less CPU.
+- Failure notifications include the last lines of the run's output again.
+- Restarting the daemon after a DST fall-back no longer reports the repeated hour's ticks as missed or runs them again.
+- `import systemd` reads weekday ranges written as `Mon-Fri` in `OnCalendar=`, which used to import as a daily schedule.
+- `import supervisord` turns `%%` into a single `%` in `command`, `environment` and `directory`, as supervisord does.
+- Run durations in the Web UI no longer go negative when the browser's clock is behind the daemon's.
+- The TUI log view no longer draws a row one column too wide when a line is cut right after an accented character.
+
 ## [1.9.3] - 2026-11-12
 
 ### Changed
@@ -1232,7 +1248,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.9.3...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.10.0...main
+[1.10.0]: https://github.com/runwisp/runwisp/compare/v1.9.3...v1.10.0
 [1.9.3]: https://github.com/runwisp/runwisp/compare/v1.9.2...v1.9.3
 [1.9.2]: https://github.com/runwisp/runwisp/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/runwisp/runwisp/compare/v1.9.0...v1.9.1

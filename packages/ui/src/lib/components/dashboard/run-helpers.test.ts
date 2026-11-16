@@ -13,11 +13,13 @@ import {
     formatTriggeredByLabel,
     runRetryLabel,
     runUsageLabel,
+    runLiveLabel,
     runUsageScale,
     usageLevel,
     usualDuration,
     outputBand,
     runOutputScale,
+    runScalesByTask,
     outputUnusual,
     formatLines,
     runOutputLabel,
@@ -140,6 +142,26 @@ describe("formatTriggeredByLabel", () => {
         expect(formatTriggeredByLabel("service")).toBe("Service");
         expect(formatTriggeredByLabel("startup")).toBe("Startup");
         expect(formatTriggeredByLabel("station")).toBe("Station");
+    });
+});
+
+describe("runLiveLabel", () => {
+    it("is undefined before the first sample", () => {
+        expect(runLiveLabel(undefined)).toBeUndefined();
+        expect(runLiveLabel({ usage: undefined, outputLines: undefined })).toBeUndefined();
+    });
+
+    it("joins live CPU, memory and lines printed so far", () => {
+        expect(
+            runLiveLabel({
+                usage: { cpuPercent: 12.4, memoryBytes: 48 * 1024 * 1024 },
+                outputLines: 3,
+            }),
+        ).toBe("CPU 12% · 48 MB · 3 lines");
+    });
+
+    it("shows lines alone for a run without CPU and memory", () => {
+        expect(runLiveLabel({ usage: undefined, outputLines: 0 })).toBe("0 lines");
     });
 });
 
@@ -344,5 +366,41 @@ describe("output band", () => {
         expect(
             runOutputLabel({ status: "running", stdoutLines: 1, stderrLines: 0 }),
         ).toBeUndefined();
+    });
+});
+
+describe("runScalesByTask", () => {
+    const run = (taskName: string, cpuTimeMs: number, seconds: number) => ({
+        taskName,
+        status: "ended" as const,
+        cpuTimeMs,
+        peakMemoryBytes: 1024,
+        startedAt: "2026-01-01T00:00:00Z",
+        endedAt: new Date(Date.parse("2026-01-01T00:00:00Z") + seconds * 1000).toISOString(),
+    });
+
+    it("judges each task against its own runs", () => {
+        const runs = [
+            run("light", 2_000, 5),
+            run("heavy", 60_000, 300),
+            run("light", 2_000, 5),
+            run("light", 30_000, 90),
+        ];
+        const scales = runScalesByTask(runs);
+        expect(scales.get("light")?.usage?.usual.cpu).toBe(2_000);
+        expect(scales.get("light")?.durationUsual).toBe(5_000);
+        expect(scales.get("heavy")?.usage).toEqual({
+            max: { cpu: 60_000, ram: 1024 },
+            usual: { cpu: 60_000, ram: 1024 },
+        });
+    });
+
+    it("matches the whole-list helpers for a single task", () => {
+        const runs = [run("backup", 100, 20), run("backup", 110, 240), run("backup", 30, 18)];
+        expect(runScalesByTask(runs).get("backup")).toEqual({
+            usage: runUsageScale(runs),
+            output: runOutputScale(runs),
+            durationUsual: usualDuration(runs),
+        });
     });
 });

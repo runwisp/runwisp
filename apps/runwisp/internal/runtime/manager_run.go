@@ -181,7 +181,10 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 	run.End(task, outcome.endReason, result.ExitCode, endTime)
 
 	m.persistence.PersistExisting(run)
-	m.publishTerminal(outcome.eventType, run, "")
+	// publishTerminal's barrier, plus the log path: notify quotes the output
+	// tail from it, and the terminal event is the one it reads.
+	m.persistence.Flush()
+	m.eventBus.Publish(outcome.eventType, events.RunEvent{Run: run.Copy(), LogPath: result.LogPath})
 
 	if serviceFatal {
 		m.publishServiceFatal(task.Name, run.InstanceIndex, fatalAttempts, result.ExitCode)

@@ -547,13 +547,28 @@ func secondsValue(value string) (string, bool) {
 	return strconv.Itoa(n) + "s", true
 }
 
-// expandSupervisordTokens resolves the %(program_name)s expansion and reports
+// expandSupervisordTokens applies supervisord's Python %-interpolation: it
+// resolves %(program_name)s, collapses the %% escape to a literal %, and reports
 // whether any expansions RunWisp can't fill (%(ENV_x)s, %(process_num)s, …)
-// remain in the string.
+// remain in the string. Those are kept as written.
 func expandSupervisordTokens(s, programName string) (string, bool) {
-	s = strings.ReplaceAll(s, "%(program_name)s", programName)
-	unresolved := strings.Contains(s, "%(")
-	return s, unresolved
+	const name = "%(program_name)s"
+	var b strings.Builder
+	unresolved := false
+	for i := 0; i < len(s); i++ {
+		switch {
+		case strings.HasPrefix(s[i:], "%%"):
+			b.WriteByte('%')
+			i++
+		case strings.HasPrefix(s[i:], name):
+			b.WriteString(programName)
+			i += len(name) - 1
+		default:
+			unresolved = unresolved || strings.HasPrefix(s[i:], "%(")
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String(), unresolved
 }
 
 // parseSupervisordEnv parses a supervisord `environment=` value of the form

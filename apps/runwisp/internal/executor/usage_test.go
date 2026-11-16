@@ -4,8 +4,12 @@
 package executor
 
 import (
+	"context"
 	"testing"
+	"time"
 
+	"github.com/oklog/ulid/v2"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/procstat"
 	"github.com/stretchr/testify/assert"
@@ -43,4 +47,19 @@ func TestTrackWithoutPidHasNoUsage(t *testing.T) {
 	pm, cpu := runUsage(nil, peak, ok)
 	assert.Nil(t, pm)
 	assert.Nil(t, cpu)
+}
+
+// A running run's printed lines are readable while it runs, and it drops out
+// of RunOutputLines once it has ended.
+func TestRunOutputLinesWhileRunning(t *testing.T) {
+	e := New(Options{LogDir: t.TempDir(), EventBus: events.NewEventBus(), HasLocalTasks: true})
+	run := &model.Run{ID: ulid.Make().String(), Status: model.PhaseRunning}
+	done := make(chan *ExecuteResult)
+	go func() {
+		done <- e.Execute(context.Background(), &model.Task{Name: "t", Run: "echo a; echo b >&2; sleep 1"}, run)
+	}()
+
+	assert.Eventually(t, func() bool { return e.RunOutputLines()[run.ID] == 2 }, 5*time.Second, 10*time.Millisecond)
+	<-done
+	assert.NotContains(t, e.RunOutputLines(), run.ID)
 }

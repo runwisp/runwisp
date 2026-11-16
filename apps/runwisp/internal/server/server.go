@@ -71,6 +71,8 @@ type Server struct {
 	updateStatus func() (bool, string)
 	// runUsage reports live CPU/memory per running run.
 	runUsage func() map[string]model.ResourceUsage
+	// runOutputLines reports how many lines each running run has printed.
+	runOutputLines func() map[string]int64
 	// configStaleLast tracks the last staleness value broadcast over the event
 	// bus so the collector goroutine only emits an EventConfigStale when it
 	// flips. Touched solely by the metrics onSample callback (single goroutine).
@@ -141,6 +143,7 @@ type Options struct {
 	UpdateStatus        func() (bool, string)                 // Per-request update-availability probe for /api/daemon (optional; nil reports never-available)
 	TaskUsage           func() map[string]model.ResourceUsage // Live CPU/memory per task (optional; nil reports none)
 	RunUsage            func() map[string]model.ResourceUsage // Live CPU/memory per running run, by run ID (optional; nil reports none)
+	RunOutputLines      func() map[string]int64               // Lines printed so far per running run, by run ID (optional; nil reports none)
 	DaemonLogBuffer     *DaemonLogBuffer                      // Ring buffer for daemon log streaming (optional)
 	MetricsEnabled      bool                                  // When false, /metrics is not mounted anywhere
 	MetricsListen       string                                // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
@@ -235,6 +238,10 @@ func New(opts Options) (*Server, error) {
 	s.runUsage = opts.RunUsage
 	if s.runUsage == nil {
 		s.runUsage = noUsage
+	}
+	s.runOutputLines = opts.RunOutputLines
+	if s.runOutputLines == nil {
+		s.runOutputLines = noOutputLines
 	}
 	s.metrics = NewMetricsCollector(32) // ~2.5 min at 5s intervals; sampling starts in Start()
 	s.daemonLogBuffer = opts.DaemonLogBuffer

@@ -32,7 +32,7 @@ min_free_space: size =0(no check) — stop accepting log lines when partition fr
 ```
 name:                 string      — display label shown instead of the fingerprint (TUI, Web UI, tab title, notification footers); ${HOSTNAME} falls back to os hostname
 allow_station_dispatch: bool =false — accept peer-dispatched ad-hoc shell/container/compose runs (opt-in; one-shot, never edits TOML; HTTP & existing-task triggers always allowed)
-allow_station_upgrade: bool =false — let the Station upgrade the daemon to a release (from GitHub releases, checksum-verified) and restart it; only for self-replaced release binaries under systemd/launchd; restart-only (since 1.10)
+allow_station_upgrade: bool =false — let the Station upgrade the daemon to a release (from GitHub releases, checksum-verified) and restart it; only for self-replaced release binaries under systemd/launchd; restart-only (since 1.11)
 shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flight runs on shutdown
 timezone:             IANA string =host system zone — TZ for cron eval when a task pins none
 external_url:         string =last signed-in Web UI address — public Web UI base for notification deep-links; absolute http(s) w/ host; unset = detected from the latest browser password sign-in to the Web UI (persisted; `--url` clients and TUI-opened tabs don't count; never with RUNWISP_AUTH=off)

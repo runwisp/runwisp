@@ -56,6 +56,9 @@ describe("formatDuration", () => {
     it("returns ms for 0", () => {
         expect(formatDuration(0)).toBe("0ms");
     });
+    it("reads a negative span (browser clock behind the daemon) as 0ms", () => {
+        expect(formatDuration(-2500)).toBe("0ms");
+    });
     it("returns ms for < 1 second", () => {
         expect(formatDuration(999)).toBe("999ms");
     });

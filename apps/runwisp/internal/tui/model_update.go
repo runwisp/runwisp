@@ -25,14 +25,32 @@ import (
 
 const keyCtrlC = "ctrl+c"
 
-// Update routes each message to its handler. The topmost open dialog gets
-// first claim on input.
+// Update routes each message to its handler, then decides whether the frame
+// Bubble Tea builds right after it is rebuilt or reused (see coalesced).
+// Direct input paints immediately; everything else (streamed log lines, SSE
+// events, daemon logs, mouse motion, fetch results) is throttled to ~60fps,
+// because Bubble Tea calls View() after every message and a chatty run would
+// otherwise rebuild the whole screen once per log line.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Reset the per-message frame-reuse flag; only a coalesced mouse motion/wheel
-	// (see handleMouse) sets it back on, so every other message rebuilds the view
-	// and no update is ever suppressed beyond one coalesce tick.
+	// Reset the per-message frame-reuse flag; coalesced sets it back on, so no
+	// update is ever suppressed beyond one coalesce tick.
 	m.coalesce = false
+	next, cmd := m.update(msg)
+	nm, ok := next.(Model)
+	if !ok {
+		return next, cmd
+	}
+	switch msg.(type) {
+	case tea.KeyPressMsg, tea.MouseClickMsg, tea.WindowSizeMsg, coalesceFlushMsg:
+		nm.lastRenderAt = time.Now()
+		return nm, cmd
+	}
+	return nm.coalesced(cmd)
+}
 
+// update routes each message to its handler. The topmost open dialog gets
+// first claim on input.
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if newModel, cmd, intercepted := m.interceptActiveDialog(msg); intercepted {
 		return newModel, cmd
 	}
@@ -122,11 +140,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case uikit.TickMsg:
 		return m.handleTick()
 	case coalesceFlushMsg:
-		// The coalesce window elapsed; the reset at the top of Update already
-		// cleared m.coalesce, so this frame rebuilds fresh. Record it as the last
-		// real frame so the next event paces from here.
+		// The coalesce window elapsed; Update renders this frame fresh.
 		m.flushPending = false
-		m.lastRenderAt = time.Now()
 	case uikit.QuitMsg:
 		return m.handleQuit(msg)
 	case uikit.FlashExpiredMsg:
@@ -847,6 +862,7 @@ func (m *Model) handleSystemSample(evt apiclient.RunStreamEvent) {
 	m.info.TaskUsage = sample.Tasks
 	m.info.RunUsage = sample.Runs
 	m.infoView.SetTaskUsage(sample.Tasks)
+	m.execList.SetLive(sample.Runs, sample.OutputLines)
 	if m.execView != nil {
 		m.execView.Usage = m.runUsage(m.execView.RunID())
 	}

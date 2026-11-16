@@ -43,6 +43,11 @@ type ExecList struct {
 	// instanceCount resolves a task's currently configured instance count so
 	// multi-instance services render a 1-based #N suffix. nil ⇒ no suffix.
 	instanceCount func(taskName string) int
+	// liveUsage and liveLines are each running run's live CPU and memory use
+	// and the lines it has printed so far, by run ID, from the latest system
+	// sample.
+	liveUsage map[string]model.ResourceUsage
+	liveLines map[string]int64
 	// selected holds the run IDs explicitly toggled with space. selectAll
 	// overrides it: when set, the selection is "every run matching the active
 	// filter", rendered all-checked and acted on with a MatchAll selector. The
@@ -59,6 +64,12 @@ func NewExecList(w *ExecWindow) ExecList {
 // whether a row's task name gets a #N instance suffix.
 func (e *ExecList) SetInstanceCountLookup(fn func(taskName string) int) {
 	e.instanceCount = fn
+}
+
+// SetLive replaces the running runs' live CPU and memory use and printed
+// line counts, keyed by run ID, shown in their CPU, RAM and OUTPUT cells.
+func (e *ExecList) SetLive(usage map[string]model.ResourceUsage, lines map[string]int64) {
+	e.liveUsage, e.liveLines = usage, lines
 }
 
 // SetSize updates the available dimensions.
@@ -298,16 +309,15 @@ func (e *ExecList) rowPrefix(runID string) string {
 	return checkboxEmpty + " "
 }
 
-// rowBaselines are what a scoped list judges each run's vitals against: the
-// task's usual duration, CPU and RAM, and its usual output band. nil when
-// unknown.
+// rowBaselines are what the list judges a run's vitals against: its task's
+// usual duration, CPU and RAM, and its usual output band. nil when unknown.
 type rowBaselines struct {
 	duration *time.Duration
 	usage    *uikit.RunUsage
 	output   *uikit.OutputBand
 }
 
-func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidths, usual rowBaselines) string {
+func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidths, baselines map[string]rowBaselines) string {
 	bg, fg, bold := uikit.ColorBg, uikit.ColorText, false
 	isCursor := e.focused && rowIdx == e.cursor
 	isHovered := rowIdx == e.hoveredRow && !isCursor
@@ -322,11 +332,12 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	if item == nil {
 		return rowStyle.Render("  " + padCell("loading…", cw.rowWidth()-2))
 	}
-	cpu, mem := usageCells(&item.Run, usual.usage, isCursor)
+	usual := baselines[item.Run.TaskName]
+	cpu, mem := usageCells(&item.Run, e.liveUsage, usual.usage, isCursor)
 	return rowStyle.Render(e.rowPrefix(item.Run.ID)+padCell(e.firstCell(item.Run, cw), cw.first)+" ") +
 		statusCell(item.Run.DisplayStatus(), cw.status, rowStyle) +
 		trailingCells(cw, rowStyle, cell{text: e.startedCell(item, cw)}, durationCell(item, usual.duration, isCursor),
-			cpu, mem, outputCell(&item.Run, usual.output, isCursor), cell{text: string(item.Run.TriggeredBy)})
+			cpu, mem, outputCell(&item.Run, e.liveLines, usual.output, isCursor), cell{text: string(item.Run.TriggeredBy)})
 }
 
 // durationCell is a run's DURATION cell, colored like CPU and RAM by how it
@@ -342,9 +353,13 @@ func durationCell(item *uikit.ExecListItem, usual *time.Duration, isCursor bool)
 
 // outputCell is a run's OUTPUT cell, its line count, in the warning colour
 // when the run printed far more or far less than the task usually does. The
-// cursor row keeps its own highlight colour.
-func outputCell(run *model.Run, band *uikit.OutputBand, isCursor bool) cell {
+// cursor row keeps its own highlight colour. A running run shows the lines it
+// has printed so far, uncolored like its DURATION.
+func outputCell(run *model.Run, live map[string]int64, band *uikit.OutputBand, isCursor bool) cell {
 	lines, ok := run.OutputLines()
+	if l, isLive := live[run.ID]; isLive && run.Status == model.PhaseRunning {
+		lines, ok, band = l, true, nil
+	}
 	var c cell
 	switch {
 	case !ok:
@@ -365,8 +380,12 @@ func outputCell(run *model.Run, band *uikit.OutputBand, isCursor bool) cell {
 
 // usageCells are a run's CPU and RAM cells, colored by how they compare with
 // the task's usual run so a heavy one stands out, like the web UI's usage bars.
-// The cursor row keeps its own highlight colour.
-func usageCells(run *model.Run, usual *uikit.RunUsage, isCursor bool) (cpu, mem cell) {
+// A running run shows its live CPU percent and resident memory instead,
+// uncolored like its DURATION. The cursor row keeps its own highlight colour.
+func usageCells(run *model.Run, live map[string]model.ResourceUsage, usual *uikit.RunUsage, isCursor bool) (cpu, mem cell) {
+	if l, ok := live[run.ID]; ok && run.Status == model.PhaseRunning {
+		return cell{text: fmt.Sprintf("%.0f%%", l.CPUPercent)}, cell{text: config.FormatByteSize(l.MemoryBytes)}
+	}
 	u, ok := uikit.MeasuredUsage(run)
 	if !ok {
 		if isCursor {
@@ -457,17 +476,7 @@ func trailingCells(cw colWidths, style lipgloss.Style, cells ...cell) string {
 
 func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, contentW int, cw colWidths, sb scrollbarRender) {
 	end := min(e.Scroll+vpH, n)
-	var usual rowBaselines
-	// Only a scoped list has one task's runs to judge a duration against.
-	if cw.scoped && cw.duration > 0 {
-		usual.duration = e.window.UsualDuration()
-	}
-	if cw.cpu > 0 || cw.mem > 0 {
-		usual.usage = e.window.UsualUsage()
-	}
-	if cw.output > 0 {
-		usual.output = e.window.UsualOutput()
-	}
+	usual := e.window.Baselines()
 	// contentW is w when no scrollbar shows and w-1 when it does; the scrollbar
 	// glyph is exactly one cell. So a row padded to contentW plus the scrollbar
 	// is already exactly w cells — no second PadLine pass needed. Skipping it
