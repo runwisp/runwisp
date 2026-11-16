@@ -5,10 +5,12 @@ package station
 
 import (
 	"context"
+	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // TaskRunner is the slice of runtime.TaskManager the station integration
@@ -16,7 +18,7 @@ import (
 // Method contracts are documented on the runtime implementation.
 type TaskRunner interface {
 	GetTask(taskName string) (*model.Task, bool)
-	// ListServiceTasks feeds tasks.sync, so station-declared services (never
+	// ListServiceTasks feeds tasks:sync, so station-declared services (never
 	// in the TOML) are reported as live on this runner.
 	ListServiceTasks() []*model.Task
 	UpsertTask(task *model.Task)
@@ -25,7 +27,7 @@ type TaskRunner interface {
 	// the TOML registry, so it has no reconcile-driven removal path.
 	RemoveTask(taskName string)
 	TriggerRunWithOptions(taskName string, options runtime.TriggerRunOptions) (*model.Run, error)
-	TerminateRunByExecutionID(executionID string) error
+	StopRunByExecutionID(executionID string, grace time.Duration, force bool) error
 	StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error
 	StartService(taskName string) error
 	StopService(taskName string) error
@@ -39,6 +41,10 @@ type ExternalRunGetter interface {
 	// GetRunByExecutionID returns the run tagged with the supplied
 	// station-side execution id, or storage.ErrNotFound if no such run exists.
 	GetRunByExecutionID(ctx context.Context, executionID string) (*model.Run, error)
+	// GetRun returns the run with the given id, or storage.ErrNotFound.
+	GetRun(ctx context.Context, id string) (*model.Run, error)
+	// QueryRuns lists runs matching q, newest first by default.
+	QueryRuns(ctx context.Context, q storage.RunQuery) ([]model.Run, error)
 }
 
 // EventSubscriber is the subset of the in-process event hub the station bridge

@@ -48,6 +48,11 @@ func loadDaemonConfig(ctx context.Context, configRepo *storage.SQLiteDatabase, m
 		if err != nil {
 			return nil, err
 		}
+		if configRepo != nil {
+			if err := station.ApplyRotatedToken(ctx, configRepo, &stationCfg); err != nil {
+				slog.Warn("failed to read the token the station rotated in; using the configured token", "err", err)
+			}
+		}
 	}
 
 	cfg, err := loadConfig(src, stationCfg.Enabled)
@@ -201,7 +206,7 @@ func loadConfig(src config.Source, stationEnabled bool) (*config.Config, error) 
 	if stationEnabled {
 		cfg := &config.Config{}
 		config.ApplyDefaults(cfg)
-		if perr := config.ApplyTrustedProxiesEnv(cfg); perr != nil {
+		if perr := config.ApplyDaemonEnv(cfg); perr != nil {
 			return nil, perr
 		}
 		return cfg, nil

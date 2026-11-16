@@ -6,6 +6,8 @@ package station
 import (
 	"encoding/json"
 	"errors"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 // --- fakeTaskRunner for dispatch resolver tests ---
 
 type fakeTaskRunner struct {
+	mu        sync.Mutex
 	tasks     map[string]*model.Task
 	upserted  []*model.Task
 	removed   []string
@@ -38,11 +41,15 @@ type fakeTaskRunner struct {
 }
 
 func (f *fakeTaskRunner) GetTask(name string) (*model.Task, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	t, ok := f.tasks[name]
 	return t, ok
 }
 
 func (f *fakeTaskRunner) ListServiceTasks() []*model.Task {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	out := make([]*model.Task, 0, len(f.tasks))
 	for _, t := range f.tasks {
 		if t != nil && t.Kind.IsService() {
@@ -53,6 +60,8 @@ func (f *fakeTaskRunner) ListServiceTasks() []*model.Task {
 }
 
 func (f *fakeTaskRunner) UpsertTask(task *model.Task) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.tasks == nil {
 		f.tasks = make(map[string]*model.Task)
 	}
@@ -61,11 +70,15 @@ func (f *fakeTaskRunner) UpsertTask(task *model.Task) {
 }
 
 func (f *fakeTaskRunner) RemoveTask(taskName string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	delete(f.tasks, taskName)
 	f.removed = append(f.removed, taskName)
 }
 
 func (f *fakeTaskRunner) MutateTask(name string, mutate func(*model.Task) error) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	t, ok := f.tasks[name]
 	if !ok {
 		return false, nil
@@ -83,47 +96,59 @@ func (f *fakeTaskRunner) MutateTask(name string, mutate func(*model.Task) error)
 }
 
 func (f *fakeTaskRunner) TriggerRunWithOptions(_ string, opts runtime.TriggerRunOptions) (*model.Run, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.trigOpts = opts
 	f.triggered = append(f.triggered, opts.ExecutionID)
 	return f.trigRun, f.trigErr
 }
 
-func (f *fakeTaskRunner) TerminateRunByExecutionID(externalID string) error {
+func (f *fakeTaskRunner) StopRunByExecutionID(string, time.Duration, bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	return errors.New("not found")
 }
 
 func (f *fakeTaskRunner) StartServiceInstances(taskName string, _ model.TriggeredBy) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.startedServices = append(f.startedServices, taskName)
 	return f.serviceErr
 }
 
 func (f *fakeTaskRunner) StartService(taskName string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.startedServices = append(f.startedServices, taskName)
 	return f.serviceErr
 }
 
 func (f *fakeTaskRunner) StopService(taskName string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.stoppedServices = append(f.stoppedServices, taskName)
 	return f.serviceErr
 }
 
 func (f *fakeTaskRunner) RestartServiceInstances(taskName string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.restartedServices = append(f.restartedServices, taskName)
 	return f.serviceErr
 }
 
 func (f *fakeTaskRunner) ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	return f.snapshot, f.snapshotOK
 }
 
 func newDispatchHandler(avail executor.Availability, tasks map[string]*model.Task) *InboundHandler {
 	runner := &fakeTaskRunner{tasks: tasks}
 	return &InboundHandler{
-		taskManager:     runner,
-		logDir:          "/tmp",
-		availability:    avail,
-		queueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
-		logListeners:    make(map[string]struct{}),
+		taskManager:  runner,
+		logDir:       "/tmp",
+		availability: avail,
 	}
 }
 
@@ -159,11 +184,11 @@ func httpScript(t *testing.T, url string) json.RawMessage {
 
 func TestResolveDispatchTask_InvalidJSON(t *testing.T) {
 	h := newDispatchHandler(executor.Availability{}, nil)
-	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: json.RawMessage(`not-json`)})
+	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{Spec: json.RawMessage(`not-json`)})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeInvalid, ce.Code)
 }
 
 func TestResolveDispatchTask_UnavailableBackend(t *testing.T) {
@@ -171,11 +196,11 @@ func TestResolveDispatchTask_UnavailableBackend(t *testing.T) {
 		Shell: executor.BackendStatus{Available: false, Reason: "no shell"},
 	}
 	h := newDispatchHandler(avail, nil)
-	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: shellScript(t, "echo hi")})
+	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{Spec: shellScript(t, "echo hi")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeUnavailable, ce.Code)
 }
 
 func TestResolveDispatchTask_ConfigTaskFound(t *testing.T) {
@@ -185,7 +210,7 @@ func TestResolveDispatchTask_ConfigTaskFound(t *testing.T) {
 	tasks := map[string]*model.Task{"mytask": {Name: "mytask", ManualTrigger: true}}
 	h := newDispatchHandler(avail, tasks)
 
-	name, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "mytask")})
+	name, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{Spec: configScript(t, "mytask")})
 	require.NoError(t, err)
 	assert.Equal(t, "mytask", name)
 }
@@ -200,11 +225,11 @@ func TestResolveDispatchTask_ConfigTaskManualTriggerDisabled(t *testing.T) {
 	tasks := map[string]*model.Task{"mytask": {Name: "mytask", ManualTrigger: false}}
 	h := newDispatchHandler(avail, tasks)
 
-	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "mytask")})
+	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{Spec: configScript(t, "mytask")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeForbidden, ce.Code)
 	assert.Contains(t, ce.Message, "manual_trigger")
 }
 
@@ -219,11 +244,11 @@ func TestResolveDispatchTask_ConfigTaskIsService(t *testing.T) {
 	tasks := map[string]*model.Task{"myservice": {Name: "myservice", Kind: model.KindService, ManualTrigger: true}}
 	h := newDispatchHandler(avail, tasks)
 
-	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "myservice")})
+	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{Spec: configScript(t, "myservice")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeForbidden, ce.Code)
 	assert.Contains(t, ce.Message, "service")
 }
 
@@ -233,11 +258,11 @@ func TestResolveDispatchTask_ConfigTaskNotFound(t *testing.T) {
 	}
 	h := newDispatchHandler(avail, nil)
 
-	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "missing")})
+	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{Spec: configScript(t, "missing")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeNotFound, ce.Code)
 }
 
 func TestResolveDispatchTask_ShellInlineUpserted(t *testing.T) {
@@ -246,16 +271,14 @@ func TestResolveDispatchTask_ShellInlineUpserted(t *testing.T) {
 	}
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
 	h := &InboundHandler{
-		taskManager:     runner,
-		logDir:          "/tmp",
-		availability:    avail,
-		queueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
-		logListeners:    make(map[string]struct{}),
+		taskManager:  runner,
+		logDir:       "/tmp",
+		availability: avail,
 	}
 
-	name, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
-		TaskID: "my-task",
-		Script: shellScript(t, "echo hello"),
+	name, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{
+		Task: &protocol.TaskRef{ID: "my-task"},
+		Spec: shellScript(t, "echo hello"),
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, name)
@@ -269,22 +292,20 @@ func TestResolveDispatchTask_ShellInlineUpserted(t *testing.T) {
 // upserted.
 func TestResolveDispatchTask_ContainerRejectedWhenDispatchDisabled(t *testing.T) {
 	avail := executor.Availability{
-		Container: executor.BackendStatus{Available: false, Reason: "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)"},
+		Container: executor.BackendStatus{Available: false, Reason: "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)", Policy: true},
 	}
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
 	h := &InboundHandler{
-		taskManager:     runner,
-		logDir:          "/tmp",
-		availability:    avail,
-		queueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
-		logListeners:    make(map[string]struct{}),
+		taskManager:  runner,
+		logDir:       "/tmp",
+		availability: avail,
 	}
 
-	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "evil", Script: containerScript(t, "rm -rf /")})
+	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "evil"}, Spec: containerScript(t, "rm -rf /")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeForbidden, ce.Code)
 	assert.Empty(t, runner.upserted, "rejected dispatch must not upsert a task")
 }
 
@@ -294,14 +315,12 @@ func TestResolveDispatchTask_ContainerInlineUpsertedWhenEnabled(t *testing.T) {
 	}
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
 	h := &InboundHandler{
-		taskManager:     runner,
-		logDir:          "/tmp",
-		availability:    avail,
-		queueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
-		logListeners:    make(map[string]struct{}),
+		taskManager:  runner,
+		logDir:       "/tmp",
+		availability: avail,
 	}
 
-	name, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "build", Script: containerScript(t, "echo hi")})
+	name, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "build"}, Spec: containerScript(t, "echo hi")})
 	require.NoError(t, err)
 	assert.NotEmpty(t, name)
 	assert.Len(t, runner.upserted, 1)
@@ -312,22 +331,20 @@ func TestResolveDispatchTask_ContainerInlineUpsertedWhenEnabled(t *testing.T) {
 // still makes a peer-directed network call, so it's not exempt from the opt-in.
 func TestResolveDispatchTask_HTTPRejectedWithoutDispatch(t *testing.T) {
 	avail := executor.Availability{
-		HTTP: executor.BackendStatus{Available: false, Reason: "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)"},
+		HTTP: executor.BackendStatus{Available: false, Reason: "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)", Policy: true},
 	}
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
 	h := &InboundHandler{
-		taskManager:     runner,
-		logDir:          "/tmp",
-		availability:    avail,
-		queueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
-		logListeners:    make(map[string]struct{}),
+		taskManager:  runner,
+		logDir:       "/tmp",
+		availability: avail,
 	}
 
-	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "probe", Script: httpScript(t, "https://example.com")})
+	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "probe"}, Spec: httpScript(t, "https://example.com")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeForbidden, ce.Code)
 	assert.Empty(t, runner.upserted, "rejected dispatch must not upsert a task")
 }
 
@@ -339,14 +356,12 @@ func TestResolveDispatchTask_HTTPAllowedWithDispatch(t *testing.T) {
 	}
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
 	h := &InboundHandler{
-		taskManager:     runner,
-		logDir:          "/tmp",
-		availability:    avail,
-		queueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
-		logListeners:    make(map[string]struct{}),
+		taskManager:  runner,
+		logDir:       "/tmp",
+		availability: avail,
 	}
 
-	name, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "probe", Script: httpScript(t, "https://example.com")})
+	name, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "probe"}, Spec: httpScript(t, "https://example.com")})
 	require.NoError(t, err)
 	assert.NotEmpty(t, name)
 }
@@ -365,14 +380,14 @@ func TestResolveDispatchTask_RejectsConfigTaskNameCollision(t *testing.T) {
 		map[string]*model.Task{"station-sync": local})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
-		TaskID: "sync",
-		Script: httpScript(t, "https://attacker.example/p"),
+	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{
+		Task: &protocol.TaskRef{ID: "sync"},
+		Spec: httpScript(t, "https://attacker.example/p"),
 	})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeConflict, ce.Code)
 	assert.Empty(t, runner.upserted, "the local task definition must survive untouched")
 	assert.Same(t, origExec, local.ExecutionDef)
 }
@@ -385,9 +400,9 @@ func TestResolveDispatchTask_EphemeralNameCollisionAllowed(t *testing.T) {
 		map[string]*model.Task{"station-probe": prior})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	name, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
-		TaskID: "probe",
-		Script: httpScript(t, "https://example.com"),
+	name, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{
+		Task: &protocol.TaskRef{ID: "probe"},
+		Spec: httpScript(t, "https://example.com"),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "station-probe", name)
@@ -404,7 +419,7 @@ func TestParseAvailableDef_ConfigAvailabilityIsLive(t *testing.T) {
 	_, err := h.parseAvailableDef(configScript(t, "backup"))
 	var se *StationError
 	require.ErrorAs(t, err, &se)
-	assert.Equal(t, StationErrorKindConflict, se.Kind)
+	assert.Equal(t, protocol.ErrorCodeUnavailable, se.Code)
 
 	registry.Set(&model.Task{Name: "backup"})
 	_, err = h.parseAvailableDef(configScript(t, "backup"))
@@ -413,7 +428,7 @@ func TestParseAvailableDef_ConfigAvailabilityIsLive(t *testing.T) {
 
 // --- buildDynamicStationTask ---
 
-func mustBuildDynamicStationTask(t *testing.T, dispatch *protocol.ExecutionPayload, def model.ExecutionDef) *model.Task {
+func mustBuildDynamicStationTask(t *testing.T, dispatch protocol.ExecutionDispatch, def model.ExecutionDef) *model.Task {
 	t.Helper()
 	task, err := buildDynamicStationTask(dispatch, def)
 	require.NoError(t, err)
@@ -422,51 +437,51 @@ func mustBuildDynamicStationTask(t *testing.T, dispatch *protocol.ExecutionPaylo
 
 func TestBuildDynamicStationTask_UsesTaskID(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{TaskID: "my-task"}, def)
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "my-task"}}, def)
 	assert.Equal(t, "station-my-task", task.Name)
 }
 
 func TestBuildDynamicStationTask_FallsBackToTaskName(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{TaskName: "backup"}, def)
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{Task: &protocol.TaskRef{Name: "backup"}}, def)
 	assert.Equal(t, "station-backup", task.Name)
 }
 
 func TestBuildDynamicStationTask_DefaultsToStationInline(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{}, def)
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{}, def)
 	assert.Equal(t, "station-inline", task.Name)
 }
 
 func TestBuildDynamicStationTask_LeavesConcurrencyToStation(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{TaskID: "t"}, def)
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "t"}}, def)
 	assert.Equal(t, config.MaxConcurrentCap, task.MaxConcurrent)
 }
 
 func TestBuildDynamicStationTask_SetsTimeout(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{TaskID: "t", Timeout: 5000}, def)
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "t"}, TimeoutMs: 5000}, def)
 	assert.Equal(t, 5000*time.Millisecond, task.TimeoutValue())
 }
 
 func TestBuildDynamicStationTask_ZeroTimeoutIgnored(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{TaskID: "t", Timeout: 0}, def)
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "t"}, TimeoutMs: 0}, def)
 	assert.Nil(t, task.Timeout)
 	assert.Equal(t, time.Duration(0), task.TimeoutValue())
 }
 
 func TestBuildDynamicStationTask_AppliesTaskConfig(t *testing.T) {
-	logOnFull := protocol.LogOnFullDropOld
+	logOnFull := "drop_old"
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{
-		TaskID: "t",
-		TaskConfig: &protocol.ExecutionTaskConfig{
-			Env:          map[string]string{"KEY": "val"},
-			GracefulStop: 3000,
-			LogMaxSize:   2048,
-			LogOnFull:    logOnFull,
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{
+		Task: &protocol.TaskRef{ID: "t"},
+		Options: &protocol.RunOptions{
+			Env:            map[string]string{"KEY": "val"},
+			GracefulStopMs: 3000,
+			LogMaxBytes:    2048,
+			LogOnFull:      logOnFull,
 		},
 	}, def)
 
@@ -478,7 +493,7 @@ func TestBuildDynamicStationTask_AppliesTaskConfig(t *testing.T) {
 
 func TestBuildDynamicStationTask_NilTaskConfigLeavesDefaults(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{TaskID: "t", TaskConfig: nil}, def)
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "t"}, Options: nil}, def)
 	assert.Empty(t, task.Env)
 	assert.Zero(t, task.GracefulStopValue())
 	assert.Zero(t, task.LogMaxSize)
@@ -487,9 +502,9 @@ func TestBuildDynamicStationTask_NilTaskConfigLeavesDefaults(t *testing.T) {
 
 func TestBuildDynamicStationTask_FailuresReplaceDefault(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{
-		TaskID:     "t",
-		TaskConfig: &protocol.ExecutionTaskConfig{Failures: []string{"2-3"}},
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{
+		Task:    &protocol.TaskRef{ID: "t"},
+		Options: &protocol.RunOptions{Failures: []string{"2-3"}},
 	}, def)
 
 	assert.True(t, task.IsFailureReason(model.ReasonFailed, 2, false))
@@ -499,9 +514,9 @@ func TestBuildDynamicStationTask_FailuresReplaceDefault(t *testing.T) {
 
 func TestBuildDynamicStationTask_FailuresDeltaAdjustsDefault(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, &protocol.ExecutionPayload{
-		TaskID:     "t",
-		TaskConfig: &protocol.ExecutionTaskConfig{Failures: []string{"-timeout", "+stopped"}},
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{
+		Task:    &protocol.TaskRef{ID: "t"},
+		Options: &protocol.RunOptions{Failures: []string{"-timeout", "+stopped"}},
 	}, def)
 
 	assert.False(t, task.IsFailureReason(model.ReasonTimeout, -1, false))
@@ -513,14 +528,14 @@ func TestResolveDispatchTask_RejectsInvalidFailures(t *testing.T) {
 	h := newDispatchHandler(executor.Availability{HTTP: executor.BackendStatus{Available: true}}, nil)
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	_, _, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
-		TaskID:     "probe",
-		Script:     httpScript(t, "https://example.com"),
-		TaskConfig: &protocol.ExecutionTaskConfig{Failures: []string{"bogus"}},
+	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{
+		Task:    &protocol.TaskRef{ID: "probe"},
+		Spec:    httpScript(t, "https://example.com"),
+		Options: &protocol.RunOptions{Failures: []string{"bogus"}},
 	})
 	var se *StationError
 	require.ErrorAs(t, err, &se)
-	assert.Equal(t, StationErrorKindValidation, se.Kind)
+	assert.Equal(t, protocol.ErrorCodeInvalid, se.Code)
 	assert.Contains(t, se.Message, `"bogus"`)
 	assert.Empty(t, runner.upserted)
 }
@@ -552,16 +567,16 @@ func TestSanitizeStationTaskName(t *testing.T) {
 func TestResolveDispatchTask_ConfigTaskOverlay(t *testing.T) {
 	avail := executor.Availability{
 		Config: executor.BackendStatus{Available: true},
-		Shell:  executor.BackendStatus{Available: false, Reason: "dispatch off"},
+		Shell:  executor.BackendStatus{Available: false, Reason: "dispatch off", Policy: true},
 	}
 	toml := &model.Task{Name: "mytask", ManualTrigger: true, Run: "echo hi", Env: map[string]string{"A": "1"}}
 	h := newDispatchHandler(avail, map[string]*model.Task{"mytask": toml})
-	payload := func(cfg *protocol.ExecutionTaskConfig) *protocol.ExecutionPayload {
-		return &protocol.ExecutionPayload{Script: configScript(t, "mytask"), Timeout: 5000, TaskConfig: cfg}
+	payload := func(cfg *protocol.RunOptions) protocol.ExecutionDispatch {
+		return protocol.ExecutionDispatch{Spec: configScript(t, "mytask"), TimeoutMs: 5000, Options: cfg}
 	}
 
-	_, overlay, err := h.resolveDispatchTask(payload(&protocol.ExecutionTaskConfig{
-		Failures: []string{"+3"}, Env: map[string]string{"A": "1"}, LogMaxSize: 1024,
+	_, overlay, err := h.resolveDispatchTask(payload(&protocol.RunOptions{
+		Failures: []string{"+3"}, Env: map[string]string{"A": "1"}, LogMaxBytes: 1024,
 	}))
 	require.NoError(t, err, "an env equal to the TOML's is no override, so the dispatch-off gate must not trip")
 	require.NotNil(t, overlay)
@@ -574,16 +589,22 @@ func TestResolveDispatchTask_ConfigTaskOverlay(t *testing.T) {
 	assert.Nil(t, toml.Timeout, "the overlay must not touch the TOML task")
 	assert.Zero(t, toml.LogMaxSize)
 
-	_, _, err = h.resolveDispatchTask(payload(&protocol.ExecutionTaskConfig{Env: map[string]string{"A": "2"}}))
+	_, _, err = h.resolveDispatchTask(payload(&protocol.RunOptions{Env: map[string]string{"A": "2"}}))
 	var ce *StationError
 	require.ErrorAs(t, err, &ce, "a real env override needs allow_station_dispatch")
-	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeForbidden, ce.Code)
 
-	_, _, err = h.resolveDispatchTask(payload(&protocol.ExecutionTaskConfig{Failures: []string{"bogus"}}))
+	_, _, err = h.resolveDispatchTask(payload(&protocol.RunOptions{Failures: []string{"bogus"}}))
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+	assert.Equal(t, protocol.ErrorCodeInvalid, ce.Code)
 
-	_, overlay, err = h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "mytask")})
+	_, overlay, err = h.resolveDispatchTask(protocol.ExecutionDispatch{Spec: configScript(t, "mytask")})
 	require.NoError(t, err)
 	assert.Nil(t, overlay, "no overrides, no overlay")
+}
+
+func (f *fakeTaskRunner) triggeredIDs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.triggered)
 }

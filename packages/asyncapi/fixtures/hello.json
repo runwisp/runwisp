@@ -1,0 +1,54 @@
+{
+  "type": "hello",
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "instanceId": "7f3c2a9e-1b4d-4e8a-9c21-5d6e7f8a9b0c",
+    "agent": {
+      "version": "1.12.0",
+      "os": "linux",
+      "arch": "amd64",
+      "host": "db-01",
+      "name": "Database server"
+    },
+    "features": {
+      "exec.shell": {
+        "available": true
+      },
+      "exec.container": {
+        "available": false,
+        "reason": "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)"
+      },
+      "exec.compose": {
+        "available": false,
+        "reason": "docker compose not found"
+      },
+      "exec.http": {
+        "available": true
+      },
+      "exec.config": {
+        "available": true
+      },
+      "agent.restart": {
+        "available": true
+      },
+      "agent.upgrade": {
+        "available": false,
+        "reason": "station upgrades disabled (set [daemon] allow_station_upgrade = true to enable)"
+      }
+    },
+    "labels": {},
+    "maxConcurrent": 0,
+    "tasksHash": "9b1c4e7f20a3d5c8",
+    "lastSeq": 41,
+    "executions": [
+      {
+        "executionId": "ex_01JC8Y2Q",
+        "status": "running"
+      },
+      {
+        "executionId": "ex_01JC8Y3R",
+        "status": "finished"
+      }
+    ]
+  }
+}

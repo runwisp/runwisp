@@ -49,6 +49,7 @@ export function generateGo(document) {
     function goType(schema, propName) {
         if (schema.$ref) {
             const name = refName(schema.$ref);
+            if (schemas[name].oneOf) return name;
             return schemas[name].enum ? name : `*${name}`;
         }
         if (schema.enum) {
@@ -105,7 +106,14 @@ export function generateGo(document) {
 
     for (const [name, schema] of Object.entries(schemas)) {
         if (schema.enum) emitEnum(name, schema);
-        else
+        else if (schema.oneOf) {
+            // A union stays raw JSON: the receiver reads its discriminator and
+            // decodes the variant (each variant is its own struct below).
+            imports.add("encoding/json");
+            decls.push(
+                `${comment(schema.description)}type ${name} = json.RawMessage`,
+            );
+        } else
             decls.push(
                 `${comment(schema.description)}type ${name} struct {\n${fields(schema).join("\n")}\n}`,
             );

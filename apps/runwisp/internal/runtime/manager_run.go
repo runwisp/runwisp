@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -224,6 +225,7 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 		nextRestartAttempt, serviceFatal = ts.supervisor.RecordExit(
 			run.InstanceIndex, runDuration, startRetries, failedStart)
 		ts.supervisor.SetLastExitCode(run.InstanceIndex, exitCode)
+		ts.supervisor.SetLastRun(run.InstanceIndex, run.ID)
 		if serviceFatal {
 			fatalAttempts = ts.supervisor.StartFails(run.InstanceIndex)
 		} else {
@@ -442,12 +444,47 @@ func (m *defaultTaskManager) TerminateRun(runID string) error {
 	}, fmt.Sprintf("run not found: %s", runID))
 }
 
-// TerminateRunByExecutionID cancels a running run bound to an
-// external execution ID.
-func (m *defaultTaskManager) TerminateRunByExecutionID(executionID string) error {
-	return m.cancelActiveRun(func(ar *ActiveRun) bool {
-		return ar.Run.ExecutionID != nil && *ar.Run.ExecutionID == executionID
-	}, fmt.Sprintf("run not found for external execution id: %s", executionID))
+// StopRunByExecutionID cancels a running run bound to an external execution
+// ID, or a service instance's run by its own run ID (the id the station knows
+// it by; the supervisor restarts the instance per its policy). force kills its process at once; a positive grace kills it once grace
+// has passed, when that comes before the end of its own graceful-stop window.
+func (m *defaultTaskManager) StopRunByExecutionID(executionID string, grace time.Duration, force bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, ts := range m.allTaskStates() {
+		for _, ar := range ts.active {
+			if !matchesExecution(ts.task, ar.Run, executionID) {
+				continue
+			}
+			ar.Cancel()
+			switch {
+			case force && ar.ForceKill != nil:
+				ar.ForceKill()
+			case grace > 0:
+				time.AfterFunc(grace, func() { m.forceKillIfActive(ts, ar) })
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("run not found for external execution id: %s", executionID)
+}
+
+func matchesExecution(task *model.Task, run *model.Run, executionID string) bool {
+	if run.ExecutionID != nil {
+		return *run.ExecutionID == executionID
+	}
+	return task.Kind.IsService() && run.ID == executionID
+}
+
+// forceKillIfActive kills ar's process if the run is still active. A run stays
+// active until its process is reaped, so its pid can't have been reused yet.
+func (m *defaultTaskManager) forceKillIfActive(ts *taskState, ar *ActiveRun) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if ar.ForceKill != nil && slices.Contains(ts.active, ar) {
+		ar.ForceKill()
+	}
 }
 
 func (m *defaultTaskManager) cancelActiveRun(match func(*ActiveRun) bool, notFoundMsg string) error {

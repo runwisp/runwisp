@@ -4,7 +4,7 @@
 package station
 
 import (
-	"fmt"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -30,10 +30,9 @@ import (
 // daemon's supervisor keeps `instances` copies alive, restarting them with the
 // configured backoff. The task is registered with Restart=always + Kind=service
 // so the supervisor owns its lifecycle (see retry.ShouldRestart).
-func (h *InboundHandler) HandleServiceApply(message protocol.ServiceApplyMessage) error {
-	svc := message.Service
-	if svc == nil {
-		return &StationError{Kind: StationErrorKindValidation, Message: "service is required"}
+func (h *InboundHandler) HandleServiceApply(svc protocol.ServiceApply) error {
+	if svc.Settings == nil {
+		svc.Settings = &protocol.ServiceSettings{}
 	}
 
 	name, existing, err := h.resolveServiceTarget(svc.TaskID, svc.TaskName)
@@ -56,7 +55,7 @@ func (h *InboundHandler) HandleServiceApply(message protocol.ServiceApplyMessage
 			// resolveServiceTarget confirmed the task existed moments ago; a
 			// concurrent reload or service:remove can still have dropped it
 			// in between. Fail closed rather than silently no-op.
-			return &StationError{Kind: StationErrorKindConflict, Message: fmt.Sprintf("service %q no longer exists", name)}
+			return newError(protocol.ErrorCodeNotFound, "service %q no longer exists", name)
 		}
 		slog.Info("service override applied", "task", name, "instances", applied.Instances)
 		return nil
@@ -69,16 +68,16 @@ func (h *InboundHandler) HandleServiceApply(message protocol.ServiceApplyMessage
 
 	h.taskManager.UpsertTask(task)
 
-	if svc.Autostart {
-		// Station-initiated: attribute the start to the control plane so the run
-		// is auditable as station-originated (supervisor-driven restarts from here
+	if svc.Settings.Autostart {
+		// Station-initiated: attribute the start to the station so the run is
+		// auditable as station-originated (supervisor-driven restarts from here
 		// on are TriggeredByService).
 		if startErr := h.taskManager.StartServiceInstances(task.Name, model.TriggeredByStation); startErr != nil {
-			return &StationError{Kind: StationErrorKindConflict, Message: startErr.Error()}
+			return newError(protocol.ErrorCodeConflict, "%s", startErr.Error())
 		}
 	}
 
-	slog.Info("service applied", "task", task.Name, "instances", task.Instances, "autostart", svc.Autostart)
+	slog.Info("service applied", "task", task.Name, "instances", task.Instances, "autostart", svc.Settings.Autostart)
 	return nil
 }
 
@@ -88,22 +87,19 @@ func (h *InboundHandler) HandleServiceApply(message protocol.ServiceApplyMessage
 // manual_trigger = false refuses every action here: it's locked to its
 // restart policy, changeable only by editing runwisp.toml and reloading, the
 // same gate resolveDispatchTask enforces for a manual_trigger = false task.
-func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControlMessage) error {
+func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControl) error {
 	taskName, _, err := h.resolveServiceTarget(message.TaskID, "")
 	if err != nil {
 		return err
 	}
 	if taskName == "" {
-		return &StationError{Kind: StationErrorKindValidation, Message: "taskId is required"}
+		return newError(protocol.ErrorCodeInvalid, "taskId is required")
 	}
 	if message.Action == "" {
-		return &StationError{Kind: StationErrorKindValidation, Message: "action is required"}
+		return newError(protocol.ErrorCodeInvalid, "action is required")
 	}
 	if task, ok := h.taskManager.GetTask(taskName); ok && !task.ManuallyControllable() {
-		return &StationError{
-			Kind:    StationErrorKindConflict,
-			Message: fmt.Sprintf("service %q has manual_trigger disabled and cannot be controlled by the control plane", taskName),
-		}
+		return newError(protocol.ErrorCodeForbidden, "service %q has manual_trigger disabled and cannot be controlled by the station", taskName)
 	}
 
 	switch message.Action {
@@ -118,10 +114,10 @@ func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControlMes
 	case "restart":
 		err = h.taskManager.RestartServiceInstances(taskName)
 	default:
-		return &StationError{Kind: StationErrorKindValidation, Message: fmt.Sprintf("unknown service action %q", message.Action)}
+		return newError(protocol.ErrorCodeInvalid, "unknown service action %q", message.Action)
 	}
 	if err != nil {
-		return &StationError{Kind: StationErrorKindConflict, Message: err.Error()}
+		return newError(protocol.ErrorCodeConflict, "%s", err.Error())
 	}
 
 	slog.Info("service control applied", "task", taskName, "action", message.Action)
@@ -138,7 +134,7 @@ func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControlMes
 // running task set from runwisp.toml with no reload path back, since the
 // reconciler's diff baseline still has it). A taskId that matches nothing is a
 // no-op (the desired end state, service-gone, already holds).
-func (h *InboundHandler) HandleServiceRemove(message protocol.ServiceRemoveMessage) error {
+func (h *InboundHandler) HandleServiceRemove(message protocol.ServiceRemove) error {
 	name, existing, err := h.resolveServiceTarget(message.TaskID, "")
 	if err != nil {
 		return err
@@ -153,10 +149,7 @@ func (h *InboundHandler) HandleServiceRemove(message protocol.ServiceRemoveMessa
 		return nil
 	}
 	if !task.StationDeclared {
-		return &StationError{
-			Kind:    StationErrorKindConflict,
-			Message: fmt.Sprintf("service %q is defined in runwisp.toml; the control plane cannot remove it", name),
-		}
+		return newError(protocol.ErrorCodeForbidden, "service %q is defined in runwisp.toml; the station cannot remove it", name)
 	}
 	h.taskManager.RemoveTask(name)
 	slog.Info("service removed", "task", name)
@@ -167,11 +160,15 @@ func (h *InboundHandler) HandleServiceRemove(message protocol.ServiceRemoveMessa
 // The task name is derived the same way as an inline execution (sanitized
 // taskId, falling back to taskName) so control messages and status reports
 // resolve to the same registered task.
-func (h *InboundHandler) buildServiceTask(svc *protocol.ServiceApplyPayload) (*model.Task, error) {
-	execDef, err := h.parseAvailableDef(svc.Script)
+func (h *InboundHandler) buildServiceTask(svc protocol.ServiceApply) (*model.Task, error) {
+	if specAbsent(svc.Spec) {
+		return nil, newError(protocol.ErrorCodeInvalid, "spec is required for a service this daemon doesn't define")
+	}
+	execDef, err := h.parseAvailableDef(svc.Spec)
 	if err != nil {
 		return nil, err
 	}
+	settings := svc.Settings
 
 	taskName := sanitizeStationTaskName(svc.TaskID)
 	if taskName == "" {
@@ -181,10 +178,10 @@ func (h *InboundHandler) buildServiceTask(svc *protocol.ServiceApplyPayload) (*m
 		taskName = "station-service"
 	}
 
-	if err := checkServiceInstances(taskName, svc.Instances); err != nil {
+	if err := checkServiceInstances(taskName, settings.Instances); err != nil {
 		return nil, err
 	}
-	instances := max(svc.Instances, 1)
+	instances := max(settings.Instances, 1)
 
 	task := &model.Task{
 		Name:         taskName,
@@ -204,39 +201,44 @@ func (h *InboundHandler) buildServiceTask(svc *protocol.ServiceApplyPayload) (*m
 		ManualTrigger: true,
 		// The runtime creates the supervisor parked unless Autostart is set,
 		// and StartServiceInstances is a no-op on a parked service.
-		Autostart: svc.Autostart,
+		Autostart: settings.Autostart,
 	}
-
-	if svc.RestartDelay > 0 {
-		d := time.Duration(svc.RestartDelay) * time.Millisecond
-		task.RestartDelay = &d
-	}
-	// Wire field is backoffResetAfter; the daemon models this uptime-resets-the-
-	// restart-counter threshold as HealthyAfter (which also clears the
-	// failed-start streak — a superset of the station-side semantics).
-	if svc.BackoffResetAfter > 0 {
-		d := time.Duration(svc.BackoffResetAfter) * time.Millisecond
-		task.HealthyAfter = &d
-	}
-	if svc.RestartBackoff != "" {
-		task.RestartBackoff = model.BackoffCurve(svc.RestartBackoff)
-	}
-
-	if err := applyStationTaskConfig(task, svc.TaskConfig); err != nil {
+	applyServiceSettings(task, settings)
+	if err := applyRunOptions(task, svc.Options); err != nil {
 		return nil, err
 	}
-
 	return task, nil
+}
+
+// applyServiceSettings overlays the restart knobs a service:apply carries;
+// zero means "keep the current value". The wire's backoffResetAfterMs is the
+// daemon's HealthyAfter (which also clears the failed-start streak, a superset
+// of the station-side meaning).
+func applyServiceSettings(task *model.Task, settings *protocol.ServiceSettings) {
+	if settings.RestartDelayMs > 0 {
+		d := time.Duration(settings.RestartDelayMs) * time.Millisecond
+		task.RestartDelay = &d
+	}
+	if settings.BackoffResetAfterMs > 0 {
+		d := time.Duration(settings.BackoffResetAfterMs) * time.Millisecond
+		task.HealthyAfter = &d
+	}
+	if settings.RestartBackoff != "" {
+		task.RestartBackoff = model.BackoffCurve(settings.RestartBackoff)
+	}
+}
+
+// specAbsent reports a spec the station left out or sent as null, which on
+// service:apply means "keep the daemon's own command".
+func specAbsent(spec json.RawMessage) bool {
+	return len(spec) == 0 || string(spec) == "null"
 }
 
 // checkServiceInstances rejects a service instance count above the cap TOML
 // services are held to.
 func checkServiceInstances(name string, instances int) error {
 	if instances > config.MaxServiceInstances {
-		return &StationError{
-			Kind:    StationErrorKindValidation,
-			Message: fmt.Sprintf("invalid instances for service %s: must be <= %d", name, config.MaxServiceInstances),
-		}
+		return newError(protocol.ErrorCodeInvalid, "invalid instances for service %s: must be <= %d", name, config.MaxServiceInstances)
 	}
 	return nil
 }
@@ -261,10 +263,7 @@ func (h *InboundHandler) resolveServiceTarget(taskID, taskName string) (name str
 		}
 		if t, ok := h.taskManager.GetTask(n); ok {
 			if !t.Kind.IsService() {
-				return "", false, &StationError{
-					Kind:    StationErrorKindValidation,
-					Message: fmt.Sprintf("task %q is not a service; a station service message cannot target it", n),
-				}
+				return "", false, newError(protocol.ErrorCodeConflict, "task %q is not a service; a station service message cannot target it", n)
 			}
 			return n, true, nil
 		}
@@ -275,61 +274,39 @@ func (h *InboundHandler) resolveServiceTarget(taskID, taskName string) (name str
 	return sanitizeStationTaskName(taskName), false, nil
 }
 
-// mergeServiceApply overlays the fields a service:apply payload carries onto an
-// existing (synced TOML) service definition, leaving every field the payload
-// does not address untouched. The station reasserts the full effective spec on
-// each apply, so absent/zero fields mean "keep the current value". script is
-// special: a synced service's station Script is a config-reference placeholder the
-// station omits unless the operator overrode the command, so it is applied only
-// when the payload actually carries one.
-//
-// "Omits" is logical, not literal: the wire field is non-omitempty, so a nil
-// station Script marshals to the JSON literal `null` rather than being dropped.
-// Treat that `null` exactly like an absent field — keep the live TOML command —
-// instead of feeding it to ParseExecutionDef (which rejects it). Only a real def
-// overrides the command.
-func (h *InboundHandler) mergeServiceApply(task *model.Task, svc *protocol.ServiceApplyPayload) error {
+// mergeServiceApply overlays the fields a service:apply carries onto an
+// existing (synced TOML) service definition, leaving every field it does not
+// address untouched. The station reasserts the full effective state on each
+// apply, so absent/zero fields mean "keep the current value". spec is applied
+// only when present: null or absent keeps the TOML command.
+func (h *InboundHandler) mergeServiceApply(task *model.Task, svc protocol.ServiceApply) error {
 	// manual_trigger = false locks a service to its TOML definition, the same
 	// gate HandleServiceControl applies; an apply would otherwise rescale or
 	// retune it.
 	if !task.ManuallyControllable() {
-		return &StationError{
-			Kind:    StationErrorKindConflict,
-			Message: fmt.Sprintf("service %q has manual_trigger disabled and cannot be changed by the control plane", task.Name),
-		}
+		return newError(protocol.ErrorCodeForbidden, "service %q has manual_trigger disabled and cannot be changed by the station", task.Name)
 	}
-	if len(svc.Script) > 0 && string(svc.Script) != "null" {
-		execDef, err := h.parseAvailableDef(svc.Script)
+	if !specAbsent(svc.Spec) {
+		execDef, err := h.parseAvailableDef(svc.Spec)
 		if err != nil {
 			return err
 		}
 		task.ExecutionDef = execDef
 	}
 
-	if err := checkServiceInstances(task.Name, svc.Instances); err != nil {
+	if err := checkServiceInstances(task.Name, svc.Settings.Instances); err != nil {
 		return err
 	}
-	if svc.Instances >= 1 {
-		task.Instances = svc.Instances
-		task.MaxConcurrent = svc.Instances
+	if svc.Settings.Instances >= 1 {
+		task.Instances = svc.Settings.Instances
+		task.MaxConcurrent = svc.Settings.Instances
 	}
-	if svc.RestartDelay > 0 {
-		d := time.Duration(svc.RestartDelay) * time.Millisecond
-		task.RestartDelay = &d
-	}
-	if svc.BackoffResetAfter > 0 {
-		d := time.Duration(svc.BackoffResetAfter) * time.Millisecond
-		task.HealthyAfter = &d
-	}
-	if svc.RestartBackoff != "" {
-		task.RestartBackoff = model.BackoffCurve(svc.RestartBackoff)
-	}
+	applyServiceSettings(task, svc.Settings)
 
-	if err := h.checkEnvOverrideAllowed(task, svc.TaskConfig); err != nil {
+	if err := h.checkEnvOverrideAllowed(task, svc.Options); err != nil {
 		return err
 	}
-
-	return applyStationTaskConfig(task, svc.TaskConfig)
+	return applyRunOptions(task, svc.Options)
 }
 
 // checkEnvOverrideAllowed puts a peer-supplied env override on the same
@@ -349,22 +326,20 @@ func (h *InboundHandler) mergeServiceApply(task *model.Task, svc *protocol.Servi
 // to protect was also the one shape that dereferenced nil — a peer-triggerable
 // crash instead of a verdict. A service with no resolvable definition at all
 // can't be checked, so it is refused rather than waved through.
-func (h *InboundHandler) checkEnvOverrideAllowed(task *model.Task, cfg *protocol.ExecutionTaskConfig) error {
+func (h *InboundHandler) checkEnvOverrideAllowed(task *model.Task, cfg *protocol.RunOptions) error {
 	if cfg == nil || len(cfg.Env) == 0 {
 		return nil
 	}
 	execDef := task.ResolvedExecutionDef()
 	if execDef == nil {
-		return &StationError{
-			Kind:    StationErrorKindConflict,
-			Message: fmt.Sprintf("env override for %q not available: it has no resolvable execution definition", task.Name),
-		}
+		return newError(protocol.ErrorCodeConflict, "env override for %q not available: it has no resolvable execution definition", task.Name)
 	}
 	if status := h.liveAvailability().ForType(execDef.ExecType()); !status.Available {
-		return &StationError{
-			Kind:    StationErrorKindConflict,
-			Message: fmt.Sprintf("env override for %q not available: %s", task.Name, status.Reason),
+		code := protocol.ErrorCodeUnavailable
+		if status.Policy {
+			code = protocol.ErrorCodeForbidden
 		}
+		return newError(code, "env override for %q not available: %s", task.Name, status.Reason)
 	}
 	return nil
 }

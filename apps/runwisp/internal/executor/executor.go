@@ -162,13 +162,11 @@ func New(opts Options) *RoutingExecutor {
 	// HTTP and the code-executing types require the dispatch opt-in.
 	if !opts.StationDispatchEnabled {
 		const reason = "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)"
-		avail.HTTP = BackendStatus{Available: false, Reason: reason}
-		avail.Shell = BackendStatus{Available: false, Reason: reason}
-		avail.Container = BackendStatus{Available: false, Reason: reason}
-		avail.Compose = BackendStatus{Available: false, Reason: reason}
+		disabled := BackendStatus{Available: false, Reason: reason, Policy: true}
+		avail.HTTP, avail.Shell, avail.Container, avail.Compose = disabled, disabled, disabled, disabled
 	} else {
-		// Container and compose report available even without Docker: both
-		// backends probe lazily, so a missing engine surfaces at run time.
+		// Container and compose are allowed by policy here; whether Docker is
+		// actually there is checked by ProbedAvailability, not at boot.
 		avail.HTTP = BackendStatus{Available: true}
 		avail.Shell = BackendStatus{Available: true}
 		avail.Container = BackendStatus{Available: true}
@@ -204,6 +202,32 @@ func (r *RoutingExecutor) SetMinFreeDisk(n int64) {
 
 func (r *RoutingExecutor) Availability() Availability {
 	return r.availability
+}
+
+// prober is a backend that can check its engine is reachable before a run.
+type prober interface {
+	Probe(ctx context.Context) error
+}
+
+// ProbedAvailability is Availability with the container and compose engines
+// checked: a type the policy allows is reported unavailable, with the reason,
+// when its engine can't be reached. The probes run in parallel under ctx.
+func (r *RoutingExecutor) ProbedAvailability(ctx context.Context) Availability {
+	avail := r.availability
+	var wg sync.WaitGroup
+	for execType, status := range map[string]*BackendStatus{"container": &avail.Container, "compose": &avail.Compose} {
+		p, ok := r.backends[execType].(prober)
+		if !status.Available || !ok {
+			continue
+		}
+		wg.Go(func() {
+			if err := p.Probe(ctx); err != nil {
+				*status = BackendStatus{Reason: err.Error()}
+			}
+		})
+	}
+	wg.Wait()
+	return avail
 }
 
 // SetRunUpdateCallback registers a hook to persist run updates.

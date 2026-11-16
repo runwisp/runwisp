@@ -44,7 +44,7 @@ type TaskManager interface {
 	TaskRunner
 	GetTask(taskName string) (*model.Task, bool)
 	MutateTask(taskName string, mutate func(*model.Task) error) (found bool, err error)
-	TerminateRunByExecutionID(executionID string) error
+	StopRunByExecutionID(executionID string, grace time.Duration, force bool) error
 	ListServiceTasks() []*model.Task
 	SetSchedulePaused(fn func(taskName string) bool)
 	BindPersistenceHook(hook RunPersistenceHook)

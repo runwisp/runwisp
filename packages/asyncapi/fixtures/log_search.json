@@ -1,0 +1,13 @@
+{
+  "type": "log:search",
+  "id": "s25",
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "executionId": "ex_01JC8Y5T",
+    "query": "error|warn",
+    "regex": true,
+    "caseSensitive": true,
+    "fromLine": 200,
+    "limit": 100
+  }
+}

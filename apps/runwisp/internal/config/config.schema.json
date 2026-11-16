@@ -150,6 +150,7 @@
       "properties": {
         "name": { "type": "string", "description": "Display label for this instance, shown instead of the fingerprint in the TUI, Web UI and notification footers. ${HOSTNAME} falls back to the machine's hostname when unset." },
         "allow_station_dispatch": { "type": "boolean", "default": false, "description": "Accept peer-dispatched ad-hoc runs (opt-in; one-shot, never edits TOML)." },
+        "allow_station_upgrade": { "type": "boolean", "default": false, "description": "Let the connected station upgrade this daemon to a RunWisp release and restart it (opt-in). Only for a binary RunWisp replaces itself, running under a service manager. Needs a restart to change." },
         "shutdown_timeout": { "$ref": "#/$defs/duration", "description": "SIGTERM→SIGKILL drain budget for in-flight runs on shutdown. Default 10s." },
         "external_url": { "type": "string", "description": "Public Web UI base for notification deep-links; absolute http(s) with host. When unset, the address of the most recent signed-in Web UI visit is used." },
         "check_updates": { "type": "boolean", "default": true, "description": "Poll concierge.runwisp.com for a newer release and show an indicator; also enables the Web UI feedback prompt. Set false to keep the daemon fully offline. Never auto-applies." },

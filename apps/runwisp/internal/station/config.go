@@ -14,20 +14,25 @@ import (
 )
 
 const (
-	defaultStationURL   = "https://app.runwisp.com"
-	requestTimeout      = 30 * time.Second
-	maxProtocolLogLines = 5000
+	defaultStationURL = "https://app.runwisp.com"
+	requestTimeout    = 30 * time.Second
 )
 
 type Config struct {
-	Enabled      bool
-	BaseURL      *url.URL
+	Enabled bool
+	BaseURL *url.URL
+	// StationToken is the token the daemon dials with: ConfiguredToken, or the
+	// one the station rotated in (ApplyRotatedToken).
 	StationToken string
-	AgentVersion string
-	Fingerprint  string
+	// ConfiguredToken is the token from the flag or RUNWISP_STATION_TOKEN.
+	ConfiguredToken string
+	AgentVersion    string
+	Fingerprint     string
 	// AllowInsecure mirrors RUNWISP_STATION_ALLOW_INSECURE=true: besides an
 	// http:// station URL it lets log archives go to http:// and private-IP
-	// upload URLs (a Station on a local dev stack). Local testing only.
+	// upload URLs. Plain http:// sends the runner token and every command
+	// unencrypted: fine on a network you trust (localhost, your LAN, a VPN like
+	// Tailscale); use HTTPS anywhere else.
 	AllowInsecure bool
 }
 
@@ -65,7 +70,7 @@ func LoadConfig(agentVersion, tokenOverride, urlOverride, fingerprint string) (C
 		if !allowInsecure {
 			return Config{}, fmt.Errorf("insecure http:// station URL rejected; set RUNWISP_STATION_ALLOW_INSECURE=true to allow")
 		}
-		slog.Warn("RUNWISP_STATION_ALLOW_INSECURE=true: control-plane traffic (bearer token, dispatch frames) runs over plaintext with no TLS — a network attacker can read the token and inject task dispatches; never use this outside local testing",
+		slog.Warn("RUNWISP_STATION_ALLOW_INSECURE=true: Plain http:// sends the runner token and every command unencrypted: fine on a network you trust (localhost, your LAN, a VPN like Tailscale); use HTTPS anywhere else.",
 			"url", baseURL.Redacted())
 	}
 
@@ -78,12 +83,13 @@ func LoadConfig(agentVersion, tokenOverride, urlOverride, fingerprint string) (C
 	}
 
 	return Config{
-		Enabled:       true,
-		BaseURL:       baseURL,
-		StationToken:  stationToken,
-		AgentVersion:  agentVersion,
-		Fingerprint:   fingerprint,
-		AllowInsecure: allowInsecure,
+		Enabled:         true,
+		BaseURL:         baseURL,
+		StationToken:    stationToken,
+		ConfiguredToken: stationToken,
+		AgentVersion:    agentVersion,
+		Fingerprint:     fingerprint,
+		AllowInsecure:   allowInsecure,
 	}, nil
 }
 
@@ -98,12 +104,4 @@ func (cfg Config) WebSocketURL() string {
 	wsURL.RawQuery = ""
 	wsURL.Fragment = ""
 	return wsURL.String()
-}
-
-func (cfg Config) TaskSyncURL() string {
-	syncURL := *cfg.BaseURL
-	syncURL.Path = "/api/v1/runner/tasks/sync"
-	syncURL.RawQuery = ""
-	syncURL.Fragment = ""
-	return syncURL.String()
 }

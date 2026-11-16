@@ -258,6 +258,7 @@ func (m *defaultTaskManager) ServiceSnapshot(taskName string) (model.ServiceSnap
 			RestartCount: ts.supervisor.Attempts(i),
 			StartFails:   ts.supervisor.StartFails(i),
 			LastExitCode: ts.supervisor.LastExitCode(i),
+			RunID:        ts.supervisor.LastRun(i),
 		}
 		switch {
 		case ts.supervisor.IsLive(i):
@@ -266,6 +267,7 @@ func (m *defaultTaskManager) ServiceSnapshot(taskName string) (model.ServiceSnap
 			if ar := liveByIdx[i]; ar != nil {
 				started := ar.StartedAt
 				st.StartedAt = &started
+				st.RunID = ar.Run.ID
 			}
 		case stopped, ts.supervisor.IsExited(i):
 			// Operator-stopped, or its run ended and the restart policy

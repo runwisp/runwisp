@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 export {
-  PROTOCOL_VERSION,
-  inboundDaemonMessageSchema,
-  type InboundDaemonMessage,
-  outboundDaemonMessageSchema,
-  type OutboundDaemonMessage,
+  SUBPROTOCOL,
+  envelopeSchema,
+  type Envelope,
+  daemonToStationSchemas,
+  stationToDaemonSchemas,
 } from "./generated/protocol-messages";

@@ -19,7 +19,7 @@ func (q *Queries) DeletePendingLogUpload(ctx context.Context, executionID string
 }
 
 const listPendingLogUploads = `-- name: ListPendingLogUploads :many
-SELECT execution_id, upload_url, log_path, inserted_at_unix FROM pending_log_uploads
+SELECT execution_id, inserted_at_unix FROM pending_log_uploads
 `
 
 func (q *Queries) ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload, error) {
@@ -31,12 +31,7 @@ func (q *Queries) ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload
 	items := []PendingLogUpload{}
 	for rows.Next() {
 		var i PendingLogUpload
-		if err := rows.Scan(
-			&i.ExecutionID,
-			&i.UploadUrl,
-			&i.LogPath,
-			&i.InsertedAtUnix,
-		); err != nil {
+		if err := rows.Scan(&i.ExecutionID, &i.InsertedAtUnix); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -52,29 +47,20 @@ func (q *Queries) ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload
 
 const upsertPendingLogUpload = `-- name: UpsertPendingLogUpload :exec
 
-INSERT INTO pending_log_uploads (execution_id, upload_url, log_path, inserted_at_unix)
-VALUES (?, ?, ?, ?)
+INSERT INTO pending_log_uploads (execution_id, inserted_at_unix)
+VALUES (?, ?)
 ON CONFLICT(execution_id) DO UPDATE SET
-  upload_url = excluded.upload_url,
-  log_path = excluded.log_path,
   inserted_at_unix = excluded.inserted_at_unix
 `
 
 type UpsertPendingLogUploadParams struct {
 	ExecutionID    string `json:"execution_id"`
-	UploadUrl      string `json:"upload_url"`
-	LogPath        string `json:"log_path"`
 	InsertedAtUnix int64  `json:"inserted_at_unix"`
 }
 
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 func (q *Queries) UpsertPendingLogUpload(ctx context.Context, arg UpsertPendingLogUploadParams) error {
-	_, err := q.db.ExecContext(ctx, upsertPendingLogUpload,
-		arg.ExecutionID,
-		arg.UploadUrl,
-		arg.LogPath,
-		arg.InsertedAtUnix,
-	)
+	_, err := q.db.ExecContext(ctx, upsertPendingLogUpload, arg.ExecutionID, arg.InsertedAtUnix)
 	return err
 }

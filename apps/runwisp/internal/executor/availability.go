@@ -7,6 +7,9 @@ package executor
 type BackendStatus struct {
 	Available bool   `json:"available"`
 	Reason    string `json:"reason,omitempty"`
+	// Policy marks an unavailability the operator chose (the dispatch
+	// opt-in is off) rather than a missing backend.
+	Policy bool `json:"-"`
 }
 
 // Availability tracks which execution backends the daemon can use.

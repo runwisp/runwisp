@@ -1,0 +1,15 @@
+{
+  "type": "welcome",
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "connectionId": "conn_01JC8Y4S",
+    "features": [],
+    "heartbeat": {
+      "intervalMs": 15000,
+      "timeoutMs": 45000
+    },
+    "statsIntervalMs": 30000,
+    "maxFrameBytes": 4194304,
+    "tasksHashKnown": false
+  }
+}

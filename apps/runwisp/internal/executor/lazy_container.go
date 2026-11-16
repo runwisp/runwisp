@@ -40,6 +40,15 @@ func (l *LazyContainerBackend) Start(ctx context.Context, task *model.Task, run 
 	return b.Start(ctx, task, run, def)
 }
 
+// Probe connects to Docker or Podman now, so availability can be reported
+// before the first run. A success is cached; a failure is retried next time.
+func (l *LazyContainerBackend) Probe(ctx context.Context) error {
+	if _, err := l.ensureConnected(ctx); err != nil {
+		return fmt.Errorf("docker backend unavailable: %w", err)
+	}
+	return nil
+}
+
 func (l *LazyContainerBackend) ensureConnected(ctx context.Context) (*ContainerBackend, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

@@ -132,8 +132,20 @@ fi
 config=${config_flag:-$RUNWISP_CONFIG}
 data=${data_flag:-$RUNWISP_DATA}
 
+# Station mode needs neither a runwisp.toml (the Station manages its tasks) nor
+# a password: without one the local Web UI keeps its random password and binds
+# loopback only, while the control socket (`docker exec`, the HEALTHCHECK)
+# works as always.
+station=""
+if [ "$subcommand" = station ]; then
+	station=1
+fi
+
 auth_lower=$(printf '%s' "${RUNWISP_AUTH:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
-if [ -z "${RUNWISP_PASSWORD:-}" ] && [ "$auth_lower" != "off" ]; then
+if [ -z "${RUNWISP_PASSWORD:-}" ] && [ "$auth_lower" != "off" ] && [ -n "$station" ]; then
+	RUNWISP_HOST=127.0.0.1
+	export RUNWISP_HOST
+elif [ -z "${RUNWISP_PASSWORD:-}" ] && [ "$auth_lower" != "off" ]; then
 	cat >&2 <<'EOF'
 error: refusing to start the daemon without an explicit auth setting.
 
@@ -172,7 +184,7 @@ config_dir=$(dirname "$config")
 # image (see the Dockerfile) at ../share/runwisp next to this script.
 starter="${0%/*}/../share/runwisp/runwisp.toml"
 db="$data/runwisp.db"
-if [ ! -e "$config" ] && [ ! -e "$db" ] && mountpoint -q "$config_dir" 2>/dev/null &&
+if [ -z "$station" ] && [ ! -e "$config" ] && [ ! -e "$db" ] && mountpoint -q "$config_dir" 2>/dev/null &&
 	cp "$starter" "$config"; then
 	# Hand the file to whoever owns the mounted directory, so a host user can edit
 	# it without sudo. Fails harmlessly when not running as root.
@@ -193,7 +205,7 @@ EOF
 	exit 1
 fi
 
-if [ ! -f "$config" ]; then
+if [ -z "$station" ] && [ ! -f "$config" ]; then
 	if [ -e "$db" ]; then
 		cat >&2 <<EOF
 error: no runwisp.toml found at $config
@@ -213,7 +225,7 @@ EOF
 	exit 1
 fi
 
-if [ ! -r "$config" ]; then
+if [ -e "$config" ] && [ ! -r "$config" ]; then
 	printf 'error: %s exists but is not readable by uid %s.\n\n' "$config" "$(id -u)" >&2
 	printf 'Check the bind mount and any --user override.\n' >&2
 	exit 1

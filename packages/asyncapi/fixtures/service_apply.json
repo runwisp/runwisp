@@ -1,0 +1,29 @@
+{
+  "type": "service:apply",
+  "id": "s26",
+  "requires": [
+    "exec.shell"
+  ],
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "taskId": "tsk_01JC8Y7W",
+    "taskName": "web",
+    "spec": {
+      "type": "shell",
+      "script": "node server.js"
+    },
+    "settings": {
+      "instances": 2,
+      "autostart": true,
+      "restartDelayMs": 1000,
+      "restartBackoff": "linear",
+      "backoffResetAfterMs": 60000
+    },
+    "options": {
+      "env": {
+        "PORT": "8080"
+      },
+      "gracefulStopMs": 5000
+    }
+  }
+}

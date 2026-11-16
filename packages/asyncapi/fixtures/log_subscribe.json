@@ -1,0 +1,11 @@
+{
+  "type": "log:subscribe",
+  "id": "s24",
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "executionId": "ex_01JC8Y5T",
+    "fromLine": 100,
+    "follow": true,
+    "limit": 5000
+  }
+}

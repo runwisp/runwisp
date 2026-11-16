@@ -156,9 +156,10 @@ the data volume already holds a database: that means the config volume was
 mounted in the wrong place, and starting with the starter would quietly drop
 your tasks.
 
-Both checks apply to anything that starts a daemon: `daemon`, `station`,
-`restart`, `demo`, bare `runwisp`, and any subcommand the entrypoint doesn't
-know. One-shot commands such as `validate`, `run`, `list`, `status`, `reload`,
+Both checks apply to anything that starts a daemon: `daemon`, `restart`,
+`demo`, bare `runwisp`, and any subcommand the entrypoint doesn't know.
+`station` needs neither (see
+[Connect to RunWisp Station](#connect-to-runwisp-station)). One-shot commands such as `validate`, `run`, `list`, `status`, `reload`,
 `import`, and `tui` skip them:
 
 ```bash
@@ -260,6 +261,30 @@ The image runs as root, because running a task as another
 can run the container as another UID with `user:` in compose (or `--user`).
 That UID must be able to write the `/var/lib/runwisp` volume; the entrypoint
 tells you if it can't.
+
+## Connect to RunWisp Station
+
+To manage the container from RunWisp Station, run the `station` command with a
+`-docker` tag and the Docker socket mounted, so the Station can run container
+and Compose tasks on the host:
+
+```bash
+docker run -d --name runwisp --restart=unless-stopped \
+  -e RUNWISP_STATION_URL=… -e RUNWISP_STATION_TOKEN=… -e RUNWISP_ALLOW_STATION_DISPATCH=true \
+  -v /var/run/docker.sock:/var/run/docker.sock -v runwisp-data:/var/lib/runwisp \
+  runwisp/runwisp:latest-docker station
+```
+
+- The Station shows you the URL and token to paste in.
+- No `runwisp.toml` is needed: the Station manages the tasks. Mount one at
+  `/etc/runwisp` to add tasks of your own.
+- `RUNWISP_ALLOW_STATION_DISPATCH=true` lets the Station run commands it
+  sends, not only your own tasks. See
+  [`allow_station_dispatch`](/configuration/daemon/#allow_station_dispatch).
+- Without `RUNWISP_PASSWORD`, the local Web UI listens only inside the
+  container. Set a password and publish port `9477` to open it from outside.
+- Keep the `runwisp-data` volume: it holds the identity the Station knows this
+  host by.
 
 ## Operating the container
 

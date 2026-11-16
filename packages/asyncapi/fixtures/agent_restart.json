@@ -1,0 +1,9 @@
+{
+  "type": "agent:restart",
+  "id": "s19",
+  "requires": [
+    "agent.restart"
+  ],
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {}
+}

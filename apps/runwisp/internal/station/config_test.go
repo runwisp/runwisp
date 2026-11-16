@@ -116,12 +116,6 @@ func TestConfig_WebSocketURL_HTTP(t *testing.T) {
 	assert.Contains(t, wsURL, "ws://")
 }
 
-func TestConfig_TaskSyncURL(t *testing.T) {
-	cfg, err := LoadConfig("1.0.0", "tok", "https://app.runwisp.com", "fp")
-	require.NoError(t, err)
-	assert.Contains(t, cfg.TaskSyncURL(), "/api/v1/runner/tasks/sync")
-}
-
 func TestConfig_WebSocketURL_Path(t *testing.T) {
 	cfg, err := LoadConfig("1.0.0", "tok", "https://app.runwisp.com", "fp")
 	require.NoError(t, err)

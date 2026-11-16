@@ -62,8 +62,8 @@ func (m *mockTaskRunner) TerminateRun(runID string) error {
 	return args.Error(0)
 }
 
-func (m *mockTaskRunner) TerminateRunByExecutionID(executionID string) error {
-	args := m.MethodCalled("TerminateRunByExecutionID", executionID)
+func (m *mockTaskRunner) StopRunByExecutionID(executionID string, grace time.Duration, force bool) error {
+	args := m.MethodCalled("StopRunByExecutionID", executionID, grace, force)
 	return args.Error(0)
 }
 

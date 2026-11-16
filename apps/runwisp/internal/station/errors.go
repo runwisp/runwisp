@@ -6,50 +6,45 @@ package station
 import (
 	"errors"
 	"fmt"
+
+	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 )
 
-type StationErrorKind string
-
-const (
-	StationErrorKindAuth       StationErrorKind = "AUTH_ERROR"
-	StationErrorKindValidation StationErrorKind = "VALIDATION_ERROR"
-	StationErrorKindConflict   StationErrorKind = "CONFLICT_ERROR"
-	StationErrorKindTransient  StationErrorKind = "TRANSIENT_ERROR"
-	// StationErrorKindUnknownExecution signals that the daemon has no record of
-	// the referenced execution (e.g. a stop for an execution it never ran).
-	// The station reconciles such executions as abandoned.
-	StationErrorKindUnknownExecution StationErrorKind = "UNKNOWN_EXECUTION"
-)
-
+// StationError is a command failure the station gets back as the result's
+// error: Code and Retryable go on the wire as they are.
 type StationError struct {
-	Kind    StationErrorKind
-	Message string
-	Err     error
+	Code      protocol.ErrorCode
+	Message   string
+	Retryable bool
+	Err       error
 }
 
 func (e *StationError) Error() string {
 	if e.Err == nil {
-		return fmt.Sprintf("%s: %s", e.Kind, e.Message)
+		return fmt.Sprintf("%s: %s", e.Code, e.Message)
 	}
-	return fmt.Sprintf("%s: %s: %v", e.Kind, e.Message, e.Err)
+	return fmt.Sprintf("%s: %s: %v", e.Code, e.Message, e.Err)
 }
 
 func (e *StationError) Unwrap() error {
 	return e.Err
 }
 
-func isHardAuthError(err error) bool {
-	var stationErr *StationError
-	if !errors.As(err, &stationErr) {
-		return false
-	}
-	return stationErr.Kind == StationErrorKindAuth
+// newError builds a StationError. Only internal failures are retryable by
+// default; a caller that knows better sets Retryable itself.
+func newError(code protocol.ErrorCode, format string, args ...any) *StationError {
+	return &StationError{Code: code, Message: fmt.Sprintf(format, args...), Retryable: code == protocol.ErrorCodeInternal || code == protocol.ErrorCodeBusy}
 }
 
-func classifyErrorKind(err error) StationErrorKind {
-	var stationErr *StationError
-	if errors.As(err, &stationErr) {
-		return stationErr.Kind
+// errorInfo turns a handler error into the result's error. An error that
+// isn't a StationError is an internal, retryable failure.
+func errorInfo(err error) *protocol.ErrorInfo {
+	if se, ok := errors.AsType[*StationError](err); ok {
+		msg := se.Message
+		if se.Err != nil {
+			msg = fmt.Sprintf("%s: %v", se.Message, se.Err)
+		}
+		return &protocol.ErrorInfo{Code: se.Code, Message: msg, Retryable: se.Retryable}
 	}
-	return StationErrorKindTransient
+	return &protocol.ErrorInfo{Code: protocol.ErrorCodeInternal, Message: err.Error(), Retryable: true}
 }
