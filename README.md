@@ -10,6 +10,8 @@ RunWisp is an open-source, self-hosted cron job manager and process supervisor. 
 
 [runwisp.com](https://runwisp.com) · [Documentation](https://docs.runwisp.com) · [Install](#install) · [Quick Start](#quick-start) · [Compare](#comparison)
 
+**English** · [Deutsch](README.de.md) · [简体中文](README.zh-CN.md)
+
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Latest Release](https://img.shields.io/github/v/release/runwisp/runwisp?include_prereleases&sort=semver&color=00ADD8)](https://runwisp.com/releases/)
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go)
@@ -145,19 +147,19 @@ RunWisp can start from the configuration you already have:
 
 ## Comparison
 
-|                      | crond                | systemd timers     | supervisord    | **RunWisp**                                                          |
-| -------------------- | -------------------- | ------------------ | -------------- | -------------------------------------------------------------------- |
-| Cron scheduling      | Yes                  | Yes                | No             | **Yes**                                                              |
-| Process supervision  | No                   | Yes                | Yes            | **Yes**                                                              |
-| Web dashboard        | No                   | No                 | Basic HTML     | **Built in**                                                         |
-| Terminal UI          | No                   | No                 | No             | **Built in**                                                         |
-| Remote interface     | No                   | D-Bus              | XML-RPC        | **REST API**                                                         |
-| Live log streaming   | No                   | `journalctl -f`    | Tail only      | **Web UI, TUI, and SSE**                                             |
-| Concurrency policies | No                   | Overlap prevention | No             | **Queue, skip, or kill**                                             |
-| Failure alerts       | No                   | `OnFailure=` unit  | Event listener | **Slack, Discord, Telegram, ntfy, Gotify, Pushover, email, webhook** |
-| Execution history    | No                   | `journalctl`       | No             | **SQLite, browsable in the UI**                                      |
-| Runtime dependencies | libc                 | systemd            | Python         | **None**                                                             |
-| Configuration        | crontab              | Unit files         | INI files      | **One TOML file**                                                    |
+|                      | crond   | systemd timers     | supervisord    | **RunWisp**                                                          |
+| -------------------- | ------- | ------------------ | -------------- | -------------------------------------------------------------------- |
+| Cron scheduling      | Yes     | Yes                | No             | **Yes**                                                              |
+| Process supervision  | No      | Yes                | Yes            | **Yes**                                                              |
+| Web dashboard        | No      | No                 | Basic HTML     | **Built in**                                                         |
+| Terminal UI          | No      | No                 | No             | **Built in**                                                         |
+| Remote interface     | No      | D-Bus              | XML-RPC        | **REST API**                                                         |
+| Live log streaming   | No      | `journalctl -f`    | Tail only      | **Web UI, TUI, and SSE**                                             |
+| Concurrency policies | No      | Overlap prevention | No             | **Queue, skip, or kill**                                             |
+| Failure alerts       | No      | `OnFailure=` unit  | Event listener | **Slack, Discord, Telegram, ntfy, Gotify, Pushover, email, webhook** |
+| Execution history    | No      | `journalctl`       | No             | **SQLite, browsable in the UI**                                      |
+| Runtime dependencies | libc    | systemd            | Python         | **None**                                                             |
+| Configuration        | crontab | Unit files         | INI files      | **One TOML file**                                                    |
 
 The API and user interfaces can inspect tasks and trigger or stop them. **Task definitions cannot be modified remotely.** `runwisp.toml` remains the source of truth.
 
@@ -171,7 +173,7 @@ The API and user interfaces can inspect tasks and trigger or stop them. **Task d
 
 ## How RunWisp is made
 
-RunWisp is built by PoppyCake, s.r.o. Most of the code isn't written by hand, so we lean hard on review and tests. Review goes down to the small stuff, like whether a helper deserves to exist or should just be three lines inline, because that's how the code stays small and quick to read. The daemon has more lines of tests than code, including awkward cases like a daily job scheduled inside the hour that daylight saving skips.
+RunWisp is built by PoppyCake, s.r.o. We lean hard on review and tests. Review goes down to the small stuff, like whether a helper deserves to exist or should just be three lines inline, because that's how the code stays small and quick to read. The daemon has more lines of tests than code, including awkward cases like a daily job scheduled inside the hour that daylight saving skips.
 
 Careful review and good tests still aren't a guarantee. If we missed something, [open an issue](https://github.com/runwisp/runwisp/issues) and we'll fix it.
 
