@@ -330,7 +330,10 @@ func TestUpload_DeclinedArchiveKeepsTheLog(t *testing.T) {
 		return err == nil && len(pending) == 0
 	}, stationtest.WaitTimeout, 10*time.Millisecond)
 	assert.FileExists(t, log.path)
-	assert.Equal(t, 1, st.Count("execution:update"))
+	// The outcome update is queued separately from the upload request, so wait
+	// for it instead of assuming it already arrived.
+	stationtest.Decode[protocol.ExecutionUpdate](t, st, "execution:update", nil)
+	assert.Equal(t, 1, st.Count("execution:update"), "a declined archive sends no second update")
 	assert.Zero(t, target.puts)
 }
 
