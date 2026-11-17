@@ -846,6 +846,30 @@ func TestUpdate_KVim_DownUp(t *testing.T) {
 	}
 }
 
+// TestSortKey_CyclesOrderAndShowsBanner pins `o`: it moves to the next order,
+// resets the cursor, and names the order in the banner.
+func TestSortKey_CyclesOrderAndShowsBanner(t *testing.T) {
+	l := buildList(20)
+	l.SetSize(80, 24)
+	l.SetFocused(true)
+	l.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+
+	l.Update(tea.KeyPressMsg{Code: 'o', Text: "o"})
+
+	if got := l.window.SortLabel(); got != "oldest first" {
+		t.Fatalf("SortLabel after o = %q, want oldest first", got)
+	}
+	if l.Cursor() != 0 {
+		t.Fatalf("cursor after o = %d, want 0", l.Cursor())
+	}
+	if l.bannerLines() != 1 {
+		t.Fatalf("bannerLines with a sort = %d, want 1", l.bannerLines())
+	}
+	if view := l.View(); !strings.Contains(view, "SORT: OLDEST FIRST") {
+		t.Fatalf("expected sort banner naming the order, got:\n%s", view)
+	}
+}
+
 // TestFilterBanner_AppearsOnlyWhenFiltering pins the active-filter banner: it is
 // absent with no filter, present (and named) once one is active, and it costs
 // exactly one viewport row so the layout stays consistent.

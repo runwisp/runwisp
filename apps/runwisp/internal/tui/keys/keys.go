@@ -71,6 +71,7 @@ var (
 // Run-list filter action, active when the executions list is focused.
 var (
 	Filter = Binding{Keys: "f", Desc: "filter by status", Bar: "f filter"}
+	Sort   = Binding{Keys: "o", Desc: "sort: newest, oldest, longest, shortest first", Bar: "o sort"}
 )
 
 // Run-list multi-select actions. Select/SelectAll start a selection; the rest
@@ -126,7 +127,7 @@ var OverlaySections = []Section{
 	{Title: "Global", Bindings: []Binding{Help, Quit, NotifPanel, ReloadConfig, SearchLogs}},
 	{Title: "Navigate", Bindings: []Binding{Move, SwitchPanel, Open, Back, FilterTasks}},
 	{Title: "Task", Bindings: []Binding{Run, Stop, Pause, OpenRun, TaskInfo, Undo}},
-	{Title: "Run list", Bindings: []Binding{Filter, Select, SelectAll, BulkDelete, BulkCancel, BulkRerun, ClearSelect}},
+	{Title: "Run list", Bindings: []Binding{Filter, Sort, Select, SelectAll, BulkDelete, BulkCancel, BulkRerun, ClearSelect}},
 	{Title: "Exec view", Bindings: []Binding{Retry, DownloadDel, Fullscreen, TopEnd, Page, FrameHist}},
 	{Title: "Run dialog", Bindings: []Binding{FlagToggle, ChooseOpt, IncludeOmit, RunCancel}},
 	{Title: "Notifications", Bindings: []Binding{NotifOpen, NotifRead, NotifReadAll, NotifCollapse}},
