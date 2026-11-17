@@ -24,7 +24,8 @@ composer require runwisp/runwisp codeigniter4/tasks
 ```
 
 Composer asks to allow the `runwisp/runwisp` plugin, which downloads the
-`runwisp` binary. CodeIgniter finds the package's commands on its own.
+`runwisp` binary. In a Dockerfile or CI, [allow it first](/sdk/php/#install).
+CodeIgniter finds the package's commands on its own.
 
 Remove the `tasks:run` line from your crontab, and start the worker instead:
 
@@ -39,7 +40,7 @@ Supervisor program or your container's command. For systemd, use the unit in
 where to find RunWisp:
 
 ```
-RunWisp dashboard: http://127.0.0.1:9477, password: vendor/bin/runwisp password --data writable/runwisp
+RunWisp dashboard: http://127.0.0.1:9477, get the password with: vendor/bin/runwisp password --data writable/runwisp
 ```
 
 RunWisp keeps its database, run logs and socket in `writable/runwisp`.

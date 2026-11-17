@@ -61,6 +61,15 @@ final class WorkerTest extends TestCase
         );
     }
 
+    public function testTheDashboardNoticeSaysHowToGetThePassword(): void
+    {
+        $settings = new Settings('app', '/tmp/rw unit', 9477, '127.0.0.1', null, true, 'runwisp', '/tmp');
+        self::assertMatchesRegularExpression(
+            "~^info: RunWisp dashboard: http://127\\.0\\.0\\.1:9477, get the password with: (vendor/bin/)?runwisp password --data '/tmp/rw unit'$~",
+            self::announced($settings)[0],
+        );
+    }
+
     /** @return list<string> */
     private static function announced(Settings $settings): array
     {

@@ -27,6 +27,21 @@ export function scheduleTimeZone(
     return daemonZone ? daemonZone : undefined;
 }
 
+/**
+ * When the task runs next: "in 7 hours (02:30)", in its schedule zone. A task
+ * with a zone of its own names it, "(02:30 UTC)", so it isn't read as the
+ * daemon's local time.
+ */
+export function formatNextRun(
+    task: Pick<Task, "timezone">,
+    at: string | Date,
+    now: Date,
+    daemonZone: string,
+): string {
+    const own = Boolean(task.timezone) && task.timezone !== daemonZone;
+    return formatRelativeTimeWithAbsolute(at, now, scheduleTimeZone(task, daemonZone), own);
+}
+
 /** Whether the task has a cron schedule. */
 export function hasCron(task: Pick<Task, "cron">): task is Pick<Task, "cron"> & { cron: string } {
     return Boolean(task.cron?.trim());
@@ -115,7 +130,7 @@ export function noRunsMessage(
     if (hasCron(task) && task.nextRunAt && schedulingActive) {
         return {
             title: "No runs yet",
-            description: `The first run is ${formatRelativeTimeWithAbsolute(task.nextRunAt, now, scheduleTimeZone(task, daemonZone))}.`,
+            description: `The first run is ${formatNextRun(task, task.nextRunAt, now, daemonZone)}.`,
         };
     }
     if (isService(task.kind)) {

@@ -404,3 +404,28 @@ func TestEnsureDir_ToleratesChmodNotPermitted(t *testing.T) {
 		t.Fatal("other chmod errors must still be returned")
 	}
 }
+
+// An SDK keeps its data dir inside the app's project (storage/runwisp,
+// .runwisp), where `git add .` would otherwise commit the SQLite database.
+// An operator's own .gitignore there is left alone.
+func TestIgnoreInGit(t *testing.T) {
+	dir := t.TempDir()
+	if err := IgnoreInGit(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil || string(got) != "*\n" {
+		t.Fatalf(".gitignore = %q, %v; want \"*\\n\"", got, err)
+	}
+
+	custom := []byte("runwisp.db\n")
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), custom, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := IgnoreInGit(dir); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, ".gitignore")); string(got) != string(custom) {
+		t.Fatalf("existing .gitignore overwritten: %q", got)
+	}
+}

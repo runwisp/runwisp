@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -69,6 +70,20 @@ func TestMapDomainError_ErrRestartDidNotDrain_Returns409(t *testing.T) {
 	result := mapDomainError(context.Background(), ErrRestartDidNotDrain, "fallback")
 	require.NotNil(t, result)
 	assert.Equal(t, http.StatusConflict, result.GetStatus())
+}
+
+// "Run now" on a running on_overlap = "skip" task, or one whose queue is full,
+// is the caller racing a busy task, not a server fault: 409 with the reason.
+func TestMapDomainError_OverlapRejections_Return409(t *testing.T) {
+	for _, err := range []error{
+		fmt.Errorf("wrapped: %w", runtime.ErrOverlapSkipped),
+		fmt.Errorf("wrapped: %w", runtime.ErrQueueFull),
+	} {
+		result := mapDomainError(context.Background(), err, "fallback")
+		require.NotNil(t, result)
+		assert.Equal(t, http.StatusConflict, result.GetStatus(), err.Error())
+		assert.Equal(t, err.Error(), result.Error())
+	}
 }
 
 func TestMapDomainError_ErrNotRunning_Returns400(t *testing.T) {

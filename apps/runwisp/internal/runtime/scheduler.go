@@ -26,6 +26,14 @@ import (
 // an operator can't pause; the wrapped message names the reason.
 var ErrNotPausable = errors.New("schedule cannot be paused")
 
+// ErrOverlapSkipped and ErrQueueFull reject a trigger because the task is busy:
+// on_overlap = "skip" with a run active, or on_overlap = "queue" at max_queued.
+// The rejected run is still recorded, as skipped or queue_full.
+var (
+	ErrOverlapSkipped = errors.New("task already running, skipping (policy: skip)")
+	ErrQueueFull      = errors.New("queue full")
+)
+
 // ScheduleResult holds the outcome of scheduling tasks.
 type ScheduleResult struct {
 	Scheduled int

@@ -130,12 +130,14 @@ function formatInZone(date: Date, options: Intl.DateTimeFormatOptions, timeZone?
 
 /**
  * "in 7 hours (02:30)". Pass timeZone for a scheduled time, so the clock time
- * agrees with the cron description ("At 02:30") written in the schedule's zone.
+ * agrees with the cron description ("At 02:30") written in the schedule's zone,
+ * and showZone to name it: "in 7 hours (02:30 UTC)".
  */
 export function formatRelativeTimeWithAbsolute(
     dateStr: string | Date,
     now: Date = new Date(),
     timeZone?: string,
+    showZone = false,
 ): string {
     const date = new Date(dateStr);
     const diffDays = Math.abs(now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
@@ -147,7 +149,8 @@ export function formatRelativeTimeWithAbsolute(
             : year(date) === year(now)
               ? { month: "short", day: "numeric" }
               : { year: "numeric", month: "short", day: "numeric" };
-    return `${formatRelativeTime(date, now)} (${formatInZone(date, options, timeZone)})`;
+    const zone = showZone && timeZone ? ` ${timeZone}` : "";
+    return `${formatRelativeTime(date, now)} (${formatInZone(date, options, timeZone)}${zone})`;
 }
 
 export function formatBytes(bytes: number): string {

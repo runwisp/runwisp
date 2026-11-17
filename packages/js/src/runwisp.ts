@@ -885,7 +885,7 @@ export class RunWisp {
         let suffix = "";
         if (!this.settings.auth) suffix = " (login off)";
         else if (this.settings.password === undefined)
-            suffix = `, password: ${this.passwordCommand()}`;
+            suffix = `, get the password with: ${this.passwordCommand()}`;
         if (this.settings.host === "0.0.0.0" || this.settings.host === "::")
             suffix = ` (listening on all interfaces)${suffix}`;
         this.log?.info(`RunWisp dashboard: ${this.url}${suffix}`);

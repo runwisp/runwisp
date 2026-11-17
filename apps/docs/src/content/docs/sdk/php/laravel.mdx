@@ -24,7 +24,8 @@ composer require runwisp/runwisp
 ```
 
 Composer asks to allow the `runwisp/runwisp` plugin, which downloads the
-`runwisp` binary. Laravel finds the package on its own.
+`runwisp` binary. In a Dockerfile or CI, [allow it first](/sdk/php/#install).
+Laravel finds the package on its own.
 
 Remove the `schedule:run` line from your crontab, and start the worker
 instead. A crontab line left behind runs every task twice, so
@@ -41,7 +42,7 @@ Supervisor program or your container's command. For systemd, use the unit in
 prints where to find RunWisp:
 
 ```
-RunWisp dashboard: http://127.0.0.1:9477, password: vendor/bin/runwisp password --data storage/runwisp
+RunWisp dashboard: http://127.0.0.1:9477, get the password with: vendor/bin/runwisp password --data storage/runwisp
 ```
 
 RunWisp keeps its database, run logs and socket in `storage/runwisp`.

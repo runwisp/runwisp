@@ -4,6 +4,9 @@
 package main
 
 import (
+	"log/slog"
+
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 	"github.com/spf13/cobra"
 )
 
@@ -15,6 +18,12 @@ var daemonCmd = &cobra.Command{
 		f, err := withAppDocument(flags, cmd.InOrStdin(), daemonApp)
 		if err != nil {
 			return err
+		}
+		if daemonApp {
+			// An SDK app's data dir sits in its project (storage/runwisp, .runwisp).
+			if err := datadir.IgnoreInGit(f.DataDir); err != nil {
+				slog.Warn("Could not write .gitignore in the data dir", "dir", f.DataDir, "err", err)
+			}
 		}
 		return runDaemon(modeStandalone, f, true)
 	},

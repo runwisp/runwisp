@@ -81,6 +81,24 @@ describe("taskStrip: cron tasks", () => {
         expect(primaries(m)).toEqual(["Run now"]);
     });
 
+    // A Laravel app's schedule runs in UTC by default, on a daemon in local time.
+    it("names the task's own timezone in the next run, not the daemon's", () => {
+        const task = makeTask({ cron: "0 * * * *", nextRunAt: "2026-10-09T13:00:00Z" });
+        const next = (timezone: string) =>
+            text(
+                taskStrip({
+                    task: { ...task, timezone },
+                    running: undefined,
+                    schedulingActive: true,
+                    now: NOW,
+                    daemonZone: "Europe/Bratislava",
+                }).sentence,
+            );
+        expect(next("UTC")).toMatch(/\(13:00 UTC\)$/);
+        expect(next("Europe/Bratislava")).toMatch(/\(15:00\)$/);
+        expect(next("")).toMatch(/\(15:00\)$/);
+    });
+
     it("says the last run failed and opens it", () => {
         const m = strip(makeTask({ lastRun: makeRun({ isFailure: true, endReason: "failed" }) }));
         expect(m.badge).toMatchObject({ text: "Last run failed", kind: "failed", runId: "run-1" });
