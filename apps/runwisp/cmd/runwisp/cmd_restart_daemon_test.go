@@ -167,3 +167,11 @@ func TestConnectedAppDaemon(t *testing.T) {
 	assert.False(t, connectedAppDaemon(context.Background(), serveStatusSocket(t, identityMux("file"))))
 	assert.False(t, connectedAppDaemon(context.Background(), Flags{DataDir: testutil.ShortTempDir(t)}))
 }
+
+func TestRestartDaemonRefusesWhenNothingRuns(t *testing.T) {
+	f := Flags{DataDir: t.TempDir(), CfgFile: filepath.Join(t.TempDir(), "runwisp.toml")}
+	err := restartDaemon(restartTestCmd(t), f, true)
+	ufe, ok := isUserFacing(err)
+	require.True(t, ok, "got %v", err)
+	assert.Equal(t, "no daemon is running here", ufe.title)
+}
