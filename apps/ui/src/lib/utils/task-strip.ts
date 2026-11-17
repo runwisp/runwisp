@@ -2,18 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { isService, type Run, type Task } from "@runwisp/common";
-import {
-    formatDayMonth,
-    formatRelativeTime,
-    formatRelativeTimeWithAbsolute,
-    humanizeCron,
-    runDuration,
-} from "@runwisp/ui";
+import { formatDayMonth, formatRelativeTime, humanizeCron, runDuration } from "@runwisp/ui";
 import {
     canTogglePause,
+    formatNextRun,
     hasCron,
     isServiceStopped,
-    scheduleTimeZone,
     taskInstanceCount,
 } from "./task";
 
@@ -181,9 +175,7 @@ function cronStrip({ task, schedulingActive, now, daemonZone }: TaskStripInput):
             ? [
                   t(schedule),
                   m(" · "),
-                  t(
-                      `next run ${formatRelativeTimeWithAbsolute(next, now, scheduleTimeZone(task, daemonZone ?? ""))}`,
-                  ),
+                  t(`next run ${formatNextRun(task, next, now, daemonZone ?? "")}`),
               ]
             : [t(schedule)],
         short: next ? [t(`next ${formatRelativeTime(next, now)}`)] : [t(schedule)],

@@ -118,7 +118,9 @@ describe("formatTaskNextRunLabel", () => {
             /\(0?8:15\)$/,
         );
         const zoned = makeOverview({ task: makeTask({ timezone: "Asia/Kathmandu" }), nextRunMs });
-        expect(formatTaskNextRunLabel(zoned, now, "Etc/UTC")).toMatch(/\(0?8:15\)$/);
+        expect(formatTaskNextRunLabel(zoned, now, "Etc/UTC")).toMatch(
+            /\(0?8:15 Asia\/Kathmandu\)$/,
+        );
     });
 
     it("ticks down as the supplied now advances", () => {

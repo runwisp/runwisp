@@ -55,6 +55,24 @@ func ensureDir(dir string, chmod func(string, os.FileMode) error) error {
 	return nil
 }
 
+// IgnoreInGit writes a .gitignore that ignores everything in dir, unless dir
+// already has one. An SDK app keeps its data dir inside the project, where the
+// database and logs must never be committed.
+func IgnoreInGit(dir string) error {
+	f, err := os.OpenFile(filepath.Join(dir, ".gitignore"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if errors.Is(err, os.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString("*\n"); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
 // WriteSecretFile writes data to path with mode 0600, refusing to follow
 // symlinks. If path already exists, it must be a regular file owned by the
 // caller; otherwise the write is rejected. This prevents a TOCTOU symlink

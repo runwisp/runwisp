@@ -8,7 +8,7 @@ import {
     runDuration,
 } from "@runwisp/ui";
 import type { TaskOverview } from "./overview.js";
-import { scheduleTimeZone, serviceLabel } from "$lib/utils/task";
+import { formatNextRun, serviceLabel } from "$lib/utils/task";
 import { isService, type Run } from "@runwisp/common";
 
 export function pluralize(count: number): string {
@@ -65,11 +65,7 @@ export function formatTaskNextRunLabel(
     }
 
     if (task.nextRunMs !== undefined) {
-        return formatRelativeTimeWithAbsolute(
-            new Date(task.nextRunMs),
-            now,
-            scheduleTimeZone(task.task, daemonZone),
-        );
+        return formatNextRun(task.task, new Date(task.nextRunMs), now, daemonZone);
     }
 
     return task.isApiOnly ? "Manual only" : "Not scheduled";

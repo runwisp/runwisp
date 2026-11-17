@@ -25,6 +25,9 @@ It works with Symfony 6.4 or later, on PHP 8.2 or later. See the
 composer require runwisp/runwisp
 ```
 
+Composer asks to allow the `runwisp/runwisp` plugin, which downloads the
+`runwisp` binary. In a Dockerfile or CI, [allow it first](/sdk/php/#install).
+
 Register the bundle:
 
 ```php
@@ -46,7 +49,7 @@ bin/console runwisp:work
 It starts RunWisp and prints where to find it:
 
 ```
-RunWisp dashboard: http://127.0.0.1:9477, password: vendor/bin/runwisp password --data var/runwisp
+RunWisp dashboard: http://127.0.0.1:9477, get the password with: vendor/bin/runwisp password --data var/runwisp
 ```
 
 RunWisp keeps its database, run logs and socket in `var/runwisp`. Keep the

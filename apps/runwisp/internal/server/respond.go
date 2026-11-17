@@ -45,7 +45,9 @@ func mapDomainError(ctx context.Context, err error, fallback500 string) huma.Sta
 		errors.Is(err, ErrRestartDidNotDrain),
 		errors.Is(err, ErrStopDidNotDrain),
 		errors.Is(err, ErrSchedulingInactive),
-		errors.Is(err, runtime.ErrNotPausable):
+		errors.Is(err, runtime.ErrNotPausable),
+		errors.Is(err, runtime.ErrOverlapSkipped),
+		errors.Is(err, runtime.ErrQueueFull):
 		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, ErrNotRunning),
 		errors.Is(err, ErrInvalidSelector),

@@ -719,7 +719,7 @@ final class Worker
         if (!$this->settings->auth) {
             $suffix = ' (login off)';
         } elseif ($this->settings->password === null) {
-            $suffix = ', password: ' . $this->passwordCommand();
+            $suffix = ', get the password with: ' . $this->passwordCommand();
         }
         if (in_array($this->settings->host, ['0.0.0.0', '::'], true)) {
             $suffix = ' (listening on all interfaces)' . $suffix;
@@ -731,14 +731,20 @@ final class Worker
     private function passwordCommand(): string
     {
         $cwd = (string) getcwd();
-        $runwisp = is_file("$cwd/vendor/bin/runwisp") ? 'vendor/bin/runwisp' : escapeshellarg($this->settings->binary);
+        $runwisp = is_file("$cwd/vendor/bin/runwisp") ? 'vendor/bin/runwisp' : self::shellArg($this->settings->binary);
         $data = $this->settings->data;
         if ($this->settings->socket !== "$data/runwisp.sock") {
-            return "$runwisp password --socket " . escapeshellarg($this->settings->socket);
+            return "$runwisp password --socket " . self::shellArg($this->settings->socket);
         }
         $shown = str_starts_with($data, "$cwd/") ? substr($data, strlen($cwd) + 1) : $data;
 
-        return "$runwisp password --data " . escapeshellarg($shown);
+        return "$runwisp password --data " . self::shellArg($shown);
+    }
+
+    /** Quotes $value for a shell only when it needs it, so the common path reads as typed. */
+    private static function shellArg(string $value): string
+    {
+        return preg_match('~^[\w./:=@%+-]+$~', $value) === 1 ? $value : escapeshellarg($value);
     }
 
     private function warnOnce(string $key, string $text): void

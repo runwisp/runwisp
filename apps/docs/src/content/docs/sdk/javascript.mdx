@@ -46,7 +46,7 @@ runwisp.task("nightly-backup", { cron: "0 3 * * *" }, async () => {
 On the first task, the app starts RunWisp and prints where to find it:
 
 ```
-RunWisp dashboard: http://127.0.0.1:9477, password: npx runwisp password --data .runwisp
+RunWisp dashboard: http://127.0.0.1:9477, get the password with: npx runwisp password --data .runwisp
 ```
 
 Without a [`password`](#password) option, RunWisp picks a new password on each

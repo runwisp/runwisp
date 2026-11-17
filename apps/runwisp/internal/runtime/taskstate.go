@@ -125,10 +125,10 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 
 	switch ts.task.OnOverlap {
 	case model.PolicySkip:
-		return actionRejected, fmt.Errorf("task already running, skipping (policy: skip)")
+		return actionRejected, ErrOverlapSkipped
 	case model.PolicyQueue:
 		if maxQueued := ts.task.MaxQueuedValue(); len(ts.queue) >= maxQueued {
-			return actionQueueFull, fmt.Errorf("queue full (%d pending) for task %s", maxQueued, ts.task.Name)
+			return actionQueueFull, fmt.Errorf("%w (%d pending) for task %s", ErrQueueFull, maxQueued, ts.task.Name)
 		}
 		ts.queue = append(ts.queue, run)
 		ts.cond.Signal()

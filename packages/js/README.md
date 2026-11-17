@@ -25,7 +25,7 @@ cron.schedule(
 ```
 
 ```
-RunWisp dashboard: http://127.0.0.1:9477, password: npx runwisp password --data .runwisp
+RunWisp dashboard: http://127.0.0.1:9477, get the password with: npx runwisp password --data .runwisp
 ```
 
 - Thrown errors fail the run, with the stack trace in its log.
