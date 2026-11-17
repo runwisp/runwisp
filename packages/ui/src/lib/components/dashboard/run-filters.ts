@@ -15,6 +15,8 @@ export interface RunsListFilters {
     search: string;
     statuses: string[];
     sortDirection: "asc" | "desc" | "";
+    // Unset sorts by creation time; "duration" sorts by how long each run took.
+    sortField?: "duration" | undefined;
     // Optional dimensions explicitly admit `undefined` so a dimension can be
     // cleared by reassignment (`{ ...f, x: undefined }`) under the project's
     // exactOptionalPropertyTypes, a fresh object reference is what re-triggers

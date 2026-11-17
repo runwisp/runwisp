@@ -195,6 +195,12 @@ func (e *ExecList) Update(msg tea.Msg) tea.Cmd {
 		e.ClearSelection()
 		return nil
 	}
+	// Reordering keeps the same runs, so the selection stays.
+	if keyMsg.String() == "o" {
+		e.window.CycleSort()
+		e.cursor, e.Scroll = 0, 0
+		return nil
+	}
 	n := e.TotalCount()
 	if n == 0 {
 		return nil
@@ -508,18 +514,25 @@ func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, contentW int, c
 	}
 }
 
-// renderFilterBanner draws the active-status-filter notice shown under the
-// column header. It is tinted with the filter's own status colour so it ties
-// visually to the row status badges and can't be missed.
+// renderFilterBanner draws the active status filter and order under the column
+// header. A filter is tinted with its own status colour so it ties visually to
+// the row status badges and can't be missed.
 func (e *ExecList) renderFilterBanner(w int) string {
-	status := e.window.StatusFilter()
-	accent := uikit.StatusStyle(status).GetBackground()
-	label := uikit.OnBg(uikit.ColorBgLight, accent).
-		Bold(true).
-		Render("▌ FILTER: " + strings.ToUpper(uikit.StatusLabel(status)))
-	hint := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
-		Render("  ·  press f to change")
-	return uikit.PadLine(label+hint, w, uikit.ColorBgLight)
+	var parts []string
+	if status := e.window.StatusFilter(); status != "" {
+		accent := uikit.StatusStyle(status).GetBackground()
+		parts = append(parts, uikit.OnBg(uikit.ColorBgLight, accent).
+			Bold(true).
+			Render("▌ FILTER: "+strings.ToUpper(uikit.StatusLabel(status)))+
+			uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).Render("  ·  press f to change"))
+	}
+	if order := e.window.SortLabel(); order != "" {
+		parts = append(parts, uikit.OnBg(uikit.ColorBgLight, uikit.ColorPrimary).
+			Bold(true).
+			Render("▌ SORT: "+strings.ToUpper(order))+
+			uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).Render("  ·  press o to change"))
+	}
+	return uikit.PadLine(strings.Join(parts, "   "), w, uikit.ColorBgLight)
 }
 
 // renderEmptySection fills the whole viewport when no rows are present: the
@@ -573,7 +586,7 @@ func (e *ExecList) View() string {
 	b.WriteString(uikit.PadLine(header, w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
-	if e.window.HasStatusFilter() {
+	if e.bannerLines() > 0 {
 		b.WriteString(e.renderFilterBanner(w))
 		b.WriteString("\n")
 	}
@@ -609,10 +622,10 @@ func (e *ExecList) View() string {
 // TotalCount returns the total number of executions known to the window.
 func (e *ExecList) TotalCount() int { return e.window.TotalCount() }
 
-// bannerLines is the number of rows the active-filter banner occupies: one
-// while a status filter is active, zero otherwise.
+// bannerLines is the number of rows the banner occupies: one while a status
+// filter or a non-default order is active, zero otherwise.
 func (e *ExecList) bannerLines() int {
-	if e.window.HasStatusFilter() {
+	if e.window.HasStatusFilter() || e.window.SortLabel() != "" {
 		return 1
 	}
 	return 0

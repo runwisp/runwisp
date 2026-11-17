@@ -276,11 +276,11 @@ func (m Model) buildMainHelpText() helpBar {
 	bar := helpBar{}.add(prioNav, keys.Move.Bar, keys.Open.Bar)
 	if name := m.sidebar.ActiveTask(); name != "" {
 		bar = bar.add(prioAction, m.taskHeader(name).Hints()...).
-			add(prioNav, keys.Filter.Bar).
+			add(prioNav, keys.Filter.Bar, keys.Sort.Bar).
 			add(prioAction, keys.TaskInfo.Bar).
 			add(prioNav, keys.ToSidebar.Bar)
 	} else {
-		bar = bar.add(prioNav, keys.Filter.Bar)
+		bar = bar.add(prioNav, keys.Filter.Bar, keys.Sort.Bar)
 		if !m.readOnly {
 			bar = bar.add(prioNav, keys.Select.Bar)
 		}

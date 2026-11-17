@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Run lists can sort by duration, longest or shortest first: from the sort menu in the web UI, and with `o` in the TUI, which also gets oldest first.
+
 ### Changed
 
 - The PHP and JavaScript SDKs put a `.gitignore` in their data directory (`storage/runwisp`, `.runwisp`), so `git add .` no longer commits RunWisp's database and logs.

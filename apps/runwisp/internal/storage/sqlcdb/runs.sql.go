@@ -638,7 +638,7 @@ SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, e
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
   AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
-ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) ASC LIMIT ?13 OFFSET ?12
+ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) ASC, id DESC LIMIT ?13 OFFSET ?12
 `
 
 type QueryRunsDurationAscParams struct {
@@ -731,7 +731,7 @@ SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, e
   AND (?8 IS NULL OR retry_attempt > 0)
   AND (?9 IS NULL OR task_name = ?9)
   AND (?10 IS NULL OR (instr(lower(task_name), ?11) > 0 OR instr(lower(id), ?11) > 0))
-ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) DESC LIMIT ?13 OFFSET ?12
+ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) DESC, id DESC LIMIT ?13 OFFSET ?12
 `
 
 type QueryRunsDurationDescParams struct {

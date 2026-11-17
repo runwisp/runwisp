@@ -33,6 +33,7 @@ type ExecWindow struct {
 	client       *apiclient.Client
 	filterTask   string
 	statusFilter string // "" = all; one of statusFilterCycle
+	sort         int    // index into sortCycle; 0 = newest first
 	totalCount   int    // server-reported total
 	windowStart  int    // offset of items[0] in the full virtual list
 	items        []uikit.ExecListItem
@@ -78,6 +79,17 @@ var statusFilterWire = map[string]string{
 	"failed":    "failed,crashed,timeout,log_overflow,start_failed,unhealthy,missed",
 	"skipped":   "skipped,dst_skipped,queue_full",
 	"stopped":   "stopped,daemon_stopped",
+}
+
+// runSort is one order the list cycles through with `o`. The label names it in
+// the banner; the first entry, newest first, is the default and has none.
+type runSort struct{ label, field, direction string }
+
+var sortCycle = []runSort{
+	{"", "createdAt", "desc"},
+	{"oldest first", "createdAt", "asc"},
+	{"longest first", "duration", "desc"},
+	{"shortest first", "duration", "asc"},
 }
 
 func NewExecWindow(client *apiclient.Client) *ExecWindow {
@@ -164,6 +176,23 @@ func (w *ExecWindow) CycleStatusFilter() {
 	w.clearLocked()
 }
 
+// CycleSort advances to the next order in sortCycle and clears the window. The
+// caller must trigger a fetch afterward.
+func (w *ExecWindow) CycleSort() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.sort = (w.sort + 1) % len(sortCycle)
+	w.clearLocked()
+}
+
+// SortLabel names the active order, e.g. "longest first", or "" for the
+// default newest first.
+func (w *ExecWindow) SortLabel() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return sortCycle[w.sort].label
+}
+
 // HasStatusFilter reports whether a run-status filter is active (i.e. the list
 // is showing a subset rather than all runs).
 func (w *ExecWindow) HasStatusFilter() bool {
@@ -238,6 +267,7 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() (FetchResult, error)
 	w.loading = true
 	filter := w.filterTask
 	statusFilter := statusFilterWire[w.statusFilter]
+	order := sortCycle[w.sort]
 	loc := w.loc
 	gen := w.gen
 	w.mu.Unlock()
@@ -246,13 +276,12 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() (FetchResult, error)
 		// Center the window on the current scroll position.
 		offset := max(scroll-windowSize/2, 0)
 
-		// The list is always newest-first.
 		params := apiclient.RunsParams{
 			Limit:         windowSize,
 			Offset:        offset,
 			Status:        statusFilter,
-			SortField:     "createdAt",
-			SortDirection: "desc",
+			SortField:     order.field,
+			SortDirection: order.direction,
 			TaskName:      filter,
 		}
 
@@ -348,9 +377,9 @@ func (w *ExecWindow) UpsertRun(run model.Run) {
 	}
 
 	// A new run only belongs at position 0 in the newest-first view. Under a
-	// status filter its correct position is unknown, so leave it to the next
-	// fetch to place it.
-	if w.statusFilter != "" {
+	// status filter or another order its correct position is unknown, so leave
+	// it to the next fetch to place it.
+	if w.statusFilter != "" || w.sort != 0 {
 		return
 	}
 

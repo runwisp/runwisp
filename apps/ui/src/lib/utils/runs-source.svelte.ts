@@ -58,6 +58,7 @@ function filtersEqual(a: RunsListFilters | null, b: RunsListFilters): boolean {
     if (!a) return false;
     return (
         a.sortDirection === b.sortDirection &&
+        a.sortField === b.sortField &&
         JSON.stringify(runFilterParams(a)) === JSON.stringify(runFilterParams(b))
     );
 }
@@ -72,6 +73,7 @@ function buildQuery(offset: number, f: RunsListFilters): RunsQuery {
     const { triggeredBy, exitCodeMin, exitCodeMax, ...rest } = runFilterParams(f);
     const params: RunsQuery = { limit: PAGE_SIZE, offset, ...rest };
     if (f.sortDirection) params.sortDirection = f.sortDirection;
+    if (f.sortField) params.sortField = f.sortField;
     const trigger = asTrigger(triggeredBy);
     if (trigger) params.triggeredBy = trigger;
     if (exitCodeMin !== undefined) params.exitCodeMin = String(exitCodeMin);
@@ -124,7 +126,15 @@ function matchesFilters(run: Run, f: RunsListFilters): boolean {
 
 /** True when filters use the server default sort (createdAt DESC). */
 function isCreatedAtDesc(f: RunsListFilters): boolean {
-    return f.sortDirection !== "asc";
+    return !f.sortField && f.sortDirection !== "asc";
+}
+
+/**
+ * True when a new run sorts first: shortest-first puts it on top, since an
+ * in-flight run counts as zero duration and ties break newest-first.
+ */
+function isShortestFirst(f: RunsListFilters): boolean {
+    return f.sortField === "duration" && f.sortDirection === "asc";
 }
 
 export function createRunsSource(): RunsSource {
@@ -250,11 +260,13 @@ export function createRunsSource(): RunsSource {
             if (insertAt === -1) next.push(run);
             else next.splice(insertAt, 0, run);
             items = next;
+        } else if (isShortestFirst(f)) {
+            items = [run, ...items];
         } else if (items.length >= total) {
-            // Ascending (oldest-first): a new run is always the newest overall,
-            // i.e. the very last item. Only safe to append directly once every
-            // earlier page is already loaded, otherwise it would visually sit
-            // ahead of older, not-yet-loaded runs that belong before it.
+            // Oldest-first or longest-first: a new run sorts last (the newest
+            // overall, or zero duration so far). Only safe to append directly
+            // once every earlier page is already loaded, otherwise it would
+            // visually sit ahead of not-yet-loaded runs that belong before it.
             items = [...items, run];
         }
         total += 1;

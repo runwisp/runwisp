@@ -10,10 +10,12 @@
         Square,
         Trash,
         RotateCw,
+        Timer,
     } from "@lucide/svelte";
     import { untrack } from "svelte";
     import { createVirtualizer } from "@tanstack/svelte-virtual";
     import Button from "../Button.svelte";
+    import Dropdown from "../Dropdown.svelte";
     import { arrival, leave, prefersReducedMotion } from "../../actions/row-motion.js";
     import type { RunMotion } from "../../utils/run-motion.js";
     import EmptyState from "../EmptyState.svelte";
@@ -247,20 +249,40 @@
         else selection.selectAll();
     }
 
-    function toggleSortDirection() {
-        // Reassign the whole object (not just the property): the parent reads
-        // `filters` through a multi-level `bind:`, and a fresh reference is what
-        // reliably re-triggers its fetch effect.
-        filters = {
-            ...filters,
-            sortDirection: filters.sortDirection === "asc" ? "desc" : "asc",
-        };
-    }
+    const SORTS: {
+        label: string;
+        field: RunsListFilters["sortField"];
+        direction: "asc" | "desc";
+    }[] = [
+        { label: "Newest first", field: undefined, direction: "desc" },
+        { label: "Oldest first", field: undefined, direction: "asc" },
+        { label: "Longest first", field: "duration", direction: "desc" },
+        { label: "Shortest first", field: "duration", direction: "asc" },
+    ];
+
+    // Reassign the whole object (not just the properties): the parent reads
+    // `filters` through a multi-level `bind:`, and a fresh reference is what
+    // reliably re-triggers its fetch effect.
+    const sortItems = $derived(
+        SORTS.map((sort) => ({
+            label: sort.label,
+            selected:
+                sort.field === filters.sortField &&
+                sort.direction === (filters.sortDirection || "desc"),
+            onClick: () => {
+                filters = { ...filters, sortField: sort.field, sortDirection: sort.direction };
+            },
+        })),
+    );
 
     // An empty list under filters says so, rather than claiming no runs exist.
     const filtered = $derived(activeFilterCount(filters) > 0 || filters.search !== "");
     function clearFilters() {
-        filters = { ...emptyRunFilters(), sortDirection: filters.sortDirection };
+        filters = {
+            ...emptyRunFilters(),
+            sortDirection: filters.sortDirection,
+            sortField: filters.sortField,
+        };
     }
 
     // The count stands in for a title: "12 runs", or matches while searching.
@@ -370,22 +392,18 @@
                     {#if showFilters}
                         <RunFilterPopover bind:filters {showTask} {tasks} />
                     {/if}
-                    <Button
-                        variant="ghost"
-                        size="xs"
-                        class="h-7 w-7 px-0"
-                        onclick={toggleSortDirection}
-                        title="Toggle sort order"
-                    >
-                        {#snippet icon()}
-                            <ArrowUpDown
-                                size={14}
-                                class="text-on-surface-muted {filters.sortDirection === 'asc'
-                                    ? 'rotate-180'
-                                    : ''}"
-                            />
+                    <Dropdown items={sortItems} triggerLabel="Sort runs">
+                        {#snippet trigger()}
+                            {#if filters.sortField === "duration"}
+                                <Timer size={14} />
+                            {:else}
+                                <ArrowUpDown
+                                    size={14}
+                                    class={filters.sortDirection === "asc" ? "rotate-180" : ""}
+                                />
+                            {/if}
                         {/snippet}
-                    </Button>
+                    </Dropdown>
                     {#if onToggleFold}
                         <Button
                             variant="ghost"
