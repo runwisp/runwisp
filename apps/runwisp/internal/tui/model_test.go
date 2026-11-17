@@ -486,7 +486,7 @@ func TestHandleBusyTasks_IdleShutsDownWithoutDialog(t *testing.T) {
 func TestHandleBusyTasks_BusyAsksBeforeShuttingDown(t *testing.T) {
 	m := newTestModel(nil)
 	m.daemon = DaemonOwned
-	if cmd := m.handleBusyTasks(uikit.BusyTasksMsg{Tasks: []string{"backup", "sync"}}); cmd != nil {
+	if m.handleBusyTasks(uikit.BusyTasksMsg{Tasks: []string{"backup", "sync"}}) != nil {
 		t.Fatal("expected no quit while the dialog asks")
 	}
 	d := m.dialogs.confirm()
