@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -443,18 +444,20 @@ func TestResolveTaskName_PanelMainReturnsSidebarActive(t *testing.T) {
 
 // ─── requestQuit ─────────────────────────────────────────────────────────────
 
-func TestRequestQuit_StartedDaemonOpensConfirmDialog(t *testing.T) {
+// A daemon this TUI owns dies with it, so quitting first looks up which tasks
+// it would interrupt.
+func TestRequestQuit_OwnedLooksUpBusyTasks(t *testing.T) {
 	m := newTestModel(nil)
-	m.daemon = DaemonStarted
-	if cmd := m.requestQuit(); cmd != nil {
-		t.Fatal("expected no quit cmd while the dialog asks")
+	m.daemon = DaemonOwned
+	cmd := m.requestQuit()
+	if m.dialogs.Has(dlgConfirm) {
+		t.Fatal("expected no dialog before the lookup answers")
 	}
-	d := m.dialogs.confirm()
-	if d == nil {
-		t.Fatal("expected confirm dialog after requestQuit")
+	if cmd == nil {
+		t.Fatal("expected the busy-task lookup cmd")
 	}
-	if d.onDeny == nil {
-		t.Fatal("expected a Shut Down action for a daemon the TUI started")
+	if _, ok := cmd().(uikit.BusyTasksMsg); !ok {
+		t.Fatal("expected a BusyTasksMsg")
 	}
 }
 
@@ -465,30 +468,50 @@ func TestRequestQuit_AttachedQuitsWithoutDialog(t *testing.T) {
 	assertQuitsKeepingDaemon(t, &m)
 }
 
-// A daemon the TUI started but that has since come under systemd / launchd is
-// no longer the TUI's to stop.
-func TestRequestQuit_ServiceManagedQuitsWithoutDialog(t *testing.T) {
+// Nothing running: quitting an owned daemon shuts it down without asking.
+func TestHandleBusyTasks_IdleShutsDownWithoutDialog(t *testing.T) {
 	m := newTestModel(nil)
-	m.daemon = DaemonStarted
-	m.info.ServiceManaged = true
-	assertQuitsKeepingDaemon(t, &m)
-}
-
-// A throwaway demo daemon has no life after the TUI, so quitting shuts it down
-// without offering to keep it running.
-func TestRequestQuit_ThrowawayShutsDownWithoutDialog(t *testing.T) {
-	m := newTestModel(nil)
-	m.daemon = DaemonThrowaway
-	cmd := m.requestQuit()
+	m.daemon = DaemonOwned
+	cmd := m.handleBusyTasks(uikit.BusyTasksMsg{})
 	if m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected no quit dialog")
 	}
-	if cmd == nil {
-		t.Fatal("expected a quit cmd")
-	}
-	msg, ok := cmd().(uikit.QuitMsg)
-	if !ok || msg.Action != uikit.QuitShutdownDaemon {
+	if msg, ok := cmd().(uikit.QuitMsg); !ok || msg.Action != uikit.QuitShutdownDaemon {
 		t.Fatalf("expected QuitMsg{QuitShutdownDaemon}, got %#v", msg)
+	}
+}
+
+// Runs in flight: quitting names what it would interrupt and only shuts down
+// once confirmed.
+func TestHandleBusyTasks_BusyAsksBeforeShuttingDown(t *testing.T) {
+	m := newTestModel(nil)
+	m.daemon = DaemonOwned
+	if cmd := m.handleBusyTasks(uikit.BusyTasksMsg{Tasks: []string{"backup", "sync"}}); cmd != nil {
+		t.Fatal("expected no quit while the dialog asks")
+	}
+	d := m.dialogs.confirm()
+	if d == nil {
+		t.Fatal("expected a quit confirm")
+	}
+	if !strings.Contains(d.message, "backup, sync") {
+		t.Fatalf("expected the busy tasks named, got %q", d.message)
+	}
+	if cmd, _ := d.handleKeyMsg("n"); cmd != nil {
+		t.Fatal("expected n to cancel without quitting")
+	}
+	cmd, _ := d.handleKeyMsg("y")
+	if msg, ok := cmd().(uikit.QuitMsg); !ok || msg.Action != uikit.QuitShutdownDaemon {
+		t.Fatalf("expected QuitMsg{QuitShutdownDaemon}, got %#v", msg)
+	}
+}
+
+// A failed lookup can't prove nothing runs, so it asks too.
+func TestHandleBusyTasks_LookupFailureAsks(t *testing.T) {
+	m := newTestModel(nil)
+	m.daemon = DaemonOwned
+	m.handleBusyTasks(uikit.BusyTasksMsg{Err: errors.New("boom")})
+	if !m.dialogs.Has(dlgConfirm) {
+		t.Fatal("expected a quit confirm when the lookup fails")
 	}
 }
 

@@ -20,7 +20,6 @@ import (
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
-	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/update"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/version"
 	"github.com/spf13/cobra"
@@ -131,7 +130,7 @@ func runUpgrade(cmd *cobra.Command, f Flags, yesFlag bool, restartFlag string) e
 		return err
 	}
 
-	if !restartable(ctx, f, out, latest) {
+	if !restartable(cmd, f, latest) {
 		return nil
 	}
 	choice, err := resolveRestartChoice(restartFlag, in, out, isTTY, latest)
@@ -178,7 +177,8 @@ func upgradeBinary(ctx context.Context, cmd *cobra.Command, argv []string, lates
 
 // restartable reports whether there's a daemon here that upgrade can restart,
 // and otherwise prints how it gets the new version.
-func restartable(ctx context.Context, f Flags, out io.Writer, latest string) bool {
+func restartable(cmd *cobra.Command, f Flags, latest string) bool {
+	ctx, out := cmd.Context(), cmd.OutOrStdout()
 	if !isDaemonRunning(f) {
 		if os.Geteuid() == 0 && os.Getenv("SUDO_USER") != "" {
 			fmt.Fprintln(out, "If a daemon runs as another user, restart it as that user with 'runwisp restart'.")
@@ -242,15 +242,10 @@ func restartAfterUpgrade(cmd *cobra.Command, f Flags, choice, latest string) err
 func waitForIdle(ctx context.Context, client *apiclient.Client, out io.Writer, interval time.Duration) error {
 	var last string
 	for {
-		tasks, err := client.ListTasks(ctx)
+		busy, err := client.BusyTasks(ctx)
 		if err != nil {
 			return err
 		}
-		runs, _, err := client.ListRuns(ctx, apiclient.RunsParams{Status: "pending,running", Limit: 500})
-		if err != nil {
-			return err
-		}
-		busy := activeTaskRuns(tasks, runs)
 		if len(busy) == 0 {
 			return nil
 		}
@@ -264,25 +259,6 @@ func waitForIdle(ctx context.Context, client *apiclient.Client, out io.Writer, i
 		case <-time.After(interval):
 		}
 	}
-}
-
-// activeTaskRuns names the tasks with active runs, ignoring services: they are
-// always running and restart with the daemon either way.
-func activeTaskRuns(tasks []model.TaskResponse, runs []model.Run) []string {
-	services := map[string]bool{}
-	for _, t := range tasks {
-		if t.Kind.IsService() {
-			services[t.Name] = true
-		}
-	}
-	var busy []string
-	for _, r := range runs {
-		if !services[r.TaskName] && !slices.Contains(busy, r.TaskName) {
-			busy = append(busy, r.TaskName)
-		}
-	}
-	slices.Sort(busy)
-	return busy
 }
 
 func vPrefixed(v string) string {

@@ -42,15 +42,12 @@ func (k buttonKind) fill(hover bool) color.Color {
 type ConfirmDialog struct {
 	title     string
 	message   string
-	noteLines []string // optional muted lines below the message
 	yesLabel  string
 	noLabel   string
 	yesKind   buttonKind
-	noKind    buttonKind
 	onConfirm tea.Cmd
-	onDeny    tea.Cmd // if non-nil, called when user selects No (instead of just closing)
-	selected  int     // 0 = Yes, 1 = No
-	hovered   int     // -1 = none, 0 = Yes, 1 = No
+	selected  int // 0 = Yes, 1 = No
+	hovered   int // -1 = none, 0 = Yes, 1 = No
 
 	shuttingDown bool
 	spinner      spinner.Model
@@ -61,14 +58,6 @@ type ConfirmDialog struct {
 	btnY               int
 }
 
-// WithNote attaches one or more muted lines rendered below the
-// message. Empty strings render as visual spacers. Returns the dialog
-// for chained construction.
-func (d *ConfirmDialog) WithNote(lines ...string) *ConfirmDialog {
-	d.noteLines = lines
-	return d
-}
-
 func NewConfirmDialog(title, message string, onConfirm tea.Cmd) *ConfirmDialog {
 	return &ConfirmDialog{
 		title:     title,
@@ -76,7 +65,6 @@ func NewConfirmDialog(title, message string, onConfirm tea.Cmd) *ConfirmDialog {
 		yesLabel:  "Yes",
 		noLabel:   "No",
 		yesKind:   btnPrimary,
-		noKind:    btnNeutral,
 		onConfirm: onConfirm,
 		selected:  1,
 		hovered:   -1,
@@ -88,27 +76,6 @@ func NewConfirmDialog(title, message string, onConfirm tea.Cmd) *ConfirmDialog {
 func (d *ConfirmDialog) Danger() *ConfirmDialog {
 	d.yesKind = btnDanger
 	return d
-}
-
-// NewChoiceDialog offers two actions; both trigger a callback and only Esc
-// cancels without action. noDanger marks the second as the destructive one.
-func NewChoiceDialog(title, message, yesLabel, noLabel string, noDanger bool, onConfirm, onDeny tea.Cmd) *ConfirmDialog {
-	noKind := btnPrimary
-	if noDanger {
-		noKind = btnDanger
-	}
-	return &ConfirmDialog{
-		title:     title,
-		message:   message,
-		yesLabel:  yesLabel,
-		noLabel:   noLabel,
-		yesKind:   btnPrimary,
-		noKind:    noKind,
-		onConfirm: onConfirm,
-		onDeny:    onDeny,
-		selected:  0,
-		hovered:   -1,
-	}
 }
 
 // Returns a command and whether the dialog should close.
@@ -140,16 +107,8 @@ func (d *ConfirmDialog) handleKeyMsg(key string) (tea.Cmd, bool) {
 		if d.selected == 0 {
 			return d.onConfirm, true
 		}
-		if d.onDeny != nil {
-			return d.onDeny, true
-		}
 		return nil, true
-	case "esc":
-		return nil, true
-	case "n":
-		if d.onDeny != nil {
-			return d.onDeny, true
-		}
+	case "esc", "n":
 		return nil, true
 	case "y":
 		return d.onConfirm, true
@@ -163,9 +122,6 @@ func (d *ConfirmDialog) handleClick(x, y int) (tea.Cmd, bool) {
 			return d.onConfirm, true
 		}
 		if x >= d.btnNoX1 && x < d.btnNoX2 {
-			if d.onDeny != nil {
-				return d.onDeny, true
-			}
 			return nil, true
 		}
 	}
@@ -239,7 +195,7 @@ func (d *ConfirmDialog) View(screenWidth, screenHeight int) string {
 
 	if !d.shuttingDown {
 		msgH := lipgloss.Height(msgStr)
-		d.btnY = box.top + 1 + 3 + msgH + len(d.noteLines) + 1
+		d.btnY = box.top + 1 + 3 + msgH + 1
 		gapW := 3
 		totalBtnW := yesBtnW + gapW + noBtnW
 		btnAreaLeft := box.left + 2 + (box.innerWidth-totalBtnW)/2
@@ -274,7 +230,7 @@ func (d *ConfirmDialog) renderShuttingDownLines(innerWidth int, titleStr string)
 
 func (d *ConfirmDialog) renderButtonLines(innerWidth int, titleStr, msgStr string) (lines []string, yesBtnW, noBtnW int) {
 	yesStyle := d.buttonStyle(0, d.yesKind)
-	noStyle := d.buttonStyle(1, d.noKind)
+	noStyle := d.buttonStyle(1, btnNeutral)
 
 	yesBtn := yesStyle.Render(d.yesLabel)
 	noBtn := noStyle.Render(d.noLabel)
@@ -286,21 +242,14 @@ func (d *ConfirmDialog) renderButtonLines(innerWidth int, titleStr, msgStr strin
 		Align(lipgloss.Center).
 		Render(buttons)
 
-	hintText := "y confirm · n/esc cancel · ←→ switch"
-	if d.onDeny != nil {
-		hintText = "enter select · esc cancel · ←→ switch"
-	}
 	lines = []string{
 		modalEmptyLine(innerWidth),
 		titleStr,
 		modalEmptyLine(innerWidth),
 		msgStr,
 	}
-	for _, note := range d.noteLines {
-		lines = append(lines, modalSurfaceLine(note, innerWidth, uikit.ColorTextMuted, false))
-	}
 	lines = append(lines, modalEmptyLine(innerWidth), buttonsLine)
-	lines = append(lines, modalFooter(hintText, innerWidth)...)
+	lines = append(lines, modalFooter("y confirm · n/esc cancel · ←→ switch", innerWidth)...)
 	return lines, lipgloss.Width(yesBtn), lipgloss.Width(noBtn)
 }
 

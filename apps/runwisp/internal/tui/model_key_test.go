@@ -877,14 +877,15 @@ func TestHandleKeyHelp_SecondQuestionMarkCloses(t *testing.T) {
 
 func TestHandleKeyHelp_CtrlCEscalatesToQuitConfirm(t *testing.T) {
 	m := newTestModel(nil)
-	m.daemon = DaemonStarted
+	m.daemon = DaemonOwned
 	m.dialogs.Show(dlgHelp, &HelpDialog{})
 
-	updated, _ := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatal("expected Model")
 	}
+	got, _ = runQuit(t, got, cmd)
 	if got.dialogs.Has(dlgHelp) {
 		t.Fatal("expected ctrl+c to dismiss the help overlay")
 	}
@@ -931,20 +932,15 @@ func TestInterceptHelpDialog_CloseKeysIntercept(t *testing.T) {
 
 // ─── handleKeyQuit ───────────────────────────────────────────────────────────
 
-func TestHandleKeyQuit_OpensQuitConfirmDialog(t *testing.T) {
+func TestHandleKeyQuit_StartsQuitFlow(t *testing.T) {
 	m := newTestModel(nil)
-	m.daemon = DaemonStarted
-	if m.dialogs.Has(dlgConfirm) {
-		t.Fatal("precondition: no dialog expected")
-	}
+	m.daemon = DaemonOwned
 	newM, cmd, handled := handleKeyQuit(m, keyMsg("q"))
 	if !handled {
 		t.Fatal("expected handled=true")
 	}
-	if cmd != nil {
-		t.Fatal("handleKeyQuit returns nil cmd; requestQuit enqueues the dialog directly")
-	}
-	if !newM.dialogs.Has(dlgConfirm) {
+	// The dummy client can't answer the busy-task lookup, so it asks.
+	if newM, _ = runQuit(t, newM, cmd); !newM.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected a confirm dialog to be queued")
 	}
 }
@@ -979,12 +975,13 @@ func TestHandleKey_UnknownKeyDelegates(t *testing.T) {
 // `handled=true` branch and returns early.
 func TestHandleKey_GlobalHandledKey(t *testing.T) {
 	m := newTestModel(nil)
-	m.daemon = DaemonStarted
-	newM, _ := m.handleKey(keyMsg("q"))
+	m.daemon = DaemonOwned
+	newM, cmd := m.handleKey(keyMsg("q"))
 	got, ok := newM.(Model)
 	if !ok {
 		t.Fatalf("expected Model return, got %T", newM)
 	}
+	got, _ = runQuit(t, got, cmd)
 	if !got.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected quit dialog after pressing q")
 	}

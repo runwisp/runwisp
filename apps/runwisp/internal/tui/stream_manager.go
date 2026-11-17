@@ -287,6 +287,17 @@ func (sm *StreamManager) FetchTaskState() tea.Cmd {
 	}
 }
 
+// FetchBusyTasks returns a command that reads which tasks have a run in
+// flight, so quitting can warn before it interrupts them.
+func (sm *StreamManager) FetchBusyTasks() tea.Cmd {
+	client := sm.client
+	ctx := sm.streamCtx
+	return func() tea.Msg {
+		tasks, err := client.BusyTasks(ctx)
+		return uikit.BusyTasksMsg{Tasks: tasks, Err: err}
+	}
+}
+
 // taskStateMsg keys the per-task state of a /api/tasks read by task name.
 func taskStateMsg(tasks []model.TaskResponse) uikit.TaskStateMsg {
 	paused := make(map[string]time.Time)

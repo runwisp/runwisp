@@ -315,7 +315,7 @@ Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_VIEWER_PASSWORD` (op
 Official Docker image: `runwisp/runwisp` (alpine default + `-debian` variant, amd64/arm64; runs under tini as PID 1). Plain tags carry no Docker CLI; add `-docker` to the tag (e.g. `latest-docker`, `latest-debian-docker`) for a build with a Docker CLI + Compose plugin baked in, needed if `[compose.*]` or a task's `run =` shells out to `docker`/`docker compose` from inside the RunWisp container itself. Binds `0.0.0.0`, plain HTTP (daemon's `[daemon] tls` default of `off`; set `-e RUNWISP_TLS=auto` to opt into self-signed HTTPS), requires `RUNWISP_PASSWORD` or `RUNWISP_AUTH=off` set or the entrypoint refuses to start; mount a config directory at `/etc/runwisp` (the entrypoint writes a starter `runwisp.toml` into it when the file is missing, the directory is a writable mount point, and the data dir has no `runwisp.db` yet) and data at `/var/lib/runwisp`. See https://docs.runwisp.com/getting-started/docker/.
 
 ```
-runwisp                      — no subcommand: attach TUI to running daemon, else scaffold toml + spawn daemon + attach
+runwisp                      — no subcommand: attach TUI to running daemon (quit leaves it running), else scaffold toml + run the daemon in-process with the TUI (quit stops it; confirms if task runs are active)
                              — scaffold prompt (TTY only) also detects an adjacent compose file and/or a readable
                                crontab (DefaultCronPatterns: root gets /etc/crontab + /etc/cron.d/* + /etc/anacrontab + every spool,
                                others get only their own spool file) and offers to wire either/both into the starter (a compose-only directory defaults to a starter that schedules jobs in the stack's services, with the import-the-services starter as the second choice);
@@ -346,7 +346,7 @@ runwisp reload               — re-read runwisp.toml + reconcile live (== SIGHU
                                change — it only appears here.
 runwisp start <target...>    — start one or more tasks/services via the local socket (or --url); target = name or quoted glob ('*' = all controllable);
                                 service: un-parks + fills empty slots, running instances untouched; task: triggers a run, no-op if one is already active/queued
-runwisp restart              — stop + fresh start the daemon (applies restart-only settings, re-fires run_on_start (except "boot" tasks already run this boot)/catch-up); delegates to systemd/launchd if service-installed; --local to pin the per-user unit
+runwisp restart              — stop + fresh start the daemon (applies restart-only settings, re-fires run_on_start (except "boot" tasks already run this boot)/catch-up); delegates to systemd/launchd if service-installed, otherwise restarts in place (SIGUSR2: graceful shutdown, then re-exec under the same PID, so a Docker container or terminal keeps it); --local to pin the per-user unit
 runwisp restart <target...>  — restart one or more tasks/services via the local socket (or --url); target = name or quoted glob; daemon untouched, never delegates to systemd
                                 service: bounces every instance (starts it if stopped); task: cancels the active run, waits for it to end, triggers exactly one fresh run (409 if it doesn't drain in time)
 runwisp stop                 — shut the daemon down (delegates to systemd/launchd if service-installed); --local to pin the per-user unit
@@ -432,7 +432,7 @@ runwisp password             — print the daemon's ephemeral password (local so
 runwisp openapi              — print the OpenAPI 3.1 spec (JSON) to stdout
 runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-12) to stdout; published at https://docs.runwisp.com/config.schema.json
 runwisp station              — start in station mode; --token --url --env-file(=.env) --no-tui
-runwisp demo                 — boot a throwaway, fully-populated instance; --no-tui --seed-only --station --token --url --env-file
+runwisp demo                 — boot a throwaway, fully-populated instance; --no-tui (foreground, Ctrl+C stops it) --seed-only --station --token --url --env-file
 runwisp upgrade              — upgrade to the latest stable release via the install channel: homebrew → brew upgrade; deb/rpm package → [sudo] apt-get update + install --only-upgrade / dnf upgrade --refresh; global npm/bun/pnpm/yarn → that manager; script/tar.gz → download from GitHub, verify SHA-256, atomic in-place swap; docker/npx/project-local npm → refuses with instructions; dev build refuses. -y/--yes (needed without a TTY), --restart now|idle|later (idle = wait until no task runs are pending/running, services ignored; no TTY + no flag = later)
 runwisp service install      — install autostart; -y --print --dry-run --force --local --binary <path> --station --token <t> --url <u>
                              — DEFAULT scope is the system-wide singleton /etc/systemd/system/runwisp.service

@@ -35,6 +35,9 @@ import (
 // our lowercase title convention holds. The fang.Styles argument is ignored;
 // renderError draws from the shared brand hex constants instead.
 func handleCLIError(w io.Writer, _ fang.Styles, err error) {
+	if errors.Is(err, errRestartInPlace) {
+		return // not an error: main re-executes the daemon
+	}
 	if ufe, ok := isUserFacing(err); ok {
 		renderError(w, ufe.title, ufe.details, "")
 		return

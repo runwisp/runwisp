@@ -298,5 +298,6 @@ docker compose exec runwisp runwisp run hello
 ```
 
 With `docker run`, use `docker exec runwisp` instead. After editing
-`runwisp.toml` on the host, run `runwisp reload` the same way (see
-[Reload](/operations/reload/)).
+`runwisp.toml` on the host, run `runwisp reload` the same way. For a setting a
+reload can't apply, `runwisp restart` restarts RunWisp inside the running
+container (see [Reload & restart](/operations/reload/)).

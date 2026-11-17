@@ -19,18 +19,19 @@ import (
 	"golang.org/x/term"
 )
 
-// runDefault detects a running daemon or spawns one, then opens the TUI.
+// runDefault attaches the TUI to a running daemon, or runs one in this process
+// with the TUI in front of it. A daemon started here lives exactly as long as
+// this process: always-on is what `runwisp service install` or Docker is for.
 func runDefault(ctx context.Context, f Flags) error {
 	client := apiclient.NewUnix(localAPISocketPath(f))
 
 	if client.HealthCheck(ctx) == nil {
-		return runTUIConnect(ctx, client, f, tui.DaemonAttached)
+		return runTUIConnect(ctx, client)
 	}
 	if err := otherUserDaemonError(f); err != nil {
 		return err
 	}
 
-	// Spawn a background daemon or handle port conflicts.
 	serviceInstalled, err := scaffoldIfMissing(f)
 	if err != nil {
 		return err
@@ -40,42 +41,26 @@ func runDefault(ctx context.Context, f Flags) error {
 	}
 
 	// When first run performed the cron cutover, systemd already owns a daemon on
-	// this data dir and started it — spawning a second one here would fight it for
-	// the port and the SQLite file. Wait for the one systemd started (which is a
-	// health poll, not a spawn) and attach to it.
+	// this data dir and started it; running a second one here would fight it for
+	// the port and the SQLite file. Wait for the one systemd started and attach.
 	if serviceInstalled {
 		if err := waitForDaemon(client, 30*time.Second, f); err != nil {
 			return err
 		}
-		return runTUIConnect(ctx, client, f, tui.DaemonAttached)
+		return runTUIConnect(ctx, client)
 	}
 
-	spawn, portErr := ensurePortFreeOrHandle(ctx, f)
-	if portErr != nil || !spawn {
+	start, portErr := ensurePortFreeOrHandle(ctx, f)
+	if portErr != nil || !start {
 		return portErr
 	}
 
-	return spawnAndAttach(ctx, client, f, modeStandalone)
+	return runDaemon(modeStandalone, f, false)
 }
 
-// spawnAndAttach spawns a detached daemon in mode, waits for it to come up and
-// attaches the TUI to it. When the spawn itself fails, it runs the daemon
-// inline instead.
-func spawnAndAttach(ctx context.Context, client *apiclient.Client, f Flags, mode daemonMode) error {
-	if err := spawnDaemon(f, mode == modeStation); err != nil {
-		slog.Warn("Failed to spawn background daemon, running inline", "err", err)
-		return runDaemon(mode, f, false)
-	}
-
-	if err := waitForDaemon(client, 10*time.Second, f); err != nil {
-		return err
-	}
-	return runTUIConnect(ctx, client, f, tui.DaemonStarted)
-}
-
-// ensurePortFreeOrHandle probes the bind port before a spawn.
-// Returns spawn=true when the caller should launch its own daemon.
-func ensurePortFreeOrHandle(ctx context.Context, f Flags) (spawn bool, err error) {
+// ensurePortFreeOrHandle probes the bind port before starting a daemon.
+// Returns start=true when the caller should run its own daemon.
+func ensurePortFreeOrHandle(ctx context.Context, f Flags) (start bool, err error) {
 	bindErr := probePortAvailable(f.Host, f.Port)
 	if bindErr == nil {
 		return true, nil
@@ -89,37 +74,22 @@ func ensurePortFreeOrHandle(ctx context.Context, f Flags) (spawn bool, err error
 	}
 	switch choice {
 	case conflictConnect:
-		return false, runTUIConnect(ctx, apiclient.NewUnix(info.SocketPath), f, tui.DaemonAttached)
+		return false, runTUIConnect(ctx, apiclient.NewUnix(info.SocketPath))
 	case conflictStopAndLaunch:
 		if stopErr := stopDaemonByInstance(f, info); stopErr != nil {
 			return false, stopErr
 		}
-		return true, nil // other daemon stopped; spawn our own
+		return true, nil // other daemon stopped; run our own
 	default: // conflictAbort
 		return false, nil
 	}
 }
 
 // runTUIConnect launches the TUI against a local daemon via Unix socket.
-// daemon says whether the caller just spawned that daemon (see tui.DaemonOwnership).
-func runTUIConnect(ctx context.Context, client *apiclient.Client, f Flags, daemon tui.DaemonOwnership) error {
-	return launchConnectedTUI(ctx, client, tuiConnectMode{
-		shutdownFunc: func() error { return shutdownConnectedDaemon(ctx, client, f) },
-		daemon:       daemon,
-	})
-}
-
-// shutdownConnectedDaemon stops the daemon the TUI is actually attached to. It
-// resolves that daemon's data dir and PID from GET /api/daemon/identity rather than
-// trusting the local --data flag: `runwisp tui --socket <path>` connects by
-// socket alone, so f.DataDir may name a different daemon (or none), and
-// signalling it would leave the connected daemon running.
-func shutdownConnectedDaemon(ctx context.Context, client *apiclient.Client, f Flags) error {
-	info, err := client.GetInstanceInfo(ctx)
-	if err != nil {
-		return fmt.Errorf("locate the connected daemon to stop it: %w", err)
-	}
-	return stopDaemonByInstance(f, info)
+// The daemon is someone else's (a service, another terminal), so quitting
+// leaves it running.
+func runTUIConnect(ctx context.Context, client *apiclient.Client) error {
+	return launchConnectedTUI(ctx, client, tuiConnectMode{})
 }
 
 // tuiConnectMode carries the few things that differ between attaching the TUI
@@ -132,18 +102,13 @@ type tuiConnectMode struct {
 	// connBaseURL is the URL the remote client connected to; it is the Web UI
 	// base when the daemon declares no external_url. Empty for local socket.
 	connBaseURL string
-	// shutdownFunc, when non-nil, lets the quit dialog stop the daemon. Nil for
-	// remote — a local PID file can't kill a daemon on another host.
-	shutdownFunc func() error
-	// daemon decides what quitting the TUI does to the daemon.
-	daemon tui.DaemonOwnership
 }
 
 // launchConnectedTUI is the shared tail for local socket and remote HTTP paths.
 // Pulls daemon info, resolves Web UI base URL, fills in transport-specific bits, and runs TUI.
 func launchConnectedTUI(ctx context.Context, client *apiclient.Client, mode tuiConnectMode) error {
 	// The TUI needs a real terminal; without one it would hang on stdin. Decline
-	// clearly instead. Any spawned background daemon keeps running headless.
+	// clearly instead.
 	if !isInteractiveTerminal() {
 		return errors.New("no interactive terminal; the daemon runs headless here — use 'runwisp station' / 'runwisp daemon', or run 'runwisp tui' from a real terminal")
 	}
@@ -186,14 +151,12 @@ func launchConnectedTUI(ctx context.Context, client *apiclient.Client, mode tuiC
 			return client.CreateLaunchTicket(ctx)
 		}
 	}
-	_, tuiErr := tui.StartTUI(tui.TUIConfig{
+	return tui.StartTUI(tui.TUIConfig{
 		Info:             startupInfo,
 		Client:           client,
-		ShutdownFunc:     mode.shutdownFunc,
 		LaunchTicketFunc: launchTicketFunc,
-		Daemon:           mode.daemon,
+		Daemon:           tui.DaemonAttached,
 	}, nil)
-	return tuiErr
 }
 
 // resolveTUIListenURL determines the operator-reachable Web UI base URL.

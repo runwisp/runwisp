@@ -411,9 +411,7 @@ func shouldDelegateStop(st autostart.Status) bool {
 
 // shouldDelegateRestart reports whether `runwisp restart` should go through
 // the init system. Unlike stop, a stopped-but-enabled unit also delegates:
-// `systemctl restart` / `kickstart -k` starts it under the manager, whereas
-// spawning our own detached process would leave two owners racing on the
-// next boot.
+// `systemctl restart` / `kickstart -k` starts it under the manager.
 func shouldDelegateRestart(st autostart.Status) bool {
 	return st.UnitExists && st.UnitManaged && (st.Running || st.Autostart)
 }

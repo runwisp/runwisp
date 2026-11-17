@@ -74,6 +74,34 @@ func newTestModel(tasks []model.Task) Model {
 	})
 }
 
+// runQuit runs the commands a quit key returned the way Bubble Tea would,
+// feeding the owned-daemon busy-task lookup (which fails fast against the
+// dummy client) back into the model. It returns the model and the QuitMsg the
+// flow reached, if any.
+func runQuit(t *testing.T, m Model, cmd tea.Cmd) (Model, *uikit.QuitMsg) {
+	t.Helper()
+	var quit *uikit.QuitMsg
+	queue := []tea.Cmd{cmd}
+	for len(queue) > 0 {
+		c := queue[0]
+		queue = queue[1:]
+		if c == nil {
+			continue
+		}
+		switch msg := c().(type) {
+		case tea.BatchMsg:
+			queue = append(queue, msg...)
+		case uikit.BusyTasksMsg:
+			updated, next := m.Update(msg)
+			m = updated.(Model)
+			queue = append(queue, next)
+		case uikit.QuitMsg:
+			quit = &msg
+		}
+	}
+	return m, quit
+}
+
 // stubCanOpenBrowser overrides canOpenBrowser for the duration of t to a
 // fixed return value. Use this instead of poking at DISPLAY/WAYLAND_DISPLAY:
 // macOS/Windows ignore those env vars and would still flow through openBrowser
@@ -871,24 +899,6 @@ func TestToggleSelectedNotificationRead_ReadToUnread(t *testing.T) {
 	// nil-client streams.MarkNotificationUnread returns nil, but the flip in
 	// the panel should still occur.
 	_ = m.toggleSelectedNotificationRead()
-}
-
-// ─── requestQuit with remote daemon ──────────────────────────────────────────
-
-// TestRequestQuit_RemoteSkipsAutostartHint exercises the outOfProcess=true
-// branch where the dialog gets no autostart hint.
-func TestRequestQuit_RemoteSkipsAutostartHint(t *testing.T) {
-	m := newTestModel(nil)
-	m.outOfProcess = true
-	m.daemon = DaemonStarted
-	m.requestQuit()
-	d := m.dialogs.confirm()
-	if d == nil {
-		t.Fatal("expected confirm dialog after requestQuit with outOfProcess=true")
-	}
-	if len(d.noteLines) != 0 {
-		t.Fatalf("expected no autostart hint, got %q", d.noteLines)
-	}
 }
 
 // ─── copyExecField with copyable value ───────────────────────────────────────

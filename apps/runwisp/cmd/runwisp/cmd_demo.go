@@ -7,25 +7,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/demo"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
-	"github.com/runwisp/runwisp/apps/runwisp/internal/tui"
 )
-
-// envDemoTempDir hands a spawned daemon the path of the throwaway demo directory
-// it should delete on shutdown. Cleanup is bound to the daemon's lifecycle (see
-// runDaemon), not the TUI's, so the dir survives a --no-tui run.
-const envDemoTempDir = "RUNWISP_DEMO_TEMP"
 
 var demoFlags struct {
 	Station  bool
@@ -45,17 +37,14 @@ explore the TUI and Web UI without writing a runwisp.toml.
 The demo loads a realistic "Acme Notes" config (scheduled backups and health
 checks, background services, manual deploy/import tasks) and — in standalone
 mode — pre-seeds hundreds of historical runs with real captured logs, timed to
-match each task's cron schedule. Quitting the TUI shuts the demo daemon down.
-Everything lives under a temp directory that is deleted when the daemon shuts
-down.
+match each task's cron schedule. Quitting the TUI shuts the demo down.
+Everything lives under a temp directory that is deleted when it stops.
 
 With --station the daemon connects to the control plane instead and no history is
 seeded (the Station owns it); RUNWISP_STATION_TOKEN is required, as for ` + "`runwisp station`" + `.
 
-With --no-tui the daemon is left running in the background and its Web UI
-password is printed to stdout (instead of attaching the TUI) — handy over SSH or
-in a script where you want to open the Web UI in a browser. Stop it later with
-` + "`runwisp stop --data <demo-data-dir>`" + ` (the data dir is printed alongside).`,
+With --no-tui the demo runs in the foreground without the TUI, handy over SSH
+when you only want the Web UI. Ctrl+C stops it.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runDemo(cmd, flags)
 	},
@@ -63,11 +52,11 @@ in a script where you want to open the Web UI in a browser. Stop it later with
 
 func init() {
 	demoCmd.Flags().BoolVar(&demoFlags.Station, "station", false, "connect to the station control plane instead of seeding local history")
-	demoCmd.Flags().BoolVar(&demoFlags.NoTUI, "no-tui", false, "leave the daemon running and print the Web UI password to stdout instead of attaching the TUI")
+	demoCmd.Flags().BoolVar(&demoFlags.NoTUI, "no-tui", false, "run in the foreground without the TUI (Ctrl+C stops it)")
 	demoCmd.Flags().StringVar(&demoFlags.Token, "token", "", "station token, with --station (overrides RUNWISP_STATION_TOKEN)")
 	demoCmd.Flags().StringVar(&demoFlags.URL, "url", "", "station API URL, with --station (overrides RUNWISP_STATION_URL)")
 	demoCmd.Flags().StringVar(&demoFlags.EnvFile, "env-file", ".env", "path to .env file, with --station")
-	demoCmd.Flags().BoolVar(&demoFlags.SeedOnly, "seed-only", false, "write the demo config to --config and seed --data, then exit without spawning a daemon or TUI (for tooling that boots its own daemon)")
+	demoCmd.Flags().BoolVar(&demoFlags.SeedOnly, "seed-only", false, "write the demo config to --config and seed --data, then exit without starting a daemon or TUI (for tooling that boots its own daemon)")
 }
 
 // demoPathFlagsRejection reports the error the full demo returns when the
@@ -84,20 +73,20 @@ func demoPathFlagsRejection(configChanged, dataChanged bool) error {
 }
 
 // demoTerminalRejection reports the error the full demo returns when it has no
-// terminal for its TUI: the daemon would outlive the failed TUI with nobody
-// attached. Checked before the temp dir and seeding, so nothing is left behind.
-// --no-tui is the headless path and never needs a terminal.
+// terminal for its TUI, rather than silently running headless. Checked before
+// the temp dir and seeding, so nothing is left behind. --no-tui is the headless
+// path and never needs a terminal.
 func demoTerminalRejection(noTUI, interactive bool) error {
 	if noTUI || interactive {
 		return nil
 	}
 	return errors.New("demo needs an interactive terminal for its TUI; " +
-		"use `runwisp demo --no-tui` to keep it running in the background and print the Web UI password")
+		"use `runwisp demo --no-tui` to run it without the TUI")
 }
 
 // runDemo sets up a throwaway temp dir, writes the embedded demo config, seeds
-// history (standalone only), spawns the background daemon against the temp dir,
-// and attaches the TUI — mirroring the plain `runwisp` flow.
+// history (standalone only), and runs the daemon against the temp dir in this
+// process, deleting the dir once it stops.
 func runDemo(cmd *cobra.Command, f Flags) error {
 	// --seed-only writes the demo config and seeds history into the
 	// caller-supplied --config/--data, then exits. No temp dir, no daemon, no
@@ -125,6 +114,7 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 	if err != nil {
 		return fmt.Errorf("create demo temp dir: %w", err)
 	}
+	defer os.RemoveAll(tmp)
 
 	// Redirect every path the daemon and TUI resolve at the throwaway dir.
 	// These mutate a local copy of Flags, never the package global, so demo
@@ -132,48 +122,18 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 	f.CfgFile = filepath.Join(tmp, "runwisp.toml")
 	f.DataDir = filepath.Join(tmp, "data")
 
-	// Until the daemon takes ownership of the temp dir (via envDemoTempDir),
-	// any early failure must clean it up here.
 	if err := setupDemoDir(cmd, f); err != nil {
-		os.RemoveAll(tmp)
 		return err
 	}
-
 	if err := demoResolvePort(cmd, &f); err != nil {
-		os.RemoveAll(tmp)
 		return err
 	}
 
-	// Hand the temp dir to the spawned daemon; from here it owns cleanup.
-	os.Setenv(envDemoTempDir, tmp)
-
-	if err := spawnDaemon(f, demoFlags.Station); err != nil {
-		os.RemoveAll(tmp)
-		return err
+	mode := modeStandalone
+	if demoFlags.Station {
+		mode = modeStation
 	}
-
-	client := apiclient.NewUnix(localAPISocketPath(f))
-	if err := waitForDaemon(client, 15*time.Second, f); err != nil {
-		// The daemon may have died before reaching its cleanup defer; make sure
-		// the temp dir doesn't leak.
-		_ = shutdownDaemon(f)
-		os.RemoveAll(tmp)
-		return err
-	}
-
-	if demoFlags.NoTUI {
-		if code := reportDemoNoTUI(cmd.Context(), os.Stdout, os.Stderr, client, f); code != passwordExitOK {
-			os.Exit(code)
-		}
-		return nil
-	}
-	if err := runTUIConnect(cmd.Context(), client, f, tui.DaemonThrowaway); err != nil {
-		// Quitting the TUI stops a throwaway daemon; a TUI that never ran must
-		// too, or the daemon keeps its temp dir with nobody attached to it.
-		_ = shutdownDaemon(f)
-		return err
-	}
-	return nil
+	return runDaemon(mode, f, demoFlags.NoTUI)
 }
 
 // demoResolvePort fails fast on a port conflict before spawning a daemon that
@@ -194,15 +154,6 @@ func demoResolvePort(cmd *cobra.Command, f *Flags) error {
 	fmt.Fprintf(os.Stderr, "Port %d is taken, using %d instead.\n", f.Port, port)
 	f.Port = port
 	return nil
-}
-
-// reportDemoNoTUI leaves the background daemon running and prints its Web UI password to stdout.
-// This is the --no-tui path, the only way to keep the demo running without the TUI. Returns a passwordExit* code.
-func reportDemoNoTUI(ctx context.Context, stdout, stderr io.Writer, client credentialsFetcher, f Flags) int {
-	fmt.Fprintf(stderr, "RunWisp demo is running at %s\n", localBindURL(tlsScheme(config.Daemon{TLS: config.TLSModeOff}, f.Host), f.Host, f.Port))
-	fmt.Fprintf(stderr, "Stop it with: runwisp stop --data %s\n", f.DataDir)
-	fmt.Fprintln(stderr, "Web UI password:")
-	return runPassword(ctx, stdout, stderr, client, localAPISocketPath(f))
 }
 
 // setupDemoDir writes the embedded config, creates the data/log dirs, and either

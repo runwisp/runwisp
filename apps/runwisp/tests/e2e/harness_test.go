@@ -707,12 +707,11 @@ func killProcessGroup(pid int, signal syscall.Signal) error {
 // that case.
 func subprocEnv(extra ...string) []string {
 	// A stray RUNWISP_SERVICE_MANAGED would make spawned daemons self-detect as
-	// service-managed. Strip it so e2e behavior is host-independent. (Production
-	// spawns do the same via autostart.WithoutServiceEnv.)
-	base := autostart.WithoutServiceEnv(os.Environ())
+	// service-managed. Strip it so e2e behavior is host-independent.
+	base := os.Environ()
 	env := make([]string, 0, len(base)+len(extra)+1)
 	for _, e := range base {
-		if strings.HasPrefix(e, "GOCOVERDIR=") {
+		if strings.HasPrefix(e, "GOCOVERDIR=") || strings.HasPrefix(e, autostart.ServiceManagedEnv+"=") {
 			continue
 		}
 		// The test runner (moon/CI) sets NO_COLOR on its subprocesses; left in
