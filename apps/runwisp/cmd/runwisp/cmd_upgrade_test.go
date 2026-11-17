@@ -13,7 +13,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -43,20 +42,6 @@ func TestResolveRestartChoice(t *testing.T) {
 		if err != nil || got != c.want {
 			t.Errorf("%s: got %q, %v; want %q", c.name, got, err, c.want)
 		}
-	}
-}
-
-func TestActiveTaskRunsIgnoresServices(t *testing.T) {
-	tasks := []model.TaskResponse{
-		{Task: model.Task{Name: "backup", Kind: model.KindTask}},
-		{Task: model.Task{Name: "web", Kind: model.KindService}},
-	}
-	runs := []model.Run{{TaskName: "web"}, {TaskName: "backup"}, {TaskName: "backup"}, {TaskName: "adhoc"}}
-	if got := activeTaskRuns(tasks, runs); !slices.Equal(got, []string{"adhoc", "backup"}) {
-		t.Fatalf("activeTaskRuns = %v, want [adhoc backup]", got)
-	}
-	if got := activeTaskRuns(tasks, []model.Run{{TaskName: "web"}}); len(got) != 0 {
-		t.Fatalf("only a service running: got %v, want idle", got)
 	}
 }
 

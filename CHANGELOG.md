@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The PHP and JavaScript SDKs put a `.gitignore` in their data directory (`storage/runwisp`, `.runwisp`), so `git add .` no longer commits RunWisp's database and logs.
 - The SDK startup line reads "get the password with:" before the command, and the PHP SDK quotes the path only when it needs quoting.
+- `runwisp` runs the daemon in the terminal and stops it when you quit the TUI, instead of asking you if you want to keep it running in the background.
+   Quitting asks first only when runs are in progress. To keep RunWisp running, install it with `runwisp service install` or run it in Docker.
+- `runwisp restart` restarts a daemon that isn't installed as a service in place, in the same process, so it works in Docker (`docker exec <container> runwisp restart`)
+   and keeps a foreground daemon in its terminal. `SIGUSR2` does the same.
+- `runwisp demo --no-tui` runs the demo in the foreground until Ctrl+C.
 
 ### Fixed
 

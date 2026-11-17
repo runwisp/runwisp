@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"runtime"
 	rdebug "runtime/debug"
@@ -62,13 +64,20 @@ func main() {
 	// RunWisp's rich userFacingError guidance share one branded look. Signal
 	// handling is intentionally left off (no WithNotifySignal) — the daemon
 	// installs and owns its own SIGINT/SIGTERM/SIGHUP handlers.
-	if err := fang.Execute(
+	err := fang.Execute(
 		context.Background(),
 		rootCmd,
 		fang.WithVersion(version.Version),
 		fang.WithColorSchemeFunc(brandColorScheme),
 		fang.WithErrorHandler(handleCLIError),
-	); err != nil {
+	)
+	if errors.Is(err, errRestartInPlace) {
+		// Every defer of the old daemon has run (lock released, DB closed,
+		// terminal restored); start over under the same PID.
+		err = reexec()
+		fmt.Fprintf(os.Stderr, "runwisp: restart failed: %v\n", err)
+	}
+	if err != nil {
 		os.Exit(1)
 	}
 }

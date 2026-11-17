@@ -22,8 +22,8 @@ import (
 
 // scaffoldIfMissing checks for a runwisp.toml at f.CfgFile. If it is absent and
 // stdin is attached to a terminal, prompts the operator to create a starter
-// config and writes one on confirmation. Non-TTY callers (background daemon,
-// systemd, Docker) are a no-op — the daemon then fails fast with noConfigError,
+// config and writes one on confirmation. Non-TTY callers (systemd,
+// Docker, scripts) are a no-op — the daemon then fails fast with noConfigError,
 // which points at writing a config or running `runwisp demo` instead. It never
 // substitutes a fallback config on its own: doing so headless would hide a
 // misconfiguration (e.g. a wrong Docker volume mount) behind a daemon that

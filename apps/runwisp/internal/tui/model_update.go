@@ -142,6 +142,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case coalesceFlushMsg:
 		// The coalesce window elapsed; Update renders this frame fresh.
 		m.flushPending = false
+	case uikit.BusyTasksMsg:
+		return m, m.handleBusyTasks(msg)
 	case uikit.QuitMsg:
 		return m.handleQuit(msg)
 	case uikit.FlashExpiredMsg:
@@ -195,6 +197,8 @@ func (m Model) interceptActiveDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case keyCtrlC:
+			// A second ctrl+c force-quits the UI. A daemon this TUI owns
+			// still shuts down: its process does that once the TUI returns.
 			if kind == dlgConfirm {
 				m.streams.Shutdown()
 				m.quitAction = uikit.QuitKeepDaemon

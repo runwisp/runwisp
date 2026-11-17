@@ -36,17 +36,18 @@ func NewDebugLogWriter() *DebugLogWriter {
 	}
 }
 
-// SetProgram attaches the Bubble Tea program and flushes buffered messages.
+// SetProgram flushes buffered messages to the Bubble Tea program, then
+// attaches it. tea.Program.Send blocks until the program runs, so call this on
+// its own goroutine before Run. Holding the lock through the flush keeps lines
+// in order: a Write meanwhile waits and lands after the buffered ones.
 func (w *DebugLogWriter) SetProgram(p programMessenger) {
 	w.mu.Lock()
-	w.program = p
-	pending := w.buf
-	w.buf = nil
-	w.mu.Unlock()
-
-	for _, msg := range pending {
+	defer w.mu.Unlock()
+	for _, msg := range w.buf {
 		p.Send(msg)
 	}
+	w.buf = nil
+	w.program = p
 }
 
 // Write implements io.Writer. Each call is split on newlines and forwarded

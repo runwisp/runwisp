@@ -221,10 +221,10 @@ func TestInterceptConfirmDialog_RoutesToShuttingDown(t *testing.T) {
 
 func TestInterceptNewReleaseDialog_CtrlCEscalatesToQuitConfirm(t *testing.T) {
 	m := newTestModel(nil)
-	m.daemon = DaemonStarted
+	m.daemon = DaemonOwned
 	m.dialogs.Show(dlgNewRelease, NewNewReleaseDialog("1.0.0", "v2.0.0"))
 
-	updated, _, intercepted := m.interceptActiveDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	updated, cmd, intercepted := m.interceptActiveDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if !intercepted {
 		t.Fatal("expected intercepted=true for ctrl+c")
 	}
@@ -232,6 +232,7 @@ func TestInterceptNewReleaseDialog_CtrlCEscalatesToQuitConfirm(t *testing.T) {
 	if !ok {
 		t.Fatal("expected Model")
 	}
+	got, _ = runQuit(t, got, cmd)
 	if got.dialogs.Has(dlgNewRelease) {
 		t.Fatal("expected new-release dialog dismissed on ctrl+c")
 	}
@@ -1422,10 +1423,10 @@ func TestModalCtrlC_DismissesAndOpensQuitConfirm(t *testing.T) {
 		k := dialogKind(kind) + dlgConfirm + 1
 		t.Run(fmt.Sprintf("kind %d", k), func(t *testing.T) {
 			m := newTestModel(nil)
-			m.daemon = DaemonStarted
+			m.daemon = DaemonOwned
 			m.dialogs.Show(k, d)
 
-			updated, _, intercepted := m.interceptActiveDialog(ctrlC)
+			updated, cmd, intercepted := m.interceptActiveDialog(ctrlC)
 			if !intercepted {
 				t.Fatal("expected ctrl+c to be intercepted")
 			}
@@ -1433,6 +1434,7 @@ func TestModalCtrlC_DismissesAndOpensQuitConfirm(t *testing.T) {
 			if !ok {
 				t.Fatal("expected Model")
 			}
+			got, _ = runQuit(t, got, cmd)
 			if got.dialogs.Has(k) {
 				t.Fatal("expected the dialog dismissed")
 			}
@@ -1462,14 +1464,15 @@ func TestModalCtrlC_QuitsImmediatelyWhenDaemonNotStartedByTUI(t *testing.T) {
 
 func TestSidebarFilterCtrlC_OpensQuitConfirm(t *testing.T) {
 	m := newTestModel(nil)
-	m.daemon = DaemonStarted
+	m.daemon = DaemonOwned
 	m.sidebar.StartFilter()
 
-	updated, _ := m.handleSidebarFilterKey(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	updated, cmd := m.handleSidebarFilterKey(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatal("expected Model")
 	}
+	got, _ = runQuit(t, got, cmd)
 	if !got.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected ctrl+c in the sidebar filter to open the quit confirm")
 	}

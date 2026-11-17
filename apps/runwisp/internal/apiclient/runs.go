@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
@@ -186,4 +187,35 @@ func (c *Client) BulkRerunRuns(ctx context.Context, sel model.RunSelector) ([]se
 		return nil, err
 	}
 	return resp.Triggered, nil
+}
+
+// BusyTasks names the tasks with a pending or running run, sorted. Services
+// don't count: they are always running and restart with the daemon either way.
+func (c *Client) BusyTasks(ctx context.Context) ([]string, error) {
+	tasks, err := c.ListTasks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	runs, _, err := c.ListRuns(ctx, RunsParams{Status: "pending,running", Limit: 500})
+	if err != nil {
+		return nil, err
+	}
+	return busyTasks(tasks, runs), nil
+}
+
+func busyTasks(tasks []model.TaskResponse, runs []model.Run) []string {
+	services := map[string]bool{}
+	for _, t := range tasks {
+		if t.Kind.IsService() {
+			services[t.Name] = true
+		}
+	}
+	var busy []string
+	for _, r := range runs {
+		if !services[r.TaskName] && !slices.Contains(busy, r.TaskName) {
+			busy = append(busy, r.TaskName)
+		}
+	}
+	slices.Sort(busy)
+	return busy
 }

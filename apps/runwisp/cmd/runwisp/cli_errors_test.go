@@ -250,3 +250,11 @@ func TestUnknownTaskError(t *testing.T) {
 		assert.Contains(t, err.Error(), "runwisp.toml")
 	})
 }
+
+// TestHandleCLIError_RestartInPlaceIsSilent guards the restart-in-place
+// sentinel: it is a clean shutdown main re-executes on, not a failure to show.
+func TestHandleCLIError_RestartInPlaceIsSilent(t *testing.T) {
+	var buf bytes.Buffer
+	handleCLIError(&buf, fang.Styles{}, fmt.Errorf("daemon: %w", errRestartInPlace))
+	assert.Empty(t, buf.String())
+}

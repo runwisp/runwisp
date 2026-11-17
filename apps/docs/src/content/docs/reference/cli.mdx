@@ -73,8 +73,10 @@ runwisp
 ```
 
 Opens the [TUI](/getting-started/tui-tour/) against the daemon that owns the
-data directory. If none is running, it starts one in the background first. With
-no `runwisp.toml`, it offers to create a starter file.
+data directory. If none is running, it runs the daemon in this terminal, and
+quitting the TUI stops it. To keep RunWisp running, install it as a service
+with [`runwisp service install`](#runwisp-service-install). With no `runwisp.toml`, it
+offers to create a starter file.
 
 If another RunWisp daemon already holds the port, it offers to connect to that
 one or to stop it and start here.
@@ -336,9 +338,12 @@ runwisp restart web 'batch-*'
 runwisp restart --attach 'web*'
 ```
 
-With no argument, restarts the daemon. Needed for settings a reload can't apply
-(see [Reload & restart](/operations/reload/)). Installed as a service, the
-restart goes through systemd or launchd.
+With no argument, restarts the daemon. Needed for settings a reload can't
+apply (see [Reload & restart](/operations/reload/)). Installed as a service, the
+restart goes through systemd or launchd. Any other daemon (`runwisp`,
+`runwisp daemon`, a Docker container) restarts in place: it stops gracefully and
+starts again in the same process, so its terminal or container keeps running.
+Sending the daemon `SIGUSR2` does the same.
 A daemon an [SDK](/sdk/) app started can't be restarted this way: restart the
 app.
 
@@ -630,7 +635,7 @@ lives in a temp directory that's deleted when the daemon stops.
 
 | Flag          | Description                                                                             |
 | ------------- | --------------------------------------------------------------------------------------- |
-| `--no-tui`    | Leave the daemon running, print its password and data directory, and exit.              |
+| `--no-tui`    | Run in the foreground without the TUI. <kbd>Ctrl</kbd>+<kbd>C</kbd> stops it.           |
 | `--seed-only` | Write the demo config to `--config`, seed `--data`, and exit without starting anything. |
 
 ### `runwisp station`

@@ -15,7 +15,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -304,20 +303,6 @@ const EnvDropInName = "runwisp-env.conf"
 // into a desktop terminal would carry it and false-report as service-managed.
 func RunningUnderServiceManager() bool {
 	return os.Getenv(ServiceManagedEnv) == "1"
-}
-
-// WithoutServiceEnv returns env (in "KEY=VALUE" form, as from os.Environ) with
-// the service-manager marker vars removed. Use it when spawning a daemon that
-// runwisp itself launches: such a daemon is not init-managed, so it must not
-// inherit a stray RUNWISP_SERVICE_MANAGED from the spawning environment.
-func WithoutServiceEnv(env []string) []string {
-	out := make([]string, 0, len(env))
-	for _, e := range env {
-		if !strings.HasPrefix(e, ServiceManagedEnv+"=") {
-			out = append(out, e)
-		}
-	}
-	return out
 }
 
 // ErrConflict means the unit file exists but is missing the managed

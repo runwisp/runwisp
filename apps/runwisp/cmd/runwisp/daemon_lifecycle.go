@@ -12,6 +12,7 @@ import (
 	goruntime "runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -390,6 +391,9 @@ type daemonRuntime struct {
 	// output mirrors job output to the daemon's stdout/stderr when
 	// [daemon] log_output is on.
 	output *runlog.OutputMirror
+	// restart is set by requestRestart: the shutdown under way ends in a
+	// restart in place.
+	restart atomic.Bool
 }
 
 // subscribeRunLogs starts narrating runs on the daemon's own log streams: one
@@ -404,7 +408,8 @@ func (rt *daemonRuntime) subscribeRunLogs() func() {
 	}
 }
 
-// runHeadless blocks until SIGINT/SIGTERM, then gracefully shuts down. The
+// runHeadless blocks until SIGINT/SIGTERM or restartSignal, then gracefully
+// shuts down. The
 // banner (or its non-TTY summary) already conveys "ready, listening" and, when
 // no TUI is attached, a dim "Press Ctrl+C to stop." line — no slog cue here.
 // sigCh is owned by runDaemon, which installs signal.Notify before any
@@ -416,6 +421,9 @@ func runHeadless(rt *daemonRuntime) error {
 			handleReloadSignal(rt)
 			continue
 		}
+		if sig == restartSignal && !rt.requestRestart() {
+			continue
+		}
 
 		start := time.Now()
 		// A self-triggered teardown (exitNonZero, crashguard) arrives as
@@ -424,7 +432,7 @@ func runHeadless(rt *daemonRuntime) error {
 		cause := rt.exitCause()
 		if cause != nil {
 			slog.Error("shutting down, will exit non-zero", "cause", cause)
-		} else {
+		} else if sig != restartSignal {
 			slog.Info("received signal, shutting down", "signal", sig.String())
 		}
 		gracefulShutdown(rt.cancelStation, rt.stationWG, rt.svc, rt.srv)
@@ -490,8 +498,9 @@ func handleReloadSignal(rt *daemonRuntime) {
 		"settings", result.Settings)
 }
 
-// runWithTUI starts the interactive TUI, waits for it to exit, then shuts down
-// or transitions to headless mode depending on user choice.
+// runWithTUI starts the interactive TUI and shuts the daemon down once it
+// exits. The daemon lives exactly as long as this process; always-on is what
+// `runwisp service install` or Docker is for.
 func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
 	client := apiclient.NewUnix(daemonSocketPath(f))
 	if rt.srv != nil {
@@ -521,8 +530,12 @@ func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
 		})
 	}
 
-	shutdownFunc := func() error {
-		gracefulShutdown(rt.cancelStation, rt.stationWG, rt.svc, rt.srv)
+	// The quit dialog's spinner runs the shutdown; a force quit (ctrl+c, a
+	// killed TUI) skips it, so it runs here after the TUI is gone. Once makes
+	// the second call wait for the first instead of shutting down twice.
+	var once sync.Once
+	shutdown := func() error {
+		once.Do(func() { gracefulShutdown(rt.cancelStation, rt.stationWG, rt.svc, rt.srv) })
 		return nil
 	}
 
@@ -533,35 +546,47 @@ func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
 		}
 	}
 
-	quitAction, tuiErr := tui.StartTUI(tui.TUIConfig{
+	stopSignals := serveReloadSignals(rt)
+	tuiErr := tui.StartTUI(tui.TUIConfig{
 		Info:             info,
 		Client:           client,
-		ShutdownFunc:     shutdownFunc,
+		ShutdownFunc:     shutdown,
 		LaunchTicketFunc: launchTicketFunc,
-		Daemon:           tui.DaemonStarted,
+		Daemon:           tui.DaemonOwned,
 	}, rt.debugWriter)
+	stopSignals()
 	clilog.SetOutput(io.MultiWriter(os.Stderr, rt.logBuffer))
 	if tuiErr != nil {
 		slog.Warn("TUI exited with error", "err", tuiErr)
 	}
-
-	if quitAction == uikit.QuitKeepDaemon {
-		// The panel is gone; restore full daemon-mode logging (timestamps,
-		// color gating) and narrate run lifecycle to stderr like a headless
-		// boot would. The ring buffer stays tee'd so remote TUI clients still
-		// see daemon logs.
-		configureLogs(clilog.Options{
-			Level:      f.LogLevel,
-			Format:     f.LogFormat,
-			Output:     io.MultiWriter(os.Stderr, clilog.NewPlainWriter(rt.logBuffer)),
-			DaemonMode: true,
-		})
-		defer rt.subscribeRunLogs()()
-		slog.Info("TUI detached. Daemon running in background. Press Ctrl+C to stop.")
-		return runHeadless(rt)
-	}
-
+	_ = shutdown()
 	tui.PrintShutdownComplete()
 
 	return rt.exitCause()
+}
+
+// serveReloadSignals answers SIGHUP with a config reload while the TUI owns
+// the terminal, the way runHeadless does without one. restartSignal quits the
+// TUI through SIGTERM, which it handles, and runWithTUI's shutdown then ends in
+// a restart in place. SIGINT/SIGTERM are left to the TUI. The returned func
+// stops serving.
+func serveReloadSignals(rt *daemonRuntime) func() {
+	done := make(chan struct{})
+	go func() {
+		defer crashguard.Guard()
+		for {
+			select {
+			case <-done:
+				return
+			case sig := <-rt.sigCh:
+				switch {
+				case sig == syscall.SIGHUP:
+					handleReloadSignal(rt)
+				case sig == restartSignal && rt.requestRestart():
+					_ = signalSelfTerm()
+				}
+			}
+		}
+	}()
+	return func() { close(done) }
 }

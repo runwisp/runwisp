@@ -143,7 +143,6 @@ func TestCaptureTUIDemo(t *testing.T) {
 	require.NotEmpty(t, entries, "captured cast should not be empty")
 	writeCast(t, castFile, markTime, entries, s.keySnapshot())
 
-	// SIGTERM only, never confirm "Shut Down".
 	s.forceStop()
 }
 

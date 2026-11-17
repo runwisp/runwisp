@@ -131,11 +131,18 @@ type TaskStateMsg struct {
 	Err      error
 }
 
+// BusyTasksMsg names the tasks with a pending or running run, fetched when
+// the operator quits a TUI that owns its daemon.
+type BusyTasksMsg struct {
+	Tasks []string
+	Err   error
+}
+
 // QuitAction specifies what should happen to the daemon when the TUI exits.
 type QuitAction int
 
 const (
-	// QuitKeepDaemon leaves the daemon running in the background.
+	// QuitKeepDaemon leaves the daemon running.
 	QuitKeepDaemon QuitAction = iota
 	// QuitShutdownDaemon stops the daemon on exit.
 	QuitShutdownDaemon

@@ -5,8 +5,8 @@ title: Running on a server
 description: Install RunWisp as a system service so it starts on boot, log in to the Web UI with a stable password, and change the config safely.
 ---
 
-So far the daemon runs in the background of your session. On a server, install
-it as a service so it starts on boot:
+So far the daemon runs only while the TUI is open. On a server, install it as
+a service so it starts on boot and keeps running:
 
 ```bash
 sudo runwisp service install

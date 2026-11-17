@@ -20,7 +20,7 @@ var stopLocal bool
 
 var stopCmd = &cobra.Command{
 	Use:   "stop [target...]",
-	Short: "Stop the background daemon, or one or more tasks/services",
+	Short: "Stop the daemon, or one or more tasks/services",
 	Long: `Stop the RunWisp daemon that owns this data dir — or, given one or more
 targets, stop just those without touching the daemon.
 
