@@ -23,7 +23,7 @@ RunWisp 是一个开源、自托管的 cron 任务管理器和进程守护工具
 
 ---
 
-当你想把定时任务和常驻服务放在一处管理时，RunWisp 可以替代 `crond` 和 `supervisord`。两者都写在 `runwisp.toml` 里；守护进程负责运行它们，不需要 Python、Node.js 或外部数据库。
+当你想把定时任务和常驻服务放在一处管理时，RunWisp 可以替代 `crond` 和 `supervisord`。两者都写在 `runwisp.toml` 里；守护进程负责运行它们，只占用约 30 MB 内存，不需要 Python、Node.js 或外部数据库。
 
 > 想先看看？运行 `bunx runwisp demo`，用演示数据体验 RunWisp，无需任何配置。
 
@@ -36,78 +36,75 @@ RunWisp 是一个开源、自托管的 cron 任务管理器和进程守护工具
 
 ## 安装
 
-将最新的二进制文件安装到 `PATH`：
-
 ```bash
 curl -fsSL https://get.runwisp.com | sh
 ```
 
-在 macOS 或 Linux 上使用 [Homebrew](https://brew.sh)：
+或者选择其他方式：
 
-```bash
-brew install runwisp/tap/runwisp
-```
-
-在 Debian、Ubuntu、Fedora 或 RHEL 上安装软件包。它会添加 RunWisp 软件源，之后 `apt upgrade` 或 `dnf upgrade` 即可保持更新：
-
-```bash
-curl -fLO https://github.com/runwisp/runwisp/releases/latest/download/runwisp-linux-x64.deb
-sudo apt install ./runwisp-linux-x64.deb
-# 或
-sudo dnf install https://github.com/runwisp/runwisp/releases/latest/download/runwisp-linux-x64.rpm
-```
-
-也可以使用 npm 包，它会运行预编译的 Go 二进制文件：
-
-```bash
-bunx runwisp
-bun add -g runwisp     # 或：npm install -g runwisp
-```
-
-压缩包可从 [runwisp.com/releases](https://runwisp.com/releases/) 下载。使用 Docker：
-
-```bash
-docker run -d --name runwisp -p 9477:9477 \
-  -e RUNWISP_PASSWORD=change-me \
-  -v ./runwisp:/etc/runwisp \
-  -v runwisp-data:/var/lib/runwisp \
-  runwisp/runwisp:latest
-```
-
-首次启动时，RunWisp 会在 `./runwisp/runwisp.toml` 写入一份初始配置。镜像支持 amd64 和 arm64，提供 Alpine 和 Debian 两种变体。标签、环境变量和卷的说明见 [Docker 指南](https://docs.runwisp.com/getting-started/docker/)。
+| 🍺<br>[Homebrew](https://runwisp.com/releases/?utm_source=github&utm_medium=readme-zh&utm_content=homebrew) | 🐧<br>[Debian / Ubuntu](https://runwisp.com/releases/?utm_source=github&utm_medium=readme-zh&utm_content=deb) | 🎩<br>[Fedora / RHEL](https://runwisp.com/releases/?utm_source=github&utm_medium=readme-zh&utm_content=rpm) | 📦<br>[npm / Bun](https://runwisp.com/releases/?utm_source=github&utm_medium=readme-zh&utm_content=npm) | 🐳<br>[Docker](https://runwisp.com/releases/?utm_source=github&utm_medium=readme-zh&utm_content=docker) | 🗜️<br>[压缩包](https://runwisp.com/releases/?utm_source=github&utm_medium=readme-zh&utm_content=tarball) |
+| :---------------------------------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------------------------------: | :---------------------------------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------: |
 
 从源码构建请参阅贡献指南中的 [Getting started](CONTRIBUTING.md#getting-started)。
 
+<div align="center">
+<img alt="RunWisp 终端界面，通过 SSH 显示任务、实时输出和运行控制" src="apps/docs/src/assets/screenshots/tui-demo.webp" width="780">
+<p><em>在 SSH 会话中，终端界面集中展示任务状态、日志、历史记录和运行控制。</em></p>
+</div>
+
 ## 快速开始
 
-运行：
+1. 在你希望存放配置的目录中启动 RunWisp：
 
-```bash
-runwisp
-```
+   ```bash
+   runwisp
+   ```
 
-如果当前目录没有 `runwisp.toml`，RunWisp 会提示创建一份示例配置。按 `Enter`，它会写入一个示例任务、启动守护进程并打开终端界面。首页会显示 Web 控制台的地址和自动生成的密码；在密码那一行按 `Enter` 即可复制。
+   如果还没有 `runwisp.toml`，RunWisp 会提示为你创建一份。按 `Enter` 后，它会写入一个示例任务，在后台启动守护进程，并打开终端界面。
 
-如果想自己设定密码，请设置环境变量 `RUNWISP_PASSWORD`。再设置 `RUNWISP_VIEWER_PASSWORD` 后，用它登录的人可以[查看所有内容但无法修改](https://docs.runwisp.com/operations/auth/#read-only-access)。在可信的本地环境中，可以用 [`RUNWISP_AUTH=off`](https://docs.runwisp.com/operations/auth/#running-without-a-password) 明确关闭身份验证。
+2. 运行示例任务。在侧边栏中选中 `hello`，然后按 `r`。
 
-> **无终端运行？** 在 cron、systemd、Docker、CI 或管道化的 SSH 会话中使用 `runwisp daemon`。它不会弹出提示，缺少配置时以非零状态退出。要让 RunWisp 在重启后自动启动，请使用 `runwisp service install`（支持 systemd 和 launchd）。
+   输出会实时显示，这次运行会连同退出码、耗时和全部输出一起保留在历史记录中。
 
-把初始任务替换成你自己的任务和服务：
+3. 打开 Web 控制台。在终端界面的首页选中 “Open Web UI” 并按 `Enter`。浏览器会打开 `http://localhost:9477`，并且已经自动登录。
 
-```toml
-[tasks.backup-db]
-cron       = "0 2 * * *"
-jitter     = "30m"  # delay by up to 30 mins if other jobs are running
-on_overlap = "kill" # if yesterday's job is still running, kill it
-keep_runs  = 30     # remove older runs
-run = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
+4. 在 `runwisp.toml` 中把示例替换成你自己的任务和服务：
 
-[services.worker]
-instances    = 3                           # keep three copies running
-env          = { NODE_ENV = "production" } # shown in API/UI
-secrets_file = "/etc/runwisp/worker.env"   # never leaked to the API/UI
-run          = "node /app/worker.js"
-```
+   ```toml
+   [tasks.backup-db]
+   cron       = "0 2 * * *"
+   jitter     = "30m"  # may start up to 30m late while other jittered jobs run
+   on_overlap = "kill" # if yesterday's job is still running, kill it
+   keep_runs  = 30     # keep the last 30 runs in the history
+   run        = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
+
+   [services.worker]
+   instances    = 3                           # keep three copies running
+   env          = { NODE_ENV = "production" } # shown in API/UI
+   secrets_file = "/etc/runwisp/worker.env"   # values never shown in API/UI
+   run          = "node /app/worker.js"
+   ```
+
+5. 应用更改，然后立即试运行这个任务，不必等到 02:00：
+
+   ```bash
+   runwisp validate        # check the file, start nothing
+   runwisp reload          # apply it; a file with an error is rejected and nothing changes
+   runwisp run backup-db   # run it now
+   runwisp logs backup-db  # what the last run printed
+   ```
+
+6. 让 RunWisp 在系统重启后自动启动（支持 systemd 和 launchd）：
+
+   ```bash
+   sudo runwisp service install   # on macOS: runwisp service install --local
+   ```
+
+首页还会显示一个自动生成的密码，用于从其他浏览器登录。设置 `RUNWISP_PASSWORD` 即可自己指定密码。再设置 `RUNWISP_VIEWER_PASSWORD` 后，用它登录的人可以[查看所有内容但无法修改](https://docs.runwisp.com/operations/auth/#read-only-access)。在可信的本地环境中，可以用 [`RUNWISP_AUTH=off`](https://docs.runwisp.com/operations/auth/#running-without-a-password) 明确关闭身份验证。
+
+> **无终端运行？** 在 cron、systemd、Docker、CI 或管道化的 SSH 会话中使用 `runwisp daemon`。它不会弹出提示，缺少配置时以非零状态退出。
+
+接下来可以阅读：[你的第一个任务](https://docs.runwisp.com/getting-started/first-task/)、[你的第一个服务](https://docs.runwisp.com/getting-started/first-service/)，以及[超时、重试和失败告警](https://docs.runwisp.com/getting-started/failures/)（英文）。
 
 ## 从 cron、supervisord 或 Docker Compose 迁移
 
@@ -118,11 +115,7 @@ RunWisp 可以直接沿用你现有的配置：
 - [导入 supervisord](https://docs.runwisp.com/coming-from/supervisord/)。
 - [导入 Docker Compose](https://docs.runwisp.com/coming-from/docker-compose/)。
 - [用 `@runwisp/js` 替换 node-cron](https://docs.runwisp.com/coming-from/node-cron/)。
-
-<div align="center">
-<img alt="RunWisp 终端界面，通过 SSH 显示任务、实时输出和运行控制" src="apps/docs/src/assets/screenshots/tui-demo.webp" width="780">
-<p><em>终端界面让你在 SSH 会话中掌握任务状态、日志、历史和控制。</em></p>
-</div>
+- [用 `runwisp/runwisp` 运行 Laravel、Symfony 或 CodeIgniter 的计划任务](https://docs.runwisp.com/sdk/php/)。
 
 ## 功能
 
@@ -166,10 +159,10 @@ API 和用户界面可以查看任务、触发或停止任务。**任务定义�
 ## 链接
 
 - [文档](https://docs.runwisp.com)：安装、配置、REST API 和运维（英文）
-- [更新日志](CHANGELOG.md)：近期变更和版本历史
-- [贡献指南](CONTRIBUTING.md)：开发环境搭建和贡献规范
-- [安全策略](SECURITY.md)：负责任的漏洞披露
-- [问题追踪](https://github.com/runwisp/runwisp/issues)：错误报告和功能建议
+- [更新日志](CHANGELOG.md)：每个版本的变更内容
+- [贡献指南](CONTRIBUTING.md)：想从源码构建或提交 PR 时参阅
+- [安全策略](SECURITY.md)：发现安全漏洞时参阅
+- [问题追踪](https://github.com/runwisp/runwisp/issues)：报告错误和提出功能建议
 
 ## RunWisp 是如何做出来的
 

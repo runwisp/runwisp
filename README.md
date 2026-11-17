@@ -23,7 +23,7 @@ RunWisp is an open-source, self-hosted cron job manager and process supervisor. 
 
 ---
 
-RunWisp replaces `crond` and `supervisord` when you want scheduled jobs and long-running services in one place. You describe both in `runwisp.toml`; the daemon runs them without needing Python, Node.js or an external database.
+RunWisp replaces `crond` and `supervisord` when you want scheduled jobs and long-running services in one place. You describe both in `runwisp.toml`; the daemon runs them in about 30 MB of RAM, without needing Python, Node.js or an external database.
 
 > Want a look first? Run `bunx runwisp demo` to try RunWisp with demo data and nothing to configure.
 
@@ -36,78 +36,75 @@ Every run leaves evidence behind: its exit code, duration, timestamps, and stdou
 
 ## Install
 
-Install the latest binary on your `PATH`:
-
 ```bash
 curl -fsSL https://get.runwisp.com | sh
 ```
 
-On macOS or Linux with [Homebrew](https://brew.sh):
+Or pick another option:
 
-```bash
-brew install runwisp/tap/runwisp
-```
-
-On Debian or Ubuntu, and Fedora or RHEL, install the package. It adds the RunWisp repository, so `apt upgrade` or `dnf upgrade` keeps it current:
-
-```bash
-curl -fLO https://github.com/runwisp/runwisp/releases/latest/download/runwisp-linux-x64.deb
-sudo apt install ./runwisp-linux-x64.deb
-# or
-sudo dnf install https://github.com/runwisp/runwisp/releases/latest/download/runwisp-linux-x64.rpm
-```
-
-You can also use the npm package, which runs the prebuilt Go binary:
-
-```bash
-bunx runwisp
-bun add -g runwisp     # or: npm install -g runwisp
-```
-
-Tarballs are available from [runwisp.com/releases](https://runwisp.com/releases/). For Docker:
-
-```bash
-docker run -d --name runwisp -p 9477:9477 \
-  -e RUNWISP_PASSWORD=change-me \
-  -v ./runwisp:/etc/runwisp \
-  -v runwisp-data:/var/lib/runwisp \
-  runwisp/runwisp:latest
-```
-
-On first start, RunWisp writes a starter config to `./runwisp/runwisp.toml`. The image supports amd64 and arm64, with Alpine and Debian variants. See the [Docker guide](https://docs.runwisp.com/getting-started/docker/) for tags, environment variables, and volumes.
+| 🍺<br>[Homebrew](https://runwisp.com/releases/?utm_source=github&utm_medium=readme&utm_content=homebrew) | 🐧<br>[Debian / Ubuntu](https://runwisp.com/releases/?utm_source=github&utm_medium=readme&utm_content=deb) | 🎩<br>[Fedora / RHEL](https://runwisp.com/releases/?utm_source=github&utm_medium=readme&utm_content=rpm) | 📦<br>[npm / Bun](https://runwisp.com/releases/?utm_source=github&utm_medium=readme&utm_content=npm) | 🐳<br>[Docker](https://runwisp.com/releases/?utm_source=github&utm_medium=readme&utm_content=docker) | 🗜️<br>[Tarball](https://runwisp.com/releases/?utm_source=github&utm_medium=readme&utm_content=tarball) |
+| :------------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------: |
 
 To build from source, see [Getting started](CONTRIBUTING.md#getting-started) in the contributing guide.
 
+<div align="center">
+<img alt="RunWisp terminal UI showing tasks, live output, and run controls over SSH" src="apps/docs/src/assets/screenshots/tui-demo.webp" width="780">
+<p><em>The terminal UI keeps task status, logs, history, and controls in the SSH session.</em></p>
+</div>
+
 ## Quick Start
 
-Run:
+1. Start RunWisp in the directory where your config should live:
 
-```bash
-runwisp
-```
+   ```bash
+   runwisp
+   ```
 
-If the current directory has no `runwisp.toml`, RunWisp offers to create an example config file. Press `Enter` and it will write an example task, start the daemon, and open the terminal UI. The Home page shows the web dashboard URL and a generated password; press `Enter` on the password row to copy it.
+   If there is no `runwisp.toml` yet, RunWisp offers to create one. Press `Enter` and it writes an example task, starts the daemon in the background, and opens the terminal UI.
 
-Set `RUNWISP_PASSWORD` env variable if you want to choose the password yourself. Set `RUNWISP_VIEWER_PASSWORD` too and anyone who signs in with it can [view everything but change nothing](https://docs.runwisp.com/operations/auth/#read-only-access). For a trusted local setup, [`RUNWISP_AUTH=off`](https://docs.runwisp.com/operations/auth/#running-without-a-password) disables authentication explicitly.
+2. Run the example task. Select `hello` in the sidebar and press `r`.
 
-> **Running headless?** Use `runwisp daemon` in cron, systemd, Docker, CI, or a piped SSH session. It doesn't prompt, and a missing config exits non-zero. To start RunWisp after a reboot, use `runwisp service install` for systemd or launchd.
+   The output streams live, and the run stays in the history with its exit code, duration, and everything it printed.
 
-Replace the starter task with your own jobs and services:
+3. Open the web dashboard. On the Home page of the terminal UI, select "Open Web UI" and press `Enter`. Your browser opens `http://localhost:9477`, already logged in.
 
-```toml
-[tasks.backup-db]
-cron       = "0 2 * * *"
-jitter     = "30m"  # delay by up to 30 mins if other jobs are running
-on_overlap = "kill" # if yesterday's job is still running, kill it
-keep_runs  = 30     # remove older runs
-run = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
+4. Replace the example with your own jobs and services in `runwisp.toml`:
 
-[services.worker]
-instances    = 3                           # keep three copies running
-env          = { NODE_ENV = "production" } # shown in API/UI
-secrets_file = "/etc/runwisp/worker.env"   # never leaked to the API/UI
-run          = "node /app/worker.js"
-```
+   ```toml
+   [tasks.backup-db]
+   cron       = "0 2 * * *"
+   jitter     = "30m"  # may start up to 30m late while other jittered jobs run
+   on_overlap = "kill" # if yesterday's job is still running, kill it
+   keep_runs  = 30     # keep the last 30 runs in the history
+   run        = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
+
+   [services.worker]
+   instances    = 3                           # keep three copies running
+   env          = { NODE_ENV = "production" } # shown in API/UI
+   secrets_file = "/etc/runwisp/worker.env"   # values never shown in API/UI
+   run          = "node /app/worker.js"
+   ```
+
+5. Apply the change, then try the job without waiting for 02:00:
+
+   ```bash
+   runwisp validate        # check the file, start nothing
+   runwisp reload          # apply it; a file with an error is rejected and nothing changes
+   runwisp run backup-db   # run it now
+   runwisp logs backup-db  # what the last run printed
+   ```
+
+6. Start RunWisp after a reboot, under systemd or launchd:
+
+   ```bash
+   sudo runwisp service install   # on macOS: runwisp service install --local
+   ```
+
+The Home page also shows a generated password for signing in from another browser. Set `RUNWISP_PASSWORD` to choose it yourself. Set `RUNWISP_VIEWER_PASSWORD` too and anyone who signs in with it can [view everything but change nothing](https://docs.runwisp.com/operations/auth/#read-only-access). For a trusted local setup, [`RUNWISP_AUTH=off`](https://docs.runwisp.com/operations/auth/#running-without-a-password) disables authentication explicitly.
+
+> **Running headless?** Use `runwisp daemon` in cron, systemd, Docker, CI, or a piped SSH session. It doesn't prompt, and a missing config exits non-zero.
+
+Next: [your first task](https://docs.runwisp.com/getting-started/first-task/), [your first service](https://docs.runwisp.com/getting-started/first-service/), and [timeouts, retries, and failure alerts](https://docs.runwisp.com/getting-started/failures/).
 
 ## Moving from cron, supervisord, or Docker Compose
 
@@ -118,11 +115,7 @@ RunWisp can start from the configuration you already have:
 - [Import supervisord](https://docs.runwisp.com/coming-from/supervisord/)
 - [Import docker compose](https://docs.runwisp.com/coming-from/docker-compose/).
 - [Swap node-cron for `@runwisp/js`](https://docs.runwisp.com/coming-from/node-cron/).
-
-<div align="center">
-<img alt="RunWisp terminal UI showing tasks, live output, and run controls over SSH" src="apps/docs/src/assets/screenshots/tui-demo.webp" width="780">
-<p><em>The terminal UI keeps task status, logs, history, and controls in the SSH session.</em></p>
-</div>
+- [Run your Laravel, Symfony, or CodeIgniter schedule with `runwisp/runwisp`](https://docs.runwisp.com/sdk/php/).
 
 ## Features
 
@@ -165,11 +158,11 @@ The API and user interfaces can inspect tasks and trigger or stop them. **Task d
 
 ## Links
 
-- [Documentation](https://docs.runwisp.com) — installation, configuration, REST API, and operations
-- [Changelog](CHANGELOG.md) — recent changes and version history
-- [Contributing](CONTRIBUTING.md) — development setup and contribution guidelines
-- [Security policy](SECURITY.md) — responsible disclosure
-- [Issue tracker](https://github.com/runwisp/runwisp/issues) — bug reports and feature requests
+- [Documentation](https://docs.runwisp.com) for installation, configuration, the REST API and operations
+- [Changelog](CHANGELOG.md) for what changed in each version
+- [Contributing](CONTRIBUTING.md) if you want to build it from source or send a PR
+- [Security policy](SECURITY.md) if you found a vulnerability
+- [Issue tracker](https://github.com/runwisp/runwisp/issues) for bugs and feature requests
 
 ## How RunWisp is made
 
