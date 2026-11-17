@@ -381,9 +381,9 @@ func validateTaskHookTokens(task *model.Task) error {
 	return nil
 }
 
-// envKeyPattern is the POSIX-ish shape required for environment variable
+// EnvKeyPattern is the POSIX-ish shape required for environment variable
 // names: letters, digits, and underscores; not starting with a digit.
-var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var EnvKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // validateTaskEnv enforces shape and size limits on env and secrets. Both maps
 // are validated with the same rules and counted against one combined cap so
@@ -412,8 +412,8 @@ func validateEnvMap(scope string, env map[string]string) error {
 		return fmt.Errorf("invalid %s: %d entries exceeds the cap of %d", scope, len(env), EnvMaxEntries)
 	}
 	for key, value := range env {
-		if !envKeyPattern.MatchString(key) {
-			return fmt.Errorf("invalid %s: key %q must match %s", scope, key, envKeyPattern.String())
+		if !EnvKeyPattern.MatchString(key) {
+			return fmt.Errorf("invalid %s: key %q must match %s", scope, key, EnvKeyPattern.String())
 		}
 		if strings.ContainsRune(value, 0) {
 			return fmt.Errorf("invalid %s: value for %q contains a NUL byte", scope, key)
@@ -487,8 +487,8 @@ func validateParamEntry(scope string, p *model.TaskParam, task *model.Task, auto
 func validateParamIdentity(scope string, p *model.TaskParam) error {
 	switch p.Kind {
 	case model.ParamEnv, model.ParamArg:
-		if !envKeyPattern.MatchString(p.Key) {
-			return fmt.Errorf("invalid %s: %s name %q must match %s", scope, p.Kind, p.Key, envKeyPattern.String())
+		if !EnvKeyPattern.MatchString(p.Key) {
+			return fmt.Errorf("invalid %s: %s name %q must match %s", scope, p.Kind, p.Key, EnvKeyPattern.String())
 		}
 	case model.ParamOption, model.ParamFlag:
 		if !strings.HasPrefix(p.Key, "-") {

@@ -6,6 +6,7 @@ package station
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"testing"
@@ -607,4 +608,41 @@ func (f *fakeTaskRunner) triggeredIDs() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.triggered)
+}
+
+// An inline dispatch turns every input key into a process env var that layers
+// over the task's own env, so a key that isn't an env name or that steers the
+// loader/shell/interpreter (LD_PRELOAD, PATH, BASH_ENV, ...) must reject the
+// dispatch before any task is upserted. Ordinary keys still become env params.
+func TestResolveDispatchTask_RejectsReservedInputKeys(t *testing.T) {
+	for _, key := range []string{"LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "PATH", "BASH_ENV", "BASH_FUNC_ls%%", "BASH_FUNC_x", "GIT_SSH_COMMAND", "GIT_CONFIG_COUNT", "NODE_OPTIONS", "1BAD", "A-B", "A=B", ""} {
+		t.Run(key, func(t *testing.T) {
+			h := newDispatchHandler(executor.Availability{Shell: executor.BackendStatus{Available: true}}, map[string]*model.Task{})
+			_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{
+				Task:   &protocol.TaskRef{ID: "job"},
+				Spec:   shellScript(t, "echo hi"),
+				Inputs: map[string]string{"GREETING": "hi", key: "x"},
+			})
+			var se *StationError
+			require.ErrorAs(t, err, &se)
+			assert.Equal(t, protocol.ErrorCodeInvalid, se.Code)
+			assert.Contains(t, se.Message, fmt.Sprintf("%q", key))
+			assert.Empty(t, h.taskManager.(*fakeTaskRunner).upserted)
+		})
+	}
+
+	h := newDispatchHandler(executor.Availability{Shell: executor.BackendStatus{Available: true}}, map[string]*model.Task{})
+	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{
+		Task:   &protocol.TaskRef{ID: "job"},
+		Spec:   shellScript(t, "echo hi"),
+		Inputs: map[string]string{"GREETING": "hi", "path": "lowercase is a different variable", "MY_PATH": "x"},
+	})
+	require.NoError(t, err)
+	upserted := h.taskManager.(*fakeTaskRunner).upserted
+	require.Len(t, upserted, 1)
+	assert.Equal(t, []model.TaskParam{
+		{Kind: model.ParamEnv, Key: "GREETING"},
+		{Kind: model.ParamEnv, Key: "MY_PATH"},
+		{Kind: model.ParamEnv, Key: "path"},
+	}, upserted[0].Parameters)
 }

@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -164,12 +165,52 @@ func buildDynamicStationTask(dispatch protocol.ExecutionDispatch, execDef model.
 	// An inline dispatch declares no TOML params, so every inputs key
 	// would otherwise fail ResolveParamValues as "unknown parameter". Declare
 	// each as an env-kind param on the fly so the supplied values land in the
-	// run's process environment under their own key.
-	for key := range dispatch.Inputs {
+	// run's process environment under their own key. The key is peer-supplied
+	// and that layer wins over task.Env, so it is checked first.
+	for _, key := range slices.Sorted(maps.Keys(dispatch.Inputs)) {
+		if err := checkStationInputKey(key); err != nil {
+			return nil, err
+		}
 		task.Parameters = append(task.Parameters, model.TaskParam{Kind: model.ParamEnv, Key: key})
 	}
 
 	return task, nil
+}
+
+// reservedInputEnvPrefixes and reservedInputEnvKeys name the environment
+// variables a station input may not set: each changes how the dynamic loader,
+// the shell, or a common interpreter starts, so setting one hijacks the run
+// (or anything it spawns) regardless of what the script says. TOML env is the
+// host owner's and isn't checked against this list.
+var (
+	reservedInputEnvPrefixes = []string{
+		"LD_",        // glibc/musl loader: LD_PRELOAD, LD_LIBRARY_PATH, LD_AUDIT
+		"DYLD_",      // macOS loader: DYLD_INSERT_LIBRARIES, DYLD_LIBRARY_PATH
+		"BASH_FUNC_", // exported bash functions, run before the script
+		"GIT_CONFIG", // GIT_CONFIG_GLOBAL, GIT_CONFIG_COUNT/KEY_n/VALUE_n: arbitrary git config
+	}
+	reservedInputEnvKeys = []string{
+		"PATH",                                // which binary every bare command resolves to
+		"IFS", "ENV", "BASH_ENV", "SHELLOPTS", // sh/bash startup and word splitting
+		"BASHOPTS", "PS4", "PROMPT_COMMAND", // bash options and xtrace/prompt command expansion
+		"PERL5OPT", "PERL5LIB", "PERLLIB", // perl
+		"PYTHONPATH", "PYTHONSTARTUP", "PYTHONHOME", // python
+		"NODE_OPTIONS", "NODE_PATH", // node
+		"RUBYOPT", "RUBYLIB", // ruby
+		"GIT_SSH_COMMAND", "GIT_SSH", "GIT_EXEC_PATH", // git
+	}
+)
+
+// checkStationInputKey rejects a station input key that isn't a valid
+// environment variable name or that names a reserved variable.
+func checkStationInputKey(key string) error {
+	if !config.EnvKeyPattern.MatchString(key) {
+		return newError(protocol.ErrorCodeInvalid, "input %q is not a valid environment variable name", key)
+	}
+	if slices.Contains(reservedInputEnvKeys, key) || slices.ContainsFunc(reservedInputEnvPrefixes, func(p string) bool { return strings.HasPrefix(key, p) }) {
+		return newError(protocol.ErrorCodeInvalid, "input %q names a reserved environment variable and cannot be set by the station", key)
+	}
+	return nil
 }
 
 // applyRunOptions overlays the optional per-run/per-process knobs the station
