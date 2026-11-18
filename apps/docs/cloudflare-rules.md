@@ -60,7 +60,7 @@ Notes:
 
 - `/api/` is excluded: the starlight-openapi generated routes have no `.md` twin.
 - Plain `contains` on `Accept` means `*/*` (curl, wget, uptime monitors) never matches and
-  keeps getting HTML — that's the deliberate default (see `llms.txt.ts` header comment).
+  keeps getting HTML. That is the deliberate default; `/llms.txt` links the `.md` twins directly.
 - If a future dashboard build reports `http.request.headers` as unavailable at this phase on
   the Free plan, fall back to the User-Agent clauses alone and rely on the HTML `<head>`
   comment (`src/components/Head.astro`) plus `/llms.txt` to reach everyone else. Do not reach
@@ -76,7 +76,7 @@ curl -si $D/configuration/tasks/ | head -20                            # curl ->
 curl -si -H 'Accept: text/html,*/*;q=0.8' $D/ | head -20               # browser -> HTML
 curl -si -H 'Accept: text/markdown' $D/                                # root -> index.md
 curl -si -H 'Accept: text/markdown' $D/recipes/migrating-from-cron/    # moved-to stub, not 404
-curl -si -H 'Accept: text/markdown' $D/api/listTasks/ | head -5        # still HTML, not 404
+curl -si -H 'Accept: text/markdown' $D/api/operations/bulkdeleteruns/ | head -5  # still HTML, not 404
 curl -si $D/llms.txt | head -5                                         # untouched
 ```
 

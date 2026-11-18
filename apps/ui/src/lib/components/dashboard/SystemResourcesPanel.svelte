@@ -74,9 +74,9 @@
         <div>
             <div class="mb-1.5 flex items-center justify-between text-sm">
                 <span class="font-mono text-xs tracking-wide text-on-surface-muted">CPU</span>
-                <span class="font-mono font-semibold text-on-surface tabular-nums"
-                    >{formatUsage(stats.cpuUsage)}</span
-                >
+                <span class="font-mono font-semibold text-on-surface tabular-nums">
+                    {formatUsage(stats.cpuUsage)}
+                </span>
             </div>
             <div
                 class="overflow-hidden rounded-[4px] border border-outline-faint bg-surface-sunken/50 text-primary"
@@ -96,9 +96,9 @@
                             )}
                         </span>
                     {/if}
-                    <span class="font-mono font-semibold text-on-surface tabular-nums"
-                        >{formatUsage(stats.memUsage)}</span
-                    >
+                    <span class="font-mono font-semibold text-on-surface tabular-nums">
+                        {formatUsage(stats.memUsage)}
+                    </span>
                 </span>
             </div>
             <div

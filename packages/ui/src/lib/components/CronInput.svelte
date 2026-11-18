@@ -126,9 +126,9 @@
             </div>
             {#if explanation.next}
                 <div class="mt-0.5 font-sans text-xs text-on-surface-muted">
-                    Next run: <span class="font-mono font-medium text-on-surface"
-                        >{explanation.next}</span
-                    >
+                    Next run: <span class="font-mono font-medium text-on-surface">
+                        {explanation.next}
+                    </span>
                 </div>
             {/if}
         </div>

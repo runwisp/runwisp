@@ -40,7 +40,7 @@
     "ajv": "^8.20.0",
     "pkg-pr-new": "^0.0.91",
     "prettier": "^3.10.1",
-    "prettier-plugin-svelte": "^4.1.1",
+    "prettier-plugin-svelte": "^4.2.0",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "typescript": "6.0.3"
   },

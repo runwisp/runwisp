@@ -79,8 +79,10 @@
             variant="secondary"
             size="xs"
             disabled={safePage <= 1}
-            onclick={() => goTo(safePage - 1)}>Prev</Button
+            onclick={() => goTo(safePage - 1)}
         >
+            Prev
+        </Button>
         <div class="min-w-[4rem] text-center font-mono text-xs text-on-surface-muted">
             Page {safePage} of {totalPages}
         </div>

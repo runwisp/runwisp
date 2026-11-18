@@ -46,9 +46,9 @@
                             <dd class="break-all text-on-surface">
                                 {row.value}
                                 {#if row.note}
-                                    <span class="ml-1 font-sans text-on-surface-faint"
-                                        >{row.note}</span
-                                    >
+                                    <span class="ml-1 font-sans text-on-surface-faint">
+                                        {row.note}
+                                    </span>
                                 {/if}
                             </dd>
                         {/each}

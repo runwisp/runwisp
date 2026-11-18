@@ -28,8 +28,9 @@
                     >
                         <span
                             class="absolute top-0 left-3.5 -translate-y-1/2 bg-surface-sunken px-2 font-mono text-[10.5px] leading-[1.6] font-medium tracking-[0.06em] text-on-surface-muted"
-                            >{label}</span
                         >
+                            {label}
+                        </span>
                         <div class="px-4 pt-5 pb-4">{@render bar("h-7 w-20")}</div>
                         <div class="space-y-1.5 border-t border-outline-faint px-4 py-2.5">
                             {@render bar("h-2.5 w-4/5")}
@@ -72,8 +73,9 @@
                         <div>
                             <span
                                 class="mb-1.5 block font-mono text-xs tracking-wide text-on-surface-muted"
-                                >{label}</span
                             >
+                                {label}
+                            </span>
                             {@render bar("h-11 w-full")}
                         </div>
                     {/each}

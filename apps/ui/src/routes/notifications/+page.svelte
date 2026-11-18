@@ -23,8 +23,10 @@
     <button
         type="button"
         class="rounded-[3px] border border-primary-soft-border bg-primary-soft px-3 py-1.5 font-mono text-sm font-medium text-primary-soft-text hover:border-outline-hover"
-        onclick={() => void markAllRead()}>Mark all read</button
+        onclick={() => void markAllRead()}
     >
+        Mark all read
+    </button>
 {/snippet}
 
 <svelte:head>
@@ -40,8 +42,9 @@
             Recent notifications across all tasks
             {#if unread > 0}· <span
                     class="font-mono font-medium text-primary-soft-text tabular-nums"
-                    >{unread} unread</span
-                >{/if}
+                >
+                    {unread} unread
+                </span>{/if}
         {/snippet}
     </PageHeader>
 
@@ -83,8 +86,10 @@
                 <button
                     type="button"
                     class="rounded-[3px] border border-outline bg-surface-raised px-4 py-1.5 font-mono text-sm font-medium text-on-surface-muted hover:border-outline-hover hover:text-primary"
-                    onclick={() => void loadMore()}>Load more</button
+                    onclick={() => void loadMore()}
                 >
+                    Load more
+                </button>
             </div>
         {/if}
     {/if}

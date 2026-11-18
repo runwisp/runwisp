@@ -58,9 +58,9 @@
                 <span class="font-mono text-sm text-on-surface-muted">{label}</span>
             {/if}
             {#if showLabel}
-                <span class="font-mono text-sm text-on-surface-muted"
-                    >{Math.round(percentage)}%</span
-                >
+                <span class="font-mono text-sm text-on-surface-muted">
+                    {Math.round(percentage)}%
+                </span>
             {/if}
         </div>
     {/if}

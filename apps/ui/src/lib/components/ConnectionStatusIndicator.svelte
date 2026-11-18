@@ -102,9 +102,9 @@
                             Update available
                         </span>
                         <span class="text-on-surface-muted">
-                            <span class="font-mono text-on-surface"
-                                >{systemStore.latestVersion}</span
-                            >
+                            <span class="font-mono text-on-surface">
+                                {systemStore.latestVersion}
+                            </span>
                             is out, you're on
                             <span class="font-mono">v{systemStore.version}</span>.
                         </span>

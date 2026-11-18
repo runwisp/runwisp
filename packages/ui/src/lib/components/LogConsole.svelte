@@ -364,8 +364,9 @@
         bind:this={rulerEl}
         aria-hidden="true"
         class="pointer-events-none absolute -top-[9999px] left-0 whitespace-pre select-none"
-        >{RULER_SAMPLE}</span
     >
+        {RULER_SAMPLE}
+    </span>
 
     {#if error}
         <div

@@ -95,9 +95,9 @@
                                 <span
                                     class="truncate font-mono text-sm font-medium text-on-surface"
                                 >
-                                    {run.taskName}{#if suffix}<span class="text-on-surface-muted"
-                                            >{suffix}</span
-                                        >{/if}
+                                    {run.taskName}{#if suffix}<span class="text-on-surface-muted">
+                                            {suffix}
+                                        </span>{/if}
                                 </span>
                                 <RunStatusBadge
                                     tone={statusConfig.badge}

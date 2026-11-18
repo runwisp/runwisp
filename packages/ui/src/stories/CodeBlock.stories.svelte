@@ -56,13 +56,13 @@
 <!-- Rich children render the markup; `code` keeps the copied text plain. -->
 <Story name="Highlighted children" asChild>
     <!-- No whitespace between the line spans: inside <pre> it would render as blank lines. -->
-    <CodeBlock filename="runwisp.toml" code={backupTask}
-        ><span class="block text-[var(--rw-syn-fn)]">[tasks.backup]</span><span class="block"
-            ><span class="text-[var(--rw-syn-kw)]">cron</span> =
-            <span class="text-[var(--rw-syn-str)]">"0 3 * * *"</span></span
-        ><span class="block"
-            ><span class="text-[var(--rw-syn-kw)]">keep_runs</span> =
-            <span class="text-[var(--rw-syn-num)]">60</span></span
-        ></CodeBlock
-    >
+    <CodeBlock filename="runwisp.toml" code={backupTask}>
+        <span class="block text-[var(--rw-syn-fn)]">[tasks.backup]</span><span class="block">
+            <span class="text-[var(--rw-syn-kw)]">cron</span> =
+            <span class="text-[var(--rw-syn-str)]">"0 3 * * *"</span>
+        </span><span class="block">
+            <span class="text-[var(--rw-syn-kw)]">keep_runs</span> =
+            <span class="text-[var(--rw-syn-num)]">60</span>
+        </span>
+    </CodeBlock>
 </Story>
