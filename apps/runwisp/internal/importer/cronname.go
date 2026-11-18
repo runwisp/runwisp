@@ -305,12 +305,12 @@ func isRedirect(t string) bool {
 	return i < len(t) && (t[i] == '>' || t[i] == '<')
 }
 
-// outputRedirect returns the first file a command sends its stdout or stderr
+// OutputRedirect returns the first file a command sends its stdout or stderr
 // to (`>> /var/log/x.log`, `2>/tmp/err`, `&>out`), or "". A duplication like
 // `2>&1` names no file, and input (`<`) is not output.
 // ponytail: splits on whitespace like the naming does, so a quoted "a > b"
 // reads as a redirect too; the note it feeds is only advice.
-func outputRedirect(command string) string {
+func OutputRedirect(command string) string {
 	tokens := strings.Fields(command)
 	for i, t := range tokens {
 		if !isRedirect(t) || strings.Contains(t, "<") {

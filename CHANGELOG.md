@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Run lists can sort by duration, longest or shortest first: from the sort menu in the web UI, and with `o` in the TUI, which also gets oldest first.
+- After `crontab -e`, `runwisp status`, `runwisp list`, the TUI and the notification bell name the crontab that changed and say to run `runwisp reload`.
+- A run with no output whose command redirects it (`>> /var/log/backup.log`) says where the output went, in the web UI and the TUI.
 
 ### Changed
 
@@ -32,9 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp takeover` lists every cron job with the task it becomes and where it comes from, and says that overlapping runs now queue.
 - A blocked `runwisp takeover` prints only what stops it, and on a machine without cron it says so and how to start fresh.
 - `status`, `reload` and `validate` no longer warn about cron task renames, an empty `MAILTO`, or crontab jobs that start at the same second. A crontab's `MAILTO` warning is one line with a link.
-
 - "Run now" on a running task with `on_overlap = "skip"`, or on a task whose queue is full, answers 409 with the reason instead of a 500 "Failed to trigger run".
-- The web UI names a task's own `timezone` next to its next run time, "(14:00 UTC)", when it differs from the daemon's. Before, a Laravel schedule in UTC looked like it ran an hour off.
+- The web UI names the zone next to a task's next run time, "(14:00 UTC)", when it isn't the browser's zone. Before, a Laravel schedule in UTC, or a daemon in another zone than the browser, looked like it ran hours off.
 - Importing a crontab no longer turns the `# m h dom mon dow command` legend (or Alpine's `# min hour day month weekday command`) into the first job's description.
 - When a crontab command has an unescaped `%`, the import note now says to write `\%` if you meant a literal percent, as in `date +%F`.
 - `import cron` on a README or script says it doesn't look like a crontab instead of importing its prose as tasks.
@@ -49,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp import cron` of a per-user spool crontab (`/var/spool/cron/crontabs/www-data`) sets `user` to its owner, so the jobs no longer run as root. A piped crontab gets a note that its owner is unknown.
 - A run that exits 127 logs "command not found" next to the exit code, and `runwisp import cron` notes a job whose program isn't on cron's `PATH` (`php` in `/usr/local/bin` in the PHP images).
 
+- A crontab job for a user whose home directory doesn't exist (`www-data`'s `/var/www`) runs in `/` as cron does, instead of failing to start. Other tasks with `working_dir = "~"` fail with an error that names the missing home directory.
+- A run that couldn't start shows "didn't start" instead of exit code -1, in the web UI, the TUI and `runwisp run`.
+- `runwisp logs` on a task that has never run prints "`<task>` hasn't run yet." instead of a log line.
+- The task details panel in the web UI says to edit the crontab and run `sudo runwisp reload` for a task read from a crontab, instead of pointing at `runwisp.toml`.
 ### Security
 
 - A browser that has signed in before has its wrong passwords counted on its own instead of per IP, so someone guessing from the same IP or proxy can't slow down your logins.
@@ -56,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The daemon checks at most 2 passwords at once from new browsers, plus 1 kept for browsers that signed in before, so a login flood from many IP addresses can't take all the CPU away from your tasks or keep you out. A login that waits more than 10 seconds for its turn gets 503 with `Retry-After`.
 - Wrong API tokens sent in the session cookie to `/api/auth/status` count toward the API token lockout, like on every other route.
 - The daemon warns at startup when `RUNWISP_PASSWORD` or `RUNWISP_VIEWER_PASSWORD` is shorter than 12 characters.
+
 
 ## [1.10.0] - 2026-11-15
 

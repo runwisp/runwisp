@@ -12,7 +12,9 @@ There are two ways to move cron jobs to RunWisp:
 
 - **Take over** (Linux with systemd): RunWisp reads your crontabs where they
   are and replaces the cron service. `crontab -e` keeps working; run
-  `sudo runwisp reload` after an edit.
+  `sudo runwisp reload` after an edit. Until you do, `runwisp status`,
+  `runwisp list`, the TUI and the notification bell name the crontab that
+  changed.
 - **Convert by hand** (any system): `runwisp import cron` turns a crontab into
   TOML, and you disable the old cron lines yourself.
 

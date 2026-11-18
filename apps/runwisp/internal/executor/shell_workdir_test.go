@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -128,7 +129,8 @@ func TestResolveWorkingDir(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := resolveWorkingDir(tc.spec, tc.home)
+			exists := func(string) (os.FileInfo, error) { return nil, nil }
+			got, notice, err := resolveWorkingDir(tc.spec, &runAs{name: "deploy", home: tc.home}, false, exists)
 			if tc.wantErr {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "home directory")
@@ -136,8 +138,34 @@ func TestResolveWorkingDir(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
+			assert.Empty(t, notice)
 		})
 	}
+}
+
+// TestResolveWorkingDir_MissingHome pins the field-report case: www-data's home
+// (/var/www) often doesn't exist. Cron runs the job anyway, so a task read from
+// a crontab runs in / with a notice; anything else fails naming the home, not a
+// working_dir key the operator never wrote.
+func TestResolveWorkingDir_MissingHome(t *testing.T) {
+	www := &runAs{name: "www-data", home: "/var/www"}
+	missing := func(string) (os.FileInfo, error) { return nil, fs.ErrNotExist }
+
+	dir, notice, err := resolveWorkingDir("~", www, true, missing)
+	require.NoError(t, err)
+	assert.Equal(t, "/", dir)
+	assert.Equal(t, "home directory of www-data (/var/www) doesn't exist; running in / like cron does", notice)
+
+	_, _, err = resolveWorkingDir("~", www, false, missing)
+	require.EqualError(t, err, "home directory of www-data (/var/www) doesn't exist")
+
+	// A subdirectory of the home was asked for explicitly: no guessing.
+	_, _, err = resolveWorkingDir("~/app", www, true, missing)
+	require.EqualError(t, err, "home directory of www-data (/var/www) doesn't exist")
+
+	// No run-as account at all is still an error, never the daemon's cwd.
+	_, _, err = resolveWorkingDir("~", nil, true, missing)
+	require.Error(t, err)
 }
 
 // TestShellBackend_TildeWorkingDirWithoutRunUserFailsLoudly proves the unresolved

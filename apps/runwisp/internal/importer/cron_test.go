@@ -1098,8 +1098,8 @@ func TestCronOutputRedirectIsNoted(t *testing.T) {
 		"/bin/job < input.txt":      "",
 		"/bin/job --level 2":        "",
 	} {
-		if got := outputRedirect(cmd); got != want {
-			t.Errorf("outputRedirect(%q) = %q, want %q", cmd, got, want)
+		if got := OutputRedirect(cmd); got != want {
+			t.Errorf("OutputRedirect(%q) = %q, want %q", cmd, got, want)
 		}
 	}
 	if hasNoteKind(parseCron(t, "15 3 * * * /srv/app/backup.sh 2>&1\n", CronOptions{}), NoteOutputRedirected) {

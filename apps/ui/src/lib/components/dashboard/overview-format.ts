@@ -50,11 +50,15 @@ export function formatTaskLastResultLabel(task: TaskOverview): string {
     return humanizeStatus(task.lastStatus);
 }
 
-/** daemonZone is the daemon's resolved timezone; a task's own timezone wins over it. */
+/**
+ * daemonZone is the daemon's resolved timezone; a task's own timezone wins over
+ * it. viewerZone (the browser's by default) decides whether the zone is named.
+ */
 export function formatTaskNextRunLabel(
     task: TaskOverview,
     now: Date = new Date(),
     daemonZone = "",
+    viewerZone?: string,
 ): string {
     if (isService(task.task.kind)) {
         return task.state === "stopped" ? "Stopped" : "Always on";
@@ -65,7 +69,7 @@ export function formatTaskNextRunLabel(
     }
 
     if (task.nextRunMs !== undefined) {
-        return formatNextRun(task.task, new Date(task.nextRunMs), now, daemonZone);
+        return formatNextRun(task.task, new Date(task.nextRunMs), now, daemonZone, viewerZone);
     }
 
     return task.isApiOnly ? "Manual only" : "Not scheduled";

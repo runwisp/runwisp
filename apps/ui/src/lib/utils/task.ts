@@ -28,18 +28,19 @@ export function scheduleTimeZone(
 }
 
 /**
- * When the task runs next: "in 7 hours (02:30)", in its schedule zone. A task
- * with a zone of its own names it, "(02:30 UTC)", so it isn't read as the
- * daemon's local time.
+ * When the task runs next: "in 7 hours (02:30)", in its schedule zone. When
+ * that zone isn't the viewer's (the browser's), it is named, "(02:30 UTC)", so
+ * the time isn't read as local next to run times shown in the browser's zone.
  */
 export function formatNextRun(
     task: Pick<Task, "timezone">,
     at: string | Date,
     now: Date,
     daemonZone: string,
+    viewerZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone,
 ): string {
-    const own = Boolean(task.timezone) && task.timezone !== daemonZone;
-    return formatRelativeTimeWithAbsolute(at, now, scheduleTimeZone(task, daemonZone), own);
+    const zone = scheduleTimeZone(task, daemonZone);
+    return formatRelativeTimeWithAbsolute(at, now, zone, Boolean(zone) && zone !== viewerZone);
 }
 
 /** Whether the task has a cron schedule. */

@@ -27,6 +27,8 @@ type runAs struct {
 	// working_dir of `~` — see resolveWorkingDir. Empty when the spec was a bare
 	// numeric uid with no account entry.
 	home string
+	// name is the account name, for messages about it (its home is missing).
+	name string
 }
 
 // resolveRunAs turns a `user` / `user:group` spec into a syscall.Credential and
@@ -66,7 +68,7 @@ func resolveRunAs(spec string) (*runAs, error) {
 		return nil, err
 	}
 
-	return &runAs{cred: cred, identity: identityEnv(ru.username, ru.home), home: ru.home}, nil
+	return &runAs{cred: cred, identity: identityEnv(ru.username, ru.home), home: ru.home, name: ru.username}, nil
 }
 
 // resolvedUser carries the run-as user resolution. entry is nil when the spec

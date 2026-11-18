@@ -92,11 +92,30 @@ describe("taskStrip: cron tasks", () => {
                     schedulingActive: true,
                     now: NOW,
                     daemonZone: "Europe/Bratislava",
+                    viewerZone: "Europe/Bratislava",
                 }).sentence,
             );
         expect(next("UTC")).toMatch(/\(13:00 UTC\)$/);
         expect(next("Europe/Bratislava")).toMatch(/\(15:00\)$/);
         expect(next("")).toMatch(/\(15:00\)$/);
+    });
+
+    // Daemon in UTC, browser in CET: run times on the page are the browser's,
+    // so a next run in the daemon's zone has to say which zone it is in.
+    it("names the daemon's zone when the browser is in another one", () => {
+        const sentence = (viewerZone: string) =>
+            text(
+                taskStrip({
+                    task: makeTask({ cron: "0 * * * *", nextRunAt: "2026-10-09T13:00:00Z" }),
+                    running: undefined,
+                    schedulingActive: true,
+                    now: NOW,
+                    daemonZone: "UTC",
+                    viewerZone,
+                }).sentence,
+            );
+        expect(sentence("Europe/Bratislava")).toMatch(/\(13:00 UTC\)$/);
+        expect(sentence("UTC")).toMatch(/\(13:00\)$/);
     });
 
     it("says the last run failed and opens it", () => {

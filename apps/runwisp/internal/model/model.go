@@ -212,7 +212,11 @@ type Task struct {
 	// change and get the cron entry registered (or dropped). Masking it would turn
 	// "held, and visibly so" into "silently never runs".
 	HeldBy HoldReason `toml:"-" json:"heldBy,omitempty" enum:"cron" doc:"Why this task is loaded but not on the scheduler: 'cron' means a live system cron daemon still reads the crontab it came from and is running it, so RunWisp stands down. Manual triggers still work. Empty means RunWisp owns the schedule."`
-
+	// OutputRedirect is the file the run command sends its output to
+	// (`>> /var/log/backup.log`), so a run with an empty log can say where its
+	// output went instead of "no output". Derived from Run at config load, never
+	// a TOML key; it changes only when Run does.
+	OutputRedirect string `toml:"-" json:"outputRedirect,omitempty" doc:"File the run command redirects its output to (for example /var/log/backup.log or /dev/null), read from the command at config load; RunWisp can't capture output sent there. Absent when the command has no output redirect."`
 	// WorkingDir is resolved to an absolute path at config load (relative to
 	// the runwisp.toml directory). Empty inherits the daemon's working dir.
 	//
@@ -665,6 +669,7 @@ type DaemonInfo struct {
 	ConfigLoadedAt    time.Time `json:"configLoadedAt"`
 	ConfigStale       bool      `json:"configStale"`
 	ConfigWarnings    []string  `json:"configWarnings,omitempty" doc:"Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads."`
+	CronChanged       []string  `json:"cronChanged,omitempty" doc:"Crontabs read via include_cron that changed on disk (edited, added or removed) since the config was loaded; a reload applies them. Re-derived per request; absent when none changed."`
 	ResolvedTimezone  string    `json:"resolvedTimezone"`
 	TimezoneSource    string    `json:"timezoneSource" enum:"config,system"`
 	Tasks             []Task    `json:"tasks"`

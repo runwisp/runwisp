@@ -508,6 +508,12 @@ func warningsCommand(info uikit.StartupInfo) string {
 // staleConfigLabel names what changed on disk. An app-supplied config has no
 // runwisp.toml; only its included and env files are watched.
 func staleConfigLabel(info uikit.StartupInfo) string {
+	switch {
+	case len(info.CronChanged) > 1:
+		return "crontabs"
+	case len(info.CronChanged) == 1:
+		return "crontab"
+	}
 	if info.AppConfig {
 		return "config files"
 	}

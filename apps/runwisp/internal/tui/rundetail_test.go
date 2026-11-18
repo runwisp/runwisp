@@ -213,3 +213,31 @@ func TestHandleDaemonInfo_AdoptsTimezoneChange(t *testing.T) {
 		t.Fatalf("loc: want Etc/GMT-2, got %v", m.loc)
 	}
 }
+
+// TestRunDetailDialog_View_RedirectedOutput: a run whose command sent its
+// output to a file says so instead of "none".
+func TestRunDetailDialog_View_RedirectedOutput(t *testing.T) {
+	run := endedRun()
+	run.StdoutLines, run.StderrLines = new(int64(0)), new(int64(0))
+	d := NewRunDetailDialog(run, false, 1)
+	d.outputRedirect = "/var/log/backup.log"
+	if out := d.View(100, 34); !strings.Contains(out, "sent to /var/log/backup.log, not captured") {
+		t.Fatalf("run detail view missing the redirect hint\n%s", out)
+	}
+	d.outputRedirect = "/dev/null"
+	if out := d.View(100, 34); !strings.Contains(out, "discarded (/dev/null)") {
+		t.Fatalf("run detail view missing the /dev/null hint\n%s", out)
+	}
+}
+
+// TestRunDetailDialog_View_DidNotStart: a run whose process never started
+// has no exit code to show, only the fact.
+func TestRunDetailDialog_View_DidNotStart(t *testing.T) {
+	run := endedRun()
+	run.ExitCode = -1
+	run.StdoutLines, run.StderrLines = new(int64(0)), new(int64(0))
+	out := NewRunDetailDialog(run, false, 1).View(80, 34)
+	if !strings.Contains(out, "didn't start") || strings.Contains(out, "-1") {
+		t.Fatalf("run detail view should say didn't start, not -1\n%s", out)
+	}
+}

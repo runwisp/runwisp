@@ -483,7 +483,7 @@ func (cp *crontabParser) importJob(line string) bool {
 			"dropped "+devNull+": cron used it to stop mail, and RunWisp sends none, so the run's log shows the output.")
 		b.lead = append(b.lead, "Dropped "+devNull+" so the run's log shows the output; RunWisp sends no cron mail.")
 	}
-	if target := outputRedirect(run); target != "" {
+	if target := OutputRedirect(run); target != "" {
 		ref.note(NoteOutputRedirected,
 			"its output goes to "+target+", so RunWisp can't show it in the run's log. "+
 				"Remove the redirect to capture it.")

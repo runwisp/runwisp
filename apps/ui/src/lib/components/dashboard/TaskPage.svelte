@@ -325,6 +325,7 @@
                 onStop={!taskIsService && !readOnly ? () => (stopConfirmOpen = true) : undefined}
                 onBack={rail.phone ? rail.back : undefined}
                 {highlightLine}
+                outputRedirect={task.outputRedirect}
                 getInstanceCount={() => instanceCount}
                 getLiveUsage={(id) => systemStore.runUsage(id)}
                 motion={live.source.motion}

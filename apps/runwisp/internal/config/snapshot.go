@@ -63,6 +63,9 @@ type snapshotPins struct {
 	// they resolved to, crond-eligibility filter already applied.
 	cronGlobs []string
 	bootCron  []string
+	// cronFiles are the crontabs the config read, also hashed in files, so
+	// CronChanged can name which of the changed inputs are crontabs.
+	cronFiles []string
 }
 
 // NewSnapshot hashes the config file at path, every included TOML file, and
@@ -102,6 +105,7 @@ func snapshotInputs(path string, cfg *Config) snapshotPins {
 	pins.bootMatched = slices.Sorted(slices.Values(cfg.includeFiles))
 	pins.cronGlobs = cfg.cronGlobs
 	pins.bootCron = slices.Sorted(slices.Values(cfg.cronMatched))
+	pins.cronFiles = cfg.cronFiles
 
 	seen := make(map[string]struct{}, len(paths))
 	pins.files = make([]fileDigest, 0, len(paths))
@@ -155,6 +159,36 @@ func (s *Snapshot) Stale() bool {
 		return true
 	}
 	return false
+}
+
+// CronChanged names the crontabs that differ from the last pin: an edited or
+// deleted crontab the config read, and one that newly appeared in (or left) an
+// include_cron glob. Sorted; empty when no crontab changed. Like Stale it reads
+// the disk on every call and never reloads anything: `crontab -e` is picked up
+// by an explicit reload, and this is how the daemon says one is needed.
+func (s *Snapshot) CronChanged() []string {
+	pins := s.pinned()
+	var changed []string
+	for _, f := range pins.files {
+		if slices.Contains(pins.cronFiles, f.path) && digestFile(f.path) != f {
+			changed = append(changed, f.path)
+		}
+	}
+	if len(pins.cronGlobs) > 0 {
+		now := globMatches(pins.cronGlobs, pins.root, true)
+		for _, p := range now {
+			if !slices.Contains(pins.bootCron, p) {
+				changed = append(changed, p)
+			}
+		}
+		for _, p := range pins.bootCron {
+			if !slices.Contains(now, p) {
+				changed = append(changed, p)
+			}
+		}
+	}
+	slices.Sort(changed)
+	return slices.Compact(changed)
 }
 
 // globMatches expands the resolved include patterns and returns the

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
@@ -75,7 +76,9 @@ func runStatus(ctx context.Context, out io.Writer, f Flags, rf remoteFlags, asJS
 		printSystemStats(out, stats)
 	}
 
-	if infoErr == nil && info.ConfigStale {
+	if infoErr == nil && len(info.CronChanged) > 0 {
+		fmt.Fprintln(out, "\n⚠ "+cronChangedNotice(info.CronChanged))
+	} else if infoErr == nil && info.ConfigStale {
 		identity, _ := client.GetInstanceInfo(ctx)
 		fmt.Fprintln(out, "\n⚠ "+staleConfigNotice(isAppDaemon(identity)))
 	}
@@ -96,6 +99,12 @@ func runStatus(ctx context.Context, out io.Writer, f Flags, rf remoteFlags, asJS
 		printDownServices(out, tasks)
 	}
 	return nil
+}
+
+// cronChangedNotice is model.CronChangedNotice from the caller's side: someone
+// who reached the daemon through sudo reloads it through sudo too.
+func cronChangedNotice(files []string) string {
+	return model.CronChangedNotice(files, os.Geteuid() == 0 && os.Getenv("SUDO_USER") != "")
 }
 
 // staleConfigNotice says what changed on disk. An app supplies the root config,

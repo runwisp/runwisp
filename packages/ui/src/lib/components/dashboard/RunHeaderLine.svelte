@@ -20,6 +20,7 @@
         formatTriggeredByLabel,
         runRetryLabel,
         runStartDelay,
+        runExitLabel,
         runUsageLabel,
         RUN_VERDICTS,
     } from "./run-helpers.js";
@@ -194,7 +195,7 @@
                 <span class="font-mono text-[13px] font-medium tabular-nums">
                     <span class="text-on-surface-faint" aria-hidden="true">·</span>
                     <span class="text-danger-surface" data-testid="run-exit">
-                        exit {run.exitCode}
+                        {runExitLabel(run)}
                     </span>
                 </span>
             {/if}

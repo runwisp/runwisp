@@ -114,13 +114,26 @@ describe("formatTaskNextRunLabel", () => {
     it("shows the time in the schedule's zone, the task's own over the daemon's", () => {
         const now = new Date("2026-10-21T00:00:00Z");
         const nextRunMs = new Date("2026-10-21T02:30:00Z").getTime();
-        expect(formatTaskNextRunLabel(makeOverview({ nextRunMs }), now, "Asia/Kathmandu")).toMatch(
-            /\(0?8:15\)$/,
-        );
-        const zoned = makeOverview({ task: makeTask({ timezone: "Asia/Kathmandu" }), nextRunMs });
-        expect(formatTaskNextRunLabel(zoned, now, "Etc/UTC")).toMatch(
+        const kathmandu = "Asia/Kathmandu";
+        expect(
+            formatTaskNextRunLabel(makeOverview({ nextRunMs }), now, kathmandu, kathmandu),
+        ).toMatch(/\(0?8:15\)$/);
+        const zoned = makeOverview({ task: makeTask({ timezone: kathmandu }), nextRunMs });
+        expect(formatTaskNextRunLabel(zoned, now, "Etc/UTC", "Etc/UTC")).toMatch(
             /\(0?8:15 Asia\/Kathmandu\)$/,
         );
+    });
+
+    // Daemon in UTC, browser elsewhere: the run list shows the browser's times,
+    // so the next run names the zone it is in.
+    it("names the schedule's zone when it isn't the browser's", () => {
+        const now = new Date("2026-10-21T00:00:00Z");
+        const nextRunMs = new Date("2026-10-21T02:30:00Z").getTime();
+        const overview = makeOverview({ nextRunMs });
+        expect(formatTaskNextRunLabel(overview, now, "UTC", "Europe/Bratislava")).toMatch(
+            /\(0?2:30 UTC\)$/,
+        );
+        expect(formatTaskNextRunLabel(overview, now, "UTC", "UTC")).toMatch(/\(0?2:30\)$/);
     });
 
     it("ticks down as the supplied now advances", () => {

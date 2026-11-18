@@ -243,6 +243,16 @@
               "null"
             ]
           },
+          "cronChanged": {
+            "description": "Crontabs read via include_cron that changed on disk (edited, added or removed) since the config was loaded; a reload applies them. Re-derived per request; absent when none changed.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "externalUrl": {
             "description": "Web UI base used for notification links: [daemon] external_url, else the address of the latest Web UI password sign-in. Empty when neither is known.",
             "type": "string"
@@ -2096,6 +2106,10 @@
             ],
             "type": "string"
           },
+          "outputRedirect": {
+            "description": "File the run command redirects its output to (for example /var/log/backup.log or /dev/null), read from the command at config load; RunWisp can't capture output sent there. Absent when the command has no output redirect.",
+            "type": "string"
+          },
           "parameters": {
             "description": "Per-execution parameters an operator may supply at manual trigger time; scheduled runs use the declared defaults",
             "items": {
@@ -2463,6 +2477,10 @@
               "skip",
               "kill"
             ],
+            "type": "string"
+          },
+          "outputRedirect": {
+            "description": "File the run command redirects its output to (for example /var/log/backup.log or /dev/null), read from the command at config load; RunWisp can't capture output sent there. Absent when the command has no output redirect.",
             "type": "string"
           },
           "parameters": {

@@ -64,6 +64,8 @@ export interface TaskStripInput {
     now: Date;
     /** The daemon's resolved timezone; the task's own wins. The next run's time is shown in it. */
     daemonZone?: string;
+    /** The viewer's timezone, the browser's by default; a next run in another zone names it. */
+    viewerZone?: string;
     /** Signed in with the read-only password: the strip shows state but offers no actions. */
     readOnly?: boolean;
 }
@@ -112,7 +114,13 @@ function failedBadge(task: Task): TaskStripModel["badge"] | undefined {
     };
 }
 
-function cronStrip({ task, schedulingActive, now, daemonZone }: TaskStripInput): TaskStripModel {
+function cronStrip({
+    task,
+    schedulingActive,
+    now,
+    daemonZone,
+    viewerZone,
+}: TaskStripInput): TaskStripModel {
     const schedule = humanizeCron(task.cron ?? "").humanized;
     const run = task.manualTrigger ? [runAction(task, true)] : [];
     if (task.pausedAt) {
@@ -175,7 +183,7 @@ function cronStrip({ task, schedulingActive, now, daemonZone }: TaskStripInput):
             ? [
                   t(schedule),
                   m(" · "),
-                  t(`next run ${formatNextRun(task, next, now, daemonZone ?? "")}`),
+                  t(`next run ${formatNextRun(task, next, now, daemonZone ?? "", viewerZone)}`),
               ]
             : [t(schedule)],
         short: next ? [t(`next ${formatRelativeTime(next, now)}`)] : [t(schedule)],

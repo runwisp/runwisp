@@ -3,7 +3,25 @@
 
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+// CronChangedNotice is the one sentence for DaemonInfo.CronChanged, shared by
+// the bell and the CLI. sudo is whether the reload goes through sudo (the
+// daemon runs as root, so the operator's own shell can't reach it).
+func CronChangedNotice(files []string, sudo bool) string {
+	reload := "runwisp reload"
+	if sudo {
+		reload = "sudo runwisp reload"
+	}
+	what, it := "A crontab changed", "it"
+	if len(files) > 1 {
+		what, it = "Crontabs changed", "them"
+	}
+	return what + ": " + strings.Join(files, ", ") + ". Run `" + reload + "` to apply " + it + "."
+}
 
 // TaskResponse extends a Task with its live state: the next scheduled run
 // time, when an operator paused the cron schedule (if they did), whether a

@@ -101,3 +101,15 @@ func TestRun_Duration(t *testing.T) {
 	_, ok = (&Run{EndedAt: &end}).Duration()
 	assert.False(t, ok)
 }
+
+func TestRun_NeverStarted(t *testing.T) {
+	ended := func(reason EndReason, exit int, lines *int64) *Run {
+		return &Run{Status: PhaseEnded, EndReason: &reason, ExitCode: exit, StdoutLines: lines, StderrLines: new(int64(0))}
+	}
+	assert.True(t, ended(ReasonFailed, -1, new(int64(0))).NeverStarted(), "spawn failure: -1 and no output")
+	assert.True(t, ended(ReasonStartFailed, -1, nil).NeverStarted())
+	assert.False(t, ended(ReasonFailed, -1, new(int64(3))).NeverStarted(), "killed by a signal after printing: it ran")
+	assert.False(t, ended(ReasonFailed, 2, new(int64(0))).NeverStarted(), "a real exit code")
+	assert.False(t, ended(ReasonMissed, -1, nil).NeverStarted(), "not a failure to start")
+	assert.False(t, (&Run{Status: PhaseRunning, ExitCode: -1}).NeverStarted())
+}

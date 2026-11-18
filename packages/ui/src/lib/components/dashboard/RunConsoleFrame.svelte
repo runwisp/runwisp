@@ -22,8 +22,11 @@
         streamLogs,
         fetchLineHistory,
         highlightLine,
+        outputRedirect,
     }: {
         run: Run;
+        /** The task's outputRedirect, explaining an empty log. */
+        outputRedirect?: string | undefined;
         /** Instance suffix of a multi-instance service, shown in focus mode. */
         suffix: string;
         fetchLogs: (
@@ -272,6 +275,7 @@
                 ? (n: number) => fetchLineHistory(run.id, n)
                 : undefined}
             bind:wrap={consoleWrap}
+            {outputRedirect}
             class="min-h-0 flex-1"
             {highlightLine}
             endLabel={endMarker.label}
