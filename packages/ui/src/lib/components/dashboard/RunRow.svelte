@@ -145,13 +145,14 @@
             <span class="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span class="flex items-center gap-1.5">
                     <span class="truncate font-mono text-[13px] font-semibold text-on-surface">
-                        {run.taskName}{#if suffix}<span class="text-on-surface-muted">{suffix}</span
-                            >{/if}
+                        {run.taskName}{#if suffix}<span class="text-on-surface-muted">
+                                {suffix}
+                            </span>{/if}
                     </span>
                     <span class="shrink-0 text-on-surface-faint">·</span>
-                    <span class="shrink-0 font-mono text-[12px] font-semibold {config.color}"
-                        >{humanizeStatus(dstatus)}</span
-                    >
+                    <span class="shrink-0 font-mono text-[12px] font-semibold {config.color}">
+                        {humanizeStatus(dstatus)}
+                    </span>
                 </span>
                 <span
                     class="flex min-w-0 items-center gap-1.5 font-mono text-2xs text-on-surface-faint"
@@ -161,9 +162,9 @@
                     <span class="shrink-0">· {formatTriggeredByLabel(run.triggeredBy)}</span>
                     {#if live}{@render liveUsage("truncate", "· ")}{/if}
                     {#if retry}
-                        <span class="shrink-0 rounded bg-surface-sunken px-1 font-mono"
-                            >{retry}</span
-                        >
+                        <span class="shrink-0 rounded bg-surface-sunken px-1 font-mono">
+                            {retry}
+                        </span>
                     {/if}
                 </span>
             </span>
@@ -197,9 +198,9 @@
                     <!-- With usage bars a tight rail drops the status word; the dot
                          keeps its colour. -->
                     <span class="text-on-surface-faint {tight}">·</span>
-                    <span class="font-mono text-[12.5px] font-semibold {config.color} {tight}"
-                        >{humanizeStatus(dstatus)}</span
-                    >
+                    <span class="font-mono text-[12.5px] font-semibold {config.color} {tight}">
+                        {humanizeStatus(dstatus)}
+                    </span>
                 {/if}
                 {#if suffix}
                     <span class="font-mono text-2xs text-on-surface-faint">{suffix}</span>
@@ -224,9 +225,11 @@
             <div
                 class="mt-1.5 truncate rounded-[3px] border border-outline-faint bg-surface-sunken px-2 py-1 font-mono text-2xs text-on-surface-muted"
             >
-                {hl.before}<mark class="rounded-[3px] bg-primary-soft px-0.5 text-primary-soft-text"
-                    >{hl.match}</mark
-                >{hl.after}
+                {hl.before}<mark
+                    class="rounded-[3px] bg-primary-soft px-0.5 text-primary-soft-text"
+                >
+                    {hl.match}
+                </mark>{hl.after}
             </div>
         {/if}
     {/if}
@@ -281,8 +284,10 @@
     <span
         class="font-mono text-on-surface-faint tabular-nums {cls}"
         title="Live CPU (100% = one core), memory and lines printed so far"
-        data-testid="run-row-live">{sep}{live}</span
+        data-testid="run-row-live"
     >
+        {sep}{live}
+    </span>
 {/snippet}
 
 {#snippet bar(value: number, max: number, level: 0 | 1 | 2)}

@@ -59,9 +59,9 @@
                 <TableRow border="faint">
                     <TableCell density="compact" class="font-mono">{run.id}</TableCell>
                     <TableCell density="compact" class="font-mono">{run.task}</TableCell>
-                    <TableCell density="compact" align="right" class="font-mono"
-                        >{run.duration}</TableCell
-                    >
+                    <TableCell density="compact" align="right" class="font-mono">
+                        {run.duration}
+                    </TableCell>
                 </TableRow>
             {/each}
         </TableBody>

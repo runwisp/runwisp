@@ -259,13 +259,17 @@
                                     <span
                                         class="font-sans font-semibold tracking-[-0.01em] {alarm
                                             ? config.color
-                                            : 'text-on-surface'}">{verdict.verb}</span
+                                            : 'text-on-surface'}"
                                     >
+                                        {verdict.verb}
+                                    </span>
                                     {#if verdict.timed && duration}
                                         <span
                                             class="font-mono text-[0.86em] font-medium text-on-surface tabular-nums"
-                                            data-testid="run-duration">{duration}</span
+                                            data-testid="run-duration"
                                         >
+                                            {duration}
+                                        </span>
                                     {/if}
                                     {#if showCode}
                                         <!-- Grouped with its own separator so a wrap can
@@ -273,12 +277,15 @@
                                         <span
                                             class="inline-flex items-center gap-x-2.5 font-mono text-[0.86em] font-medium tabular-nums"
                                         >
-                                            <span class="text-on-surface-faint" aria-hidden="true"
-                                                >·</span
+                                            <span class="text-on-surface-faint" aria-hidden="true">
+                                                ·
+                                            </span>
+                                            <span
+                                                class="text-danger-surface"
+                                                data-testid="run-exit"
                                             >
-                                            <span class="text-danger-surface" data-testid="run-exit"
-                                                >exit {run.exitCode}</span
-                                            >
+                                                exit {run.exitCode}
+                                            </span>
                                         </span>
                                     {/if}
                                 </h2>

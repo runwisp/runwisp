@@ -32,14 +32,18 @@
             <button
                 type="button"
                 class="text-primary-soft-text hover:underline"
-                onclick={() => void notificationStore.markAllRead()}>Mark all read</button
+                onclick={() => void notificationStore.markAllRead()}
             >
+                Mark all read
+            </button>
         {/if}
         <a
             href={resolve("/notifications")}
             class="text-on-surface-muted hover:text-on-surface"
-            onclick={close}>View all</a
+            onclick={close}
         >
+            View all
+        </a>
     {/snippet}
 
     <div class="-mx-2 max-h-96 space-y-2 overflow-y-auto px-2">
@@ -49,8 +53,10 @@
                 <button
                     type="button"
                     class="text-primary-soft-text hover:underline"
-                    onclick={() => void notificationStore.init()}>Retry</button
+                    onclick={() => void notificationStore.init()}
                 >
+                    Retry
+                </button>
             </p>
         {:else if !notificationStore.loaded}
             <p class="px-2 py-6 text-center text-xs text-on-surface-faint">Loading…</p>
@@ -65,8 +71,9 @@
                     href={resolve("/notifications")}
                     onclick={close}
                     class="block rounded-[3px] px-2 py-2 text-center font-mono text-xs text-on-surface-muted hover:bg-surface-sunken hover:text-primary"
-                    >+{extra} more · View all</a
                 >
+                    +{extra} more · View all
+                </a>
             {/if}
         {/if}
     </div>

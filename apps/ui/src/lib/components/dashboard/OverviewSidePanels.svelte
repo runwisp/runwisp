@@ -127,11 +127,11 @@
                             class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-on-surface-muted"
                         >
                             <!-- "Next" only reads right before a time, not "Always on"/"Manual only". -->
-                            <span
-                                >{task.nextRunMs === undefined || task.task.pausedAt
+                            <span>
+                                {task.nextRunMs === undefined || task.task.pausedAt
                                     ? nextLabel
-                                    : `Next ${nextLabel}`}</span
-                            >
+                                    : `Next ${nextLabel}`}
+                            </span>
                             {#if exitCode !== undefined}
                                 <span class="font-mono text-danger-soft-text tabular-nums">
                                     Exit {exitCode}
@@ -169,8 +169,10 @@
                                         class="truncate font-mono text-sm font-medium text-on-surface"
                                     >
                                         {run.taskName}{#if suffix}<span
-                                                class="text-on-surface-muted">{suffix}</span
-                                            >{/if}
+                                                class="text-on-surface-muted"
+                                            >
+                                                {suffix}
+                                            </span>{/if}
                                     </span>
                                 </div>
                                 <p

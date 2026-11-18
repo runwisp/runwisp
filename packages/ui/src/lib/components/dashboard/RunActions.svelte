@@ -73,12 +73,12 @@
                     >
                         <RotateCw size={15} class="mt-0.5 shrink-0 text-on-surface-muted" />
                         <span class="flex flex-col">
-                            <span class="font-mono text-sm font-medium text-on-surface"
-                                >Run again</span
-                            >
-                            <span class="text-xs text-on-surface-muted"
-                                >Reuse this run's parameters</span
-                            >
+                            <span class="font-mono text-sm font-medium text-on-surface">
+                                Run again
+                            </span>
+                            <span class="text-xs text-on-surface-muted">
+                                Reuse this run's parameters
+                            </span>
                         </span>
                     </button>
                 </Popover>

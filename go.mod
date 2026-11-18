@@ -6,16 +6,16 @@ toolchain go1.27.4
 
 require (
 	charm.land/bubbles/v2 v2.2.1
-	charm.land/bubbletea/v2 v2.1.1
+	charm.land/bubbletea/v2 v2.1.2
 	charm.land/lipgloss/v2 v2.1.1
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/fang v1.0.0
-	github.com/charmbracelet/x/ansi v0.11.9
+	github.com/charmbracelet/x/ansi v0.11.10
 	github.com/coder/websocket v1.8.15
 	github.com/compose-spec/compose-go/v2 v2.17.0
 	github.com/creack/pty v1.1.24
-	github.com/danielgtaylor/huma/v2 v2.40.0
+	github.com/danielgtaylor/huma/v2 v2.41.0
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/go-chi/httprate v0.16.1
 	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
@@ -61,7 +61,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/klauspost/cpuid/v2 v2.4.1 // indirect
+	github.com/klauspost/cpuid/v2 v2.4.2 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-runewidth v0.0.31 // indirect
@@ -78,7 +78,7 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sirupsen/logrus v1.10.1 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
+	github.com/spf13/pflag v1.1.0 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/xo/terminfo v1.0.0 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
@@ -89,7 +89,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.45.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	go.yaml.in/yaml/v4 v4.0.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	modernc.org/libc v1.80.1 // indirect

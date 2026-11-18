@@ -83,9 +83,9 @@
     {#if label || description}
         <div class="flex flex-col gap-0.5">
             {#if label}
-                <span class="{sizeClasses[size].text} font-mono font-medium text-on-surface"
-                    >{label}</span
-                >
+                <span class="{sizeClasses[size].text} font-mono font-medium text-on-surface">
+                    {label}
+                </span>
             {/if}
             {#if description}
                 <span class="text-sm text-on-surface-muted">{description}</span>

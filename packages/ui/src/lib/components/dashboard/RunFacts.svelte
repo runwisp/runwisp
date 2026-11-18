@@ -34,9 +34,9 @@
     <!-- No hover-for-the-full-timestamp here: the date sits right beside the
          clock time, so a tooltip could only repeat it. The line wraps at narrow
          widths instead of dropping the date and hiding it behind a hover. -->
-    <span data-testid="run-started" class="text-on-surface-muted"
-        >{run.startedAt ? formatClockTime(run.startedAt) : "—"}</span
-    >
+    <span data-testid="run-started" class="text-on-surface-muted">
+        {run.startedAt ? formatClockTime(run.startedAt) : "—"}
+    </span>
     <span class="text-outline-hover" aria-hidden="true">·</span>
     <span>{formatCalendarDate(run.startedAt ?? run.createdAt)}</span>
     <span class="text-outline-hover" aria-hidden="true">·</span>
@@ -46,8 +46,9 @@
         <span
             class="text-warning-soft-text"
             title="Waited between its scheduled tick and actually starting"
-            >{startDelay} queued</span
         >
+            {startDelay} queued
+        </span>
     {/if}
     {#if retry}
         <span class="text-outline-hover" aria-hidden="true">·</span>
@@ -72,8 +73,9 @@
             <div class="max-w-md min-w-48">
                 <span
                     class="font-mono text-xs font-semibold tracking-[0.14em] text-on-surface-faint uppercase"
-                    >Parameters</span
                 >
+                    Parameters
+                </span>
                 <dl
                     class="mt-2 grid max-h-72 grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 overflow-y-auto"
                 >
@@ -93,14 +95,15 @@
             data-testid="run-live-usage"
             class="text-on-surface-muted"
             title="Live CPU (100% = one core) and memory of the run's processes"
-            >CPU {Math.round(live.cpuPercent)}% · {formatBytes(live.memoryBytes)}</span
         >
+            CPU {Math.round(live.cpuPercent)}% · {formatBytes(live.memoryBytes)}
+        </span>
     {/if}
     {#if usage}
         <span class="text-outline-hover" aria-hidden="true">·</span>
-        <span data-testid="run-usage" title="CPU time and most memory the run's processes used"
-            >{usage}</span
-        >
+        <span data-testid="run-usage" title="CPU time and most memory the run's processes used">
+            {usage}
+        </span>
     {/if}
     <!-- Run-id chip: click to copy the full ULID. Last, because it is the fact
          you reach for least and the only one you interact with. -->

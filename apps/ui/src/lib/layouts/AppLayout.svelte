@@ -193,9 +193,9 @@
         <div class="flex h-[52px] items-center gap-[9px] border-b border-outline px-5">
             <Logo size="md" />
             <div class="flex flex-1 flex-col leading-none">
-                <span class="font-sans text-[18px] font-bold tracking-[-0.02em] text-on-surface"
-                    >RunWisp</span
-                >
+                <span class="font-sans text-[18px] font-bold tracking-[-0.02em] text-on-surface">
+                    RunWisp
+                </span>
             </div>
             <button
                 type="button"
@@ -313,9 +313,9 @@
                         {@render taskRow()}
                     {/if}
                 {:else}
-                    <span class="font-mono font-semibold text-on-surface capitalize"
-                        >{activeTaskName ?? activePage}</span
-                    >
+                    <span class="font-mono font-semibold text-on-surface capitalize">
+                        {activeTaskName ?? activePage}
+                    </span>
                 {/if}
             </div>
 

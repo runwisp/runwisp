@@ -81,8 +81,10 @@
         class="{classes} cursor-pointer underline decoration-dotted underline-offset-3"
         title={badge.title}
         data-testid="task-state"
-        onclick={() => onOpenRun(runId)}>{@render content()}</button
+        onclick={() => onOpenRun(runId)}
     >
+        {@render content()}
+    </button>
 {:else}
     <span class={classes} title={badge.title} data-testid="task-state">{@render content()}</span>
 {/if}

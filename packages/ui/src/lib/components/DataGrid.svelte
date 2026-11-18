@@ -357,9 +357,9 @@
                                     {:else}
                                         <!-- Raw field value: a token, so mono. Snippet-rendered
                                              cells choose their own voice. -->
-                                        <span class="font-mono"
-                                            >{resolvePath(row, String(column.key)) ?? "-"}</span
-                                        >
+                                        <span class="font-mono">
+                                            {resolvePath(row, String(column.key)) ?? "-"}
+                                        </span>
                                     {/if}
                                 </TableCell>
                             {/each}

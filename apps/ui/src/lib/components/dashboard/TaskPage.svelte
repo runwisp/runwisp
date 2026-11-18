@@ -381,9 +381,9 @@
 {#snippet runModalBody()}
     {#if concurrencyReached}
         <Alert variant="warning">
-            This task is already running at its maximum concurrency. Your run will be <strong
-                >queued</strong
-            > and will start automatically once a slot becomes available.
+            This task is already running at its maximum concurrency. Your run will be <strong>
+                queued
+            </strong> and will start automatically once a slot becomes available.
         </Alert>
     {/if}
     {#if hasParams && confirmOpen}
