@@ -9,10 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"syscall"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/update"
 )
@@ -71,10 +73,11 @@ func sudoRunwispFor(exe string, args ...string) string {
 // environment, so without them `RUNWISP_PORT=8080 runwisp takeover` would bake
 // the default port into the unit. Secrets (RUNWISP_PASSWORD, the station token)
 // are left out on purpose: they would travel on sudo's command line, which every
-// user on the box can read in ps.
+// user on the box can read in ps. SSH_CONNECTION is not a secret, and lets the
+// re-run print the SSH tunnel to the dashboard.
 var sudoForwardedEnv = []string{
 	"RUNWISP_CONFIG", "RUNWISP_DATA", "RUNWISP_HOST", "RUNWISP_PORT", "RUNWISP_TLS",
-	"RUNWISP_LOG_LEVEL", "RUNWISP_LOG_FORMAT", "RUNWISP_LOG_OUTPUT",
+	"RUNWISP_LOG_LEVEL", "RUNWISP_LOG_FORMAT", "RUNWISP_LOG_OUTPUT", "SSH_CONNECTION",
 }
 
 // sudoArgv is the argv that re-runs this invocation as root: the same
@@ -107,4 +110,36 @@ func reexecAsRoot(stderr io.Writer, why string) error {
 	fmt.Fprintf(stderr, "%s Re-running with sudo…\n", why)
 	err = syscall.Exec(sudo, sudoArgv(sudo, exe, os.Args[1:], os.Environ()), os.Environ())
 	return fmt.Errorf("re-run with sudo: %w", err)
+}
+
+// elevateOnLinux is reexecAsRoot for a command that changes the system
+// service: on Linux and not root, it re-runs through sudo. Elsewhere, or when
+// there is no sudo, it returns nil and the command's own needs-root answer
+// stands.
+func elevateOnLinux(stderr io.Writer, why string) error {
+	if runtime.GOOS != "linux" || os.Geteuid() == 0 {
+		return nil
+	}
+	return reexecAsRoot(stderr, why)
+}
+
+// sudoSystemRunwisp is sudoRunwisp for the system service: it names the binary
+// the installed unit runs rather than this one, which may be a stale copy in
+// ~/.local/bin that sudo cannot find.
+func sudoSystemRunwisp(args ...string) string {
+	if unit, ok := installedUnitArgs(); ok {
+		return sudoRunwispFor(unit.Binary, args...)
+	}
+	return sudoRunwisp(args...)
+}
+
+// installedUnitArgs reads the binary, config, data dir, host and port the
+// installed system unit runs with. The unit file is world-readable, so this
+// works for any user. ok is false when there is no unit or it isn't ours.
+func installedUnitArgs() (autostart.InstallOptions, bool) {
+	body, err := os.ReadFile(systemUnitFile)
+	if err != nil {
+		return autostart.InstallOptions{}, false
+	}
+	return autostart.ParseExecStart(body)
 }

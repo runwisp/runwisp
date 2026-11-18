@@ -54,6 +54,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A run that couldn't start shows "didn't start" instead of exit code -1, in the web UI, the TUI and `runwisp run`.
 - `runwisp logs` on a task that has never run prints "`<task>` hasn't run yet." instead of a log line.
 - The task details panel in the web UI says to edit the crontab and run `sudo runwisp reload` for a task read from a crontab, instead of pointing at `runwisp.toml`.
+- `runwisp service install` and `runwisp service uninstall` re-run themselves with sudo for the system service, like `runwisp takeover`, instead of stopping with a "needs root" error.
+- `runwisp service uninstall` gives cron back even when removing the unit fails.
+- The system service starts with its generated password already in place, instead of starting once without it and restarting.
+- `runwisp takeover` no longer runs `@reboot` jobs a second time when it starts RunWisp on a machine where cron already ran them.
+- `sudo runwisp password` prints the password `service install` saved for the system service. The saved file also says how to rotate it.
+- When the system service installs a copy of a binary from your home directory, the home copy becomes a link to it, so `runwisp` and `sudo runwisp` run the same version.
+- `runwisp service status` checks the system service against the settings in its own unit, so it no longer reports a mismatch when run without the install flags.
+- `runwisp`, `runwisp reload`, `runwisp promote`, `runwisp status`, `runwisp list` and `runwisp password` run as a normal user tell you to use `sudo runwisp` when only the system service is running.
+- `runwisp takeover` over SSH prints the `ssh -L` command that opens the dashboard from your machine.
+- Commands that need `--yes` without a terminal say "Nothing was changed. There's no terminal to ask, so pass --yes."
+- `runwisp promote` prints only the cron step that applies to your machine and the right reload command.
+- The install script points at `runwisp takeover` when the machine has cron jobs.
 ### Security
 
 - A browser that has signed in before has its wrong passwords counted on its own instead of per IP, so someone guessing from the same IP or proxy can't slow down your logins.

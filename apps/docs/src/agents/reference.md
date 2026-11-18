@@ -113,7 +113,7 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     way catch-up is re-anchored to the moment of release, so a hold window leaves
                                     no history and no missed-tick alerts.
                                     A crontab-format file OUTSIDE cron's own paths is NOT held (nothing to hand
-                                    over) and keeps a fire-twice warning instead. `sudo runwisp takeover` is the
+                                    over) and keeps a fire-twice warning instead. `runwisp takeover` is the
                                     one-command way out.
 ```
 
@@ -436,6 +436,9 @@ runwisp promote [TASK...]    — put a derived task's block in the root runwisp.
                                from held to unheld (HeldBy cron→none): the diff reports it Changed(ReasonSchedule),
                                so that reload has RunWisp take over its schedule. Emptied staging file is deleted.
 runwisp password             — print the daemon's ephemeral password (local socket; exit 5 under RUNWISP_AUTH=off, refuses if RUNWISP_PASSWORD set)
+                             — as root against the system service's data dir, a daemon that withholds the password
+                               falls back to the `password.conf` drop-in `service install` saved. A non-root caller
+                               while only the system service runs gets "Use `sudo runwisp password`".
                              — --viewer: print the read-only password instead, minting a random in-memory one on first call (refuses if RUNWISP_VIEWER_PASSWORD set)
 runwisp openapi              — print the OpenAPI 3.1 spec (JSON) to stdout
 runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-12) to stdout; published at https://docs.runwisp.com/config.schema.json
@@ -444,7 +447,8 @@ runwisp demo                 — boot a throwaway, fully-populated instance; --n
 runwisp upgrade              — upgrade to the latest stable release via the install channel: homebrew → brew upgrade; deb/rpm package → [sudo] apt-get update + install --only-upgrade / dnf upgrade --refresh; global npm/bun/pnpm/yarn → that manager; script/tar.gz → download from GitHub, verify SHA-256, atomic in-place swap; docker/npx/project-local npm → refuses with instructions; dev build refuses. -y/--yes (needed without a TTY), --restart now|idle|later (idle = wait until no task runs are pending/running, services ignored; no TTY + no flag = later)
 runwisp service install      — install autostart; -y --print --dry-run --force --local --binary <path> --station --token <t> --url <u>
                              — DEFAULT scope is the system-wide singleton /etc/systemd/system/runwisp.service
-                               (Linux, root, no fingerprint in the name). Refuses without root, naming
+                               (Linux, root, no fingerprint in the name). Run as non-root it re-execs itself
+                               through sudo (same forwarding as takeover); without sudo on PATH it refuses, naming
                                `sudo` and `--local`. macOS has no system scope yet: --local is required.
                              — --local installs ~/.config/systemd/user/runwisp-<fingerprint>.service (Linux,
                                + loginctl enable-linger) or ~/Library/LaunchAgents/com.runwisp.daemon.<fp>.plist.
@@ -453,14 +457,18 @@ runwisp service install      — install autostart; -y --print --dry-run --force
                                requires the resolved config to be root-owned and not group/world-writable.
                                An auto-detected binary that isn't root-trusted (e.g. ~/.local/bin/runwisp) is
                                copied to /usr/local/bin/runwisp first and the unit runs the copy (--binary is
-                               never copied). Read-only systemctl probes never use sudo.
+                               never copied). A same-content copy under the sudo user's home is then replaced
+                               by a symlink to it (chowned to that user), so `runwisp` and `sudo runwisp` agree.
+                               Read-only systemctl probes never use sudo.
                              — unit lifecycle ONLY: it never touches cron. When a `takeover` would do something,
                                a successful install prints a note naming the live cron unit, its job count, and
-                               `sudo runwisp takeover`. There is no --take-over-cron flag.
+                               `runwisp takeover`. There is no --take-over-cron flag.
                              — Web UI password: when auth is on and RUNWISP_PASSWORD is unset, generates one into a
-                               0600 `<unit>.d/password.conf` drop-in (NOT the world-readable unit), restarts, prints
-                               it once. Idempotent: an existing drop-in or a set RUNWISP_PASSWORD is left untouched
-                               (re-install never rotates). launchd: no drop-in, skipped. Daemon is untouched.
+                               0600 `<unit>.d/password.conf` drop-in (NOT the world-readable unit) BEFORE
+                               daemon-reload + enable --now, so the first start already has it (no restart), and
+                               prints it once. Idempotent: an existing drop-in or a set RUNWISP_PASSWORD is left
+                               untouched (re-install never rotates). `sudo runwisp password` prints it again.
+                               launchd: no drop-in, skipped.
 runwisp takeover             — retire cron in one step; --dry-run --force -y --allow-skipped-cron-jobs --binary
                              — works from NOTHING: no runwisp.toml needed. Computes one plan (internal/cutover),
                                prints it, asks once, executes. Steps: write runwisp.toml reading the crontabs it
@@ -475,7 +483,10 @@ runwisp takeover             — retire cron in one step; --dry-run --force -y -
                                non-root (--dry-run included: reading every crontab needs root) it re-execs
                                `sudo <abs binary> takeover <args>`, forwarding non-secret RUNWISP_* settings.
                                Without sudo on PATH it only reports "needs root". Ends by printing the dashboard
-                               URL, `sudo runwisp password` and `sudo runwisp upgrade`.
+                               URL, an `ssh -L` tunnel line when run over SSH (SSH_CONNECTION is forwarded through
+                               sudo), `sudo runwisp password` and `sudo runwisp upgrade`.
+                             — when cron was running, tasks from @reboot lines (run_on_start="boot") are marked as
+                               already run for the current boot, so the first start doesn't fire them twice.
                              — a failed start restores cron to its pre-take-over state rather than leaving no
                                scheduler. Later crash loops: unit has StartLimitBurst=5/300s + OnFailure=
                                runwisp-cron-failsafe.service, which unmasks+starts cron only when runwisp.service
@@ -499,7 +510,11 @@ runwisp takeover             — retire cron in one step; --dry-run --force -y -
                              — off Linux it is blocked and names the manual route (`runwisp import cron
                                --write`, then `crontab -r`); masking cron needs systemd.
 runwisp service uninstall    — remove autostart; -y --purge (also data dir) --force --local
+                             — the system unit re-execs itself through sudo when not root. Cron is restored
+                               even when a later step (unit removal, daemon-reload) fails.
 runwisp service status       — show autostart status; --local
+                             — for the system unit, with no explicit flags or RUNWISP_* env, it checks the unit
+                               against the settings parsed from its own ExecStart (binary/config/data/host/port).
                              — install/status/uninstall/stop/restart all detect the installed scope; --local is
                                only needed to disambiguate when a system AND a per-user unit both exist
 ```

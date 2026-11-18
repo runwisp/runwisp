@@ -128,7 +128,7 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 		// Warning color: these are the operator's own jobs, loaded and listed, that
 		// RunWisp is deliberately not firing. The chip names the way out.
 		warn := uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
-			Render(fmt.Sprintf("⏸ %d held by cron — `sudo runwisp takeover`", n))
+			Render(fmt.Sprintf("⏸ %d held by cron: `runwisp takeover`", n))
 		parts = append(parts, warn)
 	}
 	if n := len(info.PausedTasks); n > 0 {

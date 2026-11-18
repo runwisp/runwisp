@@ -765,7 +765,7 @@ func TestEnsureServiceEnv_PersistsOperatorSuppliedPasswordViaEnvDropIn(t *testin
 
 	require.True(t, inst.EnvCalled)
 	assert.Equal(t, "hunter2", inst.EnvVars["RUNWISP_PASSWORD"])
-	assert.False(t, inst.EnsureCalled, "an operator-supplied password rides the env drop-in, not the generated-password fallback")
+	assert.Empty(t, servicePassword(inst), "an operator-supplied password rides the env drop-in, not a generated one")
 	assert.Equal(t, 1, inst.Restarts, "must restart so the daemon picks up the new environment")
 	assert.NotContains(t, out.String(), "hunter2", "must not echo the operator's secret back")
 	assert.Contains(t, out.String(), inst.EnvPath)
@@ -784,24 +784,9 @@ func TestEnsureServiceEnv_AuthOffStillCapturedNoPasswordFallback(t *testing.T) {
 
 	require.True(t, inst.EnvCalled)
 	assert.Equal(t, "off", inst.EnvVars["RUNWISP_AUTH"])
-	assert.False(t, inst.EnsureCalled, "no password boundary means no password to set")
+	assert.Empty(t, servicePassword(inst), "no password boundary means no password to set")
 	assert.NotContains(t, out.String(), "does not carry into the managed service",
 		"RUNWISP_AUTH now rides the env drop-in, so the old warning is stale")
-}
-
-// `service install --local` saves the password under ~/.config/systemd/user,
-// which the operator owns, yet the note called it a root-owned drop-in.
-func TestServicePasswordFallbackLocalDoesNotSayRootOwned(t *testing.T) {
-	t.Setenv("RUNWISP_AUTH", "")
-	t.Setenv("RUNWISP_PASSWORD", "")
-	inst := &autostartfake.Installer{
-		EnsurePath:  filepath.Join(t.TempDir(), ".config/systemd/user/runwisp.service.d/password.conf"),
-		EnsureWrote: true,
-	}
-	var out bytes.Buffer
-	require.True(t, ensureServicePasswordFallback(&out, inst, autostart.InstallOptions{System: false}))
-	assert.Contains(t, out.String(), inst.EnsurePath)
-	assert.NotContains(t, out.String(), "root-owned")
 }
 
 // A reinstall run from a shell that no longer exports the operator's
@@ -826,27 +811,26 @@ func TestEnsureServiceEnv_WarnsLoudlyWhenEnvRemoved(t *testing.T) {
 	assert.Equal(t, 1, inst.Restarts, "the daemon must restart to pick up the reverted environment")
 }
 
-func TestEnsureServiceEnv_GeneratesPasswordPrintsAndRestarts(t *testing.T) {
+// The generated password is saved by Install before the unit first starts,
+// so nothing after the install restarts the service to pick it up.
+func TestServicePassword_GeneratedBeforeInstallNoRestartAfter(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "")
 	t.Setenv("RUNWISP_AUTH", "")
-	inst := &autostartfake.Installer{EnsurePath: "/etc/systemd/system/runwisp.service.d/password.conf", EnsureWrote: true}
+	inst := &autostartfake.Installer{}
+	assert.NotEmpty(t, servicePassword(inst), "a fresh password must be generated")
+	assert.Empty(t, servicePassword(&autostartfake.Installer{NoDropIn: true}), "launchd has nowhere to save it")
+
 	var out bytes.Buffer
 	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{}, capturedServiceEnv())
-
-	require.True(t, inst.EnsureCalled)
-	assert.NotEmpty(t, inst.EnsurePassword, "a fresh password must be generated")
-	assert.Equal(t, 1, inst.Restarts, "must restart so the daemon picks up the drop-in")
-	assert.Contains(t, out.String(), inst.EnsurePassword, "the generated password is printed once")
-	assert.Contains(t, out.String(), inst.EnsurePath)
+	assert.Zero(t, inst.Restarts, "the password is in place before the first start")
 }
 
 func TestEnsureServiceEnv_SkipsRestartWhenNothingChanged(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "")
 	t.Setenv("RUNWISP_AUTH", "")
-	// EnsureWrote=false with a non-empty path means an existing password drop-in was
-	// left alone; envChange=DropInUnchanged (default) means the env drop-in already
-	// matched — neither needs a restart.
-	inst := &autostartfake.Installer{EnsurePath: "/etc/systemd/system/runwisp.service.d/password.conf", EnsureWrote: false}
+	// envChange=DropInUnchanged (default) means the env drop-in already matched,
+	// so no restart is needed.
+	inst := &autostartfake.Installer{}
 	var out bytes.Buffer
 	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{}, capturedServiceEnv())
 

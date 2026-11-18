@@ -142,6 +142,12 @@ type InstallOptions struct {
 	// preconditions hold; this package only executes the mechanics.
 	TakeOverCron bool
 
+	// Password, when set, is a Web UI password Install saves to a 0600 drop-in
+	// beside the unit before it first starts it, so the service starts once,
+	// already on it. An existing saved password is kept, never rotated. launchd
+	// has no drop-ins and ignores it.
+	Password string
+
 	// PreConfirmed says the caller (internal/cutover) already showed a plan
 	// covering every step and took the operator's consent, so Install skips its
 	// own banner and "Proceed?".
@@ -236,14 +242,8 @@ type Installer interface {
 	Stop(ctx context.Context, opts InstallOptions) error
 	Restart(ctx context.Context, opts InstallOptions) error
 
-	// EnsurePasswordDropIn writes a 0600 drop-in beside the managed unit that
-	// sets RUNWISP_PASSWORD, so the service has a stable Web UI password. It
-	// never rotates: an existing drop-in is left alone and wrote is false.
-	// launchd has no drop-ins and returns ("", false, nil).
-	EnsurePasswordDropIn(ctx context.Context, opts InstallOptions, password string) (path string, wrote bool, err error)
-
-	// SupportsPasswordDropIn reports whether EnsurePasswordDropIn can write a
-	// drop-in on this OS, so a --dry-run can describe what install will do.
+	// SupportsPasswordDropIn reports whether Install can save
+	// InstallOptions.Password in a drop-in on this OS.
 	SupportsPasswordDropIn() bool
 
 	// WriteEnvDropIn replaces a 0600 drop-in holding one Environment line per

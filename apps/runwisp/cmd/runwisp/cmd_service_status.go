@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/spf13/cobra"
@@ -71,6 +72,9 @@ func runServiceStatus(cmd *cobra.Command, f Flags) error {
 	if err != nil {
 		return err
 	}
+	if systemWide && !explicitServiceFlags(cmd) {
+		opts = withInstalledUnitArgs(opts)
+	}
 
 	st, err := installer.Status(context.Background(), opts)
 	if err != nil {
@@ -105,6 +109,32 @@ func resolveStatusOptions(f Flags, systemWide bool) (autostart.InstallOptions, e
 		System:      systemWide,
 		StopTimeout: stopWaitTimeout(f.CfgFile),
 	}, nil
+}
+
+// withInstalledUnitArgs checks the system unit against what it runs. With no
+// flags of its own, the caller's defaults (./runwisp.toml for a normal user)
+// say nothing about the unit, and comparing against them reported DRIFT on a
+// fresh install.
+func withInstalledUnitArgs(opts autostart.InstallOptions) autostart.InstallOptions {
+	unit, ok := installedUnitArgs()
+	if !ok {
+		return opts
+	}
+	opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port = unit.Binary, unit.Config, unit.DataDir, unit.Host, unit.Port
+	opts.StopTimeout = stopWaitTimeout(unit.Config)
+	return opts
+}
+
+// explicitServiceFlags reports that the caller named the settings a unit is
+// built from, by flag or by RUNWISP_* variable, so they are what to check the
+// unit against.
+func explicitServiceFlags(cmd *cobra.Command) bool {
+	for _, name := range []string{"config", "data", "host", "port"} {
+		if cmd.Flags().Changed(name) || os.Getenv("RUNWISP_"+strings.ToUpper(name)) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func renderServiceStatus(w io.Writer, st autostart.Status) int {

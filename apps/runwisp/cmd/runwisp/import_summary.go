@@ -73,7 +73,7 @@ var (
 	sourceAnacrontab = importSource{
 		label: "anacrontab",
 		stillRuns: fixedLines(
-			"anacron still runs these jobs. Retire it (`sudo runwisp takeover` does, or",
+			"anacron still runs these jobs. Retire it (`runwisp takeover` does, or",
 			"`systemctl mask --now anacron.timer anacron.service`) before RunWisp runs",
 			"them, or each one runs twice.",
 		),

@@ -5,7 +5,6 @@ package cutover
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -124,7 +123,7 @@ func (fx fixture) build(t *testing.T) (*Cutover, *autostartfake.Installer, strin
 		Preflight:     func(context.Context) (bool, error) { return false, nil },
 		DaemonRunning: func() bool { return fx.daemonRunning },
 		Reload:        func(context.Context) error { inst.Calls = append(inst.Calls, "reload"); return nil },
-		AfterInstall:  func(context.Context, io.Writer) { inst.Calls = append(inst.Calls, "after-install") },
+		MarkBootRan:   func(string) error { inst.Calls = append(inst.Calls, "mark-boot"); return nil },
 		WriteConfig: func(path string, patterns []string) error {
 			inst.Calls = append(inst.Calls, "write-config")
 			return os.WriteFile(path, []byte(config.CronStarterConfig(patterns)), 0o644)

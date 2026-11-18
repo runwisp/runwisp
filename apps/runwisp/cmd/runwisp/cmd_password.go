@@ -13,6 +13,7 @@ import (
 	"os"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 	"github.com/spf13/cobra"
 )
@@ -53,15 +54,23 @@ stdout is captured. Pipe to a clipboard tool to keep it out of scrollback:
     runwisp password | xclip -selection clipboard
 
 Fails when the daemon is configured with RUNWISP_PASSWORD (or, with --viewer,
-RUNWISP_VIEWER_PASSWORD) — that value is never disclosed via this command.`,
+RUNWISP_VIEWER_PASSWORD) — that value is never disclosed via this command.
+The exception is the password 'runwisp service install' or 'runwisp takeover'
+generated for the system service: 'sudo runwisp password' prints it.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// A normal user's shell on a box with the system service: its socket and
+		// password are root's.
+		if systemDaemonElsewhere(flags) && !hasLocalSetup(flags) {
+			renderError(os.Stderr, systemServiceHint(os.Args[1:]...), "", "")
+			os.Exit(passwordExitUnreachable)
+		}
 		socketPath := localAPISocketPath(flags)
 		client := apiclient.NewUnix(socketPath)
-		fetch, envVar := client.GetLocalCredentials, "RUNWISP_PASSWORD"
+		fetch, envVar, saved := client.GetLocalCredentials, "RUNWISP_PASSWORD", savedServicePassword
 		if viewer, _ := cmd.Flags().GetBool("viewer"); viewer {
-			fetch, envVar = client.MintViewerPassword, "RUNWISP_VIEWER_PASSWORD"
+			fetch, envVar, saved = client.MintViewerPassword, "RUNWISP_VIEWER_PASSWORD", nil
 		}
-		code := runPasswordVia(cmd.Context(), os.Stdout, os.Stderr, fetch, socketPath, envVar, daemonNotRunningHint(flags))
+		code := runPasswordVia(cmd.Context(), os.Stdout, os.Stderr, fetch, saved, socketPath, envVar, daemonNotRunningHint(flags))
 		if code != passwordExitOK {
 			os.Exit(code)
 		}
@@ -80,13 +89,16 @@ type credentialsFetcher interface {
 }
 
 func runPassword(ctx context.Context, stdout, stderr io.Writer, client credentialsFetcher, socketPath string) int {
-	return runPasswordVia(ctx, stdout, stderr, client.GetLocalCredentials, socketPath, "RUNWISP_PASSWORD", startDaemonHint)
+	return runPasswordVia(ctx, stdout, stderr, client.GetLocalCredentials, nil, socketPath, "RUNWISP_PASSWORD", startDaemonHint)
 }
 
 // runPasswordVia prints the password fetch returns (the admin or the read-only
-// one). envVar names the variable that would have supplied it, for the refusal
-// message; notRunningHint is the next step when no daemon answers.
-func runPasswordVia(ctx context.Context, stdout, stderr io.Writer, fetch func(context.Context) (*server.LocalCredentialsBody, error), socketPath, envVar, notRunningHint string) int {
+// one). When the daemon withholds it, saved (if non-nil) may still know it:
+// the password `service install` saved for the system service is RunWisp's,
+// not the operator's, so there is nobody else to ask. envVar names the
+// variable that would have supplied it, for the refusal message;
+// notRunningHint is the next step when no daemon answers.
+func runPasswordVia(ctx context.Context, stdout, stderr io.Writer, fetch func(context.Context) (*server.LocalCredentialsBody, error), saved func() (string, bool), socketPath, envVar, notRunningHint string) int {
 	creds, err := fetch(ctx)
 	if err == nil {
 		fmt.Fprintln(stdout, creds.Password)
@@ -94,6 +106,12 @@ func runPasswordVia(ctx context.Context, stdout, stderr io.Writer, fetch func(co
 	}
 
 	if errors.Is(err, apiclient.ErrLocalCredentialsUnavailable) {
+		if saved != nil {
+			if pw, ok := saved(); ok {
+				fmt.Fprintln(stdout, pw)
+				return passwordExitOK
+			}
+		}
 		renderError(stderr,
 			fmt.Sprintf("this daemon is configured with %s; RunWisp will not disclose it", envVar),
 			"Retrieve it from wherever you set it (Docker secret, systemd credential, vault, password manager, …).",
@@ -126,6 +144,28 @@ func runPasswordVia(ctx context.Context, stdout, stderr io.Writer, fetch func(co
 	}
 	renderError(stderr, fmt.Sprintf("unexpected error: %v", err), "", "")
 	return passwordExitUnexpectedErr
+}
+
+// savedServicePassword is the Web UI password `service install` saved for the
+// system service, when this command talks to that service's daemon (its data
+// dir) and the file is readable (root). A RUNWISP_PASSWORD the operator set at
+// install time rides in the env drop-in, overrides the saved one, and stays
+// undisclosed like any operator-supplied value.
+func savedServicePassword() (string, bool) {
+	unit, ok := installedUnitArgs()
+	if !ok || absPathOrFallback(unit.DataDir) != absPathOrFallback(flags.DataDir) {
+		return "", false
+	}
+	if env, err := os.ReadFile(systemUnitFile + ".d/" + autostart.EnvDropInName); err == nil {
+		if _, set := autostart.DropInValue(env, "RUNWISP_PASSWORD"); set {
+			return "", false
+		}
+	}
+	body, err := os.ReadFile(systemUnitFile + ".d/password.conf")
+	if err != nil {
+		return "", false
+	}
+	return autostart.DropInValue(body, "RUNWISP_PASSWORD")
 }
 
 // isTransportError reports whether the error came from a failed dial or read

@@ -54,8 +54,8 @@ var serviceInstallCmd = &cobra.Command{
 	Long: `Wire RunWisp into the host init system.
 
 By default this installs the system-wide service: /etc/systemd/system/
-runwisp.service, running as root, one per host. That needs root, so run it
-with sudo. It wires up the unit and nothing else — if cron is still running
+runwisp.service, running as root, one per host. That needs root: run as anyone
+else, it re-runs itself with sudo. It wires up the unit and nothing else — if cron is still running
 jobs on this box, the install says so and points you at ` + "`runwisp takeover`" + `,
 which is the command that retires it.
 
@@ -92,6 +92,13 @@ func init() {
 }
 
 func runServiceInstall(cmd *cobra.Command, f Flags) error {
+	// The system service needs root; re-run through sudo like takeover does.
+	// Without sudo, resolveInstallScope's needs-root error explains the ways out.
+	if !serviceInstallOpts.Local {
+		if err := elevateOnLinux(cmd.ErrOrStderr(), "Installing the system service needs root."); err != nil {
+			return err
+		}
+	}
 	_, err := installService(cmd, f, serviceInstallOpts)
 	return err
 }
@@ -140,6 +147,7 @@ func installService(cmd *cobra.Command, f Flags, req installRequest) (installed 
 	if err != nil {
 		return false, err
 	}
+	opts.Password = servicePassword(installer)
 
 	if req.Print || req.DryRun {
 		return false, inspectServiceInstall(cmd, installer, opts, req, f)
@@ -225,21 +233,18 @@ func serviceEnv(req installRequest) (map[string]string, error) {
 }
 
 // ensureServiceEnv gives a fresh service install the operator's RUNWISP_*
-// environment and a stable Web UI password — neither survives on its own,
-// since a systemd unit / launchd plist never inherits the install shell's
-// environment.
+// environment, which a systemd unit / launchd plist never inherits from the
+// install shell. (The stable Web UI password is saved by Install itself,
+// before the unit first starts; see servicePassword.)
 //
 // Every RUNWISP_* var present at install time (an operator-supplied
 // RUNWISP_PASSWORD included) is refreshed into a 0600 drop-in beside the
 // unit on every install, so changing RUNWISP_AUTH/RUNWISP_TLS and
-// reinstalling actually takes effect. When auth is on and the operator did
-// not set RUNWISP_PASSWORD, a password is generated and persisted the same
-// way into its own 0600 drop-in, so a managed daemon does not mint a fresh
-// one — logging every session out — on every restart.
+// reinstalling actually takes effect.
 //
 // Best-effort and idempotent: any failure here leaves a working install
 // rather than aborting the command. The daemon is restarted once at the end
-// if either drop-in actually changed, so the new environment takes effect.
+// if the drop-in actually changed, so the new environment takes effect.
 func ensureServiceEnv(cmd *cobra.Command, installer autostart.Installer, opts autostart.InstallOptions, env map[string]string) {
 	out := cmd.OutOrStdout()
 	restartNeeded := false
@@ -256,8 +261,8 @@ func ensureServiceEnv(cmd *cobra.Command, installer autostart.Installer, opts au
 		restartNeeded = true
 	}
 
-	if ensureServicePasswordFallback(out, installer, opts) {
-		restartNeeded = true
+	if !installer.SupportsPasswordDropIn() && servicePasswordNeeded() {
+		fmt.Fprintf(out, "\n%s\n", manualPasswordHint)
 	}
 
 	if restartNeeded {
@@ -282,50 +287,32 @@ func printEnvDropInRemovedWarning(out io.Writer, path string) {
 	fmt.Fprintf(&b, "  environment a previous install saved to %s\n", path)
 	b.WriteString("  was just removed. Any setting it carried (RUNWISP_AUTH, RUNWISP_TLS,\n")
 	b.WriteString("  RUNWISP_STATION_TOKEN, ...) has reverted to its default — including auth,\n")
-	b.WriteString("  which may come back on with a freshly generated password below.\n")
+	b.WriteString("  which may come back on with a freshly generated password.\n")
 	b.WriteString("  If you rely on one of these, re-export it and re-run this command.\n")
 	b.WriteString("================================================================================\n")
 	fmt.Fprint(out, b.String())
 }
 
-// ensureServicePasswordFallback generates and persists a Web UI password when
-// auth is on and the operator did not supply RUNWISP_PASSWORD — an
-// operator-supplied one already rides into the service via the env drop-in
-// above. Reports whether it wrote a fresh password, so the caller knows a
-// restart is needed to pick it up.
-func ensureServicePasswordFallback(out io.Writer, installer autostart.Installer, opts autostart.InstallOptions) bool {
+// servicePasswordNeeded reports that a service install has to save a Web UI
+// password: auth is on and the operator did not supply RUNWISP_PASSWORD, which
+// would ride into the service in the env drop-in instead.
+func servicePasswordNeeded() bool {
 	noAuth, err := resolveAuthMode()
-	if err != nil {
-		return false // misconfigured; reported at daemon start
-	}
-	if noAuth || os.Getenv("RUNWISP_PASSWORD") != "" {
-		return false
-	}
+	return err == nil && !noAuth && os.Getenv("RUNWISP_PASSWORD") == ""
+}
 
+// servicePassword is the password a service install saves before the unit
+// first starts (autostart.InstallOptions.Password), or "" when none is needed
+// or this init system has nowhere to save it.
+func servicePassword(installer autostart.Installer) string {
+	if installer == nil || !installer.SupportsPasswordDropIn() || !servicePasswordNeeded() {
+		return ""
+	}
 	pw, err := datadir.GeneratePassword()
 	if err != nil {
-		fmt.Fprintf(out, "\nNote: could not generate a Web UI password (%v).\n%s\n", err, manualPasswordHint)
-		return false
+		return "" // the daemon then makes one up each start, and says so
 	}
-
-	path, wrote, err := installer.EnsurePasswordDropIn(context.Background(), opts, pw)
-	if err != nil {
-		fmt.Fprintf(out, "\nNote: could not set a Web UI password automatically (%v).\n%s\n", err, manualPasswordHint)
-		return false
-	}
-	if !wrote {
-		// path == "" means the OS has no drop-in mechanism (launchd); a non-empty
-		// path means one already exists and must not be rotated.
-		if path == "" {
-			fmt.Fprintf(out, "\n%s\n", manualPasswordHint)
-		}
-		return false
-	}
-
-	fmt.Fprintf(out, "\nGenerated a Web UI password and saved it to %s (0600):\n\n    %s\n\n"+
-		"Store it now. It won't be shown again here, and 'runwisp password' won't disclose it —\n"+
-		"it lives only in that drop-in. To rotate it, edit or delete the file and restart.\n", path, pw)
-	return true
+	return pw
 }
 
 // printCronStillOwnsNote is what an install says about cron: nothing, unless a
@@ -345,8 +332,8 @@ func printCronStillOwnsNote(cmd *cobra.Command, f Flags, deps autostart.Deps, in
 	}
 	fmt.Fprintf(cmd.OutOrStdout(),
 		"\nNote: %s is still running, and owns %d cron job(s) on this box.\n"+
-			"      Run '%s' to hand them to RunWisp.\n",
-		plan.Evidence.CronUnit, plan.Evidence.Scan.Jobs, sudoRunwisp("takeover"))
+			"      Run 'runwisp takeover' to hand them to RunWisp.\n",
+		plan.Evidence.CronUnit, plan.Evidence.Scan.Jobs)
 }
 
 // printSystemdStillEnabledNote is the systemd half of printCronStillOwnsNote:

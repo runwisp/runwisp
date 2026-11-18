@@ -8,6 +8,7 @@ import (
 	"embed"
 	"encoding/xml"
 	"fmt"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -198,4 +199,88 @@ func renderTemplate(name string, data any) ([]byte, error) {
 		return nil, fmt.Errorf("execute template %s: %w", name, err)
 	}
 	return buf.Bytes(), nil
+}
+
+// ParseExecStart reads back what a unit RenderSystemdUnit wrote runs: the
+// binary, and the --config, --data, --host and --port its ExecStart passes.
+// ok is false when the unit has no ExecStart of that shape (a hand-written
+// unit), so a caller can fall back to its own defaults.
+func ParseExecStart(unit []byte) (opts InstallOptions, ok bool) {
+	for _, line := range strings.Split(string(unit), "\n") {
+		rest, found := strings.CutPrefix(strings.TrimSpace(line), "ExecStart=")
+		if !found {
+			continue
+		}
+		words := systemdWords(rest)
+		if len(words) == 0 {
+			return InstallOptions{}, false
+		}
+		opts.Binary = words[0]
+		for i := 1; i+1 < len(words); i++ {
+			// ExecStart arguments double a literal "$" (systemdExecArg).
+			value := strings.ReplaceAll(words[i+1], "$$", "$")
+			switch words[i] {
+			case "--config":
+				opts.Config = value
+			case "--data":
+				opts.DataDir = value
+			case "--host":
+				opts.Host = value
+			case "--port":
+				opts.Port, _ = strconv.Atoi(value)
+			}
+		}
+		return opts, opts.Config != "" && opts.DataDir != ""
+	}
+	return InstallOptions{}, false
+}
+
+// DropInValue reads key's value from the Environment="KEY=VALUE" lines of a
+// drop-in envDropInContent wrote. ok is false when no line sets key.
+func DropInValue(dropIn []byte, key string) (value string, ok bool) {
+	for _, line := range strings.Split(string(dropIn), "\n") {
+		rest, found := strings.CutPrefix(strings.TrimSpace(line), "Environment=")
+		if !found {
+			continue
+		}
+		for _, word := range systemdWords(rest) {
+			if v, match := strings.CutPrefix(word, key+"="); match {
+				value, ok = v, true
+			}
+		}
+	}
+	return value, ok
+}
+
+// systemdWords splits a unit value into words, undoing the quoting
+// systemdEscape produces: double quotes group, a backslash inside them escapes
+// the next character, and "%%" is a literal "%".
+func systemdWords(s string) []string {
+	var words []string
+	var cur strings.Builder
+	inQuote, inWord := false, false
+	flush := func() {
+		if inWord {
+			words = append(words, strings.ReplaceAll(cur.String(), "%%", "%"))
+		}
+		cur.Reset()
+		inWord = false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case inQuote && c == '\\' && i+1 < len(s):
+			i++
+			cur.WriteByte(s[i])
+		case c == '"':
+			inQuote, inWord = !inQuote, true
+		case !inQuote && (c == ' ' || c == '\t'):
+			flush()
+		default:
+			cur.WriteByte(c)
+			inWord = true
+		}
+	}
+	flush()
+	return words
 }

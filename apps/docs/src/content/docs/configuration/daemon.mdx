@@ -390,7 +390,7 @@ include_cron = [
 ]
 ```
 
-- `sudo runwisp takeover` finds the crontabs on the host and writes this key for
+- `runwisp takeover` finds the crontabs on the host and writes this key for
   you. It doesn't edit an `include_cron` you already have; it prints what to add.
 - After `crontab -e`, run [`runwisp reload`](/operations/reload/).
 - `runwisp promote <task>` copies a job into `runwisp.toml` and comments out the
@@ -400,7 +400,7 @@ include_cron = [
 :::note[Held jobs]
 While a system cron daemon is running, RunWisp **holds** the jobs it read: they
 are listed with their schedule, but RunWisp doesn't start them, so nothing runs
-twice. `sudo runwisp takeover` ends the hold. If cron is stopped some other way,
+twice. `runwisp takeover` ends the hold. If cron is stopped some other way,
 the hold ends within a minute. See [Held jobs](/coming-from/cron/#held-jobs).
 :::
 

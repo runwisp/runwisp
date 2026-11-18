@@ -12,6 +12,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// `service status` as a normal user compared the unit against its own default
+// paths and reported DRIFT. It now reads the paths back from the unit, so the
+// parse has to undo exactly the quoting the template applies.
+func TestParseExecStart_ReadsBackTheRenderedUnit(t *testing.T) {
+	want := InstallOptions{
+		Binary:  "/opt/run wisp/runwisp",
+		Config:  `/etc/rw "x"/100%/runwisp.toml`,
+		DataDir: "/var/lib/$rw",
+		Host:    "0.0.0.0",
+		Port:    8080,
+	}
+	body, err := RenderSystemdUnit(SystemdParams{
+		Binary: want.Binary, Config: want.Config, DataDir: want.DataDir,
+		Host: want.Host, Port: want.Port, Home: "/root", Path: "/usr/bin", System: true,
+	})
+	require.NoError(t, err)
+
+	got, ok := ParseExecStart(body)
+	require.True(t, ok)
+	assert.Equal(t, want, got)
+
+	_, ok = ParseExecStart([]byte("[Service]\nExecStart=/usr/bin/true\n"))
+	assert.False(t, ok, "a hand-written unit without our flags")
+}
+
 func TestRenderSystemdUnit_Golden(t *testing.T) {
 	body, err := RenderSystemdUnit(SystemdParams{
 		Binary:     "/home/alice/.local/bin/runwisp",

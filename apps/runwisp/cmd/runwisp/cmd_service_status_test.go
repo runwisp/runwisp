@@ -39,6 +39,30 @@ func TestResolveStatusOptions_SystemWide(t *testing.T) {
 	assert.True(t, opts.System)
 }
 
+// `runwisp service status` as a normal user compared the unit against
+// ./runwisp.toml and ./.runwisp and reported DRIFT straight after a takeover.
+// With no flags it now checks the unit against what the unit itself runs.
+func TestWithInstalledUnitArgs_ChecksTheUnitAgainstItself(t *testing.T) {
+	fakeSystemUnit(t, "/var/lib/runwisp")
+	opts, err := resolveStatusOptions(Flags{CfgFile: "runwisp.toml", DataDir: ".runwisp", Host: "127.0.0.1", Port: 9477}, true)
+	require.NoError(t, err)
+
+	opts = withInstalledUnitArgs(opts)
+	assert.Equal(t, "/usr/local/bin/runwisp", opts.Binary)
+	assert.Equal(t, "/etc/runwisp/runwisp.toml", opts.Config)
+	assert.Equal(t, "/var/lib/runwisp", opts.DataDir)
+	assert.True(t, opts.System)
+
+	for _, v := range []string{"RUNWISP_CONFIG", "RUNWISP_DATA", "RUNWISP_HOST", "RUNWISP_PORT"} {
+		t.Setenv(v, "")
+	}
+	cmd := newInstallTestCmd(&bytes.Buffer{}, &bytes.Buffer{})
+	cmd.Flags().String("data", "", "")
+	assert.False(t, explicitServiceFlags(cmd))
+	require.NoError(t, cmd.Flags().Set("data", "/srv/rw"))
+	assert.True(t, explicitServiceFlags(cmd), "an explicit --data is what to compare against")
+}
+
 func TestRenderAutostartLine(t *testing.T) {
 	t.Run("enabled prints enabled and not degraded", func(t *testing.T) {
 		var buf bytes.Buffer

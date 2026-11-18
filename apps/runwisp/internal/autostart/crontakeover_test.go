@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -632,6 +633,47 @@ func TestApplyUninstall_UnmasksAndRestartsCron(t *testing.T) {
 	assert.Zero(t, cmd.Remaining())
 	assert.Contains(t, out.String(), "Unmasking cron.service")
 	assert.Contains(t, out.String(), "Starting cron.service")
+}
+
+// failingRemoveFS fails Remove for one path, the way a non-root uninstall
+// fails to delete /etc/systemd/system/runwisp.service.
+type failingRemoveFS struct {
+	*autostarttest.FakeFS
+	path string
+}
+
+func (f failingRemoveFS) Remove(path string) error {
+	if path == f.path {
+		return fs.ErrPermission
+	}
+	return f.FakeFS.Remove(path)
+}
+
+// An uninstall whose unit removal failed after stop had already run left
+// RunWisp stopped and cron masked: nothing ran any job. Cron now comes back
+// however the steps after stop end.
+func TestApplyUninstall_RestoresCronWhenUnitRemovalFails(t *testing.T) {
+	inst, fakeFS, cmd, _, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	opts.maskedCronUnit = "cron.service"
+	body, err := inst.renderUnit(opts)
+	require.NoError(t, err)
+	unitPath := inst.unitPath(true)
+	require.NoError(t, fakeFS.WriteFile(unitPath, body, 0644))
+	inst.deps.FS = failingRemoveFS{FakeFS: fakeFS, path: unitPath}
+
+	cmd.Expect("systemctl", []string{"stop", "runwisp.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"disable", "runwisp.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"unmask", "cron.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"start", "cron.service"}, nil, nil, nil)
+
+	plan, err := inst.computeUninstallPlan(context.Background(), UninstallOptions{System: true})
+	require.NoError(t, err)
+
+	err = inst.applyUninstall(context.Background(), plan, UninstallOptions{System: true}, &bytes.Buffer{})
+	require.ErrorIs(t, err, fs.ErrPermission)
+	assert.Zero(t, cmd.Remaining(), "cron is unmasked and started even though the uninstall failed")
 }
 
 func TestStatus_CronRow_MaskedByUs(t *testing.T) {

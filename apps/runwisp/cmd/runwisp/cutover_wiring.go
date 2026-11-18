@@ -7,13 +7,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"runtime"
 	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/bootid"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cutover"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -32,6 +36,9 @@ import (
 // replaces WriteConfig so the scaffold can also import an adjacent
 // docker-compose.yml, and takeover sets AllowSkippedCronJobs.
 func newCutover(f Flags, deps autostart.Deps, installer autostart.Installer, opts autostart.InstallOptions, tweaks ...func(*cutover.Deps)) *cutover.Cutover {
+	// The same stable Web UI password `service install` saves. Without it the
+	// daemon makes up a new one, signing everyone out, on every restart.
+	opts.Password = servicePassword(installer)
 	cd := cutover.Deps{
 		Installer: installer,
 		Prompter:  deps.Prompter,
@@ -44,7 +51,7 @@ func newCutover(f Flags, deps autostart.Deps, installer autostart.Installer, opt
 		},
 		DaemonRunning: func() bool { return isDaemonRunning(f) },
 		Reload:        func(ctx context.Context) error { return reloadRunningDaemon(ctx, f, deps.Stdout) },
-		AfterInstall:  ensureCutoverPassword(installer, opts),
+		MarkBootRan:   func(cfgPath string) error { return markCronBootTasksRan(cfgPath, opts.DataDir) },
 	}
 	for _, tweak := range tweaks {
 		tweak(&cd)
@@ -52,18 +59,48 @@ func newCutover(f Flags, deps autostart.Deps, installer autostart.Installer, opt
 	return cutover.New(cd)
 }
 
-// ensureCutoverPassword gives a service the cutover installed the same stable
-// Web UI password `service install` does. Without it the daemon mints a new
-// one, signing everyone out, on every restart and reboot.
-func ensureCutoverPassword(installer autostart.Installer, opts autostart.InstallOptions) func(context.Context, io.Writer) {
-	return func(ctx context.Context, out io.Writer) {
-		if !ensureServicePasswordFallback(out, installer, opts) {
-			return
-		}
-		if err := installer.Restart(ctx, opts); err != nil {
-			fmt.Fprintf(out, "\nSaved the password, but restarting to apply it failed (%v). Run 'runwisp restart'.\n", err)
+// markCronBootTasksRan records in dataDir's database that the cron-sourced
+// run_on_start = "boot" tasks in cfgPath already ran this boot: cron ran them
+// when the machine booted, and taking over is not a reboot. The next boot has
+// a new boot ID, so they run then as usual.
+func markCronBootTasksRan(cfgPath, dataDir string) error {
+	boot := bootid.Current()
+	if boot == "" {
+		return nil // no boot identity here: such tasks run on every start anyway
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return err
+	}
+	names := cronBootTasks(cfg)
+	if len(names) == 0 {
+		return nil
+	}
+	if err := datadir.EnsureDir(dataDir); err != nil {
+		return err
+	}
+	db, err := storage.New(datadir.DBPath(dataDir))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	for _, name := range names {
+		if err := db.SetTaskBootID(context.Background(), name, boot); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+// cronBootTasks names the tasks read from a crontab's @reboot lines.
+func cronBootTasks(cfg *config.Config) []string {
+	var names []string
+	for _, t := range cfg.Tasks {
+		if t.Source == model.SourceCron && t.RunOnStart && t.RunOnStartMode == model.RunOnStartBoot {
+			names = append(names, t.Name)
+		}
+	}
+	return names
 }
 
 // resolveCutover builds the cutover for `runwisp takeover`.

@@ -190,8 +190,10 @@
                         </span>
                     {/snippet}
                     <p class="max-w-[16rem] text-xs leading-relaxed text-on-surface-muted">
-                        It's <code class={chip}>RUNWISP_PASSWORD</code> if that's set.
-                        <br />Otherwise the daemon randomizes one each boot. Run
+                        Running as a system service? Run
+                        <code class={chip}>sudo runwisp password</code> on the host.
+                        <br />Otherwise it's <code class={chip}>RUNWISP_PASSWORD</code> if that's
+                        set, or the daemon makes one up each start: run
                         <code class={chip}>runwisp password</code> on the host to print it.
                     </p>
                 </Popover>

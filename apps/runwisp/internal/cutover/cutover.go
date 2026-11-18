@@ -19,7 +19,6 @@ package cutover
 
 import (
 	"context"
-	"io"
 	"os/exec"
 	"os/user"
 
@@ -89,9 +88,11 @@ type Deps struct {
 	DaemonRunning func() bool
 	// Reload hands the held jobs to a daemon that was already running.
 	Reload func(ctx context.Context) error
-	// AfterInstall (optional) runs last, once the unit is installed and started: the
-	// service's stable Web UI password lives in a drop-in cmd/runwisp writes.
-	AfterInstall func(ctx context.Context, out io.Writer)
+	// MarkBootRan (optional) records, for the config at cfgPath, that its
+	// cron-sourced run_on_start = "boot" tasks already ran this boot. Execute
+	// calls it when cron was running, before RunWisp first starts: cron ran the
+	// @reboot lines when the machine booted, and a take-over is not a reboot.
+	MarkBootRan func(cfgPath string) error
 
 	// AllowSkippedCronJobs proceeds even though some cron sources won't load.
 	// Those jobs stay stopped.

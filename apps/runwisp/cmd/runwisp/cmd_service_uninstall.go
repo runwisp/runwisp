@@ -37,7 +37,8 @@ their paths are printed.
 With no flags this finds whichever unit is installed — the system-wide
 service or a per-user one. Pass --local to pin the per-user unit when both
 are present. If the install took over cron, this hands it back, along with
-the crontab lines 'runwisp promote' moved into runwisp.toml.
+the crontab lines 'runwisp promote' moved into runwisp.toml. Removing the
+system service needs root: run as anyone else, it re-runs itself with sudo.
 
 Pass --purge to also remove the data dir. --purge requires typing the
 literal word 'delete' to confirm; --yes does NOT skip that prompt.`,
@@ -62,6 +63,14 @@ func runServiceUninstall(cmd *cobra.Command, f Flags) error {
 	systemWide, err := resolveManagedScope(deps, serviceUninstallOpts.Local)
 	if err != nil {
 		return err
+	}
+	// Removing the system unit needs root. Without it, stop and disable went
+	// through sudo and then deleting the unit failed, leaving RunWisp stopped
+	// and cron still masked: nothing ran any job.
+	if systemWide && fileExists(systemUnitFile) {
+		if err := elevateOnLinux(cmd.ErrOrStderr(), "Uninstalling the system service needs root."); err != nil {
+			return err
+		}
 	}
 
 	installer, err := autostart.New(deps)

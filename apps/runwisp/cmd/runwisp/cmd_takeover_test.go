@@ -14,9 +14,11 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostartfake"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart/autostarttest"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/bootid"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cutover"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -147,7 +149,7 @@ func TestRunTakeover_WorksFromNothing(t *testing.T) {
 	assert.Contains(t, out, "write /etc/systemd/system/runwisp.service",
 		"autostart's own steps are shown, not a restatement of them")
 	assert.Contains(t, out, "Dashboard:  http://127.0.0.1:9477")
-	assert.Contains(t, out, "Password:   "+sudoRunwisp("password"),
+	assert.Contains(t, out, "Password:   sudo runwisp password",
 		"the system daemon's socket is root's, so the way in has to be spelled out")
 	assert.FileExists(t, h.cfgPath)
 	assert.Equal(t, 1, h.inst.Installs())
@@ -323,30 +325,83 @@ func TestRunTakeover_NothingToDoIsANoop(t *testing.T) {
 	assert.Zero(t, h.reloads)
 }
 
-// A take-over left the daemon on a random password that changed on every
-// restart. It now gets the same saved password as `service install`, and the
-// closing summary points at where it is saved.
-func TestTakeoverSavesAStablePassword(t *testing.T) {
+// A take-over saved the service's password after starting it and then
+// restarted it, so the service started twice in one second and killed the
+// @reboot run the first start fired. The password now goes to the installer,
+// which saves it before the first start, and nothing restarts afterwards.
+func TestTakeoverSavesThePasswordBeforeTheFirstStart(t *testing.T) {
 	t.Setenv("RUNWISP_AUTH", "")
 	t.Setenv("RUNWISP_PASSWORD", "")
-	unit := filepath.Join(t.TempDir(), "runwisp.service")
-	prev := systemUnitFile
-	t.Cleanup(func() { systemUnitFile = prev })
-	systemUnitFile = unit
-	dropIn := unit + ".d/password.conf"
+	dir := t.TempDir()
+	tab := filepath.Join(dir, "crontabs", "backup")
+	require.NoError(t, os.MkdirAll(filepath.Dir(tab), 0o755))
+	require.NoError(t, os.WriteFile(tab, []byte("17 3 * * * /usr/bin/backup\n"), 0o644))
+	inst := newTakeoverInstaller()
+	opts := autostart.InstallOptions{
+		Binary: "/usr/local/bin/runwisp", Config: filepath.Join(dir, "runwisp.toml"),
+		DataDir: dir, Host: "127.0.0.1", Port: 9477, System: true,
+	}
+	c := newCutover(Flags{}, autostart.Deps{Prompter: &autostarttest.ScriptedPrompter{}}, inst, opts, func(d *cutover.Deps) {
+		d.GOOS = "linux"
+		d.Scan = func(_ []string, cfgPath string) config.CronScan {
+			return config.ScanCronSources([]string{filepath.Join(dir, "crontabs", "*")}, cfgPath)
+		}
+		d.Trusted = func(string) error { return nil }
+		d.Preflight = func(context.Context) (bool, error) { return false, nil }
+		d.DaemonRunning = func() bool { return false }
+		d.MarkBootRan = nil
+	})
 
-	inst := &autostartfake.Installer{EnsurePath: dropIn, EnsureWrote: true}
+	p, err := c.Compute(context.Background())
+	require.NoError(t, err)
+	_, err = c.Execute(context.Background(), p, &bytes.Buffer{})
+	require.NoError(t, err)
+	assert.NotEmpty(t, inst.InstallOpts.Password, "the installer saves it before the first start")
+	assert.Zero(t, inst.Restarts, "nothing restarts the service after it started")
+}
+
+// Cron runs @reboot lines when the machine boots, and RunWisp's first start
+// right after a take-over ran them again. The take-over now records them as
+// run this boot in the data dir the service opens, so that start skips them.
+func TestMarkCronBootTasksRan_RecordsTheRebootLines(t *testing.T) {
+	dir := t.TempDir()
+	tab := filepath.Join(dir, "crontabs", "ops")
+	require.NoError(t, os.MkdirAll(filepath.Dir(tab), 0o755))
+	require.NoError(t, os.WriteFile(tab, []byte("@reboot /usr/bin/start-app\n17 3 * * * /usr/bin/backup\n"), 0o644))
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(cfgPath,
+		[]byte("[daemon]\ninclude_cron = [\""+filepath.Join(dir, "crontabs", "*")+"\"]\n"), 0o644))
+	data := filepath.Join(dir, "data")
+
+	require.NoError(t, markCronBootTasksRan(cfgPath, data))
+
+	cfg, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	names := cronBootTasks(cfg)
+	require.Len(t, names, 1, "only the @reboot line")
+	db, err := storage.New(datadir.DBPath(data))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	got, err := db.GetTaskBootID(t.Context(), names[0])
+	require.NoError(t, err)
+	assert.Equal(t, bootid.Current(), got)
+}
+
+// Over SSH the loopback dashboard URL is useless on its own; the summary adds
+// the tunnel that reaches it.
+func TestPrintTakeoverDone_SSHTunnel(t *testing.T) {
+	cfg := Flags{CfgFile: filepath.Join(t.TempDir(), "none.toml"), Port: 9477}
+	t.Setenv("SUDO_USER", "ops")
+
+	t.Setenv("SSH_CONNECTION", "")
 	var out bytes.Buffer
-	ensureCutoverPassword(inst, autostart.InstallOptions{System: true})(context.Background(), &out)
-	assert.True(t, inst.EnsureCalled)
-	assert.Equal(t, 1, inst.Restarts, "the daemon restarts to pick the saved password up")
-	assert.Contains(t, out.String(), inst.EnsurePassword)
+	printTakeoverDone(&out, cfg, "/usr/local/bin/runwisp")
+	assert.NotContains(t, out.String(), "Tunnel:")
 
-	require.NoError(t, os.MkdirAll(filepath.Dir(dropIn), 0o755))
-	require.NoError(t, os.WriteFile(dropIn, []byte("x"), 0o600))
+	t.Setenv("SSH_CONNECTION", "203.0.113.9 51234 198.51.100.7 22")
 	out.Reset()
-	printTakeoverDone(&out, Flags{CfgFile: filepath.Join(t.TempDir(), "none.toml")}, "/usr/local/bin/runwisp")
-	assert.Contains(t, out.String(), "Password:   sudo cat "+dropIn)
+	printTakeoverDone(&out, cfg, "/usr/local/bin/runwisp")
+	assert.Contains(t, out.String(), "Tunnel:     ssh -L 9477:127.0.0.1:9477 ops@198.51.100.7\n")
 }
 
 // The unit runs the root-owned copy service install made, and `upgrade`

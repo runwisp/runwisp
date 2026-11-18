@@ -53,6 +53,9 @@ func reloadRunningDaemon(ctx context.Context, f Flags, out io.Writer) error {
 		return err
 	}
 	if !isDaemonRunning(f) {
+		if systemDaemonElsewhere(f) {
+			return &userFacingError{title: "no daemon runs on " + absPathOrFallback(f.DataDir), details: systemServiceHint("reload")}
+		}
 		fmt.Fprintf(out, "No daemon is running on data dir %s — nothing to reload.\n", absPathOrFallback(f.DataDir))
 		return nil
 	}

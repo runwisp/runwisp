@@ -19,8 +19,10 @@ import (
 // TestCLIServiceInstallRefusesSystemScopeUnprivileged pins the new default:
 // a bare `runwisp service install` targets the system-wide service, so an
 // unprivileged run has to stop and say so rather than quietly installing a
-// per-user unit the operator didn't ask for. The message must name both
-// ways forward, since either could be what they meant.
+// per-user unit the operator didn't ask for. With sudo on PATH it re-runs
+// itself through it; this pins the answer on a box without sudo, so PATH is
+// emptied. The message must name both ways forward, since either could be
+// what they meant.
 func TestCLIServiceInstallRefusesSystemScopeUnprivileged(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
@@ -34,7 +36,7 @@ func TestCLIServiceInstallRefusesSystemScopeUnprivileged(t *testing.T) {
 
 	cmd := exec.Command(binaryPath, "service", "install", "--dry-run")
 	cmd.Dir = projectDir
-	cmd.Env = subprocEnv()
+	cmd.Env = append(subprocEnv(), "PATH="+t.TempDir()) // no sudo to re-run through
 	out, err := cmd.CombinedOutput()
 
 	require.Errorf(t, err, "expected a refusal, got:\n%s", string(out))
