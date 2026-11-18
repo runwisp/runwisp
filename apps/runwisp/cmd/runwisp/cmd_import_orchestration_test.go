@@ -45,7 +45,7 @@ func TestRunImportCronStdout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runImportCron: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "[tasks.backup]") {
+	if !strings.Contains(stdout.String(), "[tasks.nightly-backup]") {
 		t.Errorf("stdout missing task block:\n%s", stdout.String())
 	}
 	if !strings.Contains(stderr.String(), "Imported crontab") {

@@ -23,8 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp demo --no-tui` runs the demo in the foreground until Ctrl+C.
 - Cron jobs ending in `>/dev/null 2>&1` (or `&>/dev/null`) run without that redirect, so their output shows in the run's log. Cron needed it to stop mail, and RunWisp sends none.
 - `runwisp takeover`'s plan says how many jobs had that redirect dropped and how many still send their output to a file.
+- Tasks read from user crontabs and `/etc/cron.d` now carry their source in the name, such as `report-ops`, so adding a crontab never renames a job that already runs.
+   A short comment above a cron job names it (`# nightly backup` becomes `nightly-backup`), and names look past `sleep`, a piped `echo` and a bare `env`.
+   Migration: these tasks get their new name once on upgrade, and earlier runs stay under the old name.
 
 ### Fixed
+
+- `runwisp takeover` lists every cron job with the task it becomes and where it comes from, and says that overlapping runs now queue.
+- A blocked `runwisp takeover` prints only what stops it, and on a machine without cron it says so and how to start fresh.
+- `status`, `reload` and `validate` no longer warn about cron task renames, an empty `MAILTO`, or crontab jobs that start at the same second. A crontab's `MAILTO` warning is one line with a link.
 
 - "Run now" on a running task with `on_overlap = "skip"`, or on a task whose queue is full, answers 409 with the reason instead of a 500 "Failed to trigger run".
 - The web UI names a task's own `timezone` next to its next run time, "(14:00 UTC)", when it differs from the daemon's. Before, a Laravel schedule in UTC looked like it ran an hour off.

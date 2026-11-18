@@ -26,7 +26,8 @@ sudo runwisp takeover
 ```
 
 You don't need a `runwisp.toml` first. `takeover` finds your crontabs, shows a
-plan, and asks once. Nothing is written until you say yes.
+plan that lists each job with the task it becomes, and asks once. Nothing is
+written until you say yes.
 
 :::caution[Linux with systemd, as root]
 `takeover` retires cron by masking its systemd unit, so systemd won't start it
@@ -220,7 +221,7 @@ MAILTO=ops@example.com
 you get:
 
 ```toml title="runwisp.toml"
-[tasks.backup]
+[tasks.nightly-database-backup]
 description = "Nightly database backup"
 cron = "30 2 * * *"
 shell = "/bin/bash"
@@ -230,7 +231,7 @@ catch_up = 0  # cron never re-fires a missed tick
 on_overlap = "queue"  # cron would overlap instead of queueing
 run = "/usr/local/bin/backup.sh --full"
 
-[tasks.backup.env]
+[tasks.nightly-database-backup.env]
 PATH = "/usr/local/bin:/usr/bin"
 ```
 
@@ -441,8 +442,12 @@ For jobs read live through `include_cron`, you can't edit these lines;
   The sixth field must name a user that exists on this machine, so
   `* * * * * echo "tick"` is skipped (there is no user `echo`). Add the user and
   import again. A crontab from another machine is checked by its shape only.
-- **Task names.** Names come from the command (`/usr/local/bin/backup.sh`
-  becomes `backup`). Rename any that aren't clear.
+- **Task names.** A short comment above the job names it, otherwise the
+  command does (`/usr/local/bin/backup.sh` becomes `backup`). Jobs from a
+  user's crontab or a `/etc/cron.d` file carry their source, so
+  `/home/ops/bin/healthcheck.sh` in ops's crontab becomes `healthcheck-ops`.
+  See [task names](/configuration/daemon/#include_cron) for the full rule.
+  Rename any that aren't clear.
 
 ## Learn more
 

@@ -300,7 +300,7 @@ func Warnings(cfg *Config) []string {
 
 // refreshScheduleWarnings recomputes cfg.scheduleWarnings from the tasks that
 // are live right now, in the scheduler's zone. Call it after anything that
-// changes which tasks fire (load, a cron hold flipping).
+// changes which tasks fire.
 func (c *Config) refreshScheduleWarnings(now time.Time) {
 	c.scheduleWarnings = scheduleCollisionWarnings(c.Tasks, c.SchedulerLocation(), now)
 }

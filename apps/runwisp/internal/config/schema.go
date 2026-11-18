@@ -33,9 +33,8 @@ type Config struct {
 	composeWarnings []string
 
 	// scheduleWarnings are the schedule pile-up findings (see
-	// scheduleCollisionWarnings), computed once at load and again when a cron
-	// hold changes: Warnings is answered on every /api/daemon request and must
-	// not walk every schedule each time.
+	// scheduleCollisionWarnings), computed once at load: Warnings is answered
+	// on every /api/daemon request and must not walk every schedule each time.
 	scheduleWarnings []string
 
 	// includeFiles are the absolute paths of the TOML files merged in via

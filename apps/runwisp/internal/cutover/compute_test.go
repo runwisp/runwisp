@@ -182,6 +182,22 @@ func TestCompute_NoCronJobsAnywhereIsTheOnlyNothingToReadRefusal(t *testing.T) {
 		"the old wording sent operators off to do RunWisp's job for it")
 }
 
+// TestCompute_NoCronAtAllSaysHowToStartFresh: a box with no cron unit and no
+// crontab binary has no cron to take over, and the operator needs the next step,
+// not a sentence about masking a scheduler that isn't there.
+func TestCompute_NoCronAtAllSaysHowToStartFresh(t *testing.T) {
+	c, _, _ := fixture{noCrontab: true}.build(t)
+
+	p, err := c.Compute(context.Background())
+	require.NoError(t, err)
+
+	assert.Equal(t, []BlockerKind{BlockerNoCronJobs}, blockerKinds(p))
+	b, _ := p.FirstBlocker()
+	assert.Equal(t, "no cron on this machine, nothing to take over", b.Title)
+	assert.Contains(t, b.Details, "To start fresh: `runwisp`, or `runwisp service install` to run it at boot.")
+	assert.NotContains(t, b.Details, "masking cron")
+}
+
 func TestCompute_BrokenConfigBlocksAndSaysNothingWasWritten(t *testing.T) {
 	c, _, _ := fixture{
 		config:     "[daemon\nthis is not toml",

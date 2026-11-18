@@ -80,11 +80,14 @@ func scheduleCollisionWarnings(tasks []model.Task, defaultLoc *time.Location, no
 
 // firingInstants lists the un-jittered schedulable tasks (in config order) and,
 // per unix second, which of them fire then within the horizon.
+//
+// A task read live from a crontab is left out: there is no jitter key to set on a
+// crontab line, and cron started those jobs together too.
 func firingInstants(tasks []model.Task, defaultLoc *time.Location, now time.Time) (listed []*model.Task, at map[int64][]int) {
 	at = map[int64][]int{}
 	for i := range tasks {
 		task := &tasks[i]
-		if !task.Schedulable() || task.JitterValue() > 0 {
+		if !task.Schedulable() || task.JitterValue() > 0 || task.Source == model.SourceCron {
 			continue
 		}
 		spec, loc := cronspec.Resolve(task.Cron, task.Timezone, defaultLoc)

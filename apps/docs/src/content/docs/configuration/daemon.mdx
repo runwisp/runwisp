@@ -468,9 +468,15 @@ A glob picks only the files cron would read:
 - **Overlapping runs queue.** Cron starts a second copy of a slow job; RunWisp
   waits for the first. `promote` the task and set
   [`max_concurrent`](/configuration/tasks/#max_concurrent) to change this.
-- **Task names come from the command.** `run-parts /etc/cron.daily` becomes
-  `cron-daily`. If two crontabs give the same name, the second becomes
-  `backup-<crontab name>`, and the rename is reported.
+- **Task names come from the job.** A comment of up to four words on the line
+  above names it (`# nightly backup` becomes `nightly-backup`). Otherwise the
+  command does: `run-parts /etc/cron.daily` becomes `cron-daily`, and
+  `echo "hi" | logger -t hi` becomes `logger`. Since 1.11, a job from a user's
+  crontab or a `/etc/cron.d` file also carries its source: `report` in ops's
+  crontab becomes `report-ops`, and in `/etc/cron.d/myapp` it becomes
+  `report-myapp`. Root's crontab and `/etc/crontab` keep bare names. The same
+  name twice in one file becomes `report-ops-2`. Adding a crontab never renames
+  a job that already runs.
 - **Guard lines that do nothing on this machine are left out.** Since 1.8,
   distro lines such as `test -x /usr/sbin/anacron || run-parts …` or
   `test -e /run/systemd/system || …` are not imported when their own test

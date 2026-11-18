@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // This file is the one place that may know where a crontab lives on disk.
@@ -190,6 +192,22 @@ func UserSpoolOwner(path string) (string, bool) {
 		return "", false
 	}
 	return base, true
+}
+
+// CronNameSuffix is how a crontab's path shows up in its task names (see
+// CronOptions.NameSuffix): the owner for a spool crontab, else the file's
+// basename without its extension. qualify is true for a crontab that belongs to
+// someone, a non-root user's crontab or a /etc/cron.d file, whose every task
+// name carries the suffix (`report-ops`). Root's crontab, /etc/crontab and any
+// other file keep bare names.
+func CronNameSuffix(path string) (suffix string, qualify bool) {
+	if owner, ok := UserSpoolOwner(path); ok {
+		return model.SanitizeTaskName(owner), owner != "root"
+	}
+	base := filepath.Base(path)
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+	clean := filepath.Clean(path)
+	return model.SanitizeTaskName(base), clean != SystemCrontabPath && IsSystemCrontabPath(clean)
 }
 
 // IsSpoolCrontabDir reports whether dir is one of the per-user cron spool

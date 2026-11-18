@@ -4,6 +4,7 @@
 package config
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -324,6 +325,10 @@ func cronOptionsFor(path string, owned importer.Owned) importer.CronOptions {
 		// see CronOptions.HostStat.
 		hostStat = cronHostStat
 	}
+	// A job's name is a function of where it came from, never of how many files
+	// the glob matched first: dropping a file into /etc/cron.d must not rename
+	// the tasks already running. See importer.CronNameSuffix.
+	suffix, qualify := importer.CronNameSuffix(path)
 	return importer.CronOptions{
 		Flavor:   flavor,
 		HostStat: hostStat,
@@ -335,12 +340,9 @@ func cronOptionsFor(path string, owned importer.Owned) importer.CronOptions {
 		// CronOptions.UserExists. Without it, `* * * * * echo hi` dropped into
 		// /etc/cron.d schedules `"hi"` as user `echo`, which is a live task that cannot
 		// run and a schedule the operator never wrote.
-		UserExists: cronUserExists,
-		// The collision tie-breaker is the file's own name, so a derived name is a
-		// function of where the job came from rather than of how many files the glob
-		// happened to match first. Dropping a lexically-earlier file into
-		// /etc/cron.d must not renumber the tasks already running.
-		NameSuffix: cronNameSuffix(path),
+		UserExists:   cronUserExists,
+		NameSuffix:   suffix,
+		QualifyNames: qualify,
 	}
 }
 
@@ -357,16 +359,6 @@ var cronHostStat = os.Stat
 // cronFlavor detects which cron this box runs. A package var
 // for the same reason cronUserExists is one. Never assigned outside tests.
 var cronFlavor = importer.HostCronFlavor
-
-// cronNameSuffix derives the stable collision suffix from a source path: the
-// basename with its extension dropped, sanitized to a task-name-safe form.
-func cronNameSuffix(path string) string {
-	base := filepath.Base(path)
-	if ext := filepath.Ext(base); ext != "" {
-		base = strings.TrimSuffix(base, ext)
-	}
-	return model.SanitizeTaskName(base)
-}
 
 // mergeCronResult renders the live-eligible half of a parse, decodes it through
 // the ordinary wire path, and folds the entries into root.
@@ -429,14 +421,12 @@ func claimOwned(owned importer.Owned, res *importer.Result) {
 }
 
 // findingsFrom turns one parse's report rows into the findings an operator needs:
-// every job that won't run, plus every job that will run under a name or with a
-// caveat they wouldn't guess from the crontab.
+// every job that won't run, plus every caveat they have to act on.
 //
-// The renames matter as much as the skips. A cron task's name is derived from its
-// command, so two crontabs can derive the same name and one of them gets renamed.
-// That is the right outcome — better than retiring a live job — but an operator
-// who wrote `backup` and finds `backup-db` in the UI has to be told why, or the
-// task looks like something RunWisp invented.
+// A rename is not one of them. Names are derived from the source, so they don't
+// move between reloads, and an FYI repeated on every reload, validate and boot
+// teaches an operator to stop reading warnings. The import and takeover reports
+// still say it once.
 func findingsFrom(res *importer.Result, path string) []CronFinding {
 	return append(fileFindings(res, path), jobFindings(res, path)...)
 }
@@ -451,18 +441,28 @@ func fileFindings(res *importer.Result, path string) []CronFinding {
 		if !n.Blocking() {
 			continue
 		}
+		reason := n.Message
+		if n.Kind == importer.NoteMailto {
+			// The import report carries the whole sendmail block; a warning repeated
+			// on every reload and boot gets one line and the link.
+			reason = cronMailtoWarning
+		}
 		out = append(out, CronFinding{
 			File:   path,
 			Source: filepath.Base(path),
-			Reason: n.Message,
+			Reason: reason,
 			kind:   n.Kind,
 		})
 	}
 	return out
 }
 
-// jobFindings reports the per-job rows: every job that won't run, plus every job
-// running under a name the crontab doesn't mention.
+// cronMailtoWarning is the config warning for a crontab that sets MAILTO.
+const cronMailtoWarning = "sets MAILTO, but RunWisp doesn't mail job output; " +
+	"to get failures by mail, add a sendmail notifier: https://docs.runwisp.com/notifications/providers/sendmail/"
+
+// jobFindings reports the per-job rows: every job that won't run, plus every
+// caveat on one that does.
 func jobFindings(res *importer.Result, path string) []CronFinding {
 	var out []CronFinding
 	for _, it := range res.Items() {
@@ -487,10 +487,7 @@ func jobFindings(res *importer.Result, path string) []CronFinding {
 // row is downstream of a job that isn't running, so a skipped job yields exactly
 // one finding rather than a pile explaining consequences of the first.
 func worthReporting(n importer.Note, live bool) bool {
-	if !n.Blocking() && !isRenameNote(n) {
-		return false
-	}
-	return live || n.UnsafeLive()
+	return n.Blocking() && (live || n.UnsafeLive())
 }
 
 // dropAnsweredFindings removes findings whose need the rest of the config already
@@ -515,13 +512,6 @@ func dropAnsweredFindings(cfg *Config) {
 		kept = append(kept, f)
 	}
 	cfg.CronFindings = kept
-}
-
-// isRenameNote reports whether a note explains that a job is running under a name
-// the crontab doesn't mention. Non-blocking — the job runs fine — but the operator
-// cannot find the task without being told.
-func isRenameNote(n importer.Note) bool {
-	return n.Kind == importer.NoteRenamedOwned || n.Kind == importer.NoteRenamedCollision
 }
 
 // resolveCronIncludes expands each include_cron pattern against the root config
@@ -550,8 +540,31 @@ func resolveCronIncludes(patterns []string, rootDir, rootPath string) (globs, ma
 		}
 		matched = appendGlobHits(matched, hits, rootAbs, seen)
 	}
-	slices.Sort(matched)
+	slices.SortFunc(matched, cronReadOrder)
 	return globs, matched, ignored, nil
+}
+
+// cronReadOrder orders matched crontabs by kind, which decides who keeps a bare
+// name when two sources derive the same one: root's crontab, then /etc/crontab,
+// then everything else by path. A user crontab or /etc/cron.d file carries its
+// source in every name (importer.CronNameSuffix), so it rarely clashes at all.
+//
+// ponytail: two files of the same unqualified kind (two crontab-format files
+// outside cron's own paths) still settle a clash by path order, so adding a
+// lexically earlier one can take a bare name. Qualify those too if anyone
+// points include_cron at several of them.
+func cronReadOrder(a, b string) int {
+	return cmp.Or(cmp.Compare(cronReadRank(a), cronReadRank(b)), strings.Compare(a, b))
+}
+
+func cronReadRank(path string) int {
+	if owner, ok := importer.UserSpoolOwner(path); ok && owner == "root" {
+		return 0
+	}
+	if filepath.Clean(path) == importer.SystemCrontabPath {
+		return 1
+	}
+	return 2
 }
 
 // ignoredSource is one glob hit that was not read, and why.

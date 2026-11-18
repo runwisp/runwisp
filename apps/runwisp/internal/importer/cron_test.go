@@ -454,13 +454,13 @@ func TestCronMailtoHandsOverTheNotifier(t *testing.T) {
 	}
 }
 
-// TestCronEmptyMailtoIsNotAGapToFill: MAILTO= means "mail nobody", so proposing
-// a mail notifier for it would invent a requirement the crontab disclaimed.
+// TestCronEmptyMailtoIsNotAGapToFill: MAILTO= means "mail nobody", which is what
+// RunWisp does anyway, so there is nothing to say about it.
 func TestCronEmptyMailtoIsNotAGapToFill(t *testing.T) {
-	res := parseCron(t, "MAILTO=\"\"\n0 4 * * * /bin/rollup\n", CronOptions{})
-	note := findNote(t, res, NoteMailto)
-	if strings.Contains(note.Message, "sendmail") {
-		t.Errorf("an empty MAILTO should not propose a notifier:\n%s", note.Message)
+	for _, in := range []string{"MAILTO=\"\"\n0 4 * * * /bin/rollup\n", "MAILTO=\n0 4 * * * /bin/rollup\n"} {
+		if res := parseCron(t, in, CronOptions{}); hasNoteKind(res, NoteMailto) {
+			t.Errorf("an empty MAILTO got a note: %+v", allNotes(res))
+		}
 	}
 }
 

@@ -8,6 +8,33 @@ import (
 	"testing"
 )
 
+// TestCronNameSuffix: a crontab that belongs to someone names every task after
+// them; root's crontab, /etc/crontab and files outside cron's paths don't.
+func TestCronNameSuffix(t *testing.T) {
+	for _, tc := range []struct {
+		path, suffix string
+		qualify      bool
+	}{
+		{"/etc/cron.d/backup", "backup", true},
+		{"/etc/cron.d/my_backups", "my_backups", true},
+		{"/etc/cron.d/a.tab", "a", true},
+		{"/var/spool/cron/crontabs/ops", "ops", true},
+		{"/var/spool/cron/alice", "alice", true},
+		{"/var/spool/cron/john.doe", "john_doe", true},
+		{"/usr/lib/cron/tabs/ops", "ops", true},
+		{"/var/at/tabs/ops", "ops", true},
+		{"/var/spool/cron/crontabs/root", "root", false},
+		{"/etc/crontab", "crontab", false},
+		{"/etc/anacrontab", "anacrontab", false},
+		{"/opt/app/jobs.cron", "jobs", false},
+	} {
+		suffix, qualify := CronNameSuffix(tc.path)
+		if suffix != tc.suffix || qualify != tc.qualify {
+			t.Errorf("CronNameSuffix(%q) = %q, %v; want %q, %v", tc.path, suffix, qualify, tc.suffix, tc.qualify)
+		}
+	}
+}
+
 // TestSystemCronDirGlob pins the one literal first-run cron detection needs
 // to offer the same /etc/cron.d default that IsSystemCrontabPath recognizes.
 func TestSystemCronDirGlob(t *testing.T) {

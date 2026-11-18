@@ -115,9 +115,9 @@ func runTakeover(cmd *cobra.Command, f Flags) error {
 	}
 	cutover.Render(out, plan)
 
-	// A blocked plan is still printed above (someone told their config does
-	// not load wants to know twelve jobs are waiting) and then exits non-zero, so a
-	// provisioning script cannot mistake it for a take-over that happened.
+	// A blocked plan prints what it found but no steps (see cutover.Render) and
+	// then exits non-zero, so a provisioning script cannot mistake it for a
+	// take-over that happened.
 	if plan.Blocked() {
 		return blockedCutoverError(plan)
 	}

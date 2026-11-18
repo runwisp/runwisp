@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -71,7 +72,7 @@ func TestIncludeCron_CronSourceLineIsCaptured(t *testing.T) {
 [daemon]
 include_cron = ["crontabs/*"]
 `,
-		"crontabs/backup": "# a lead comment\n0 3 * * * /usr/local/bin/backup.sh --full\n",
+		"crontabs/backup": "# a lead comment that describes the job\n0 3 * * * /usr/local/bin/backup.sh --full\n",
 	})
 
 	cfg := loadTree(t, dir)
@@ -128,6 +129,42 @@ run = "cd /var/www/parcel && php artisan payments:reconcile"
 
 	cfg := loadTree(t, dir)
 	assert.Equal(t, []string{"php"}, taskNames(cfg), "the cron copy must not come back as payments-reconcile")
+}
+
+// TestIncludeCron_NativeWinsJobA110ReleaseNamed: a job promoted under the name
+// RunWisp 1.10 gave it (bare, or with the file's name after a clash, and before
+// the look past a piped echo) is still that crontab line after an upgrade, so it
+// runs once rather than coming back under its new name.
+func TestIncludeCron_NativeWinsJobA110ReleaseNamed(t *testing.T) {
+	stubCronUsers(t, "ops", "www")
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["cron.d/*"]
+
+[tasks.echo]
+cron = "15 8 * * 1-5"
+run = 'echo "weekday standup" | logger -t standup'
+user = "ops"
+
+[tasks.payments-reconcile]
+cron = "* * * * *"
+run = "php artisan payments:reconcile"
+working_dir = "/var/www"
+user = "www"
+
+[tasks.backup-ops]
+cron = "0 6 * * *"
+run = "/usr/local/bin/backup.sh --ops"
+user = "ops"
+`,
+		"cron.d/ops": `15 8 * * 1-5 ops echo "weekday standup" | logger -t standup` + "\n" +
+			"0 6 * * * ops /usr/local/bin/backup.sh --ops\n",
+		"cron.d/app": "* * * * * www cd /var/www && php artisan payments:reconcile\n",
+	})
+
+	cfg := loadTree(t, dir)
+	assert.ElementsMatch(t, []string{"echo", "payments-reconcile", "backup-ops"}, taskNames(cfg))
 }
 
 // TestIncludeCron_RenamesDifferentJob is the other half: cron names are derived
@@ -201,14 +238,32 @@ include_cron = ["crontabs/*"]
 	})
 
 	cfg := loadTree(t, dir)
-	require.Len(t, cfg.CronFindings, 1)
-	finding := cfg.CronFindings[0]
-	assert.False(t, finding.Skipped, "a renamed job still runs")
-	assert.Equal(t, "backup-zeta", finding.Task)
-	assert.Equal(t, filepath.Join(dir, "crontabs", "zeta"), finding.File)
+	assert.ElementsMatch(t, []string{"backup", "backup-zeta"}, taskNames(cfg))
+	assert.Empty(t, cfg.CronFindings, "a rename is not a warning")
+	assert.NotContains(t, strings.Join(Warnings(cfg), "\n"), "backup-zeta")
+}
 
-	warnings := strings.Join(Warnings(cfg), "\n")
-	assert.Contains(t, warnings, "backup-zeta")
+// TestIncludeCron_AddedCronDFileRenamesNothing is field report #1: a new file in
+// /etc/cron.d whose job derives the same name, sorting first, must leave every
+// existing name where it was.
+func TestIncludeCron_AddedCronDFileRenamesNothing(t *testing.T) {
+	stubCronUsers(t, "root", "ops", "www-data")
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["cron.d/*", "crontab"]
+`,
+		"crontab": "* * * * * echo hi > /tmp/root.txt\n",
+		"cron.d/ops": `15 8 * * 1-5 ops echo "weekday standup" | logger -t standup` + "\n" +
+			"* * * * * ops echo hi > /tmp/ops.txt\n",
+	})
+	before := taskNames(loadTree(t, dir))
+	assert.ElementsMatch(t, []string{"echo", "logger-ops", "echo-ops"}, before)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "cron.d", "aaa"),
+		[]byte("* * * * * www-data cd / && echo hi > /tmp/www2.txt\n"), 0o600))
+	after := taskNames(loadTree(t, dir))
+	assert.ElementsMatch(t, []string{"echo", "logger-ops", "echo-ops", "echo-aaa"}, after)
 }
 
 // TestIncludeCron_SameCommandInTwoCrontabsBothRun: one command in two crontabs is
@@ -227,7 +282,7 @@ include_cron = ["cron.d/*"]
 	})
 
 	cfg := loadTree(t, dir)
-	assert.ElementsMatch(t, []string{"backup", "backup-mu", "backup-zeta"}, taskNames(cfg))
+	assert.ElementsMatch(t, []string{"backup-alpha", "backup-mu", "backup-zeta"}, taskNames(cfg))
 	assert.Equal(t, "30 4 * * *", findTask(t, cfg, "backup-zeta").Cron)
 	assert.Equal(t, "deploy", findTask(t, cfg, "backup-zeta").RunUser)
 	for _, f := range cfg.CronFindings {
@@ -428,6 +483,11 @@ include_cron = ["crontabs/*"]
 	assert.Equal(t, filepath.Join(dir, "crontabs", "nightly"), finding.File)
 	assert.Zero(t, finding.Line, "a file-level finding has no line")
 	assert.Contains(t, finding.Reason, "MAILTO")
+	// One line and a link: the sendmail block belongs in the import report, not
+	// in every reload and journal start (where it was flattened to \x0a).
+	assert.NotContains(t, finding.Reason, "\n")
+	assert.NotContains(t, finding.Reason, "[notifiers")
+	assert.Contains(t, finding.Reason, "https://docs.runwisp.com/notifications/providers/sendmail/")
 
 	warnings := strings.Join(Warnings(cfg), "\n")
 	assert.Contains(t, warnings, "MAILTO")
@@ -943,7 +1003,7 @@ include_cron = ["crontabs/*"]
 	})
 
 	cfg := loadTree(t, dir)
-	task := findTask(t, cfg, "dump")
+	task := findTask(t, cfg, "nightly-db-dump")
 	assert.Contains(t, task.Description, "${DB}")
 	assert.Equal(t, "${RUNWISP_TEST_CRON_CANARY}", task.Env["CANARY"])
 	assert.Contains(t, task.Run, "${DB}", "run reaches the shell verbatim")
@@ -1035,7 +1095,7 @@ include_cron = ["cron.d/*"]
 	})
 
 	cfg := loadTree(t, dir)
-	assert.Equal(t, []string{"backup"}, taskNames(cfg),
+	assert.Equal(t, []string{"backup-broken"}, taskNames(cfg),
 		"the malformed line must not become a task, and must not take the good line with it")
 
 	require.Len(t, cfg.CronFindings, 1)
@@ -1075,16 +1135,24 @@ include_cron = ["spool/*"]
 	assert.Equal(t, home, task.WorkingDir)
 }
 
-func TestCronNameSuffix(t *testing.T) {
-	cases := map[string]string{
-		"/etc/cron.d/backup":     "backup",
-		"/etc/cron.d/my_backups": "my_backups",
-		"/var/spool/cron/alice":  "alice",
-		"/etc/cron.d/a.tab":      "a",
+// TestCronReadOrderPutsBareNamesFirst: who keeps a bare name is settled by the
+// kind of source, not by where its path sorts.
+func TestCronReadOrderPutsBareNamesFirst(t *testing.T) {
+	paths := []string{
+		"/etc/cron.d/aaa",
+		"/opt/app/jobs.cron",
+		"/etc/crontab",
+		"/var/spool/cron/crontabs/ops",
+		"/var/spool/cron/crontabs/root",
 	}
-	for path, want := range cases {
-		assert.Equal(t, want, cronNameSuffix(path), path)
-	}
+	slices.SortFunc(paths, cronReadOrder)
+	assert.Equal(t, []string{
+		"/var/spool/cron/crontabs/root",
+		"/etc/crontab",
+		"/etc/cron.d/aaa",
+		"/opt/app/jobs.cron",
+		"/var/spool/cron/crontabs/ops",
+	}, paths)
 }
 
 // TestIncludeCron_BareWordCommandStillRuns is the regression for the sniff that
@@ -1358,20 +1426,6 @@ func TestWithCronHold(t *testing.T) {
 		got, changed := WithCronHold(&Config{Tasks: []model.Task{held}}, cronprobe.State{})
 		assert.Equal(t, []string{"backup"}, changed)
 		assert.Empty(t, got.Tasks[0].HeldBy)
-	})
-
-	t.Run("a hold flip recomputes the pile-up warnings", func(t *testing.T) {
-		tasks := collisionTasks("0 3 * * *", "a", "b")
-		held := cronOwned
-		held.Name, held.Cron = "c", "0 3 * * *"
-		held.HeldBy = model.HeldByCron
-		cfg := &Config{Tasks: append(tasks, held)}
-		cfg.refreshScheduleWarnings(time.Now())
-		require.Empty(t, cfg.scheduleWarnings, "the held task does not count")
-
-		got, _ := WithCronHold(cfg, cronprobe.State{})
-		require.Len(t, got.scheduleWarnings, 1, "released, it makes three")
-		assert.Empty(t, cfg.scheduleWarnings, "and the input config is untouched")
 	})
 
 	// The reconciler hands &cfg.Tasks[i] straight to the TaskRegistry, and the API,

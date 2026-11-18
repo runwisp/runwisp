@@ -62,6 +62,8 @@ type fixture struct {
 	scanBlocked []string
 	// binaryProblem seeds Deps.BinaryProblem.
 	binaryProblem error
+	// noCrontab describes a box without a `crontab` binary.
+	noCrontab bool
 }
 
 // build turns a fixture into a Cutover plus the installer it will talk to.
@@ -118,6 +120,7 @@ func (fx fixture) build(t *testing.T) (*Cutover, *autostartfake.Installer, strin
 			return scan
 		},
 		Trusted:       func(string) error { return nil },
+		HasCrontab:    func() bool { return !fx.noCrontab },
 		Preflight:     func(context.Context) (bool, error) { return false, nil },
 		DaemonRunning: func() bool { return fx.daemonRunning },
 		Reload:        func(context.Context) error { inst.Calls = append(inst.Calls, "reload"); return nil },

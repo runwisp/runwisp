@@ -67,9 +67,16 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     neither root nor the daemon's euid nor the run-as account, unresolvable run-as
                                     account, spool file the daemon can't become. A job RunWisp can't reproduce is
                                     SKIPPED (rest of the file still runs) and reported via config.Warnings by
-                                    file:line; derived name collisions rename to <base>-<crontab basename> and are
-                                    reported too. File-level notes are reported the same way: MAILTO= (suppressed
-                                    once a sendmail/smtp notifier exists) and a non-absolute SHELL=.
+                                    file:line. Task name = a <=4-word comment on the line above, slugged, else
+                                    the command's program (skipping wrappers, guards, `sleep`, and an echo/printf
+                                    piped into another program); jobs from a non-root user's spool crontab or a
+                                    cron.d file always get -<user|file basename> (unless the name contains it);
+                                    root's crontab and /etc/crontab stay bare. Repeats in one file get -2, -3. A
+                                    bare name another source already took gets -<crontab basename> (root's crontab
+                                    reads first, then /etc/crontab). Renames are not config warnings. File-level
+                                    notes are reported the same way: a non-empty MAILTO= (one line + docs link,
+                                    suppressed once a sendmail/smtp notifier exists) and a non-absolute SHELL=.
+                                    Cron-sourced tasks never count toward the same-second pile-up warning.
                                     Emitted per job for crond parity: env_base="clean", working_dir="~",
                                     catch_up=0 (crond never re-fires a missed tick; the missed row is still
                                     recorded), on_overlap="queue" (deliberately NOT crond's unbounded overlap).
@@ -474,7 +481,12 @@ runwisp takeover             — retire cron in one step; --dry-run --force -y -
                                runwisp-cron-failsafe.service, which unmasks+starts cron only when runwisp.service
                                is "failed" and Result != timeout (so stop never triggers it). Uninstall restores
                                the recorded `# runwisp-cron-prior-state:` (masked stays masked, stopped stays stopped).
-                             — --dry-run ALWAYS prints a plan, blocked or not, then exits non-zero if blocked.
+                             — the plan lists each live job as `task ← file:line  command` (command cut to
+                               fit 80 cols) and says overlapping runs now queue (on_overlap="queue").
+                               --dry-run prints the same plan, then exits non-zero if blocked. A blocked plan
+                               prints what it found and the blockers, never the steps; with no cron jobs at
+                               all it prints only the blocker (no cron unit and no `crontab` binary: "no cron
+                               on this machine", pointing at `runwisp` / `runwisp service install`).
                                A finished take-over re-runs as a no-op (exit 0), so it is script-safe.
                              — blocked by (all reported at once, nothing written): not Linux/systemd; not root;
                                no cron jobs on the box; the config does not load; the config is not trusted for a

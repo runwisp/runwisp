@@ -6,6 +6,7 @@ package cutover
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,15 +140,62 @@ func TestRender_IncludeCronMismatchPrintsThePasteableArray(t *testing.T) {
 }
 
 // TestRender_NoJobsAnywhereNamesWhereItLooked, so an operator whose jobs live
-// somewhere unusual knows why RunWisp found none.
+// somewhere unusual knows why RunWisp found none. The blocker says it all, so
+// the plan prints nothing of its own.
 func TestRender_NoJobsAnywhereNamesWhereItLooked(t *testing.T) {
-	c, _, _ := fixture{}.build(t)
+	c, _, _ := fixture{cronUnit: "cron.service"}.build(t)
 
 	p, text := render(t, c)
 	require.True(t, hasBlocker(p, BlockerNoCronJobs))
 
-	assert.Contains(t, text, "No cron jobs found on this box.")
+	assert.Empty(t, text)
 	assert.Contains(t, blockerText(p), "crontabs", "the blocker names where it looked")
+}
+
+// TestRender_ListsEveryJobItWillRun: the prompt is the one moment an operator
+// reads carefully, so it shows which task each crontab line becomes, and says
+// that overlapping runs now queue.
+func TestRender_ListsEveryJobItWillRun(t *testing.T) {
+	c, _, _ := fixture{
+		crontabs: map[string]string{
+			"ops": "# nightly backup\n30 2 * * * tar czf /var/backups/app/full-archive-of-everything.tgz /srv/app /srv/data\n",
+		},
+		cronUnit:   "cron.service",
+		cronActive: true,
+	}.build(t)
+
+	p, text := render(t, c)
+	require.False(t, p.Blocked(), blockerText(p))
+
+	var row string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "nightly-backup") {
+			row = line
+		}
+	}
+	require.NotEmpty(t, row, text)
+	assert.Contains(t, row, "← "+filepath.Join(filepath.Dir(p.Opts.Config), "crontabs", "ops")+":2")
+	assert.Contains(t, row, "tar czf")
+	assert.Contains(t, row, "…", "a long command is cut to fit")
+	assert.NotContains(t, row, "/srv/data")
+	assert.Contains(t, text, `on_overlap = "queue"`)
+}
+
+// TestRender_BlockedPlanShowsNoSteps: a plan that won't run has no steps worth
+// reading; printing "1. write the config" above the refusal reads as if it did.
+func TestRender_BlockedPlanShowsNoSteps(t *testing.T) {
+	c, _, cfgPath := fixture{
+		crontabs:      map[string]string{"backup": oneJob},
+		cronUnit:      "cron.service",
+		binaryProblem: errors.New("binary lives under /tmp"),
+	}.build(t)
+
+	p, text := render(t, c)
+	require.True(t, p.Blocked())
+	assert.Contains(t, text, "Found 1 cron job on this box:")
+	assert.NotContains(t, text, " 1.")
+	assert.NotContains(t, text, cfgPath)
+	assert.NotContains(t, text, "Resolved settings:")
 }
 
 // TestRender_SettingsAreOmittedOnceTheUnitMatches: those numbers would then

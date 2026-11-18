@@ -99,6 +99,18 @@ type CronScan struct {
 	// guard makes it do nothing on this host (importer.Item.NoopHere). They are
 	// in neither Jobs nor Skipped: nothing that ran is lost by leaving them out.
 	Noop []string
+	// LiveJobs are the jobs counted in Live, in read order, so a take-over plan
+	// can show which task each crontab line becomes before anyone says yes.
+	LiveJobs []CronJob
+}
+
+// CronJob is one crontab line that runs under include_cron: the task it becomes
+// and where it comes from.
+type CronJob struct {
+	Task string
+	File string
+	Line int
+	Run  string
 }
 
 // ScanCronSources globs patterns exactly like `[daemon] include_cron` would
@@ -146,8 +158,8 @@ func ScanCronSources(patterns []string, cfgPath string) CronScan {
 	return scan
 }
 
-// countJobs tallies one read crontab's jobs into Jobs, Live, HiddenOutput and
-// Noop.
+// countJobs tallies one read crontab's jobs into Jobs, Live, LiveJobs, HiddenOutput
+// and Noop.
 func (scan *CronScan) countJobs(res *importer.Result, path string) {
 	for _, it := range res.Items() {
 		if why := it.NoopHere(); why != "" {
@@ -163,6 +175,7 @@ func (scan *CronScan) countJobs(res *importer.Result, path string) {
 		}
 		if it.LiveEligible() {
 			scan.Live++
+			scan.LiveJobs = append(scan.LiveJobs, CronJob{Task: it.Name, File: path, Line: res.ListLine(it.Line), Run: it.Run})
 		}
 	}
 }

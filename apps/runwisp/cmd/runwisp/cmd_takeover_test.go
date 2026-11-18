@@ -211,10 +211,11 @@ func TestRunTakeover_DryRunPrintsThePlanAndWritesNothing(t *testing.T) {
 	assert.Zero(t, h.reloads)
 }
 
-// TestRunTakeover_DryRunWithUndurableBinaryPrintsThePlanThenFails: a binary under
-// /tmp used to abort before any plan existed. The dry run prints the plan, lists
-// the binary as a blocker, and exits non-zero so a script cannot read it as ready.
-func TestRunTakeover_DryRunWithUndurableBinaryPrintsThePlanThenFails(t *testing.T) {
+// TestRunTakeover_DryRunWithUndurableBinaryPrintsTheBlockerThenFails: a binary
+// under /tmp used to abort before any plan existed. The dry run says what it
+// found, lists the binary as a blocker, and exits non-zero so a script cannot
+// read it as ready. It prints no steps: a plan that won't run has none.
+func TestRunTakeover_DryRunWithUndurableBinaryPrintsTheBlockerThenFails(t *testing.T) {
 	h := newTakeoverHarness(t)
 	h.binaryProblem = errors.New("refusing to install service pointing at /tmp/runwisp")
 	takeoverOpts.DryRun = true
@@ -222,7 +223,8 @@ func TestRunTakeover_DryRunWithUndurableBinaryPrintsThePlanThenFails(t *testing.
 	err := h.run(t, h.flags())
 	require.Error(t, err)
 
-	assert.Contains(t, h.out.String(), "Write "+h.cfgPath)
+	assert.Contains(t, h.out.String(), "Found ")
+	assert.NotContains(t, h.out.String(), "Write "+h.cfgPath)
 	assert.Contains(t, err.Error(), "binary path is not durable")
 	assert.Contains(t, err.Error(), "/tmp/runwisp")
 	assert.Zero(t, h.inst.Installs())
@@ -270,10 +272,10 @@ func TestRunTakeover_DeclinedWritesNothing(t *testing.T) {
 	assert.Zero(t, h.inst.Installs())
 }
 
-// TestRunTakeover_BlockedPlanPrintsFindingsThenExitsNonZero: the plan block still
-// prints (someone told their config does not load wants to know what was found),
-// and every blocker is reported, not just the first.
-func TestRunTakeover_BlockedPlanPrintsFindingsThenExitsNonZero(t *testing.T) {
+// TestRunTakeover_BlockedPlanReportsEveryBlockerAndExitsNonZero: every blocker
+// is reported, not just the first. With no cron jobs to show, the blockers are
+// the whole output.
+func TestRunTakeover_BlockedPlanReportsEveryBlockerAndExitsNonZero(t *testing.T) {
 	h := newTakeoverHarness(t)
 	h.noCrontabs = true
 	h.configBody = "this is not toml"
@@ -281,7 +283,7 @@ func TestRunTakeover_BlockedPlanPrintsFindingsThenExitsNonZero(t *testing.T) {
 	err := h.run(t, h.flags())
 	require.Error(t, err)
 
-	assert.Contains(t, h.out.String(), "No cron jobs found on this box.")
+	assert.Empty(t, h.out.String())
 	assert.Contains(t, err.Error(), "2 things stop RunWisp taking over cron")
 	assert.Contains(t, err.Error(), "does not load")
 	assert.Contains(t, err.Error(), "no cron jobs on this box")

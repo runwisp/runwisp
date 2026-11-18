@@ -20,6 +20,7 @@ package cutover
 import (
 	"context"
 	"io"
+	"os/exec"
 	"os/user"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
@@ -66,6 +67,9 @@ type Deps struct {
 	// Trusted checks that an existing config is safe to bake into a root-run
 	// unit. Defaults to a config.AssertFileTrusted wrapper.
 	Trusted func(path string) error
+	// HasCrontab reports whether a `crontab` binary is on PATH, which with no
+	// cron unit means this box has no cron at all. Defaults to exec.LookPath.
+	HasCrontab func() bool
 	// WriteConfig scaffolds a new config at path reading patterns. Defaults to
 	// writing config.CronStarterConfig; the first-run flow overrides it so a single
 	// "yes" can fold in an adjacent docker-compose import too.
@@ -112,6 +116,12 @@ func New(deps Deps) *Cutover {
 	if deps.Trusted == nil {
 		deps.Trusted = func(path string) error {
 			return config.AssertFileTrusted(path, "the config file")
+		}
+	}
+	if deps.HasCrontab == nil {
+		deps.HasCrontab = func() bool {
+			_, err := exec.LookPath("crontab")
+			return err == nil
 		}
 	}
 	if deps.WriteConfig == nil {
