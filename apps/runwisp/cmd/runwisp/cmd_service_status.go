@@ -221,7 +221,13 @@ func renderDataDirLine(w io.Writer, st autostart.Status) bool {
 }
 
 func dataDirNote(st autostart.Status) (string, bool) {
-	if !st.DataDirWritable {
+	return dataDirNoteAs(st, os.Geteuid())
+}
+
+// dataDirNoteAs tests writability as the caller, so for the system service
+// only root's answer means anything: a normal user can never write root's dir.
+func dataDirNoteAs(st autostart.Status, euid int) (string, bool) {
+	if !st.DataDirWritable && (!st.System || euid == 0) {
 		return "  (not writable)", true
 	}
 	if !st.DataDirLastWrite.IsZero() {

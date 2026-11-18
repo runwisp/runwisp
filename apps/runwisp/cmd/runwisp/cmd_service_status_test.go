@@ -171,6 +171,15 @@ func TestDataDirNote(t *testing.T) {
 		assert.True(t, degraded)
 		assert.Contains(t, note, "not writable")
 	})
+	t.Run("system service seen by a normal user", func(t *testing.T) {
+		// After takeover, `runwisp service status` as the operator flagged
+		// root's /var/lib/runwisp as not writable, which it never is for them.
+		note, degraded := dataDirNoteAs(autostart.Status{System: true}, 1000)
+		assert.False(t, degraded)
+		assert.Empty(t, note)
+		_, degraded = dataDirNoteAs(autostart.Status{System: true}, 0)
+		assert.True(t, degraded, "root's answer still counts")
+	})
 	t.Run("with last write", func(t *testing.T) {
 		when := time.Date(2026, 5, 22, 10, 30, 0, 0, time.UTC)
 		note, degraded := dataDirNote(autostart.Status{

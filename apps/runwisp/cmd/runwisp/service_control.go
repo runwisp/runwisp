@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -289,6 +290,9 @@ func controlClient(ctx context.Context, f Flags, baseURL, password string) (*api
 		return connectRemote(ctx, baseURL, password)
 	}
 	if !isDaemonRunning(f) {
+		if svcErr := systemServiceError(f, os.Args[1:]...); svcErr != nil && os.Getenv("RUNWISP_INSTANCE_INDEX") == "" {
+			return nil, svcErr
+		}
 		return nil, fmt.Errorf("no daemon is running on data dir %q — %s", f.DataDir, controlNotRunningHint(f))
 	}
 	return connectLocal(ctx, f)
@@ -377,6 +381,9 @@ func connectLocal(ctx context.Context, f Flags) (*apiclient.Client, error) {
 }
 
 func localUnreachableError(f Flags, err error) error {
+	if svcErr := systemServiceError(f, os.Args[1:]...); svcErr != nil && !errors.Is(err, fs.ErrPermission) {
+		return svcErr
+	}
 	return fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonUnreachableHint(f, err))
 }
 

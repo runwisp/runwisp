@@ -115,6 +115,16 @@ func systemServiceHint(args ...string) string {
 	return "RunWisp runs as the system service. Use `" + sudoSystemRunwisp(args...) + "`."
 }
 
+// systemServiceError is the whole error a normal user gets on a box where
+// RunWisp runs as the system service and their shell found no setup of its
+// own: just the same command under sudo. Nil when that isn't the case.
+func systemServiceError(f Flags, args ...string) error {
+	if !systemDaemonElsewhere(f) || hasLocalSetup(f) {
+		return nil
+	}
+	return &userFacingError{title: systemServiceHint(args...)}
+}
+
 // daemonUnreachableHint is daemonNotRunningHint for a connection that failed
 // with err. A socket this user may not open belongs to a daemon that is up, so
 // starting one here would be a second daemon, not the fix.

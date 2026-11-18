@@ -395,6 +395,30 @@ func (cp *crontabParser) bannerIfAmbiguous() {
 		"  `runwisp import cron --system`.")
 }
 
+// nameJob picks the task name for a job line from the derived base, the
+// pending comment, and the job's legacy names. It also returns the description
+// to keep: a bun-cron marker names the job, so it isn't kept as one.
+func (cp *crontabParser) nameJob(base, command, asWritten string, id OwnedEntry) (string, string, []namedEntry) {
+	description := cp.pendingComment
+	if cp.jobName != "" {
+		base = finalizeTaskName(strings.ReplaceAll(cp.jobName, ".", "-"), base)
+		return base, description, cp.legacyNames(base, base, command, asWritten, id)
+	}
+	if title, bun := strings.CutPrefix(description, "bun-cron: "); bun {
+		// Bun.cron() marks each job it writes with "# bun-cron: <title>"; the title names it.
+		base = finalizeTaskName(title, base)
+		return base, "", cp.legacyNames(base, base, command, asWritten, id)
+	}
+	legacy := cp.legacyNames(legacyCronName(command), cronName110(command), command, asWritten, id)
+	if slug := commentName(description); slug != "" {
+		base = finalizeTaskName(slug, base)
+	}
+	if cp.opts.QualifyNames {
+		base = qualifiedName(base, cp.opts.NameSuffix)
+	}
+	return base, description, legacy
+}
+
 // importJob turns one schedule+command line into its [tasks.NAME] block plus,
 // when the crontab set SHELL / CRON_TZ / env vars in effect above it, the
 // matching per-task fields and a [tasks.NAME.env] child block. Cron applies
@@ -444,26 +468,7 @@ func (cp *crontabParser) importJob(line string) bool {
 	// applyOwner resolves which, so buildJob doesn't have to know the difference.
 	owner := cp.applyOwner(j)
 	id := OwnedEntry{Kind: model.KindTask, Run: run, User: owner, Schedule: cronSchedule(j.schedule, j.runOnStart)}
-	description := cp.pendingComment
-	var legacy []namedEntry
-	switch title, bun := strings.CutPrefix(description, "bun-cron: "); {
-	case cp.jobName != "":
-		base = finalizeTaskName(strings.ReplaceAll(cp.jobName, ".", "-"), base)
-		legacy = cp.legacyNames(base, base, command, asWritten, id)
-	case bun:
-		// Bun.cron() marks each job it writes with "# bun-cron: <title>"; the title names it.
-		base = finalizeTaskName(title, base)
-		legacy = cp.legacyNames(base, base, command, asWritten, id)
-		description = ""
-	default:
-		legacy = cp.legacyNames(legacyCronName(command), cronName110(command), command, asWritten, id)
-		if slug := commentName(description); slug != "" {
-			base = finalizeTaskName(slug, base)
-		}
-		if cp.opts.QualifyNames {
-			base = qualifiedName(base, cp.opts.NameSuffix)
-		}
-	}
+	base, description, legacy := cp.nameJob(base, command, asWritten, id)
 	ref, name, skip := cp.names.resolve(base, base, id, cp.line, legacy...)
 	if skip {
 		return true

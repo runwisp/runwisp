@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
@@ -123,7 +124,7 @@ func TestSystemServiceHint_EverywhereANormalUserMissesTheService(t *testing.T) {
 	err = reloadRunningDaemon(t.Context(), defaults, io.Discard)
 	ufe, ok = isUserFacing(err)
 	require.True(t, ok, "reload says where the daemon is instead of 'nothing to reload': %v", err)
-	assert.Equal(t, "RunWisp runs as the system service. Use `sudo runwisp reload`.", ufe.details)
+	assert.Equal(t, "RunWisp runs as the system service. Use `sudo runwisp reload`.", ufe.title)
 }
 
 // Once the probes stopped needing sudo, a non-root `runwisp restart` of its own
@@ -152,6 +153,12 @@ func TestRunList_PointsAtTheSystemService(t *testing.T) {
 	err := runList(t.Context(), io.Discard, defaults, remoteFlags{}, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "RunWisp runs as the system service. Use `sudo ")
+
+	// status and logs reach the socket, not the config; they say only the same.
+	err = localUnreachableError(defaults, fs.ErrNotExist)
+	ufe, ok := isUserFacing(err)
+	require.True(t, ok, "%v", err)
+	assert.True(t, strings.HasPrefix(ufe.title, "RunWisp runs as the system service. Use `sudo "), ufe.title)
 }
 
 // A socket another user owns is a daemon that is up; the hint must not send the

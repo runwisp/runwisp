@@ -328,8 +328,9 @@ func (s *systemdInstaller) preflight(_ context.Context, opts InstallOptions) err
 	return requireConfig(s.deps.FS, opts.Config)
 }
 
-// applyInstall executes the steps after confirmation.
-func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts InstallOptions, out io.Writer) error {
+// installBinary copies the invoking binary to where the unit runs it, then
+// links the invoking user's copy to it so both names run the same binary.
+func installBinary(opts InstallOptions, out io.Writer) error {
 	if binaryCopyNeeded(opts) {
 		if err := copyBinary(opts.CopyBinaryFrom, opts.Binary); err != nil {
 			return fmt.Errorf("copy binary: %w", err)
@@ -342,6 +343,14 @@ func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts Ins
 		} else if linked {
 			fmt.Fprintf(out, "Replaced %s with a link to %s, so `runwisp` and `sudo runwisp` run the same binary\n", opts.CopyBinaryFrom, opts.Binary)
 		}
+	}
+	return nil
+}
+
+// applyInstall executes the steps after confirmation.
+func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts InstallOptions, out io.Writer) error {
+	if err := installBinary(opts, out); err != nil {
+		return err
 	}
 	if err := s.deps.FS.WriteFile(plan.UnitPath, []byte(plan.UnitContent), 0644); err != nil {
 		return fmt.Errorf("write unit: %w", err)

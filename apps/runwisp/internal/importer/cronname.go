@@ -149,12 +149,7 @@ func firstCommandProgram(tokens []string, launcher launcherFunc, lookPast bool) 
 			// `echo "x" | logger …` only feeds the program after the pipe.
 			atCmd = false
 		default:
-			if pick, ok := launcher(prog); ok && !ends {
-				if target := pick(commandArgs(tokens[i+1:])); target != "" {
-					return filepath.Base(target), true
-				}
-			}
-			return prog, false
+			return launchedProgram(prog, ends, tokens[i+1:], launcher)
 		}
 		if ends {
 			atCmd = true
@@ -165,6 +160,17 @@ func firstCommandProgram(tokens []string, launcher launcherFunc, lookPast bool) 
 		return fallback, false
 	}
 	return "", false
+}
+
+// launchedProgram names the job after prog, or after the program prog
+// launches when it is a launcher with a target among its arguments.
+func launchedProgram(prog string, ends bool, rest []string, launcher launcherFunc) (string, bool) {
+	if pick, ok := launcher(prog); ok && !ends {
+		if target := pick(commandArgs(rest)); target != "" {
+			return filepath.Base(target), true
+		}
+	}
+	return prog, false
 }
 
 // pipesOn reports whether the simple command starting at tokens ends in a pipe.

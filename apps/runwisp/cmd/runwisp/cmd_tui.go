@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -52,6 +53,9 @@ func runTUIClient(ctx context.Context, f Flags) error {
 	client := apiclient.NewUnix(localAPISocketPath(f))
 
 	if err := pollHealth(client, 5*time.Second); err != nil {
+		if svcErr := systemServiceError(f, os.Args[1:]...); svcErr != nil && !errors.Is(err, fs.ErrPermission) {
+			return svcErr
+		}
 		return fmt.Errorf("cannot reach daemon at %s (%w) — %s", localAPISocketPath(f), err, daemonUnreachableHint(f, err))
 	}
 
