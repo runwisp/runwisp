@@ -339,7 +339,8 @@ type AuthStatusInput struct {
 }
 
 type AuthLoginInput struct {
-	Body AuthLoginRequest
+	Device string `cookie:"runwisp_device" doc:"Device token set by an earlier login; its logins are throttled per browser instead of per IP"`
+	Body   AuthLoginRequest
 }
 
 type AuthLoginRequest struct {
@@ -351,7 +352,7 @@ type AuthLoginRequest struct {
 // browser clients, and in the body for TCP API clients that hold their own
 // token and send it as a Bearer header instead of relying on cookies.
 type AuthLoginOutput struct {
-	SetCookie http.Cookie `header:"Set-Cookie"`
+	SetCookie []http.Cookie `header:"Set-Cookie"` // session, then device
 	Body      AuthLoginBody
 }
 

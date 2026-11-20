@@ -78,6 +78,9 @@ func loadDaemonConfig(ctx context.Context, configRepo *storage.SQLiteDatabase, m
 		return nil, err
 	}
 
+	warnShortPassword("RUNWISP_PASSWORD", password, ephemeral)
+	warnShortPassword("RUNWISP_VIEWER_PASSWORD", viewerPassword, false)
+
 	if viewerPassword != "" {
 		slog.Info("read-only access enabled: RUNWISP_VIEWER_PASSWORD signs in sessions that can view but not change anything")
 	}
@@ -136,6 +139,23 @@ func checkAPITokensNeedAuth(noAuth bool, d config.Daemon) error {
 		return errors.New("RUNWISP_AUTH=off accepts every request, so [daemon] api_tokens and viewer_api_tokens can't be used with it; remove them or turn auth on")
 	}
 	return nil
+}
+
+// minPasswordLength is the shortest RUNWISP_PASSWORD or RUNWISP_VIEWER_PASSWORD
+// that boots without a warning. Login throttling slows guessing per client IP,
+// but many IPs together can still work through a short password.
+const minPasswordLength = 12
+
+// warnShortPassword logs a warning when an operator-supplied password is
+// shorter than minPasswordLength. Generated passwords are long enough, and an
+// unset one ("") has nothing to guess. It only warns: refusing would stop
+// existing installs from booting after an upgrade.
+func warnShortPassword(envVar, password string, generated bool) {
+	if generated || password == "" || len(password) >= minPasswordLength {
+		return
+	}
+	slog.Warn(fmt.Sprintf("%s is short and easy to guess over the network; use at least %d characters, e.g. from `openssl rand -base64 18`", envVar, minPasswordLength),
+		"length", len(password))
 }
 
 // resolveViewerPassword returns the optional read-only password from

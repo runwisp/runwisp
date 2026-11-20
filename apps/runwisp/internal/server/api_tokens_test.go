@@ -162,3 +162,27 @@ func TestAPIToken_FailureLimiterCountsCookieGuesses(t *testing.T) {
 	assert.Equal(t, http.StatusTooManyRequests, apiTokenRequest(s, "192.0.2.6", testOperatorAPIToken, "").Code,
 		"the lockout covers bearer tokens too")
 }
+
+// /api/auth/status is public and checks the cookie, which may hold an API
+// token, so wrong ones there count toward the same lockout as everywhere else;
+// otherwise it would confirm guesses for free.
+func TestAPIToken_FailureLimiterCoversAuthStatus(t *testing.T) {
+	s := setupAPITokenServer(t)
+	const guess = "guessed-api-token-0123456789abcdef"
+	status := func(cookie string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+		req.RemoteAddr = "192.0.2.7:1234"
+		req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: cookie})
+		return serveReq(s, req)
+	}
+
+	for range tokenMaxFailures {
+		w := status(guess)
+		require.Equal(t, http.StatusOK, w.Code)
+		require.Contains(t, w.Body.String(), `"authenticated":false`)
+	}
+	assert.Equal(t, http.StatusTooManyRequests, status(testOperatorAPIToken).Code)
+	assert.Equal(t, http.StatusTooManyRequests, apiTokenRequest(s, "192.0.2.7", testOperatorAPIToken, "").Code,
+		"the lockout is shared with the protected routes")
+	assert.Equal(t, http.StatusOK, status(s.auth.IssueToken(auth.SessionDuration)).Code, "sessions are spared")
+}

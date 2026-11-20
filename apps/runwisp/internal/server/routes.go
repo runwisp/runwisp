@@ -98,8 +98,7 @@ func isSafeMethod(method string) bool {
 // count toward the apiTokens lockout. An expired browser cookie or a remote
 // CLI's stale session token never does, and a locked-out IP keeps its cookie
 // sessions and session tokens; CHAP login has its own limiter.
-func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
-	apiTokens := newFailureLimiter("API token")
+func authOrLocalTrusted(authSvc *auth.Service, apiTokens *failureLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if IsLocalTrusted(r) || authorizeRequest(authSvc, apiTokens, w, r) {
@@ -135,6 +134,27 @@ func authorizeRequest(authSvc *auth.Service, apiTokens *failureLimiter, w http.R
 		return false
 	}
 	return true
+}
+
+// limitCookieAPITokenGuesses puts a public route that checks the session cookie
+// (GET /api/auth/status) under the same API-token lockout as the protected
+// routes. The cookie may carry an API token, so without it the route would
+// confirm API token guesses for free.
+func (srv *Server) limitCookieAPITokenGuesses(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := r.Cookie(auth.CookieName)
+		if srv.noAuth || err != nil || c.Value == "" || auth.LooksLikeSessionToken(c.Value) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if srv.apiTokenFailures.refuse(w, r) {
+			return
+		}
+		next.ServeHTTP(w, r)
+		if _, ok := srv.auth.VerifyToken(c.Value); !ok {
+			srv.apiTokenFailures.fail(w, r)
+		}
+	})
 }
 
 // signInBaseKey carries a browser auth request's Web UI base URL from
@@ -456,9 +476,13 @@ func (srv *Server) setupRoutes() error {
 		})
 	}
 
-	// Public auth status endpoint. No rate limit (nothing to flood — it only
-	// reads a cookie) and outside the protected group (the UI calls it before
-	// it knows whether the caller is authenticated).
+	// Public auth status endpoint, outside the protected group (the UI calls it
+	// before it knows whether the caller is authenticated). Wrong API tokens in
+	// its cookie count toward the protected routes' lockout.
+	srv.router.Group(func(r chi.Router) {
+		r.Use(srv.limitCookieAPITokenGuesses)
+		srv.registerAuthStatusRoute(r)
+	})
 	srv.registerAuthRoutes()
 
 	// Public identity endpoint. Outside the authOrLocalTrusted group so a
@@ -496,7 +520,7 @@ func (srv *Server) setupRoutes() error {
 		r.Use(maxBodySize(maxProtectedBodySize))
 		r.Use(csrfGuard(!srv.noAuth))
 		if !srv.noAuth {
-			r.Use(authOrLocalTrusted(srv.auth))
+			r.Use(authOrLocalTrusted(srv.auth, srv.apiTokenFailures))
 		}
 
 		// Huma operations (registered on the chi sub-router group)

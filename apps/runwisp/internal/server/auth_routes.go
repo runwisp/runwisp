@@ -26,20 +26,24 @@ import (
 // (launch-redirect sanitization). Loopback/local-peer detection lives in
 // peercred.go alongside the context keys it reads.
 
-// registerAuthRoutes registers the auth routes that need no limiter directly
-// onto the server's public huma API, outside the protected group (callers use
-// them before they are authenticated). GET /api/auth/status only reads a
-// cookie. Launch-ticket redemption can't be brute-forced: a ticket carries
-// about 256 bits and only an authenticated session can mint one.
-func (srv *Server) registerAuthRoutes() {
-	huma.Register(srv.api, huma.Operation{
+// registerAuthStatusRoute wires GET /api/auth/status onto r, which carries
+// limitCookieAPITokenGuesses: the cookie it checks may hold an API token.
+func (srv *Server) registerAuthStatusRoute(r chi.Router) {
+	huma.Register(srv.subAPI(r), huma.Operation{
 		OperationID: "getAuthStatus",
 		Method:      http.MethodGet,
 		Path:        "/api/auth/status",
 		Summary:     "Check whether the caller is authenticated",
 		Tags:        []string{"Auth"},
 	}, srv.humaAuthStatus)
+}
 
+// registerAuthRoutes registers the auth routes that need no limiter directly
+// onto the server's public huma API, outside the protected group (callers use
+// them before they are authenticated). Launch-ticket redemption can't be
+// brute-forced: a ticket carries about 256 bits and only an authenticated
+// session can mint one.
+func (srv *Server) registerAuthRoutes() {
 	huma.Register(srv.api, huma.Operation{
 		OperationID: "redeemLaunchTicket",
 		Method:      http.MethodGet,
@@ -91,12 +95,16 @@ func (srv *Server) registerLoginRoute(r chi.Router) {
 		Method:      http.MethodPost,
 		Path:        "/api/auth/login",
 		Summary:     "Exchange a signed CHAP challenge response for a session",
-		Description: "The first few wrong passwords from a client IP cost nothing; after that " +
+		Description: "The first few wrong passwords from a client cost nothing; after that " +
 			"each one doubles the wait before the next try, up to 90 seconds. Trying too soon " +
-			"gets 429 with `Retry-After`. A successful login clears the count.",
+			"gets 429 with `Retry-After`. A successful operator login clears the count and sets " +
+			"the `runwisp_device` cookie; logins carrying it are counted per browser instead of per " +
+			"IP and never wait behind logins from other clients. While the daemon is busy " +
+			"checking other logins, the request waits up to 10 seconds, then gets 503 with " +
+			"`Retry-After`.",
 		Tags:         []string{"Auth"},
 		MaxBodyBytes: auth.MaxRequestBodySize,
-		Errors:       []int{http.StatusTooManyRequests},
+		Errors:       []int{http.StatusTooManyRequests, http.StatusServiceUnavailable},
 	}, srv.humaLogin)
 }
 
@@ -111,7 +119,12 @@ func (srv *Server) humaAuthChallenge(_ context.Context, _ *struct{}) (*AuthChall
 }
 
 func (srv *Server) humaLogin(ctx context.Context, input *AuthLoginInput) (*AuthLoginOutput, error) {
-	done, retryAfter := srv.logins.acquire(httprate.CanonicalizeIP(clientIPFromCtx(ctx)))
+	client := httprate.CanonicalizeIP(clientIPFromCtx(ctx))
+	deviceID, knownDevice := srv.auth.DeviceID(input.Device)
+	if knownDevice {
+		client = "device:" + deviceID
+	}
+	done, retryAfter := srv.logins.acquire(client)
 	if done == nil {
 		secs := strconv.Itoa(int(math.Ceil(retryAfter.Seconds())))
 		return nil, huma.ErrorWithHeaders(
@@ -119,6 +132,15 @@ func (srv *Server) humaLogin(ctx context.Context, input *AuthLoginInput) (*AuthL
 			http.Header{"Retry-After": {secs}},
 		)
 	}
+	release := srv.logins.checkSlot(ctx, knownDevice)
+	if release == nil {
+		done(loginUnchecked)
+		return nil, huma.ErrorWithHeaders(
+			huma.Error503ServiceUnavailable("Too many logins in progress, try again shortly"),
+			http.Header{"Retry-After": {"5"}},
+		)
+	}
+	defer release()
 	token, readOnly, err := srv.auth.Login(input.Body.Nonce, input.Body.Response)
 	if errors.Is(err, auth.ErrInvalidNonce) {
 		done(loginUnchecked)
@@ -128,10 +150,20 @@ func (srv *Server) humaLogin(ctx context.Context, input *AuthLoginInput) (*AuthL
 		done(loginWrongPassword)
 		return nil, huma.Error401Unauthorized("Invalid password")
 	}
-	done(loginSucceeded)
 	srv.recordSignIn(ctx)
+	secure := isSecureCtx(ctx)
+	cookies := []http.Cookie{srv.auth.BuildAuthCookie(token, auth.SessionDuration, secure)}
+	if readOnly {
+		// A viewer login neither resets the count nor earns a device cookie:
+		// either would give a viewer a fresh budget of guesses at the operator
+		// password.
+		done(loginViewer)
+	} else {
+		done(loginSucceeded)
+		cookies = append(cookies, srv.auth.BuildDeviceCookie(srv.auth.IssueDeviceToken(), secure))
+	}
 	return &AuthLoginOutput{
-		SetCookie: srv.auth.BuildAuthCookie(token, auth.SessionDuration, isSecureCtx(ctx)),
+		SetCookie: cookies,
 		Body:      AuthLoginBody{Token: token, ReadOnly: readOnly},
 	}, nil
 }
