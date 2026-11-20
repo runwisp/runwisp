@@ -343,6 +343,7 @@ func TestTakeoverSavesThePasswordBeforeTheFirstStart(t *testing.T) {
 	}
 	c := newCutover(Flags{}, autostart.Deps{Prompter: &autostarttest.ScriptedPrompter{}}, inst, opts, func(d *cutover.Deps) {
 		d.GOOS = "linux"
+		d.SystemdBooted = func() bool { return true }
 		d.Scan = func(_ []string, cfgPath string) config.CronScan {
 			return config.ScanCronSources([]string{filepath.Join(dir, "crontabs", "*")}, cfgPath)
 		}
