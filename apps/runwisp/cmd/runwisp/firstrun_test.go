@@ -283,7 +283,8 @@ func stubFirstRunOffer(t *testing.T, inst *autostartfake.Installer) {
 				Binary: "/usr/local/bin/runwisp", Config: f.CfgFile,
 				DataDir: dir, Host: "127.0.0.1", Port: 9477, System: true,
 			},
-			GOOS: "linux",
+			GOOS:          "linux",
+			SystemdBooted: func() bool { return true },
 			Scan: func(_ []string, cfgPath string) config.CronScan {
 				return config.ScanCronSources([]string{filepath.Join(crontabs, "*")}, cfgPath)
 			},

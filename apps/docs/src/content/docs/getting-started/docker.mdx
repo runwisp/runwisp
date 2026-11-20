@@ -234,9 +234,20 @@ To replace `cron` or `supervisord` in your app's image, copy the binary into it:
 FROM php:8.4-fpm
 COPY --from=runwisp/runwisp:1 /usr/local/bin/runwisp /usr/local/bin/runwisp
 COPY runwisp.toml /etc/runwisp/runwisp.toml
+ENV RUNWISP_HOST=0.0.0.0
 ENV RUNWISP_LOG_OUTPUT=true
 CMD ["runwisp", "daemon"]
 ```
+
+```bash
+docker build -t myapp .
+docker run -d --init -p 9477:9477 -e RUNWISP_PASSWORD=change-me myapp
+```
+
+Outside the official image the daemon listens on `127.0.0.1`, so
+`RUNWISP_HOST=0.0.0.0` is what makes the dashboard reachable through `-p`.
+Pass the password when you run the container rather than baking it into the
+image. Without one, the daemon makes up a new password on every start.
 
 Run the container with `init: true` (`docker run --init`): RunWisp doesn't reap
 orphaned processes itself. List the processes as
@@ -250,9 +261,9 @@ run = "php-fpm -F"
 run = "nginx -g 'daemon off;'"
 ```
 
-Set `RUNWISP_PASSWORD` or `RUNWISP_AUTH=off`, as in
-[Required settings](#required-settings). [From supervisord](/coming-from/supervisord/)
-maps the rest of a `supervisord.conf`.
+[From cron](/coming-from/cron/#in-a-container) moves a crontab into the image,
+and [From supervisord](/coming-from/supervisord/) maps the rest of a
+`supervisord.conf`.
 
 ## Running as non-root
 

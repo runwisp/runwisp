@@ -31,7 +31,8 @@ plan, and asks once. Nothing is written until you say yes.
 :::caution[Linux with systemd, as root]
 `takeover` retires cron by masking its systemd unit, so systemd won't start it
 again. This needs root and systemd. Run it as yourself and it re-runs itself
-with sudo. On macOS or without systemd, [convert by hand](#convert-by-hand).
+with sudo. In a container, see [In a container](#in-a-container). On macOS or
+without systemd, [convert by hand](#convert-by-hand).
 :::
 
 ### What it does
@@ -149,6 +150,46 @@ jobs again within a minute. `sudo runwisp takeover` fixes the cron side.
 
 `sudo runwisp service install` alone never retires cron. If cron still runs
 jobs, it tells you to use `takeover`.
+
+## In a container
+
+A container has no systemd, so `takeover` stops there. Set RunWisp up in the
+image instead, reading the crontab you already ship:
+
+```dockerfile title="Dockerfile"
+FROM php:8.4-cli
+COPY --from=runwisp/runwisp:1 /usr/local/bin/runwisp /usr/local/bin/runwisp
+COPY --chmod=0644 crontab /etc/cron.d/app
+COPY runwisp.toml /etc/runwisp/runwisp.toml
+ENV RUNWISP_HOST=0.0.0.0
+CMD ["runwisp", "daemon"]
+```
+
+```toml title="runwisp.toml"
+[daemon]
+include_cron = ["/etc/cron.d/*"]
+```
+
+```bash
+docker build -t myapp .
+docker run -d --init -p 9477:9477 -e RUNWISP_PASSWORD=change-me myapp
+```
+
+- **Read or convert.** [`include_cron`](/configuration/daemon/#include_cron)
+  reads the crontab as it is, so it stays the place you edit jobs. Like cron,
+  it refuses a file others can write, hence `--chmod=0644`. To own the
+  jobs as TOML instead, run `runwisp import cron crontab -o runwisp.toml` and
+  copy that file in.
+- **Drop cron from the CMD.** Remove `cron -f` or `crond` from the `CMD` or
+  entrypoint; you no longer need the cron package. While cron runs next to
+  RunWisp, the jobs are [held](#held-jobs) and RunWisp doesn't run them.
+- **Listen on all interfaces.** The daemon listens on `127.0.0.1` by default,
+  so without `RUNWISP_HOST=0.0.0.0` the dashboard is unreachable through `-p`.
+- **Set a password.** Without `RUNWISP_PASSWORD`, the daemon makes up a new
+  one on every start. Read it with `runwisp password` inside the container.
+
+The rest of running RunWisp in your own image, such as services and `--init`,
+is in [Running in Docker](/getting-started/docker/#inside-your-own-image).
 
 ## Convert by hand
 

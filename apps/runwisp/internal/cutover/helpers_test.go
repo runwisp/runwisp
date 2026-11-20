@@ -51,6 +51,11 @@ type fixture struct {
 	// `runwisp stop` leaves behind.
 	serviceStopped bool
 	daemonRunning  bool
+	// unitDisabled reports a matching unit file that systemd has not loaded and
+	// enabled: what a takeover that died at `systemctl daemon-reload` leaves.
+	unitDisabled bool
+	// noSystemd describes a box where systemd is not PID 1, as in a container.
+	noSystemd bool
 
 	allowSkipped bool
 	// scanBlocked seeds CronScan.Blocked, the pre-config refusals.
@@ -81,8 +86,12 @@ func (fx fixture) build(t *testing.T) (*Cutover, *autostartfake.Installer, strin
 	inst := &autostartfake.Installer{
 		CronUnit:   fx.cronUnit,
 		CronActive: fx.cronActive,
-		Stat:       autostart.Status{Installed: fx.unitInstalled, Running: fx.unitInstalled && !fx.serviceStopped},
-		Plan:       unitPlan,
+		Stat: autostart.Status{
+			Installed: fx.unitInstalled,
+			Autostart: fx.unitInstalled && !fx.unitDisabled,
+			Running:   fx.unitInstalled && !fx.serviceStopped && !fx.unitDisabled,
+		},
+		Plan: unitPlan,
 	}
 
 	goos := fx.goos
@@ -121,6 +130,7 @@ func (fx fixture) build(t *testing.T) (*Cutover, *autostartfake.Installer, strin
 			inst.Calls = append(inst.Calls, "wire-cron")
 			return writeWired(path, patterns)
 		},
+		SystemdBooted:        func() bool { return !fx.noSystemd },
 		AllowSkippedCronJobs: fx.allowSkipped,
 		BinaryProblem:        fx.binaryProblem,
 	})

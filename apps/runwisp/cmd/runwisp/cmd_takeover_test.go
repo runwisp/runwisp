@@ -93,8 +93,9 @@ func newTakeoverHarness(t *testing.T) *takeoverHarness {
 				Binary: "/usr/local/bin/runwisp", Config: h.cfgPath,
 				DataDir: dir, Host: "127.0.0.1", Port: 9477, System: true,
 			},
-			GOOS: "linux",
-			Euid: h.euid,
+			GOOS:          "linux",
+			SystemdBooted: func() bool { return true },
+			Euid:          h.euid,
 			Scan: func(_ []string, cfgPath string) config.CronScan {
 				return config.ScanCronSources([]string{filepath.Join(crontabs, "*")}, cfgPath)
 			},
@@ -308,7 +309,7 @@ func TestRunTakeover_SingleBlockerKeepsItsOwnTitle(t *testing.T) {
 func TestRunTakeover_NothingToDoIsANoop(t *testing.T) {
 	h := newTakeoverHarness(t)
 	h.inst.Plan = autostart.Plan{Kind: autostart.PlanNoop}
-	h.inst.Stat = autostart.Status{Installed: true, Running: true}
+	h.inst.Stat = autostart.Status{Installed: true, Autostart: true, Running: true}
 	h.inst.CronActive = false
 	dir := filepath.Dir(h.cfgPath)
 	h.configBody = "[daemon]\ninclude_cron = [\"" + filepath.Join(dir, "crontabs", "*") + "\"]\n"

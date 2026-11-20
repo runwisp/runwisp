@@ -34,6 +34,26 @@ func sudoRunwisp(args ...string) string {
 	return sudoRunwispFor(exe, args...)
 }
 
+// rootRunwisp is sudoRunwisp for a box that may have no sudo, such as most
+// container images: there it names the command and says to run it as root.
+func rootRunwisp(args ...string) string {
+	_, err := exec.LookPath("sudo")
+	exe, exeErr := update.Executable()
+	if exeErr != nil {
+		exe = ""
+	}
+	return rootRunwispFor(err == nil, exe, args...)
+}
+
+// rootRunwispFor is rootRunwisp with sudo's presence and the executable injected.
+func rootRunwispFor(hasSudo bool, exe string, args ...string) string {
+	cmd := sudoRunwispFor(exe, args...)
+	if hasSudo {
+		return cmd
+	}
+	return strings.TrimPrefix(cmd, "sudo ") + "   (run as root; there is no sudo here)"
+}
+
 // sudoRunwispFor is sudoRunwisp with the executable injected.
 func sudoRunwispFor(exe string, args ...string) string {
 	name := "runwisp"

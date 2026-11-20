@@ -41,6 +41,9 @@ func TestImportWarnsThatCronStillRunsTheJobs(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, stderr, want)
 		assert.Contains(t, stderr, "or each one runs twice.")
+		// In a container there is no crontab -e to run and nothing to move:
+		// cron goes away when it leaves the CMD.
+		assert.Contains(t, stderr, "drop cron from the CMD")
 	})
 
 	t.Run("dry run", func(t *testing.T) {

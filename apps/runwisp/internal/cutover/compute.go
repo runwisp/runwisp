@@ -27,6 +27,12 @@ import (
 // Blockers accumulate rather than short-circuit: reporting one at a time turns a
 // migration into a guessing game.
 func (c *Cutover) Compute(ctx context.Context) (Plan, error) {
+	// Without systemd as PID 1 (most containers) the install step can only fail
+	// at daemon-reload, after the config and unit are written. Checked before
+	// root, because root cannot fix it.
+	if c.deps.GOOS == "linux" && !c.deps.SystemdBooted() {
+		return Plan{Opts: c.deps.Opts, Blockers: []Blocker{noSystemdBlocker()}}, nil
+	}
 	// Without root, this process sees only its own crontab and its own
 	// cwd-relative config, so any finding it made would describe a box root
 	// never looks at ("no cron jobs" next to seven of them in /etc/cron.d).
@@ -145,7 +151,9 @@ func (c *Cutover) probeUnits(ctx context.Context, ev *Evidence) error {
 	if err != nil {
 		return fmt.Errorf("probe the runwisp service: %w", err)
 	}
-	ev.UnitInstalled, ev.ServiceRunning = st.Installed, st.Running
+	// The file on disk is not enough: a take-over that failed at daemon-reload
+	// leaves a matching unit systemd never loaded.
+	ev.UnitEnabled, ev.ServiceRunning = st.Installed && st.Autostart, st.Running
 	return nil
 }
 
@@ -207,6 +215,24 @@ func unsupportedOSBlocker(goos string) Blocker {
 			"  1. runwisp import cron --write   (the jobs become RunWisp tasks)\n" +
 			"  2. crontab -r                    (once you've seen them run under RunWisp)\n\n" +
 			"Docs: https://docs.runwisp.com/coming-from/cron/#convert-by-hand",
+	}
+}
+
+// noSystemdBlocker is the answer on Linux without systemd as PID 1: a container,
+// WSL without systemd, an OpenRC or runit box. There is no unit to install and
+// no cron unit to mask, so it names the by-hand route.
+func noSystemdBlocker() Blocker {
+	return Blocker{
+		Kind:  BlockerNoSystemd,
+		Title: "taking over cron needs systemd, and it is not running here",
+		Details: "RunWisp retires cron by masking its systemd unit, and systemd is not PID 1 on this " +
+			"box (no /run/systemd/system), as in most containers. Nothing was written.\n\n" +
+			"Set it up by hand instead:\n" +
+			"  1. Read the crontabs with [daemon] include_cron, or convert them with\n" +
+			"     runwisp import cron, in /etc/runwisp/runwisp.toml\n" +
+			"  2. Stop cron: in a container, drop `cron -f` or `crond` from the CMD or entrypoint\n" +
+			"  3. Start runwisp daemon (the container's CMD)\n\n" +
+			"Docs: https://docs.runwisp.com/coming-from/cron/#in-a-container",
 	}
 }
 
@@ -380,7 +406,7 @@ func (c *Cutover) installStep(ctx context.Context, p Plan) ([]Step, error) {
 	}
 	// A stopped service is not "done" either: with cron masked, nothing runs the
 	// jobs until RunWisp is back, so a re-run has to start it.
-	noop := unitPlan.Kind == autostart.PlanNoop && !p.Evidence.CronActive && p.Evidence.UnitInstalled
+	noop := unitPlan.Kind == autostart.PlanNoop && !p.Evidence.CronActive && p.Evidence.UnitEnabled
 	satisfied := noop && (p.Evidence.ServiceRunning || !p.MasksCron)
 	if noop && !satisfied {
 		detail = fmt.Sprintf("Start RunWisp: it is installed but not running, and with %s masked\n"+

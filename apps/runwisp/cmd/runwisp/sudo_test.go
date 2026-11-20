@@ -30,6 +30,14 @@ func TestSudoRunwispFor_NamesTheBinaryWhenSudoCannotFindIt(t *testing.T) {
 	assert.Equal(t, "sudo runwisp upgrade", sudoRunwispFor("", "upgrade"))
 }
 
+// Container images rarely have sudo, so the needs-root hint there said
+// `sudo runwisp takeover --dry-run`, a command that cannot run.
+func TestRootRunwispFor_SaysRunAsRootWithoutSudo(t *testing.T) {
+	assert.Equal(t, "sudo runwisp takeover", rootRunwispFor(true, "/usr/local/bin/runwisp", "takeover"))
+	assert.Equal(t, "runwisp takeover --dry-run   (run as root; there is no sudo here)",
+		rootRunwispFor(false, "/usr/local/bin/runwisp", "takeover", "--dry-run"))
+}
+
 // The hint is pasted into a shell, so an argument with a space (or the binary's own
 // path) has to arrive as one word.
 func TestSudoRunwispFor_QuotesWordsTheShellWouldSplit(t *testing.T) {
