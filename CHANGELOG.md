@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp restart` restarts a daemon that isn't installed as a service in place, in the same process, so it works in Docker (`docker exec <container> runwisp restart`)
    and keeps a foreground daemon in its terminal. `SIGUSR2` does the same.
 - `runwisp demo --no-tui` runs the demo in the foreground until Ctrl+C.
+- Cron jobs ending in `>/dev/null 2>&1` (or `&>/dev/null`) run without that redirect, so their output shows in the run's log. Cron needed it to stop mail, and RunWisp sends none.
+- `runwisp takeover`'s plan says how many jobs had that redirect dropped and how many still send their output to a file.
 
 ### Fixed
 

@@ -1052,6 +1052,45 @@ func TestCronOutputRedirectIsNoted(t *testing.T) {
 	}
 }
 
+// Cron mails whatever a job prints, so crontabs end jobs in >/dev/null 2>&1 to
+// keep quiet. RunWisp sends no mail, and a run whose output went to /dev/null
+// shows nothing, so the import drops that redirect and says so. A redirect to a
+// real file is a log someone keeps, and stdout alone to /dev/null still mails
+// stderr: both stay as written.
+func TestCronDropsTrailingDevNullRedirect(t *testing.T) {
+	for in, want := range map[string]string{
+		"/bin/job >/dev/null 2>&1":          "/bin/job",
+		"/bin/job > /dev/null 2>&1":         "/bin/job",
+		"/bin/job >> /dev/null 2>&1":        "/bin/job",
+		"/bin/job 1>/dev/null 2>&1":         "/bin/job",
+		"/bin/job &>/dev/null":              "/bin/job",
+		"/bin/job >/dev/null 2>/dev/null":   "/bin/job",
+		"/bin/job 2>/dev/null >/dev/null":   "/bin/job",
+		"a && b | c > /dev/null  2>&1":      "a && b | c",
+		"/bin/job >/dev/null":               "/bin/job >/dev/null",
+		"/bin/job 2>&1 >/dev/null":          "/bin/job 2>&1 >/dev/null",
+		"/bin/job >/dev/null 2>&1 &":        "/bin/job >/dev/null 2>&1 &",
+		"/bin/job >> /var/log/job.log 2>&1": "/bin/job >> /var/log/job.log 2>&1",
+		"sh -c 'job >/dev/null 2>&1'":       "sh -c 'job >/dev/null 2>&1'",
+		">/dev/null 2>&1":                   ">/dev/null 2>&1",
+	} {
+		if got, _ := dropDevNullRedirect(in); got != want {
+			t.Errorf("dropDevNullRedirect(%q) = %q, want %q", in, got, want)
+		}
+	}
+
+	res := parseCron(t, "* * * * * cd /srv/app && php artisan schedule:run >> /dev/null 2>&1\n", CronOptions{})
+	out := res.TOML()
+	mustContain(t, out, `run = "php artisan schedule:run"`)
+	mustContain(t, out, "# Dropped >> /dev/null 2>&1")
+	if !hasNoteKind(res, NoteDevNullDropped) || hasNoteKind(res, NoteOutputRedirected) {
+		t.Fatalf("expected only the dropped note, got %+v", allNotes(res))
+	}
+	if items := res.Items(); len(items) != 1 || !items[0].LiveEligible() {
+		t.Fatal("the job still runs live")
+	}
+}
+
 // The report note vanished after promote, leaving a failed run with an empty log
 // and no cause. The comment above the table is what promote carries along.
 func TestCronRedirectCommentAboveTheTask(t *testing.T) {
@@ -1081,6 +1120,8 @@ func TestCronExistingSkipsAJobAnOlderReleaseImported(t *testing.T) {
 		{"cd and php", "* * * * * cd /var/www/parcel && php artisan payments:reconcile\n", "php", "cd /var/www/parcel && php artisan payments:reconcile"},
 		{"php only", "0 * * * * php artisan queue:prune\n", "php", "php artisan queue:prune"},
 		{"cd only", "30 2 * * * cd /srv && ./backup.sh\n", "backup", "cd /srv && ./backup.sh"},
+		{"with its /dev/null", "30 2 * * * cd /srv && ./backup.sh >/dev/null 2>&1\n", "backup", "./backup.sh >/dev/null 2>&1"},
+		{"cd and /dev/null", "30 2 * * * cd /srv && ./backup.sh >/dev/null 2>&1\n", "backup", "cd /srv && ./backup.sh >/dev/null 2>&1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := CronOptions{Existing: Owned{tc.owned: {Kind: model.KindTask, Run: tc.run}}}
