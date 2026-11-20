@@ -66,7 +66,8 @@ var (
 		label: "crontab",
 		stillRuns: fixedLines(
 			"cron still runs these jobs. Comment them out (`crontab -e`, or move the",
-			"file out of /etc/cron.d) before RunWisp runs them, or each one runs twice.",
+			"file out of /etc/cron.d; in a container, drop cron from the CMD) before",
+			"RunWisp runs them, or each one runs twice.",
 		),
 	}
 	sourceAnacrontab = importSource{
