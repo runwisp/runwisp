@@ -209,14 +209,14 @@ func (cp *crontabParser) feedLine(raw string) {
 
 func (cp *crontabParser) handleComment(line string) {
 	comment := strings.TrimSpace(strings.TrimPrefix(line, "#"))
-	// The column legend system crontabs print above their jobs
-	// (`# m h dom mon dow user command`, or Debian's `# * * * * * user-name
-	// command to be executed`) is never a job description — drop it in every
-	// mode, or it rides onto the next job as one. Only when sniffing does it
-	// also flip on system parsing; forcing the format leaves that decision to
-	// the caller, but the legend still must not become a description.
-	if isCronHeaderLegend(comment) {
-		if cp.opts.Detect && !cp.system {
+	// The column legend crontabs print above their jobs (`# m h dom mon dow
+	// command`, `# m h dom mon dow user command`, or Debian's `# * * * * *
+	// user-name command to be executed`) is never a job description: drop it in
+	// every mode, or it rides onto the next job as one. Only a legend with a user
+	// column, and only when sniffing, also flips on system parsing; forcing the
+	// format leaves that decision to the caller.
+	if legend, hasUser := isCronHeaderLegend(comment); legend {
+		if hasUser && cp.opts.Detect && !cp.system {
 			cp.system = true
 		}
 		cp.pendingComment = ""
@@ -824,26 +824,23 @@ func isCrontabSpoolHeader(comment string) bool {
 	return strings.Contains(inner, " installed on ") || strings.HasPrefix(inner, "Cron version")
 }
 
-// isCronHeaderLegend reports whether a comment is the column legend that system
-// crontabs print above their jobs. Two shapes ship on real boxes and both are
-// matched: the field-name key `# m h dom mon dow user command`, and the one
-// Debian/Ubuntu's own /etc/crontab prints, `# * * * * * user-name command to be
-// executed`. Both carry a "user"/"user-name" column word next to "command";
-// requiring that pair plus either the day-field words or a five-star schedule
-// placeholder keeps it from matching prose.
-func isCronHeaderLegend(comment string) bool {
+// isCronHeaderLegend reports whether a comment is the column legend crontabs
+// print above their jobs, and whether that legend has a user column. The shapes
+// that ship on real boxes: the field-name key `# m h dom mon dow command` that
+// `crontab -e` writes (with `user` before `command` in /etc/crontab), Alpine's
+// `# min hour day month weekday command`, and Debian/Ubuntu's `# * * * * *
+// user-name command to be executed`. Requiring "command" plus the day-field
+// words or a five-star schedule placeholder keeps it from matching prose.
+func isCronHeaderLegend(comment string) (legend, hasUser bool) {
 	fields := strings.Fields(strings.ToLower(comment))
 	words := map[string]bool{}
 	for _, w := range fields {
 		words[w] = true
 	}
-	if !words["command"] || !(words["user"] || words["user-name"]) {
-		return false
+	if !words["command"] || !(words["dom"] || words["dow"] || words["weekday"] || startsWithFiveStars(fields)) {
+		return false, false
 	}
-	if words["dom"] || words["dow"] {
-		return true
-	}
-	return startsWithFiveStars(fields)
+	return true, words["user"] || words["user-name"]
 }
 
 // startsWithFiveStars reports whether the first five tokens are all "*", the

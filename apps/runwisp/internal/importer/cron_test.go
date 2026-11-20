@@ -1113,3 +1113,15 @@ func TestCronExistingLegacyMatchNeedsTheSameJob(t *testing.T) {
 		})
 	}
 }
+
+// TestCronPerUserLegendIsNotADescription: the legend `crontab -e` writes into
+// every new per-user crontab, and Alpine's /etc/crontabs/root one, carry no user
+// column. They must not ride onto the first job, nor switch on system parsing.
+func TestCronPerUserLegendIsNotADescription(t *testing.T) {
+	for _, legend := range []string{"m h  dom mon dow   command", "min\thour\tday\tmonth\tweekday\tcommand"} {
+		out := parseCron(t, "# "+legend+"\n0 5 * * * /usr/bin/cleanup --all\n", CronOptions{Detect: true}).TOML()
+		mustNotContain(t, out, "description")
+		mustContain(t, out, `run = "/usr/bin/cleanup --all"`)
+		mustNotContain(t, out, "user =")
+	}
+}
