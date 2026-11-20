@@ -264,14 +264,29 @@ cron = "* * * * *"
 run  = "docker run --rm ghcr.io/example/worker:current"
 ```
 
-Use a [service](/configuration/services/). RunWisp restarts it when it exits:
+Use a [service](/configuration/services/). RunWisp restarts it when it exits.
+If the container is in a compose file, import it with a
+[`[compose.*]`](/configuration/compose/) block:
+
+```toml title="runwisp.toml"
+[compose.myapp]
+file     = "/srv/myapp/compose.yaml"
+services = ["worker"]
+```
+
+RunWisp names, labels, and cleans up the containers it starts this way. See
+[From docker-compose](/coming-from/docker-compose/).
+
+### An image in no compose file
+
+Start it with `docker run`:
 
 ```toml title="runwisp.toml"
 [services.worker]
 restart_delay   = "2s"
 restart_backoff = "exponential"
 run = """
-exec docker run --rm --init \\
+exec docker run --rm --init --name worker \\
   --env-file=/etc/worker/.env \\
   --network=internal \\
   ghcr.io/example/worker:current
@@ -280,6 +295,13 @@ exec docker run --rm --init \\
 
 `exec` replaces the shell with the `docker` client, so the container's exit
 code reaches RunWisp directly.
+
+Give the container a `--name`. If the name is taken when the service starts,
+because someone restarted the container by hand or RunWisp was killed while it
+kept running, RunWisp takes that container over in the same run. It attaches
+to a running one, and a stop or restart of the service then replaces it. It
+removes a stopped one and runs the command again. To restart the container
+yourself, use `runwisp restart worker`.
 
 ## Prefetch images
 
