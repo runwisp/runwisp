@@ -49,7 +49,9 @@ RUNWISP_PASSWORD='long-random-string' runwisp daemon
 
 - **Set `RUNWISP_PASSWORD`.** The daemon reads it from the environment and keeps
   it in memory. Browser sessions survive a restart as long as the value doesn't
-  change. Keep the value in whatever secret store you already use.
+  change. Keep the value in whatever secret store you already use. Use at least
+  12 characters (`openssl rand -base64 18` makes a good one); since 1.11, a
+  shorter one logs a warning at startup.
 - **Leave it unset.** The daemon makes up a new random password on every boot,
   so each restart logs everyone out. Fine for a daemon you start by hand;
   annoying for one that runs for months.
@@ -256,9 +258,25 @@ token takes effect on [`runwisp reload`](/operations/reload/).
 Only wrong passwords count, per client IP. The first 5 cost nothing. After
 that, each one doubles the wait before the next try: 2 seconds, then 4, 8, and
 so on up to 90 seconds. Trying sooner gets `429 Too Many Requests` with a
-`Retry-After` header, even with the right password. A successful login clears
-the count, and so do 15 minutes without a wrong password. A restart also
-clears it.
+`Retry-After` header, even with the right password. A successful login with
+the operator password clears the count, and so do 15 minutes without a wrong
+password. A restart also clears it. Signing in with the
+[read-only password](#read-only-access) leaves the count as it is.
+
+A browser that has signed in before is counted on its own. Each successful
+login with the operator password sets a `runwisp_device` cookie, and logins that carry it are counted per
+browser instead of per IP. So someone guessing from your IP, or from behind
+the same proxy, never slows down a browser you have used before. The cookie
+grants no access by itself, and changing the password forgets every browser.
+
+Each password check takes real CPU time, so the daemon runs at most 2 at once
+for new browsers, plus 1 kept for browsers that have signed in before. That
+keeps a flood of logins from many addresses from slowing your tasks or keeping
+you out. A login waits up to 10 seconds for its turn, then gets
+`503 Service Unavailable` with a `Retry-After` header, and it doesn't count as a
+wrong password. If you're ever stuck on a new browser, open the web UI from
+the TUI's [**Open Web UI**](/getting-started/tui-tour/#home), which signs it
+in without a password.
 
 Launch tickets and the control socket aren't limited. Challenges are capped at
 60 per minute per IP.
@@ -269,7 +287,8 @@ the window moves on. Successful calls never count.
 
 [API tokens](#api-tokens) work the same way, with their own count: after 20
 wrong API tokens from one client IP within a minute, that IP gets `429` for
-every API token, the right one included, until the window moves on. RunWisp
+every API token, the right one included, until the window moves on. Wrong API
+tokens in the session cookie count too, including on `/api/auth/status`. RunWisp
 logs one warning per lockout, without the token. Session cookies, session
 tokens and password logins from that IP keep working, and an expired session
 never counts as a wrong token.

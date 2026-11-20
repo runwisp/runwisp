@@ -86,7 +86,9 @@
             // layout's auth effect reacts to (connect streams, seed system, load
             // tasks/notifications). No separate success event needed.
         } catch (err) {
-            if (err instanceof RateLimitedError) {
+            if (err instanceof RateLimitedError && err.busy) {
+                error = "RunWisp is busy checking other logins. Try again in a few seconds.";
+            } else if (err instanceof RateLimitedError) {
                 error = err.retryAfterSeconds
                     ? `Too many wrong passwords. Try again in ${String(err.retryAfterSeconds)} seconds.`
                     : "Too many attempts. Please wait a moment and try again.";

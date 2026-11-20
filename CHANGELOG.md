@@ -42,6 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp import cron` of a per-user spool crontab (`/var/spool/cron/crontabs/www-data`) sets `user` to its owner, so the jobs no longer run as root. A piped crontab gets a note that its owner is unknown.
 - A run that exits 127 logs "command not found" next to the exit code, and `runwisp import cron` notes a job whose program isn't on cron's `PATH` (`php` in `/usr/local/bin` in the PHP images).
 
+### Security
+
+- A browser that has signed in before has its wrong passwords counted on its own instead of per IP, so someone guessing from the same IP or proxy can't slow down your logins.
+- Signing in with the read-only password no longer clears the count of wrong passwords, so it can't be used to keep guessing the operator password.
+- The daemon checks at most 2 passwords at once from new browsers, plus 1 kept for browsers that signed in before, so a login flood from many IP addresses can't take all the CPU away from your tasks or keep you out. A login that waits more than 10 seconds for its turn gets 503 with `Retry-After`.
+- Wrong API tokens sent in the session cookie to `/api/auth/status` count toward the API token lockout, like on every other route.
+- The daemon warns at startup when `RUNWISP_PASSWORD` or `RUNWISP_VIEWER_PASSWORD` is shorter than 12 characters.
+
 ## [1.10.0] - 2026-11-15
 
 ### Added

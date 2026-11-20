@@ -153,6 +153,17 @@ describe("authApi", () => {
         expect(err).toHaveProperty("retryAfterSeconds", 30);
     });
 
+    it("reports a busy daemon apart from a throttled client", async () => {
+        fetchMock
+            .mockResolvedValueOnce(json({ nonce: "00ff" }))
+            .mockResolvedValueOnce(
+                new Response(null, { status: 503, headers: { "Retry-After": "5" } }),
+            );
+        const err = await authApi.login("pw").catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(RateLimitedError);
+        expect(err).toHaveProperty("busy", true);
+    });
+
     it("tells a wrong password apart from throttling", async () => {
         fetchMock
             .mockResolvedValueOnce(json({ nonce: "00ff" }))

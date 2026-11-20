@@ -80,11 +80,14 @@ type Server struct {
 	metrics         *MetricsCollector
 	streams         *streamLimiter
 	logins          *loginThrottle
-	proxyWarn       sync.Once // resolveClientIP's once-only untrusted-proxy warning
-	httpServer      *http.Server
-	unixServer      *http.Server
-	metricsServer   *http.Server
-	socketPath      string
+	// apiTokenFailures counts wrong API tokens per client IP, shared by every
+	// route that accepts one so they all feed and honour one lockout.
+	apiTokenFailures *failureLimiter
+	proxyWarn        sync.Once // resolveClientIP's once-only untrusted-proxy warning
+	httpServer       *http.Server
+	unixServer       *http.Server
+	metricsServer    *http.Server
+	socketPath       string
 	// tlsCert/tlsKey, when both set, switch the main TCP listener to HTTPS via
 	// ServeTLS. Empty keeps the listener on plain HTTP. The Unix socket and the
 	// metrics listener are never wrapped (local-only / loopback-scrape).
@@ -247,6 +250,7 @@ func New(opts Options) (*Server, error) {
 	s.daemonLogBuffer = opts.DaemonLogBuffer
 	s.streams = newStreamLimiter(maxConcurrentStreams, maxStreamsPerIP)
 	s.logins = newLoginThrottle(time.Now)
+	s.apiTokenFailures = newFailureLimiter("API token")
 	if err := s.setupRoutes(); err != nil {
 		return nil, fmt.Errorf("setup routes: %w", err)
 	}

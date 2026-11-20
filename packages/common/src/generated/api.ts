@@ -55,7 +55,7 @@ export interface paths {
         put?: never;
         /**
          * Exchange a signed CHAP challenge response for a session
-         * @description The first few wrong passwords from a client IP cost nothing; after that each one doubles the wait before the next try, up to 90 seconds. Trying too soon gets 429 with `Retry-After`. A successful login clears the count.
+         * @description The first few wrong passwords from a client cost nothing; after that each one doubles the wait before the next try, up to 90 seconds. Trying too soon gets 429 with `Retry-After`. A successful operator login clears the count and sets the `runwisp_device` cookie; logins carrying it are counted per browser instead of per IP and never wait behind logins from other clients. While the daemon is busy checking other logins, the request waits up to 10 seconds, then gets 503 with `Retry-After`.
          */
         post: operations["login"];
         delete?: never;
@@ -2228,7 +2228,10 @@ export interface operations {
             query?: never;
             header?: never;
             path?: never;
-            cookie?: never;
+            cookie?: {
+                /** @description Device token set by an earlier login; its logins are throttled per browser instead of per IP */
+                runwisp_device?: string;
+            };
         };
         requestBody: {
             content: {
@@ -2266,6 +2269,15 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

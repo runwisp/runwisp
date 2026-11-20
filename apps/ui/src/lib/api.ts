@@ -28,10 +28,14 @@ export class AuthRequiredError extends Error {
 // throttled-but-correct password as "invalid".
 export class RateLimitedError extends Error {
     readonly retryAfterSeconds: number | undefined;
+    // busy: a 503 from login, the daemon is checking other logins. Not the
+    // caller's fault, unlike a 429.
+    readonly busy: boolean;
 
     constructor(res: Response) {
         super("Too many attempts");
         this.name = "RateLimitedError";
+        this.busy = res.status === HTTP_STATUS.SERVICE_UNAVAILABLE;
         const secs = Number(res.headers.get("Retry-After"));
         this.retryAfterSeconds = secs > 0 ? secs : undefined;
     }
@@ -115,7 +119,11 @@ export const authApi = {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ nonce, response }),
         });
-        if (res.status === HTTP_STATUS.TOO_MANY_REQUESTS) throw new RateLimitedError(res);
+        if (
+            res.status === HTTP_STATUS.TOO_MANY_REQUESTS ||
+            res.status === HTTP_STATUS.SERVICE_UNAVAILABLE
+        )
+            throw new RateLimitedError(res);
         // The response sets the HttpOnly session cookie; the body only says which
         // role the password granted.
         if (!res.ok) throw new Error("Authentication failed");

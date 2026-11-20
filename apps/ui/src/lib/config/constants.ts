@@ -16,4 +16,5 @@ export const SSE_CONFIG = {
 export const HTTP_STATUS = {
     UNAUTHORIZED: 401,
     TOO_MANY_REQUESTS: 429,
+    SERVICE_UNAVAILABLE: 503,
 } as const;
