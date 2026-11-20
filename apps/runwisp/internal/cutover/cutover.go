@@ -25,6 +25,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/configedit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronprobe"
 )
 
 // Deps is every seam a cutover needs. GOOS is injected and Installer is an
@@ -46,7 +47,10 @@ type Deps struct {
 	BinaryProblem error
 
 	GOOS string
-	Euid int
+	// SystemdBooted reports whether systemd is PID 1. Defaults to
+	// cronprobe.SystemdBooted.
+	SystemdBooted func() bool
+	Euid          int
 	// Username is the account running the process, for the unprivileged
 	// default cron patterns. "" offers no per-user spool pattern.
 	Username string
@@ -99,6 +103,9 @@ type Cutover struct {
 // New fills in the production defaults for any seam the caller left nil, so a
 // caller only overrides what it actually needs to fake.
 func New(deps Deps) *Cutover {
+	if deps.SystemdBooted == nil {
+		deps.SystemdBooted = cronprobe.SystemdBooted
+	}
 	if deps.Scan == nil {
 		deps.Scan = config.ScanCronSources
 	}

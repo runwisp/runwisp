@@ -46,6 +46,14 @@ var PidFiles = []string{"/run/crond.pid", "/run/cron.pid", "/var/run/crond.pid",
 // Never assigned outside tests.
 var SystemdBootedDir = "/run/systemd/system"
 
+// SystemdBooted reports whether systemd is the running init (PID 1). False in
+// most containers, on WSL without systemd, and on non-systemd Linux, even when
+// the systemctl binary is installed.
+func SystemdBooted() bool {
+	fi, err := os.Stat(SystemdBootedDir)
+	return err == nil && fi.IsDir()
+}
+
 // ServiceProbe asks the init system whether any of units is active or enabled.
 // A package var for the same reason PidFiles is one: the real answer comes from
 // systemd, and a test needs to ask the question about an init system it can
@@ -105,7 +113,7 @@ func serviceState(units []string) (state State, ok bool) {
 // for a crond that is running right now, so the probe would release the hold and
 // both schedulers would fire every job. Only trust it when systemd is PID 1.
 func systemctlState(units []string) (active, enabled, ok bool) {
-	if fi, err := os.Stat(SystemdBootedDir); err != nil || !fi.IsDir() {
+	if !SystemdBooted() {
 		return false, false, false
 	}
 	systemctlPath, err := exec.LookPath("systemctl")

@@ -20,8 +20,9 @@ import (
 // the same strings autostart builds from the systemctl argv it will actually run.
 // Nothing here re-derives a systemctl command.
 func Render(w io.Writer, p Plan) {
-	// A non-root plan looked at nothing (see Compute), so it has nothing to show.
-	if b, ok := p.FirstBlocker(); ok && b.Kind == BlockerNeedsRoot {
+	// A non-root or no-systemd plan looked at nothing (see Compute), so it has
+	// nothing to show.
+	if b, ok := p.FirstBlocker(); ok && (b.Kind == BlockerNeedsRoot || b.Kind == BlockerNoSystemd) {
 		return
 	}
 	renderFindings(w, p)

@@ -297,7 +297,10 @@ func (s *systemdInstaller) Install(ctx context.Context, opts InstallOptions, out
 		return fmt.Errorf("%w: %s", ErrConflict, plan.UnitPath)
 	case PlanNoop:
 		fmt.Fprintf(out, "Already installed. ✓\n  Unit: %s\n", plan.UnitPath)
-		return s.reassertCronTakeover(ctx, opts, plan, out)
+		if opts.TakeOverCron && plan.CronUnit != "" {
+			return s.reassertCronTakeover(ctx, opts, plan, out)
+		}
+		return s.enableIfNotLoaded(ctx, opts.System)
 	}
 
 	if err := s.preflight(ctx, opts); err != nil {
@@ -456,6 +459,20 @@ func (s *systemdInstaller) enableLinger(ctx context.Context, out io.Writer) erro
 		return fmt.Errorf("loginctl enable-linger: %w: %s", err, string(stderr))
 	}
 	return nil
+}
+
+// enableIfNotLoaded finishes an install whose unit file is on disk but which
+// systemd never loaded and enabled, such as one that failed at daemon-reload.
+// is-enabled exits non-zero for anything but enabled, so only stdout counts.
+func (s *systemdInstaller) enableIfNotLoaded(ctx context.Context, systemWide bool) error {
+	stdout, _, _ := s.querySystemctl(ctx, systemWide, "is-enabled", s.serviceName(systemWide))
+	if strings.TrimSpace(string(stdout)) == "enabled" {
+		return nil
+	}
+	if err := s.runDaemonReload(ctx, systemWide); err != nil {
+		return err
+	}
+	return s.runEnableNow(ctx, systemWide)
 }
 
 func (s *systemdInstaller) runEnableNow(ctx context.Context, systemWide bool) error {

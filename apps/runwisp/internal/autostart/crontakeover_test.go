@@ -8,6 +8,7 @@ package autostart
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -551,10 +552,28 @@ func TestInstall_NoopWithoutTakeOverFlagNeverProbesCron(t *testing.T) {
 	inst.deps.Euid = 0
 	opts := systemInstallOpts(binary)
 	takenOverUnitOnDisk(t, inst, fs, opts)
+	cmd.Expect("systemctl", []string{"is-enabled", "runwisp.service"}, []byte("enabled\n"), nil, nil)
 
 	out := &bytes.Buffer{}
 	require.NoError(t, inst.Install(context.Background(), opts, out))
-	assert.Zero(t, cmd.Remaining(), "no systemctl call scripted for a plain no-op re-install")
+	assert.Zero(t, cmd.Remaining(), "only the is-enabled check for a plain no-op re-install")
+}
+
+// A matching unit file that systemd never loaded is not installed: a take-over
+// that failed at daemon-reload left one behind, and a re-run printed "Already
+// installed" without ever enabling it.
+func TestInstall_NoopEnablesAUnitSystemdNeverLoaded(t *testing.T) {
+	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	takenOverUnitOnDisk(t, inst, fs, opts)
+	cmd.Expect("systemctl", []string{"is-enabled", "runwisp.service"}, []byte("disabled\n"), nil, errors.New("exit status 1"))
+	cmd.Expect("systemctl", []string{"daemon-reload"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"enable", "--now", "runwisp.service"}, nil, nil, nil)
+
+	out := &bytes.Buffer{}
+	require.NoError(t, inst.Install(context.Background(), opts, out))
+	assert.Zero(t, cmd.Remaining())
 }
 
 func TestComputeUninstallPlan_UnmasksOnlyOwnMarker(t *testing.T) {
