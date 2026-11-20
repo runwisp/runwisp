@@ -37,6 +37,7 @@ func TestCronOwnsPath(t *testing.T) {
 		{"an rhel spool crontab", "/var/spool/cron/root", true},
 		{"an opensuse spool crontab", "/var/spool/cron/tabs/deploy", true},
 		{"a macos spool crontab", "/usr/lib/cron/tabs/riki", true},
+		{"an alpine busybox crontab", "/etc/crontabs/root", true},
 		// A spool file is cron's whatever it is named: cron resolves the
 		// basename with getpwnam, and guessing that it wouldn't would trade a
 		// visible hold for an invisible double fire.

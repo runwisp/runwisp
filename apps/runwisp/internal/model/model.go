@@ -500,6 +500,13 @@ const (
 	EnvBaseClean EnvBase = "clean"
 )
 
+// CleanEnvPath is the PATH an env_base = "clean" run starts with: crond's own
+// compiled-in default (_PATH_DEFPATH). Deliberately not the daemon's PATH: the
+// whole point of a clean base is that the run doesn't depend on how the daemon
+// was launched. A task that needs more sets PATH in its own env, which layers
+// over this.
+const CleanEnvPath = "/usr/bin:/bin"
+
 // Valid reports whether b is a value the executor knows how to honor. The empty
 // string is not valid: the config loader resolves it to EnvBaseInherit, so a
 // zero value reaching this check means it bypassed the loader.

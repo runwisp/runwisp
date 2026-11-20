@@ -4,6 +4,8 @@
 package importer
 
 import (
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -79,6 +81,59 @@ func findNote(t *testing.T, r *Result, kind NoteKind) Note {
 	}
 	t.Fatalf("no note of kind %q in the report: %+v", kind.slug(), allNotes(r))
 	return Note{}
+}
+
+// TestCronOwnerUnknownNote: a piped crontab doesn't say whose it is, so its
+// jobs run as the daemon. The report says so once, unless the lines carry their
+// own user column.
+func TestCronOwnerUnknownNote(t *testing.T) {
+	res := parseCron(t, "30 2 * * * /usr/local/bin/backup.sh\n", CronOptions{OwnerUnknown: true})
+	if !hasNoteKind(res, NoteOwnerUnknown) {
+		t.Errorf("a piped per-user crontab should note its owner is unknown: %+v", allNotes(res))
+	}
+	res = parseCron(t, "30 2 * * * root /usr/local/bin/backup.sh\n", CronOptions{OwnerUnknown: true, System: true})
+	if hasNoteKind(res, NoteOwnerUnknown) {
+		t.Errorf("a system crontab names its users: %+v", allNotes(res))
+	}
+	res = parseCron(t, "30 2 * * * /usr/local/bin/backup.sh\n", CronOptions{})
+	if hasNoteKind(res, NoteOwnerUnknown) {
+		t.Errorf("a file with a known source gets no owner note: %+v", allNotes(res))
+	}
+}
+
+// TestCronProgramNotOnJobPath: in php:* images php lives in /usr/local/bin,
+// which cron's PATH (/usr/bin:/bin) leaves out, so the imported job fails every
+// run with exit 127 and the usual >/dev/null 2>&1 hides why. The import says so.
+func TestCronProgramNotOnJobPath(t *testing.T) {
+	bins := map[string][]string{"/usr/local/bin": {"php"}, "/usr/bin": {"curl"}, "/opt/app/bin": {"tool"}}
+	lookPath := func(name, pathList string) string {
+		for _, dir := range filepath.SplitList(pathList) {
+			if slices.Contains(bins[dir], name) {
+				return dir + "/" + name
+			}
+		}
+		return ""
+	}
+	opts := CronOptions{LookPath: lookPath, DaemonPATH: "/usr/local/bin:/usr/bin:/bin"}
+
+	res := parseCron(t, "* * * * * cd /srv/app && php artisan schedule:run >/dev/null 2>&1\n", opts)
+	n := findNote(t, res, NoteProgramNotOnPath)
+	mustContain(t, n.Message, "/usr/local/bin")
+	mustContain(t, res.TOML(), "# php is in /usr/local/bin")
+
+	for name, crontab := range map[string]string{
+		"on the job's PATH":       "* * * * * curl -s https://example.com\n",
+		"PATH set in the crontab": "PATH=/usr/local/bin:/usr/bin:/bin\n* * * * * php artisan schedule:run\n",
+		"an absolute path":        "* * * * * /usr/local/bin/php artisan schedule:run\n",
+		"on neither PATH":         "* * * * * tool --run\n",
+	} {
+		if res := parseCron(t, crontab, opts); hasNoteKind(res, NoteProgramNotOnPath) {
+			t.Errorf("%s: unexpected note %+v", name, allNotes(res))
+		}
+	}
+	if res := parseCron(t, "* * * * * php artisan schedule:run\n", CronOptions{}); hasNoteKind(res, NoteProgramNotOnPath) {
+		t.Error("without LookPath there is nothing to check")
+	}
 }
 
 func TestCronBasicFiveField(t *testing.T) {

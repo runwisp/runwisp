@@ -413,6 +413,7 @@ The path decides the format:
 | `/etc/crontab`, any `cron.d/*`    | system crontab    | the user in the line's 6th field |
 | `/var/spool/cron/crontabs/<user>` | per-user spool    | `<user>`, from the file name     |
 | `/var/spool/cron/<user>`          | per-user spool    | `<user>` (RHEL/SUSE layout)      |
+| `/etc/crontabs/<user>`            | per-user spool    | `<user>` (Alpine, BusyBox crond) |
 | `/etc/anacrontab`                 | anacrontab        | `root`                           |
 | any other file named `anacrontab` | anacrontab        | the daemon's user                |
 | anything else                     | `crontab -l` dump | the daemon's user                |

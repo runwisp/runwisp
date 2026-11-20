@@ -57,7 +57,7 @@ func TestShellBackend_CleanEnvBaseUsesCronsPath(t *testing.T) {
 	exec := &model.ShellExecution{EnvBase: model.EnvBaseClean}
 	exec.Script = `printf '%s' "$PATH"`
 	got := drainStdout(t, &model.Task{Name: "envbase"}, exec)
-	assert.Equal(t, cleanEnvPath, strings.TrimSpace(got))
+	assert.Equal(t, model.CleanEnvPath, strings.TrimSpace(got))
 }
 
 // TestShellBackend_CleanEnvBaseIsOverriddenByTaskEnv: the base is a floor, not a
@@ -127,5 +127,5 @@ func TestShellBackend_InheritEnvBaseStillHidesDaemonSecrets(t *testing.T) {
 func TestCleanEnvBaseSetsShellFromTheResolvedInterpreter(t *testing.T) {
 	got := cleanEnvBase("/bin/bash")
 	assert.Contains(t, got, "SHELL=/bin/bash")
-	assert.Contains(t, got, "PATH="+cleanEnvPath)
+	assert.Contains(t, got, "PATH="+model.CleanEnvPath)
 }
