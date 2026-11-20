@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Line numbers in crontab warnings match `crontab -l` on Debian, which hides the three header lines cron writes atop the file.
 - The takeover plan says "1 of them needs a fix" instead of "need".
 - `runwisp takeover` without systemd as PID 1, as in most containers, stops before writing anything and lists the steps to do by hand, instead of failing at `systemctl daemon-reload` and then reporting "Nothing to do" on a re-run.
+- Without systemd, the held-jobs banner and `runwisp status` say to stop the cron process (drop `cron -f` or `crond` from the container's CMD) instead of suggesting `sudo runwisp takeover` or `systemctl`.
 
 ## [1.10.0] - 2026-11-15
 

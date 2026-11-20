@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
@@ -52,6 +53,11 @@ func printHeldBlock(w io.Writer, names []string, cronState string) {
 	fmt.Fprintf(w, "\n⏸ %s held — %s still owns %s, so RunWisp is not running %s:\n",
 		heldTaskCount(len(names)), daemon, them, them)
 	fmt.Fprintf(w, "    %s\n", heldNameList(names))
+	if !cronprobe.SystemdBooted() {
+		fmt.Fprintf(w, "  Stop the cron process (in a container, drop %s from the CMD or\n", dropCronExample)
+		fmt.Fprintf(w, "  entrypoint) and RunWisp picks %s up.\n", them)
+		return
+	}
 	fmt.Fprintf(w, "  Run '%s' to hand %s over, or stop cron and disable it at boot\n", sudoRunwisp("takeover"), them)
 	fmt.Fprintf(w, "  (for example '%s') and RunWisp picks %s up.\n", disableCronExample, them)
 }
@@ -62,6 +68,11 @@ func printHeldBlock(w io.Writer, names []string, cronState string) {
 // keeps holding the jobs while nothing runs them. The unit is Debian's name; the
 // "for example" covers crond/cronie.
 const disableCronExample = "sudo systemctl disable --now cron"
+
+// dropCronExample is the by-hand retirement without systemd (most containers):
+// takeover and systemctl both need systemd as PID 1, so the cron process has to
+// go from whatever starts it.
+const dropCronExample = "'cron -f' or 'crond'"
 
 // pausedTaskNames pulls the tasks whose cron schedule an operator paused out of
 // a task list, preserving its order.
@@ -118,6 +129,14 @@ func printHeldBanner(w io.Writer, names []string, cronState string) {
 	b.WriteString("  RunWisp is standing down so nothing fires twice — cron keeps running these\n")
 	b.WriteString("  jobs, and RunWisp records no history or output for them.\n")
 	fmt.Fprintf(&b, "    %s\n", heldNameList(names))
+	if !cronprobe.SystemdBooted() {
+		b.WriteString("  Stop the cron process: in a container, drop " + dropCronExample + " from\n")
+		b.WriteString("  the CMD or entrypoint. RunWisp notices within a minute and takes them on,\n")
+		b.WriteString("  no reload needed.\n")
+		b.WriteString("================================================================================\n")
+		_, _ = fmt.Fprint(w, b.String())
+		return
+	}
 	fmt.Fprintf(&b, "  Run '%s' to hand them over. Or stop cron and disable it at\n", sudoRunwisp("takeover"))
 	fmt.Fprintf(&b, "  boot (for example '%s'): RunWisp notices within a\n", disableCronExample)
 	b.WriteString("  minute and takes them on, no reload needed. A stopped cron that is still\n")
