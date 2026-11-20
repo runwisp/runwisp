@@ -216,3 +216,16 @@ func IsPlausibleAccountName(name string) bool {
 	}
 	return true
 }
+
+// LookPathIn returns the first executable regular file named name in
+// pathList's directories, or "". exec.LookPath with a PATH other than the
+// process's own.
+func LookPathIn(name, pathList string) string {
+	for _, dir := range filepath.SplitList(pathList) {
+		p := filepath.Join(dir, name)
+		if info, err := os.Stat(p); err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0 {
+			return p
+		}
+	}
+	return ""
+}

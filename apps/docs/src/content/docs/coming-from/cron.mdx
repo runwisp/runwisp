@@ -385,6 +385,10 @@ were written for cron:
 - Cron gives a job an almost empty environment. Without `env_base = "clean"`,
   the job would get the daemon's environment. Your crontab's `PATH=` is still
   added on top.
+- Cron's `PATH` is `/usr/bin:/bin`. A program elsewhere, like `php` in
+  `/usr/local/bin` in the official PHP images, fails with exit 127 (command not
+  found), under cron and RunWisp alike. The import notes each job this hits; add
+  `PATH=` to the crontab.
 - Cron runs a job in the user's home directory. Without `working_dir = "~"`,
   the job would run in the directory the daemon started in, and relative paths
   would point somewhere else. `~` is the home of the user the task runs as.

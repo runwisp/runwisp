@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On a box without sudo, `runwisp takeover` run as another user says to run it as root instead of printing a `sudo` command.
 - On Alpine and other BusyBox systems, `runwisp takeover` and `include_cron` find the crontabs in `/etc/crontabs`, and a symlinked directory on a crontab's path no longer counts as world-writable.
 - `runwisp import cron` of a per-user spool crontab (`/var/spool/cron/crontabs/www-data`) sets `user` to its owner, so the jobs no longer run as root. A piped crontab gets a note that its owner is unknown.
+- A run that exits 127 logs "command not found" next to the exit code, and `runwisp import cron` notes a job whose program isn't on cron's `PATH` (`php` in `/usr/local/bin` in the PHP images).
 
 ## [1.10.0] - 2026-11-15
 

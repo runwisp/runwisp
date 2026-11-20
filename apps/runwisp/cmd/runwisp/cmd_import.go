@@ -488,6 +488,7 @@ func resolveCronOptions(source string, systemFlag, systemSet bool) importer.Cron
 	// makes, so an imported job runs as the account cron ran it as.
 	opts.User, _ = importer.UserSpoolOwner(source)
 	opts.OwnerUnknown = source == "-"
+	opts.LookPath, opts.DaemonPATH = importer.LookPathIn, os.Getenv("PATH")
 	if importer.AnacronOwnsPath(source) {
 		opts.User = "root" // the system anacron runs every job as root
 	}

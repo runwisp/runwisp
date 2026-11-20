@@ -37,6 +37,7 @@ const (
 	NoteRebootLongRunning
 	NoteNotACrontab
 	NoteOwnerUnknown
+	NoteProgramNotOnPath
 
 	// Naming and identity, shared by both parsers.
 	NoteAlreadyDefined
@@ -170,6 +171,7 @@ var noteKindInfo = map[NoteKind]noteSeverity{
 	NoteRebootLongRunning:     {slug: "reboot-long-running", blocking: false, unsafeLive: false},
 	NoteNotACrontab:           {slug: "not-a-crontab", blocking: true, unsafeLive: true},
 	NoteOwnerUnknown:          {slug: "owner-unknown", blocking: false, unsafeLive: false},
+	NoteProgramNotOnPath:      {slug: "program-not-on-path", blocking: false, unsafeLive: false},
 	NoteAlreadyDefined:        {slug: "already-defined", blocking: false, unsafeLive: false},
 	NoteRenamedOwned:          {slug: "renamed-owned", blocking: false, unsafeLive: false},
 	NoteRenamedCollision:      {slug: "renamed-collision", blocking: false, unsafeLive: false},

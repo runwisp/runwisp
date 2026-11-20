@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -39,6 +40,12 @@ type CronOptions struct {
 	// owner is its filename. Mutually exclusive with System: a file either names a
 	// user per line or has one for the whole file, never both.
 	User string
+	// LookPath returns where name is found on pathList, or "". With it set, a
+	// job whose program cron's PATH can't find but DaemonPATH can gets a note:
+	// it would fail every run with exit 127. Nil skips the check. Normally
+	// LookPathIn and the importing shell's own PATH.
+	LookPath   func(name, pathList string) string
+	DaemonPATH string
 	// OwnerUnknown says the crontab was piped in, so nothing tells whose it is.
 	// Its per-user jobs run as the daemon, and the report says so once.
 	OwnerUnknown bool
@@ -462,6 +469,7 @@ func (cp *crontabParser) importJob(line string) bool {
 				"Remove the redirect to capture it.")
 		b.lead = append(b.lead, "Output goes to "+target+"; RunWisp can't show it. Remove the redirect to capture it.")
 	}
+	cp.noteProgramNotOnPath(&b, ref, run)
 	if description != "" {
 		b.set("description", tomlString(description))
 	}
@@ -499,6 +507,44 @@ func (cp *crontabParser) importJob(line string) bool {
 	ref.emit(name, model.KindTask, id.Schedule, run, blocks...)
 	return true
 }
+
+// noteProgramNotOnPath flags a job whose program cron's PATH can't find but the
+// daemon's can, the php:* image case: php is in /usr/local/bin, cron's PATH is
+// /usr/bin:/bin, and every run exits 127 with the "not found" usually sent to
+// /dev/null. Real cron fails the same way; the note says why before it does.
+func (cp *crontabParser) noteProgramNotOnPath(b *block, ref itemRef, run string) {
+	if cp.opts.LookPath == nil {
+		return
+	}
+	tokens := strings.Fields(run)
+	prog, _ := firstCommandProgram(tokens, noLauncher)
+	// ponytail: firstCommandProgram returns a basename, so a bare token equal to
+	// it stands in for "named without a path". A path-qualified program with the
+	// same name also appearing bare as an argument is checked by mistake.
+	if prog == "" || !slices.Contains(tokens, prog) {
+		return
+	}
+	jobPath := cp.env["PATH"]
+	if jobPath == "" {
+		jobPath = model.CleanEnvPath
+	}
+	if cp.opts.LookPath(prog, jobPath) != "" {
+		return
+	}
+	found := cp.opts.LookPath(prog, cp.opts.DaemonPATH)
+	if found == "" {
+		return
+	}
+	dir := filepath.Dir(found)
+	ref.note(NoteProgramNotOnPath, prog+" is in "+dir+", which is not on the job's PATH ("+jobPath+
+		"), so every run fails with exit 127 (command not found), as it does under cron. "+
+		"Add PATH="+dir+":"+jobPath+" to the crontab.")
+	b.lead = append(b.lead, prog+" is in "+dir+", not on this task's PATH ("+jobPath+"); set PATH in the crontab or in env.")
+}
+
+// noLauncher treats every program as itself, for callers that want the program
+// a job runs rather than the name it gets.
+func noLauncher(string) (func([]string) string, bool) { return nil, false }
 
 // cronJobLine is one crontab job line, split into the parts RunWisp maps.
 type cronJobLine struct {
