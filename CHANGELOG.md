@@ -49,7 +49,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On Alpine and other BusyBox systems, `runwisp takeover` and `include_cron` find the crontabs in `/etc/crontabs`, and a symlinked directory on a crontab's path no longer counts as world-writable.
 - `runwisp import cron` of a per-user spool crontab (`/var/spool/cron/crontabs/www-data`) sets `user` to its owner, so the jobs no longer run as root. A piped crontab gets a note that its owner is unknown.
 - A run that exits 127 logs "command not found" next to the exit code, and `runwisp import cron` notes a job whose program isn't on cron's `PATH` (`php` in `/usr/local/bin` in the PHP images).
-
 - A crontab job for a user whose home directory doesn't exist (`www-data`'s `/var/www`) runs in `/` as cron does, instead of failing to start. Other tasks with `working_dir = "~"` fail with an error that names the missing home directory.
 - A run that couldn't start shows "didn't start" instead of exit code -1, in the web UI, the TUI and `runwisp run`.
 - `runwisp logs` on a task that has never run prints "`<task>` hasn't run yet." instead of a log line.
@@ -66,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Commands that need `--yes` without a terminal say "Nothing was changed. There's no terminal to ask, so pass --yes."
 - `runwisp promote` prints only the cron step that applies to your machine and the right reload command.
 - The install script points at `runwisp takeover` when the machine has cron jobs.
+
 ### Security
 
 - A browser that has signed in before has its wrong passwords counted on its own instead of per IP, so someone guessing from the same IP or proxy can't slow down your logins.
