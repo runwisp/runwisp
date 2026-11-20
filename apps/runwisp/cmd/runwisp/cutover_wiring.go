@@ -79,6 +79,8 @@ func markCronBootTasksRan(cfgPath, dataDir string) error {
 	if err := datadir.EnsureDir(dataDir); err != nil {
 		return err
 	}
+	// A daemon may already have this database open; WAL and busy_timeout
+	// (storage.New) make a second writer wait instead of fail.
 	db, err := storage.New(datadir.DBPath(dataDir))
 	if err != nil {
 		return err

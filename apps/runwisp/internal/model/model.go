@@ -665,6 +665,7 @@ type DaemonInfo struct {
 	StationEnabled    bool      `json:"stationEnabled"`
 	SchedulingActive  bool      `json:"schedulingActive"`
 	ServiceManaged    bool      `json:"serviceManaged"`
+	RunsAsRoot        bool      `json:"runsAsRoot" doc:"True when the daemon runs as root, so a shell on the host needs sudo to reach it (sudo runwisp reload)."`
 	AuthDisabled      bool      `json:"authDisabled"`
 	ConfigLoadedAt    time.Time `json:"configLoadedAt"`
 	ConfigStale       bool      `json:"configStale"`

@@ -393,13 +393,13 @@ type RunExitFields = Pick<Run, "status" | "endReason" | "exitCode" | "stdoutLine
 /**
  * A failed run whose process never started (its working directory, user or
  * shell couldn't be set up): there is no exit code, the stored -1 is a
- * placeholder. A process killed by a signal also reads -1, but it ran, so a
- * run that printed anything doesn't count. Mirrors Go's `Run.NeverStarted`.
+ * placeholder. Only a run whose process started has line counts, so a
+ * process killed by a signal (also -1) still reads as an exit. Mirrors Go's
+ * `Run.NeverStarted`.
  */
 export function runNeverStarted(run: RunExitFields): boolean {
-    if (run.status !== "ended" || run.exitCode >= 0) return false;
-    if (run.endReason !== "failed" && run.endReason !== "start_failed") return false;
-    return (runOutputLines(run) ?? 0) === 0;
+    if (run.status !== "ended" || run.exitCode >= 0 || run.stdoutLines !== undefined) return false;
+    return run.endReason === "failed" || run.endReason === "start_failed";
 }
 
 /** A failed run's exit readout: "exit N", or "didn't start" when it never ran. */

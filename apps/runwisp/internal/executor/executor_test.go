@@ -730,6 +730,8 @@ func TestRoutingExecutor_Execute_BlockedURLSurfacesStartFailure(t *testing.T) {
 	require.NotNil(t, result.Error)
 	assert.Equal(t, -1, result.ExitCode)
 	assert.Contains(t, result.Error.Error(), "failed to start")
+	assert.Nil(t, result.StdoutLines, "a process that never started has no line counts")
+	assert.Nil(t, result.StderrLines)
 }
 
 // A service that daemonizes exits 0 at once. Its log says why it keeps

@@ -7,11 +7,12 @@
     import type { Task } from "@runwisp/common";
     import { Drawer } from "@runwisp/ui";
     import { taskDetailSections, taskEditHint } from "$lib/utils/task-details";
+    import { systemStore } from "$lib/stores/system.svelte";
 
     let { task, open = $bindable(false) }: { task: Task; open: boolean } = $props();
 
     const sections = $derived(taskDetailSections(task));
-    const hint = $derived(taskEditHint(task));
+    const hint = $derived(taskEditHint(task, systemStore.runsAsRoot));
 </script>
 
 <Drawer bind:open side="right" size="lg" title="Details">

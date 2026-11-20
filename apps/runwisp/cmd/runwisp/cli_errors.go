@@ -117,12 +117,19 @@ func systemServiceHint(args ...string) string {
 
 // systemServiceError is the whole error a normal user gets on a box where
 // RunWisp runs as the system service and their shell found no setup of its
-// own: just the same command under sudo. Nil when that isn't the case.
+// own: just the same command under sudo. Nil when that isn't the case, and
+// inside a RunWisp run, which can't sudo.
 func systemServiceError(f Flags, args ...string) error {
-	if !systemDaemonElsewhere(f) || hasLocalSetup(f) {
+	if insideRun() || !systemDaemonElsewhere(f) || hasLocalSetup(f) {
 		return nil
 	}
 	return &userFacingError{title: systemServiceHint(args...)}
+}
+
+// insideRun reports whether this command runs inside a RunWisp run, which
+// always has RUNWISP_INSTANCE_INDEX set.
+func insideRun() bool {
+	return os.Getenv("RUNWISP_INSTANCE_INDEX") != ""
 }
 
 // daemonUnreachableHint is daemonNotRunningHint for a connection that failed

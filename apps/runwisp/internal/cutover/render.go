@@ -146,7 +146,8 @@ func renderJobs(w io.Writer, jobs []config.CronJob) {
 		nameW = max(nameW, utf8.RuneCountInString(j.Task))
 		fromW = max(fromW, utf8.RuneCountInString(from[i]))
 	}
-	cmdW := max(minCommandWidth, planWidth-len("  ")-nameW-len("  ← ")-fromW-len("  "))
+	const gaps = 8 // the columns' indent, spacing and "← ", in runes
+	cmdW := max(minCommandWidth, planWidth-nameW-fromW-gaps)
 	for i, j := range jobs {
 		fmt.Fprintf(w, "  %-*s  ← %-*s  %s\n", nameW, j.Task, fromW, from[i], truncate(strings.Join(strings.Fields(j.Run), " "), cmdW))
 	}

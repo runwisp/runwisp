@@ -44,6 +44,7 @@ func TestCronNamesCarryTheirSource(t *testing.T) {
 			CronOptions{}, []string{"tar"}},
 		{"user crontab", "*/10 * * * * /home/ops/bin/healthcheck.sh\n", ops, []string{"healthcheck-ops"}},
 		{"user crontab with comment", "# nightly backup\n30 2 * * * tar czf /x.tgz /srv\n", ops, []string{"nightly-backup-ops"}},
+		{"suffix inside a word is not the suffix", "0 1 * * * /usr/local/bin/stops\n", ops, []string{"stops-ops"}},
 		{"repeats in one file", "0 1 * * * /bin/report\n0 2 * * * /bin/report\n", ops, []string{"report-ops", "report-ops-2"}},
 		{"suffix already in the name", "30 3 * * 0 root /sbin/e2scrub_all -A -r\n",
 			CronOptions{System: true, NameSuffix: "e2scrub_all", QualifyNames: true}, []string{"e2scrub_all"}},

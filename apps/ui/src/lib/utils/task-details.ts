@@ -176,22 +176,22 @@ function outputRows(row: Row): DetailRow[] {
 
 /**
  * Where the details sheet says the task is defined and how an edit goes live.
- * A cron-sourced task lives in a crontab (`crontab -e` for a user crontab) and
- * the daemon reading it runs as root, so its reload goes through sudo.
+ * A cron-sourced task lives in a crontab (`crontab -e` for a user crontab).
+ * A daemon running as root is only reachable through sudo.
  */
-export function taskEditHint(task: Pick<Task, "source" | "sourceFile">): {
+export function taskEditHint(
+    task: Pick<Task, "source" | "sourceFile">,
+    runsAsRoot: boolean,
+): {
     file: string;
     crontab: boolean;
     reload: string;
 } {
+    const reload = runsAsRoot ? "sudo runwisp reload" : "runwisp reload";
     if (task.source === "cron") {
-        return {
-            file: task.sourceFile ?? "a crontab",
-            crontab: true,
-            reload: "sudo runwisp reload",
-        };
+        return { file: task.sourceFile ?? "a crontab", crontab: true, reload };
     }
-    return { file: task.sourceFile ?? "runwisp.toml", crontab: false, reload: "runwisp reload" };
+    return { file: task.sourceFile ?? "runwisp.toml", crontab: false, reload };
 }
 
 /** The task's configuration in runwisp.toml terms, the sections that apply. */

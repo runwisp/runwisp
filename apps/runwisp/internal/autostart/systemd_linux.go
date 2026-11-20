@@ -549,12 +549,6 @@ func (s *systemdInstaller) Restart(ctx context.Context, opts InstallOptions) err
 	return s.runSystemctlVerb(ctx, opts.System, "restart")
 }
 
-// passwordDropInName is the drop-in file `service install` writes a generated
-// RUNWISP_PASSWORD into. A separate file (not the unit) so the secret gets 0600
-// while the unit stays world-readable, and so a re-install rewriting the unit
-// leaves it alone.
-const passwordDropInName = "password.conf"
-
 // dropInPath is where a "<unit>.d/<name>" override lives: the standard
 // systemd drop-in directory, shared by the password drop-in and the
 // operator-environment drop-in.
@@ -564,7 +558,7 @@ func (s *systemdInstaller) dropInPath(systemWide bool, name string) string {
 
 // ownedDropIns are the drop-ins RunWisp itself writes into `<unit>.d/`. Uninstall
 // removes exactly these and leaves any other file an operator put there.
-var ownedDropIns = []string{passwordDropInName, EnvDropInName}
+var ownedDropIns = []string{PasswordDropInName, EnvDropInName}
 
 // existingOwnedDropIns lists the RunWisp-written drop-ins present on disk.
 func (s *systemdInstaller) existingOwnedDropIns(systemWide bool) []string {
@@ -612,7 +606,7 @@ func (s *systemdInstaller) savePassword(opts InstallOptions, out io.Writer) erro
 	if opts.Password == "" {
 		return nil
 	}
-	path := s.dropInPath(opts.System, passwordDropInName)
+	path := s.dropInPath(opts.System, PasswordDropInName)
 	if _, err := s.deps.FS.Stat(path); err == nil {
 		return nil
 	} else if !errors.Is(err, fs.ErrNotExist) {

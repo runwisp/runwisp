@@ -281,6 +281,10 @@
           "resolvedTimezone": {
             "type": "string"
           },
+          "runsAsRoot": {
+            "description": "True when the daemon runs as root, so a shell on the host needs sudo to reach it (sudo runwisp reload).",
+            "type": "boolean"
+          },
           "schedulingActive": {
             "type": "boolean"
           },
@@ -326,6 +330,7 @@
           "stationEnabled",
           "schedulingActive",
           "serviceManaged",
+          "runsAsRoot",
           "authDisabled",
           "configLoadedAt",
           "configStale",

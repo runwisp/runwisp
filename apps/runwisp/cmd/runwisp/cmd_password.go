@@ -161,7 +161,7 @@ func savedServicePassword() (string, bool) {
 			return "", false
 		}
 	}
-	body, err := os.ReadFile(systemUnitFile + ".d/password.conf")
+	body, err := os.ReadFile(systemUnitFile + ".d/" + autostart.PasswordDropInName)
 	if err != nil {
 		return "", false
 	}

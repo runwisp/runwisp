@@ -71,9 +71,11 @@ func commentName(comment string) string {
 
 // qualifiedName appends a source's suffix to a derived name, so `report` from
 // ops's crontab becomes `report-ops`. A name that already says where it came
-// from (`e2scrub_all` from /etc/cron.d/e2scrub_all) is left alone.
+// from (`e2scrub_all` from /etc/cron.d/e2scrub_all) is left alone. Only whole
+// words count: ops's `stops` still becomes `stops-ops`.
 func qualifiedName(base, suffix string) string {
-	if suffix == "" || strings.Contains(base, suffix) {
+	words := func(s string) string { return "-" + strings.ReplaceAll(s, "_", "-") + "-" }
+	if suffix == "" || strings.Contains(words(base), words(suffix)) {
 		return base
 	}
 	return finalizeTaskName(base+"-"+suffix, base)

@@ -4,6 +4,8 @@
 package config
 
 import (
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -1158,4 +1160,39 @@ notifiers = []
 	err = Validate(cfg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "notifiers list is empty")
+}
+
+// A route whose match.task names a task that is gone (renamed by an import, or
+// removed) is flagged on load. A route aimed at a task from an included file
+// is not, because the check runs after every include is merged.
+func TestStaleRouteWarnings_FlagsOnlyRoutesNoTaskMatches(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include = ["conf.d/*.toml"]
+
+[[route]]
+match = { task = "backup" }
+notifiers = ["inapp"]
+
+[[route]]
+match = { task = "included-*" }
+notifiers = ["inapp"]
+
+[tasks.backup-db]
+run = "backup.sh"
+cron = "0 3 * * *"
+`,
+		"conf.d/svc.toml": `
+[tasks.included-report]
+run = "report.sh"
+cron = "0 4 * * *"
+`,
+	})
+	cfg, err := Load(filepath.Join(dir, "runwisp.toml"))
+	require.NoError(t, err)
+
+	warnings := strings.Join(Warnings(cfg), "\n")
+	assert.Contains(t, warnings, `[[route]] match.task "backup" matches no task`)
+	assert.NotContains(t, warnings, `"included-*"`)
 }

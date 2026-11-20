@@ -88,18 +88,13 @@ install_dir() {
   fi
 }
 
-# has_cron_jobs succeeds when the caller's crontab has a job line or
-# /etc/cron.d holds a file. Read-only, best effort: any error means "no".
-# Linux only, since takeover needs systemd.
+# has_cron_jobs succeeds when the caller's crontab has a job line (one that
+# starts with a schedule, not a MAILTO= or SHELL= setting). /etc/cron.d is
+# left out: distros ship files there on every box. Read-only, best effort:
+# any error means "no". Linux only, since takeover needs systemd.
 has_cron_jobs() {
   [ "$(uname -s)" = "Linux" ] || return 1
-  if crontab -l 2>/dev/null | grep -q '^[[:space:]]*[^#[:space:]]'; then
-    return 0
-  fi
-  for f in /etc/cron.d/*; do
-    [ -f "${f}" ] && return 0
-  done
-  return 1
+  crontab -l 2>/dev/null | grep -q '^[[:space:]]*[0-9*@]'
 }
 
 main() {

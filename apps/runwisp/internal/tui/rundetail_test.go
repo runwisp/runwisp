@@ -235,7 +235,7 @@ func TestRunDetailDialog_View_RedirectedOutput(t *testing.T) {
 func TestRunDetailDialog_View_DidNotStart(t *testing.T) {
 	run := endedRun()
 	run.ExitCode = -1
-	run.StdoutLines, run.StderrLines = new(int64(0)), new(int64(0))
+	run.StdoutLines, run.StderrLines = nil, nil
 	out := NewRunDetailDialog(run, false, 1).View(80, 34)
 	if !strings.Contains(out, "didn't start") || strings.Contains(out, "-1") {
 		t.Fatalf("run detail view should say didn't start, not -1\n%s", out)

@@ -934,6 +934,8 @@ export interface components {
             /** Format: int64 */
             port: number;
             resolvedTimezone: string;
+            /** @description True when the daemon runs as root, so a shell on the host needs sudo to reach it (sudo runwisp reload). */
+            runsAsRoot: boolean;
             schedulingActive: boolean;
             serviceManaged: boolean;
             /** Format: date-time */

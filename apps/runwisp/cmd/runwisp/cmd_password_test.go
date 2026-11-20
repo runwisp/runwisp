@@ -128,7 +128,7 @@ func TestRunPassword_PrintsThePasswordTheServiceInstallSaved(t *testing.T) {
 	t.Cleanup(func() { flags = prevFlags })
 	flags.DataDir = dataDir
 	require.NoError(t, os.MkdirAll(unit+".d", 0o755))
-	require.NoError(t, os.WriteFile(unit+".d/password.conf",
+	require.NoError(t, os.WriteFile(unit+".d/"+autostart.PasswordDropInName,
 		[]byte(autostart.ManagedMarker+"\n[Service]\nEnvironment=\"RUNWISP_PASSWORD=s3cr%%t\"\n"), 0o600))
 
 	withheld := func(context.Context) (*server.LocalCredentialsBody, error) {

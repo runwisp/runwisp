@@ -471,7 +471,7 @@ func TestRunOutcomeLogSaysHowTheRunEnded(t *testing.T) {
 
 	// A process that never started has no exit code to quote.
 	failed := model.ReasonFailed
-	noStart := &model.Run{Status: model.PhaseEnded, EndReason: &failed, IsFailure: true, ExitCode: -1, StdoutLines: new(int64(0)), StderrLines: new(int64(0))}
+	noStart := &model.Run{Status: model.PhaseEnded, EndReason: &failed, IsFailure: true, ExitCode: -1}
 	level, msg, args = runOutcomeLog("backup", noStart)
 	assert.Equal(t, slog.LevelError, level)
 	assert.Equal(t, "Task didn't start", msg)

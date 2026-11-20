@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp takeover`'s plan says how many jobs had that redirect dropped and how many still send their output to a file.
 - Tasks read from user crontabs and `/etc/cron.d` now carry their source in the name, such as `report-ops`, so adding a crontab never renames a job that already runs.
    A short comment above a cron job names it (`# nightly backup` becomes `nightly-backup`), and names look past `sleep`, a piped `echo` and a bare `env`.
-   Migration: these tasks get their new name once on upgrade, and earlier runs stay under the old name.
+   Migration: these tasks get their new name once on upgrade, and earlier runs stay under the old name. A `[[route]]` that still names the old task gets a warning on load; change its `match.task` to the new name.
 
 ### Fixed
 

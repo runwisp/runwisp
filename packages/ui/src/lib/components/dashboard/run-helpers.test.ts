@@ -238,8 +238,6 @@ describe("runRowReadout", () => {
             status: "ended",
             endReason: "failed",
             exitCode: -1,
-            stdoutLines: 0,
-            stderrLines: 0,
         } as const;
         expect(runRowReadout(noStart, "failed")).toBe("didn't start");
         // Killed by a signal after printing: it ran, so the code stays.
@@ -259,11 +257,14 @@ describe("outputRedirectHint", () => {
 });
 
 describe("runNeverStarted", () => {
-    const base = { status: "ended", exitCode: -1, stdoutLines: 0, stderrLines: 0 } as const;
+    const base = { status: "ended", exitCode: -1 } as const;
 
-    it("is a failed or start_failed run with no exit code and no output", () => {
+    it("is a failed or start_failed run with no exit code and no line counts", () => {
         expect(runNeverStarted({ ...base, endReason: "failed" })).toBe(true);
         expect(runNeverStarted({ ...base, endReason: "start_failed" })).toBe(true);
+        expect(
+            runNeverStarted({ ...base, endReason: "failed", stdoutLines: 0, stderrLines: 0 }),
+        ).toBe(false);
         expect(runNeverStarted({ ...base, endReason: "failed", exitCode: 2 })).toBe(false);
         expect(runNeverStarted({ ...base, endReason: "missed" })).toBe(false);
         expect(runNeverStarted({ ...base, endReason: "failed", status: "running" })).toBe(false);

@@ -286,6 +286,12 @@ const (
 	DropInRemoved
 )
 
+// PasswordDropInName is the drop-in file `service install` writes a generated
+// RUNWISP_PASSWORD into. A separate file (not the unit) so the secret gets 0600
+// while the unit stays world-readable, and so a re-install rewriting the unit
+// leaves it alone.
+const PasswordDropInName = "password.conf"
+
 // EnvDropInName is the "<unit>.d/<name>" drop-in `service install` writes the
 // operator's captured RUNWISP_* environment into via WriteEnvDropIn. Named to
 // sort lexicographically after the password drop-in's filename

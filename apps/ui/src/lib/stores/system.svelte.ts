@@ -25,6 +25,8 @@ class SystemStore {
     timezone = $state("");
     timezoneSource = $state("");
     configStale = $state(false);
+    // The daemon runs as root, so host commands that reach it need sudo.
+    runsAsRoot = $state(false);
     // Standalone assumptions until the first /api/daemon lands: a standalone
     // daemon must never flash a station chip or hide its scheduling UI during
     // hydration. Components read these reactively and self-correct.
@@ -110,6 +112,7 @@ class SystemStore {
             this.timezone = info.resolvedTimezone;
             this.timezoneSource = info.timezoneSource;
             this.configStale = info.configStale;
+            this.runsAsRoot = info.runsAsRoot;
             this.stationEnabled = info.stationEnabled;
             this.schedulingActive = info.schedulingActive;
             this.updateAvailable = info.updateAvailable;

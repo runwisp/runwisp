@@ -93,8 +93,9 @@ func init() {
 
 func runServiceInstall(cmd *cobra.Command, f Flags) error {
 	// The system service needs root; re-run through sudo like takeover does.
-	// Without sudo, resolveInstallScope's needs-root error explains the ways out.
-	if !serviceInstallOpts.Local {
+	// Without sudo, resolveInstallScope's needs-root error explains the ways
+	// out. --print and --dry-run only read, so they run as the caller.
+	if !serviceInstallOpts.Local && !serviceInstallOpts.Print && !serviceInstallOpts.DryRun {
 		if err := elevateOnLinux(cmd.ErrOrStderr(), "Installing the system service needs root."); err != nil {
 			return err
 		}
@@ -118,7 +119,7 @@ func installService(cmd *cobra.Command, f Flags, req installRequest) (installed 
 		return false, err
 	}
 
-	systemWide, err := resolveInstallScope(req.Local, deps.Euid)
+	systemWide, err := resolveInstallScope(req.Local, deps.Euid, req.Print || req.DryRun)
 	if err != nil {
 		return false, err
 	}
@@ -147,11 +148,10 @@ func installService(cmd *cobra.Command, f Flags, req installRequest) (installed 
 	if err != nil {
 		return false, err
 	}
-	opts.Password = servicePassword(installer)
-
 	if req.Print || req.DryRun {
 		return false, inspectServiceInstall(cmd, installer, opts, req, f)
 	}
+	opts.Password = servicePassword(installer)
 
 	settingsStale, err := preflightDaemon(context.Background(), installer, opts, f)
 	if err != nil {

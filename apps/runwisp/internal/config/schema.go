@@ -37,6 +37,10 @@ type Config struct {
 	// on every /api/daemon request and must not walk every schedule each time.
 	scheduleWarnings []string
 
+	// routeWarnings are the [[route]] findings from staleRouteWarnings, computed
+	// once at load for the same reason scheduleWarnings is.
+	routeWarnings []string
+
 	// includeFiles are the absolute paths of the TOML files merged in via
 	// [daemon].include at this load. includeGlobs are those patterns resolved
 	// against the root config dir. watchFiles is every additional on-disk input

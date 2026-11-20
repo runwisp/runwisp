@@ -221,18 +221,16 @@ func (r *Run) Duration() (d time.Duration, ok bool) {
 
 // NeverStarted reports a failed run whose process never started: the working
 // directory, user or shell couldn't be set up, so there is no exit code (the
-// stored -1 is a placeholder) and no output. Displays say "didn't start"
-// instead of a made-up exit code. A process killed by a signal also reads -1,
-// but it ran, so a run that printed anything is not counted.
+// stored -1 is a placeholder). Displays say "didn't start" instead of a
+// made-up exit code. Only a run whose process started gets line counts, so a
+// process killed by a signal (also -1) still reads as an exit, even silent.
+// ponytail: rows recorded before line counts existed also have none, so an
+// old signal kill reads "didn't start"; they age out with retention.
 func (r *Run) NeverStarted() bool {
-	if r.Status != PhaseEnded || r.ExitCode >= 0 || r.EndReason == nil {
+	if r.Status != PhaseEnded || r.ExitCode >= 0 || r.EndReason == nil || r.StdoutLines != nil {
 		return false
 	}
-	if *r.EndReason != ReasonFailed && *r.EndReason != ReasonStartFailed {
-		return false
-	}
-	lines, _ := r.OutputLines()
-	return lines == 0
+	return *r.EndReason == ReasonFailed || *r.EndReason == ReasonStartFailed
 }
 
 // OutputLines is the number of lines the run printed on stdout and stderr

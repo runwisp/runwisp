@@ -71,6 +71,7 @@ func load(path string, root *tomlConfig) (*Config, error) {
 	}
 	// After ApplyDefaults: a jitter inherited from [defaults] counts.
 	cfg.refreshScheduleWarnings(time.Now())
+	cfg.routeWarnings = staleRouteWarnings(cfg)
 	cfg.watchFiles = collectWatchFiles(cfg, dirs)
 	return cfg, nil
 }
@@ -299,6 +300,7 @@ func Warnings(cfg *Config) []string {
 	w = append(w, composeOwnProjectWarnings(cfg)...)
 	w = append(w, cfg.composeWarnings...)
 	w = append(w, cfg.scheduleWarnings...)
+	w = append(w, cfg.routeWarnings...)
 	return append(w, cronSourceWarnings(cfg)...)
 }
 
