@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -155,4 +156,78 @@ func TestShellBackend_Task_DoesNotAdoptContainer(t *testing.T) {
 	assert.Equal(t, 125, r.exit)
 	assert.Nil(t, proc.Notices)
 	assert.NotContains(t, readDockerCalls(t, logFile), "inspect")
+}
+
+// conflictStderr is Docker's name-conflict error as `docker run` prints it.
+const conflictStderr = `docker: Error response from daemon: Conflict. The container name "/slackbot" is already in use by container "` + holderID + `".`
+
+func TestAdoptConflictHolder_LeavesRunAloneWhenItCannotTakeOver(t *testing.T) {
+	rerunFails := func() (*Process, error) { return nil, io.ErrUnexpectedEOF }
+	for name, tc := range map[string]struct {
+		shell  string
+		stderr string
+		rerun  func() (*Process, error)
+	}{
+		"not a name conflict": {"#!/bin/sh\nexit 0\n", "docker: no such image", nil},
+		"inspect fails":       {"#!/bin/sh\nexit 1\n", conflictStderr, nil},
+		"remove fails":        {"#!/bin/sh\ncase \"$1\" in inspect) echo 'false 0' ;; rm) exit 1 ;; esac\n", conflictStderr, nil},
+		"rerun fails":         {"#!/bin/sh\ncase \"$1\" in inspect) echo 'false 0' ;; esac\n", conflictStderr, rerunFails},
+	} {
+		t.Run(name, func(t *testing.T) {
+			installDockerShimScript(t, t.TempDir(), tc.shell)
+			task, _ := slackbot(model.KindService)
+
+			proc, msg := adoptConflictHolder(context.Background(), task, tc.stderr, tc.rerun)
+
+			assert.Nil(t, proc)
+			assert.Empty(t, msg)
+		})
+	}
+}
+
+// The wrapper hands ForceKill and Rusage to the process that is current, and
+// keeps the first process's pid.
+func TestAdoptNameConflict_DelegatesToCurrentProcess(t *testing.T) {
+	var killed bool
+	rusage := &syscall.Rusage{}
+	first := &Process{
+		Pid:       42,
+		Stdout:    io.NopCloser(strings.NewReader("")),
+		Stderr:    io.NopCloser(strings.NewReader("")),
+		Wait:      func() (int, error) { return 0, nil },
+		ForceKill: func() { killed = true },
+		Rusage:    func() *syscall.Rusage { return rusage },
+	}
+	task, _ := slackbot(model.KindService)
+
+	proc := adoptNameConflict(context.Background(), task, first, nil)
+	code, err := proc.Wait()
+	proc.ForceKill()
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, code)
+	assert.True(t, killed)
+	assert.Equal(t, 42, proc.Pid)
+	assert.Same(t, rusage, proc.Rusage())
+}
+
+func TestForwardProcess_RunsCleanupAndKeepsStderrTail(t *testing.T) {
+	var cleaned bool
+	p := &Process{
+		Stdout:  io.NopCloser(strings.NewReader("out")),
+		Stderr:  io.NopCloser(strings.NewReader(strings.Repeat("x", stderrTailSize) + "end")),
+		Wait:    func() (int, error) { return 3, nil },
+		Cleanup: func() { cleaned = true },
+	}
+	var stdout, stderr strings.Builder
+
+	code, tail, err := forwardProcess(p, &stdout, &stderr)
+
+	require.NoError(t, err)
+	assert.Equal(t, 3, code)
+	assert.True(t, cleaned)
+	assert.Equal(t, "out", stdout.String())
+	assert.Len(t, stderr.String(), stderrTailSize+3)
+	assert.Len(t, tail, stderrTailSize)
+	assert.True(t, strings.HasSuffix(tail, "end"))
 }
