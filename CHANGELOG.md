@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `runwisp import` exits 1 when the config it printed or wrote won't load until fixed, such as a crontab line with a bad schedule. The draft is still printed or written.
 - The PHP and JavaScript SDKs put a `.gitignore` in their data directory (`storage/runwisp`, `.runwisp`), so `git add .` no longer commits RunWisp's database and logs.
 - The SDK startup line reads "get the password with:" before the command, and the PHP SDK quotes the path only when it needs quoting.
 - `runwisp` runs the daemon in the terminal and stops it when you quit the TUI, instead of asking you if you want to keep it running in the background.
@@ -25,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - "Run now" on a running task with `on_overlap = "skip"`, or on a task whose queue is full, answers 409 with the reason instead of a 500 "Failed to trigger run".
 - The web UI names a task's own `timezone` next to its next run time, "(14:00 UTC)", when it differs from the daemon's. Before, a Laravel schedule in UTC looked like it ran an hour off.
+- Importing a crontab no longer turns the `# m h dom mon dow command` legend (or Alpine's `# min hour day month weekday command`) into the first job's description.
+- When a crontab command has an unescaped `%`, the import note now says to write `\%` if you meant a literal percent, as in `date +%F`.
+- `import cron` on a README or script says it doesn't look like a crontab instead of importing its prose as tasks.
+- `import cron` reads a line like `0=Sun` as a job line rather than an environment variable, since an env name can't start with a digit and the imported config would not load.
+- Line numbers in crontab warnings match `crontab -l` on Debian, which hides the three header lines cron writes atop the file.
+- The takeover plan says "1 of them needs a fix" instead of "need".
 
 ## [1.10.0] - 2026-11-15
 

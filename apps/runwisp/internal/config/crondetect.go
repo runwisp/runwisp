@@ -135,7 +135,7 @@ func ScanCronSources(patterns []string, cfgPath string) CronScan {
 		scan.Mails = scan.Mails || res.CronMails()
 		for _, it := range res.Items() {
 			if why := it.NoopHere(); why != "" {
-				scan.Noop = append(scan.Noop, fmt.Sprintf("%s:%d: %s", path, it.Line, why))
+				scan.Noop = append(scan.Noop, fmt.Sprintf("%s:%d: %s", path, res.ListLine(it.Line), why))
 				continue
 			}
 			scan.Jobs++

@@ -553,14 +553,23 @@ func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, 
 			return err
 		}
 		printImportSummary(stderr, rep, opts, singleFileEpilogue(rep, ""))
-		return nil
+		return unloadableErr(rep)
 	}
 
 	if err := confirmAndWrite(stderr, stdin, opts.output, toml, opts); err != nil {
 		return err
 	}
 	printImportSummary(stderr, rep, opts, singleFileEpilogue(rep, opts.output))
-	return nil
+	return unloadableErr(rep)
+}
+
+// unloadableErr fails the command when the draft it printed or wrote doesn't
+// load, so a script sees a non-zero exit instead of a config that won't start.
+func unloadableErr(rep importReport) error {
+	if rep.validationErr == nil {
+		return nil
+	}
+	return &userFacingError{title: "the imported config won't load until the items above are fixed"}
 }
 
 // printImportPlan is --dry-run for a saving import: the same report a real run

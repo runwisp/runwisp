@@ -38,7 +38,8 @@ import (
 // runs, so the per-run machinery that normally keeps a failure visible has nothing
 // to hang on, and the only honest substitute is state re-derived every load.
 type CronFinding struct {
-	// File is the crontab it came from and Line the 1-based line within it. An
+	// File is the crontab it came from and Line the 1-based line within it, as
+	// `crontab -l` numbers it (see importer.Result.ListLine). An
 	// operator looking at a crontab needs `file:line`; a derived task name they
 	// have never seen is not a place they can go.
 	File string
@@ -470,7 +471,7 @@ func jobFindings(res *importer.Result, path string) []CronFinding {
 			if !worthReporting(n, live) {
 				continue
 			}
-			f := CronFinding{File: path, Line: it.Line, Source: it.Source, Reason: n.Message, Skipped: !live}
+			f := CronFinding{File: path, Line: res.ListLine(it.Line), Source: it.Source, Reason: n.Message, Skipped: !live}
 			if live {
 				f.Task = it.Name
 			}
