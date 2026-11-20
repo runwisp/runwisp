@@ -261,6 +261,12 @@ schedule and the command. The importer detects it from the path (or the
 [`user`](/configuration/tasks/#user). For piped input, force it with
 `--system` or `--system=false`.
 
+A per-user crontab has no user column: cron runs it as the user it belongs to.
+Import the spool file itself (`runwisp import cron
+/var/spool/cron/crontabs/www-data`) and every task gets that `user`. A piped
+`crontab -l` doesn't say whose it is, so its tasks run as the daemon's user
+unless you add `user`.
+
 ### Retire the crontab
 
 An import copies your jobs and never touches the crontab. If cron keeps running

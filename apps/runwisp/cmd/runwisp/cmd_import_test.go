@@ -42,6 +42,22 @@ func TestResolveCronOptions(t *testing.T) {
 	}
 }
 
+// TestResolveCronOptionsSpoolOwner: a per-user spool crontab runs as the
+// account it is named after, the same as include_cron reads it. Without this,
+// `runwisp import cron /var/spool/cron/crontabs/www-data` ran every job as root
+// in a container. A piped crontab has no owner to read.
+func TestResolveCronOptionsSpoolOwner(t *testing.T) {
+	if o := resolveCronOptions("/var/spool/cron/crontabs/www-data", false, false); o.User != "www-data" || o.OwnerUnknown {
+		t.Errorf("spool crontab should run as its owner, got %+v", o)
+	}
+	if o := resolveCronOptions("-", false, false); o.User != "" || !o.OwnerUnknown {
+		t.Errorf("piped crontab should have an unknown owner, got %+v", o)
+	}
+	if o := resolveCronOptions("/home/me/jobs.cron", false, false); o.User != "" || o.OwnerUnknown {
+		t.Errorf("a plain file has no owner to report, got %+v", o)
+	}
+}
+
 func TestResolveImportSourceArg(t *testing.T) {
 	src, err := resolveImportSource([]string{"/etc/crontab"}, os.Stdin, "crontab")
 	if err != nil || src != "/etc/crontab" {

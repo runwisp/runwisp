@@ -484,6 +484,10 @@ func resolveCronOptions(source string, systemFlag, systemSet bool) importer.Cron
 		opts.Flavor = hostCronFlavor()
 		opts.HostStat = os.Stat
 	}
+	// A spool crontab's owner is its file name, the same reading include_cron
+	// makes, so an imported job runs as the account cron ran it as.
+	opts.User, _ = importer.UserSpoolOwner(source)
+	opts.OwnerUnknown = source == "-"
 	if importer.AnacronOwnsPath(source) {
 		opts.User = "root" // the system anacron runs every job as root
 	}

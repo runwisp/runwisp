@@ -39,6 +39,9 @@ type CronOptions struct {
 	// owner is its filename. Mutually exclusive with System: a file either names a
 	// user per line or has one for the whole file, never both.
 	User string
+	// OwnerUnknown says the crontab was piped in, so nothing tells whose it is.
+	// Its per-user jobs run as the daemon, and the report says so once.
+	OwnerUnknown bool
 	// UserExists reports whether a name identifies an account on this machine. Set
 	// it — normally to SystemUserExists — whenever the crontab being parsed belongs
 	// to the machine doing the parsing, so a system line missing its user column is
@@ -137,6 +140,11 @@ func ParseCrontab(r io.Reader, opts CronOptions) (*Result, error) {
 		res.items, res.blocks = nil, nil
 		res.fileNote(NoteNotACrontab, "this doesn't look like a crontab: no line is a cron "+
 			"schedule followed by a command, so nothing was imported.")
+	}
+	if opts.OwnerUnknown && opts.User == "" && !cp.system && len(res.items) > 0 {
+		res.fileNote(NoteOwnerUnknown, "A piped crontab doesn't say whose it is, so these jobs run as "+
+			"the daemon's user. If they belong to another account, add user = \"<name>\" to each task, "+
+			"or import the file itself (runwisp import cron /var/spool/cron/crontabs/<name>).")
 	}
 	return cp.res, nil
 }

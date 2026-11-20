@@ -81,6 +81,24 @@ func findNote(t *testing.T, r *Result, kind NoteKind) Note {
 	return Note{}
 }
 
+// TestCronOwnerUnknownNote: a piped crontab doesn't say whose it is, so its
+// jobs run as the daemon. The report says so once, unless the lines carry their
+// own user column.
+func TestCronOwnerUnknownNote(t *testing.T) {
+	res := parseCron(t, "30 2 * * * /usr/local/bin/backup.sh\n", CronOptions{OwnerUnknown: true})
+	if !hasNoteKind(res, NoteOwnerUnknown) {
+		t.Errorf("a piped per-user crontab should note its owner is unknown: %+v", allNotes(res))
+	}
+	res = parseCron(t, "30 2 * * * root /usr/local/bin/backup.sh\n", CronOptions{OwnerUnknown: true, System: true})
+	if hasNoteKind(res, NoteOwnerUnknown) {
+		t.Errorf("a system crontab names its users: %+v", allNotes(res))
+	}
+	res = parseCron(t, "30 2 * * * /usr/local/bin/backup.sh\n", CronOptions{})
+	if hasNoteKind(res, NoteOwnerUnknown) {
+		t.Errorf("a file with a known source gets no owner note: %+v", allNotes(res))
+	}
+}
+
 func TestCronBasicFiveField(t *testing.T) {
 	res := parseCron(t, "30 2 * * * /usr/local/bin/backup.sh --full\n", CronOptions{})
 	out := res.TOML()
