@@ -49,7 +49,8 @@ include:              []string    — glob(s) of extra TOML files merged at load
 include_cron:         []string    — glob(s) of REAL crontabs read as live task defs at every load/reload; root
                                     config only. Format is PATH-DERIVED, never flagged: /etc/crontab + **/cron.d/*
                                     = system format (6th field = user, job runs as them);
-                                    /var/spool/cron/crontabs/<u> and /var/spool/cron/<u> = per-user spool, jobs run
+                                    /var/spool/cron/crontabs/<u>, /var/spool/cron/<u>, /etc/crontabs/<u> (Alpine)
+                                    = per-user spool, jobs run
                                     as <u> taken from the FILENAME (requires a root daemon unless <u> IS the
                                     daemon's account; the file must also be owned by <u>, which is what makes the
                                     filename safe to trust); any other path = `crontab -l` dump, runs as the daemon.
@@ -92,7 +93,7 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     is-enabled on cron.service/crond.service/cronie.service, else a live pidfile
                                     naming a process that is actually alive), every task
                                     whose source_file is a path cron itself reads (/etc/crontab, **/cron.d/*,
-                                    /var/spool/cron[/crontabs]/*) is HELD (so are /etc/anacrontab tasks
+                                    /var/spool/cron[/crontabs]/*, /etc/crontabs/*) is HELD (so are /etc/anacrontab tasks
                                     while anacron.timer/anacron.service is active or enabled; without systemd,
                                     while cron is live). HELD means: loaded, listed, schedule shown, but
                                     NOT registered with the scheduler — no cron firing, no jitter plan, no

@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Without systemd, the held-jobs banner and `runwisp status` say to stop the cron process (drop `cron -f` or `crond` from the container's CMD) instead of suggesting `sudo runwisp takeover` or `systemctl`.
 - The note at the end of `runwisp import cron` also says what to do in a container: drop cron from the CMD.
 - On a box without sudo, `runwisp takeover` run as another user says to run it as root instead of printing a `sudo` command.
+- On Alpine and other BusyBox systems, `runwisp takeover` and `include_cron` find the crontabs in `/etc/crontabs`, and a symlinked directory on a crontab's path no longer counts as world-writable.
 
 ## [1.10.0] - 2026-11-15
 

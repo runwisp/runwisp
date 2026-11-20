@@ -828,6 +828,44 @@ func TestCronTrust_WorldWritableAncestorRefused(t *testing.T) {
 	assert.Contains(t, err.Error(), "world-writable")
 }
 
+// TestCronTrust_SymlinkedAncestorJudgedByTarget is Alpine's layout:
+// /var/spool/cron/crontabs is a symlink to /etc/crontabs. A symlink's own mode
+// is always 0777 on Linux and says nothing, so a symlinked directory on the path
+// is judged by the directory it points to.
+func TestCronTrust_SymlinkedAncestorJudgedByTarget(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "crontabs")
+	require.NoError(t, os.Mkdir(target, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(target, "root"), []byte("0 3 * * * /bin/true\n"), 0o600))
+	link := filepath.Join(dir, "spool")
+	require.NoError(t, os.Symlink(target, link))
+
+	require.NoError(t, assertCronFileTrusted(filepath.Join(link, "root"), ""))
+
+	// A symlink to a world-writable directory is still refused.
+	require.NoError(t, os.Chmod(target, 0o777))
+	err := assertCronFileTrusted(filepath.Join(link, "root"), "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "world-writable")
+}
+
+// TestIncludeCron_SameFileThroughSymlinkReadOnce: on Alpine the default patterns
+// reach /etc/crontabs/root both directly and through the
+// /var/spool/cron/crontabs symlink. Reading it twice would schedule every job
+// twice.
+func TestIncludeCron_SameFileThroughSymlinkReadOnce(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "crontabs")
+	require.NoError(t, os.Mkdir(target, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(target, "root"), []byte("0 3 * * * /bin/true\n"), 0o600))
+	link := filepath.Join(dir, "spool")
+	require.NoError(t, os.Symlink(target, link))
+
+	_, matched, _, err := resolveCronIncludes([]string{link + "/*", target + "/*"}, dir, filepath.Join(dir, "runwisp.toml"))
+	require.NoError(t, err)
+	assert.Equal(t, []string{filepath.Join(link, "root")}, matched)
+}
+
 // TestAssertPrivilegedConfigTrust_NonContainerRefusesSymlinkedConfig: outside a
 // container, a root daemon (faked here via euid) still runs the full trust
 // check — proven with a symlinked config, since a real ownership mismatch

@@ -91,6 +91,7 @@ func UserSpoolDirs() []string {
 		"/var/spool/cron/tabs",     // openSUSE
 		"/usr/lib/cron/tabs",       // macOS
 		"/var/at/tabs",             // macOS/BSD, alongside at(1)'s spool
+		"/etc/crontabs",            // Alpine and other BusyBox crond
 	}
 }
 
