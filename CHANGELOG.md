@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `runwisp import` exits 1 when the config it printed or wrote won't load until fixed, such as a crontab line with a bad schedule. The draft is still printed or written.
 - The PHP and JavaScript SDKs put a `.gitignore` in their data directory (`storage/runwisp`, `.runwisp`), so `git add .` no longer commits RunWisp's database and logs.
 - The SDK startup line reads "get the password with:" before the command, and the PHP SDK quotes the path only when it needs quoting.
 - `runwisp` runs the daemon in the terminal and stops it when you quit the TUI, instead of asking you if you want to keep it running in the background.

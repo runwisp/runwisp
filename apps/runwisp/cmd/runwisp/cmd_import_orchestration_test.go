@@ -169,9 +169,15 @@ func TestRunImportCronInvalidGeneratesNote(t *testing.T) {
 	// doesn't validate — the summary must say so instead of claiming success.
 	src := tempFile(t, "crontab", "99 99 * * * /usr/bin/broken.sh\n")
 	var stdout, stderr bytes.Buffer
-	if err := runImportCron(&stdout, &stderr, openTempFile(t, ""), src,
-		importer.CronOptions{}, Flags{}, importOpts{}); err != nil {
-		t.Fatalf("runImportCron: %v", err)
+	// The draft still goes out, but the exit status says it can't load, so a
+	// script piping it somewhere notices.
+	err := runImportCron(&stdout, &stderr, openTempFile(t, ""), src,
+		importer.CronOptions{}, Flags{}, importOpts{})
+	if err == nil || !strings.Contains(err.Error(), "won't load") {
+		t.Fatalf("runImportCron err = %v, want the won't-load error", err)
+	}
+	if !strings.Contains(stdout.String(), "[tasks.broken]") {
+		t.Errorf("stdout should still carry the draft TOML:\n%s", stdout.String())
 	}
 	// The row itself carries the parser's own words for what's wrong, and the
 	// verdict says the config won't load — so the epilogue points at the rows
@@ -201,8 +207,8 @@ func TestRunImportCronQuietStillReportsBlocking(t *testing.T) {
 	src := tempFile(t, "crontab", "0 0 * * * /usr/bin/fine.sh\n99 99 * * * /usr/bin/broken.sh\n")
 	var stdout, stderr bytes.Buffer
 	if err := runImportCron(&stdout, &stderr, openTempFile(t, ""), src,
-		importer.CronOptions{}, Flags{}, importOpts{quiet: true}); err != nil {
-		t.Fatalf("runImportCron: %v", err)
+		importer.CronOptions{}, Flags{}, importOpts{quiet: true}); err == nil {
+		t.Fatal("runImportCron: want an error for a config that won't load")
 	}
 	out := stderr.String()
 	for _, want := range []string{"broken", "didn't parse", "can't load until fixed"} {

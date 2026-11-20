@@ -464,6 +464,10 @@ runs twice.
 The summary marks each job: `✓` mapped, `~` changed, `!` needs a fix, `-`
 skipped because it already exists.
 
+When the TOML it prints or writes won't load until a `# TODO` is fixed (a
+crontab line with a bad schedule, say), `import` still prints or writes it and
+exits 1. Since 1.11; before, it exited 0.
+
 ### `runwisp promote`
 
 ```bash
