@@ -73,7 +73,7 @@ func TestCLIServiceInstallDryRunNeedsNoRoot(t *testing.T) {
 	cmd := exec.Command(binaryPath, "service", "install", "--dry-run", "--local",
 		"--binary", "/opt/runwisp/bin/runwisp",
 		"--config", configPath,
-		"--data", filepath.Join(home, "data"),
+		"--data", "/var/lib/runwisp",
 		"--port", strconv.Itoa(reserveTCPPort(t)),
 		"--host", "127.0.0.1",
 	)
