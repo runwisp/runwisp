@@ -557,8 +557,9 @@ func (cp *crontabParser) applyCommand(b *block, ref itemRef, cc cronCommand) {
 			"TODO: crond also piped "+strconv.Quote(cc.stdin)+" to this on stdin.")
 		ref.note(NotePercentStdin,
 			"crond ended the command at the first '%' and piped "+strconv.Quote(cc.stdin)+
-				" to it on standard input. RunWisp has no stdin field — fold the input into "+
-				"the command itself (a here-doc, or `printf … | cmd`).")
+				" to it on standard input. If you meant a literal %, write \\% in the crontab. "+
+				"For input, RunWisp has no stdin field: fold it into the command itself "+
+				"(a here-doc, or `printf … | cmd`).")
 		return
 	}
 	b.set("run", tomlVerbatimString(cc.run))
