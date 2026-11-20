@@ -71,7 +71,7 @@ func renderFindings(w io.Writer, p Plan) {
 		fmt.Fprintf(w, "Found %s on this box:\n  %s\n",
 			textutil.Count(ev.Scan.Jobs, "cron job", "cron jobs"), strings.Join(ev.Sources, ", "))
 		if skipped := ev.Scan.Jobs - ev.Scan.Live; skipped > 0 {
-			fmt.Fprintf(w, "  (%d of them need a fix first and would not run)\n", skipped)
+			fmt.Fprintf(w, "  (%d of them %s a fix first and would not run)\n", skipped, textutil.Pluralize(skipped, "needs", "need"))
 		}
 		if tz := ev.Scan.CronTZIgnored; len(tz) > 0 {
 			fmt.Fprintf(w, "  (CRON_TZ in %s is ignored, as this host's cron ignores it)\n",

@@ -309,3 +309,13 @@ func TestRender_ListsJobsLeftOutAndEveryRetiredUnit(t *testing.T) {
 	assert.NotContains(t, out.String(), "need a fix first")
 	assert.Equal(t, "Take over from cron.service, anacron.timer and anacron.service?", PromptQuestion(p))
 }
+
+func TestRender_OneJobNeedingAFixIsSingular(t *testing.T) {
+	p := Plan{Evidence: Evidence{
+		Scan:    config.CronScan{Files: []string{"/etc/crontab"}, Jobs: 3, Live: 2},
+		Sources: []string{"/etc/crontab"},
+	}}
+	var out bytes.Buffer
+	Render(&out, p)
+	assert.Contains(t, out.String(), "(1 of them needs a fix first and would not run)")
+}

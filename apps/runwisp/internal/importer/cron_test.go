@@ -1125,3 +1125,38 @@ func TestCronPerUserLegendIsNotADescription(t *testing.T) {
 		mustNotContain(t, out, "user =")
 	}
 }
+
+// TestCronEnvLineRejectsDigitFirstName: `0=Sun` is prose in a tutorial crontab,
+// not a variable, and an env key starting with a digit fails the TOML load.
+func TestCronEnvLineRejectsDigitFirstName(t *testing.T) {
+	if name, _, ok := cronEnvLine("0=Sun"); ok {
+		t.Fatalf("cronEnvLine(%q) accepted name %q", "0=Sun", name)
+	}
+	res := parseCron(t, "0=Sun\n0 5 * * * /usr/bin/cleanup\n", CronOptions{})
+	mustNotContain(t, res.TOML(), `"0"`)
+}
+
+// TestCronNotACrontab: a README or script fed to import cron has no line shaped
+// like a schedule followed by a command. Say so once instead of importing its
+// prose as tasks whose cron is "Edit your crontab with crontab".
+func TestCronNotACrontab(t *testing.T) {
+	in := "# My app\n\nEdit your crontab with crontab -e and add:\n\nThen run the installer.\n"
+	res := parseCron(t, in, CronOptions{})
+	if n := len(res.Items()); n != 0 {
+		t.Fatalf("expected no rows, got %d: %+v", n, res.Items())
+	}
+	mustNotContain(t, res.TOML(), "[tasks.")
+	if !hasNoteKind(res, NoteNotACrontab) {
+		t.Fatalf("expected a not-a-crontab note, got %+v", allNotes(res))
+	}
+
+	// One bad schedule in an otherwise cron-shaped file is still a crontab.
+	res = parseCron(t, "61 * * * * /usr/bin/job\n", CronOptions{})
+	if hasNoteKind(res, NoteNotACrontab) || len(res.Items()) != 1 {
+		t.Fatalf("a cron-shaped line was taken for prose: %+v", allNotes(res))
+	}
+	res = parseCron(t, "59 23 * JAN/DEC * /usr/bin/job\n", CronOptions{})
+	if hasNoteKind(res, NoteNotACrontab) {
+		t.Fatalf("month names were taken for prose: %+v", allNotes(res))
+	}
+}

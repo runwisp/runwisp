@@ -131,6 +131,13 @@ func ParseCrontab(r io.Reader, opts CronOptions) (*Result, error) {
 	}
 
 	cp.bannerIfAmbiguous()
+	if cp.proseJobs && !cp.cronShaped {
+		// A README or a script, not a crontab: its rows would be prose read as
+		// schedules, so one note replaces them.
+		res.items, res.blocks = nil, nil
+		res.fileNote(NoteNotACrontab, "this doesn't look like a crontab: no line is a cron "+
+			"schedule followed by a command, so nothing was imported.")
+	}
 	return cp.res, nil
 }
 
@@ -174,6 +181,10 @@ type crontabParser struct {
 	// command; approxPeriod says its period was only approximated.
 	jobName      string
 	approxPeriod bool
+	// cronShaped is set once any job line's schedule looks like cron fields,
+	// valid or not; proseJobs once one splits like a job but its "schedule" is
+	// words. With the second and not the first, the file isn't a crontab.
+	cronShaped, proseJobs bool
 }
 
 // addItem opens a report row for the line currently being fed, stamped with its
@@ -221,6 +232,9 @@ func (cp *crontabParser) handleComment(line string) {
 		}
 		cp.pendingComment = ""
 		return
+	}
+	if isCrontabSpoolHeader(comment) && cp.line == cp.res.headerLines+1 {
+		cp.res.headerLines++
 	}
 	if isCrontabSpoolHeader(comment) || isCommentedOutJob(comment) || isRunwispMarker(comment) {
 		cp.pendingComment = ""
@@ -380,6 +394,7 @@ func (cp *crontabParser) importJob(line string) bool {
 	if !ok {
 		return false
 	}
+	cp.noteShape(j)
 	if cp.noteSuspectUserColumn(line, j.user) {
 		return true // a row was added; nothing to emit for a line this shape
 	}
@@ -844,6 +859,42 @@ func isCronHeaderLegend(comment string) (legend, hasUser bool) {
 	return true, words["user"] || words["user-name"]
 }
 
+// noteShape records whether a job line's schedule reads as cron fields or as
+// words, for the not-a-crontab check at the end of ParseCrontab.
+func (cp *crontabParser) noteShape(j cronJobLine) {
+	if j.runOnStart || looksLikeCronFields(j.schedule) {
+		cp.cronShaped = true
+	} else {
+		cp.proseJobs = true
+	}
+}
+
+// looksLikeCronFields reports whether a schedule is made of cron field
+// characters and month or weekday names, valid or not: `61 * * * *` and
+// `* * * JAN/DEC *` do, `Edit your crontab with crontab` doesn't.
+func looksLikeCronFields(schedule string) bool {
+	if strings.HasPrefix(schedule, "@") {
+		return true
+	}
+	for _, word := range strings.FieldsFunc(strings.ToLower(schedule), func(r rune) bool {
+		return strings.ContainsRune(" \t0123456789*/,-?#", r)
+	}) {
+		if !cronNames[word] {
+			return false
+		}
+	}
+	return true
+}
+
+// cronNames are the month and weekday names and special letters a cron field
+// may hold.
+var cronNames = map[string]bool{
+	"jan": true, "feb": true, "mar": true, "apr": true, "may": true, "jun": true,
+	"jul": true, "aug": true, "sep": true, "oct": true, "nov": true, "dec": true,
+	"sun": true, "mon": true, "tue": true, "wed": true, "thu": true, "fri": true, "sat": true,
+	"l": true, "w": true, "lw": true, "h": true, // last, weekday, hashed
+}
+
 // startsWithFiveStars reports whether the first five tokens are all "*", the
 // schedule placeholder Debian's /etc/crontab legend uses in place of the
 // field-name words.
@@ -911,14 +962,15 @@ func isLikelyUsername(s string) bool {
 
 // cronEnvLine reports whether line is a cron environment assignment and, if so,
 // returns its name and unquoted value. Cron assignments have the form
-// `NAME = value` where NAME is a bare identifier and "=" precedes the value.
+// `NAME = value` where NAME is a bare identifier (not starting with a digit)
+// and "=" precedes the value.
 func cronEnvLine(line string) (name, value string, ok bool) {
 	name, value, ok = strings.Cut(line, "=")
 	if !ok {
 		return "", "", false
 	}
 	name = strings.TrimSpace(name)
-	if name == "" || strings.ContainsAny(name, " \t/") {
+	if name == "" || strings.ContainsAny(name, " \t/") || (name[0] >= '0' && name[0] <= '9') {
 		return "", "", false
 	}
 	for _, rn := range name {

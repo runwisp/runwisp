@@ -41,11 +41,23 @@ type Result struct {
 	notes []Note
 	// cronMails is set when at least one job runs under a non-empty MAILTO.
 	cronMails bool
+	// headerLines counts the spool header Debian's crontab writes atop the file
+	// (see isCrontabSpoolHeader), which `crontab -l` doesn't show.
+	headerLines int
 }
 
 // CronMails reports whether any job in this crontab runs under a MAILTO, whose
 // mail stops once RunWisp runs the jobs instead.
 func (r *Result) CronMails() bool { return r.cronMails }
+
+// ListLine maps a 1-based file line to the line `crontab -l` shows it on, which
+// differs only for a Debian spool file and its hidden header.
+func (r *Result) ListLine(line int) int {
+	if line <= r.headerLines {
+		return line
+	}
+	return line - r.headerLines
+}
 
 // field is one `key = value` line. value is already TOML-formatted.
 type field struct {
