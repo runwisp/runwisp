@@ -198,6 +198,40 @@ func TestRender_SaysCronMailStops(t *testing.T) {
 	}
 }
 
+// TestRender_SaysWhereRedirectedOutputGoes: half of real crontabs redirect a
+// job's output. The plan counts the /dev/null ones RunWisp now captures, and the
+// ones still redirecting it, before the operator meets an empty run.
+func TestRender_SaysWhereRedirectedOutputGoes(t *testing.T) {
+	for _, tc := range []struct {
+		name, crontab string
+		want, not     []string
+	}{
+		{"both kinds", "0 3 * * * /bin/a >> /var/log/a.log 2>&1\n" +
+			"0 4 * * * /bin/b > /dev/null 2>&1\n0 5 * * * /bin/c &>/dev/null\n" + oneJob,
+			[]string{"2 jobs sent their output to /dev/null", "1 job still redirects its output", "runwisp reload"}, nil},
+		{"one file", "0 3 * * * /bin/a >/var/log/a\n",
+			[]string{"1 job still redirects its output (to a log file, say), so its runs"}, []string{"/dev/null"}},
+		{"none", oneJob, nil, []string{"output"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _, _ := fixture{
+				crontabs:   map[string]string{"backup": tc.crontab},
+				cronUnit:   "cron.service",
+				cronActive: true,
+			}.build(t)
+
+			_, text := render(t, c)
+
+			for _, w := range tc.want {
+				assert.Contains(t, text, w)
+			}
+			for _, n := range tc.not {
+				assert.NotContains(t, text, n)
+			}
+		})
+	}
+}
+
 // TestPromptQuestion_NamesTheUnitBeingRetired: a bare "Proceed?" must never be
 // the last thing an operator sees before cron stops.
 func TestPromptQuestion_NamesTheUnitBeingRetired(t *testing.T) {

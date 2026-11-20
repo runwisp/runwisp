@@ -48,6 +48,28 @@ func Render(w io.Writer, p Plan) {
 	if p.Evidence.Scan.Mails && !p.NothingToDo() {
 		fmt.Fprintf(w, "\n%s\n", cronMailStops)
 	}
+	renderOutputNotes(w, p)
+}
+
+// renderOutputNotes says what happens to the output of jobs that redirect it.
+// Half of real crontabs do, and an operator should hear it here rather than from
+// an empty run.
+func renderOutputNotes(w io.Writer, p Plan) {
+	if p.NothingToDo() {
+		return
+	}
+	if n := p.Evidence.Scan.DevNullDropped; n > 0 {
+		fmt.Fprintf(w, "\n%s output to /dev/null so cron would not mail it. RunWisp sends no\n"+
+			"mail, so it drops that redirect and the run's log shows the output.\n",
+			textutil.Count(n, "job sent its", "jobs sent their"))
+	}
+	if n := p.Evidence.Scan.HiddenOutput; n > 0 {
+		fmt.Fprintf(w, "\n%s output (to a log file, say), so %s in RunWisp\n"+
+			"won't show it. To see it in RunWisp, remove the redirect from the crontab line,\n"+
+			"then run sudo runwisp reload.\n",
+			textutil.Count(n, "job still redirects its", "jobs still redirect their"),
+			textutil.Pluralize(n, "its runs", "their runs"))
+	}
 }
 
 // cronMailStops is the plan's note for crontabs that set MAILTO. That mail stops at takeover and RunWisp sends none in its place, so an

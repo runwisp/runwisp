@@ -34,6 +34,7 @@ const (
 	NoteNoopHere
 	NoteAnacronPeriod
 	NoteOutputRedirected
+	NoteDevNullDropped
 	NoteRebootLongRunning
 	NoteNotACrontab
 
@@ -166,6 +167,7 @@ var noteKindInfo = map[NoteKind]noteSeverity{
 	},
 	NoteAnacronPeriod:         {slug: "anacron-period", blocking: false, unsafeLive: false},
 	NoteOutputRedirected:      {slug: "output-redirected", blocking: false, unsafeLive: false},
+	NoteDevNullDropped:        {slug: "devnull-dropped", blocking: false, unsafeLive: false},
 	NoteRebootLongRunning:     {slug: "reboot-long-running", blocking: false, unsafeLive: false},
 	NoteNotACrontab:           {slug: "not-a-crontab", blocking: true, unsafeLive: true},
 	NoteAlreadyDefined:        {slug: "already-defined", blocking: false, unsafeLive: false},

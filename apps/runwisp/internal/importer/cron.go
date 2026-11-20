@@ -408,7 +408,11 @@ func (cp *crontabParser) importJob(line string) bool {
 	command := cc.run
 	// A leading `cd DIR &&` becomes the task's working_dir; what is left is the
 	// command RunWisp runs, so it is also what identifies the entry on re-import.
-	cwd, run := splitLeadingCd(command)
+	cwd, asWritten := splitLeadingCd(command)
+	// Cron mails what a job prints, so `>/dev/null 2>&1` was there to keep it
+	// quiet. RunWisp sends no mail, and output thrown away is output no run log
+	// can show, so the redirect goes. See dropDevNullRedirect.
+	run, devNull := dropDevNullRedirect(asWritten)
 	cc.run = run
 
 	base, oldBase := deriveCronName(command), legacyCronName(command)
@@ -434,7 +438,10 @@ func (cp *crontabParser) importJob(line string) bool {
 	// RunWisp 1.8 and earlier kept the cd in run and named PHP console jobs `php`.
 	legacy := namedEntry{name: oldBase, id: id}
 	legacy.id.Run = command
-	ref, name, skip := cp.names.resolve(base, base, id, cp.line, legacy)
+	// RunWisp 1.10 and earlier kept the /dev/null redirect in run.
+	kept := namedEntry{name: base, id: id}
+	kept.id.Run = asWritten
+	ref, name, skip := cp.names.resolve(base, base, id, cp.line, legacy, kept)
 	if skip {
 		return true
 	}
@@ -448,6 +455,11 @@ func (cp *crontabParser) importJob(line string) bool {
 	// The note only lives in this import's report; the comment above the table
 	// travels with it through promote, so a failed run with an empty log still
 	// says where its output went.
+	if devNull != "" {
+		ref.note(NoteDevNullDropped,
+			"dropped "+devNull+": cron used it to stop mail, and RunWisp sends none, so the run's log shows the output.")
+		b.lead = append(b.lead, "Dropped "+devNull+" so the run's log shows the output; RunWisp sends no cron mail.")
+	}
 	if target := outputRedirect(run); target != "" {
 		ref.note(NoteOutputRedirected,
 			"its output goes to "+target+", so RunWisp can't show it in the run's log. "+

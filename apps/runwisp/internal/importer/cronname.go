@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
@@ -261,6 +262,25 @@ func outputRedirect(command string) string {
 		}
 	}
 	return ""
+}
+
+// devNullTail matches a trailing redirect that sends both stdout and stderr to
+// /dev/null: `>/dev/null 2>&1`, `&>/dev/null`, `>/dev/null 2>/dev/null` and
+// their `>>`, `1>` and reversed spellings. Stdout alone (`>/dev/null`) is not
+// one: cron still mailed stderr, so the crontab asked to hear about errors.
+var devNullTail = regexp.MustCompile(`\s+(1?>>? ?/dev/null\s+(?:2>&1|2>>? ?/dev/null)|&>>? ?/dev/null|2>>? ?/dev/null\s+1?>>? ?/dev/null)\s*$`)
+
+// dropDevNullRedirect strips devNullTail from the end of a cron command and
+// returns the command and the redirect it dropped, or the command unchanged and
+// "". Only the very end counts, so a redirect inside quotes or before a `&` is
+// left alone, and it never empties the command. It applies to the last command
+// of a list or pipeline only, which is exactly the one the redirect applied to.
+func dropDevNullRedirect(command string) (rest, dropped string) {
+	loc := devNullTail.FindStringSubmatchIndex(command)
+	if loc == nil || strings.TrimSpace(command[:loc[0]]) == "" {
+		return command, ""
+	}
+	return strings.TrimRightFunc(command[:loc[0]], unicode.IsSpace), command[loc[2]:loc[3]]
 }
 
 // isAllDigits reports whether s is non-empty and entirely ASCII digits.
