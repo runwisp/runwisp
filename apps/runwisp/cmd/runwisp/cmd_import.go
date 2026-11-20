@@ -492,6 +492,11 @@ func resolveCronOptions(source string, systemFlag, systemSet bool) importer.Cron
 	if importer.AnacronOwnsPath(source) {
 		opts.User = "root" // the system anacron runs every job as root
 	}
+	// The same names include_cron gives these jobs, so an import and the live
+	// read agree on which task is which.
+	if suffix, qualify := importer.CronNameSuffix(source); qualify {
+		opts.NameSuffix, opts.QualifyNames = suffix, true
+	}
 	switch {
 	case systemSet:
 		opts.System = systemFlag

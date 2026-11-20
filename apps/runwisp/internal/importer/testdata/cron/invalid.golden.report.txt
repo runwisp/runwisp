@@ -1,2 +1,2 @@
-blocked	bad	bad	99 99 * * *	/bin/bad
+blocked	broken-nightly-job	broken-nightly-job	99 99 * * *	/bin/bad
 	cron-unparseable

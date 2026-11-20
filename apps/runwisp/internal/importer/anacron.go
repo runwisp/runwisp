@@ -64,7 +64,7 @@ func ParseAnacrontab(r io.Reader, opts CronOptions) (*Result, error) {
 	res := &Result{}
 	cp := &crontabParser{
 		res:     res,
-		names:   newNamer(res, opts.Existing, opts.NameSuffix),
+		names:   newNamer(res, opts.Existing, clashSuffix(opts)),
 		opts:    opts,
 		env:     map[string]string{},
 		anacron: true,

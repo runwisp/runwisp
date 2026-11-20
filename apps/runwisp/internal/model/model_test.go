@@ -84,6 +84,7 @@ func TestDaemonInfo_JSONShapeIsLocked(t *testing.T) {
 		"name",
 		"port",
 		"resolvedTimezone",
+		"runsAsRoot",
 		"schedulingActive",
 		"serviceManaged",
 		"startedAt",

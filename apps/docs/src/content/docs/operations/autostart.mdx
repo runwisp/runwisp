@@ -11,13 +11,14 @@ starts on boot.
 ## Install
 
 ```bash
-sudo runwisp service install      # system service (Linux, WSL)
+runwisp service install           # system service (Linux, WSL)
 runwisp service install --local   # per-user service (Linux, WSL, macOS)
 ```
 
 The **system service** is what you want on a server. It writes
 `/etc/systemd/system/runwisp.service`, runs the daemon as root, and starts it
-now. There's one per host. It uses `/etc/runwisp/runwisp.toml` and
+now. It needs root: run it as yourself and it re-runs itself with sudo.
+There's one per host. It uses `/etc/runwisp/runwisp.toml` and
 `/var/lib/runwisp` unless you pass `--config` or `--data`.
 
 **`--local`** installs a service that runs as you:
@@ -44,8 +45,9 @@ A few things it checks:
   survives `brew upgrade`.
 - **Root runs only root's binary.** For the system service, a binary that isn't
   owned by root (like `~/.local/bin/runwisp`) is copied to
-  `/usr/local/bin/runwisp` first, and the unit runs the copy. Upgrade it with
-  `sudo runwisp upgrade`.
+  `/usr/local/bin/runwisp` first, and the unit runs the copy. A copy in your
+  home directory is then replaced with a link to it, so `runwisp` and
+  `sudo runwisp` run the same binary. Upgrade it with `sudo runwisp upgrade`.
 - **The config is safe to run as root.** For the system service, the config
   file must be owned by root and not writable by group or others.
 - **Nothing else holds the data directory.** Stop a daemon you started by hand
@@ -99,7 +101,8 @@ For config edits, [`runwisp reload`](/operations/reload/) is usually enough.
 
 A daemon without `RUNWISP_PASSWORD` makes up a new password on every boot. So
 when auth is on and you haven't set one, `service install` generates a password,
-saves it in a `0600` file next to the unit, and prints it once:
+saves it in a `0600` file next to the unit before the service first starts, and
+prints it:
 
 ```
 Generated a Web UI password and saved it to
@@ -108,9 +111,10 @@ Generated a Web UI password and saved it to
     curl-battery-staple-hinge
 ```
 
-- **Store it right away.** `runwisp password` won't show it later.
+- **Print it again** with `sudo runwisp password`.
 - **Re-installing never changes it,** so nobody gets logged out.
-- **To rotate it,** edit or delete the file and run `runwisp restart`.
+- **To rotate it,** change `RUNWISP_PASSWORD` in the file and run
+  `sudo systemctl restart runwisp`.
 - **To use your own,** set `RUNWISP_PASSWORD` before you install. The installer
   carries it into the unit (see below) and generates nothing.
 
@@ -206,7 +210,7 @@ Register-ScheduledTask -TaskName 'RunWispBoot' -Action $Action -Trigger $Trigger
 ## Cron
 
 `service install` doesn't touch cron. If cron still runs jobs on the box, the
-installer tells you to run `sudo runwisp takeover`. See
+installer tells you to run `runwisp takeover`. See
 [From cron](/coming-from/cron/).
 
 ## Back up and move
@@ -244,8 +248,8 @@ To move RunWisp to a new machine:
 1. Install the same version or a newer one. The database only migrates forward.
 2. Restore the paths above, keeping their owners and the data directory's
    `0700` mode.
-3. Run `sudo runwisp service install`. It keeps the restored `password.conf`.
-4. If the old machine ran `takeover`, run `sudo runwisp takeover` again.
+3. Run `runwisp service install`. It keeps the restored `password.conf`.
+4. If the old machine ran `takeover`, run `runwisp takeover` again.
 
 In Docker, back up the volume mounted at `/var/lib/runwisp` the same way, with
 the container stopped.
@@ -253,8 +257,8 @@ the container stopped.
 ## Uninstall
 
 ```bash
-sudo runwisp service uninstall           # keep the data directory
-sudo runwisp service uninstall --purge   # delete it too
+runwisp service uninstall           # keep the data directory
+runwisp service uninstall --purge   # delete it too
 ```
 
 Uninstall stops the daemon, turns off autostart, and removes the unit and the

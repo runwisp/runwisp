@@ -8,7 +8,9 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
@@ -20,12 +22,19 @@ import (
 // the same strings autostart builds from the systemctl argv it will actually run.
 // Nothing here re-derives a systemctl command.
 func Render(w io.Writer, p Plan) {
-	// A non-root or no-systemd plan looked at nothing (see Compute), so it has
-	// nothing to show.
-	if b, ok := p.FirstBlocker(); ok && (b.Kind == BlockerNeedsRoot || b.Kind == BlockerNoSystemd) {
+	// A non-root or no-systemd plan looked at nothing (see Compute), and a box
+	// with nothing to take over is all its blocker says, so none has anything
+	// to show.
+	if b, ok := p.FirstBlocker(); ok && (b.Kind == BlockerNeedsRoot || b.Kind == BlockerNoSystemd || b.Kind == BlockerNoCronJobs) {
 		return
 	}
 	renderFindings(w, p)
+	// A blocked plan still says what it found (someone told their config does
+	// not load wants to know twelve jobs are waiting), but steps it won't run
+	// would read as if it were about to.
+	if p.Blocked() {
+		return
+	}
 
 	if len(p.Steps) > 0 {
 		fmt.Fprintln(w)
@@ -41,7 +50,7 @@ func Render(w io.Writer, p Plan) {
 			"only after the unit exists, and if RunWisp then fails to start, cron is unmasked and\n"+
 			"restarted rather than leaving this box with no scheduler.\n", unitNames(p.Evidence.CronUnit))
 	}
-	if !p.MasksCron && !p.Blocked() {
+	if !p.MasksCron {
 		fmt.Fprintln(w, "\nNothing to mask — this host has no cron systemd unit, so RunWisp owns these\n"+
 			"jobs the moment it starts.")
 	}
@@ -91,10 +100,17 @@ func renderFindings(w io.Writer, p Plan) {
 
 	switch {
 	case ev.Scan.Jobs > 0:
-		fmt.Fprintf(w, "Found %s on this box:\n  %s\n",
-			textutil.Count(ev.Scan.Jobs, "cron job", "cron jobs"), strings.Join(ev.Sources, ", "))
+		fmt.Fprintf(w, "Found %s on this box:\n", textutil.Count(ev.Scan.Jobs, "cron job", "cron jobs"))
+		if len(ev.Scan.LiveJobs) == 0 {
+			fmt.Fprintf(w, "  %s\n", strings.Join(ev.Sources, ", "))
+		}
+		renderJobs(w, ev.Scan.LiveJobs)
 		if skipped := ev.Scan.Jobs - ev.Scan.Live; skipped > 0 {
 			fmt.Fprintf(w, "  (%d of them %s a fix first and would not run)\n", skipped, textutil.Pluralize(skipped, "needs", "need"))
+		}
+		if ev.Scan.Live > 0 {
+			fmt.Fprintln(w, "  A run that would overlap the previous one now waits for it instead of\n"+
+				"  starting alongside it, as cron did (on_overlap = \"queue\").")
 		}
 		if tz := ev.Scan.CronTZIgnored; len(tz) > 0 {
 			fmt.Fprintf(w, "  (CRON_TZ in %s is ignored, as this host's cron ignores it)\n",
@@ -110,6 +126,40 @@ func renderFindings(w io.Writer, p Plan) {
 			textutil.Count(len(noop), "job", "jobs"), textutil.Pluralize(len(noop), "does", "do"),
 			strings.Join(noop, "\n  "))
 	}
+}
+
+// planWidth is the terminal width the job list is cut to fit.
+const planWidth = 80
+
+// minCommandWidth keeps a recognizable start of the command even when a long
+// task name or path leaves no room for it within planWidth.
+const minCommandWidth = 20
+
+// renderJobs lists each job as `name  ← file:line  command`, aligned, with the
+// command cut to fit planWidth: the operator sees which task each crontab line
+// becomes before saying yes.
+func renderJobs(w io.Writer, jobs []config.CronJob) {
+	nameW, fromW := 0, 0
+	from := make([]string, len(jobs))
+	for i, j := range jobs {
+		from[i] = fmt.Sprintf("%s:%d", j.File, j.Line)
+		nameW = max(nameW, utf8.RuneCountInString(j.Task))
+		fromW = max(fromW, utf8.RuneCountInString(from[i]))
+	}
+	const gaps = 8 // the columns' indent, spacing and "← ", in runes
+	cmdW := max(minCommandWidth, planWidth-nameW-fromW-gaps)
+	for i, j := range jobs {
+		fmt.Fprintf(w, "  %-*s  ← %-*s  %s\n", nameW, j.Task, fromW, from[i], truncate(strings.Join(strings.Fields(j.Run), " "), cmdW))
+	}
+}
+
+// truncate cuts s to at most n runes, marking the cut with an ellipsis.
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }
 
 // unitNames renders the space-separated units a take-over retires (see

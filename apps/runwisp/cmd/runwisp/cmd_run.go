@@ -570,6 +570,9 @@ func runOutcomeLog(taskName string, run *model.Run) (slog.Level, string, []any) 
 	switch {
 	case *run.EndReason == model.ReasonSuccess:
 		return slog.LevelInfo, "Task completed", args
+	case run.NeverStarted():
+		// No process, so no exit code to quote; the command still exits 1.
+		return slog.LevelError, "Task didn't start", args
 	case run.IsFailure:
 		return slog.LevelError, "Task failed", append(args, "exit", exitCodeFromRun(run))
 	default:

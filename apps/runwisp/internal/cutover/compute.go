@@ -87,6 +87,7 @@ func (c *Cutover) gatherEvidence(ctx context.Context) (Evidence, error) {
 		return Evidence{}, err
 	}
 	ev.DaemonRunning = c.deps.DaemonRunning()
+	ev.CrontabBinary = c.deps.HasCrontab()
 	return ev, nil
 }
 
@@ -239,6 +240,13 @@ func noSystemdBlocker() Blocker {
 // noCronJobsBlocker reports that there is nothing on this box to take over.
 // A missing config is not a blocker: RunWisp writes one itself.
 func noCronJobsBlocker(ev Evidence) Blocker {
+	if ev.CronUnit == "" && !ev.CrontabBinary {
+		return Blocker{
+			Kind:    BlockerNoCronJobs,
+			Title:   "no cron on this machine, nothing to take over",
+			Details: "To start fresh: `runwisp`, or `runwisp service install` to run it at boot.",
+		}
+	}
 	where := "the usual cron paths"
 	if len(ev.Patterns) > 0 {
 		where = strings.Join(ev.Patterns, ", ")

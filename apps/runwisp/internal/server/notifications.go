@@ -7,10 +7,12 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/oklog/ulid/v2"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/inapp"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
@@ -275,6 +277,42 @@ func (srv *Server) announceUntrustedProxy(ctx context.Context, peer string) {
 	created, err := srv.notifyRepo.UpsertByFingerprint(ctx, n, 24*time.Hour, inapp.DefaultCoalesceLimit)
 	if err != nil {
 		slog.Error("Failed to store the untrusted proxy notification", "err", err)
+		return
+	}
+	typ := inapp.UpdateTypeUpdated
+	if created {
+		typ = inapp.UpdateTypeCreated
+	}
+	srv.publishNotification(ctx, typ, n)
+}
+
+// cronChangedKind is the kind (and fingerprint) of the bell notification
+// raised when a crontab the daemon reads changed on disk.
+const cronChangedKind = "daemon.crontab_changed"
+
+// announceCronChanged puts "a crontab changed, reload to apply it" in the bell,
+// the way announceUntrustedProxy does: straight to storage, whatever the
+// [[route]]s say.
+func (srv *Server) announceCronChanged(ctx context.Context, files []string) {
+	if srv.notifyRepo == nil {
+		return
+	}
+	now := time.Now()
+	n := &storage.Notification{
+		ID:             ulid.Make().String(),
+		Fingerprint:    cronChangedKind,
+		Kind:           cronChangedKind,
+		Severity:       string(notify.SevWarn),
+		Title:          "A crontab changed",
+		Body:           model.CronChangedNotice(files, os.Geteuid() == 0),
+		Count:          1,
+		Occurrences:    []time.Time{now},
+		CreatedAt:      now,
+		LastOccurredAt: now,
+	}
+	created, err := srv.notifyRepo.UpsertByFingerprint(ctx, n, 24*time.Hour, inapp.DefaultCoalesceLimit)
+	if err != nil {
+		slog.Error("Failed to store the crontab changed notification", "err", err)
 		return
 	}
 	typ := inapp.UpdateTypeUpdated

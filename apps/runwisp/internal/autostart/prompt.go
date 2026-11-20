@@ -17,6 +17,10 @@ var ErrAborted = errors.New("autostart: aborted by user")
 // ErrNeedsYes is returned when stdin is not a TTY and --yes is missing.
 var ErrNeedsYes = errors.New("autostart: requires --yes when stdin is not a terminal")
 
+// ErrNeedsTerminal is ConfirmLiteral's refusal without a TTY: --yes doesn't
+// skip a literal-word prompt, so pointing at --yes would be a dead end.
+var ErrNeedsTerminal = errors.New("autostart: this asks you to type a word to confirm, so it needs a terminal")
+
 // Prompter is the user-confirmation seam. Production uses a TTY-aware
 // implementation; tests use autostarttest.ScriptedPrompter.
 type Prompter interface {
@@ -78,7 +82,7 @@ func (p *stdioPrompter) ConfirmLiteral(question, expected string) error {
 	// --yes does NOT skip the literal prompt — that's the whole
 	// point of the footgun guard.
 	if !p.isTTY {
-		return ErrNeedsYes
+		return ErrNeedsTerminal
 	}
 	fmt.Fprintf(p.out, "%s ", question)
 	answer, err := p.in.ReadString('\n')

@@ -2213,3 +2213,23 @@ run = "echo hi"
 		assert.Contains(t, err.Error(), "warn_after")
 	})
 }
+
+// TestLoad_OutputRedirect pins the derived outputRedirect: a run with an empty
+// log can then say its output went to a file rather than "no output".
+func TestLoad_OutputRedirect(t *testing.T) {
+	cfg, err := loadTOML(t, `
+[tasks.backup]
+cron = "0 3 * * *"
+run = "tar czf /srv/b.tgz /srv/data >> /var/log/backup.log 2>&1"
+
+[tasks.plain]
+cron = "0 3 * * *"
+run = "echo hi 2>&1"
+`)
+	require.NoError(t, err)
+	got := map[string]string{}
+	for _, task := range cfg.Tasks {
+		got[task.Name] = task.OutputRedirect
+	}
+	assert.Equal(t, map[string]string{"backup": "/var/log/backup.log", "plain": ""}, got)
+}

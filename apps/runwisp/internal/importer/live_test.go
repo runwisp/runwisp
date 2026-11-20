@@ -175,52 +175,72 @@ func TestUnsafeLiveImpliesBlocking(t *testing.T) {
 	}
 }
 
-// TestUniqueInIsStableAcrossAnAddedSource is decision 3 at unit scale: a
-// positional suffix is only stable while the input order is, and include_cron's
-// input set changes every time a file lands in /etc/cron.d. Renumbering a task
-// detaches its run history, breaks a notification route matching its name, and
-// re-anchors catch-up.
-func TestUniqueInIsStableAcrossAnAddedSource(t *testing.T) {
-	// Files a and b, in that order.
-	d := newDeduper()
-	if got := d.uniqueIn("backup", "a"); got != "backup" {
-		t.Fatalf("first claim = %q, want backup", got)
-	}
-	fromB := d.uniqueIn("backup", "b")
-
-	// The same two files, with a lexically-earlier c added in front.
-	d = newDeduper()
-	d.uniqueIn("backup", "c")
-	d.uniqueIn("backup", "a")
-	if got := d.uniqueIn("backup", "b"); got != fromB {
-		t.Errorf("b's job renamed from %q to %q when an unrelated file was added", fromB, got)
-	}
+// cronSourceFixture is one crontab as include_cron reads it.
+type cronSourceFixture struct {
+	body string
+	opts CronOptions
 }
 
-// TestUniqueInFallsBackWithinOneSource: two jobs in the same file deriving the
-// same name still need distinct names, and a positional suffix is fine there —
-// a file's own line order doesn't change when another file appears.
-func TestUniqueInFallsBackWithinOneSource(t *testing.T) {
-	d := newDeduper()
-	got := []string{
-		d.uniqueIn("job", "db"),
-		d.uniqueIn("job", "db"),
-		d.uniqueIn("job", "db"),
-	}
-	want := []string{"job", "job-db", "job-db-2"}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("names = %v, want %v", got, want)
+// namesAcross parses sources in order with one shared Owned, the way
+// include_cron folds a glob together, and returns every task name by source.
+func namesAcross(t *testing.T, sources ...cronSourceFixture) [][]string {
+	t.Helper()
+	owned := Owned{}
+	out := make([][]string, len(sources))
+	for i, src := range sources {
+		src.opts.Existing = owned
+		for _, it := range parseCron(t, src.body, src.opts).Items() {
+			out[i] = append(out[i], it.Name)
+			owned[it.Name] = OwnedEntry{Kind: it.Kind}
 		}
 	}
+	return out
 }
 
-// TestUniqueWithoutASeedKeepsPositionalSuffixes pins the single-source import
-// path: there is one file in one order, so -2/-3 is already stable and is what
-// the documented behaviour and the goldens say.
-func TestUniqueWithoutASeedKeepsPositionalSuffixes(t *testing.T) {
+// TestAddedCrontabLeavesEveryExistingNameAlone is field report #1: dropping a
+// file into /etc/cron.d whose job derives the same name must not rename the job
+// that already had it, in either direction. Names come from the source, never
+// from which file the glob happened to read first.
+func TestAddedCrontabLeavesEveryExistingNameAlone(t *testing.T) {
+	ops := cronSourceFixture{`15 8 * * 1-5 echo "weekday standup" | logger -t standup` + "\n" +
+		"* * * * * echo hi > /tmp/ops.txt\n",
+		CronOptions{User: "ops", NameSuffix: "ops", QualifyNames: true}}
+	root := cronSourceFixture{"* * * * * echo hi > /tmp/root.txt\n", CronOptions{NameSuffix: "root"}}
+	added := cronSourceFixture{"* * * * * www-data cd / && echo hi > /tmp/www2.txt\n",
+		CronOptions{System: true, NameSuffix: "aaa", QualifyNames: true}}
+
+	before := namesAcross(t, root, ops)
+	after := namesAcross(t, root, added, ops)
+	if strings.Join(before[0], ",") != "echo" || strings.Join(before[1], ",") != "logger-ops,echo-ops" {
+		t.Fatalf("before = %v", before)
+	}
+	if strings.Join(after[0], ",") != "echo" || strings.Join(after[2], ",") != "logger-ops,echo-ops" {
+		t.Errorf("adding /etc/cron.d/aaa renamed an existing job: before %v, after %v", before, after)
+	}
+	if strings.Join(after[1], ",") != "echo-aaa" {
+		t.Errorf("the new job = %v, want echo-aaa", after[1])
+	}
+}
+
+// TestBareNameTakenElsewhereGetsTheSourceSuffix: two unqualified sources (root's
+// crontab and /etc/crontab) deriving the same name are the leftover a fixed read
+// order settles. The later one carries its file's name, and a repeat inside one
+// file is numbered by line.
+func TestBareNameTakenElsewhereGetsTheSourceSuffix(t *testing.T) {
+	got := namesAcross(t,
+		cronSourceFixture{"0 1 * * * /bin/backup\n0 2 * * * /bin/backup\n", CronOptions{NameSuffix: "root"}},
+		cronSourceFixture{"0 3 * * * root /bin/backup\n", CronOptions{System: true, NameSuffix: "crontab"}},
+	)
+	if strings.Join(got[0], ",") != "backup,backup-2" || strings.Join(got[1], ",") != "backup-crontab" {
+		t.Errorf("names = %v", got)
+	}
+}
+
+// TestUniqueKeepsPositionalSuffixes pins repeats inside one source: the file's
+// own line order is stable, so -2/-3 is too.
+func TestUniqueKeepsPositionalSuffixes(t *testing.T) {
 	d := newDeduper()
-	got := []string{d.uniqueIn("job", ""), d.uniqueIn("job", ""), d.uniqueIn("job", "")}
+	got := []string{d.unique("job"), d.unique("job"), d.unique("job")}
 	want := []string{"job", "job-2", "job-3"}
 	for i := range want {
 		if got[i] != want[i] {

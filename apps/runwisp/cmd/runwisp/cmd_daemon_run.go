@@ -188,6 +188,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		DaemonInfo:          daemonInfo,
 		ConfigStale:         configSnap.Stale,
 		ConfigWarnings:      reconciler.Warnings,
+		CronChanged:         configSnap.CronChanged,
 		UpdateStatus:        updateChecker.Status,
 		TaskUsage:           svc.Usage.TaskUsage,
 		RunUsage:            svc.Usage.RunUsage,

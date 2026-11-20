@@ -9,7 +9,10 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/netguard"
 )
@@ -134,6 +137,61 @@ func copyBinary(src, dst string) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), dst)
+}
+
+// sudoOwner is the account that ran sudo: whose home a copied binary may have
+// come from, and who should own the link left in its place.
+type sudoOwner struct {
+	Home     string
+	UID, GID int
+}
+
+// sudoOwnerFromEnv reads the account sudo ran for from SUDO_USER/SUDO_UID/
+// SUDO_GID. ok is false when this isn't a sudo run.
+func sudoOwnerFromEnv() (sudoOwner, bool) {
+	name := os.Getenv("SUDO_USER")
+	uid, uidErr := strconv.Atoi(os.Getenv("SUDO_UID"))
+	gid, gidErr := strconv.Atoi(os.Getenv("SUDO_GID"))
+	if name == "" || name == "root" || uidErr != nil || gidErr != nil {
+		return sudoOwner{}, false
+	}
+	u, err := user.Lookup(name)
+	if err != nil || u.HomeDir == "" {
+		return sudoOwner{}, false
+	}
+	return sudoOwner{Home: u.HomeDir, UID: uid, GID: gid}, true
+}
+
+// linkUserCopy replaces src, the binary the system unit was copied from, with a
+// symlink to dst when src lives in owner's home (~/.local/bin/runwisp from the
+// installer). Otherwise `runwisp` and `sudo runwisp` run two binaries, and
+// `runwisp upgrade` upgrades the one the service never starts. Only an exact
+// copy is replaced, and the link is owned by owner like the file it replaces.
+func linkUserCopy(src, dst string, owner sudoOwner) (bool, error) {
+	if owner.Home == "" || !strings.HasPrefix(src, owner.Home+string(filepath.Separator)) {
+		return false, nil
+	}
+	if info, err := os.Lstat(src); err != nil || !info.Mode().IsRegular() {
+		return false, err
+	}
+	srcSHA, _ := fileSHA(src)
+	if dstSHA, ok := fileSHA(dst); !ok || srcSHA != dstSHA {
+		return false, nil
+	}
+	tmp := src + ".runwisp-link"
+	_ = os.Remove(tmp)
+	if err := os.Symlink(dst, tmp); err != nil {
+		return false, err
+	}
+	if err := os.Lchown(tmp, owner.UID, owner.GID); err != nil {
+		_ = os.Remove(tmp)
+		return false, err
+	}
+	if err := os.Rename(tmp, src); err != nil {
+		_ = os.Remove(tmp)
+		return false, err
+	}
+	return true, nil
 }
 
 func (st *Status) fillBinary(path string) {

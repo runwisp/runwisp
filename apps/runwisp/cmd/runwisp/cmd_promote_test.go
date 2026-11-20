@@ -17,6 +17,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Promote printed both "if cron was still running…" and "if cron was already
+// retired…" even though it can tell which one is true. It now prints the one
+// that applies, and the reload command the operator actually needs.
+func TestPrintPromoted_DescribesOnlyTheCronStateThatApplies(t *testing.T) {
+	res := configedit.PromoteResult{
+		Promoted:        []configedit.Block{{Name: "backup"}},
+		CronCommentOuts: []configedit.CronCommentOut{{Name: "backup", File: "/etc/crontab", Line: 3}},
+	}
+	layout := configedit.NewLayout("/etc/runwisp/runwisp.toml")
+
+	var live bytes.Buffer
+	printPromoted(&live, res, layout, true, "sudo runwisp reload")
+	assert.Contains(t, live.String(), "cron no longer runs this job")
+	assert.NotContains(t, live.String(), "already ran")
+	assert.Contains(t, live.String(), "Run `sudo runwisp reload`")
+
+	var retired bytes.Buffer
+	printPromoted(&retired, res, layout, false, "")
+	assert.Contains(t, retired.String(), "RunWisp already ran this job")
+	assert.NotContains(t, retired.String(), "held")
+	assert.NotContains(t, retired.String(), "reload", "--reload is about to do it")
+}
+
 // promoteFixture stages the two-tier layout `import cron --write` produces and
 // returns the root config path. Everything the promote tests need is on disk,
 // deliberately: the whole subject is which bytes end up in which file.
@@ -195,8 +218,8 @@ func TestPromoteCmd_CronPromoteCommentsOutTheCrontabLine(t *testing.T) {
 	assert.Contains(t, stdout, "Promoted 1 task")
 	assert.Contains(t, stdout, "Commented out 1 crontab line(s)")
 	assert.Contains(t, stdout, cronPath+":1")
-	assert.Contains(t, stdout, "a reload starts RunWisp scheduling it",
-		"a live cron promotion is a real handover, not the staged path's no-op")
+	assert.Contains(t, stdout, "The crontab line is commented out",
+		"a cron promotion is a handover, not the staged path's no-op")
 	assert.NotContains(t, stdout, "did not change",
 		"the staged path's 'nothing changed' line must not appear for a cron handover")
 	assert.Contains(t, stdout, "runwisp reload")

@@ -58,7 +58,7 @@ func printHeldBlock(w io.Writer, names []string, cronState string) {
 		fmt.Fprintf(w, "  entrypoint) and RunWisp picks %s up.\n", them)
 		return
 	}
-	fmt.Fprintf(w, "  Run '%s' to hand %s over, or stop cron and disable it at boot\n", sudoRunwisp("takeover"), them)
+	fmt.Fprintf(w, "  Run 'runwisp takeover' to hand %s over, or stop cron and disable it at boot\n", them)
 	fmt.Fprintf(w, "  (for example '%s') and RunWisp picks %s up.\n", disableCronExample, them)
 }
 
@@ -137,7 +137,7 @@ func printHeldBanner(w io.Writer, names []string, cronState string) {
 		_, _ = fmt.Fprint(w, b.String())
 		return
 	}
-	fmt.Fprintf(&b, "  Run '%s' to hand them over. Or stop cron and disable it at\n", sudoRunwisp("takeover"))
+	fmt.Fprintf(&b, "  Run 'runwisp takeover' to hand them over. Or stop cron and disable it at\n")
 	fmt.Fprintf(&b, "  boot (for example '%s'): RunWisp notices within a\n", disableCronExample)
 	b.WriteString("  minute and takes them on, no reload needed. A stopped cron that is still\n")
 	b.WriteString("  enabled keeps them held.\n")

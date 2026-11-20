@@ -128,7 +128,7 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 		// Warning color: these are the operator's own jobs, loaded and listed, that
 		// RunWisp is deliberately not firing. The chip names the way out.
 		warn := uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
-			Render(fmt.Sprintf("⏸ %d held by cron — `sudo runwisp takeover`", n))
+			Render(fmt.Sprintf("⏸ %d held by cron: `runwisp takeover`", n))
 		parts = append(parts, warn)
 	}
 	if n := len(info.PausedTasks); n > 0 {
@@ -508,6 +508,12 @@ func warningsCommand(info uikit.StartupInfo) string {
 // staleConfigLabel names what changed on disk. An app-supplied config has no
 // runwisp.toml; only its included and env files are watched.
 func staleConfigLabel(info uikit.StartupInfo) string {
+	switch {
+	case len(info.CronChanged) > 1:
+		return "crontabs"
+	case len(info.CronChanged) == 1:
+		return "crontab"
+	}
 	if info.AppConfig {
 		return "config files"
 	}

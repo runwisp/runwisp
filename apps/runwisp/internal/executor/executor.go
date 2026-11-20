@@ -58,9 +58,10 @@ type ExecuteResult struct {
 	// the backend has no measurable process or the value is unknown.
 	PeakMemoryBytes *int64
 	CPUTimeMs       *int64
-	// StdoutLines and StderrLines are the lines the run printed per stream.
-	StdoutLines int64
-	StderrLines int64
+	// StdoutLines and StderrLines are the lines the run printed per stream;
+	// nil when its process never started.
+	StdoutLines *int64
+	StderrLines *int64
 	// LogPath is the run's log file; empty when it could not be created. The
 	// run manager puts it on the terminal event, where notify reads the
 	// output tail from.
@@ -312,7 +313,8 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	result = classifyExecuteResult(killer.ctx, killReason, exitCode, waitErr)
 	r.explainExit(writer, task, run, proc, result, r.clock().Sub(startedAt))
 	result.OutputMatched = matcher.pattern() != ""
-	result.StdoutLines, result.StderrLines = writer.OutputLines()
+	stdout, stderr := writer.OutputLines()
+	result.StdoutLines, result.StderrLines = new(stdout), new(stderr)
 	peak, sampled := stopSampling()
 	var ru *syscall.Rusage
 	if proc.Rusage != nil {

@@ -32,7 +32,7 @@ var spawnFields = map[string]bool{
 	"Autostart": false, "DependsOn": false, "RetryAttempts": false, "RetryDelay": false,
 	"RetryBackoff": false, "KeepRuns": false, "KeepFor": false, "EnvFile": false,
 	"SecretsFile": false, "HookTokens": false, "Compose": false, "Source": false,
-	"SourceFile": false, "HeldBy": false, "FailureSpec": false, "Ephemeral": false,
+	"SourceFile": false, "HeldBy": false, "OutputRedirect": false, "FailureSpec": false, "Ephemeral": false,
 	"StationDeclared": false,
 }
 

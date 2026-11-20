@@ -148,7 +148,14 @@ func runLogs(ctx context.Context, out, errOut io.Writer, f Flags, rf remoteFlags
 		}
 	}
 
-	runs, err := selectRuns(ctx, client, baseURL, targets, runIDs, true)
+	// The "hasn't run yet" note is the whole answer for a one-shot read. With
+	// --json or --follow stdout carries records or the live stream, so it goes
+	// to stderr there.
+	notRun := out
+	if opts.JSON || opts.Follow {
+		notRun = errOut
+	}
+	runs, err := selectRuns(ctx, client, baseURL, targets, runIDs, notRun)
 	if err != nil {
 		return err
 	}
@@ -185,7 +192,7 @@ func openLogAttach(ctx context.Context, client *apiclient.Client, baseURL string
 			return nil, fmt.Errorf("open event stream: %w", err)
 		}
 	}
-	if a.runs, err = selectRuns(ctx, client, baseURL, targets, runIDs, false); err != nil {
+	if a.runs, err = selectRuns(ctx, client, baseURL, targets, runIDs, nil); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -216,9 +223,9 @@ func (a *logAttach) follow(ctx context.Context, out, errOut io.Writer, targets [
 }
 
 // selectRuns picks the runs the targets name: each task's, then each run ID's.
-// lastEnded is selectTaskRuns'.
-func selectRuns(ctx context.Context, client *apiclient.Client, baseURL string, targets []model.TaskResponse, runIDs []string, lastEnded bool) ([]*model.Run, error) {
-	runs, err := selectTaskRuns(ctx, client, targets, lastEnded)
+// notRun is selectTaskRuns'.
+func selectRuns(ctx context.Context, client *apiclient.Client, baseURL string, targets []model.TaskResponse, runIDs []string, notRun io.Writer) ([]*model.Run, error) {
+	runs, err := selectTaskRuns(ctx, client, targets, notRun)
 	if err != nil {
 		return nil, err
 	}
@@ -233,9 +240,9 @@ func selectRuns(ctx context.Context, client *apiclient.Client, baseURL string, t
 }
 
 // selectTaskRuns gives each task or service its active runs, oldest first, or
-// else, with lastEnded, its most recent finished run. A task that has never
-// run is reported and skipped.
-func selectTaskRuns(ctx context.Context, client *apiclient.Client, targets []model.TaskResponse, lastEnded bool) ([]*model.Run, error) {
+// else, when notRun is non-nil, its most recent finished run. A task that has
+// never run is reported on notRun and skipped.
+func selectTaskRuns(ctx context.Context, client *apiclient.Client, targets []model.TaskResponse, notRun io.Writer) ([]*model.Run, error) {
 	if len(targets) == 0 {
 		return nil, nil
 	}
@@ -249,13 +256,13 @@ func selectTaskRuns(ctx context.Context, client *apiclient.Client, targets []mod
 	var runs []*model.Run
 	for _, t := range targets {
 		mine := runsOf(active, t.Name)
-		if len(mine) == 0 && lastEnded {
+		if len(mine) == 0 && notRun != nil {
 			last, _, err := client.ListRuns(ctx, apiclient.RunsParams{TaskName: t.Name, Status: string(model.PhaseEnded), Limit: 1})
 			if err != nil {
 				return nil, fmt.Errorf("list runs of %q: %w", t.Name, err)
 			}
 			if len(last) == 0 {
-				slog.Info("No runs yet", "task", t.Name)
+				_, _ = fmt.Fprintf(notRun, "%s hasn't run yet.\n", t.Name)
 				continue
 			}
 			mine = []*model.Run{&last[0]}

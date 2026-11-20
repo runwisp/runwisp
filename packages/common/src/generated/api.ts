@@ -919,6 +919,8 @@ export interface components {
             configStale: boolean;
             /** @description Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads. */
             configWarnings?: string[] | null;
+            /** @description Crontabs read via include_cron that changed on disk (edited, added or removed) since the config was loaded; a reload applies them. Re-derived per request; absent when none changed. */
+            cronChanged?: string[] | null;
             /** @description Web UI base used for notification links: [daemon] external_url, else the address of the latest Web UI password sign-in. Empty when neither is known. */
             externalUrl: string;
             /**
@@ -932,6 +934,8 @@ export interface components {
             /** Format: int64 */
             port: number;
             resolvedTimezone: string;
+            /** @description True when the daemon runs as root, so a shell on the host needs sudo to reach it (sudo runwisp reload). */
+            runsAsRoot: boolean;
             schedulingActive: boolean;
             serviceManaged: boolean;
             /** Format: date-time */
@@ -1791,6 +1795,8 @@ export interface components {
              * @enum {string}
              */
             onOverlap?: "queue" | "skip" | "kill";
+            /** @description File the run command redirects its output to (for example /var/log/backup.log or /dev/null), read from the command at config load; RunWisp can't capture output sent there. Absent when the command has no output redirect. */
+            outputRedirect?: string;
             /** @description Per-execution parameters an operator may supply at manual trigger time; scheduled runs use the declared defaults */
             parameters?: components["schemas"]["TaskParam"][] | null;
             /**
@@ -2001,6 +2007,8 @@ export interface components {
              * @enum {string}
              */
             onOverlap?: "queue" | "skip" | "kill";
+            /** @description File the run command redirects its output to (for example /var/log/backup.log or /dev/null), read from the command at config load; RunWisp can't capture output sent there. Absent when the command has no output redirect. */
+            outputRedirect?: string;
             /** @description Per-execution parameters an operator may supply at manual trigger time; scheduled runs use the declared defaults */
             parameters?: components["schemas"]["TaskParam"][] | null;
             /**

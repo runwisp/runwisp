@@ -66,6 +66,11 @@ type Server struct {
 	stats           *statsProvider
 	configStale     func() bool
 	configWarnings  func() []string
+	// cronChanged names the crontabs edited since the config was loaded; nil
+	// reports none. cronChangedLast is the set last announced in the bell,
+	// touched only by the metrics onSample callback like configStaleLast.
+	cronChanged     func() []string
+	cronChangedLast []string
 	// updateStatus reports (available, latestVersion) from the background update
 	// checker. nil (station mode, or check disabled) reports never-available.
 	updateStatus func() (bool, string)
@@ -143,6 +148,7 @@ type Options struct {
 	DaemonInfo          *model.DaemonInfo                     // Static identity/config info for /api/daemon
 	ConfigStale         func() bool                           // Per-request staleness probe for /api/daemon (optional; nil reports never-stale)
 	ConfigWarnings      func() []string                       // Per-request live-config warnings for /api/daemon (optional; nil reports none)
+	CronChanged         func() []string                       // Crontabs changed on disk since the config was loaded, for /api/daemon and the bell (optional; nil reports none)
 	UpdateStatus        func() (bool, string)                 // Per-request update-availability probe for /api/daemon (optional; nil reports never-available)
 	TaskUsage           func() map[string]model.ResourceUsage // Live CPU/memory per task (optional; nil reports none)
 	RunUsage            func() map[string]model.ResourceUsage // Live CPU/memory per running run, by run ID (optional; nil reports none)
@@ -237,6 +243,7 @@ func New(opts Options) (*Server, error) {
 		s.configStale = neverStale
 	}
 	s.configWarnings = opts.ConfigWarnings
+	s.cronChanged = opts.CronChanged
 	s.updateStatus = opts.UpdateStatus
 	s.runUsage = opts.RunUsage
 	if s.runUsage == nil {

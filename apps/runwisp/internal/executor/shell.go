@@ -5,8 +5,10 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,15 +56,17 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 	// a uid — privilege drop is a TOML-only capability.
 	var cred *syscall.Credential
 	var identity []string
-	var runUserHome string
+	var ra *runAs
 	if task.RunUser != "" {
-		ra, err := resolveRunAs(task.RunUser)
+		var err error
+		ra, err = resolveRunAs(task.RunUser)
 		if err != nil {
 			return nil, fmt.Errorf("resolve run-as for task %q: %w", task.Name, err)
 		}
-		cred = ra.cred
-		identity = ra.identity
-		runUserHome = ra.home
+		if ra != nil {
+			cred = ra.cred
+			identity = ra.identity
+		}
 	}
 
 	// env_base = "clean" replaces the daemon's environment with the minimal set
@@ -82,13 +86,18 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 	// so task.Env can still override it.
 	cmd.Env = buildProcessEnv(append(base, identity...), InstanceIndexEnv(run), task.Env, task.Secrets, paramEnv)
 
-	dir, err := resolveWorkingDir(shell.WorkingDir, runUserHome)
+	dir, notice, err := resolveWorkingDir(shell.WorkingDir, ra, task.Source == model.SourceCron, os.Stat)
 	if err != nil {
-		return nil, fmt.Errorf("working_dir for task %q: %w", task.Name, err)
+		return nil, err
 	}
 	cmd.Dir = dir
 
-	return startCmd(cmd, task.GracefulStopValue(), signalFromName(task.StopSignal), cred, "start command")
+	proc, err := startCmd(cmd, task.GracefulStopValue(), signalFromName(task.StopSignal), cred, "start command")
+	if err != nil {
+		return nil, err
+	}
+	proc.Notice = notice
+	return proc, nil
 }
 
 // resolveWorkingDir expands a leading `~` against the run-as user's home.
@@ -99,15 +108,25 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 // absolute and passes through.
 //
 // An empty home is an error rather than a fallback to the daemon's home, which
-// the dropped process may not be able to read.
-func resolveWorkingDir(spec, runUserHome string) (string, error) {
+// the dropped process may not be able to read. A home that doesn't exist is an
+// error naming it, except for a task read from a crontab with a bare `~` (what
+// the importer writes): cron runs such a job anyway, so the task runs in `/`
+// and notice says why.
+func resolveWorkingDir(spec string, ra *runAs, cronSourced bool, stat func(string) (os.FileInfo, error)) (dir, notice string, err error) {
 	if spec != "~" && !strings.HasPrefix(spec, "~/") {
-		return spec, nil
+		return spec, "", nil
 	}
-	if runUserHome == "" {
-		return "", fmt.Errorf("cannot expand %q: the run-as user has no home directory", spec)
+	if ra == nil || ra.home == "" {
+		return "", "", fmt.Errorf("cannot expand working_dir %q: the run-as user has no home directory", spec)
 	}
-	return filepath.Join(runUserHome, strings.TrimPrefix(spec, "~")), nil
+	if _, statErr := stat(ra.home); errors.Is(statErr, fs.ErrNotExist) {
+		missing := fmt.Sprintf("home directory of %s (%s) doesn't exist", ra.name, ra.home)
+		if cronSourced && spec == "~" {
+			return "/", missing + "; running in / like cron does", nil
+		}
+		return "", "", errors.New(missing)
+	}
+	return filepath.Join(ra.home, strings.TrimPrefix(spec, "~")), "", nil
 }
 
 // startCmd sets up process-group isolation, graceful-stop cancellation, stdio

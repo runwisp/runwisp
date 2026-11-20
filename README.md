@@ -97,7 +97,7 @@ To build from source, see [Getting started](CONTRIBUTING.md#getting-started) in 
 6. Start RunWisp after a reboot, under systemd or launchd:
 
    ```bash
-   sudo runwisp service install   # on macOS: runwisp service install --local
+   runwisp service install        # on macOS: runwisp service install --local
    ```
 
 The Home page also shows a generated password for signing in from another browser. Set `RUNWISP_PASSWORD` to choose it yourself. Set `RUNWISP_VIEWER_PASSWORD` too and anyone who signs in with it can [view everything but change nothing](https://docs.runwisp.com/operations/auth/#read-only-access). For a trusted local setup, [`RUNWISP_AUTH=off`](https://docs.runwisp.com/operations/auth/#running-without-a-password) disables authentication explicitly.

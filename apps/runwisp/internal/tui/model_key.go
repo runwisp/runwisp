@@ -416,6 +416,9 @@ func handleKeyI(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.currentRun() != nil {
 		d := NewRunDetailDialog(m.execView.Run, m.execView.TaskIsService, m.execView.InstanceCount)
 		d.loc = m.loc
+		if task := m.taskDisplayByName(m.execView.Run.TaskName); task != nil {
+			d.outputRedirect = task.OutputRedirect
+		}
 		m.dialogs.Show(dlgRunDetail, d)
 		return m, nil, true
 	}

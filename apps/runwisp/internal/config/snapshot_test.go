@@ -246,3 +246,33 @@ func TestSnapshot_MissingFileAppearingIsStale(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("[tasks.t]\nrun = \"echo hi\"\n"), 0o600))
 	assert.True(t, snap.Stale())
 }
+
+// TestSnapshot_CronChangedNamesTheCrontabs: `crontab -e` edits a file the
+// daemon read, and a new user's first crontab appears in the glob. Both are
+// named, runwisp.toml's own edit is not, and a reload clears them.
+func TestSnapshot_CronChangedNamesTheCrontabs(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml":    "[daemon]\ninclude_cron = [\"crontabs/*\"]\n",
+		"crontabs/backup": "17 3 * * * /usr/bin/backup\n",
+		"crontabs/gone":   "17 5 * * * /usr/bin/gone\n",
+	})
+	path := filepath.Join(dir, "runwisp.toml")
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	snap := NewSnapshot(path, cfg, time.Now())
+	require.Empty(t, snap.CronChanged())
+
+	backup := filepath.Join(dir, "crontabs", "backup")
+	reports := filepath.Join(dir, "crontabs", "reports")
+	gone := filepath.Join(dir, "crontabs", "gone")
+	require.NoError(t, os.WriteFile(backup, []byte("* * * * * date\n"), 0o600))
+	require.NoError(t, os.WriteFile(reports, []byte("0 6 * * * /usr/bin/reports\n"), 0o600))
+	require.NoError(t, os.Remove(gone))
+	require.NoError(t, os.WriteFile(path, []byte("[daemon]\ninclude_cron = [\"crontabs/*\"]\n# edited\n"), 0o600))
+	assert.Equal(t, []string{backup, gone, reports}, snap.CronChanged())
+
+	cfg, err = Load(path)
+	require.NoError(t, err)
+	snap.Refresh(path, cfg, time.Now())
+	assert.Empty(t, snap.CronChanged(), "a reload makes the edits live")
+}

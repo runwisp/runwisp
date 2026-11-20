@@ -70,7 +70,7 @@ func TestCLILogs(t *testing.T) {
 	follow.Stdout, follow.Stderr = output, output
 	require.NoError(t, follow.Start())
 	t.Cleanup(func() { _ = follow.Process.Kill() })
-	require.Eventually(t, func() bool { return strings.Contains(output.Tail(4096), "No runs yet") },
+	require.Eventually(t, func() bool { return strings.Contains(output.Tail(4096), "alpha-stream hasn't run yet.") },
 		15*time.Second, 50*time.Millisecond, "follow never attached: %s", output.Tail(4096))
 
 	out, err = cli("start", "alpha-stream").CombinedOutput()

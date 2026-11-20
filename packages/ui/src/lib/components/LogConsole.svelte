@@ -13,6 +13,7 @@
     import { createHighlightScroll } from "../log-console/highlight-scroll.js";
     import type { FetchLogsFn, LogEvent } from "../log-console/types.js";
     import { LINE_HEIGHT as lineHeight, WrapLayout } from "../log-console/wrap-layout.svelte.js";
+    import { outputRedirectHint } from "./dashboard/run-helpers.js";
 
     interface Props {
         fetchLogs?: FetchLogsFn;
@@ -48,6 +49,10 @@
         // a daemon that is offline). An empty console then says so instead of
         // "Waiting for logs...", which reads as a run that is still going.
         unavailable?: boolean;
+        // Where the run's command sent its output (Task.outputRedirect), so a
+        // finished run with an empty log says where it went instead of only
+        // "The run ended without printing anything."
+        outputRedirect?: string | undefined;
         // Wrap long lines instead of horizontally scrolling them. When on, each
         // rendered row's height becomes a multiple of `lineHeight` (one per
         // wrapped visual row), so the virtualizer switches from the fixed-height
@@ -66,8 +71,11 @@
         error = null,
         loading = false,
         unavailable = false,
+        outputRedirect,
         wrap = $bindable(false),
     }: Props = $props();
+
+    let redirectHint = $derived(outputRedirectHint(outputRedirect));
 
     const frames = new FrameHistory(() => fetchLineHistory);
 
@@ -559,7 +567,7 @@
                         {:else if cache.finished}
                             <div class="mb-1 text-lg">No output</div>
                             <div class="text-sm text-[var(--rw-con-gutter)]">
-                                The run ended without printing anything.
+                                {redirectHint ?? "The run ended without printing anything."}
                             </div>
                         {:else}
                             <div class="mb-1 text-lg">No output yet</div>

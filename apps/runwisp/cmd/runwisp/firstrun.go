@@ -38,12 +38,14 @@ func scaffoldIfMissing(f Flags) (installed bool, err error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return false, err
 	}
+	// The system service already has a config. A starter here would start a
+	// second, unrelated daemon, so name the one that is running instead.
+	if systemDaemonElsewhere(f) {
+		return false, configLoadError(f, os.ErrNotExist)
+	}
 	// Without a terminal there is nobody to ask, and a daemon spawned without a
 	// config would only fail later, after the data dir was made for nothing.
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		if systemDaemonElsewhere(f) {
-			return false, configLoadError(f, os.ErrNotExist)
-		}
 		return false, &userFacingError{
 			title:   fmt.Sprintf("no runwisp.toml at %s", configLocation(f.CfgFile)),
 			details: "Run `runwisp` in a terminal to create one, or pass --config.",
@@ -161,7 +163,7 @@ func firstRunQuestion(out io.Writer, scan config.CronScan, offer *firstRunCutove
 // reads the jobs but cron keeps running them, so the prompt has to say so.
 func heldNote() string {
 	return "cron keeps running them for now, so RunWisp holds those jobs — nothing fires twice.\n" +
-		"Run '" + sudoRunwisp("takeover") + "' when you want RunWisp to own them (needs root and systemd).\n"
+		"Run 'runwisp takeover' when you want RunWisp to own them (needs root and systemd).\n"
 }
 
 // firstRunCutover is a cron take-over this host can actually perform, paired with
@@ -181,7 +183,7 @@ var offerFirstRunCutover = probeFirstRunCutover
 // probeFirstRunCutover returns the offer, or nil when this box would not benefit
 // from one. Every nil is a non-error: the operator did not ask for a take-over, so
 // a host that cannot do one just gets the plain scaffold prompt plus heldNote,
-// which already names `sudo runwisp takeover` and what it needs. Printing the
+// which already names `runwisp takeover` and what it needs. Printing the
 // blockers here instead would greet every ordinary laptop first run with a wall of
 // text about root and systemd.
 //
@@ -250,7 +252,7 @@ func (o *firstRunCutover) perform(out io.Writer) (installed bool, err error) {
 	if err != nil {
 		if res.ConfigWritten != "" {
 			fmt.Fprintf(out, "\n%s was created and cron is untouched — fix the above, then run "+
-				"'%s'.\n", res.ConfigWritten, sudoRunwisp("takeover"))
+				"'runwisp takeover'.\n", res.ConfigWritten)
 		}
 		return false, asUserFacing(err)
 	}

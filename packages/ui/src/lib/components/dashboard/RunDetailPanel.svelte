@@ -22,7 +22,7 @@
     import RunFacts from "./RunFacts.svelte";
     import RunHeaderLine from "./RunHeaderLine.svelte";
     import { RUN_STATUS_CONFIG } from "./status-config.js";
-    import { runDuration, RUN_VERDICTS, instanceSuffix } from "./run-helpers.js";
+    import { runDuration, runExitLabel, RUN_VERDICTS, instanceSuffix } from "./run-helpers.js";
 
     let {
         run,
@@ -37,6 +37,7 @@
         onRunTask,
         onBack,
         highlightLine = null,
+        outputRedirect,
         getInstanceCount = () => 1,
         getLiveUsage = () => undefined,
         motion,
@@ -81,6 +82,8 @@
         // a back arrow in the header's top-left corner.
         onBack?: (() => void) | undefined;
         highlightLine?: number | null;
+        // The task's outputRedirect: an empty log then says where the output went.
+        outputRedirect?: string | undefined;
         // Resolves a task's currently configured instance count so multi-instance
         // services render a 1-based #N suffix. Defaults to single-instance.
         getInstanceCount?: (taskName: string) => number;
@@ -284,7 +287,7 @@
                                                 class="text-danger-surface"
                                                 data-testid="run-exit"
                                             >
-                                                exit {run.exitCode}
+                                                {runExitLabel(run)}
                                             </span>
                                         </span>
                                     {/if}
@@ -307,6 +310,7 @@
             {streamLogs}
             {fetchLineHistory}
             {highlightLine}
+            {outputRedirect}
         />
     </div>
 {:else if loading && !notFound}

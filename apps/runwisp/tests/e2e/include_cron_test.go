@@ -120,7 +120,7 @@ include_cron = ["cron.d/*"]
 	daemon := startDaemon(t, projectDir, binaryPath, configPath)
 	client := socketClient(t, daemon.dataDir)
 
-	require.Equal(t, []string{"nightly"}, taskNames(t, client),
+	require.Equal(t, []string{"nightly-jobs"}, taskNames(t, client),
 		"the malformed line must not be scheduled, and must not take the good line with it")
 
 	validate, err := runCLI(t, projectDir, binaryPath, "validate", "--config", configPath)

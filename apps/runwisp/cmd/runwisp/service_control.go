@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -289,17 +290,19 @@ func controlClient(ctx context.Context, f Flags, baseURL, password string) (*api
 		return connectRemote(ctx, baseURL, password)
 	}
 	if !isDaemonRunning(f) {
+		if svcErr := systemServiceError(f, os.Args[1:]...); svcErr != nil {
+			return nil, svcErr
+		}
 		return nil, fmt.Errorf("no daemon is running on data dir %q — %s", f.DataDir, controlNotRunningHint(f))
 	}
 	return connectLocal(ctx, f)
 }
 
-// controlNotRunningHint is daemonNotRunningHint, except inside a RunWisp run
-// (which always has RUNWISP_INSTANCE_INDEX). A task that runs as another user
-// can't open the daemon's socket, and sudo is the wrong advice there: a hook
-// token is the way back in.
+// controlNotRunningHint is daemonNotRunningHint, except inside a RunWisp run.
+// A task that runs as another user can't open the daemon's socket, and sudo
+// is the wrong advice there: a hook token is the way back in.
 func controlNotRunningHint(f Flags) string {
-	if os.Getenv("RUNWISP_INSTANCE_INDEX") == "" {
+	if !insideRun() {
 		return daemonNotRunningHint(f)
 	}
 	return "this runs inside a RunWisp task, which can't reach the daemon's socket when it runs as another user. " +
@@ -377,6 +380,9 @@ func connectLocal(ctx context.Context, f Flags) (*apiclient.Client, error) {
 }
 
 func localUnreachableError(f Flags, err error) error {
+	if svcErr := systemServiceError(f, os.Args[1:]...); svcErr != nil && !errors.Is(err, fs.ErrPermission) {
+		return svcErr
+	}
 	return fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonUnreachableHint(f, err))
 }
 

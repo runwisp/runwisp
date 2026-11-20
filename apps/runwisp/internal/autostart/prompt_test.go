@@ -70,5 +70,5 @@ func TestPrompter_LiteralWordExactMatch(t *testing.T) {
 func TestPrompter_LiteralNonTTYErrors(t *testing.T) {
 	p := NewStdioPrompter(strings.NewReader("delete\n"), &bytes.Buffer{}, false, false)
 	err := p.ConfirmLiteral("Type 'delete'", "delete")
-	assert.True(t, errors.Is(err, ErrNeedsYes))
+	assert.True(t, errors.Is(err, ErrNeedsTerminal))
 }

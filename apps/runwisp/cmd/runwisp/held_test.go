@@ -68,7 +68,7 @@ func TestPrintHeld_NamesTasksAndTheWayOut(t *testing.T) {
 			got := out.String()
 			assert.Contains(t, got, "backup, vacuum")
 			assert.Contains(t, got, "is running")
-			assert.Contains(t, got, sudoRunwisp("takeover"))
+			assert.Contains(t, got, "Run 'runwisp takeover'", "takeover elevates itself")
 			assert.Contains(t, got, "2 tasks are")
 		})
 	}

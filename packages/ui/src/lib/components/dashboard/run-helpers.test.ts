@@ -8,6 +8,8 @@ import {
     runStartDelay,
     RUN_VERDICTS,
     runEndMarker,
+    outputRedirectHint,
+    runNeverStarted,
     runRowReadout,
     highlightParts,
     formatTriggeredByLabel,
@@ -228,6 +230,44 @@ describe("runRowReadout", () => {
     it("falls back to the duration, or a dash when it never started", () => {
         expect(runRowReadout({ ...ended, status: "ended", exitCode: 0 }, "succeeded")).toBe("2s");
         expect(runRowReadout({ status: "ended", exitCode: 0 }, "missed")).toBe("—");
+    });
+
+    it("says didn't start instead of a made-up exit -1", () => {
+        const noStart = {
+            ...ended,
+            status: "ended",
+            endReason: "failed",
+            exitCode: -1,
+        } as const;
+        expect(runRowReadout(noStart, "failed")).toBe("didn't start");
+        // Killed by a signal after printing: it ran, so the code stays.
+        expect(runRowReadout({ ...noStart, stdoutLines: 4 }, "failed")).toBe("exit -1");
+    });
+});
+
+describe("outputRedirectHint", () => {
+    it("says where a redirected run's output went", () => {
+        expect(outputRedirectHint("/var/log/backup.log")).toBe(
+            "Output goes to /var/log/backup.log; RunWisp can't show it.",
+        );
+        expect(outputRedirectHint("/dev/null")).toBe("Output is discarded (sent to /dev/null).");
+        expect(outputRedirectHint(undefined)).toBeUndefined();
+        expect(outputRedirectHint("")).toBeUndefined();
+    });
+});
+
+describe("runNeverStarted", () => {
+    const base = { status: "ended", exitCode: -1 } as const;
+
+    it("is a failed or start_failed run with no exit code and no line counts", () => {
+        expect(runNeverStarted({ ...base, endReason: "failed" })).toBe(true);
+        expect(runNeverStarted({ ...base, endReason: "start_failed" })).toBe(true);
+        expect(
+            runNeverStarted({ ...base, endReason: "failed", stdoutLines: 0, stderrLines: 0 }),
+        ).toBe(false);
+        expect(runNeverStarted({ ...base, endReason: "failed", exitCode: 2 })).toBe(false);
+        expect(runNeverStarted({ ...base, endReason: "missed" })).toBe(false);
+        expect(runNeverStarted({ ...base, endReason: "failed", status: "running" })).toBe(false);
     });
 });
 

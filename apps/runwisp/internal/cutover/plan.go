@@ -114,6 +114,9 @@ type Evidence struct {
 	// nothing to mask, not that RunWisp must refuse.
 	CronUnit   string
 	CronActive bool
+	// CrontabBinary reports a `crontab` command on PATH. With no CronUnit
+	// either, there is no cron on this box at all.
+	CrontabBinary bool
 	// UnitEnabled reports whether RunWisp's own unit is on disk, loaded and
 	// enabled, and ServiceRunning whether it is up right now.
 	UnitEnabled    bool

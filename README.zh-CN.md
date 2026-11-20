@@ -97,7 +97,7 @@ curl -fsSL https://get.runwisp.com | sh
 6. 让 RunWisp 在系统重启后自动启动（支持 systemd 和 launchd）：
 
    ```bash
-   sudo runwisp service install   # on macOS: runwisp service install --local
+   runwisp service install        # on macOS: runwisp service install --local
    ```
 
 首页还会显示一个自动生成的密码，用于从其他浏览器登录。设置 `RUNWISP_PASSWORD` 即可自己指定密码。再设置 `RUNWISP_VIEWER_PASSWORD` 后，用它登录的人可以[查看所有内容但无法修改](https://docs.runwisp.com/operations/auth/#read-only-access)。在可信的本地环境中，可以用 [`RUNWISP_AUTH=off`](https://docs.runwisp.com/operations/auth/#running-without-a-password) 明确关闭身份验证。

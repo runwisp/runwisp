@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
@@ -90,8 +91,7 @@ func TestDaemonNotRunningHint_PointsAtTheSystemService(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(unit, nil, 0o644))
 	hint := daemonNotRunningHint(defaults)
-	assert.True(t, strings.HasPrefix(hint, "RunWisp runs here as the system service"), hint)
-	assert.Contains(t, hint, "sudo ")
+	assert.True(t, strings.HasPrefix(hint, "RunWisp runs as the system service. Use `sudo "), hint)
 	assert.Equal(t, startDaemonHint, daemonNotRunningHint(Flags{DataDir: "/srv/rw"}),
 		"an explicit data dir was not looking for the system daemon")
 
@@ -100,6 +100,31 @@ func TestDaemonNotRunningHint_PointsAtTheSystemService(t *testing.T) {
 	hint = daemonNotRunningHint(defaults)
 	assert.True(t, strings.HasPrefix(hint, startDaemonHint), hint)
 	assert.Contains(t, hint, "For the system service instead")
+}
+
+// After a takeover a normal user's plain `runwisp` offered a starter config
+// (which would start a second daemon), and the other hints named the stale
+// ~/.local/bin copy. Every no-config path now says the same thing, built from
+// the binary the unit runs.
+func TestSystemServiceHint_EverywhereANormalUserMissesTheService(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("describes a non-root shell")
+	}
+	fakeSystemUnit(t, "/var/lib/runwisp")
+	t.Chdir(t.TempDir())
+	defaults := Flags{CfgFile: defaultConfigPath(os.Geteuid(), ""), DataDir: defaultDataDir(os.Geteuid(), "")}
+
+	assert.Equal(t, "RunWisp runs as the system service. Use `sudo runwisp status`.", systemServiceHint("status"))
+
+	_, err := scaffoldIfMissing(defaults)
+	ufe, ok := isUserFacing(err)
+	require.True(t, ok, "no starter offer, whatever the terminal: %v", err)
+	assert.True(t, strings.HasPrefix(ufe.details, "RunWisp runs as the system service. Use `sudo runwisp"), ufe.details)
+
+	err = reloadRunningDaemon(t.Context(), defaults, io.Discard)
+	ufe, ok = isUserFacing(err)
+	require.True(t, ok, "reload says where the daemon is instead of 'nothing to reload': %v", err)
+	assert.Equal(t, "RunWisp runs as the system service. Use `sudo runwisp reload`.", ufe.title)
 }
 
 // Once the probes stopped needing sudo, a non-root `runwisp restart` of its own
@@ -112,8 +137,8 @@ func TestOwnsSystemDaemon(t *testing.T) {
 }
 
 // After `takeover`, `runwisp list` from the operator's shell said only "open
-// runwisp.toml: no such file or directory". It now names the system config.
-func TestRunList_PointsAtTheSystemConfig(t *testing.T) {
+// runwisp.toml: no such file or directory". It now names the system service.
+func TestRunList_PointsAtTheSystemService(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("describes a non-root shell")
 	}
@@ -127,8 +152,13 @@ func TestRunList_PointsAtTheSystemConfig(t *testing.T) {
 	defaults := Flags{CfgFile: defaultConfigPath(os.Geteuid(), ""), DataDir: defaultDataDir(os.Geteuid(), "")}
 	err := runList(t.Context(), io.Discard, defaults, remoteFlags{}, false)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "/etc/runwisp/runwisp.toml")
-	assert.Contains(t, err.Error(), "sudo ")
+	assert.Contains(t, err.Error(), "RunWisp runs as the system service. Use `sudo ")
+
+	// status and logs reach the socket, not the config; they say only the same.
+	err = localUnreachableError(defaults, fs.ErrNotExist)
+	ufe, ok := isUserFacing(err)
+	require.True(t, ok, "%v", err)
+	assert.True(t, strings.HasPrefix(ufe.title, "RunWisp runs as the system service. Use `sudo "), ufe.title)
 }
 
 // A socket another user owns is a daemon that is up; the hint must not send the

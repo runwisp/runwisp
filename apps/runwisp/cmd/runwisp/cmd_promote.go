@@ -7,11 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/configedit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronprobe"
 	"github.com/spf13/cobra"
 )
 
@@ -28,31 +31,13 @@ var promoteFlags promoteOpts
 var promoteCmd = &cobra.Command{
 	Use:   "promote [TASK...]",
 	Short: "Move an imported task into your own runwisp.toml",
-	Long: `Graduate a staged or cron-sourced task into your own runwisp.toml, where
-you own it outright.
+	Long: `Move a staged task (from ` + "`runwisp import --write`" + `) or one read from a
+crontab into your own runwisp.toml, where you edit it like any other task.
+A crontab job's line is commented out in the same step, so cron stops running
+it. Nothing is written if the result wouldn't load.
 
-` + "`runwisp import --write`" + ` stages jobs in ` + config.StagingIncludeGlob + ` and marks
-them "staged" — imported, not yet native. Promoting one moves its block into your
-root config: after that a re-import leaves it alone, and it's yours to edit.
-
-A task read live out of a crontab via ` + "`include_cron`" + ` promotes the same way:
-the block lands in your root config, and the exact crontab line it came from is
-commented out in the same transaction — so a still-live cron daemon stops firing
-it, while the line stays visible with a note pointing at your runwisp.toml.
-Promote refuses, writing nothing, if that line has changed or gone missing since
-the config was loaded.
-
-The move is textual. The block's comments, its formatting, and any unresolved
-# TODO notes the import left behind travel with it byte-for-byte — nothing is
-re-generated. Every file involved is written as one transaction, so if the
-result wouldn't load, nothing changes.
-
-A staged promotion changes nothing about what the daemon runs — only which file
-defines it — so ` + "`runwisp reload`" + ` (or --reload) just clears the provenance
-marker. Promoting a job while its cron daemon is still live is a real change:
-with the crontab line commented out the task is no longer held, so on reload
-RunWisp takes over scheduling it. Either way run ` + "`runwisp reload`" + ` (or pass
---reload) so a running daemon picks it up.`,
+Run ` + "`runwisp reload`" + ` afterwards, or pass --reload.
+Details: https://docs.runwisp.com/reference/cli/#runwisp-promote`,
 	Example: `  runwisp promote backup           # move one task
   runwisp promote backup reindex   # move several
   runwisp promote --all --reload   # move everything, then reconcile
@@ -76,6 +61,9 @@ func runPromote(cmd *cobra.Command, args []string, f Flags, opts promoteOpts) er
 
 	layout := configedit.NewLayout(f.CfgFile)
 	cfg, err := config.Load(f.CfgFile)
+	if errors.Is(err, fs.ErrNotExist) && systemDaemonElsewhere(f) {
+		return configLoadError(f, err)
+	}
 	if err != nil {
 		// Promote has to know which tasks are staged before it can move anything,
 		// and that answer only exists in a config that loads. Refusing here also
@@ -110,7 +98,12 @@ func runPromote(cmd *cobra.Command, args []string, f Flags, opts promoteOpts) er
 	if err != nil {
 		return promoteError(err, layout)
 	}
-	printPromoted(out, res, layout)
+	reload := ""
+	if !opts.reload {
+		reload = reloadCommand(f)
+	}
+	cronLive := len(res.CronCommentOuts) > 0 && cronprobe.Probe().Live
+	printPromoted(out, res, layout, cronLive, reload)
 
 	if opts.reload {
 		fmt.Fprintln(out)
@@ -233,8 +226,19 @@ func printPromotePlan(out io.Writer, layout configedit.Layout, names []string, c
 	return nil
 }
 
-// printPromoted reports a completed move.
-func printPromoted(out io.Writer, res configedit.PromoteResult, layout configedit.Layout) {
+// reloadCommand is how this operator reloads the daemon: under sudo when they
+// ran this under sudo, or when RunWisp runs as the system service.
+func reloadCommand(f Flags) string {
+	if (os.Geteuid() == 0 && os.Getenv("SUDO_USER") != "") || systemDaemonElsewhere(f) {
+		return sudoSystemRunwisp("reload")
+	}
+	return "runwisp reload"
+}
+
+// printPromoted reports a completed move. cronLive says whether a cron daemon
+// still runs, so only the case that applies is described. reload is the
+// command that applies the move, "" when --reload is about to.
+func printPromoted(out io.Writer, res configedit.PromoteResult, layout configedit.Layout, cronLive bool, reload string) {
 	tasks, services := countBlocks(res.Promoted)
 	fmt.Fprintf(out, "Promoted %s into %s:\n", pluralizeCounts(tasks, services), layout.RootPath)
 	for _, b := range res.Promoted {
@@ -251,16 +255,19 @@ func printPromoted(out io.Writer, res configedit.PromoteResult, layout configedi
 	}
 
 	fmt.Fprintln(out)
-	if len(res.CronCommentOuts) > 0 {
-		fmt.Fprintf(out, "The crontab line is commented out, so nothing but RunWisp will fire this job now.\n")
-		fmt.Fprintf(out, "If a live cron daemon was still running it, RunWisp had been holding it — that\n")
-		fmt.Fprintf(out, "hold ends here, and a reload starts RunWisp scheduling it. If cron was already\n")
-		fmt.Fprintf(out, "retired, only the provenance changes. Either way, run `runwisp reload` so a\n")
-		fmt.Fprintf(out, "running daemon picks it up.\n")
-		return
+	switch {
+	case len(res.CronCommentOuts) == 0:
+		fmt.Fprintln(out, "What the daemon runs did not change, only which file defines it.")
+	case cronLive:
+		fmt.Fprintln(out, "The crontab line is commented out, so cron no longer runs this job. RunWisp held")
+		fmt.Fprintln(out, "it while cron did; after a reload, RunWisp runs it.")
+	default:
+		fmt.Fprintln(out, "The crontab line is commented out. RunWisp already ran this job, so only the file")
+		fmt.Fprintln(out, "that defines it changed.")
 	}
-	fmt.Fprintf(out, "What the daemon runs did not change — only which file defines it.\n")
-	fmt.Fprintf(out, "Run `runwisp reload` to clear the provenance marker on a running daemon.\n")
+	if reload != "" {
+		fmt.Fprintf(out, "Run `%s` so a running daemon picks it up.\n", reload)
+	}
 }
 
 // countBlocks splits promoted blocks into task and service counts for the

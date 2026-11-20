@@ -479,6 +479,12 @@ Moves an imported task (staged by `import --write`, or read from a crontab via
 [`include_cron`](/configuration/daemon/#include_cron)) into your own
 `runwisp.toml`. See [Staging and promoting](/coming-from/cron/#staging-and-promoting).
 
+The block moves as written, comments and `# TODO` notes included. For a crontab
+job, the line it came from is commented out in the same step, so cron stops
+running it; promote writes nothing if that line changed since the config was
+loaded, or if the result wouldn't load. Run `runwisp reload` (or pass `--reload`)
+so a running daemon picks the change up.
+
 | Flag        | Description                                    |
 | ----------- | ---------------------------------------------- |
 | `--all`     | Promote every staged and crontab-sourced task. |
@@ -488,7 +494,7 @@ Moves an imported task (staged by `import --write`, or read from a crontab via
 ### `runwisp takeover`
 
 ```bash
-sudo runwisp takeover
+runwisp takeover
 ```
 
 Replaces the system cron in one step: writes a config that reads your crontabs,
@@ -509,11 +515,12 @@ and systemd. Run without root, it re-runs itself with sudo. See
 ### `runwisp service install`
 
 ```bash
-sudo runwisp service install
+runwisp service install
 runwisp service install --local
 ```
 
-Installs a unit so the daemon starts on boot. See [Autostart](/operations/autostart/).
+Installs a unit so the daemon starts on boot. The system service needs root: run
+without it, the command re-runs itself with sudo. See [Autostart](/operations/autostart/).
 
 | Flag          | Description                                                                                                  |
 | ------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -533,11 +540,12 @@ overwriting.
 ### `runwisp service uninstall`
 
 ```bash
-sudo runwisp service uninstall
+runwisp service uninstall
 ```
 
 Stops the daemon, disables autostart, and removes the unit and the drop-ins
-RunWisp saved beside it. Keeps the config and the data directory, and prints
+RunWisp saved beside it. For the system service, run without root, it re-runs
+itself with sudo. Keeps the config and the data directory, and prints
 their paths. If `takeover` retired cron, this gives cron back. Before it asks, it
 lists the tasks and services in `runwisp.toml` that stop running. Crontab lines
 that `promote` commented out are uncommented, so cron runs those jobs again.

@@ -129,6 +129,25 @@ func TestRunStatus_ConfigStaleWarns(t *testing.T) {
 	assert.Contains(t, buf.String(), "runwisp.toml has changed")
 }
 
+// `crontab -e` makes the config stale too, and status names the crontab and
+// the command that applies it rather than blaming runwisp.toml.
+func TestRunStatus_CronChangedNamesTheCrontab(t *testing.T) {
+	t.Setenv("SUDO_USER", "")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/api/daemon", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(model.DaemonInfo{Port: 9477, ConfigStale: true, CronChanged: []string{"/var/spool/cron/crontabs/ops"}})
+	})
+	f := serveStatusSocket(t, mux)
+
+	var buf bytes.Buffer
+	require.NoError(t, runStatus(t.Context(), &buf, f, remoteFlags{}, false))
+	assert.Contains(t, buf.String(), "⚠ A crontab changed: /var/spool/cron/crontabs/ops. Run `runwisp reload` to apply it.")
+	assert.NotContains(t, buf.String(), "runwisp.toml")
+}
+
 func TestRunStatus_ConfigStaleInAppModeNamesIncludedFiles(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

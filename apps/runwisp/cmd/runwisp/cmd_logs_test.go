@@ -412,14 +412,12 @@ func TestLogs_JSONRecords(t *testing.T) {
 }
 
 func TestLogs_NoRunsYetIsNotAnError(t *testing.T) {
-	slogBuf := captureCLISlog(t)
 	d := newFakeLogDaemon()
 	d.addTask("fresh", model.KindTask, 0)
 
 	var out, errOut syncBuffer
 	require.NoError(t, runLogsAgainst(t, t.Context(), d, &out, &errOut, false, "", false, "fresh"))
-	assert.Empty(t, out.String())
-	assert.Contains(t, slogBuf.String(), "No runs yet")
+	assert.Equal(t, "fresh hasn't run yet.\n", out.String())
 }
 
 func TestLogs_UnknownTargets(t *testing.T) {

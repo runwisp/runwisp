@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
@@ -178,7 +177,8 @@ func WithCronHold(cfg *Config, state cronprobe.State) (updated *Config, changed 
 	if len(changed) == 0 {
 		return cfg, nil
 	}
-	next.refreshScheduleWarnings(time.Now())
+	// No schedule warnings to refresh: a hold only ever flips a cron-sourced
+	// task, and those never count toward a pile-up.
 	return &next, changed
 }
 

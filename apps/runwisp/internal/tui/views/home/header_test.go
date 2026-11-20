@@ -242,6 +242,12 @@ func TestRenderHeader_ConfigStale(t *testing.T) {
 	header, _ := RenderHeader(info, false, 80, -1, -1, false)
 	assert.Contains(t, header, "runwisp.toml changed")
 	assert.Contains(t, header, "press R to reload")
+
+	// `crontab -e` makes the config stale too; say which file it was.
+	info.CronChanged = []string{"/var/spool/cron/crontabs/ops"}
+	header, _ = RenderHeader(info, false, 80, -1, -1, false)
+	assert.Contains(t, header, "crontab changed")
+	assert.NotContains(t, header, "runwisp.toml")
 }
 
 func TestRenderHeader_AppConfigNotices(t *testing.T) {

@@ -378,14 +378,43 @@ export function runPhaseOrder(status: string): number {
     return 2;
 }
 
+/**
+ * Where a run's output went when its task's command redirected it
+ * (`Task.outputRedirect`), for an empty log; undefined when it wasn't.
+ */
+export function outputRedirectHint(target: string | undefined): string | undefined {
+    if (!target) return undefined;
+    if (target === "/dev/null") return "Output is discarded (sent to /dev/null).";
+    return `Output goes to ${target}; RunWisp can't show it.`;
+}
+
+type RunExitFields = Pick<Run, "status" | "endReason" | "exitCode" | "stdoutLines" | "stderrLines">;
+
+/**
+ * A failed run whose process never started (its working directory, user or
+ * shell couldn't be set up): there is no exit code, the stored -1 is a
+ * placeholder. Only a run whose process started has line counts, so a
+ * process killed by a signal (also -1) still reads as an exit. Mirrors Go's
+ * `Run.NeverStarted`.
+ */
+export function runNeverStarted(run: RunExitFields): boolean {
+    if (run.status !== "ended" || run.exitCode >= 0 || run.stdoutLines !== undefined) return false;
+    return run.endReason === "failed" || run.endReason === "start_failed";
+}
+
+/** A failed run's exit readout: "exit N", or "didn't start" when it never ran. */
+export function runExitLabel(run: RunExitFields): string {
+    return runNeverStarted(run) ? "didn't start" : "exit " + String(run.exitCode);
+}
+
 /** Right-hand mono readout of a run row: live / queued / exit N / duration. */
 export function runRowReadout(
-    run: Pick<Run, "status" | "exitCode" | "startedAt" | "endedAt">,
+    run: RunExitFields & Pick<Run, "startedAt" | "endedAt">,
     displayed: RunStatus,
 ): string {
     if (run.status === "running") return "live";
     if (run.status === "pending") return "queued";
-    if (displayed === "failed" || displayed === "crashed") return "exit " + String(run.exitCode);
+    if (displayed === "failed" || displayed === "crashed") return runExitLabel(run);
     return runDuration(run) ?? "—";
 }
 

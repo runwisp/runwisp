@@ -23,10 +23,11 @@ const localFlagUsage = "target the per-user unit under your account instead of t
 // several of them, which is what the fingerprint suffix is for).
 //
 // euid and GOOS are the two things that can make the requested scope
-// impossible, and each gets its own message naming the way out — a bare
+// impossible (euid only for a real install: inspectOnly, --print and
+// --dry-run, just read), and each gets its own message naming the way out — a bare
 // "permission denied" from systemctl three steps later is not a useful
 // answer to "why didn't this install".
-func resolveInstallScope(local bool, euid int) (systemWide bool, err error) {
+func resolveInstallScope(local bool, euid int, inspectOnly bool) (systemWide bool, err error) {
 	if local {
 		// systemctl --user talks to the calling user's session bus. Under
 		// sudo there is no such bus for root, so the unit would be written
@@ -51,7 +52,7 @@ func resolveInstallScope(local bool, euid int) (systemWide bool, err error) {
 		}
 	}
 
-	if euid != 0 {
+	if euid != 0 && !inspectOnly {
 		return false, &userFacingError{
 			title: "installing the system service requires root",
 			details: "Re-run as root:\n" +

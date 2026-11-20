@@ -30,13 +30,10 @@ type Installer struct {
 	CronActive bool
 	CronErr    error
 	// NoDropIn makes SupportsPasswordDropIn report false (the launchd case).
-	NoDropIn    bool
-	EnsurePath  string
-	EnsureWrote bool
-	EnsureErr   error
-	EnvPath     string
-	EnvChange   autostart.DropInChange
-	EnvErr      error
+	NoDropIn  bool
+	EnvPath   string
+	EnvChange autostart.DropInChange
+	EnvErr    error
 	// OnInstall, when set, runs inside Install (e.g. to leave a live PID file
 	// behind, the way `systemctl enable --now` leaves a daemon).
 	OnInstall func(autostart.InstallOptions)
@@ -48,8 +45,6 @@ type Installer struct {
 	// ConfigAtInstall is whether opts.Config existed when Install ran, the
 	// ordering a unit pointing at a missing config would break.
 	ConfigAtInstall bool
-	EnsureCalled    bool
-	EnsurePassword  string
 	EnvCalled       bool
 	EnvVars         map[string]string
 	Restarts        int
@@ -96,12 +91,6 @@ func (f *Installer) Stop(context.Context, autostart.InstallOptions) error { retu
 func (f *Installer) Restart(context.Context, autostart.InstallOptions) error {
 	f.Restarts++
 	return nil
-}
-
-func (f *Installer) EnsurePasswordDropIn(_ context.Context, _ autostart.InstallOptions, password string) (string, bool, error) {
-	f.EnsureCalled = true
-	f.EnsurePassword = password
-	return f.EnsurePath, f.EnsureWrote, f.EnsureErr
 }
 
 func (f *Installer) SupportsPasswordDropIn() bool { return !f.NoDropIn }
