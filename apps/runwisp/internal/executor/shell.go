@@ -49,8 +49,6 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 	if shellPath == "" {
 		shellPath = model.DefaultShell
 	}
-	cmd := exec.CommandContext(ctx, shellPath, shellArgs(shellPath, script)...)
-
 	// Resolve run-as (user[:group]) at run time. RunUser is read from the task,
 	// never from the execution def, so a station-dispatched ad-hoc run can't pick
 	// a uid — privilege drop is a TOML-only capability.
@@ -84,17 +82,25 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 	// the RUNWISP_* secrets (password, station token) that buildProcessEnv strips.
 	// The run-as identity (HOME/USER/LOGNAME) seeds beneath the task's own env
 	// so task.Env can still override it.
-	cmd.Env = buildProcessEnv(append(base, identity...), InstanceIndexEnv(run), task.Env, task.Secrets, paramEnv)
+	env := buildProcessEnv(append(base, identity...), InstanceIndexEnv(run), task.Env, task.Secrets, paramEnv)
 
 	dir, notice, err := resolveWorkingDir(shell.WorkingDir, ra, task.Source == model.SourceCron, os.Stat)
 	if err != nil {
 		return nil, err
 	}
-	cmd.Dir = dir
 
-	proc, err := startCmd(cmd, task.GracefulStopValue(), signalFromName(task.StopSignal), cred, "start command")
+	start := func() (*Process, error) {
+		cmd := exec.CommandContext(ctx, shellPath, shellArgs(shellPath, script)...)
+		cmd.Env = env
+		cmd.Dir = dir
+		return startCmd(cmd, task.GracefulStopValue(), signalFromName(task.StopSignal), cred, "start command")
+	}
+	proc, err := start()
 	if err != nil {
 		return nil, err
+	}
+	if task.Kind.IsService() {
+		proc = adoptNameConflict(ctx, task, proc, start)
 	}
 	proc.Notice = notice
 	return proc, nil

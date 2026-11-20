@@ -518,6 +518,11 @@ func (r *RoutingExecutor) streamProcessOutput(proc *Process, writer *LogWriter, 
 	var wg sync.WaitGroup
 	r.streamOne(&wg, proc.Stdout, writer, task, run, matcher, logutil.StreamStdout)
 	r.streamOne(&wg, proc.Stderr, writer, task, run, matcher, logutil.StreamStderr)
+	if proc.Notices != nil {
+		for msg := range proc.Notices {
+			r.systemLine(writer, task, run, msg)
+		}
+	}
 	wg.Wait()
 }
 

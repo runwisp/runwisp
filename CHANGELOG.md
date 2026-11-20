@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tasks read from user crontabs and `/etc/cron.d` now carry their source in the name, such as `report-ops`, so adding a crontab never renames a job that already runs.
    A short comment above a cron job names it (`# nightly backup` becomes `nightly-backup`), and names look past `sleep`, a piped `echo` and a bare `env`.
    Migration: these tasks get their new name once on upgrade, and earlier runs stay under the old name. A `[[route]]` that still names the old task gets a warning on load; change its `match.task` to the new name.
+- A service whose `docker run --name` finds the name taken by a container started outside RunWisp takes that container over instead of failing with exit 125 in a loop:
+   it attaches to a running one, and removes a stopped one and starts again.
 
 ### Fixed
 
