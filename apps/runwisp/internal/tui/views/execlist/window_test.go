@@ -469,11 +469,10 @@ func TestFetchAroundCmd_RunsRequest_ReturnsItemsAndTotal(t *testing.T) {
 	}
 }
 
-// TestFetchAroundCmd_AppliesFilterAndFixedSort verifies the status filter set
-// via CycleStatusFilter reaches the request query string, and that the list's
-// fixed newest-first order (created_at + desc) is always sent — sorting is no
-// longer user-configurable.
-func TestFetchAroundCmd_AppliesFilterAndFixedSort(t *testing.T) {
+// TestFetchAroundCmd_AppliesFilterAndDefaultSort verifies the status filter set
+// via CycleStatusFilter reaches the request query string, and that the default
+// order is newest first (created_at + desc).
+func TestFetchAroundCmd_AppliesFilterAndDefaultSort(t *testing.T) {
 	var gotQuery url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.Query()
@@ -501,6 +500,46 @@ func TestFetchAroundCmd_AppliesFilterAndFixedSort(t *testing.T) {
 	}
 	if got := gotQuery.Get("sortDirection"); got != "desc" {
 		t.Fatalf("sortDirection = %q, want desc", got)
+	}
+}
+
+// TestSortCycle pins the order cycle (`o`), the query each order sends, and
+// that a new live run is left to the next fetch under any non-default order.
+func TestSortCycle(t *testing.T) {
+	var gotQuery url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		_ = json.NewEncoder(w).Encode(server.RunsResponseBody{Total: 0})
+	}))
+	defer srv.Close()
+
+	w := NewExecWindow(apiclient.New(srv.URL, ""))
+	want := []struct{ label, field, direction string }{
+		{"oldest first", "createdAt", "asc"},
+		{"longest first", "duration", "desc"},
+		{"shortest first", "duration", "asc"},
+		{"", "createdAt", "desc"},
+	}
+	for _, exp := range want {
+		w.CycleSort()
+		if got := w.SortLabel(); got != exp.label {
+			t.Fatalf("SortLabel = %q, want %q", got, exp.label)
+		}
+		if _, err := w.FetchAroundCmd(0, 20)(); err != nil {
+			t.Fatalf("FetchAroundCmd closure: %v", err)
+		}
+		if got := gotQuery.Get("sortField"); got != exp.field {
+			t.Fatalf("%q: sortField = %q, want %q", exp.label, got, exp.field)
+		}
+		if got := gotQuery.Get("sortDirection"); got != exp.direction {
+			t.Fatalf("%q: sortDirection = %q, want %q", exp.label, got, exp.direction)
+		}
+	}
+
+	w.CycleSort() // oldest first
+	w.UpsertRun(model.Run{ID: "new", TaskName: "t", Status: model.PhaseRunning})
+	if w.TotalCount() != 0 || w.FindRun("new") != nil {
+		t.Fatal("a live run was placed under a non-default order, want it left to the next fetch")
 	}
 }
 
@@ -692,4 +731,25 @@ func TestUpdateVisibleTimes(t *testing.T) {
 			t.Fatalf("expected nil item on empty window, got %+v", got)
 		}
 	})
+}
+
+func TestBaselines_PerTask(t *testing.T) {
+	ok := model.ReasonSuccess
+	usage := func(task string, cpuMs int64) uikit.ExecListItem {
+		mem := int64(20 << 20)
+		return uikit.ExecListItem{Run: model.Run{TaskName: task, Status: model.PhaseEnded, EndReason: &ok, CPUTimeMs: &cpuMs, PeakMemoryBytes: &mem}}
+	}
+	w := NewExecWindow(nil)
+	w.ApplyFetch([]uikit.ExecListItem{
+		usage("light", 2_000), usage("heavy", 60_000), usage("light", 2_000), usage("heavy", 60_000), usage("light", 30_000),
+	}, 0, 5)
+
+	got := w.Baselines()
+	if got["light"].usage.CPUMs != 2_000 || got["heavy"].usage.CPUMs != 60_000 {
+		t.Fatalf("expected each task's own median CPU, got light %d, heavy %d", got["light"].usage.CPUMs, got["heavy"].usage.CPUMs)
+	}
+	// 30s is unusual for the light task even though the heavy one dwarfs it.
+	if c, _ := usageCells(&w.Item(4).Run, nil, got["light"].usage, false); c.fg != uikit.ColorError {
+		t.Errorf("expected a 30s run flagged against its own task's 2s, got %v", c.fg)
+	}
 }

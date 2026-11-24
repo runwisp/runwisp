@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/fang"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
@@ -35,8 +36,21 @@ import (
 // our lowercase title convention holds. The fang.Styles argument is ignored;
 // renderError draws from the shared brand hex constants instead.
 func handleCLIError(w io.Writer, _ fang.Styles, err error) {
+	if errors.Is(err, errRestartInPlace) {
+		return // not an error: main re-executes the daemon
+	}
 	if ufe, ok := isUserFacing(err); ok {
 		renderError(w, ufe.title, ufe.details, "")
+		return
+	}
+	// Every prompt comes before the first change, so a missing --yes means
+	// nothing happened yet: say that first, then how to answer.
+	if errors.Is(err, autostart.ErrNeedsYes) {
+		renderError(w, "Nothing was changed. There's no terminal to ask, so pass --yes.", "", "")
+		return
+	}
+	if errors.Is(err, autostart.ErrNeedsTerminal) {
+		renderError(w, "Nothing was changed. Confirming this needs a terminal to type the word into.", "", "")
 		return
 	}
 	// A --help hint only makes sense for cobra usage errors; appending it to
@@ -87,11 +101,35 @@ func daemonNotRunningHint(f Flags) string {
 	if !systemDaemonElsewhere(f) {
 		return startDaemonHint
 	}
-	sudo := sudoRunwisp(os.Args[1:]...)
 	if hasLocalSetup(f) {
-		return startDaemonHint + ". For the system service instead, whose socket is root's: " + sudo
+		return startDaemonHint + ". For the system service instead, whose socket is root's: " + sudoSystemRunwisp(os.Args[1:]...)
 	}
-	return "RunWisp runs here as the system service, and its socket is root's: " + sudo
+	return systemServiceHint(os.Args[1:]...)
+}
+
+// systemServiceHint is the one thing every command says to a normal user on a
+// box where RunWisp runs as the system service and their own shell found no
+// config or daemon: the same command, under sudo. It names the binary the unit
+// runs, never a stale copy in ~/.local/bin.
+func systemServiceHint(args ...string) string {
+	return "RunWisp runs as the system service. Use `" + sudoSystemRunwisp(args...) + "`."
+}
+
+// systemServiceError is the whole error a normal user gets on a box where
+// RunWisp runs as the system service and their shell found no setup of its
+// own: just the same command under sudo. Nil when that isn't the case, and
+// inside a RunWisp run, which can't sudo.
+func systemServiceError(f Flags, args ...string) error {
+	if insideRun() || !systemDaemonElsewhere(f) || hasLocalSetup(f) {
+		return nil
+	}
+	return &userFacingError{title: systemServiceHint(args...)}
+}
+
+// insideRun reports whether this command runs inside a RunWisp run, which
+// always has RUNWISP_INSTANCE_INDEX set.
+func insideRun() bool {
+	return os.Getenv("RUNWISP_INSTANCE_INDEX") != ""
 }
 
 // daemonUnreachableHint is daemonNotRunningHint for a connection that failed
@@ -166,9 +204,8 @@ func systemDaemonElsewhere(f Flags) bool {
 func configLoadError(f Flags, err error) error {
 	if errors.Is(err, fs.ErrNotExist) && systemDaemonElsewhere(f) {
 		return &userFacingError{
-			title: fmt.Sprintf("there is no %s here", f.CfgFile),
-			details: "RunWisp runs here as the system service, with its config in " +
-				defaultConfigPath(0, "") + ": " + sudoRunwisp(os.Args[1:]...),
+			title:   fmt.Sprintf("there is no %s here", f.CfgFile),
+			details: systemServiceHint(os.Args[1:]...),
 		}
 	}
 	return fmt.Errorf("failed to load %s: %w", f.CfgFile, err)

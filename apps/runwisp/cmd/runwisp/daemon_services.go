@@ -556,6 +556,7 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time
 		StationEnabled:   cfg.StationConfig.Enabled,
 		SchedulingActive: svc.Scheduler != nil,
 		ServiceManaged:   autostart.RunningUnderServiceManager(),
+		RunsAsRoot:       os.Geteuid() == 0,
 		AuthDisabled:     cfg.NoAuth,
 		ConfigLoadedAt:   configLoadedAt,
 		ResolvedTimezone: cfg.Config.Scheduler.Timezone,

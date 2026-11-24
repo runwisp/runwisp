@@ -8,7 +8,9 @@ package e2e
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -19,8 +21,10 @@ import (
 // TestCLIServiceInstallRefusesSystemScopeUnprivileged pins the new default:
 // a bare `runwisp service install` targets the system-wide service, so an
 // unprivileged run has to stop and say so rather than quietly installing a
-// per-user unit the operator didn't ask for. The message must name both
-// ways forward, since either could be what they meant.
+// per-user unit the operator didn't ask for. With sudo on PATH it re-runs
+// itself through it; this pins the answer on a box without sudo, so PATH is
+// emptied. The message must name both ways forward, since either could be
+// what they meant.
 func TestCLIServiceInstallRefusesSystemScopeUnprivileged(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
@@ -32,9 +36,11 @@ func TestCLIServiceInstallRefusesSystemScopeUnprivileged(t *testing.T) {
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
-	cmd := exec.Command(binaryPath, "service", "install", "--dry-run")
+	// A real install, not --dry-run: a dry run only inspects and is allowed
+	// without root, so it would not reach the refusal this test pins.
+	cmd := exec.Command(binaryPath, "service", "install")
 	cmd.Dir = projectDir
-	cmd.Env = subprocEnv()
+	cmd.Env = append(subprocEnv(), "PATH="+t.TempDir()) // no sudo to re-run through
 	out, err := cmd.CombinedOutput()
 
 	require.Errorf(t, err, "expected a refusal, got:\n%s", string(out))
@@ -44,6 +50,40 @@ func TestCLIServiceInstallRefusesSystemScopeUnprivileged(t *testing.T) {
 		assert.Contains(t, string(out), "requires root")
 	}
 	assert.Contains(t, string(out), "--local")
+}
+
+// TestCLIServiceInstallDryRunNeedsNoRoot pins that a dry run is allowed without
+// root: it only prints the plan, so an unprivileged `service install --local
+// --dry-run` must succeed and describe the install rather than refuse it.
+func TestCLIServiceInstallDryRunNeedsNoRoot(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("autostart is only built for linux and darwin")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("running as root — the dry run is not what this checks")
+	}
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	home := t.TempDir()
+	configPath := filepath.Join(home, "runwisp.toml")
+	require.NoError(t, os.WriteFile(configPath, []byte("[[task]]\nname = \"hi\"\nschedule = \"@hourly\"\nrun = \"echo hi\"\n"), 0o644))
+
+	cmd := exec.Command(binaryPath, "service", "install", "--dry-run", "--local",
+		"--binary", "/opt/runwisp/bin/runwisp",
+		"--config", configPath,
+		"--data", "/var/lib/runwisp",
+		"--port", strconv.Itoa(reserveTCPPort(t)),
+		"--host", "127.0.0.1",
+	)
+	cmd.Dir = projectDir
+	cmd.Env = append(subprocEnv(), "HOME="+home)
+	out, err := cmd.CombinedOutput()
+
+	require.NoErrorf(t, err, "a dry run must not need root: %s", string(out))
+	assert.Contains(t, string(out), "Plan: install")
+	assert.NotContains(t, string(out), "requires root")
 }
 
 // TestCLIServicePrintGolden exercises `runwisp service install --print`

@@ -14,7 +14,6 @@ import (
 
 // onConfirmCmd is a sentinel tea.Cmd for confirm
 var onConfirmCmd = func() tea.Msg { return struct{}{} }
-var onDenyCmd = func() tea.Msg { return struct{ deny bool }{true} }
 
 // placeButtons gives d fixed button geometry (row 5, yes at x 10-20, no at x
 // 22-30) so click and hover tests don't need a render pass.
@@ -59,23 +58,9 @@ func TestConfirmDialog_HandleKeyMsg_Enter_Yes(t *testing.T) {
 	assert.True(t, confirmed)
 }
 
-// TestConfirmDialog_HandleKeyMsg_Enter_No_WithDeny fires onDeny when selected=1 and onDeny is set.
-func TestConfirmDialog_HandleKeyMsg_Enter_No_WithDeny(t *testing.T) {
-	var denied bool
-	deny := func() tea.Msg { denied = true; return nil }
-	d := NewChoiceDialog("title", "msg", "Yes", "No", false, onConfirmCmd, deny)
-	d.selected = 1
-
-	cmd, closed := d.handleKeyMsg("enter")
-	assert.True(t, closed)
-	assert.NotNil(t, cmd)
-	cmd() //nolint:errcheck
-	assert.True(t, denied)
-}
-
-// TestConfirmDialog_HandleKeyMsg_Enter_No_NoDeny returns nil cmd, closed=true.
-func TestConfirmDialog_HandleKeyMsg_Enter_No_NoDeny(t *testing.T) {
-	d := NewConfirmDialog("title", "message", onConfirmCmd) // no onDeny
+// TestConfirmDialog_HandleKeyMsg_Enter_No returns nil cmd, closed=true.
+func TestConfirmDialog_HandleKeyMsg_Enter_No(t *testing.T) {
+	d := NewConfirmDialog("title", "message", onConfirmCmd)
 	d.selected = 1
 
 	cmd, closed := d.handleKeyMsg("enter")
@@ -99,16 +84,8 @@ func TestConfirmDialog_HandleKeyMsg_Y(t *testing.T) {
 	assert.NotNil(t, cmd)
 }
 
-// TestConfirmDialog_HandleKeyMsg_N_WithDeny fires deny.
-func TestConfirmDialog_HandleKeyMsg_N_WithDeny(t *testing.T) {
-	d := NewChoiceDialog("t", "m", "Yes", "No", false, onConfirmCmd, onDenyCmd)
-	cmd, closed := d.handleKeyMsg("n")
-	assert.True(t, closed)
-	assert.NotNil(t, cmd)
-}
-
-// TestConfirmDialog_HandleKeyMsg_N_NoDeny returns nil cmd, closed.
-func TestConfirmDialog_HandleKeyMsg_N_NoDeny(t *testing.T) {
+// TestConfirmDialog_HandleKeyMsg_N returns nil cmd, closed.
+func TestConfirmDialog_HandleKeyMsg_N(t *testing.T) {
 	d := NewConfirmDialog("title", "message", onConfirmCmd)
 	cmd, closed := d.handleKeyMsg("n")
 	assert.True(t, closed)
@@ -127,15 +104,6 @@ func TestConfirmDialog_HandleClick_Yes(t *testing.T) {
 	d := placeButtons(NewConfirmDialog("t", "m", onConfirmCmd))
 
 	cmd, closed := d.handleClick(15, 5)
-	assert.True(t, closed)
-	assert.NotNil(t, cmd)
-}
-
-// TestConfirmDialog_HandleClick_No_WithDeny fires deny.
-func TestConfirmDialog_HandleClick_No_WithDeny(t *testing.T) {
-	d := placeButtons(NewChoiceDialog("t", "m", "Yes", "No", false, onConfirmCmd, onDenyCmd))
-
-	cmd, closed := d.handleClick(25, 5)
 	assert.True(t, closed)
 	assert.NotNil(t, cmd)
 }
@@ -273,10 +241,9 @@ func TestConfirmDialog_View_ShuttingDownStateRendersWithoutButtons(t *testing.T)
 	assert.NotEmpty(t, out)
 }
 
-// TestConfirmDialog_RenderButtonLines_NoDenyShowsYConfirmHint exercises the
-// onDeny == nil hint-text branch and the noteLines loop.
-func TestConfirmDialog_RenderButtonLines_NoDenyShowsYConfirmHint(t *testing.T) {
-	d := NewConfirmDialog("title", "message", onConfirmCmd).WithNote("note-a", "note-b")
+// TestConfirmDialog_RenderButtonLines_ShowsYConfirmHint pins the key hint.
+func TestConfirmDialog_RenderButtonLines_ShowsYConfirmHint(t *testing.T) {
+	d := NewConfirmDialog("title", "message", onConfirmCmd)
 	view := d.View(80, 24)
 	assert.Contains(t, view, "y confirm")
 }
@@ -309,18 +276,16 @@ func TestModalDimensions_TightScreenClamps(t *testing.T) {
 	assert.GreaterOrEqual(t, iw, 1)
 }
 
-// TestChoiceDialog_ButtonKinds pins the quit dialog's colours: the safe
-// default (Keep Running) fills blue, never red, and the unselected destructive
+// TestConfirmDialog_ButtonKinds pins the button colours: the unselected
 // choice sits on the raised surface in normal text rather than looking
-// disabled. Selected, Shut Down fills red.
-func TestChoiceDialog_ButtonKinds(t *testing.T) {
-	d := NewChoiceDialog("Quit", "Keep it?", "Keep Running", "Shut Down", true, nil, nil)
-	assert.Equal(t, uikit.ColorPrimary, d.buttonStyle(0, d.yesKind).GetBackground())
-	assert.Equal(t, uikit.ColorButtonRaised, d.buttonStyle(1, d.noKind).GetBackground())
-	assert.Equal(t, uikit.ColorText, d.buttonStyle(1, d.noKind).GetForeground())
+// disabled, a plain confirm is primary and Danger() turns it red.
+func TestConfirmDialog_ButtonKinds(t *testing.T) {
+	d := NewConfirmDialog("Quit", "Quit?", nil)
+	assert.Equal(t, uikit.ColorButtonRaised, d.buttonStyle(0, d.yesKind).GetBackground())
+	assert.Equal(t, uikit.ColorText, d.buttonStyle(0, d.yesKind).GetForeground())
 
-	d.handleKeyMsg("right")
-	assert.Equal(t, uikit.ColorError, d.buttonStyle(1, d.noKind).GetBackground())
+	d.handleKeyMsg("left")
+	assert.Equal(t, uikit.ColorPrimary, d.buttonStyle(0, d.yesKind).GetBackground())
 
 	// A plain confirm is primary; Danger() turns it red.
 	c := NewConfirmDialog("Run", "Run it?", nil)

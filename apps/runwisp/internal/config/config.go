@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
@@ -65,8 +66,12 @@ func load(path string, root *tomlConfig) (*Config, error) {
 	if err := Validate(cfg); err != nil {
 		return nil, err
 	}
+	for i := range cfg.Tasks {
+		cfg.Tasks[i].OutputRedirect = importer.OutputRedirect(cfg.Tasks[i].Run)
+	}
 	// After ApplyDefaults: a jitter inherited from [defaults] counts.
 	cfg.refreshScheduleWarnings(time.Now())
+	cfg.routeWarnings = staleRouteWarnings(cfg)
 	cfg.watchFiles = collectWatchFiles(cfg, dirs)
 	return cfg, nil
 }
@@ -295,12 +300,13 @@ func Warnings(cfg *Config) []string {
 	w = append(w, composeOwnProjectWarnings(cfg)...)
 	w = append(w, cfg.composeWarnings...)
 	w = append(w, cfg.scheduleWarnings...)
+	w = append(w, cfg.routeWarnings...)
 	return append(w, cronSourceWarnings(cfg)...)
 }
 
 // refreshScheduleWarnings recomputes cfg.scheduleWarnings from the tasks that
 // are live right now, in the scheduler's zone. Call it after anything that
-// changes which tasks fire (load, a cron hold flipping).
+// changes which tasks fire.
 func (c *Config) refreshScheduleWarnings(now time.Time) {
 	c.scheduleWarnings = scheduleCollisionWarnings(c.Tasks, c.SchedulerLocation(), now)
 }

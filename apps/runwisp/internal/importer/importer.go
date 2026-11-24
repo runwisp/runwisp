@@ -41,11 +41,23 @@ type Result struct {
 	notes []Note
 	// cronMails is set when at least one job runs under a non-empty MAILTO.
 	cronMails bool
+	// headerLines counts the spool header Debian's crontab writes atop the file
+	// (see isCrontabSpoolHeader), which `crontab -l` doesn't show.
+	headerLines int
 }
 
 // CronMails reports whether any job in this crontab runs under a MAILTO, whose
 // mail stops once RunWisp runs the jobs instead.
 func (r *Result) CronMails() bool { return r.cronMails }
+
+// ListLine maps a 1-based file line to the line `crontab -l` shows it on, which
+// differs only for a Debian spool file and its hidden header.
+func (r *Result) ListLine(line int) int {
+	if line <= r.headerLines {
+		return line
+	}
+	return line - r.headerLines
+}
 
 // field is one `key = value` line. value is already TOML-formatted.
 type field struct {
@@ -253,8 +265,6 @@ type deduper struct {
 
 func newDeduper() *deduper { return &deduper{seen: map[string]int{}} }
 
-func (d *deduper) taken(name string) bool { _, ok := d.seen[name]; return ok }
-
 // reserve claims a name up front so a later unique() for the same base skips
 // straight to base-2. Used to seed names the live config already owns, so a
 // re-import never emits a duplicate that would fail the merged load.
@@ -264,36 +274,14 @@ func (d *deduper) reserve(name string) {
 	}
 }
 
-// uniqueIn returns base if unused, otherwise base-2, base-3, … (the first
-// collision for a base claims "-2" so the suffixes read naturally). With a
-// non-empty seed it gains a stable tie-breaker: a taken base resolves to
-// base-seed rather than base-2.
-//
-// This exists because a positional suffix is only stable while the input order
-// is. `[daemon] include_cron` reads a set of files that grows and shrinks — drop
-// a lexically-earlier file into /etc/cron.d and every -2 after it renumbers,
-// which detaches run history, breaks a notification route matching on the task
-// name, and re-anchors catch-up. Deriving the suffix from where the job came from
-// instead makes the name a function of the source, so adding an unrelated file
-// leaves existing names alone.
-func (d *deduper) uniqueIn(base, seed string) string {
+// unique returns base if unused, otherwise base-2, base-3, … (the first
+// collision for a base claims "-2" so the suffixes read naturally). Positional,
+// so only stable within one source, whose own line order doesn't change when
+// another file appears; see namer.unique for names other sources took.
+func (d *deduper) unique(base string) string {
 	if _, ok := d.seen[base]; !ok {
 		d.seen[base] = 1
 		return base
-	}
-	if seed != "" {
-		if candidate := base + "-" + seed; !d.taken(candidate) {
-			d.seen[candidate] = 1
-			return candidate
-		}
-		// Two jobs in the same file deriving the same name: fall through to the
-		// positional suffix, which is stable *within* a file because the file's own
-		// line order is.
-		base += "-" + seed
-		if _, ok := d.seen[base]; !ok {
-			d.seen[base] = 1
-			return base
-		}
 	}
 	for {
 		d.seen[base]++

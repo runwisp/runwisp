@@ -33,6 +33,7 @@ type ExecWindow struct {
 	client       *apiclient.Client
 	filterTask   string
 	statusFilter string // "" = all; one of statusFilterCycle
+	sort         int    // index into sortCycle; 0 = newest first
 	totalCount   int    // server-reported total
 	windowStart  int    // offset of items[0] in the full virtual list
 	items        []uikit.ExecListItem
@@ -78,6 +79,17 @@ var statusFilterWire = map[string]string{
 	"failed":    "failed,crashed,timeout,log_overflow,start_failed,unhealthy,missed",
 	"skipped":   "skipped,dst_skipped,queue_full",
 	"stopped":   "stopped,daemon_stopped",
+}
+
+// runSort is one order the list cycles through with `o`. The label names it in
+// the banner; the first entry, newest first, is the default and has none.
+type runSort struct{ label, field, direction string }
+
+var sortCycle = []runSort{
+	{"", "createdAt", "desc"},
+	{"oldest first", "createdAt", "asc"},
+	{"longest first", "duration", "desc"},
+	{"shortest first", "duration", "asc"},
 }
 
 func NewExecWindow(client *apiclient.Client) *ExecWindow {
@@ -164,6 +176,23 @@ func (w *ExecWindow) CycleStatusFilter() {
 	w.clearLocked()
 }
 
+// CycleSort advances to the next order in sortCycle and clears the window. The
+// caller must trigger a fetch afterward.
+func (w *ExecWindow) CycleSort() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.sort = (w.sort + 1) % len(sortCycle)
+	w.clearLocked()
+}
+
+// SortLabel names the active order, e.g. "longest first", or "" for the
+// default newest first.
+func (w *ExecWindow) SortLabel() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return sortCycle[w.sort].label
+}
+
 // HasStatusFilter reports whether a run-status filter is active (i.e. the list
 // is showing a subset rather than all runs).
 func (w *ExecWindow) HasStatusFilter() bool {
@@ -238,6 +267,7 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() (FetchResult, error)
 	w.loading = true
 	filter := w.filterTask
 	statusFilter := statusFilterWire[w.statusFilter]
+	order := sortCycle[w.sort]
 	loc := w.loc
 	gen := w.gen
 	w.mu.Unlock()
@@ -246,13 +276,12 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() (FetchResult, error)
 		// Center the window on the current scroll position.
 		offset := max(scroll-windowSize/2, 0)
 
-		// The list is always newest-first.
 		params := apiclient.RunsParams{
 			Limit:         windowSize,
 			Offset:        offset,
 			Status:        statusFilter,
-			SortField:     "createdAt",
-			SortDirection: "desc",
+			SortField:     order.field,
+			SortDirection: order.direction,
 			TaskName:      filter,
 		}
 
@@ -298,53 +327,33 @@ func (w *ExecWindow) ApplyFetch(items []uikit.ExecListItem, offset, total int) {
 	w.rebuildIDSet()
 }
 
-// UsualUsage is the median usage of the loaded runs, the baseline the list
-// colors each run's CPU and RAM against; nil when none was measured. Like the
+// Baselines is each task's usual run over the loaded runs, keyed by task name:
+// what the list colors a run's DURATION, CPU, RAM and OUTPUT against. Home
+// mixes tasks, so every run is judged against its own task's runs. Like the
 // web UI it judges against the runs on hand rather than a server aggregate.
-func (w *ExecWindow) UsualUsage() *uikit.RunUsage {
+func (w *ExecWindow) Baselines() map[string]rowBaselines {
 	w.mu.Lock()
-	runs := make([]model.Run, len(w.items))
+	byTask := make(map[string][]model.Run)
 	for i := range w.items {
-		runs[i] = w.items[i].Run
+		run := w.items[i].Run
+		byTask[run.TaskName] = append(byTask[run.TaskName], run)
 	}
 	w.mu.Unlock()
-	u, ok := uikit.UsualUsage(runs)
-	if !ok {
-		return nil
+	out := make(map[string]rowBaselines, len(byTask))
+	for task, runs := range byTask {
+		var b rowBaselines
+		if d, ok := uikit.UsualDuration(runs); ok {
+			b.duration = &d
+		}
+		if u, ok := uikit.UsualUsage(runs); ok {
+			b.usage = &u
+		}
+		if o, ok := uikit.UsualOutput(runs); ok {
+			b.output = &o
+		}
+		out[task] = b
 	}
-	return &u
-}
-
-// UsualDuration is the median wall time of the loaded runs, the baseline the
-// list colors each run's DURATION against; nil when none has finished.
-func (w *ExecWindow) UsualDuration() *time.Duration {
-	w.mu.Lock()
-	runs := make([]model.Run, len(w.items))
-	for i := range w.items {
-		runs[i] = w.items[i].Run
-	}
-	w.mu.Unlock()
-	d, ok := uikit.UsualDuration(runs)
-	if !ok {
-		return nil
-	}
-	return &d
-}
-
-// UsualOutput is the output band of the loaded runs, the baseline the list
-// colors each run's OUTPUT against; nil until enough runs have line counts.
-func (w *ExecWindow) UsualOutput() *uikit.OutputBand {
-	w.mu.Lock()
-	runs := make([]model.Run, len(w.items))
-	for i := range w.items {
-		runs[i] = w.items[i].Run
-	}
-	w.mu.Unlock()
-	b, ok := uikit.UsualOutput(runs)
-	if !ok {
-		return nil
-	}
-	return &b
+	return out
 }
 
 // UpsertRun handles a real-time SSE event. New runs are prepended.
@@ -368,9 +377,9 @@ func (w *ExecWindow) UpsertRun(run model.Run) {
 	}
 
 	// A new run only belongs at position 0 in the newest-first view. Under a
-	// status filter its correct position is unknown, so leave it to the next
-	// fetch to place it.
-	if w.statusFilter != "" {
+	// status filter or another order its correct position is unknown, so leave
+	// it to the next fetch to place it.
+	if w.statusFilter != "" || w.sort != 0 {
 		return
 	}
 

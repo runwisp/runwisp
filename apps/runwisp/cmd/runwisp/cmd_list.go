@@ -59,7 +59,7 @@ func runList(ctx context.Context, out io.Writer, f Flags, rf remoteFlags, asJSON
 	if err != nil {
 		return listFailed(out, asJSON, configLoadError(f, err))
 	}
-	live := liveServices(ctx, f)
+	live, cronChanged := liveState(ctx, f)
 	tasks := make([]model.TaskResponse, len(cfg.Tasks))
 	for i, task := range cfg.Tasks {
 		tasks[i] = model.TaskResponse{Task: task, Service: live[task.Name]}
@@ -72,6 +72,11 @@ func runList(ctx context.Context, out io.Writer, f Flags, rf remoteFlags, asJSON
 	// and because the useful part is the command, not a per-row flag.
 	if footer := promoteStagedFooter(cfg, f.CfgFile); footer != "" {
 		fmt.Fprintf(out, "\n%s\n", footer)
+	}
+	// list reads the files, so an unreloaded crontab edit is already in the
+	// table above while the daemon still runs the old one.
+	if len(cronChanged) > 0 {
+		fmt.Fprintf(out, "\n⚠ %s Until then, this list shows changes the daemon isn't running.\n", cronChangedNotice(cronChanged))
 	}
 	return nil
 }
@@ -119,21 +124,27 @@ func writeTaskList(out io.Writer, tasks []model.TaskResponse, asJSON bool) error
 // holds up a listing the config alone can answer.
 const liveStateTimeout = 2 * time.Second
 
-// liveServices asks the local daemon, when one answers, for each service's
-// supervisor state, keyed by name. nil when no daemon is running or it does
-// not answer in time: list then shows the config alone.
-func liveServices(ctx context.Context, f Flags) map[string]*model.ServiceStatus {
+// liveState asks the local daemon, when one answers, for each service's
+// supervisor state, keyed by name, and the crontabs changed since it loaded
+// them. Both nil when no daemon is running or it does not answer in time: list
+// then shows the config alone.
+func liveState(ctx context.Context, f Flags) (map[string]*model.ServiceStatus, []string) {
 	ctx, cancel := context.WithTimeout(ctx, liveStateTimeout)
 	defer cancel()
-	tasks, err := apiclient.NewUnix(localAPISocketPath(f)).ListTasks(ctx)
+	client := apiclient.NewUnix(localAPISocketPath(f))
+	tasks, err := client.ListTasks(ctx)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	live := make(map[string]*model.ServiceStatus, len(tasks))
 	for _, t := range tasks {
 		live[t.Name] = t.Service
 	}
-	return live
+	var cronChanged []string
+	if info, err := client.GetDaemonInfo(ctx); err == nil {
+		cronChanged = info.CronChanged
+	}
+	return live, cronChanged
 }
 
 // renderTaskTable writes the human-readable task listing (the default,

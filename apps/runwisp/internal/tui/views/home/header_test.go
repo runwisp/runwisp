@@ -242,6 +242,12 @@ func TestRenderHeader_ConfigStale(t *testing.T) {
 	header, _ := RenderHeader(info, false, 80, -1, -1, false)
 	assert.Contains(t, header, "runwisp.toml changed")
 	assert.Contains(t, header, "press R to reload")
+
+	// `crontab -e` makes the config stale too; say which file it was.
+	info.CronChanged = []string{"/var/spool/cron/crontabs/ops"}
+	header, _ = RenderHeader(info, false, 80, -1, -1, false)
+	assert.Contains(t, header, "crontab changed")
+	assert.NotContains(t, header, "runwisp.toml")
 }
 
 func TestRenderHeader_AppConfigNotices(t *testing.T) {
@@ -252,13 +258,25 @@ func TestRenderHeader_AppConfigNotices(t *testing.T) {
 		ConfigWarnings: []string{"tasks a, b fire in the same second"},
 	}
 	header, _ := RenderHeader(info, false, 120, -1, -1, false)
-	assert.Contains(t, header, "see `runwisp status`")
-	assert.NotContains(t, header, "runwisp validate")
+	assert.Contains(t, header, "1 config warning: press w to view")
 	assert.NotContains(t, header, "runwisp.toml")
+}
 
-	info.AppConfig = false
-	header, _ = RenderHeader(info, false, 120, -1, -1, false)
-	assert.Contains(t, header, "see `runwisp validate`")
+// The warnings chip is clickable; its span sits after the other notices.
+func TestWarningsNoticeAt(t *testing.T) {
+	info := uikit.StartupInfo{ConfigWarnings: []string{"w1", "w2"}}
+	assert.True(t, WarningsNoticeAt(info, 2), "chip starts after the indent")
+	assert.False(t, WarningsNoticeAt(info, 1))
+
+	info.ConfigStale = true
+	assert.False(t, WarningsNoticeAt(info, 2), "stale notice comes first")
+	header, _ := RenderHeader(info, false, 200, -1, -1, false)
+	row := ansi.Strip(strings.Split(header, "\n")[NoticesY])
+	x := lipgloss.Width(row[:strings.Index(row, "\u26a0 2 config")])
+	assert.True(t, WarningsNoticeAt(info, x))
+	assert.False(t, WarningsNoticeAt(info, x-1))
+
+	assert.False(t, WarningsNoticeAt(uikit.StartupInfo{}, 2), "no warnings, no chip")
 }
 
 func TestRenderHeader_ConfigFresh_NoNotice(t *testing.T) {
@@ -441,5 +459,21 @@ func TestRenderTaskHeader_NarrowNeverOverflows(t *testing.T) {
 		if w := uikit.VisibleWidth(line); w > 40 {
 			t.Fatalf("line %d is %d cells wide, want <= 40: %q", i, w, line)
 		}
+	}
+}
+
+// With --no-http the password gates nothing: the socket is the only way in.
+func TestRenderHomeHeader_NoHTTPHidesPassword(t *testing.T) {
+	for _, info := range []uikit.StartupInfo{
+		{PasswordEphemeral: true, Password: "Kj2x9pQ7mN4vL8rT5wYz1c"},
+		{AuthDisabled: true, PasswordEphemeral: true, Password: "Kj2x9pQ7mN4vL8rT5wYz1c"},
+	} {
+		assert.Empty(t, Fields(info, true))
+		header, _ := RenderHeader(info, true, 80, -1, -1, false)
+		assert.NotContains(t, header, "Password")
+		assert.NotContains(t, header, "Web UI")
+		withRows, _ := RenderHeader(uikit.StartupInfo{Port: 9477}, false, 80, -1, -1, false)
+		assert.Equal(t, strings.Count(withRows, "\n")-3, strings.Count(header, "\n"),
+			"no rows means no spacer lines around them either")
 	}
 }

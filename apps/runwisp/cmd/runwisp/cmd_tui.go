@@ -7,13 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
-	"github.com/runwisp/runwisp/apps/runwisp/internal/tui"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -53,10 +53,13 @@ func runTUIClient(ctx context.Context, f Flags) error {
 	client := apiclient.NewUnix(localAPISocketPath(f))
 
 	if err := pollHealth(client, 5*time.Second); err != nil {
+		if svcErr := systemServiceError(f, os.Args[1:]...); svcErr != nil && !errors.Is(err, fs.ErrPermission) {
+			return svcErr
+		}
 		return fmt.Errorf("cannot reach daemon at %s (%w) — %s", localAPISocketPath(f), err, daemonUnreachableHint(f, err))
 	}
 
-	return runTUIConnect(ctx, client, f, tui.DaemonAttached)
+	return runTUIConnect(ctx, client)
 }
 
 // maxRemotePasswordPrompts bounds the interactive re-prompt loop so a wrong

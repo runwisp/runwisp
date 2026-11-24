@@ -24,6 +24,9 @@ type RunDetailDialog struct {
 	run           *model.Run
 	isService     bool
 	instanceCount int
+	// outputRedirect is the task's model.Task.OutputRedirect: where a run with
+	// no captured output sent it.
+	outputRedirect string
 	// loc is the daemon's timezone, so timestamps match what the scheduler uses
 	// even when the TUI runs in a different zone.
 	loc *time.Location
@@ -99,7 +102,9 @@ func (d *RunDetailDialog) facts(row func(label, value string, color color.Color)
 		row("Status", uikit.StatusLabel(status), uikit.StatusColor(status)),
 		row("Run ID", run.ID, uikit.ColorText),
 	}
-	if run.Status == model.PhaseEnded {
+	if run.NeverStarted() {
+		out = append(out, row("Exit code", "didn't start", uikit.ColorError))
+	} else if run.Status == model.PhaseEnded {
 		out = append(out, row("Exit code", strconv.Itoa(run.ExitCode), exitCodeColor(run.ExitCode)))
 	}
 	out = append(out, row("Triggered", string(run.TriggeredBy), uikit.ColorText))
@@ -128,12 +133,25 @@ func (d *RunDetailDialog) facts(row func(label, value string, color color.Color)
 		out = append(out, row("CPU time", (time.Duration(*run.CPUTimeMs)*time.Millisecond).String(), uikit.ColorText))
 	}
 	if lines, ok := run.OutputLines(); ok {
-		out = append(out, row("Output", outputSummary(lines, *run.StderrLines), uikit.ColorText))
+		summary := outputSummary(lines, *run.StderrLines)
+		if lines == 0 && d.outputRedirect != "" {
+			summary = redirectSummary(d.outputRedirect)
+		}
+		out = append(out, row("Output", summary, uikit.ColorText))
 	}
 	if len(run.Params) > 0 {
 		out = append(out, row("Params", strconv.Itoa(len(run.Params)), uikit.ColorTextMuted))
 	}
 	return out
+}
+
+// redirectSummary says where a run's output went when its command redirected
+// it, so an empty log doesn't read as a run that printed nothing.
+func redirectSummary(target string) string {
+	if target == "/dev/null" {
+		return "discarded (/dev/null)"
+	}
+	return "sent to " + target + ", not captured"
 }
 
 // outputSummary is how much a run printed: "none", "12 lines", or

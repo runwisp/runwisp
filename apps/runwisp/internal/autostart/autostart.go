@@ -15,7 +15,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -143,6 +142,12 @@ type InstallOptions struct {
 	// preconditions hold; this package only executes the mechanics.
 	TakeOverCron bool
 
+	// Password, when set, is a Web UI password Install saves to a 0600 drop-in
+	// beside the unit before it first starts it, so the service starts once,
+	// already on it. An existing saved password is kept, never rotated. launchd
+	// has no drop-ins and ignores it.
+	Password string
+
 	// PreConfirmed says the caller (internal/cutover) already showed a plan
 	// covering every step and took the operator's consent, so Install skips its
 	// own banner and "Proceed?".
@@ -237,14 +242,8 @@ type Installer interface {
 	Stop(ctx context.Context, opts InstallOptions) error
 	Restart(ctx context.Context, opts InstallOptions) error
 
-	// EnsurePasswordDropIn writes a 0600 drop-in beside the managed unit that
-	// sets RUNWISP_PASSWORD, so the service has a stable Web UI password. It
-	// never rotates: an existing drop-in is left alone and wrote is false.
-	// launchd has no drop-ins and returns ("", false, nil).
-	EnsurePasswordDropIn(ctx context.Context, opts InstallOptions, password string) (path string, wrote bool, err error)
-
-	// SupportsPasswordDropIn reports whether EnsurePasswordDropIn can write a
-	// drop-in on this OS, so a --dry-run can describe what install will do.
+	// SupportsPasswordDropIn reports whether Install can save
+	// InstallOptions.Password in a drop-in on this OS.
 	SupportsPasswordDropIn() bool
 
 	// WriteEnvDropIn replaces a 0600 drop-in holding one Environment line per
@@ -287,6 +286,12 @@ const (
 	DropInRemoved
 )
 
+// PasswordDropInName is the drop-in file `service install` writes a generated
+// RUNWISP_PASSWORD into. A separate file (not the unit) so the secret gets 0600
+// while the unit stays world-readable, and so a re-install rewriting the unit
+// leaves it alone.
+const PasswordDropInName = "password.conf"
+
 // EnvDropInName is the "<unit>.d/<name>" drop-in `service install` writes the
 // operator's captured RUNWISP_* environment into via WriteEnvDropIn. Named to
 // sort lexicographically after the password drop-in's filename
@@ -304,20 +309,6 @@ const EnvDropInName = "runwisp-env.conf"
 // into a desktop terminal would carry it and false-report as service-managed.
 func RunningUnderServiceManager() bool {
 	return os.Getenv(ServiceManagedEnv) == "1"
-}
-
-// WithoutServiceEnv returns env (in "KEY=VALUE" form, as from os.Environ) with
-// the service-manager marker vars removed. Use it when spawning a daemon that
-// runwisp itself launches: such a daemon is not init-managed, so it must not
-// inherit a stray RUNWISP_SERVICE_MANAGED from the spawning environment.
-func WithoutServiceEnv(env []string) []string {
-	out := make([]string, 0, len(env))
-	for _, e := range env {
-		if !strings.HasPrefix(e, ServiceManagedEnv+"=") {
-			out = append(out, e)
-		}
-	}
-	return out
 }
 
 // ErrConflict means the unit file exists but is missing the managed

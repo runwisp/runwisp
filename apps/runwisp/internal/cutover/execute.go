@@ -66,6 +66,12 @@ func (c *Cutover) Execute(ctx context.Context, p Plan, out io.Writer) (Result, e
 	if err := c.applyConfig(p, &res, out); err != nil {
 		return res, err
 	}
+	if p.Evidence.CronActive && c.deps.MarkBootRan != nil {
+		// Best-effort: failing here costs one extra @reboot run, not the take-over.
+		if err := c.deps.MarkBootRan(p.Opts.Config); err != nil {
+			fmt.Fprintf(out, "Note: could not record that cron already ran the @reboot jobs this boot (%v); RunWisp runs them once now.\n", err)
+		}
+	}
 
 	if p.pending(StepInstallService) {
 		installed, stale, err := c.install(ctx, p, out)
@@ -87,10 +93,6 @@ func (c *Cutover) Execute(ctx context.Context, p Plan, out io.Writer) (Result, e
 			return res, err
 		}
 		res.Reloaded = true
-	}
-	// Last, since it may restart the daemon the reload above just talked to.
-	if res.ServiceInstalled && c.deps.AfterInstall != nil {
-		c.deps.AfterInstall(ctx, out)
 	}
 	return res, nil
 }

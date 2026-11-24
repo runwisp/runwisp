@@ -55,7 +55,7 @@ func promoteNote(layout Layout) string {
 func TestPromote_CronSourcedTaskIsARealMove(t *testing.T) {
 	crontab := "# an unrelated job, not being promoted\n" +
 		"*/10 * * * * /usr/local/bin/other.sh\n" +
-		"# nightly dump\n" +
+		"# nightly dump of the main database\n" +
 		"0 3 * * * /usr/local/bin/dump.sh --full\n"
 	layout := cronLayout(t, cronRoot, crontab)
 	path := cronPath(layout)
@@ -84,7 +84,7 @@ func TestPromote_CronSourcedTaskIsARealMove(t *testing.T) {
 	assert.Equal(t,
 		"# an unrelated job, not being promoted\n"+
 			"*/10 * * * * /usr/local/bin/other.sh\n"+
-			"# nightly dump\n"+
+			"# nightly dump of the main database\n"+
 			promoteNote(layout)+"\n"+
 			"#0 3 * * * /usr/local/bin/dump.sh --full\n",
 		after, "only the promoted job's own line is commented out; its lead comment and the unrelated job stay")
@@ -299,11 +299,11 @@ func TestPromote_CronSourceFileGoneRefuses(t *testing.T) {
 // e.g. someone truncated it — so the recorded line number no longer exists at
 // all, distinct from existing-but-changed.
 func TestPromote_CronSourceLineTruncatedRefuses(t *testing.T) {
-	crontab := "# a comment\n0 3 * * * /usr/local/bin/dump.sh --full\n"
+	crontab := "# a comment, longer than a name\n0 3 * * * /usr/local/bin/dump.sh --full\n"
 	layout := cronLayout(t, cronRoot, crontab)
 	cfg := loadLayout(t, layout)
 
-	require.NoError(t, os.WriteFile(cronPath(layout), []byte("# a comment\n"), 0o644))
+	require.NoError(t, os.WriteFile(cronPath(layout), []byte("# a comment, longer than a name\n"), 0o644))
 
 	_, err := Promote(PromoteRequest{Layout: layout, Config: cfg, Names: []string{"dump"}})
 	require.Error(t, err)

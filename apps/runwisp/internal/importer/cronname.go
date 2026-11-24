@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
@@ -19,7 +20,14 @@ import (
 // kept whole with dots and colons as hyphens: `cron.hourly` is a directory, not a file with
 // a `.hourly` suffix, and reads better as `cron-hourly` than `cron_hourly`.
 func deriveCronName(command string) string {
-	return cronName(command, cronLauncher)
+	return cronName(command, cronLauncher, true)
+}
+
+// cronName110 is the name RunWisp 1.9 and 1.10 derived for command, before it
+// looked past `sleep`, a piped `echo` and a bare wrapper. Frozen: a task imported
+// under it is still the same job; see namer.resolve.
+func cronName110(command string) string {
+	return cronName(command, cronLauncher, false)
 }
 
 // legacyCronName is the name RunWisp 1.8 and earlier derived for command, before
@@ -29,11 +37,11 @@ func legacyCronName(command string) string {
 	return cronName(command, func(prog string) (func([]string) string, bool) {
 		pick, ok := cronLaunchers[prog]
 		return pick, ok
-	})
+	}, false)
 }
 
-func cronName(command string, launcher launcherFunc) string {
-	base, launched := firstCommandProgram(strings.Fields(command), launcher)
+func cronName(command string, launcher launcherFunc, lookPast bool) string {
+	base, launched := firstCommandProgram(strings.Fields(command), launcher, lookPast)
 	if base == "" {
 		base = "job"
 	}
@@ -43,6 +51,34 @@ func cronName(command string, launcher launcherFunc) string {
 		base = strings.TrimSuffix(base, ext)
 	}
 	return finalizeTaskName(base, "job")
+}
+
+// maxCommentNameWords is the longest comment that still reads as a name.
+// Anything longer is a sentence about the job, which stays its description.
+const maxCommentNameWords = 4
+
+var nonSlugRun = regexp.MustCompile(`[^a-z0-9]+`)
+
+// commentName turns a short comment above a job (`# nightly backup`) into a
+// name (`nightly-backup`). Empty when the comment is too long to be a name or
+// has nothing name-like in it.
+func commentName(comment string) string {
+	if len(strings.Fields(comment)) > maxCommentNameWords {
+		return ""
+	}
+	return strings.Trim(nonSlugRun.ReplaceAllString(strings.ToLower(comment), "-"), "-")
+}
+
+// qualifiedName appends a source's suffix to a derived name, so `report` from
+// ops's crontab becomes `report-ops`. A name that already says where it came
+// from (`e2scrub_all` from /etc/cron.d/e2scrub_all) is left alone. Only whole
+// words count: ops's `stops` still becomes `stops-ops`.
+func qualifiedName(base, suffix string) string {
+	words := func(s string) string { return "-" + strings.ReplaceAll(s, "_", "-") + "-" }
+	if suffix == "" || strings.Contains(words(base), words(suffix)) {
+		return base
+	}
+	return finalizeTaskName(base+"-"+suffix, base)
 }
 
 // finalizeTaskName sanitizes base to RunWisp's name rules, trims stray
@@ -73,13 +109,20 @@ func finalizeTaskName(base, fallback string) string {
 // || …` after `system`, `command -v x > /dev/null && x` after `null`, and
 // `if [ -x … ]; then …` after `if` — the path-like tokens in those lines are
 // arguments to a guard, not the program.
-func firstCommandProgram(tokens []string, launcher launcherFunc) (name string, launched bool) {
+//
+// lookPast also skips `sleep` like a guard, skips an `echo`/`printf` whose
+// output is piped (the program after the `|` is the job), and names a job that
+// is only a wrapper or a sleep (`/usr/bin/env > f`) after that word rather than
+// nothing. Off only for the frozen older derivations.
+func firstCommandProgram(tokens []string, launcher launcherFunc, lookPast bool) (name string, launched bool) {
 	atCmd := true       // is the next token the start of a simple command?
 	skipTarget := false // is the next token a redirection target to ignore?
+	fallback := ""      // the last wrapper or sleep stepped over, for a job that is only that
 	for i, t := range tokens {
 		// A `;` glued to a word (`];`, `start;`) ends the simple command just
 		// like a free-standing one does.
 		word, ends := strings.CutSuffix(t, ";")
+		prog := filepath.Base(word)
 		switch {
 		case skipTarget:
 			skipTarget = false
@@ -94,26 +137,55 @@ func firstCommandProgram(tokens []string, launcher launcherFunc) (name string, l
 		case isEnvAssignment(word) || isAllDigits(word) || strings.HasPrefix(word, "-"):
 			// leading NAME=value, a flag, or a flag's numeric value — the real
 			// program is still ahead, at the same command position.
-		case cronWrappers[filepath.Base(word)]:
+		case cronWrappers[prog]:
 			// sudo/nice/flock/… — the wrapped program follows it.
-		case cronBuiltins[filepath.Base(word)]:
+			fallback = prog
+		case cronBuiltins[prog]:
 			// cd/test/command/… — a guard whose arguments run to the next operator.
 			atCmd = false
+		case lookPast && prog == "sleep":
+			// `sleep 30 && …` waits; what follows is the job.
+			fallback = prog
+			atCmd = false
+		case lookPast && (prog == "echo" || prog == "printf") && !ends && pipesOn(tokens[i+1:]):
+			// `echo "x" | logger …` only feeds the program after the pipe.
+			atCmd = false
 		default:
-			prog := filepath.Base(word)
-			if pick, ok := launcher(prog); ok && !ends {
-				if target := pick(commandArgs(tokens[i+1:])); target != "" {
-					return filepath.Base(target), true
-				}
-			}
-			return prog, false
+			return launchedProgram(prog, ends, tokens[i+1:], launcher)
 		}
 		if ends {
 			atCmd = true
 			skipTarget = false
 		}
 	}
+	if lookPast {
+		return fallback, false
+	}
 	return "", false
+}
+
+// launchedProgram names the job after prog, or after the program prog
+// launches when it is a launcher with a target among its arguments.
+func launchedProgram(prog string, ends bool, rest []string, launcher launcherFunc) (string, bool) {
+	if pick, ok := launcher(prog); ok && !ends {
+		if target := pick(commandArgs(rest)); target != "" {
+			return filepath.Base(target), true
+		}
+	}
+	return prog, false
+}
+
+// pipesOn reports whether the simple command starting at tokens ends in a pipe.
+func pipesOn(tokens []string) bool {
+	for _, t := range tokens {
+		if isControlOperator(t) {
+			return t == "|" || t == "|&"
+		}
+		if strings.HasSuffix(t, ";") {
+			return false
+		}
+	}
+	return false
 }
 
 // shellKeywords open a fresh command position the way a control operator does:
@@ -241,12 +313,12 @@ func isRedirect(t string) bool {
 	return i < len(t) && (t[i] == '>' || t[i] == '<')
 }
 
-// outputRedirect returns the first file a command sends its stdout or stderr
+// OutputRedirect returns the first file a command sends its stdout or stderr
 // to (`>> /var/log/x.log`, `2>/tmp/err`, `&>out`), or "". A duplication like
 // `2>&1` names no file, and input (`<`) is not output.
 // ponytail: splits on whitespace like the naming does, so a quoted "a > b"
 // reads as a redirect too; the note it feeds is only advice.
-func outputRedirect(command string) string {
+func OutputRedirect(command string) string {
 	tokens := strings.Fields(command)
 	for i, t := range tokens {
 		if !isRedirect(t) || strings.Contains(t, "<") {
@@ -261,6 +333,25 @@ func outputRedirect(command string) string {
 		}
 	}
 	return ""
+}
+
+// devNullTail matches a trailing redirect that sends both stdout and stderr to
+// /dev/null: `>/dev/null 2>&1`, `&>/dev/null`, `>/dev/null 2>/dev/null` and
+// their `>>`, `1>` and reversed spellings. Stdout alone (`>/dev/null`) is not
+// one: cron still mailed stderr, so the crontab asked to hear about errors.
+var devNullTail = regexp.MustCompile(`\s+(1?>>? ?/dev/null\s+(?:2>&1|2>>? ?/dev/null)|&>>? ?/dev/null|2>>? ?/dev/null\s+1?>>? ?/dev/null)\s*$`)
+
+// dropDevNullRedirect strips devNullTail from the end of a cron command and
+// returns the command and the redirect it dropped, or the command unchanged and
+// "". Only the very end counts, so a redirect inside quotes or before a `&` is
+// left alone, and it never empties the command. It applies to the last command
+// of a list or pipeline only, which is exactly the one the redirect applied to.
+func dropDevNullRedirect(command string) (rest, dropped string) {
+	loc := devNullTail.FindStringSubmatchIndex(command)
+	if loc == nil || strings.TrimSpace(command[:loc[0]]) == "" {
+		return command, ""
+	}
+	return strings.TrimRightFunc(command[:loc[0]], unicode.IsSpace), command[loc[2]:loc[3]]
 }
 
 // isAllDigits reports whether s is non-empty and entirely ASCII digits.

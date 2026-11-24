@@ -324,7 +324,7 @@ allow_station_dispatch = true
 
 ### `allow_station_upgrade`
 
-**type**: `boolean` **default**: `false` **since**: `1.10`
+**type**: `boolean` **default**: `false` **since**: `1.11`
 
 Lets the connected Station upgrade this daemon to a RunWisp release. The daemon
 downloads the release from GitHub, the same place `runwisp upgrade` uses (never
@@ -390,7 +390,7 @@ include_cron = [
 ]
 ```
 
-- `sudo runwisp takeover` finds the crontabs on the host and writes this key for
+- `runwisp takeover` finds the crontabs on the host and writes this key for
   you. It doesn't edit an `include_cron` you already have; it prints what to add.
 - After `crontab -e`, run [`runwisp reload`](/operations/reload/).
 - `runwisp promote <task>` copies a job into `runwisp.toml` and comments out the
@@ -400,7 +400,7 @@ include_cron = [
 :::note[Held jobs]
 While a system cron daemon is running, RunWisp **holds** the jobs it read: they
 are listed with their schedule, but RunWisp doesn't start them, so nothing runs
-twice. `sudo runwisp takeover` ends the hold. If cron is stopped some other way,
+twice. `runwisp takeover` ends the hold. If cron is stopped some other way,
 the hold ends within a minute. See [Held jobs](/coming-from/cron/#held-jobs).
 :::
 
@@ -413,6 +413,7 @@ The path decides the format:
 | `/etc/crontab`, any `cron.d/*`    | system crontab    | the user in the line's 6th field |
 | `/var/spool/cron/crontabs/<user>` | per-user spool    | `<user>`, from the file name     |
 | `/var/spool/cron/<user>`          | per-user spool    | `<user>` (RHEL/SUSE layout)      |
+| `/etc/crontabs/<user>`            | per-user spool    | `<user>` (Alpine, BusyBox crond) |
 | `/etc/anacrontab`                 | anacrontab        | `root`                           |
 | any other file named `anacrontab` | anacrontab        | the daemon's user                |
 | anything else                     | `crontab -l` dump | the daemon's user                |
@@ -467,9 +468,15 @@ A glob picks only the files cron would read:
 - **Overlapping runs queue.** Cron starts a second copy of a slow job; RunWisp
   waits for the first. `promote` the task and set
   [`max_concurrent`](/configuration/tasks/#max_concurrent) to change this.
-- **Task names come from the command.** `run-parts /etc/cron.daily` becomes
-  `cron-daily`. If two crontabs give the same name, the second becomes
-  `backup-<crontab name>`, and the rename is reported.
+- **Task names come from the job.** A comment of up to four words on the line
+  above names it (`# nightly backup` becomes `nightly-backup`). Otherwise the
+  command does: `run-parts /etc/cron.daily` becomes `cron-daily`, and
+  `echo "hi" | logger -t hi` becomes `logger`. Since 1.11, a job from a user's
+  crontab or a `/etc/cron.d` file also carries its source: `report` in ops's
+  crontab becomes `report-ops`, and in `/etc/cron.d/myapp` it becomes
+  `report-myapp`. Root's crontab and `/etc/crontab` keep bare names. The same
+  name twice in one file becomes `report-ops-2`. Adding a crontab never renames
+  a job that already runs.
 - **Guard lines that do nothing on this machine are left out.** Since 1.8,
   distro lines such as `test -x /usr/sbin/anacron || run-parts …` or
   `test -e /run/systemd/system || …` are not imported when their own test

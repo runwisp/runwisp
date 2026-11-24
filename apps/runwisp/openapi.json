@@ -243,6 +243,16 @@
               "null"
             ]
           },
+          "cronChanged": {
+            "description": "Crontabs read via include_cron that changed on disk (edited, added or removed) since the config was loaded; a reload applies them. Re-derived per request; absent when none changed.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "externalUrl": {
             "description": "Web UI base used for notification links: [daemon] external_url, else the address of the latest Web UI password sign-in. Empty when neither is known.",
             "type": "string"
@@ -270,6 +280,10 @@
           },
           "resolvedTimezone": {
             "type": "string"
+          },
+          "runsAsRoot": {
+            "description": "True when the daemon runs as root, so a shell on the host needs sudo to reach it (sudo runwisp reload).",
+            "type": "boolean"
           },
           "schedulingActive": {
             "type": "boolean"
@@ -316,6 +330,7 @@
           "stationEnabled",
           "schedulingActive",
           "serviceManaged",
+          "runsAsRoot",
           "authDisabled",
           "configLoadedAt",
           "configStale",
@@ -1841,6 +1856,14 @@
       "SystemSampleSSEEvent": {
         "additionalProperties": false,
         "properties": {
+          "outputLines": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "description": "Lines each running run has printed so far on stdout and stderr, keyed by run ID",
+            "type": "object"
+          },
           "runs": {
             "additionalProperties": {
               "$ref": "#/components/schemas/ResourceUsage"
@@ -2086,6 +2109,10 @@
               "skip",
               "kill"
             ],
+            "type": "string"
+          },
+          "outputRedirect": {
+            "description": "File the run command redirects its output to (for example /var/log/backup.log or /dev/null), read from the command at config load; RunWisp can't capture output sent there. Absent when the command has no output redirect.",
             "type": "string"
           },
           "parameters": {
@@ -2455,6 +2482,10 @@
               "skip",
               "kill"
             ],
+            "type": "string"
+          },
+          "outputRedirect": {
+            "description": "File the run command redirects its output to (for example /var/log/backup.log or /dev/null), read from the command at config load; RunWisp can't capture output sent there. Absent when the command has no output redirect.",
             "type": "string"
           },
           "parameters": {
@@ -2827,8 +2858,19 @@
     },
     "/api/auth/login": {
       "post": {
-        "description": "The first few wrong passwords from a client IP cost nothing; after that each one doubles the wait before the next try, up to 90 seconds. Trying too soon gets 429 with `Retry-After`. A successful login clears the count.",
+        "description": "The first few wrong passwords from a client cost nothing; after that each one doubles the wait before the next try, up to 90 seconds. Trying too soon gets 429 with `Retry-After`. A successful operator login clears the count and sets the `runwisp_device` cookie; logins carrying it are counted per browser instead of per IP and never wait behind logins from other clients. While the daemon is busy checking other logins, the request waits up to 10 seconds, then gets 503 with `Retry-After`.",
         "operationId": "login",
+        "parameters": [
+          {
+            "description": "Device token set by an earlier login; its logins are throttled per browser instead of per IP",
+            "in": "cookie",
+            "name": "runwisp_device",
+            "schema": {
+              "description": "Device token set by an earlier login; its logins are throttled per browser instead of per IP",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2886,6 +2928,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "summary": "Exchange a signed CHAP challenge response for a session",

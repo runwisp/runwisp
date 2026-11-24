@@ -4,12 +4,14 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"syscall"
 
 	tea "charm.land/bubbletea/v2"
@@ -34,37 +36,44 @@ var (
 // If debugWriter is non-nil, it is wired to the program so that writes to it
 // appear in the TUI's debug view; a nil debugWriter means the daemon runs out
 // of process.
-// It blocks until the user quits. Returns the chosen uikit.QuitAction and any error.
-func StartTUI(cfg TUIConfig, debugWriter *DebugLogWriter) (uikit.QuitAction, error) {
+// It blocks until the user quits. The error is the TUI's own, or a failed
+// daemon shutdown run from the quit dialog.
+func StartTUI(cfg TUIConfig, debugWriter *DebugLogWriter) error {
 	m := NewModel(cfg)
 	m.outOfProcess = debugWriter == nil
 
 	p := tea.NewProgram(m)
 
 	if debugWriter != nil {
-		debugWriter.SetProgram(p)
+		// Send blocks until p.Run starts below, so the flush can't run inline.
+		go debugWriter.SetProgram(p)
 	}
 
 	// Kill the program on SIGTERM so main() returns normally and the Go
 	// coverage runtime can flush GOCOVERDIR data before the process exits.
+	// That is a requested exit, not a TUI failure.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM)
 	defer func() { signal.Stop(sigCh); close(sigCh) }()
+	var terminated atomic.Bool
 	go func() {
 		if _, ok := <-sigCh; ok {
+			terminated.Store(true)
 			p.Kill()
 		}
 	}()
 
 	finalModel, err := p.Run()
+	if errors.Is(err, tea.ErrProgramKilled) && !errors.Is(err, tea.ErrProgramPanic) && terminated.Load() {
+		return nil
+	}
 	if err != nil {
-		return uikit.QuitShutdownDaemon, err
+		return err
 	}
-
 	if fm, ok := finalModel.(Model); ok {
-		return fm.QuitAction(), fm.ShutdownErr()
+		return fm.ShutdownErr()
 	}
-	return uikit.QuitShutdownDaemon, nil
+	return nil
 }
 
 const (
@@ -148,7 +157,7 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 	// retrieve it via `runwisp password` (CLI) or by selecting Home →
 	// Password in the TUI. Anything that captures stderr (journald, log
 	// shippers, screen-share recordings) therefore never sees the value.
-	if info.PasswordEphemeral {
+	if info.PasswordEphemeral && info.Port > 0 {
 		fmt.Fprintf(w, "  %s\n", dimStyle.Render("🔑  Ephemeral password generated in memory."))
 		fmt.Fprintf(w, "    %s\n", dimStyle.Render("Run `runwisp password` to retrieve it, or open Home in the TUI."))
 		fmt.Fprintln(w)

@@ -109,7 +109,8 @@ test.describe("run arrival and removal animation", () => {
                 url.searchParams.get("sortDirection") === "asc"
             );
         });
-        await page.getByTitle("Toggle sort order").click();
+        await page.getByRole("button", { name: "Sort runs" }).click();
+        await page.getByRole("menuitem", { name: "Oldest first" }).click();
         await resorted;
         await expect(page.locator(`${rows}.run-arrive`)).toHaveCount(0);
 

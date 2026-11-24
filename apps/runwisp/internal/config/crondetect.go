@@ -82,6 +82,14 @@ type CronScan struct {
 	// Mails is true when some job runs under a MAILTO. RunWisp sends no such
 	// mail, so a cutover has to say so.
 	Mails bool
+	// HiddenOutput counts the jobs in Jobs whose command still redirects its
+	// output, usually to a log file (importer.NoteOutputRedirected). They run, but their runs in
+	// RunWisp show no output, so a take-over plan has to say so.
+	HiddenOutput int
+	// DevNullDropped counts the jobs in Jobs that ended in >/dev/null 2>&1, which
+	// the importer drops (importer.NoteDevNullDropped). Their runs now show output
+	// cron threw away, which a take-over plan says so it isn't a surprise.
+	DevNullDropped int
 	// CronTZIgnored are the crontabs whose CRON_TZ was not used as a schedule
 	// timezone, because this host's cron ignores it (see importer.CronFlavor).
 	// Their jobs still run; a take-over plan names them so the operator isn't
@@ -91,6 +99,18 @@ type CronScan struct {
 	// guard makes it do nothing on this host (importer.Item.NoopHere). They are
 	// in neither Jobs nor Skipped: nothing that ran is lost by leaving them out.
 	Noop []string
+	// LiveJobs are the jobs counted in Live, in read order, so a take-over plan
+	// can show which task each crontab line becomes before anyone says yes.
+	LiveJobs []CronJob
+}
+
+// CronJob is one crontab line that runs under include_cron: the task it becomes
+// and where it comes from.
+type CronJob struct {
+	Task string
+	File string
+	Line int
+	Run  string
 }
 
 // ScanCronSources globs patterns exactly like `[daemon] include_cron` would
@@ -133,18 +153,35 @@ func ScanCronSources(patterns []string, cfgPath string) CronScan {
 			scan.CronTZIgnored = append(scan.CronTZIgnored, path)
 		}
 		scan.Mails = scan.Mails || res.CronMails()
-		for _, it := range res.Items() {
-			if why := it.NoopHere(); why != "" {
-				scan.Noop = append(scan.Noop, fmt.Sprintf("%s:%d: %s", path, it.Line, why))
-				continue
-			}
-			scan.Jobs++
-			if it.LiveEligible() {
-				scan.Live++
-			}
-		}
+		scan.countJobs(res, path)
 	}
 	return scan
+}
+
+// countJobs tallies one read crontab's jobs into Jobs, Live, LiveJobs, HiddenOutput
+// and Noop.
+func (scan *CronScan) countJobs(res *importer.Result, path string) {
+	for _, it := range res.Items() {
+		if why := it.NoopHere(); why != "" {
+			scan.Noop = append(scan.Noop, fmt.Sprintf("%s:%d: %s", path, res.ListLine(it.Line), why))
+			continue
+		}
+		scan.Jobs++
+		if hasNote(it, importer.NoteOutputRedirected) {
+			scan.HiddenOutput++
+		}
+		if hasNote(it, importer.NoteDevNullDropped) {
+			scan.DevNullDropped++
+		}
+		if it.LiveEligible() {
+			scan.Live++
+			scan.LiveJobs = append(scan.LiveJobs, CronJob{Task: it.Name, File: path, Line: res.ListLine(it.Line), Run: it.Run})
+		}
+	}
+}
+
+func hasNote(it importer.Item, kind importer.NoteKind) bool {
+	return slices.ContainsFunc(it.Notes, func(n importer.Note) bool { return n.Kind == kind })
 }
 
 // appendSkipped renders the findings that mean "this is not running" onto a

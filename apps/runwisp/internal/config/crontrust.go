@@ -155,8 +155,12 @@ func assertPathTrusted(path, what string, extraOwner int) error {
 // assertInfoTrusted applies the writability and ownership checks to an
 // already-stat'd entry, shared by the file check and the ancestor walk.
 func assertInfoTrusted(info os.FileInfo, path, what string, extraOwner int) error {
-	if err := assertNotGroupOrWorldWritable(info, path, what); err != nil {
-		return err
+	// A symlink's mode is never consulted by the kernel; only its owner and the
+	// directory holding it decide who can repoint it.
+	if info.Mode()&os.ModeSymlink == 0 {
+		if err := assertNotGroupOrWorldWritable(info, path, what); err != nil {
+			return err
+		}
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
@@ -174,17 +178,35 @@ func assertInfoTrusted(info os.FileInfo, path, what string, extraOwner int) erro
 
 // assertAncestorsTrusted walks every directory component from the file's parent
 // up to the filesystem root, refusing if any is writable by an untrusted party
-// or owned by one — a writable ancestor lets an attacker rename or replace a
-// component and redirect the path to their own file. Directory components are
-// Lstat'd but symlinks among them are *not* rejected: system layouts legitimately
-// symlink directories (macOS /etc -> /private/etc), and the ownership/writability
-// check on the lstat'd component is what actually gates the swap.
+// or owned by one, since a writable ancestor lets an attacker rename or replace a
+// component and redirect the path to their own file.
+//
+// Symlinked directories are legitimate (macOS /etc -> /private/etc, Alpine's
+// /var/spool/cron/crontabs -> /etc/crontabs), so they are not rejected. A
+// symlink's own mode means nothing (always 0777 on Linux), so the walk checks
+// only its owner, and then walks the resolved path too: that is where the
+// directory the file really sits in, and its parents, get their mode checks.
 func assertAncestorsTrusted(path string, extraOwner int) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("resolve %s: %w", path, err)
 	}
 	dir := filepath.Dir(abs)
+	if err := assertDirChainTrusted(dir, extraOwner); err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", dir, err)
+	}
+	if real == dir {
+		return nil
+	}
+	return assertDirChainTrusted(real, extraOwner)
+}
+
+// assertDirChainTrusted Lstats dir and each of its parents up to the root.
+func assertDirChainTrusted(dir string, extraOwner int) error {
 	for {
 		info, err := os.Lstat(dir)
 		if err != nil {

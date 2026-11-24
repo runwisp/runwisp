@@ -297,7 +297,10 @@ func (s *systemdInstaller) Install(ctx context.Context, opts InstallOptions, out
 		return fmt.Errorf("%w: %s", ErrConflict, plan.UnitPath)
 	case PlanNoop:
 		fmt.Fprintf(out, "Already installed. ✓\n  Unit: %s\n", plan.UnitPath)
-		return s.reassertCronTakeover(ctx, opts, plan, out)
+		if opts.TakeOverCron && plan.CronUnit != "" {
+			return s.reassertCronTakeover(ctx, opts, plan, out)
+		}
+		return s.enableIfNotLoaded(ctx, opts.System)
 	}
 
 	if err := s.preflight(ctx, opts); err != nil {
@@ -325,13 +328,29 @@ func (s *systemdInstaller) preflight(_ context.Context, opts InstallOptions) err
 	return requireConfig(s.deps.FS, opts.Config)
 }
 
-// applyInstall executes the steps after confirmation.
-func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts InstallOptions, out io.Writer) error {
+// installBinary copies the invoking binary to where the unit runs it, then
+// links the invoking user's copy to it so both names run the same binary.
+func installBinary(opts InstallOptions, out io.Writer) error {
 	if binaryCopyNeeded(opts) {
 		if err := copyBinary(opts.CopyBinaryFrom, opts.Binary); err != nil {
 			return fmt.Errorf("copy binary: %w", err)
 		}
 		fmt.Fprintf(out, "Copied %s to %s\n", opts.CopyBinaryFrom, opts.Binary)
+	}
+	if owner, ok := sudoOwnerFromEnv(); ok && opts.CopyBinaryFrom != "" {
+		if linked, err := linkUserCopy(opts.CopyBinaryFrom, opts.Binary, owner); err != nil {
+			fmt.Fprintf(out, "Note: could not link %s to %s (%v). Run 'sudo runwisp upgrade' to upgrade the service.\n", opts.CopyBinaryFrom, opts.Binary, err)
+		} else if linked {
+			fmt.Fprintf(out, "Replaced %s with a link to %s, so `runwisp` and `sudo runwisp` run the same binary\n", opts.CopyBinaryFrom, opts.Binary)
+		}
+	}
+	return nil
+}
+
+// applyInstall executes the steps after confirmation.
+func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts InstallOptions, out io.Writer) error {
+	if err := installBinary(opts, out); err != nil {
+		return err
 	}
 	if err := s.deps.FS.WriteFile(plan.UnitPath, []byte(plan.UnitContent), 0644); err != nil {
 		return fmt.Errorf("write unit: %w", err)
@@ -342,6 +361,11 @@ func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts Ins
 			return fmt.Errorf("write failsafe unit: %w", err)
 		}
 		fmt.Fprintf(out, "Wrote %s\n", cronFailsafePath())
+	}
+	if err := s.savePassword(opts, out); err != nil {
+		// Best-effort: without it the daemon makes up a password each start,
+		// which is a worse login, not a broken install.
+		fmt.Fprintf(out, "Note: could not save a Web UI password (%v). Set RUNWISP_PASSWORD for the service yourself.\n", err)
 	}
 
 	if err := s.runDaemonReload(ctx, opts.System); err != nil {
@@ -458,6 +482,20 @@ func (s *systemdInstaller) enableLinger(ctx context.Context, out io.Writer) erro
 	return nil
 }
 
+// enableIfNotLoaded finishes an install whose unit file is on disk but which
+// systemd never loaded and enabled, such as one that failed at daemon-reload.
+// is-enabled exits non-zero for anything but enabled, so only stdout counts.
+func (s *systemdInstaller) enableIfNotLoaded(ctx context.Context, systemWide bool) error {
+	stdout, _, _ := s.querySystemctl(ctx, systemWide, "is-enabled", s.serviceName(systemWide))
+	if strings.TrimSpace(string(stdout)) == "enabled" {
+		return nil
+	}
+	if err := s.runDaemonReload(ctx, systemWide); err != nil {
+		return err
+	}
+	return s.runEnableNow(ctx, systemWide)
+}
+
 func (s *systemdInstaller) runEnableNow(ctx context.Context, systemWide bool) error {
 	_, stderr, err := s.runSystemctl(ctx, systemWide, "enable", "--now", s.serviceName(systemWide))
 	if err != nil {
@@ -511,12 +549,6 @@ func (s *systemdInstaller) Restart(ctx context.Context, opts InstallOptions) err
 	return s.runSystemctlVerb(ctx, opts.System, "restart")
 }
 
-// passwordDropInName is the drop-in file `service install` writes a generated
-// RUNWISP_PASSWORD into. A separate file (not the unit) so the secret gets 0600
-// while the unit stays world-readable, and so a re-install rewriting the unit
-// leaves it alone.
-const passwordDropInName = "password.conf"
-
 // dropInPath is where a "<unit>.d/<name>" override lives: the standard
 // systemd drop-in directory, shared by the password drop-in and the
 // operator-environment drop-in.
@@ -526,7 +558,7 @@ func (s *systemdInstaller) dropInPath(systemWide bool, name string) string {
 
 // ownedDropIns are the drop-ins RunWisp itself writes into `<unit>.d/`. Uninstall
 // removes exactly these and leaves any other file an operator put there.
-var ownedDropIns = []string{passwordDropInName, EnvDropInName}
+var ownedDropIns = []string{PasswordDropInName, EnvDropInName}
 
 // existingOwnedDropIns lists the RunWisp-written drop-ins present on disk.
 func (s *systemdInstaller) existingOwnedDropIns(systemWide bool) []string {
@@ -566,31 +598,54 @@ func (s *systemdInstaller) SupportsPasswordDropIn() bool {
 	return true
 }
 
-// EnsurePasswordDropIn implements Installer.
-func (s *systemdInstaller) EnsurePasswordDropIn(ctx context.Context, opts InstallOptions, password string) (string, bool, error) {
-	if err := s.requireFingerprint(opts.System); err != nil {
-		return "", false, err
+// savePassword writes opts.Password to the password drop-in before the unit is
+// first started, so the service starts once, already on it. The daemon-reload
+// that follows in applyInstall picks the file up. A saved password is never
+// rotated: an existing drop-in is left alone.
+func (s *systemdInstaller) savePassword(opts InstallOptions, out io.Writer) error {
+	if opts.Password == "" {
+		return nil
 	}
-	path := s.dropInPath(opts.System, passwordDropInName)
+	path := s.dropInPath(opts.System, PasswordDropInName)
 	if _, err := s.deps.FS.Stat(path); err == nil {
-		return path, false, nil // already set — never rotate an existing password
+		return nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return "", false, err
+		return err
 	}
-
-	content, err := envDropInContent(map[string]string{"RUNWISP_PASSWORD": password})
+	restart := s.restartCommand(opts.System)
+	content, err := passwordDropInContent(opts.Password, restart)
 	if err != nil {
-		return "", false, err
+		return err
 	}
 	if err := s.deps.FS.WriteFile(path, []byte(content), 0o600); err != nil {
-		return "", false, fmt.Errorf("write password drop-in %s: %w", path, err)
+		return fmt.Errorf("write password drop-in %s: %w", path, err)
 	}
-	// systemd caches unit config; the running daemon only sees the drop-in after
-	// a daemon-reload followed by the caller's Restart.
-	if _, stderr, err := s.runSystemctl(ctx, opts.System, systemctlDaemonReload); err != nil {
-		return "", false, fmt.Errorf("daemon-reload after writing password drop-in: %w: %s", err, strings.TrimSpace(string(stderr)))
+	fmt.Fprintf(out, "Generated a Web UI password and saved it to %s (0600):\n\n    %s\n\n", path, opts.Password)
+	if opts.System {
+		fmt.Fprintln(out, "Print it again with: sudo runwisp password")
 	}
-	return path, true, nil
+	fmt.Fprintf(out, "To rotate it, change RUNWISP_PASSWORD in that file and run: %s\n", restart)
+	return nil
+}
+
+// restartCommand is what an operator types to restart the service, for the
+// password drop-in's header and the install output.
+func (s *systemdInstaller) restartCommand(systemWide bool) string {
+	if systemWide {
+		return "sudo systemctl restart " + strings.TrimSuffix(s.serviceName(true), ".service")
+	}
+	return systemctlCommandLine(false, s.deps.Euid, "restart", s.serviceName(false))
+}
+
+// passwordDropInContent is envDropInContent for the password, plus a second
+// header line on how to rotate it. ManagedMarker stays the first line.
+func passwordDropInContent(password, restart string) (string, error) {
+	content, err := envDropInContent(map[string]string{"RUNWISP_PASSWORD": password})
+	if err != nil {
+		return "", err
+	}
+	return strings.Replace(content, ManagedMarker+"\n",
+		ManagedMarker+"\n# To rotate, change RUNWISP_PASSWORD below and run: "+restart+"\n", 1), nil
 }
 
 // envDropInContent renders the body of a RUNWISP_* env drop-in: the managed
@@ -780,6 +835,21 @@ func (s *systemdInstaller) applyUninstall(ctx context.Context, plan Plan, opts U
 	if _, stderr, err := s.runSystemctl(ctx, opts.System, "stop", name); err != nil {
 		fmt.Fprintf(out, "Warning: %s: %v %s\n", systemctlErrLabel(opts.System, "stop"), err, string(stderr))
 	}
+	// RunWisp is stopped from here on, so cron goes back however the rest
+	// ends: a step below that fails must not leave the box with no scheduler.
+	// Best-effort, like stop/disable: failing to restore cron must not turn
+	// into a failed uninstall of a unit that may already be gone.
+	cronPending := plan.CronUnit != ""
+	restoreCron := func() {
+		if !cronPending {
+			return
+		}
+		cronPending = false
+		if err := s.restoreCron(ctx, plan.CronUnit, plan.cronPrior, out); err != nil {
+			fmt.Fprintf(out, "Warning: %v\n", err)
+		}
+	}
+	defer restoreCron()
 	if _, stderr, err := s.runSystemctl(ctx, opts.System, "disable", name); err != nil {
 		fmt.Fprintf(out, "Warning: %s: %v %s\n", systemctlErrLabel(opts.System, "disable"), err, string(stderr))
 	}
@@ -798,15 +868,7 @@ func (s *systemdInstaller) applyUninstall(ctx context.Context, plan Plan, opts U
 	if _, stderr, err := s.runSystemctl(ctx, opts.System, systemctlDaemonReload); err != nil {
 		fmt.Fprintf(out, "Warning: %s: %v %s\n", systemctlErrLabel(opts.System, systemctlDaemonReload), err, string(stderr))
 	}
-	if plan.CronUnit != "" {
-		// Best-effort, like stop/disable above: RunWisp's own unit is
-		// already gone, so failing to restore cron must not turn into a
-		// failed uninstall — it would just leave the operator with no
-		// way to remove a unit that no longer exists.
-		if err := s.restoreCron(ctx, plan.CronUnit, plan.cronPrior, out); err != nil {
-			fmt.Fprintf(out, "Warning: %v\n", err)
-		}
-	}
+	restoreCron()
 	if opts.Purge {
 		if err := purgeDataDir(out, opts.DataDir); err != nil {
 			return err

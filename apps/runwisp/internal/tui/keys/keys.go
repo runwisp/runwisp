@@ -37,6 +37,7 @@ var (
 	Help         = Binding{Keys: "?", Desc: "toggle this help", Bar: "? help"}
 	Quit         = Binding{Keys: "q / ctrl+c", Desc: "quit", Bar: "q/^C quit"}
 	NotifPanel   = Binding{Keys: "n", Desc: "notifications panel (Home)", Bar: "n notifications"}
+	Warnings     = Binding{Keys: "w", Desc: "list config warnings (Home)"}
 	ReloadConfig = Binding{Keys: "R", Desc: "reload runwisp.toml", Bar: "R reload", Writes: true}
 	SearchLogs   = Binding{Keys: "/", Desc: "search logs of the focused task"}
 	// FilterTasks shares `/` with SearchLogs; it applies when the sidebar is
@@ -71,12 +72,14 @@ var (
 // Run-list filter action, active when the executions list is focused.
 var (
 	Filter = Binding{Keys: "f", Desc: "filter by status", Bar: "f filter"}
+	Sort   = Binding{Keys: "o", Desc: "sort: newest, oldest, longest, shortest first", Bar: "o sort"}
 )
 
 // Run-list multi-select actions. Select/SelectAll start a selection; the rest
 // act on it and only appear in the bar once one or more runs are selected.
 var (
 	Select      = Binding{Keys: "space", Desc: "select / deselect the run under the cursor", Bar: "space select", Writes: true}
+	SelectRange = Binding{Keys: "shift+↑↓", Desc: "extend the selection up / down", Writes: true}
 	SelectAll   = Binding{Keys: "a", Desc: "select all runs matching the filter", Bar: "a select all", Writes: true}
 	BulkDelete  = Binding{Keys: "d", Desc: "delete selected runs (undoable)", Bar: "d delete", Writes: true}
 	BulkCancel  = Binding{Keys: "c", Desc: "cancel selected runs", Bar: "c cancel", Writes: true}
@@ -123,10 +126,10 @@ var (
 // Each row's Keys/Desc come from the bindings above, so the overlay and the
 // contextual bars are guaranteed consistent.
 var OverlaySections = []Section{
-	{Title: "Global", Bindings: []Binding{Help, Quit, NotifPanel, ReloadConfig, SearchLogs}},
+	{Title: "Global", Bindings: []Binding{Help, Quit, NotifPanel, Warnings, ReloadConfig, SearchLogs}},
 	{Title: "Navigate", Bindings: []Binding{Move, SwitchPanel, Open, Back, FilterTasks}},
 	{Title: "Task", Bindings: []Binding{Run, Stop, Pause, OpenRun, TaskInfo, Undo}},
-	{Title: "Run list", Bindings: []Binding{Filter, Select, SelectAll, BulkDelete, BulkCancel, BulkRerun, ClearSelect}},
+	{Title: "Run list", Bindings: []Binding{Filter, Sort, Select, SelectRange, SelectAll, BulkDelete, BulkCancel, BulkRerun, ClearSelect}},
 	{Title: "Exec view", Bindings: []Binding{Retry, DownloadDel, Fullscreen, TopEnd, Page, FrameHist}},
 	{Title: "Run dialog", Bindings: []Binding{FlagToggle, ChooseOpt, IncludeOmit, RunCancel}},
 	{Title: "Notifications", Bindings: []Binding{NotifOpen, NotifRead, NotifReadAll, NotifCollapse}},

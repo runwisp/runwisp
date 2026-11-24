@@ -5,11 +5,11 @@ title: Running on a server
 description: Install RunWisp as a system service so it starts on boot, log in to the Web UI with a stable password, and change the config safely.
 ---
 
-So far the daemon runs in the background of your session. On a server, install
-it as a service so it starts on boot:
+So far the daemon runs only while the TUI is open. On a server, install it as
+a service so it starts on boot and keeps running:
 
 ```bash
-sudo runwisp service install
+runwisp service install
 runwisp service status
 ```
 
@@ -22,8 +22,8 @@ or to run it as your own user, use `--local`. See
 ## Log in to the Web UI
 
 The installer generates a Web UI password, saves it next to the service, and
-prints it once. Store it right away. To use your own password instead, set
-`RUNWISP_PASSWORD` before you install. See
+prints it. Print it again with `sudo runwisp password`. To use your own
+password instead, set `RUNWISP_PASSWORD` before you install. See
 [A stable Web UI password](/operations/autostart/#a-stable-web-ui-password).
 
 The Web UI listens on `127.0.0.1:9477`. To reach it from another machine, put a

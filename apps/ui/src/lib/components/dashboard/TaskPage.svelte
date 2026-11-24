@@ -300,6 +300,7 @@
                 onBulkDelete={selection.handleBulkDelete}
                 onBulkRerun={selection.handleBulkRerun}
                 getInstanceCount={() => instanceCount}
+                getLive={(id) => systemStore.runLive(id)}
                 motion={live.source.motion}
                 outputSearch
                 usageBars
@@ -324,6 +325,7 @@
                 onStop={!taskIsService && !readOnly ? () => (stopConfirmOpen = true) : undefined}
                 onBack={rail.phone ? rail.back : undefined}
                 {highlightLine}
+                outputRedirect={task.outputRedirect}
                 getInstanceCount={() => instanceCount}
                 getLiveUsage={(id) => systemStore.runUsage(id)}
                 motion={live.source.motion}
@@ -380,9 +382,9 @@
 {#snippet runModalBody()}
     {#if concurrencyReached}
         <Alert variant="warning">
-            This task is already running at its maximum concurrency. Your run will be <strong
-                >queued</strong
-            > and will start automatically once a slot becomes available.
+            This task is already running at its maximum concurrency. Your run will be <strong>
+                queued
+            </strong> and will start automatically once a slot becomes available.
         </Alert>
     {/if}
     {#if hasParams && confirmOpen}

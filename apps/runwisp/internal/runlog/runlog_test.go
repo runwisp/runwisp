@@ -181,6 +181,21 @@ func TestLogEnded(t *testing.T) {
 	})
 }
 
+// TestLogEnded_Exit127SaysCommandNotFound: the shell exits 127 when it can't
+// find the program, and a crontab's usual >/dev/null 2>&1 hides its message.
+// The run line says it.
+func TestLogEnded_Exit127SaysCommandNotFound(t *testing.T) {
+	buf := captureSlog(t)
+	run := sampleRun(model.ReasonFailed, 127)
+	run.IsFailure = true
+	LogEnded(run)
+	assert.Contains(t, buf.String(), `exit=127 hint="command not found"`)
+
+	buf.Reset()
+	LogEnded(sampleRun(model.ReasonFailed, 2))
+	assert.NotContains(t, buf.String(), "hint=")
+}
+
 func TestSubscribe_LogsLongRunning(t *testing.T) {
 	bus := events.NewEventBus()
 	buf := captureSlog(t)

@@ -22,6 +22,7 @@
         isFieldActive,
         isBlank,
     } from "./filter-spec.js";
+    import { formatLocalDay } from "../utils/format.js";
 
     let {
         field,
@@ -70,12 +71,11 @@
 
     // Date-range quick presets. Browser runtime, so reading the clock is fine.
     const DAY_MS = 86_400_000;
-    const isoDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
     function setRange(days: number) {
         if (field.type !== "daterange") return;
         const now = Date.now();
-        values[`${field.key}From`] = isoDay(now - days * DAY_MS);
-        values[`${field.key}To`] = isoDay(now);
+        values[`${field.key}From`] = formatLocalDay(now - days * DAY_MS);
+        values[`${field.key}To`] = formatLocalDay(now);
     }
 </script>
 

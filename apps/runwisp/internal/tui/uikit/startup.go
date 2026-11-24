@@ -66,6 +66,9 @@ type StartupInfo struct {
 	// after the daemon loaded it. Kept current by the TUI's periodic
 	// /api/daemon poll; renders as a "press R to reload" notice in the header.
 	ConfigStale bool
+	// CronChanged names the crontabs edited since the daemon loaded them, from
+	// the same poll; the stale notice then names a crontab, not runwisp.toml.
+	CronChanged []string
 	// AppConfig is true when an SDK app supplies the config, so there is no
 	// runwisp.toml to validate or reload from; notices point at `runwisp status`.
 	AppConfig bool
@@ -128,6 +131,7 @@ func (s *StartupInfo) ApplyDaemonInfo(info model.DaemonInfo) {
 	s.ServiceManaged = info.ServiceManaged
 	s.AuthDisabled = info.AuthDisabled
 	s.ConfigStale = info.ConfigStale
+	s.CronChanged = info.CronChanged
 	s.ConfigWarnings = info.ConfigWarnings
 	s.Timezone = info.ResolvedTimezone
 	s.TimezoneSource = info.TimezoneSource

@@ -6,6 +6,7 @@ package cutover
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,15 +140,62 @@ func TestRender_IncludeCronMismatchPrintsThePasteableArray(t *testing.T) {
 }
 
 // TestRender_NoJobsAnywhereNamesWhereItLooked, so an operator whose jobs live
-// somewhere unusual knows why RunWisp found none.
+// somewhere unusual knows why RunWisp found none. The blocker says it all, so
+// the plan prints nothing of its own.
 func TestRender_NoJobsAnywhereNamesWhereItLooked(t *testing.T) {
-	c, _, _ := fixture{}.build(t)
+	c, _, _ := fixture{cronUnit: "cron.service"}.build(t)
 
 	p, text := render(t, c)
 	require.True(t, hasBlocker(p, BlockerNoCronJobs))
 
-	assert.Contains(t, text, "No cron jobs found on this box.")
+	assert.Empty(t, text)
 	assert.Contains(t, blockerText(p), "crontabs", "the blocker names where it looked")
+}
+
+// TestRender_ListsEveryJobItWillRun: the prompt is the one moment an operator
+// reads carefully, so it shows which task each crontab line becomes, and says
+// that overlapping runs now queue.
+func TestRender_ListsEveryJobItWillRun(t *testing.T) {
+	c, _, _ := fixture{
+		crontabs: map[string]string{
+			"ops": "# nightly backup\n30 2 * * * tar czf /var/backups/app/full-archive-of-everything.tgz /srv/app /srv/data\n",
+		},
+		cronUnit:   "cron.service",
+		cronActive: true,
+	}.build(t)
+
+	p, text := render(t, c)
+	require.False(t, p.Blocked(), blockerText(p))
+
+	var row string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "nightly-backup") {
+			row = line
+		}
+	}
+	require.NotEmpty(t, row, text)
+	assert.Contains(t, row, "← "+filepath.Join(filepath.Dir(p.Opts.Config), "crontabs", "ops")+":2")
+	assert.Contains(t, row, "tar czf")
+	assert.Contains(t, row, "…", "a long command is cut to fit")
+	assert.NotContains(t, row, "/srv/data")
+	assert.Contains(t, text, `on_overlap = "queue"`)
+}
+
+// TestRender_BlockedPlanShowsNoSteps: a plan that won't run has no steps worth
+// reading; printing "1. write the config" above the refusal reads as if it did.
+func TestRender_BlockedPlanShowsNoSteps(t *testing.T) {
+	c, _, cfgPath := fixture{
+		crontabs:      map[string]string{"backup": oneJob},
+		cronUnit:      "cron.service",
+		binaryProblem: errors.New("binary lives under /tmp"),
+	}.build(t)
+
+	p, text := render(t, c)
+	require.True(t, p.Blocked())
+	assert.Contains(t, text, "Found 1 cron job on this box:")
+	assert.NotContains(t, text, " 1.")
+	assert.NotContains(t, text, cfgPath)
+	assert.NotContains(t, text, "Resolved settings:")
 }
 
 // TestRender_SettingsAreOmittedOnceTheUnitMatches: those numbers would then
@@ -193,6 +241,40 @@ func TestRender_SaysCronMailStops(t *testing.T) {
 				assert.Contains(t, text, "https://docs.runwisp.com/notifications/")
 			} else {
 				assert.NotContains(t, text, "Cron mail stops")
+			}
+		})
+	}
+}
+
+// TestRender_SaysWhereRedirectedOutputGoes: half of real crontabs redirect a
+// job's output. The plan counts the /dev/null ones RunWisp now captures, and the
+// ones still redirecting it, before the operator meets an empty run.
+func TestRender_SaysWhereRedirectedOutputGoes(t *testing.T) {
+	for _, tc := range []struct {
+		name, crontab string
+		want, not     []string
+	}{
+		{"both kinds", "0 3 * * * /bin/a >> /var/log/a.log 2>&1\n" +
+			"0 4 * * * /bin/b > /dev/null 2>&1\n0 5 * * * /bin/c &>/dev/null\n" + oneJob,
+			[]string{"2 jobs sent their output to /dev/null", "1 job still redirects its output", "runwisp reload"}, nil},
+		{"one file", "0 3 * * * /bin/a >/var/log/a\n",
+			[]string{"1 job still redirects its output (to a log file, say), so its runs"}, []string{"/dev/null"}},
+		{"none", oneJob, nil, []string{"output"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _, _ := fixture{
+				crontabs:   map[string]string{"backup": tc.crontab},
+				cronUnit:   "cron.service",
+				cronActive: true,
+			}.build(t)
+
+			_, text := render(t, c)
+
+			for _, w := range tc.want {
+				assert.Contains(t, text, w)
+			}
+			for _, n := range tc.not {
+				assert.NotContains(t, text, n)
 			}
 		})
 	}
@@ -308,4 +390,14 @@ func TestRender_ListsJobsLeftOutAndEveryRetiredUnit(t *testing.T) {
 		"  /etc/crontab:21: /usr/sbin/anacron is executable")
 	assert.NotContains(t, out.String(), "need a fix first")
 	assert.Equal(t, "Take over from cron.service, anacron.timer and anacron.service?", PromptQuestion(p))
+}
+
+func TestRender_OneJobNeedingAFixIsSingular(t *testing.T) {
+	p := Plan{Evidence: Evidence{
+		Scan:    config.CronScan{Files: []string{"/etc/crontab"}, Jobs: 3, Live: 2},
+		Sources: []string{"/etc/crontab"},
+	}}
+	var out bytes.Buffer
+	Render(&out, p)
+	assert.Contains(t, out.String(), "(1 of them needs a fix first and would not run)")
 }

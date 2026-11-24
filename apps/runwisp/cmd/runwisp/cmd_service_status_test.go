@@ -39,6 +39,30 @@ func TestResolveStatusOptions_SystemWide(t *testing.T) {
 	assert.True(t, opts.System)
 }
 
+// `runwisp service status` as a normal user compared the unit against
+// ./runwisp.toml and ./.runwisp and reported DRIFT straight after a takeover.
+// With no flags it now checks the unit against what the unit itself runs.
+func TestWithInstalledUnitArgs_ChecksTheUnitAgainstItself(t *testing.T) {
+	fakeSystemUnit(t, "/var/lib/runwisp")
+	opts, err := resolveStatusOptions(Flags{CfgFile: "runwisp.toml", DataDir: ".runwisp", Host: "127.0.0.1", Port: 9477}, true)
+	require.NoError(t, err)
+
+	opts = withInstalledUnitArgs(opts)
+	assert.Equal(t, "/usr/local/bin/runwisp", opts.Binary)
+	assert.Equal(t, "/etc/runwisp/runwisp.toml", opts.Config)
+	assert.Equal(t, "/var/lib/runwisp", opts.DataDir)
+	assert.True(t, opts.System)
+
+	for _, v := range []string{"RUNWISP_CONFIG", "RUNWISP_DATA", "RUNWISP_HOST", "RUNWISP_PORT"} {
+		t.Setenv(v, "")
+	}
+	cmd := newInstallTestCmd(&bytes.Buffer{}, &bytes.Buffer{})
+	cmd.Flags().String("data", "", "")
+	assert.False(t, explicitServiceFlags(cmd))
+	require.NoError(t, cmd.Flags().Set("data", "/srv/rw"))
+	assert.True(t, explicitServiceFlags(cmd), "an explicit --data is what to compare against")
+}
+
 func TestRenderAutostartLine(t *testing.T) {
 	t.Run("enabled prints enabled and not degraded", func(t *testing.T) {
 		var buf bytes.Buffer
@@ -146,6 +170,15 @@ func TestDataDirNote(t *testing.T) {
 		note, degraded := dataDirNote(autostart.Status{DataDirWritable: false})
 		assert.True(t, degraded)
 		assert.Contains(t, note, "not writable")
+	})
+	t.Run("system service seen by a normal user", func(t *testing.T) {
+		// After takeover, `runwisp service status` as the operator flagged
+		// root's /var/lib/runwisp as not writable, which it never is for them.
+		note, degraded := dataDirNoteAs(autostart.Status{System: true}, 1000)
+		assert.False(t, degraded)
+		assert.Empty(t, note)
+		_, degraded = dataDirNoteAs(autostart.Status{System: true}, 0)
+		assert.True(t, degraded, "root's answer still counts")
 	})
 	t.Run("with last write", func(t *testing.T) {
 		when := time.Date(2026, 5, 22, 10, 30, 0, 0, time.UTC)

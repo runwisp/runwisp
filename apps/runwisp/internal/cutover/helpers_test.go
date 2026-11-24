@@ -5,7 +5,6 @@ package cutover
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -51,12 +50,19 @@ type fixture struct {
 	// `runwisp stop` leaves behind.
 	serviceStopped bool
 	daemonRunning  bool
+	// unitDisabled reports a matching unit file that systemd has not loaded and
+	// enabled: what a takeover that died at `systemctl daemon-reload` leaves.
+	unitDisabled bool
+	// noSystemd describes a box where systemd is not PID 1, as in a container.
+	noSystemd bool
 
 	allowSkipped bool
 	// scanBlocked seeds CronScan.Blocked, the pre-config refusals.
 	scanBlocked []string
 	// binaryProblem seeds Deps.BinaryProblem.
 	binaryProblem error
+	// noCrontab describes a box without a `crontab` binary.
+	noCrontab bool
 }
 
 // build turns a fixture into a Cutover plus the installer it will talk to.
@@ -81,8 +87,12 @@ func (fx fixture) build(t *testing.T) (*Cutover, *autostartfake.Installer, strin
 	inst := &autostartfake.Installer{
 		CronUnit:   fx.cronUnit,
 		CronActive: fx.cronActive,
-		Stat:       autostart.Status{Installed: fx.unitInstalled, Running: fx.unitInstalled && !fx.serviceStopped},
-		Plan:       unitPlan,
+		Stat: autostart.Status{
+			Installed: fx.unitInstalled,
+			Autostart: fx.unitInstalled && !fx.unitDisabled,
+			Running:   fx.unitInstalled && !fx.serviceStopped && !fx.unitDisabled,
+		},
+		Plan: unitPlan,
 	}
 
 	goos := fx.goos
@@ -109,10 +119,11 @@ func (fx fixture) build(t *testing.T) (*Cutover, *autostartfake.Installer, strin
 			return scan
 		},
 		Trusted:       func(string) error { return nil },
+		HasCrontab:    func() bool { return !fx.noCrontab },
 		Preflight:     func(context.Context) (bool, error) { return false, nil },
 		DaemonRunning: func() bool { return fx.daemonRunning },
 		Reload:        func(context.Context) error { inst.Calls = append(inst.Calls, "reload"); return nil },
-		AfterInstall:  func(context.Context, io.Writer) { inst.Calls = append(inst.Calls, "after-install") },
+		MarkBootRan:   func(string) error { inst.Calls = append(inst.Calls, "mark-boot"); return nil },
 		WriteConfig: func(path string, patterns []string) error {
 			inst.Calls = append(inst.Calls, "write-config")
 			return os.WriteFile(path, []byte(config.CronStarterConfig(patterns)), 0o644)
@@ -121,6 +132,7 @@ func (fx fixture) build(t *testing.T) (*Cutover, *autostartfake.Installer, strin
 			inst.Calls = append(inst.Calls, "wire-cron")
 			return writeWired(path, patterns)
 		},
+		SystemdBooted:        func() bool { return !fx.noSystemd },
 		AllowSkippedCronJobs: fx.allowSkipped,
 		BinaryProblem:        fx.binaryProblem,
 	})

@@ -42,6 +42,14 @@ const (
 	CookieName = "runwisp_jwt"
 	CookiePath = "/api/"
 
+	// DeviceCookieName marks a browser that has signed in before, so its
+	// logins skip the per-IP throttle (see DeviceToken). It only rides on
+	// auth requests and grants no access by itself.
+	DeviceCookieName = "runwisp_device"
+	deviceCookiePath = "/api/auth/"
+	// deviceDuration is the longest cookie lifetime browsers keep (400 days).
+	deviceDuration = 400 * 24 * time.Hour
+
 	nonceTTL        = 5 * time.Minute
 	launchTicketTTL = 60 * time.Second
 
@@ -58,6 +66,10 @@ const (
 	// no role segment ("<exp>.<mac>"), so sessions issued before the viewer
 	// password existed stay valid.
 	viewerRole = "viewer"
+
+	// deviceRole namespaces device-token MACs so one can never pass as a
+	// session token's ("<exp>" is all digits).
+	deviceRole = "device"
 )
 
 // ErrEmptySessionKey is returned by NewService when the supplied session key
@@ -277,6 +289,27 @@ func (s *Service) VerifyToken(token string) (readOnly, ok bool) {
 		return false, false
 	}
 	return true, hmac.Equal([]byte(mac), []byte(sign(v.key, exp+"."+viewerRole)))
+}
+
+// IssueDeviceToken mints "<id>.<mac>" for a browser that just signed in: id
+// is random, mac is HMAC-SHA256 of "device.<id>" under the session key, so
+// rotating the password forgets every device.
+func (s *Service) IssueDeviceToken() string {
+	id := rand.Text()
+	return id + "." + sign(s.sessionKey, deviceRole+"."+id)
+}
+
+// DeviceID returns the id of a device token this daemon minted, or false.
+func (s *Service) DeviceID(token string) (string, bool) {
+	id, mac, ok := strings.Cut(token, ".")
+	return id, ok && id != "" && hmac.Equal([]byte(mac), []byte(sign(s.sessionKey, deviceRole+"."+id)))
+}
+
+// BuildDeviceCookie builds the cookie carrying a device token.
+func (s *Service) BuildDeviceCookie(token string, secure bool) http.Cookie {
+	c := s.BuildAuthCookie(token, deviceDuration, secure)
+	c.Name, c.Path = DeviceCookieName, deviceCookiePath
+	return c
 }
 
 // IsViewerToken reports whether token claims the viewer role. Like TokenExpiry

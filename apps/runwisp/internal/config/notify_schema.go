@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/kinds"
 )
 
@@ -754,4 +755,23 @@ func validateRoute(idx int, r NotificationRoute, known map[string]struct{}) erro
 		}
 	}
 	return nil
+}
+
+// staleRouteWarnings names each [[route]] whose match.task glob matches no task.
+// A task renamed by an import or removed from the file would otherwise leave
+// its routes matching nothing, silently. Runs once every task is in place
+// (includes, cron sources, compose), so a route aimed at an imported job is
+// never flagged.
+func staleRouteWarnings(cfg *Config) []string {
+	var out []string
+	for _, r := range cfg.Notify.Routes {
+		if r.TaskGlob == "" || slices.ContainsFunc(cfg.Tasks, func(t model.Task) bool {
+			ok, _ := path.Match(r.TaskGlob, t.Name)
+			return ok
+		}) {
+			continue
+		}
+		out = append(out, fmt.Sprintf("[[route]] match.task %q matches no task, so it never fires; check the task name", r.TaskGlob))
+	}
+	return out
 }

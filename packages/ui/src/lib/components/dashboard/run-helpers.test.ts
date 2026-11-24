@@ -4,20 +4,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Run } from "@runwisp/common";
 import {
+    rangeIds,
     runDuration,
     runStartDelay,
     RUN_VERDICTS,
     runEndMarker,
+    outputRedirectHint,
+    runNeverStarted,
     runRowReadout,
     highlightParts,
     formatTriggeredByLabel,
     runRetryLabel,
     runUsageLabel,
+    runLiveLabel,
     runUsageScale,
     usageLevel,
     usualDuration,
     outputBand,
     runOutputScale,
+    runScalesByTask,
     outputUnusual,
     formatLines,
     runOutputLabel,
@@ -143,6 +148,26 @@ describe("formatTriggeredByLabel", () => {
     });
 });
 
+describe("runLiveLabel", () => {
+    it("is undefined before the first sample", () => {
+        expect(runLiveLabel(undefined)).toBeUndefined();
+        expect(runLiveLabel({ usage: undefined, outputLines: undefined })).toBeUndefined();
+    });
+
+    it("joins live CPU, memory and lines printed so far", () => {
+        expect(
+            runLiveLabel({
+                usage: { cpuPercent: 12.4, memoryBytes: 48 * 1024 * 1024 },
+                outputLines: 3,
+            }),
+        ).toBe("CPU 12% · 48 MB · 3 lines");
+    });
+
+    it("shows lines alone for a run without CPU and memory", () => {
+        expect(runLiveLabel({ usage: undefined, outputLines: 0 })).toBe("0 lines");
+    });
+});
+
 describe("runUsageLabel", () => {
     it("is undefined for an unmeasured run", () => {
         expect(runUsageLabel({})).toBeUndefined();
@@ -206,6 +231,44 @@ describe("runRowReadout", () => {
     it("falls back to the duration, or a dash when it never started", () => {
         expect(runRowReadout({ ...ended, status: "ended", exitCode: 0 }, "succeeded")).toBe("2s");
         expect(runRowReadout({ status: "ended", exitCode: 0 }, "missed")).toBe("—");
+    });
+
+    it("says didn't start instead of a made-up exit -1", () => {
+        const noStart = {
+            ...ended,
+            status: "ended",
+            endReason: "failed",
+            exitCode: -1,
+        } as const;
+        expect(runRowReadout(noStart, "failed")).toBe("didn't start");
+        // Killed by a signal after printing: it ran, so the code stays.
+        expect(runRowReadout({ ...noStart, stdoutLines: 4 }, "failed")).toBe("exit -1");
+    });
+});
+
+describe("outputRedirectHint", () => {
+    it("says where a redirected run's output went", () => {
+        expect(outputRedirectHint("/var/log/backup.log")).toBe(
+            "Output goes to /var/log/backup.log; RunWisp can't show it.",
+        );
+        expect(outputRedirectHint("/dev/null")).toBe("Output is discarded (sent to /dev/null).");
+        expect(outputRedirectHint(undefined)).toBeUndefined();
+        expect(outputRedirectHint("")).toBeUndefined();
+    });
+});
+
+describe("runNeverStarted", () => {
+    const base = { status: "ended", exitCode: -1 } as const;
+
+    it("is a failed or start_failed run with no exit code and no line counts", () => {
+        expect(runNeverStarted({ ...base, endReason: "failed" })).toBe(true);
+        expect(runNeverStarted({ ...base, endReason: "start_failed" })).toBe(true);
+        expect(
+            runNeverStarted({ ...base, endReason: "failed", stdoutLines: 0, stderrLines: 0 }),
+        ).toBe(false);
+        expect(runNeverStarted({ ...base, endReason: "failed", exitCode: 2 })).toBe(false);
+        expect(runNeverStarted({ ...base, endReason: "missed" })).toBe(false);
+        expect(runNeverStarted({ ...base, endReason: "failed", status: "running" })).toBe(false);
     });
 });
 
@@ -344,5 +407,60 @@ describe("output band", () => {
         expect(
             runOutputLabel({ status: "running", stdoutLines: 1, stderrLines: 0 }),
         ).toBeUndefined();
+    });
+});
+
+describe("runScalesByTask", () => {
+    const run = (taskName: string, cpuTimeMs: number, seconds: number) => ({
+        taskName,
+        status: "ended" as const,
+        cpuTimeMs,
+        peakMemoryBytes: 1024,
+        startedAt: "2026-01-01T00:00:00Z",
+        endedAt: new Date(Date.parse("2026-01-01T00:00:00Z") + seconds * 1000).toISOString(),
+    });
+
+    it("judges each task against its own runs", () => {
+        const runs = [
+            run("light", 2_000, 5),
+            run("heavy", 60_000, 300),
+            run("light", 2_000, 5),
+            run("light", 30_000, 90),
+        ];
+        const scales = runScalesByTask(runs);
+        expect(scales.get("light")?.usage?.usual.cpu).toBe(2_000);
+        expect(scales.get("light")?.durationUsual).toBe(5_000);
+        expect(scales.get("heavy")?.usage).toEqual({
+            max: { cpu: 60_000, ram: 1024 },
+            usual: { cpu: 60_000, ram: 1024 },
+        });
+    });
+
+    it("matches the whole-list helpers for a single task", () => {
+        const runs = [run("backup", 100, 20), run("backup", 110, 240), run("backup", 30, 18)];
+        expect(runScalesByTask(runs).get("backup")).toEqual({
+            usage: runUsageScale(runs),
+            output: runOutputScale(runs),
+            durationUsual: usualDuration(runs),
+        });
+    });
+});
+
+describe("rangeIds", () => {
+    const ids = ["a", "b", "c", "d", "e"];
+
+    it("spans the anchor to the target in either direction", () => {
+        expect(rangeIds(ids, "b", null, "d")).toEqual(["b", "c", "d"]);
+        expect(rangeIds(ids, "d", null, "b")).toEqual(["b", "c", "d"]);
+    });
+
+    it("falls back to the open run when the anchor is missing or gone", () => {
+        expect(rangeIds(ids, null, "c", "e")).toEqual(["c", "d", "e"]);
+        expect(rangeIds(ids, "zz", "c", "a")).toEqual(["a", "b", "c"]);
+    });
+
+    it("returns null without a usable start or target", () => {
+        expect(rangeIds(ids, null, null, "c")).toBeNull();
+        expect(rangeIds(ids, "a", null, "zz")).toBeNull();
     });
 });

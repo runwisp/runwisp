@@ -131,6 +131,8 @@ func (v *ExecView) renderTitleRow(w int) string {
 	// A non-zero exit code is the first thing to read on a failed run.
 	if v.Run.Status == model.PhaseEnded && v.Run.ExitCode > 0 {
 		headerRight = bgLight.Foreground(uikit.ColorError).Render("exit "+strconv.Itoa(v.Run.ExitCode)+"  ") + headerRight
+	} else if v.Run.NeverStarted() {
+		headerRight = bgLight.Foreground(uikit.ColorError).Render("didn't start  ") + headerRight
 	}
 	// Resource use sits beside the status, shortened and then dropped as the
 	// row narrows.

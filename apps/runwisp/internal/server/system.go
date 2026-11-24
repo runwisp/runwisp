@@ -100,6 +100,9 @@ func (srv *Server) humaGetInfo(ctx context.Context, input *struct{}) (*DaemonInf
 	if srv.configWarnings != nil {
 		info.ConfigWarnings = srv.configWarnings()
 	}
+	if srv.cronChanged != nil {
+		info.CronChanged = srv.cronChanged()
+	}
 	// And the task list itself, for the same reason once more. A reload adds,
 	// removes and changes tasks, and the cron hold releases itself the moment a
 	// system cron daemon goes away — so the boot-time list would keep reporting a
@@ -145,16 +148,40 @@ func (srv *Server) humaGetSystemStats(ctx context.Context, input *struct{}) (*Sy
 // server-side replacement for every dashboard polling /api/system + /api/daemon.
 func (srv *Server) broadcastSample(sample model.MetricsSample) {
 	srv.eventBus.Publish(events.EventSystemSample, events.SystemSampleEvent{
-		Sample: sample,
-		Uptime: formatUptime(time.Since(srv.stats.startTime)),
-		Tasks:  srv.runService.taskUsage(),
-		Runs:   srv.runUsage(),
+		Sample:      sample,
+		Uptime:      formatUptime(time.Since(srv.stats.startTime)),
+		Tasks:       srv.runService.taskUsage(),
+		Runs:        srv.runUsage(),
+		OutputLines: srv.runOutputLines(),
 	})
 
 	stale := srv.configStale()
 	if stale != srv.configStaleLast {
 		srv.configStaleLast = stale
 		srv.eventBus.Publish(events.EventConfigStale, events.ConfigStaleEvent{Stale: stale})
+	}
+	srv.checkCronChanged(stale)
+}
+
+// checkCronChanged rings the bell when the set of edited crontabs changes, so
+// `crontab -e` without a reload doesn't go unnoticed. A crontab edit always
+// makes the config stale, so the crontabs are only read when it is. One row,
+// fingerprinted by kind: a later edit updates it and marks it unread again,
+// and an unchanged set never repeats it.
+func (srv *Server) checkCronChanged(stale bool) {
+	if srv.cronChanged == nil {
+		return
+	}
+	var changed []string
+	if stale {
+		changed = srv.cronChanged()
+	}
+	if slices.Equal(changed, srv.cronChangedLast) {
+		return
+	}
+	srv.cronChangedLast = changed
+	if len(changed) > 0 {
+		srv.announceCronChanged(context.Background(), changed)
 	}
 }
 

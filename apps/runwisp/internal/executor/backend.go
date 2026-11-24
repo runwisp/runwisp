@@ -37,6 +37,9 @@ type Process struct {
 	// process has started: the backend saying it did something other than the
 	// usual (compose attaching to a container it didn't start).
 	Notice string
+	// Notices, when non-nil, carries system log lines the backend writes
+	// mid-run. The backend closes it before Stdout and Stderr reach EOF.
+	Notices <-chan string
 	// EndReason, when non-nil, is called after Wait and may return the
 	// reason the backend itself ended the run for (an SDK app skipping a run
 	// under on_overlap = "skip"). "" leaves the exit code to decide. A

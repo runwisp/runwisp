@@ -96,6 +96,28 @@ describe("applyFilters", () => {
         ).toEqual(["b", "c"]);
     });
 
+    it("compares the date range in the viewer's local days, like the date inputs", () => {
+        const tz = process.env.TZ;
+        process.env.TZ = "America/New_York";
+        try {
+            // 20:00 on Nov 15 in New York is already Nov 16 in UTC.
+            const late: Row[] = [
+                {
+                    id: "late",
+                    status: "ok",
+                    exitCode: 0,
+                    roles: [],
+                    user: { name: "Di" },
+                    startedAt: new Date("2026-11-16T01:00:00Z"),
+                },
+            ];
+            const day = { startedAtFrom: "2026-11-15", startedAtTo: "2026-11-15" };
+            expect(ids(applyFilters(late, fields, day))).toEqual(["late"]);
+        } finally {
+            process.env.TZ = tz;
+        }
+    });
+
     it("ANDs combined filters", () => {
         expect(ids(applyFilters(rows, fields, { status: "ok", role: "viewer" }))).toEqual(["c"]);
     });

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
@@ -64,10 +65,13 @@ func runStatus(ctx context.Context, out io.Writer, f Flags, rf remoteFlags, asJS
 	}
 
 	info, infoErr := client.GetDaemonInfo(ctx)
-	if infoErr == nil {
+	switch {
+	case infoErr == nil && info.Port == 0:
+		fmt.Fprintln(out, "RunWisp is healthy (no HTTP port, started with --no-http)")
+	case infoErr == nil:
 		fmt.Fprintf(out, "RunWisp is healthy at :%d\n", info.Port)
 		printWebUIAddress(out, info)
-	} else {
+	default:
 		fmt.Fprintln(out, "RunWisp is healthy")
 	}
 
@@ -75,27 +79,40 @@ func runStatus(ctx context.Context, out io.Writer, f Flags, rf remoteFlags, asJS
 		printSystemStats(out, stats)
 	}
 
-	if infoErr == nil && info.ConfigStale {
-		identity, _ := client.GetInstanceInfo(ctx)
-		fmt.Fprintln(out, "\n⚠ "+staleConfigNotice(isAppDaemon(identity)))
-	}
-	// Findings the daemon printed at boot, re-derived from the live config so a
-	// reload's are shown instead. Chiefly crontab jobs include_cron couldn't
-	// schedule: they have no runs, so `status` is one of the few places they exist.
 	if infoErr == nil {
-		for _, w := range info.ConfigWarnings {
-			fmt.Fprintf(out, "! %s\n", w)
-		}
-		// Held tasks come from the daemon's own task list, so this reports what the
-		// live scheduler is actually doing rather than re-probing cron from here.
-		// They have no runs — `status` is one of the few places they exist at all.
-		printHeldBlock(out, heldTaskNames(info.Tasks), "")
+		printInfoNotices(ctx, out, client, info)
 	}
 	if tasks, err := client.ListTasks(ctx); err == nil {
 		printPausedBlock(out, pausedTaskNames(tasks))
 		printDownServices(out, tasks)
 	}
 	return nil
+}
+
+// printInfoNotices prints what the daemon info says needs the operator: a
+// pending reload, config warnings, and tasks cron still holds.
+func printInfoNotices(ctx context.Context, out io.Writer, client *apiclient.Client, info *model.DaemonInfo) {
+	if len(info.CronChanged) > 0 {
+		fmt.Fprintln(out, "\n⚠ "+cronChangedNotice(info.CronChanged))
+	} else if info.ConfigStale {
+		identity, _ := client.GetInstanceInfo(ctx)
+		fmt.Fprintln(out, "\n⚠ "+staleConfigNotice(isAppDaemon(identity)))
+	}
+	// Findings the daemon printed at boot, re-derived from the live config so a
+	// reload's are shown instead. Chiefly crontab jobs include_cron couldn't
+	// schedule: they have no runs, so `status` is one of the few places they exist.
+	for _, w := range info.ConfigWarnings {
+		fmt.Fprintf(out, "! %s\n", w)
+	}
+	// Held tasks come from the daemon's own task list, so this reports what the
+	// live scheduler is actually doing rather than re-probing cron from here.
+	printHeldBlock(out, heldTaskNames(info.Tasks), "")
+}
+
+// cronChangedNotice is model.CronChangedNotice from the caller's side: someone
+// who reached the daemon through sudo reloads it through sudo too.
+func cronChangedNotice(files []string) string {
+	return model.CronChangedNotice(files, os.Geteuid() == 0 && os.Getenv("SUDO_USER") != "")
 }
 
 // staleConfigNotice says what changed on disk. An app supplies the root config,

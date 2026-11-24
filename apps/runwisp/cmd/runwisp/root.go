@@ -33,6 +33,8 @@ type Flags struct {
 	Socket    string
 	Host      string
 	Port      int
+	// NoHTTP is `daemon --no-http`: serve only the control socket.
+	NoHTTP bool
 
 	// logLevelRaw and logFormatRaw hold the raw CLI flag values; PersistentPreRunE
 	// resolves them (with RUNWISP_LOG_LEVEL / RUNWISP_LOG_FORMAT env fallbacks)
@@ -66,7 +68,7 @@ surfaces for scripts and AI agents:
   runwisp run <t> --json  run a task and print its outcome as JSON
   runwisp status --json    daemon + task snapshot as JSON
   runwisp openapi          the REST API's OpenAPI 3.1 spec
-On a box that already runs cron: sudo runwisp takeover retires cron and adopts its jobs.
+On a box that already runs cron: runwisp takeover retires cron and adopts its jobs.
 Machine-readable reference for agents: https://docs.runwisp.com/llms.txt`,
 	Version: version.Version,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -118,6 +120,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flags.Host, "host", cmp.Or(os.Getenv("RUNWISP_HOST"), "127.0.0.1"), "HTTP server bind address (use 0.0.0.0 to listen on all interfaces) (env: RUNWISP_HOST)")
 	rootCmd.PersistentFlags().StringVar(&flags.logLevelRaw, "log-level", "", "log verbosity: debug, info, warn, error (env: RUNWISP_LOG_LEVEL)")
 	rootCmd.PersistentFlags().StringVar(&flags.logFormatRaw, "log-format", "", "log format: auto, text, json (env: RUNWISP_LOG_FORMAT)")
+
+	addNoHTTPFlag(rootCmd)
 
 	rootCmd.AddCommand(daemonCmd)
 	rootCmd.AddCommand(stationCmd)
@@ -261,4 +265,11 @@ func defaultConfigPath(euid int, env string) string {
 // defaultDataDir is defaultConfigPath's counterpart for --data.
 func defaultDataDir(euid int, env string) string {
 	return resolveDefaultPath(env, "/var/lib/runwisp", ".runwisp", euid)
+}
+
+// addNoHTTPFlag gives a daemon-hosting command (runwisp, daemon, demo) the
+// --no-http flag. Local, not persistent: only a command that runs the daemon
+// can act on it.
+func addNoHTTPFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&flags.NoHTTP, "no-http", false, "don't open the HTTP port (no Web UI or remote API); the TUI and CLI still work over the control socket")
 }

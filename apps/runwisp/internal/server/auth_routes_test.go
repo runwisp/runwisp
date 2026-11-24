@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	neturl "net/url"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-chi/httprate"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/chap"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -474,7 +476,7 @@ func serveReq(s *Server, req *http.Request) *httptest.ResponseRecorder {
 // seedWrongPasswords records n wrong passwords for ip, the last one just now,
 // straight into the throttle, skipping the deliberately slow CHAP key derivation.
 func seedWrongPasswords(s *Server, ip string, n int) {
-	s.logins.ips[httprate.CanonicalizeIP(ip)] = &loginState{failures: n, lastFail: s.logins.now()}
+	s.logins.clients[httprate.CanonicalizeIP(ip)] = &loginState{failures: n, lastFail: s.logins.now()}
 }
 
 // httptest's default RemoteAddr, which chapAttempt uses.
@@ -499,7 +501,7 @@ func TestAuthRateLimit_OnlyWrongPasswordsCount(t *testing.T) {
 	}
 
 	require.Equal(t, http.StatusUnauthorized, chapAttempt(t, s, "wrong").Code)
-	assert.Equal(t, 1, s.logins.ips[defaultTestIP].failures, "a wrong password counts")
+	assert.Equal(t, 1, s.logins.clients[defaultTestIP].failures, "a wrong password counts")
 }
 
 // Past the free failures the right password is refused too until the delay
@@ -518,7 +520,7 @@ func TestAuthRateLimit_ThrottlesAfterFreeFailures(t *testing.T) {
 
 	now = now.Add(2 * time.Second)
 	require.Equal(t, http.StatusOK, chapAttempt(t, s, "secret").Code)
-	assert.NotContains(t, s.logins.ips, defaultTestIP, "a success forgets the failures")
+	assert.NotContains(t, s.logins.clients, defaultTestIP, "a success forgets the failures")
 }
 
 func TestAuthChallenge_FloodCapped(t *testing.T) {
@@ -545,4 +547,93 @@ func TestResolveClientIP_WarnsOnceAboutUntrustedProxy(t *testing.T) {
 		serveReq(s, req)
 	}
 	assert.Equal(t, 1, strings.Count(logs.String(), "Request has proxy headers"))
+}
+
+// Every password check is a slow PBKDF2, so many addresses logging in at once
+// must not be able to occupy every core: past the global cap a login waits,
+// then gets 503 without its password being tested or counted.
+func TestLogin_BusyPasswordChecksAnswer503(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+	s.logins.checkWait = time.Millisecond
+	for range maxConcurrentPasswordChecks {
+		s.logins.checks <- struct{}{}
+	}
+
+	w := chapAttempt(t, s, "wrong")
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.NotEmpty(t, w.Header().Get("Retry-After"))
+	assert.Empty(t, s.logins.clients, "a login that never checked the password must not count")
+
+	<-s.logins.checks
+	assert.Equal(t, http.StatusOK, chapAttempt(t, s, "secret").Code)
+}
+
+// chapAttemptWithDevice is chapAttempt from ip, sending device as the device
+// cookie when set.
+func chapAttemptWithDevice(t *testing.T, s *Server, ip, device, password string) *httptest.ResponseRecorder {
+	t.Helper()
+	nonce := chapChallenge(t, s)
+	body := fmt.Sprintf(`{"nonce":%q,"response":%q}`, nonce, chap.Response(password, nonce))
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = ip + ":1234"
+	if device != "" {
+		req.AddCookie(&http.Cookie{Name: auth.DeviceCookieName, Value: device})
+	}
+	return serveReq(s, req)
+}
+
+func deviceCookie(t *testing.T, w *httptest.ResponseRecorder) string {
+	t.Helper()
+	for _, c := range w.Result().Cookies() {
+		if c.Name == auth.DeviceCookieName {
+			assert.True(t, c.HttpOnly)
+			assert.Equal(t, http.SameSiteStrictMode, c.SameSite)
+			return c.Value
+		}
+	}
+	t.Fatal("login set no device cookie")
+	return ""
+}
+
+// A guesser sharing the operator's IP (same NAT, an untrusted proxy) or
+// flooding logins from many addresses must not keep out a browser that signed
+// in before: its device cookie gets its own failure count and check slot.
+// A forged device cookie earns nothing.
+func TestLogin_KnownDeviceIgnoresOthersFailures(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+	w := chapAttemptWithDevice(t, s, defaultTestIP, "", "secret")
+	require.Equal(t, http.StatusOK, w.Code)
+	device := deviceCookie(t, w)
+
+	seedWrongPasswords(s, defaultTestIP, freeLoginFailures+3)
+	s.logins.checkWait = time.Millisecond
+	for range maxConcurrentPasswordChecks {
+		s.logins.checks <- struct{}{}
+	}
+
+	assert.Equal(t, http.StatusTooManyRequests, chapAttemptWithDevice(t, s, defaultTestIP, "", "secret").Code)
+	forged := "AAAA." + strings.Repeat("A", 43)
+	assert.Equal(t, http.StatusTooManyRequests, chapAttemptWithDevice(t, s, defaultTestIP, forged, "secret").Code)
+	assert.Equal(t, http.StatusServiceUnavailable, chapAttemptWithDevice(t, s, "192.0.2.99", "", "secret").Code)
+	assert.Equal(t, http.StatusOK, chapAttemptWithDevice(t, s, defaultTestIP, device, "secret").Code)
+}
+
+// Whoever holds the read-only password must not be able to reset the count
+// of wrong operator passwords by signing in as a viewer, nor earn a fresh
+// per-device count: either would make guessing the operator password free.
+func TestLogin_ViewerLoginKeepsTheCount(t *testing.T) {
+	s, _, _, _ := setupServerWithOpts(t, func(o *Options) { o.ViewerPassword = "view-only" })
+	seedWrongPasswords(s, defaultTestIP, freeLoginFailures-1)
+
+	w := chapAttemptWithDevice(t, s, defaultTestIP, "", "view-only")
+	require.Equal(t, http.StatusOK, w.Code)
+	for _, c := range w.Result().Cookies() {
+		assert.NotEqual(t, auth.DeviceCookieName, c.Name, "a viewer login earns no device cookie")
+	}
+	require.Contains(t, s.logins.clients, defaultTestIP)
+	assert.Equal(t, freeLoginFailures-1, s.logins.clients[defaultTestIP].failures)
+
+	require.Equal(t, http.StatusOK, chapAttemptWithDevice(t, s, defaultTestIP, "", "secret").Code)
+	assert.NotContains(t, s.logins.clients, defaultTestIP, "an operator login clears the count")
 }

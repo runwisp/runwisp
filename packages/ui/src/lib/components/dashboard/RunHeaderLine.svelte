@@ -20,6 +20,7 @@
         formatTriggeredByLabel,
         runRetryLabel,
         runStartDelay,
+        runExitLabel,
         runUsageLabel,
         RUN_VERDICTS,
     } from "./run-helpers.js";
@@ -179,21 +180,23 @@
                     ? 'animate-spin'
                     : ''}"
             />
-            <span class="font-sans font-semibold {config.alarm ? config.color : 'text-on-surface'}"
-                >{verdict.verb}</span
-            >
+            <span class="font-sans font-semibold {config.alarm ? config.color : 'text-on-surface'}">
+                {verdict.verb}
+            </span>
             {#if verdict.timed && duration}
                 <span
                     class="font-mono text-[13px] font-medium text-on-surface tabular-nums"
-                    data-testid="run-duration">{duration}</span
+                    data-testid="run-duration"
                 >
+                    {duration}
+                </span>
             {/if}
             {#if status === "failed"}
                 <span class="font-mono text-[13px] font-medium tabular-nums">
                     <span class="text-on-surface-faint" aria-hidden="true">·</span>
-                    <span class="text-danger-surface" data-testid="run-exit"
-                        >exit {run.exitCode}</span
-                    >
+                    <span class="text-danger-surface" data-testid="run-exit">
+                        {runExitLabel(run)}
+                    </span>
                 </span>
             {/if}
         </h2>
@@ -208,8 +211,10 @@
                         data-fold="start"
                         data-testid="run-started"
                         class={FACT}
-                        title={formatFullDateTime(run.startedAt)}>{fact.value}</span
+                        title={formatFullDateTime(run.startedAt)}
                     >
+                        {fact.value}
+                    </span>
                 {:else if fact.key === "params"}
                     <span data-fold="params" class={FACT}>
                         <Popover placement="bottom-start">
@@ -231,8 +236,9 @@
                         title={live
                             ? "Live CPU (100% = one core) and memory of the run's processes"
                             : "CPU time and most memory the run's processes used"}
-                        >{fact.value}</span
                     >
+                        {fact.value}
+                    </span>
                 {:else if fact.key === "id"}
                     <button
                         type="button"
@@ -240,14 +246,16 @@
                         onclick={() => void runIdCopy.copy(run.id)}
                         class="{FACT} hover:text-primary"
                         title="Copy run ID {run.id}"
-                        >{runIdCopy.copied ? "Copied" : fact.value}</button
                     >
+                        {runIdCopy.copied ? "Copied" : fact.value}
+                    </button>
                 {:else}
                     <span
                         data-fold={fact.key}
                         class="{FACT} {fact.key === 'queued' ? 'text-warning-soft-text' : ''}"
-                        >{fact.value}</span
                     >
+                        {fact.value}
+                    </span>
                 {/if}
             {/each}
         </span>

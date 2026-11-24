@@ -91,7 +91,7 @@ describe("RunWisp with the real daemon", () => {
     it("prints the dashboard URL and how to get the password, never the password", () => {
         const notice = lines.find((line) => line.startsWith("RunWisp dashboard:"));
         expect(notice).toBe(
-            `RunWisp dashboard: ${cron.url}, password: npx runwisp password --data ${data}`,
+            `RunWisp dashboard: ${cron.url}, get the password with: npx runwisp password --data ${data}`,
         );
         const password = execFileSync(binary, ["password", "--data", data], {
             encoding: "utf8",

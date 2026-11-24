@@ -6,19 +6,26 @@
     // operator knows what to edit. Read-only: TOML is the source of truth.
     import type { Task } from "@runwisp/common";
     import { Drawer } from "@runwisp/ui";
-    import { taskDetailSections } from "$lib/utils/task-details";
+    import { taskDetailSections, taskEditHint } from "$lib/utils/task-details";
+    import { systemStore } from "$lib/stores/system.svelte";
 
     let { task, open = $bindable(false) }: { task: Task; open: boolean } = $props();
 
     const sections = $derived(taskDetailSections(task));
+    const hint = $derived(taskEditHint(task, systemStore.runsAsRoot));
 </script>
 
 <Drawer bind:open side="right" size="lg" title="Details">
     <div class="flex flex-col gap-5" data-testid="task-details">
-        <p class="text-sm text-on-surface-muted">
-            Read-only, as written in runwisp.toml. Edit the file, then run
-            <code class="font-mono text-xs">runwisp reload</code>. Keys left at their defaults are
-            hidden.
+        <p class="text-sm text-on-surface-muted" data-testid="task-edit-hint">
+            Read-only, as written in <code class="font-mono text-xs break-all">{hint.file}</code>.
+            {#if hint.crontab}
+                Edit it (<code class="font-mono text-xs">crontab -e</code> for a user crontab),
+            {:else}
+                Edit the file,
+            {/if}
+            then run <code class="font-mono text-xs">{hint.reload}</code>. Keys left at their
+            defaults are hidden.
         </p>
         {#each sections as section (section.title)}
             <section>
@@ -46,9 +53,9 @@
                             <dd class="break-all text-on-surface">
                                 {row.value}
                                 {#if row.note}
-                                    <span class="ml-1 font-sans text-on-surface-faint"
-                                        >{row.note}</span
-                                    >
+                                    <span class="ml-1 font-sans text-on-surface-faint">
+                                        {row.note}
+                                    </span>
                                 {/if}
                             </dd>
                         {/each}

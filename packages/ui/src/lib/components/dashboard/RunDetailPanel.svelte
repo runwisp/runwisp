@@ -22,7 +22,7 @@
     import RunFacts from "./RunFacts.svelte";
     import RunHeaderLine from "./RunHeaderLine.svelte";
     import { RUN_STATUS_CONFIG } from "./status-config.js";
-    import { runDuration, RUN_VERDICTS, instanceSuffix } from "./run-helpers.js";
+    import { runDuration, runExitLabel, RUN_VERDICTS, instanceSuffix } from "./run-helpers.js";
 
     let {
         run,
@@ -37,6 +37,7 @@
         onRunTask,
         onBack,
         highlightLine = null,
+        outputRedirect,
         getInstanceCount = () => 1,
         getLiveUsage = () => undefined,
         motion,
@@ -81,6 +82,8 @@
         // a back arrow in the header's top-left corner.
         onBack?: (() => void) | undefined;
         highlightLine?: number | null;
+        // The task's outputRedirect: an empty log then says where the output went.
+        outputRedirect?: string | undefined;
         // Resolves a task's currently configured instance count so multi-instance
         // services render a 1-based #N suffix. Defaults to single-instance.
         getInstanceCount?: (taskName: string) => number;
@@ -259,13 +262,17 @@
                                     <span
                                         class="font-sans font-semibold tracking-[-0.01em] {alarm
                                             ? config.color
-                                            : 'text-on-surface'}">{verdict.verb}</span
+                                            : 'text-on-surface'}"
                                     >
+                                        {verdict.verb}
+                                    </span>
                                     {#if verdict.timed && duration}
                                         <span
                                             class="font-mono text-[0.86em] font-medium text-on-surface tabular-nums"
-                                            data-testid="run-duration">{duration}</span
+                                            data-testid="run-duration"
                                         >
+                                            {duration}
+                                        </span>
                                     {/if}
                                     {#if showCode}
                                         <!-- Grouped with its own separator so a wrap can
@@ -273,12 +280,15 @@
                                         <span
                                             class="inline-flex items-center gap-x-2.5 font-mono text-[0.86em] font-medium tabular-nums"
                                         >
-                                            <span class="text-on-surface-faint" aria-hidden="true"
-                                                >·</span
+                                            <span class="text-on-surface-faint" aria-hidden="true">
+                                                ·
+                                            </span>
+                                            <span
+                                                class="text-danger-surface"
+                                                data-testid="run-exit"
                                             >
-                                            <span class="text-danger-surface" data-testid="run-exit"
-                                                >exit {run.exitCode}</span
-                                            >
+                                                {runExitLabel(run)}
+                                            </span>
                                         </span>
                                     {/if}
                                 </h2>
@@ -300,6 +310,7 @@
             {streamLogs}
             {fetchLineHistory}
             {highlightLine}
+            {outputRedirect}
         />
     </div>
 {:else if loading && !notFound}

@@ -32,6 +32,20 @@ describe("BulkSelection", () => {
         });
     });
 
+    it("ticks a range of rows in either mode", () => {
+        const sel = new BulkSelection();
+        sel.toggle("a");
+        sel.selectMany(["a", "b", "c"]);
+        expect(["a", "b", "c"].every((id) => sel.isSelected(id))).toBe(true);
+
+        sel.selectAll();
+        sel.toggle("x");
+        sel.toggle("y");
+        sel.selectMany(["x"]);
+        expect(sel.isSelected("x")).toBe(true);
+        expect(sel.isSelected("y")).toBe(false);
+    });
+
     it("clears back to nothing selected", () => {
         const sel = new BulkSelection();
         sel.selectAll();

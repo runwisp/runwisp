@@ -7,6 +7,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Run lists can sort by duration, longest or shortest first: from the sort menu in the web UI, and with `o` in the TUI, which also gets oldest first.
+- After `crontab -e`, `runwisp status`, `runwisp list`, the TUI and the notification bell name the crontab that changed and say to run `runwisp reload`.
+- Select a range of runs with shift+click in the web UI and shift+↑/↓ in the TUI.
+- A run with no output whose command redirects it (`>> /var/log/backup.log`) says where the output went, in the web UI and the TUI.
+- `--no-http` on `runwisp daemon`, `runwisp` and `runwisp demo` runs the daemon without the HTTP port, for servers you only manage from the TUI and the CLI.
+- The TUI lists config warnings in full when you click the header's warning notice or press `w` on Home.
+
+### Changed
+
+- `runwisp import` exits 1 when the config it printed or wrote won't load until fixed, such as a crontab line with a bad schedule. The draft is still printed or written.
+- The PHP and JavaScript SDKs put a `.gitignore` in their data directory (`storage/runwisp`, `.runwisp`), so `git add .` no longer commits RunWisp's database and logs.
+- The SDK startup line reads "get the password with:" before the command, and the PHP SDK quotes the path only when it needs quoting.
+- `runwisp` runs the daemon in the terminal and stops it when you quit the TUI, instead of asking you if you want to keep it running in the background.
+   Quitting asks first only when runs are in progress. To keep RunWisp running, install it with `runwisp service install` or run it in Docker.
+- `runwisp restart` restarts a daemon that isn't installed as a service in place, in the same process, so it works in Docker (`docker exec <container> runwisp restart`)
+   and keeps a foreground daemon in its terminal. `SIGUSR2` does the same.
+- `runwisp demo --no-tui` runs the demo in the foreground until Ctrl+C.
+- Cron jobs ending in `>/dev/null 2>&1` (or `&>/dev/null`) run without that redirect, so their output shows in the run's log. Cron needed it to stop mail, and RunWisp sends none.
+- `runwisp takeover`'s plan says how many jobs had that redirect dropped and how many still send their output to a file.
+- Tasks read from user crontabs and `/etc/cron.d` now carry their source in the name, such as `report-ops`, so adding a crontab never renames a job that already runs.
+   A short comment above a cron job names it (`# nightly backup` becomes `nightly-backup`), and names look past `sleep`, a piped `echo` and a bare `env`.
+   Migration: these tasks get their new name once on upgrade, and earlier runs stay under the old name. A `[[route]]` that still names the old task gets a warning on load; change its `match.task` to the new name.
+- A service whose `docker run --name` finds the name taken by a container started outside RunWisp takes that container over instead of failing with exit 125 in a loop:
+   it attaches to a running one, and removes a stopped one and starts again.
+
+### Fixed
+
+- `runwisp demo` starts without a config warning about tasks starting at the same second.
+- The TUI Home page no longer shifts a row when a config warning, stale-config or paused-schedule notice appears or goes away.
+- `runwisp takeover` lists every cron job with the task it becomes and where it comes from, and says that overlapping runs now queue.
+- The web UI's browser tab title names the task you are on, or Notifications, instead of keeping the previous page's title.
+- A blocked `runwisp takeover` prints only what stops it, and on a machine without cron it says so and how to start fresh.
+- `status`, `reload` and `validate` no longer warn about cron task renames, an empty `MAILTO`, or crontab jobs that start at the same second. A crontab's `MAILTO` warning is one line with a link.
+- "Run now" on a running task with `on_overlap = "skip"`, or on a task whose queue is full, answers 409 with the reason instead of a 500 "Failed to trigger run".
+- The web UI names the zone next to a task's next run time, "(14:00 UTC)", when it isn't the browser's zone. Before, a Laravel schedule in UTC, or a daemon in another zone than the browser, looked like it ran hours off.
+- Importing a crontab no longer turns the `# m h dom mon dow command` legend (or Alpine's `# min hour day month weekday command`) into the first job's description.
+- When a crontab command has an unescaped `%`, the import note now says to write `\%` if you meant a literal percent, as in `date +%F`.
+- `import cron` on a README or script says it doesn't look like a crontab instead of importing its prose as tasks.
+- `import cron` reads a line like `0=Sun` as a job line rather than an environment variable, since an env name can't start with a digit and the imported config would not load.
+- Line numbers in crontab warnings match `crontab -l` on Debian, which hides the three header lines cron writes atop the file.
+- The takeover plan says "1 of them needs a fix" instead of "need".
+- `runwisp takeover` without systemd as PID 1, as in most containers, stops before writing anything and lists the steps to do by hand, instead of failing at `systemctl daemon-reload` and then reporting "Nothing to do" on a re-run.
+- Without systemd, the held-jobs banner and `runwisp status` say to stop the cron process (drop `cron -f` or `crond` from the container's CMD) instead of suggesting `sudo runwisp takeover` or `systemctl`.
+- The note at the end of `runwisp import cron` also says what to do in a container: drop cron from the CMD.
+- On a box without sudo, `runwisp takeover` run as another user says to run it as root instead of printing a `sudo` command.
+- On Alpine and other BusyBox systems, `runwisp takeover` and `include_cron` find the crontabs in `/etc/crontabs`, and a symlinked directory on a crontab's path no longer counts as world-writable.
+- `runwisp import cron` of a per-user spool crontab (`/var/spool/cron/crontabs/www-data`) sets `user` to its owner, so the jobs no longer run as root. A piped crontab gets a note that its owner is unknown.
+- A run that exits 127 logs "command not found" next to the exit code, and `runwisp import cron` notes a job whose program isn't on cron's `PATH` (`php` in `/usr/local/bin` in the PHP images).
+- A crontab job for a user whose home directory doesn't exist (`www-data`'s `/var/www`) runs in `/` as cron does, instead of failing to start. Other tasks with `working_dir = "~"` fail with an error that names the missing home directory.
+- A run that couldn't start shows "didn't start" instead of exit code -1, in the web UI, the TUI and `runwisp run`.
+- `runwisp logs` on a task that has never run prints "`<task>` hasn't run yet." instead of a log line.
+- The task details panel in the web UI says to edit the crontab and run `sudo runwisp reload` for a task read from a crontab, instead of pointing at `runwisp.toml`.
+- `runwisp service install` and `runwisp service uninstall` re-run themselves with sudo for the system service, like `runwisp takeover`, instead of stopping with a "needs root" error.
+- `runwisp service uninstall` gives cron back even when removing the unit fails.
+- The system service starts with its generated password already in place, instead of starting once without it and restarting.
+- `runwisp takeover` no longer runs `@reboot` jobs a second time when it starts RunWisp on a machine where cron already ran them.
+- `sudo runwisp password` prints the password `service install` saved for the system service. The saved file also says how to rotate it.
+- When the system service installs a copy of a binary from your home directory, the home copy becomes a link to it, so `runwisp` and `sudo runwisp` run the same version.
+- `runwisp service status` checks the system service against the settings in its own unit, so it no longer reports a mismatch when run without the install flags, or calls its data dir not writable when run as a normal user.
+- `runwisp`, `runwisp reload`, `runwisp promote`, `runwisp status`, `runwisp list`, `runwisp logs` and `runwisp password` run as a normal user tell you to use `sudo runwisp` when only the system service is running.
+- `runwisp takeover` over SSH prints the `ssh -L` command that opens the dashboard from your machine.
+- Commands that need `--yes` without a terminal say "Nothing was changed. There's no terminal to ask, so pass --yes."
+- `runwisp promote` prints only the cron step that applies to your machine and the right reload command.
+- The install script points at `runwisp takeover` when the machine has cron jobs.
+
+### Security
+
+- A browser that has signed in before has its wrong passwords counted on its own instead of per IP, so someone guessing from the same IP or proxy can't slow down your logins.
+- Signing in with the read-only password no longer clears the count of wrong passwords, so it can't be used to keep guessing the operator password.
+- The daemon checks at most 2 passwords at once from new browsers, plus 1 kept for browsers that signed in before, so a login flood from many IP addresses can't take all the CPU away from your tasks or keep you out. A login that waits more than 10 seconds for its turn gets 503 with `Retry-After`.
+- Wrong API tokens sent in the session cookie to `/api/auth/status` count toward the API token lockout, like on every other route.
+- The daemon warns at startup when `RUNWISP_PASSWORD` or `RUNWISP_VIEWER_PASSWORD` is shorter than 12 characters.
+
+
+## [1.10.0] - 2026-11-15
+
+### Added
+
+- On a terminal 143 columns or wider, the TUI Home run list also shows CPU, RAM and OUTPUT, with live CPU, memory and output lines for running runs. Home and the Web UI's Runs page color each run against its own task's usual run, and the Runs page shows the CPU, RAM and output bars. Running runs in the Web UI's run lists show the same live values.
+
+### Fixed
+
+- The TUI redraws at most 60 times a second while following a busy log or event stream, instead of once per line, so it uses far less CPU.
+- Failure notifications include the last lines of the run's output again.
+- Restarting the daemon after a DST fall-back no longer reports the repeated hour's ticks as missed or runs them again.
+- `import systemd` reads weekday ranges written as `Mon-Fri` in `OnCalendar=`, which used to import as a daily schedule.
+- `import supervisord` turns `%%` into a single `%` in `command`, `environment` and `directory`, as supervisord does.
+- Run durations in the Web UI no longer go negative when the browser's clock is behind the daemon's.
+- The TUI log view no longer draws a row one column too wide when a line is cut right after an accented character.
+
 ## [1.9.3] - 2026-11-12
 
 ### Changed
@@ -1232,7 +1324,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.9.3...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.10.0...main
+[1.10.0]: https://github.com/runwisp/runwisp/compare/v1.9.3...v1.10.0
 [1.9.3]: https://github.com/runwisp/runwisp/compare/v1.9.2...v1.9.3
 [1.9.2]: https://github.com/runwisp/runwisp/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/runwisp/runwisp/compare/v1.9.0...v1.9.1

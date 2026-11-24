@@ -162,3 +162,13 @@ func TestCronTrailingPercentIsNotABlocker(t *testing.T) {
 		t.Fatalf("status = %v, want changed", got)
 	}
 }
+
+// TestCronPercentStdinOffersTheEscape: most unescaped '%' in real crontabs are a
+// `date +%F` that wanted a literal percent, so the note names `\%` as well as
+// the stdin rewrites.
+func TestCronPercentStdinOffersTheEscape(t *testing.T) {
+	res := parseCron(t, "0 2 * * * tar czf /backups/db-$(date +%F).tgz /srv/db\n", CronOptions{})
+	if !hasBlockingNote(res, `write \%`) {
+		t.Fatalf("expected the note to offer \\%%, got %+v", allNotes(res))
+	}
+}

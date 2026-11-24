@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 )
 
@@ -189,7 +190,7 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 		}
 		lineNum := gutterStyle.Render(fmt.Sprintf("%*d%s", lnw, absLineNum, marker))
 		sliced, clippedRight := uikit.SliceLineColumns(row.Text, p.HScroll, textAreaWidth)
-		sliced = trimTrailingRuneIfClipped(sliced, clippedRight)
+		sliced = trimTrailingCellIfClipped(sliced, clippedRight)
 
 		textStyle := styleForStream(row.Stream, o.stdoutStyle, o.stderrStyle, o.systemStyle)
 		base := o.baseForStream(row.Stream)
@@ -207,18 +208,15 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 	}
 }
 
-// trimTrailingRuneIfClipped drops one rune off the end of sliced so the "▸"
-// indicator can fit in the text-area width. No-op when not clipped or when
-// the slice is already empty.
-func trimTrailingRuneIfClipped(sliced string, clippedRight bool) string {
+// trimTrailingCellIfClipped frees one display cell off the end of sliced so
+// the "▸" indicator fits in the text-area width. It trims by width, not by
+// rune: a trailing combining mark or variation selector is zero-width, so
+// dropping just that rune would free nothing. No-op when not clipped.
+func trimTrailingCellIfClipped(sliced string, clippedRight bool) string {
 	if !clippedRight {
 		return sliced
 	}
-	runes := []rune(sliced)
-	if len(runes) == 0 {
-		return sliced
-	}
-	return string(runes[:len(runes)-1])
+	return ansi.Truncate(sliced, max(uikit.VisibleWidth(sliced)-1, 0), "")
 }
 
 func (p *Pane) renderLinesPlain(o lineRenderOpts) {
@@ -244,14 +242,14 @@ func (p *Pane) renderLinesPlain(o lineRenderOpts) {
 }
 
 // sliceRowText applies horizontal scrolling to a single log row when HScroll
-// is enabled. When the slice is clipped on the right we drop one trailing
-// rune so the trailing "▸" indicator fits within the text-area width.
+// is enabled. When the slice is clipped on the right we free one trailing
+// cell so the trailing "▸" indicator fits within the text-area width.
 func (p *Pane) sliceRowText(text string, textAreaWidth int) (sliced string, clippedRight bool) {
 	if !p.Cfg.HScroll {
 		return text, false
 	}
 	sliced, clippedRight = uikit.SliceLineColumns(text, p.HScroll, textAreaWidth)
-	return trimTrailingRuneIfClipped(sliced, clippedRight), clippedRight
+	return trimTrailingCellIfClipped(sliced, clippedRight), clippedRight
 }
 
 // scrollIndicatorStyle draws the ◂ / ▸ marks shown when a row is scrolled

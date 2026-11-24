@@ -44,6 +44,12 @@ func TestScheduleCollisionWarnings(t *testing.T) {
 		require.Empty(t, scheduleCollisionWarnings(tasks, loc, now))
 	})
 
+	t.Run("a task read from a crontab does not count", func(t *testing.T) {
+		tasks := collisionTasks("0 3 * * *", "a", "b", "c")
+		tasks[2].Source = model.SourceCron
+		require.Empty(t, scheduleCollisionWarnings(tasks, loc, now))
+	})
+
 	t.Run("held and unscheduled tasks do not count", func(t *testing.T) {
 		tasks := collisionTasks("0 3 * * *", "a", "b", "c")
 		tasks[2].HeldBy = model.HeldByCron

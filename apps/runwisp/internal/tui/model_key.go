@@ -49,6 +49,7 @@ var globalKeyHandlers = map[string]keyHandlerFn{
 	"[":         handleKeyPrevAnchor,
 	"]":         handleKeyNextAnchor,
 	"?":         handleKeyHelp,
+	"w":         handleKeyW,
 }
 
 // handleKey processes keyboard input. Global shortcuts are dispatched through
@@ -142,6 +143,15 @@ func handleKeyQuit(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 func handleKeyHelp(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	m.dialogs.Show(dlgHelp, &HelpDialog{readOnly: m.readOnly})
 	return m, nil, true
+}
+
+// handleKeyW lists the config warnings the Home header counts. Elsewhere, or
+// with none to show, it falls through.
+func handleKeyW(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
+	if m.execView == nil && m.sidebar.ActivePage() == uikit.PageHome && len(m.info.ConfigWarnings) > 0 {
+		return m, m.showConfigWarnings(), true
+	}
+	return m, nil, false
 }
 
 func handleKeyN(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
@@ -416,6 +426,9 @@ func handleKeyI(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.currentRun() != nil {
 		d := NewRunDetailDialog(m.execView.Run, m.execView.TaskIsService, m.execView.InstanceCount)
 		d.loc = m.loc
+		if task := m.taskDisplayByName(m.execView.Run.TaskName); task != nil {
+			d.outputRedirect = task.OutputRedirect
+		}
 		m.dialogs.Show(dlgRunDetail, d)
 		return m, nil, true
 	}
@@ -592,7 +605,8 @@ func (m Model) runListFocused() bool {
 }
 
 // handleRunListSelectionKey routes the run-list multi-select keys while the
-// executions list is focused: space toggles the cursor row, `a` selects every
+// executions list is focused: space toggles the cursor row, shift+↑/↓ extends
+// the selection as the cursor moves, `a` selects every
 // run matching the active filter, and — once a selection exists — `d` deletes
 // (undoably), `c` cancels, `e` reruns, and esc clears it. Keys it doesn't own
 // return handled=false so normal handling continues.
@@ -603,6 +617,14 @@ func (m Model) handleRunListSelectionKey(msg tea.KeyPressMsg) (Model, tea.Cmd, b
 	}
 	if msg.Code == tea.KeySpace {
 		m.execList.ToggleSelectCursor()
+		return m, nil, true
+	}
+	switch msg.String() {
+	case "shift+up":
+		m.execList.ExtendSelection(-1)
+		return m, nil, true
+	case "shift+down":
+		m.execList.ExtendSelection(1)
 		return m, nil, true
 	}
 	if msg.String() == "a" {

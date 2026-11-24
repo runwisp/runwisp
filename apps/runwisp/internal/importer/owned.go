@@ -77,9 +77,11 @@ type namer struct {
 	res   *Result
 	dd    *deduper
 	owned Owned
-	// suffix is the stable collision tie-breaker for the file being parsed — see
-	// deduper.uniqueIn. Empty for a single-source import, where positional
-	// suffixes are stable because there is only one order.
+	// suffix is appended to a name another source or the live config already
+	// owns, so the clash resolves to a name derived from where the job came from
+	// rather than from how many sources were read before it. Empty for a
+	// single-source import, where positional suffixes are stable because there is
+	// only one order.
 	suffix string
 }
 
@@ -93,8 +95,15 @@ func newNamer(res *Result, owned Owned, suffix string) *namer {
 	return n
 }
 
-// unique returns a name unique within this import, ignoring the live config.
-func (n *namer) unique(base string) string { return n.dd.uniqueIn(base, n.suffix) }
+// unique returns a name unique within this import. A repeat inside this source
+// is numbered by line (-2, -3); a name something outside it owns first gets the
+// source's suffix.
+func (n *namer) unique(base string) string {
+	if _, elsewhere := n.owned[base]; elsewhere && n.suffix != "" {
+		base += "-" + n.suffix
+	}
+	return n.dd.unique(base)
+}
 
 // resolve opens this job's report row and picks its RunWisp name. source is what
 // the source file called the job; base is that name sanitized to RunWisp's

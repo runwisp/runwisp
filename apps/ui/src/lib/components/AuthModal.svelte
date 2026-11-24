@@ -86,7 +86,9 @@
             // layout's auth effect reacts to (connect streams, seed system, load
             // tasks/notifications). No separate success event needed.
         } catch (err) {
-            if (err instanceof RateLimitedError) {
+            if (err instanceof RateLimitedError && err.busy) {
+                error = "RunWisp is busy checking other logins. Try again in a few seconds.";
+            } else if (err instanceof RateLimitedError) {
                 error = err.retryAfterSeconds
                     ? `Too many wrong passwords. Try again in ${String(err.retryAfterSeconds)} seconds.`
                     : "Too many attempts. Please wait a moment and try again.";
@@ -188,8 +190,10 @@
                         </span>
                     {/snippet}
                     <p class="max-w-[16rem] text-xs leading-relaxed text-on-surface-muted">
-                        It's <code class={chip}>RUNWISP_PASSWORD</code> if that's set.
-                        <br />Otherwise the daemon randomizes one each boot. Run
+                        Running as a system service? Run
+                        <code class={chip}>sudo runwisp password</code> on the host.
+                        <br />Otherwise it's <code class={chip}>RUNWISP_PASSWORD</code> if that's
+                        set, or the daemon makes one up each start: run
                         <code class={chip}>runwisp password</code> on the host to print it.
                     </p>
                 </Popover>

@@ -62,16 +62,29 @@ func (b *ComposeBackend) composeUpContainer(ctx context.Context, ce *model.Compo
 }
 
 // attach follows c's output as the run instead of starting a second container
-// next to it, which for a database means two containers on one volume. The
-// run ends when c does, with c's own exit code. A stop or restart ends the
-// log follow and then stops c, so the next start finds no `up` container and
-// launches a RunWisp-managed one: ownership moves over without a duplicate.
+// next to it, which for a database means two containers on one volume. A stop
+// or restart stops c, so the next start finds no `up` container and launches a
+// RunWisp-managed one: ownership moves over without a duplicate.
 func (b *ComposeBackend) attach(ctx context.Context, task *model.Task, c upContainer) (*Process, error) {
+	proc, err := attachContainer(ctx, b.dockerCmd, task, c.id, false)
+	if err != nil {
+		return nil, err
+	}
+	proc.Notice = fmt.Sprintf("Attached to %s, started outside RunWisp by docker compose up. "+
+		"A stop or restart replaces it with a RunWisp-managed container.", c.name)
+	return proc, nil
+}
+
+// attachContainer follows container id's output as a run. The run ends when
+// the container does, with its own exit code. A stop or restart ends the log
+// follow and then stops the container, given grace to exit. remove also
+// removes it once the run ends, freeing its name for the unit's own container.
+func attachContainer(ctx context.Context, dockerCmd string, task *model.Task, id string, remove bool) (*Process, error) {
 	// --since now: the run shows what the container prints from here on, not
 	// the history it logged before RunWisp got to it.
 	since := time.Now().UTC().Format(time.RFC3339)
-	cmd := exec.CommandContext(ctx, b.dockerCmd, "logs", "-f", "--since", since, c.id)
-	proc, err := startCmd(cmd, task.GracefulStopValue(), syscall.SIGTERM, nil, "attach to docker compose container")
+	cmd := exec.CommandContext(ctx, dockerCmd, "logs", "-f", "--since", since, id)
+	proc, err := startCmd(cmd, task.GracefulStopValue(), syscall.SIGTERM, nil, "attach to container")
 	if err != nil {
 		return nil, err
 	}
@@ -80,10 +93,12 @@ func (b *ComposeBackend) attach(ctx context.Context, task *model.Task, c upConta
 	followWait := proc.Wait
 	proc.Wait = func() (int, error) {
 		code, err := followWait()
-		return b.endAttached(c.id, task.GracefulStopValue(), code, err)
+		code, err = endAttached(dockerCmd, id, task.GracefulStopValue(), code, err)
+		if remove {
+			removeContainer(dockerCmd, id)
+		}
+		return code, err
 	}
-	proc.Notice = fmt.Sprintf("Attached to %s, started outside RunWisp by docker compose up. "+
-		"A stop or restart replaces it with a RunWisp-managed container.", c.name)
 	return proc, nil
 }
 
@@ -91,33 +106,45 @@ func (b *ComposeBackend) attach(ctx context.Context, task *model.Task, c upConta
 // running, the follow was stopped (a stop or restart), so the container is
 // stopped too, given grace to exit. The run then reports the container's exit
 // code. When Docker can't say, the follow's own result stands.
-func (b *ComposeBackend) endAttached(id string, grace time.Duration, followCode int, followErr error) (int, error) {
-	running, code, err := b.containerState(id)
+func endAttached(dockerCmd, id string, grace time.Duration, followCode int, followErr error) (int, error) {
+	running, code, err := containerState(dockerCmd, id)
 	if err != nil {
 		return followCode, followErr
 	}
 	if running {
 		ctx, cancel := context.WithTimeout(context.Background(), grace+composeHousekeepingTimeout)
 		secs := strconv.Itoa(int(math.Ceil(grace.Seconds())))
-		if err := exec.CommandContext(ctx, b.dockerCmd, "stop", "-t", secs, id).Run(); err != nil {
-			slog.Warn("compose: could not stop the attached container", "id", id, "err", err)
+		if err := exec.CommandContext(ctx, dockerCmd, "stop", "-t", secs, id).Run(); err != nil {
+			slog.Warn("could not stop the attached container", "id", id, "err", err)
 		}
 		cancel()
-		if _, code, err = b.containerState(id); err != nil {
+		if _, code, err = containerState(dockerCmd, id); err != nil {
 			return followCode, followErr
 		}
 	}
 	return code, nil
 }
 
-// containerState reports whether container id is running and its last exit
-// code.
-func (b *ComposeBackend) containerState(id string) (running bool, exitCode int, err error) {
+// removeContainer removes a stopped container. A container started with --rm
+// is already gone, so a failure is only logged.
+func removeContainer(dockerCmd, id string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), composeHousekeepingTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, b.dockerCmd, "inspect", "-f", "{{.State.Running}} {{.State.ExitCode}}", id).Output()
+	if err := exec.CommandContext(ctx, dockerCmd, "rm", id).Run(); err != nil {
+		slog.Warn("could not remove container", "id", id, "err", err)
+		return false
+	}
+	return true
+}
+
+// containerState reports whether container id is running and its last exit
+// code.
+func containerState(dockerCmd, id string) (running bool, exitCode int, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), composeHousekeepingTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, dockerCmd, "inspect", "-f", "{{.State.Running}} {{.State.ExitCode}}", id).Output()
 	if err != nil {
-		slog.Warn("compose: could not inspect the attached container", "id", id, "err", err)
+		slog.Warn("could not inspect container", "id", id, "err", err)
 		return false, 0, err
 	}
 	state, codeStr, _ := strings.Cut(strings.TrimSpace(string(out)), " ")

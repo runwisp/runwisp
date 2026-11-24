@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
+/* eslint-disable @typescript-eslint/no-deprecated -- these tests exercise the deprecated node-cron options on purpose. */
 
 import { Logger, Module, type DynamicModule } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
@@ -233,6 +234,7 @@ describe("@runwisp/js/nestjs", () => {
             }
         }
         Module({ imports: [forRoot()], providers: [hooks("root service", events)] })(AppModule);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-class-instance-assignment -- Nest types its options as a class but takes a plain object.
         const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
         slowClose(app.get(RunWisp), events);
         await app.close();

@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/spf13/cobra"
 )
@@ -23,7 +25,7 @@ var restartLocal bool
 
 var restartCmd = &cobra.Command{
 	Use:   "restart [target...]",
-	Short: "Restart the background daemon, or one or more tasks/services",
+	Short: "Restart the daemon, or one or more tasks/services",
 	Long: `Restart the RunWisp daemon that owns this data dir — or, given one or more
 targets, restart just those without touching the daemon.
 
@@ -52,13 +54,12 @@ With no target, the whole daemon restarts. Most config edits only need
 [storage], [notify], the listen address) or to re-fire run_on_start and
 missed-run catch-up.
 
-When the daemon is managed by systemd or launchd (wired up via
-'runwisp service install'), the restart is delegated to the service
-manager. Otherwise the daemon is stopped gracefully (SIGTERM) and a
-fresh one is spawned in the background.
-
-The delegation finds whichever unit is installed on its own. Pass --local to
-pin the per-user one when both a system and a user unit are present.`,
+A daemon installed with 'runwisp service install' restarts through systemd or
+launchd, which finds whichever unit is installed. Pass --local to pin the
+per-user one when both a system and a user unit are present. Any other daemon
+('runwisp', 'runwisp daemon', a Docker container) restarts in place: it shuts
+down gracefully and starts again in the same process, so it keeps its terminal
+or container.`,
 	Example: `  runwisp restart web
   runwisp restart web worker 'batch-*'
   runwisp restart --attach 'web*'
@@ -97,16 +98,16 @@ func runRestart(cmd *cobra.Command, args []string, f Flags, attach bool) error {
 }
 
 // restartDaemon restarts the local daemon: through systemd/launchd when a unit
-// manages it, otherwise by stopping it gracefully and spawning a fresh one.
-// local pins the per-user unit (restart --local).
+// manages it, otherwise in place, under the same PID, so the terminal or
+// container it runs in keeps it. local pins the per-user unit (restart --local).
 func restartDaemon(cmd *cobra.Command, f Flags, local bool) error {
 	out := cmd.OutOrStdout()
 
 	if err := otherUserDaemonError(f); err != nil {
 		return err
 	}
-	// Pin the dir the running daemon was found in, so the fresh one comes back
-	// there and not in the default (an empty ./.runwisp next to an app's dir).
+	// Pin the dir the running daemon was found in, so the post-restart health
+	// check polls it and not the default (an empty ./.runwisp next to an app's dir).
 	f.DataDir = clientDataDir(f)
 	running := isDaemonRunning(f)
 	info, err := runningDaemonInfo(cmd, f, running)
@@ -115,35 +116,62 @@ func restartDaemon(cmd *cobra.Command, f Flags, local bool) error {
 	}
 
 	installer, opts, st, ok := serviceState(cmd, f, local)
-	if ok && shouldDelegateRestart(st) {
-		// The unit starts the daemon with its own --config, which the running
-		// daemon reports.
-		if err := validateRestartConfig(runningConfigPath(info, f)); err != nil {
-			return err
+	delegate := ok && shouldDelegateRestart(st)
+	if !delegate && !running {
+		return &userFacingError{
+			title:   "no daemon is running here",
+			details: "Start one with `runwisp` (with the TUI) or `runwisp daemon`, or install it as a service with `runwisp service install`.",
 		}
+	}
+	// The daemon comes back with the --config it runs with, which it reports.
+	cfgPath := runningConfigPath(info, f)
+	if err := validateRestartConfig(cfgPath); err != nil {
+		return err
+	}
+	if delegate {
 		return restartViaService(out, installer, opts, st, f)
 	}
+	return restartInPlace(cmd, f, cfgPath)
+}
 
-	if err := validateRestartConfig(f.CfgFile); err != nil {
-		return err
-	}
-	if running {
-		if err := shutdownDaemonWait(stopWaitTimeout(f.CfgFile), f); err != nil {
-			return err
-		}
-	} else {
-		fmt.Fprintln(out, "No daemon was running — starting one.")
-	}
-
-	if err := spawnDaemon(f, false); err != nil {
-		return err
-	}
+// restartInPlace sends the daemon restartSignal: it shuts down gracefully and
+// re-executes itself under the same PID. It returns once the fresh daemon
+// answers, which it tells apart from the old one by its start time.
+func restartInPlace(cmd *cobra.Command, f Flags, cfgPath string) error {
+	ctx, out := cmd.Context(), cmd.OutOrStdout()
 	client := apiclient.NewUnix(localAPISocketPath(f))
-	if err := waitForDaemon(client, 10*time.Second, f); err != nil {
-		return err
+	before, err := client.GetDaemonInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("cannot reach the daemon: %w", err)
 	}
-	printRestarted(out, f)
-	return nil
+	pid, err := datadir.ReadPidFile(f.DataDir)
+	if err != nil {
+		return fmt.Errorf("cannot read daemon PID file: %w", err)
+	}
+	if err := syscall.Kill(pid, restartSignal); err != nil {
+		return fmt.Errorf("cannot signal daemon process %d: %w", pid, err)
+	}
+	fmt.Fprintf(out, "Restarting the daemon (pid %d)...\n", pid)
+
+	timeout := stopWaitTimeout(cfgPath) + 15*time.Second
+	restarted := false
+	pollUntil(time.Now().Add(timeout), func() bool {
+		if !datadir.ProcessAlive(pid) {
+			return true
+		}
+		info, err := client.GetDaemonInfo(ctx)
+		restarted = err == nil && info.StartedAt.After(before.StartedAt)
+		return restarted
+	})
+	switch {
+	case restarted:
+		printRestarted(out, f)
+		return nil
+	case !datadir.ProcessAlive(pid):
+		return errors.New("the daemon stopped instead of starting again; check its output for the reason")
+	default:
+		return fmt.Errorf("the daemon did not come back within %s; check its output", timeout)
+	}
 }
 
 // runningDaemonInfo asks the running daemon about itself, and refuses when it
@@ -226,9 +254,18 @@ func restartViaService(out io.Writer, installer autostart.Installer, opts autost
 	return nil
 }
 
-// printRestarted confirms the restart and points at the web UI. The URL is
-// best-effort — an unreadable config just drops the suffix.
+// printRestarted confirms the restart and points at the web UI, on the port
+// the daemon reports (it may differ from this command's --port). The URL is
+// best-effort — an unreadable config just drops the suffix, and so does a
+// daemon reporting port 0 (`daemon --no-http`, no web UI to point at).
 func printRestarted(out io.Writer, f Flags) {
+	if info, err := apiclient.NewUnix(localAPISocketPath(f)).GetDaemonInfo(context.Background()); err == nil {
+		if info.Port == 0 {
+			fmt.Fprintln(out, "Daemon restarted.")
+			return
+		}
+		f.Port = info.Port
+	}
 	if cfg, err := config.Load(f.CfgFile); err == nil {
 		fmt.Fprintf(out, "Daemon restarted — web UI at %s\n", daemonListenURL(cfg, f))
 		return

@@ -43,6 +43,11 @@ type ExecList struct {
 	// instanceCount resolves a task's currently configured instance count so
 	// multi-instance services render a 1-based #N suffix. nil ⇒ no suffix.
 	instanceCount func(taskName string) int
+	// liveUsage and liveLines are each running run's live CPU and memory use
+	// and the lines it has printed so far, by run ID, from the latest system
+	// sample.
+	liveUsage map[string]model.ResourceUsage
+	liveLines map[string]int64
 	// selected holds the run IDs explicitly toggled with space. selectAll
 	// overrides it: when set, the selection is "every run matching the active
 	// filter", rendered all-checked and acted on with a MatchAll selector. The
@@ -59,6 +64,12 @@ func NewExecList(w *ExecWindow) ExecList {
 // whether a row's task name gets a #N instance suffix.
 func (e *ExecList) SetInstanceCountLookup(fn func(taskName string) int) {
 	e.instanceCount = fn
+}
+
+// SetLive replaces the running runs' live CPU and memory use and printed
+// line counts, keyed by run ID, shown in their CPU, RAM and OUTPUT cells.
+func (e *ExecList) SetLive(usage map[string]model.ResourceUsage, lines map[string]int64) {
+	e.liveUsage, e.liveLines = usage, lines
 }
 
 // SetSize updates the available dimensions.
@@ -112,6 +123,27 @@ func (e *ExecList) ToggleSelectCursor() {
 	} else {
 		e.selected[run.ID] = struct{}{}
 	}
+}
+
+// ExtendSelection is shift+↑/↓: it ticks the run under the cursor, moves the
+// cursor by delta, and ticks the run it lands on. Add-only, so holding shift
+// and walking the list marks every row passed. Like ToggleSelectCursor it drops
+// select-all into an explicit set. A no-op when the cursor row isn't loaded.
+func (e *ExecList) ExtendSelection(delta int) {
+	run := e.SelectedRun()
+	if run == nil {
+		return
+	}
+	if e.selectAll {
+		e.selectAll = false
+		e.selected = make(map[string]struct{})
+	}
+	e.selected[run.ID] = struct{}{}
+	e.cursor = min(max(e.cursor+delta, 0), e.TotalCount()-1)
+	if run := e.SelectedRun(); run != nil {
+		e.selected[run.ID] = struct{}{}
+	}
+	e.ensureVisible()
 }
 
 // SelectAllMatching marks every run matching the active filter as selected. The
@@ -182,6 +214,12 @@ func (e *ExecList) Update(msg tea.Msg) tea.Cmd {
 		// Rows under the old filter may no longer be visible; a bulk action on a
 		// carried-over selection would hit runs the operator can't see.
 		e.ClearSelection()
+		return nil
+	}
+	// Reordering keeps the same runs, so the selection stays.
+	if keyMsg.String() == "o" {
+		e.window.CycleSort()
+		e.cursor, e.Scroll = 0, 0
 		return nil
 	}
 	n := e.TotalCount()
@@ -298,16 +336,15 @@ func (e *ExecList) rowPrefix(runID string) string {
 	return checkboxEmpty + " "
 }
 
-// rowBaselines are what a scoped list judges each run's vitals against: the
-// task's usual duration, CPU and RAM, and its usual output band. nil when
-// unknown.
+// rowBaselines are what the list judges a run's vitals against: its task's
+// usual duration, CPU and RAM, and its usual output band. nil when unknown.
 type rowBaselines struct {
 	duration *time.Duration
 	usage    *uikit.RunUsage
 	output   *uikit.OutputBand
 }
 
-func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidths, usual rowBaselines) string {
+func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidths, baselines map[string]rowBaselines) string {
 	bg, fg, bold := uikit.ColorBg, uikit.ColorText, false
 	isCursor := e.focused && rowIdx == e.cursor
 	isHovered := rowIdx == e.hoveredRow && !isCursor
@@ -322,11 +359,12 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	if item == nil {
 		return rowStyle.Render("  " + padCell("loading…", cw.rowWidth()-2))
 	}
-	cpu, mem := usageCells(&item.Run, usual.usage, isCursor)
+	usual := baselines[item.Run.TaskName]
+	cpu, mem := usageCells(&item.Run, e.liveUsage, usual.usage, isCursor)
 	return rowStyle.Render(e.rowPrefix(item.Run.ID)+padCell(e.firstCell(item.Run, cw), cw.first)+" ") +
 		statusCell(item.Run.DisplayStatus(), cw.status, rowStyle) +
 		trailingCells(cw, rowStyle, cell{text: e.startedCell(item, cw)}, durationCell(item, usual.duration, isCursor),
-			cpu, mem, outputCell(&item.Run, usual.output, isCursor), cell{text: string(item.Run.TriggeredBy)})
+			cpu, mem, outputCell(&item.Run, e.liveLines, usual.output, isCursor), cell{text: string(item.Run.TriggeredBy)})
 }
 
 // durationCell is a run's DURATION cell, colored like CPU and RAM by how it
@@ -342,9 +380,13 @@ func durationCell(item *uikit.ExecListItem, usual *time.Duration, isCursor bool)
 
 // outputCell is a run's OUTPUT cell, its line count, in the warning colour
 // when the run printed far more or far less than the task usually does. The
-// cursor row keeps its own highlight colour.
-func outputCell(run *model.Run, band *uikit.OutputBand, isCursor bool) cell {
+// cursor row keeps its own highlight colour. A running run shows the lines it
+// has printed so far, uncolored like its DURATION.
+func outputCell(run *model.Run, live map[string]int64, band *uikit.OutputBand, isCursor bool) cell {
 	lines, ok := run.OutputLines()
+	if l, isLive := live[run.ID]; isLive && run.Status == model.PhaseRunning {
+		lines, ok, band = l, true, nil
+	}
 	var c cell
 	switch {
 	case !ok:
@@ -365,8 +407,12 @@ func outputCell(run *model.Run, band *uikit.OutputBand, isCursor bool) cell {
 
 // usageCells are a run's CPU and RAM cells, colored by how they compare with
 // the task's usual run so a heavy one stands out, like the web UI's usage bars.
-// The cursor row keeps its own highlight colour.
-func usageCells(run *model.Run, usual *uikit.RunUsage, isCursor bool) (cpu, mem cell) {
+// A running run shows its live CPU percent and resident memory instead,
+// uncolored like its DURATION. The cursor row keeps its own highlight colour.
+func usageCells(run *model.Run, live map[string]model.ResourceUsage, usual *uikit.RunUsage, isCursor bool) (cpu, mem cell) {
+	if l, ok := live[run.ID]; ok && run.Status == model.PhaseRunning {
+		return cell{text: fmt.Sprintf("%.0f%%", l.CPUPercent)}, cell{text: config.FormatByteSize(l.MemoryBytes)}
+	}
 	u, ok := uikit.MeasuredUsage(run)
 	if !ok {
 		if isCursor {
@@ -457,17 +503,7 @@ func trailingCells(cw colWidths, style lipgloss.Style, cells ...cell) string {
 
 func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, contentW int, cw colWidths, sb scrollbarRender) {
 	end := min(e.Scroll+vpH, n)
-	var usual rowBaselines
-	// Only a scoped list has one task's runs to judge a duration against.
-	if cw.scoped && cw.duration > 0 {
-		usual.duration = e.window.UsualDuration()
-	}
-	if cw.cpu > 0 || cw.mem > 0 {
-		usual.usage = e.window.UsualUsage()
-	}
-	if cw.output > 0 {
-		usual.output = e.window.UsualOutput()
-	}
+	usual := e.window.Baselines()
 	// contentW is w when no scrollbar shows and w-1 when it does; the scrollbar
 	// glyph is exactly one cell. So a row padded to contentW plus the scrollbar
 	// is already exactly w cells — no second PadLine pass needed. Skipping it
@@ -499,18 +535,25 @@ func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, contentW int, c
 	}
 }
 
-// renderFilterBanner draws the active-status-filter notice shown under the
-// column header. It is tinted with the filter's own status colour so it ties
-// visually to the row status badges and can't be missed.
+// renderFilterBanner draws the active status filter and order under the column
+// header. A filter is tinted with its own status colour so it ties visually to
+// the row status badges and can't be missed.
 func (e *ExecList) renderFilterBanner(w int) string {
-	status := e.window.StatusFilter()
-	accent := uikit.StatusStyle(status).GetBackground()
-	label := uikit.OnBg(uikit.ColorBgLight, accent).
-		Bold(true).
-		Render("▌ FILTER: " + strings.ToUpper(uikit.StatusLabel(status)))
-	hint := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).
-		Render("  ·  press f to change")
-	return uikit.PadLine(label+hint, w, uikit.ColorBgLight)
+	var parts []string
+	if status := e.window.StatusFilter(); status != "" {
+		accent := uikit.StatusStyle(status).GetBackground()
+		parts = append(parts, uikit.OnBg(uikit.ColorBgLight, accent).
+			Bold(true).
+			Render("▌ FILTER: "+strings.ToUpper(uikit.StatusLabel(status)))+
+			uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).Render("  ·  press f to change"))
+	}
+	if order := e.window.SortLabel(); order != "" {
+		parts = append(parts, uikit.OnBg(uikit.ColorBgLight, uikit.ColorPrimary).
+			Bold(true).
+			Render("▌ SORT: "+strings.ToUpper(order))+
+			uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).Render("  ·  press o to change"))
+	}
+	return uikit.PadLine(strings.Join(parts, "   "), w, uikit.ColorBgLight)
 }
 
 // renderEmptySection fills the whole viewport when no rows are present: the
@@ -564,7 +607,7 @@ func (e *ExecList) View() string {
 	b.WriteString(uikit.PadLine(header, w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
-	if e.window.HasStatusFilter() {
+	if e.bannerLines() > 0 {
 		b.WriteString(e.renderFilterBanner(w))
 		b.WriteString("\n")
 	}
@@ -600,10 +643,10 @@ func (e *ExecList) View() string {
 // TotalCount returns the total number of executions known to the window.
 func (e *ExecList) TotalCount() int { return e.window.TotalCount() }
 
-// bannerLines is the number of rows the active-filter banner occupies: one
-// while a status filter is active, zero otherwise.
+// bannerLines is the number of rows the banner occupies: one while a status
+// filter or a non-default order is active, zero otherwise.
 func (e *ExecList) bannerLines() int {
-	if e.window.HasStatusFilter() {
+	if e.window.HasStatusFilter() || e.window.SortLabel() != "" {
 		return 1
 	}
 	return 0

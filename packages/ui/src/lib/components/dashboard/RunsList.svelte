@@ -10,10 +10,12 @@
         Square,
         Trash,
         RotateCw,
+        Timer,
     } from "@lucide/svelte";
     import { untrack } from "svelte";
     import { createVirtualizer } from "@tanstack/svelte-virtual";
     import Button from "../Button.svelte";
+    import Dropdown from "../Dropdown.svelte";
     import { arrival, leave, prefersReducedMotion } from "../../actions/row-motion.js";
     import type { RunMotion } from "../../utils/run-motion.js";
     import EmptyState from "../EmptyState.svelte";
@@ -30,7 +32,13 @@
         runFilterParams,
         type RunsListFilters,
     } from "./run-filters.js";
-    import { instanceSuffix, runOutputScale, runUsageScale, usualDuration } from "./run-helpers.js";
+    import {
+        instanceSuffix,
+        runLiveLabel,
+        rangeIds,
+        runScalesByTask,
+        type RunLive,
+    } from "./run-helpers.js";
     import { formatDateTime } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
@@ -55,6 +63,7 @@
         onBulkDelete,
         onBulkRerun,
         getInstanceCount = () => 1,
+        getLive = () => undefined,
         motion,
         outputSearch = false,
         outputQuery = "",
@@ -88,6 +97,9 @@
         // Resolves a task's currently configured instance count so multi-instance
         // services render a 1-based #N suffix. Defaults to single-instance.
         getInstanceCount?: (taskName: string) => number;
+        // A running run's live CPU, memory and lines printed so far, shown on
+        // its row beside the usage bars. Defaults to none.
+        getLive?: (runId: string) => RunLive | undefined;
         // Which runs arrived or were removed live moments ago: their rows animate
         // in or out. Page loads, scrolling and filtering never do.
         motion?: RunMotion;
@@ -104,9 +116,10 @@
         // True while a query is typed but its results aren't in yet (debounce
         // window or request in flight), the rail shows its searching shimmer.
         outputSearchPending?: boolean;
-        // Task rail only: three small bars per finished run, CPU time, RAM and
-        // lines printed, scaled to the largest loaded run and colored against
-        // the usual one. The duration readout is colored against the usual run too.
+        // Three small bars per finished run, CPU time, RAM and lines printed,
+        // scaled to its task's largest loaded run and colored against the task's
+        // usual one, so a list mixing tasks judges each run against its own task.
+        // The duration readout is colored against the usual run too.
         usageBars?: boolean;
         // Folds the list to a thin strip that still counts the runs, giving the
         // run detail the width. Omitted where the screen keeps the list open.
@@ -114,9 +127,7 @@
         onToggleFold?: (() => void) | undefined;
     } = $props();
 
-    const usageScale = $derived(usageBars ? runUsageScale(items) : undefined);
-    const outputScale = $derived(usageBars ? runOutputScale(items) : undefined);
-    const durationUsual = $derived(usageBars ? usualDuration(items) : undefined);
+    const scales = $derived(usageBars ? runScalesByTask(items) : undefined);
 
     // Task-rail rows are one dense line (44px); the cross-task /runs view adds
     // the task name on a second line (64px).
@@ -197,6 +208,33 @@
         onselect?.(runId);
     }
 
+    // Shift+click range select: ticks every row between the anchor and the
+    // clicked row, in the order the rail shows them. The anchor is the last row
+    // toggled with a plain click, or else the open run, so "open a run, then
+    // shift+click another" works like a file manager.
+    let anchorId: string | null = null;
+    const shownRuns = $derived(outputSearchActive ? matchedRuns : items);
+
+    function toggleRow(runId: string) {
+        selection.toggle(runId);
+        anchorId = runId;
+    }
+
+    function selectRange(runId: string) {
+        const ids = rangeIds(
+            shownRuns.map((r: Run) => r.id),
+            anchorId,
+            selectedRunId ?? null,
+            runId,
+        );
+        if (!ids) {
+            toggleRow(runId);
+            return;
+        }
+        selection.selectMany(ids);
+        anchorId = runId;
+    }
+
     let selectedRuns = $derived(items.filter((r: Run) => selection.isSelected(r.id)));
     let selectionCount = $derived(selectedRuns.length);
     let hasSelection = $derived(selectionCount > 0);
@@ -244,20 +282,40 @@
         else selection.selectAll();
     }
 
-    function toggleSortDirection() {
-        // Reassign the whole object (not just the property): the parent reads
-        // `filters` through a multi-level `bind:`, and a fresh reference is what
-        // reliably re-triggers its fetch effect.
-        filters = {
-            ...filters,
-            sortDirection: filters.sortDirection === "asc" ? "desc" : "asc",
-        };
-    }
+    const SORTS: {
+        label: string;
+        field: RunsListFilters["sortField"];
+        direction: "asc" | "desc";
+    }[] = [
+        { label: "Newest first", field: undefined, direction: "desc" },
+        { label: "Oldest first", field: undefined, direction: "asc" },
+        { label: "Longest first", field: "duration", direction: "desc" },
+        { label: "Shortest first", field: "duration", direction: "asc" },
+    ];
+
+    // Reassign the whole object (not just the properties): the parent reads
+    // `filters` through a multi-level `bind:`, and a fresh reference is what
+    // reliably re-triggers its fetch effect.
+    const sortItems = $derived(
+        SORTS.map((sort) => ({
+            label: sort.label,
+            selected:
+                sort.field === filters.sortField &&
+                sort.direction === (filters.sortDirection || "desc"),
+            onClick: () => {
+                filters = { ...filters, sortField: sort.field, sortDirection: sort.direction };
+            },
+        })),
+    );
 
     // An empty list under filters says so, rather than claiming no runs exist.
     const filtered = $derived(activeFilterCount(filters) > 0 || filters.search !== "");
     function clearFilters() {
-        filters = { ...emptyRunFilters(), sortDirection: filters.sortDirection };
+        filters = {
+            ...emptyRunFilters(),
+            sortDirection: filters.sortDirection,
+            sortField: filters.sortField,
+        };
     }
 
     // The count stands in for a title: "12 runs", or matches while searching.
@@ -367,22 +425,18 @@
                     {#if showFilters}
                         <RunFilterPopover bind:filters {showTask} {tasks} />
                     {/if}
-                    <Button
-                        variant="ghost"
-                        size="xs"
-                        class="h-7 w-7 px-0"
-                        onclick={toggleSortDirection}
-                        title="Toggle sort order"
-                    >
-                        {#snippet icon()}
-                            <ArrowUpDown
-                                size={14}
-                                class="text-on-surface-muted {filters.sortDirection === 'asc'
-                                    ? 'rotate-180'
-                                    : ''}"
-                            />
+                    <Dropdown items={sortItems} triggerLabel="Sort runs">
+                        {#snippet trigger()}
+                            {#if filters.sortField === "duration"}
+                                <Timer size={14} />
+                            {:else}
+                                <ArrowUpDown
+                                    size={14}
+                                    class={filters.sortDirection === "asc" ? "rotate-180" : ""}
+                                />
+                            {/if}
                         {/snippet}
-                    </Button>
+                    </Dropdown>
                     {#if onToggleFold}
                         <Button
                             variant="ghost"
@@ -511,8 +565,14 @@
         <input
             type="checkbox"
             checked={selection.isSelected(run.id)}
-            onchange={() => selection.toggle(run.id)}
-            onclick={(e) => e.stopPropagation()}
+            onclick={(e) => {
+                e.stopPropagation();
+                if (e.shiftKey) selectRange(run.id);
+                else toggleRow(run.id);
+                // The browser already flipped the box; a range over a ticked
+                // row leaves the state unchanged, so put the box back in step.
+                e.currentTarget.checked = selection.isSelected(run.id);
+            }}
             aria-label={`Select run from ${formatDateTime(run.startedAt ?? run.createdAt)}`}
             class="size-3.5 cursor-pointer rounded border-outline accent-primary opacity-0 {selectionActive
                 ? 'opacity-100'
@@ -522,6 +582,7 @@
 {/snippet}
 
 {#snippet runRow(run: Run, match: RunOutputMatch | undefined)}
+    {@const scale = scales?.get(run.taskName)}
     <RunRow
         {run}
         active={selectedRunId === run.id}
@@ -531,9 +592,11 @@
         {outputQuery}
         {bulkActions}
         {selectionActive}
-        usage={usageBars ? (usageScale ?? null) : undefined}
-        output={outputScale}
-        {durationUsual}
+        usage={usageBars ? (scale?.usage ?? null) : undefined}
+        output={scale?.output}
+        durationUsual={scale?.durationUsual}
+        live={usageBars && run.status === "running" ? runLiveLabel(getLive(run.id)) : undefined}
         onselect={selectRun}
+        onshiftselect={bulkActions ? selectRange : undefined}
     />
 {/snippet}

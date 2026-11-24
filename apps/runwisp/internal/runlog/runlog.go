@@ -79,11 +79,19 @@ func logFailed(e events.Event) {
 }
 
 func logEnd(level slog.Level, msg string, run *model.Run) {
-	slog.Log(context.Background(), level, msg,
-		"task", run.TaskName, "run", run.ID,
-		"exit", run.ExitCode, "reason", reasonString(run),
-		"dur", runDuration(run))
+	args := []any{"task", run.TaskName, "run", run.ID, "exit", run.ExitCode}
+	// The shell's own "not found" usually goes to a crontab's >/dev/null 2>&1,
+	// so the exit code is all that's left to say why.
+	if run.ExitCode == exitCommandNotFound {
+		args = append(args, "hint", "command not found")
+	}
+	args = append(args, "reason", reasonString(run), "dur", runDuration(run))
+	slog.Log(context.Background(), level, msg, args...)
 }
+
+// exitCommandNotFound is the status a POSIX shell exits with when it can't find
+// the program it was asked to run.
+const exitCommandNotFound = 127
 
 // LogEnded emits the line the daemon logs when run ends, for a caller holding
 // the ended run rather than its bus event. Unlike the daemon's handler it keeps

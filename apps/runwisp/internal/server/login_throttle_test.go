@@ -51,7 +51,7 @@ func TestLoginThrottle_DelayAndMemory(t *testing.T) {
 	done, _ = th.acquire("a")
 	require.NotNil(t, done, "failures are forgotten after loginFailureMemory")
 	done(loginWrongPassword)
-	assert.Equal(t, 1, th.ips["a"].failures)
+	assert.Equal(t, 1, th.clients["a"].failures)
 }
 
 func TestLoginThrottle_UncheckedNeitherCountsNorResets(t *testing.T) {
@@ -62,11 +62,11 @@ func TestLoginThrottle_UncheckedNeitherCountsNorResets(t *testing.T) {
 		require.NotNil(t, done)
 		done(loginUnchecked)
 	}
-	assert.Equal(t, 1, th.ips["a"].failures)
+	assert.Equal(t, 1, th.clients["a"].failures)
 
 	done, _ := th.acquire("b")
 	done(loginUnchecked)
-	assert.NotContains(t, th.ips, "b", "an IP with nothing to remember is dropped")
+	assert.NotContains(t, th.clients, "b", "an IP with nothing to remember is dropped")
 }
 
 // A parallel burst from one IP must not outrun the throttle: with each check
@@ -99,5 +99,5 @@ func TestLoginThrottle_SweepDropsForgottenIPs(t *testing.T) {
 	}
 	now = now.Add(loginFailureMemory + time.Second)
 	fail(t, th, "fresh")
-	assert.Len(t, th.ips, 1)
+	assert.Len(t, th.clients, 1)
 }

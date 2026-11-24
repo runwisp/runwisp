@@ -73,11 +73,17 @@ runwisp
 ```
 
 Opens the [TUI](/getting-started/tui-tour/) against the daemon that owns the
-data directory. If none is running, it starts one in the background first. With
-no `runwisp.toml`, it offers to create a starter file.
+data directory. If none is running, it runs the daemon in this terminal, and
+quitting the TUI stops it. To keep RunWisp running, install it as a service
+with [`runwisp service install`](#runwisp-service-install). With no `runwisp.toml`, it
+offers to create a starter file.
 
 If another RunWisp daemon already holds the port, it offers to connect to that
 one or to stop it and start here.
+
+| Flag        | Description                                                                                                  |
+| ----------- | ------------------------------------------------------------------------------------------------------------ |
+| `--no-http` | When it runs the daemon here, don't open the HTTP port, so there is no web UI and no remote API. Since 1.11. |
 
 ### `runwisp daemon`
 
@@ -89,9 +95,10 @@ Starts the daemon in the foreground with no TUI. Use it under Docker, systemd,
 or any init system. Exits non-zero if the config is missing, instead of
 prompting.
 
-| Flag    | Description                                                                                                                                                                              |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--app` | Read the config as a JSON document on stdin instead of `runwisp.toml`, with the same keys. [SDKs](/sdk/) start the daemon this way. It stops 10 seconds after the app leaves. Since 1.7. |
+| Flag        | Description                                                                                                                                                                              |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--app`     | Read the config as a JSON document on stdin instead of `runwisp.toml`, with the same keys. [SDKs](/sdk/) start the daemon this way. It stops 10 seconds after the app leaves. Since 1.7. |
+| `--no-http` | Don't open the HTTP port, so there is no web UI and no remote API. The TUI and the CLI still work through the [control socket](#control-socket). Since 1.11.                             |
 
 ### `runwisp tui`
 
@@ -336,9 +343,12 @@ runwisp restart web 'batch-*'
 runwisp restart --attach 'web*'
 ```
 
-With no argument, restarts the daemon. Needed for settings a reload can't apply
-(see [Reload & restart](/operations/reload/)). Installed as a service, the
-restart goes through systemd or launchd.
+With no argument, restarts the daemon. Needed for settings a reload can't
+apply (see [Reload & restart](/operations/reload/)). Installed as a service, the
+restart goes through systemd or launchd. Any other daemon (`runwisp`,
+`runwisp daemon`, a Docker container) restarts in place: it stops gracefully and
+starts again in the same process, so its terminal or container keeps running.
+Sending the daemon `SIGUSR2` does the same.
 A daemon an [SDK](/sdk/) app started can't be restarted this way: restart the
 app.
 
@@ -459,6 +469,10 @@ runs twice.
 The summary marks each job: `✓` mapped, `~` changed, `!` needs a fix, `-`
 skipped because it already exists.
 
+When the TOML it prints or writes won't load until a `# TODO` is fixed (a
+crontab line with a bad schedule, say), `import` still prints or writes it and
+exits 1. Since 1.11; before, it exited 0.
+
 ### `runwisp promote`
 
 ```bash
@@ -470,6 +484,12 @@ Moves an imported task (staged by `import --write`, or read from a crontab via
 [`include_cron`](/configuration/daemon/#include_cron)) into your own
 `runwisp.toml`. See [Staging and promoting](/coming-from/cron/#staging-and-promoting).
 
+The block moves as written, comments and `# TODO` notes included. For a crontab
+job, the line it came from is commented out in the same step, so cron stops
+running it; promote writes nothing if that line changed since the config was
+loaded, or if the result wouldn't load. Run `runwisp reload` (or pass `--reload`)
+so a running daemon picks the change up.
+
 | Flag        | Description                                    |
 | ----------- | ---------------------------------------------- |
 | `--all`     | Promote every staged and crontab-sourced task. |
@@ -479,7 +499,7 @@ Moves an imported task (staged by `import --write`, or read from a crontab via
 ### `runwisp takeover`
 
 ```bash
-sudo runwisp takeover
+runwisp takeover
 ```
 
 Replaces the system cron in one step: writes a config that reads your crontabs,
@@ -500,11 +520,12 @@ and systemd. Run without root, it re-runs itself with sudo. See
 ### `runwisp service install`
 
 ```bash
-sudo runwisp service install
+runwisp service install
 runwisp service install --local
 ```
 
-Installs a unit so the daemon starts on boot. See [Autostart](/operations/autostart/).
+Installs a unit so the daemon starts on boot. The system service needs root: run
+without it, the command re-runs itself with sudo. See [Autostart](/operations/autostart/).
 
 | Flag          | Description                                                                                                  |
 | ------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -524,11 +545,12 @@ overwriting.
 ### `runwisp service uninstall`
 
 ```bash
-sudo runwisp service uninstall
+runwisp service uninstall
 ```
 
 Stops the daemon, disables autostart, and removes the unit and the drop-ins
-RunWisp saved beside it. Keeps the config and the data directory, and prints
+RunWisp saved beside it. For the system service, run without root, it re-runs
+itself with sudo. Keeps the config and the data directory, and prints
 their paths. If `takeover` retired cron, this gives cron back. Before it asks, it
 lists the tasks and services in `runwisp.toml` that stop running. Crontab lines
 that `promote` commented out are uncommented, so cron runs those jobs again.
@@ -630,8 +652,9 @@ lives in a temp directory that's deleted when the daemon stops.
 
 | Flag          | Description                                                                             |
 | ------------- | --------------------------------------------------------------------------------------- |
-| `--no-tui`    | Leave the daemon running, print its password and data directory, and exit.              |
+| `--no-tui`    | Run in the foreground without the TUI. <kbd>Ctrl</kbd>+<kbd>C</kbd> stops it.           |
 | `--seed-only` | Write the demo config to `--config`, seed `--data`, and exit without starting anything. |
+| `--no-http`   | Don't open the HTTP port, so there is no web UI. Since 1.11.                            |
 
 ### `runwisp station`
 

@@ -6,11 +6,24 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
 	"testing"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 )
+
+// systemdBooted makes cronprobe.SystemdBooted answer booted for this test.
+func systemdBooted(t *testing.T, booted bool) {
+	t.Helper()
+	prev := cronprobe.SystemdBootedDir
+	t.Cleanup(func() { cronprobe.SystemdBootedDir = prev })
+	cronprobe.SystemdBootedDir = t.TempDir()
+	if !booted {
+		cronprobe.SystemdBootedDir = filepath.Join(cronprobe.SystemdBootedDir, "missing")
+	}
+}
 
 func TestHeldTaskNames_OnlyHeldTasksInListOrder(t *testing.T) {
 	tasks := []model.Task{
@@ -41,6 +54,7 @@ func TestPrintHeld_SilentWhenNothingIsHeld(t *testing.T) {
 // Both surfaces have to carry the two facts an operator acts on: which tasks are
 // not running, and the command that makes them run.
 func TestPrintHeld_NamesTasksAndTheWayOut(t *testing.T) {
+	systemdBooted(t, true)
 	for _, tc := range []struct {
 		name  string
 		print func(*bytes.Buffer)
@@ -54,7 +68,7 @@ func TestPrintHeld_NamesTasksAndTheWayOut(t *testing.T) {
 			got := out.String()
 			assert.Contains(t, got, "backup, vacuum")
 			assert.Contains(t, got, "is running")
-			assert.Contains(t, got, sudoRunwisp("takeover"))
+			assert.Contains(t, got, "Run 'runwisp takeover'", "takeover elevates itself")
 			assert.Contains(t, got, "2 tasks are")
 		})
 	}
@@ -119,11 +133,27 @@ func TestPrintHeldBlock_ReadsWithoutCronState(t *testing.T) {
 // starts again at boot, so the probe keeps it live and the jobs stay held with
 // nothing running them. The advice has to say to disable it.
 func TestPrintHeld_AdviceDisablesCronNotJustStops(t *testing.T) {
+	systemdBooted(t, true)
 	var block, banner bytes.Buffer
 	printHeldBlock(&block, []string{"backup"}, "is running")
 	printHeldBanner(&banner, []string{"backup"}, "is running")
 	for _, got := range []string{block.String(), banner.String()} {
 		assert.Contains(t, got, "systemctl disable --now cron")
 		assert.NotContains(t, got, "just stop cron")
+	}
+}
+
+// In a container there is no systemd and usually no sudo, so takeover and
+// systemctl both fail there. The way out is to drop cron from the CMD.
+func TestPrintHeld_WithoutSystemdSaysToDropCronFromTheCMD(t *testing.T) {
+	systemdBooted(t, false)
+	var block, banner bytes.Buffer
+	printHeldBlock(&block, []string{"backup"}, "looks like it's running (a live pidfile was found)")
+	printHeldBanner(&banner, []string{"backup"}, "looks like it's running (a live pidfile was found)")
+	for _, got := range []string{block.String(), banner.String()} {
+		assert.Contains(t, got, "cron -f")
+		assert.Contains(t, got, "entrypoint")
+		assert.NotContains(t, got, "takeover")
+		assert.NotContains(t, got, "systemctl")
 	}
 }

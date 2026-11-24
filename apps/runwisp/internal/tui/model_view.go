@@ -28,7 +28,7 @@ func (m Model) View() tea.View {
 		return v
 	}
 
-	// During a coalesced mouse-motion/wheel burst, reuse the last full frame
+	// During a coalesced burst (see Model.Update), reuse the last full frame
 	// instead of rebuilding the whole screen for every event.
 	if m.coalesce && m.frame != nil && *m.frame != "" {
 		v.SetContent(*m.frame)
@@ -276,11 +276,11 @@ func (m Model) buildMainHelpText() helpBar {
 	bar := helpBar{}.add(prioNav, keys.Move.Bar, keys.Open.Bar)
 	if name := m.sidebar.ActiveTask(); name != "" {
 		bar = bar.add(prioAction, m.taskHeader(name).Hints()...).
-			add(prioNav, keys.Filter.Bar).
+			add(prioNav, keys.Filter.Bar, keys.Sort.Bar).
 			add(prioAction, keys.TaskInfo.Bar).
 			add(prioNav, keys.ToSidebar.Bar)
 	} else {
-		bar = bar.add(prioNav, keys.Filter.Bar)
+		bar = bar.add(prioNav, keys.Filter.Bar, keys.Sort.Bar)
 		if !m.readOnly {
 			bar = bar.add(prioNav, keys.Select.Bar)
 		}

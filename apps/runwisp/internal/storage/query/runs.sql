@@ -230,7 +230,7 @@ SELECT * FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
   AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
-ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
+ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) DESC, id DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsDurationAsc :many
 SELECT * FROM runs WHERE deleted_at IS NULL
@@ -246,7 +246,7 @@ SELECT * FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
   AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0))
-ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
+ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) ASC, id DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: GetRunSummary :one
 -- 'missed' is counted on its own and deliberately excluded from 'failed':

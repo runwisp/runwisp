@@ -56,6 +56,7 @@ const (
 	BlockerIncludeCronMissesCrontabs
 	BlockerCronSourcesFailed
 	BlockerBinaryNotDurable
+	BlockerNoSystemd
 )
 
 // Blocker is a reason the cutover cannot proceed. Unlike a step, nothing RunWisp
@@ -113,9 +114,12 @@ type Evidence struct {
 	// nothing to mask, not that RunWisp must refuse.
 	CronUnit   string
 	CronActive bool
-	// UnitInstalled reports whether RunWisp's own service is already installed,
-	// and ServiceRunning whether it is up right now.
-	UnitInstalled  bool
+	// CrontabBinary reports a `crontab` command on PATH. With no CronUnit
+	// either, there is no cron on this box at all.
+	CrontabBinary bool
+	// UnitEnabled reports whether RunWisp's own unit is on disk, loaded and
+	// enabled, and ServiceRunning whether it is up right now.
+	UnitEnabled    bool
 	ServiceRunning bool
 	// DaemonRunning is sampled before anything is executed.
 	DaemonRunning bool

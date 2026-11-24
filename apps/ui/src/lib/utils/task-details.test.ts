@@ -4,7 +4,34 @@
 import { describe, expect, it } from "vitest";
 import type { Task } from "@runwisp/common";
 import { TASK_DEFAULTS } from "./__task_defaults";
-import { taskDetailSections } from "./task-details";
+import { taskDetailSections, taskEditHint } from "./task-details";
+
+describe("taskEditHint", () => {
+    it("points a cron task at its crontab", () => {
+        expect(taskEditHint({ source: "cron", sourceFile: "/etc/cron.d/myapp" }, true)).toEqual({
+            file: "/etc/cron.d/myapp",
+            crontab: true,
+            reload: "sudo runwisp reload",
+        });
+    });
+
+    it("says sudo only when the daemon runs as root", () => {
+        expect(taskEditHint({ source: "cron" }, false).reload).toBe("runwisp reload");
+        expect(taskEditHint({}, true).reload).toBe("sudo runwisp reload");
+    });
+
+    it("points everything else at its file", () => {
+        expect(taskEditHint({}, false)).toEqual({
+            file: "runwisp.toml",
+            crontab: false,
+            reload: "runwisp reload",
+        });
+        expect(
+            taskEditHint({ source: "staged", sourceFile: "/etc/runwisp/imported.toml" }, false)
+                .file,
+        ).toBe("/etc/runwisp/imported.toml");
+    });
+});
 
 const SECOND_NS = 1e9;
 const MINUTE_NS = 60 * SECOND_NS;

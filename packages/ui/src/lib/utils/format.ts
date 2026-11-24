@@ -108,6 +108,14 @@ export const formatFullDateTime = dateFormatter({
     hour12: false,
 });
 
+/** The viewer's local calendar day of date as `YYYY-MM-DD`, what an `<input type="date">` holds; "" when invalid. */
+export function formatLocalDay(date: string | number | Date): string {
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${String(d.getFullYear())}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 /** Formats date with options in timeZone; the browser's zone when unset or unknown to Intl. */
 function formatInZone(date: Date, options: Intl.DateTimeFormatOptions, timeZone?: string): string {
     if (timeZone) {
@@ -122,12 +130,14 @@ function formatInZone(date: Date, options: Intl.DateTimeFormatOptions, timeZone?
 
 /**
  * "in 7 hours (02:30)". Pass timeZone for a scheduled time, so the clock time
- * agrees with the cron description ("At 02:30") written in the schedule's zone.
+ * agrees with the cron description ("At 02:30") written in the schedule's zone,
+ * and showZone to name it: "in 7 hours (02:30 UTC)".
  */
 export function formatRelativeTimeWithAbsolute(
     dateStr: string | Date,
     now: Date = new Date(),
     timeZone?: string,
+    showZone = false,
 ): string {
     const date = new Date(dateStr);
     const diffDays = Math.abs(now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
@@ -139,7 +149,8 @@ export function formatRelativeTimeWithAbsolute(
             : year(date) === year(now)
               ? { month: "short", day: "numeric" }
               : { year: "numeric", month: "short", day: "numeric" };
-    return `${formatRelativeTime(date, now)} (${formatInZone(date, options, timeZone)})`;
+    const zone = showZone && timeZone ? ` ${timeZone}` : "";
+    return `${formatRelativeTime(date, now)} (${formatInZone(date, options, timeZone)}${zone})`;
 }
 
 export function formatBytes(bytes: number): string {
@@ -155,7 +166,9 @@ export function formatBytes(bytes: number): string {
     return `${new Intl.NumberFormat("en", { maximumFractionDigits: digits }).format(value)} ${unit}`;
 }
 
+/** "450ms", "12s", "3m 4s", "1h 12m". A negative span (clock skew) reads "0ms". */
 export function formatDuration(ms: number): string {
+    if (ms <= 0) return "0ms";
     if (ms < 1000) return String(ms) + "ms";
     const s = Math.floor(ms / 1000);
     if (s < 60) return String(s) + "s";

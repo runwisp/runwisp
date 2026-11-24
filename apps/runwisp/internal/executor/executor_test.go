@@ -97,6 +97,21 @@ func TestExecuteFailure(t *testing.T) {
 	assert.Equal(t, 1, result.ExitCode)
 }
 
+// The result names the run's log file, so the terminal event the run manager
+// publishes from it lets notifications quote the output tail.
+func TestExecuteResultCarriesLogPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	eb := events.NewEventBus()
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
+	getLogPath := captureLogPath(eb)
+
+	run := &model.Run{ID: ulid.Make().String(), Status: model.PhaseRunning}
+	result := exec.Execute(context.Background(), &model.Task{Name: "fail-task", Run: "echo boom; exit 1"}, run)
+
+	require.NotEmpty(t, getLogPath())
+	assert.Equal(t, getLogPath(), result.LogPath)
+}
+
 // An exit-0 run whose output matches a `failures` output pattern ends failed,
 // with a system line in its log explaining why; a non-matching run succeeds.
 func TestExecuteOutputPatternFailsExitZero(t *testing.T) {
@@ -715,6 +730,8 @@ func TestRoutingExecutor_Execute_BlockedURLSurfacesStartFailure(t *testing.T) {
 	require.NotNil(t, result.Error)
 	assert.Equal(t, -1, result.ExitCode)
 	assert.Contains(t, result.Error.Error(), "failed to start")
+	assert.Nil(t, result.StdoutLines, "a process that never started has no line counts")
+	assert.Nil(t, result.StderrLines)
 }
 
 // A service that daemonizes exits 0 at once. Its log says why it keeps

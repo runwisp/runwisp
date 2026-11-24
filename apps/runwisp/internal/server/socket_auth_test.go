@@ -7,6 +7,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -35,7 +36,7 @@ func TestAuthOrLocalTrusted_BypassWithLocalContext(t *testing.T) {
 	require.NoError(t, err)
 
 	called := false
-	handler := authOrLocalTrusted(authSvc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := authOrLocalTrusted(authSvc, newFailureLimiter("API token"))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -58,7 +59,7 @@ func TestAuthOrLocalTrusted_RejectsTCPWithoutSession(t *testing.T) {
 	require.NoError(t, err)
 
 	called := false
-	handler := authOrLocalTrusted(authSvc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := authOrLocalTrusted(authSvc, newFailureLimiter("API token"))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -170,6 +171,34 @@ func TestServer_ReadySignalsAfterListenersBound(t *testing.T) {
 	defer cancel()
 	require.NoError(t, s.Shutdown(ctx))
 	<-errCh
+}
+
+// TestServer_NoHTTPServesOnlyTheSocket: with NoHTTP the TCP port stays closed
+// while the socket (TUI, CLI) still answers, and Start returns on Shutdown.
+func TestServer_NoHTTPServesOnlyTheSocket(t *testing.T) {
+	s, _, _, _ := setupServerWithSocket(t)
+	s.port = testutil.PickFreePort(t)
+	s.noHTTP = true
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- s.Start() }()
+	select {
+	case <-s.Ready():
+	case <-time.After(3 * time.Second):
+		t.Fatal("Ready() did not close after Start()")
+	}
+	requireSocketReady(t, s.socketPath, 2*time.Second)
+
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", s.port), 500*time.Millisecond)
+	if err == nil {
+		conn.Close()
+		t.Fatal("TCP port accepted a connection under NoHTTP")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	require.NoError(t, s.Shutdown(ctx))
+	require.NoError(t, <-errCh)
 }
 
 // setupServerWithSocket is the shared boot for socket-aware tests. It reuses

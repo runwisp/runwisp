@@ -6,6 +6,7 @@ package demo
 import (
 	"testing"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 )
@@ -36,4 +37,10 @@ func TestDemoConfig(t *testing.T) {
 	assert.GreaterOrEqual(t, len(cfg.Notify.Notifiers), 3, "demo should declare at least three notifiers")
 	assert.GreaterOrEqual(t, len(cfg.Notify.Routes), 3, "demo should expose at least three notification routes")
 	assert.NotEmpty(t, cfg.Daemon.ExternalURL, "demo should set [daemon] external_url so notifications carry deep-links")
+}
+
+// The demo is a showcase: it must load clean, with no warning for
+// `runwisp validate` or the TUI header to show.
+func TestDemoConfigHasNoWarnings(t *testing.T) {
+	assert.Empty(t, config.Warnings(loadDemoConfig(t)))
 }

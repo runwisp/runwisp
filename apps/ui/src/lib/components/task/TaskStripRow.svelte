@@ -109,8 +109,10 @@
     {#each parts as part, i (i)}<span
             class="{part.muted ? 'text-on-surface-faint' : ''} {part.struck
                 ? 'line-through'
-                : ''} {part.mono ? 'font-mono text-[0.92em]' : ''}">{part.text}</span
-        >{/each}
+                : ''} {part.mono ? 'font-mono text-[0.92em]' : ''}"
+        >
+            {part.text}
+        </span>{/each}
 {/snippet}
 
 {#snippet runLink(className: string, fold: boolean)}
@@ -120,8 +122,10 @@
             type="button"
             data-fold={fold ? "link" : undefined}
             class="cursor-pointer text-primary underline-offset-2 hover:underline {className}"
-            onclick={() => onOpenRun(runId)}>{model.link.text}</button
+            onclick={() => onOpenRun(runId)}
         >
+            {model.link.text}
+        </button>
     {/if}
 {/snippet}
 
@@ -157,8 +161,10 @@
                     <span
                         class="cursor-pointer text-primary underline-offset-2 hover:underline {bar
                             ? 'text-xs'
-                            : 'text-sm'}">{model.link?.text}</span
+                            : 'text-sm'}"
                     >
+                        {model.link?.text}
+                    </span>
                 {/snippet}
                 <p class="w-80 max-w-full text-xs leading-relaxed whitespace-normal">
                     {HELD_BY_CRON_HELP}
@@ -174,8 +180,10 @@
             data-fold="usage"
             class="shrink-0 font-mono text-2xs text-on-surface-muted tabular-nums"
             title="Live CPU (100% = one core) and memory of everything this task is running"
-            data-testid="task-usage">{usageText}</span
+            data-testid="task-usage"
         >
+            {usageText}
+        </span>
     {/if}
 
     <div class="ml-auto flex shrink-0 items-center gap-1.5">
@@ -200,8 +208,10 @@
             class="shrink-0"
             data-fold="details"
             aria-expanded={detailsOpen}
-            onclick={onDetails}>Details</Button
+            onclick={onDetails}
         >
+            Details
+        </Button>
         {#if menu.length > 0}
             <Dropdown items={menu} triggerLabel="More task actions">
                 {#snippet trigger()}<Ellipsis size={bar ? 14 : 16} />{/snippet}

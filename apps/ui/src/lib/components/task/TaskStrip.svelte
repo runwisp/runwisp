@@ -218,8 +218,10 @@
                     variant="primary"
                     size="xs"
                     class="shrink-0"
-                    onclick={() => act(primary.kind)}>{primary.label}</Button
+                    onclick={() => act(primary.kind)}
                 >
+                    {primary.label}
+                </Button>
             {/if}
             <button
                 type="button"
@@ -246,17 +248,18 @@
                     <button
                         type="button"
                         class="text-primary underline underline-offset-2"
-                        onclick={() => onOpenRun(runId)}>{model.link.text}</button
+                        onclick={() => onOpenRun(runId)}
                     >
+                        {model.link.text}
+                    </button>
                 {/if}
                 {#if usage}
                     <span
                         class="font-mono text-2xs whitespace-nowrap tabular-nums"
                         data-testid="task-usage"
-                        >CPU {Math.round(usage.cpuPercent)}% · RAM {formatBytes(
-                            usage.memoryBytes,
-                        )}</span
                     >
+                        CPU {Math.round(usage.cpuPercent)}% · RAM {formatBytes(usage.memoryBytes)}
+                    </span>
                 {/if}
             </p>
             {@render description("line-clamp-2")}
@@ -268,8 +271,10 @@
                         class="flex-1 justify-center"
                         title={action.title}
                         loading={busy && action.kind !== "run"}
-                        onclick={() => act(action.kind)}>{action.label}</Button
+                        onclick={() => act(action.kind)}
                     >
+                        {action.label}
+                    </Button>
                 {/each}
                 <Button variant="secondary" size="sm" onclick={onDetails}>Details</Button>
             </div>
@@ -312,8 +317,10 @@
                 <button
                     type="button"
                     class="shrink-0 text-on-surface underline underline-offset-2 hover:text-primary"
-                    onclick={() => (descOpen = !descOpen)}>{descOpen ? "less" : "more"}</button
+                    onclick={() => (descOpen = !descOpen)}
                 >
+                    {descOpen ? "less" : "more"}
+                </button>
             {/if}
         </div>
     {/if}

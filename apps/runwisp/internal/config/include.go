@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
@@ -178,7 +177,8 @@ func WithCronHold(cfg *Config, state cronprobe.State) (updated *Config, changed 
 	if len(changed) == 0 {
 		return cfg, nil
 	}
-	next.refreshScheduleWarnings(time.Now())
+	// No schedule warnings to refresh: a hold only ever flips a cron-sourced
+	// task, and those never count toward a pile-up.
 	return &next, changed
 }
 
@@ -239,7 +239,10 @@ func resolveIncludes(patterns []string, rootDir, rootPath string) (resolvedGlobs
 
 // appendGlobHits absolutizes each glob hit and appends the new ones to matched,
 // skipping the root config itself and any already-seen path (seen is updated in
-// place). A hit whose absolute path can't be resolved is kept as-is.
+// place). Paths are compared after resolving symlinks, so one file reached two
+// ways (Alpine's /var/spool/cron/crontabs is a symlink to /etc/crontabs) is read
+// once, under the first path that found it. A hit whose absolute path can't be
+// resolved is kept as-is.
 func appendGlobHits(matched, hits []string, rootAbs string, seen map[string]struct{}) []string {
 	for _, h := range hits {
 		ha, err := filepath.Abs(h)
@@ -249,10 +252,14 @@ func appendGlobHits(matched, hits []string, rootAbs string, seen map[string]stru
 		if ha == rootAbs {
 			continue
 		}
-		if _, dup := seen[ha]; dup {
+		key := ha
+		if real, err := filepath.EvalSymlinks(ha); err == nil {
+			key = real
+		}
+		if _, dup := seen[key]; dup {
 			continue
 		}
-		seen[ha] = struct{}{}
+		seen[key] = struct{}{}
 		matched = append(matched, ha)
 	}
 	return matched

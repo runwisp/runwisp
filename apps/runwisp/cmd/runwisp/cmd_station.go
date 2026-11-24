@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/apps/runwisp/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -39,20 +38,15 @@ The local scheduler is not started — task scheduling is managed by the Station
 	},
 }
 
-// runStationInteractive boots station mode the same way the bare `runwisp` command
-// boots standalone mode: spawn the daemon as a detached background process and
-// attach the TUI to it over the local socket. Keeping the daemon in its own
-// process is what protects the operator's terminal — a daemon crash can never
-// leave the attached TUI's terminal in raw/alt-screen mode, because the TUI
-// process (which owns the terminal) is not the one that died.
+// runStationInteractive boots station mode the same way the bare `runwisp`
+// command boots standalone mode: attach to a daemon already running on this
+// data dir, or run one in this process with the TUI in front of it.
 func runStationInteractive(ctx context.Context, f Flags) error {
 	client := apiclient.NewUnix(localAPISocketPath(f))
-
-	// A station daemon is already running on this data dir — just attach.
 	if client.HealthCheck(ctx) == nil {
-		return runTUIConnect(ctx, client, f, tui.DaemonAttached)
+		return runTUIConnect(ctx, client)
 	}
-	return spawnAndAttach(ctx, client, f, modeStation)
+	return runDaemon(modeStation, f, false)
 }
 
 // resolveStationEnv loads the .env file (if present) and applies the --token /

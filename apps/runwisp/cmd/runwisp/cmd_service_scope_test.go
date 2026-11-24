@@ -18,7 +18,7 @@ func TestResolveInstallScope_DefaultsToSystemAsRoot(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the system scope only exists on Linux today")
 	}
-	systemWide, err := resolveInstallScope(false, 0)
+	systemWide, err := resolveInstallScope(false, 0, false)
 	require.NoError(t, err)
 	assert.True(t, systemWide, "the default install is the system-wide singleton")
 }
@@ -30,7 +30,7 @@ func TestResolveInstallScope_NonRootDefaultRefuses(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("macOS refuses the system scope for a different reason")
 	}
-	_, err := resolveInstallScope(false, 1000)
+	_, err := resolveInstallScope(false, 1000, false)
 	require.Error(t, err)
 	var ufe *userFacingError
 	require.ErrorAs(t, err, &ufe)
@@ -39,11 +39,21 @@ func TestResolveInstallScope_NonRootDefaultRefuses(t *testing.T) {
 	assert.Contains(t, ufe.details, "--local")
 }
 
+// --print and --dry-run only read, so they show the system unit to anyone.
+func TestResolveInstallScope_NonRootMayInspect(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the system scope only exists on Linux today")
+	}
+	systemWide, err := resolveInstallScope(false, 1000, true)
+	require.NoError(t, err)
+	assert.True(t, systemWide)
+}
+
 func TestResolveInstallScope_DarwinRefusesSystemScope(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("macOS-specific refusal")
 	}
-	_, err := resolveInstallScope(false, 0)
+	_, err := resolveInstallScope(false, 0, false)
 	require.Error(t, err)
 	var ufe *userFacingError
 	require.ErrorAs(t, err, &ufe)
@@ -52,7 +62,7 @@ func TestResolveInstallScope_DarwinRefusesSystemScope(t *testing.T) {
 }
 
 func TestResolveInstallScope_LocalIsAlwaysUserScope(t *testing.T) {
-	systemWide, err := resolveInstallScope(true, 1000)
+	systemWide, err := resolveInstallScope(true, 1000, false)
 	require.NoError(t, err)
 	assert.False(t, systemWide)
 }
@@ -63,7 +73,7 @@ func TestResolveInstallScope_LocalAsRootRefusesOnLinux(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the systemctl --user bus problem is Linux-specific")
 	}
-	_, err := resolveInstallScope(true, 0)
+	_, err := resolveInstallScope(true, 0, false)
 	require.Error(t, err)
 	var ufe *userFacingError
 	require.ErrorAs(t, err, &ufe)

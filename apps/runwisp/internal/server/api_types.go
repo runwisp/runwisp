@@ -339,7 +339,8 @@ type AuthStatusInput struct {
 }
 
 type AuthLoginInput struct {
-	Body AuthLoginRequest
+	Device string `cookie:"runwisp_device" doc:"Device token set by an earlier login; its logins are throttled per browser instead of per IP"`
+	Body   AuthLoginRequest
 }
 
 type AuthLoginRequest struct {
@@ -351,7 +352,7 @@ type AuthLoginRequest struct {
 // browser clients, and in the body for TCP API clients that hold their own
 // token and send it as a Bearer header instead of relying on cookies.
 type AuthLoginOutput struct {
-	SetCookie http.Cookie `header:"Set-Cookie"`
+	SetCookie []http.Cookie `header:"Set-Cookie"` // session, then device
 	Body      AuthLoginBody
 }
 
@@ -407,10 +408,11 @@ type ResyncEvent struct{}
 // stream. Mirrors events.SystemSampleEvent; aliased so huma/sse's reverse-type
 // lookup maps it to the `system` event name.
 type SystemSampleSSEEvent struct {
-	Sample model.MetricsSample            `json:"sample" doc:"Resource snapshot, same shape as a metrics-history entry"`
-	Uptime string                         `json:"uptime" doc:"Human-readable daemon uptime"`
-	Tasks  map[string]model.ResourceUsage `json:"tasks,omitempty" doc:"Live CPU and memory use per task, keyed by task name; only tasks with a measured running shell run appear"`
-	Runs   map[string]model.ResourceUsage `json:"runs,omitempty" doc:"Live CPU and memory use per running run, keyed by run ID; only measured shell runs appear"`
+	Sample      model.MetricsSample            `json:"sample" doc:"Resource snapshot, same shape as a metrics-history entry"`
+	Uptime      string                         `json:"uptime" doc:"Human-readable daemon uptime"`
+	Tasks       map[string]model.ResourceUsage `json:"tasks,omitempty" doc:"Live CPU and memory use per task, keyed by task name; only tasks with a measured running shell run appear"`
+	Runs        map[string]model.ResourceUsage `json:"runs,omitempty" doc:"Live CPU and memory use per running run, keyed by run ID; only measured shell runs appear"`
+	OutputLines map[string]int64               `json:"outputLines,omitempty" doc:"Lines each running run has printed so far on stdout and stderr, keyed by run ID"`
 }
 
 // ConfigStaleSSEEvent fires when config-staleness flips; maps to the

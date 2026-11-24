@@ -6,10 +6,11 @@
 # release tarball, verify its SHA-256 against the release's checksums file,
 # and place it on PATH. That's the whole job.
 #
-# This script never reads a crontab, never writes runwisp.toml, and never
-# calls systemctl/launchctl — every one of those decisions belongs to the
+# This script never changes a crontab, never writes runwisp.toml, and never
+# calls systemctl/launchctl: every one of those decisions belongs to the
 # binary itself, which is the only thing that can apply runwisp's trust
-# gates. Run `runwisp` once you have it; see
+# gates. It only peeks for cron jobs to point at `runwisp takeover`.
+# Run `runwisp` once you have it; see
 # https://docs.runwisp.com/operations/autostart/ for autostart and
 # https://docs.runwisp.com/coming-from/cron/ for taking over from cron.
 #
@@ -87,6 +88,15 @@ install_dir() {
   fi
 }
 
+# has_cron_jobs succeeds when the caller's crontab has a job line (one that
+# starts with a schedule, not a MAILTO= or SHELL= setting). /etc/cron.d is
+# left out: distros ship files there on every box. Read-only, best effort:
+# any error means "no". Linux only, since takeover needs systemd.
+has_cron_jobs() {
+  [ "$(uname -s)" = "Linux" ] || return 1
+  crontab -l 2>/dev/null | grep -q '^[[:space:]]*[0-9*@]'
+}
+
 main() {
   target=$(detect_target)
   version=${RUNWISP_VERSION:-latest}
@@ -126,6 +136,10 @@ main() {
     *":${dir}:"*) ;;
     *) log "Note: ${dir} is not on your PATH. Add it, then run 'runwisp' to get started." ;;
   esac
+
+  if has_cron_jobs; then
+    log "This machine has cron jobs. To let RunWisp run them: runwisp takeover"
+  fi
 }
 
 main "$@"

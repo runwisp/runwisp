@@ -11,10 +11,21 @@ import (
 
 	"github.com/charmbracelet/fang"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// Without a terminal, uninstall printed its plan and then
+// "autostart: requires --yes when stdin is not a terminal", which reads as if
+// something had already happened.
+func TestHandleCLIError_NeedsYesSaysNothingChanged(t *testing.T) {
+	var buf bytes.Buffer
+	handleCLIError(&buf, fang.Styles{}, fmt.Errorf("uninstall: %w", autostart.ErrNeedsYes))
+	assert.Contains(t, buf.String(), "Nothing was changed. There's no terminal to ask, so pass --yes.")
+	assert.NotContains(t, buf.String(), "autostart:")
+}
 
 func TestHandleCLIError_UserFacingKeepsRichRendering(t *testing.T) {
 	var buf bytes.Buffer
@@ -249,4 +260,12 @@ func TestUnknownTaskError(t *testing.T) {
 		assert.Contains(t, err.Error(), "No tasks are defined")
 		assert.Contains(t, err.Error(), "runwisp.toml")
 	})
+}
+
+// TestHandleCLIError_RestartInPlaceIsSilent guards the restart-in-place
+// sentinel: it is a clean shutdown main re-executes on, not a failure to show.
+func TestHandleCLIError_RestartInPlaceIsSilent(t *testing.T) {
+	var buf bytes.Buffer
+	handleCLIError(&buf, fang.Styles{}, fmt.Errorf("daemon: %w", errRestartInPlace))
+	assert.Empty(t, buf.String())
 }

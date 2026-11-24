@@ -106,7 +106,7 @@ done
 
 # --- does this invocation bring a daemon up? --------------------------------
 # Daemon-starting: `daemon`, `station`, `restart`, `demo`, and *no subcommand at
-# all* — bare `runwisp` spawns a background daemon before opening the TUI.
+# all* — bare `runwisp` runs the daemon before opening the TUI.
 #
 # So the list below is an EXEMPTION list of one-shot and client-only
 # subcommands, and anything unrecognized is treated as daemon-starting. That

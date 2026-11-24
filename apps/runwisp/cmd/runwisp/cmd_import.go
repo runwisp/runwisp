@@ -484,8 +484,18 @@ func resolveCronOptions(source string, systemFlag, systemSet bool) importer.Cron
 		opts.Flavor = hostCronFlavor()
 		opts.HostStat = os.Stat
 	}
+	// A spool crontab's owner is its file name, the same reading include_cron
+	// makes, so an imported job runs as the account cron ran it as.
+	opts.User, _ = importer.UserSpoolOwner(source)
+	opts.OwnerUnknown = source == "-"
+	opts.LookPath, opts.DaemonPATH = importer.LookPathIn, os.Getenv("PATH")
 	if importer.AnacronOwnsPath(source) {
 		opts.User = "root" // the system anacron runs every job as root
+	}
+	// The same names include_cron gives these jobs, so an import and the live
+	// read agree on which task is which.
+	if suffix, qualify := importer.CronNameSuffix(source); qualify {
+		opts.NameSuffix, opts.QualifyNames = suffix, true
 	}
 	switch {
 	case systemSet:
@@ -553,14 +563,23 @@ func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, 
 			return err
 		}
 		printImportSummary(stderr, rep, opts, singleFileEpilogue(rep, ""))
-		return nil
+		return unloadableErr(rep)
 	}
 
 	if err := confirmAndWrite(stderr, stdin, opts.output, toml, opts); err != nil {
 		return err
 	}
 	printImportSummary(stderr, rep, opts, singleFileEpilogue(rep, opts.output))
-	return nil
+	return unloadableErr(rep)
+}
+
+// unloadableErr fails the command when the draft it printed or wrote doesn't
+// load, so a script sees a non-zero exit instead of a config that won't start.
+func unloadableErr(rep importReport) error {
+	if rep.validationErr == nil {
+		return nil
+	}
+	return &userFacingError{title: "the imported config won't load until the items above are fixed"}
 }
 
 // printImportPlan is --dry-run for a saving import: the same report a real run

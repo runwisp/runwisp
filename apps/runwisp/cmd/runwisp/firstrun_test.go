@@ -208,7 +208,7 @@ func TestPromptAndScaffoldOffersDetectedCron(t *testing.T) {
 	assert.Contains(t, string(body), `"/etc/crontab"`)
 	assert.Contains(t, out.String(), "Found 3 cron job(s)")
 	assert.Contains(t, out.String(), "cron keeps running them for now")
-	assert.Contains(t, out.String(), sudoRunwisp("takeover"))
+	assert.Contains(t, out.String(), "Run 'runwisp takeover'", "takeover elevates itself")
 	assert.Contains(t, out.String(), "Read them as RunWisp tasks?")
 }
 
@@ -283,7 +283,8 @@ func stubFirstRunOffer(t *testing.T, inst *autostartfake.Installer) {
 				Binary: "/usr/local/bin/runwisp", Config: f.CfgFile,
 				DataDir: dir, Host: "127.0.0.1", Port: 9477, System: true,
 			},
-			GOOS: "linux",
+			GOOS:          "linux",
+			SystemdBooted: func() bool { return true },
 			Scan: func(_ []string, cfgPath string) config.CronScan {
 				return config.ScanCronSources([]string{filepath.Join(crontabs, "*")}, cfgPath)
 			},

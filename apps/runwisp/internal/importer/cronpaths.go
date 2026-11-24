@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // This file is the one place that may know where a crontab lives on disk.
@@ -91,6 +93,7 @@ func UserSpoolDirs() []string {
 		"/var/spool/cron/tabs",     // openSUSE
 		"/usr/lib/cron/tabs",       // macOS
 		"/var/at/tabs",             // macOS/BSD, alongside at(1)'s spool
+		"/etc/crontabs",            // Alpine and other BusyBox crond
 	}
 }
 
@@ -191,6 +194,22 @@ func UserSpoolOwner(path string) (string, bool) {
 	return base, true
 }
 
+// CronNameSuffix is how a crontab's path shows up in its task names (see
+// CronOptions.NameSuffix): the owner for a spool crontab, else the file's
+// basename without its extension. qualify is true for a crontab that belongs to
+// someone, a non-root user's crontab or a /etc/cron.d file, whose every task
+// name carries the suffix (`report-ops`). Root's crontab, /etc/crontab and any
+// other file keep bare names.
+func CronNameSuffix(path string) (suffix string, qualify bool) {
+	if owner, ok := UserSpoolOwner(path); ok {
+		return model.SanitizeTaskName(owner), owner != "root"
+	}
+	base := filepath.Base(path)
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+	clean := filepath.Clean(path)
+	return model.SanitizeTaskName(base), clean != SystemCrontabPath && IsSystemCrontabPath(clean)
+}
+
 // IsSpoolCrontabDir reports whether dir is one of the per-user cron spool
 // directories UserSpoolDirs recognizes. `[daemon] include_cron`'s glob filter
 // uses it to avoid guessing "spool" for an arbitrary directory that merely
@@ -214,4 +233,17 @@ func IsPlausibleAccountName(name string) bool {
 		}
 	}
 	return true
+}
+
+// LookPathIn returns the first executable regular file named name in
+// pathList's directories, or "". exec.LookPath with a PATH other than the
+// process's own.
+func LookPathIn(name, pathList string) string {
+	for _, dir := range filepath.SplitList(pathList) {
+		p := filepath.Join(dir, name)
+		if info, err := os.Stat(p); err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0 {
+			return p
+		}
+	}
+	return ""
 }

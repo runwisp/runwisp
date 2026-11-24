@@ -26,6 +26,8 @@
 {#if rendered}
     <span
         aria-label="Recent occurrences sparkline"
-        class="font-mono tracking-tight tabular-nums {className}">{rendered}</span
+        class="font-mono tracking-tight tabular-nums {className}"
     >
+        {rendered}
+    </span>
 {/if}

@@ -85,6 +85,8 @@ type SystemSampleEvent struct {
 	Uptime string
 	Tasks  map[string]model.ResourceUsage // live usage per task; empty when nothing is measured
 	Runs   map[string]model.ResourceUsage // live usage per running run, by run ID
+	// OutputLines is how many lines each running run has printed so far, by run ID.
+	OutputLines map[string]int64
 }
 
 // ConfigStaleEvent fires only when the daemon's config-staleness flips: a TOML

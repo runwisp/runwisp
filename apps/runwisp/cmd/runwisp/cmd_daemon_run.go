@@ -55,19 +55,16 @@ var noTUI bool
 
 func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	headless, tuiAutoDisabled := resolveHeadless(headless)
+	if f.NoHTTP {
+		// Port 0 tells /api/daemon, the banner and the TUI there is no Web UI.
+		f.Port = 0
+	}
 
 	// Arm SIGINT/SIGTERM before any goroutine could self-signal (superviseServerStart
 	// raises SIGTERM on its own PID when srv.Start fails). Registered first so the
 	// stop func runs last, after every other defer has unwound.
 	sigCh, stopSignals := installSignalHandler()
 	defer stopSignals()
-
-	// `runwisp demo` boots this daemon against a throwaway temp dir (see
-	// envDemoTempDir). Registered first ⇒ runs last, after the DB is closed and
-	// the PID file is cleaned.
-	if demoTmp := os.Getenv(envDemoTempDir); demoTmp != "" {
-		defer os.RemoveAll(demoTmp)
-	}
 
 	// Ring buffer for streaming daemon logs to remote TUI clients.
 	logBuffer := server.NewDaemonLogBuffer(1000)
@@ -176,6 +173,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		Scheduler:           svc.Scheduler,
 		Host:                f.Host,
 		Port:                f.Port,
+		NoHTTP:              f.NoHTTP,
 		DataDir:             absPathOrFallback(f.DataDir),
 		ConfigPath:          absPathOrFallback(f.CfgFile),
 		AppConfig:           fromApp,
@@ -195,9 +193,11 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		DaemonInfo:          daemonInfo,
 		ConfigStale:         configSnap.Stale,
 		ConfigWarnings:      reconciler.Warnings,
+		CronChanged:         configSnap.CronChanged,
 		UpdateStatus:        updateChecker.Status,
 		TaskUsage:           svc.Usage.TaskUsage,
 		RunUsage:            svc.Usage.RunUsage,
+		RunOutputLines:      svc.Executor.RunOutputLines,
 		DaemonLogBuffer:     logBuffer,
 		MetricsEnabled:      cfg.Config.Daemon.MetricsEnabled,
 		MetricsListen:       cfg.Config.Daemon.MetricsListen,
@@ -283,13 +283,15 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		output:        output,
 	}
 
+	var runErr error
 	if headless {
 		defer rt.subscribeRunLogs()()
 		emitReadiness(rt, startupInfo.ListenURL, f)
-		return runHeadless(rt)
+		runErr = runHeadless(rt)
+	} else {
+		runErr = runWithTUI(rt, startupInfo, f)
 	}
-
-	return runWithTUI(rt, startupInfo, f)
+	return rt.restartOutcome(runErr)
 }
 
 // rerouteLogsToStderrOnError sends CLI logging back to stderr when runDaemon is
@@ -367,15 +369,16 @@ func resolveHeadless(headless bool) (effective, autoDisabled bool) {
 	return headless, false
 }
 
-// installSignalHandler arms SIGINT/SIGTERM/SIGHUP on a buffered channel before
-// any goroutine could self-signal (superviseServerStart raises SIGTERM on
-// itself when srv.Start fails). SIGINT/SIGTERM shut the daemon down; SIGHUP
-// triggers an explicit config reload (see runHeadless). The returned stop func
+// installSignalHandler arms SIGINT/SIGTERM/SIGHUP/restartSignal on a buffered
+// channel before any goroutine could self-signal (superviseServerStart raises
+// SIGTERM on itself when srv.Start fails). SIGINT/SIGTERM shut the daemon down;
+// SIGHUP triggers an explicit config reload, restartSignal a restart in place
+// (see runHeadless). The returned stop func
 // reverses signal.Notify so subsequent processes inherit the default
 // disposition. The buffer is sized for the rare SIGHUP-during-shutdown overlap.
 func installSignalHandler() (<-chan os.Signal, func()) {
 	sigCh := make(chan os.Signal, 4)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, restartSignal)
 	return sigCh, func() { signal.Stop(sigCh) }
 }
 
@@ -532,10 +535,13 @@ func absPathOrFallback(p string) string {
 }
 
 // daemonListenURL returns the operator-reachable base URL of the Web UI:
-// [daemon] external_url when configured, else <scheme>://<bind-host>:<port>
+// "" under --no-http, [daemon] external_url when configured, else <scheme>://<bind-host>:<port>
 // where scheme follows the resolved TLS mode. Wildcard binds are mapped to
 // localhost because 0.0.0.0/:: are not themselves connectable addresses.
 func daemonListenURL(cfg *config.Config, f Flags) string {
+	if f.NoHTTP {
+		return ""
+	}
 	if u := cfg.Daemon.ExternalURL; u != "" {
 		return u
 	}
@@ -545,7 +551,7 @@ func daemonListenURL(cfg *config.Config, f Flags) string {
 // localBindURL builds the operator-reachable <scheme>://host:port for a bind,
 // mapping wildcard binds to localhost (0.0.0.0/:: are not connectable
 // addresses). It is the external_url-free fallback shared by daemonListenURL
-// and the demo's --no-tui summary.
+// and takeover.
 func localBindURL(scheme, host string, port int) string {
 	switch host {
 	case "", "0.0.0.0", "::", "[::]":
@@ -614,6 +620,8 @@ func logSecurityWarnings(cfg *daemonConfig, f Flags, tlsCfg tlsSetup) {
 	// auto-HTTPS removes the eavesdrop risk, so it gets a calm fingerprint line
 	// instead — the same SHA-256 the startup banner shows for verification.
 	switch {
+	case f.NoHTTP:
+		// Nothing listens on the network, so auth and bind address don't matter.
 	case cfg.NoAuth:
 		slog.Warn("Authentication is DISABLED (RUNWISP_AUTH=off) — the API and Web UI accept unauthenticated requests")
 		printNoAuthBanner(f.Host, nonLoopback)

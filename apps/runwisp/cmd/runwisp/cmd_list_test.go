@@ -232,3 +232,21 @@ func TestRunList_WithoutTomlOrDaemonStillFails(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load")
 }
+
+// list reads the files, so after `crontab -e` it already shows the edit while
+// the daemon runs the old crontab. The footer says so and how to apply it.
+func TestRunList_CronChangedFooter(t *testing.T) {
+	t.Setenv("SUDO_USER", "")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/tasks", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	})
+	mux.HandleFunc("/api/daemon", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(model.DaemonInfo{ConfigStale: true, CronChanged: []string{"/etc/cron.d/app"}})
+	})
+	f := serveStatusSocket(t, mux)
+	f.CfgFile = writeConfig(t, minimalCfgOneTask)
+
+	out := runListString(t, f)
+	assert.Contains(t, out, "⚠ A crontab changed: /etc/cron.d/app. Run `runwisp reload` to apply it.")
+}

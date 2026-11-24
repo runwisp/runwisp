@@ -554,6 +554,39 @@ func TestQueryRunsAllSortVariants(t *testing.T) {
 	}
 }
 
+// TestQueryRunsDurationTiesNewestFirst pins the tie-break of the duration sort:
+// runs of equal duration (e.g. skipped runs, all zero) rank newest first in
+// both directions, so paging through them never repeats or drops a run.
+func TestQueryRunsDurationTiesNewestFirst(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	base := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	ids := []string{"01J000000000000000000000A1", "01J000000000000000000000B2", "01J000000000000000000000C3"}
+	for i, id := range ids {
+		require.NoError(t, db.CreateRun(ctx, &model.Run{
+			ID:          id,
+			TaskName:    "same",
+			Status:      model.PhaseEnded,
+			EndReason:   model.EndReasonPtr(model.ReasonSkipped),
+			TriggeredBy: model.TriggeredByCron,
+			CreatedAt:   base.Add(time.Duration(i) * time.Minute),
+		}))
+	}
+
+	for _, dir := range []SortDirection{SortAsc, SortDesc} {
+		var got []string
+		for offset := range ids {
+			rs, err := db.QueryRuns(ctx, RunQuery{Limit: 1, Offset: offset, SortField: SortColumnDuration, SortDirection: dir})
+			require.NoError(t, err)
+			require.Len(t, rs, 1)
+			got = append(got, rs[0].ID)
+		}
+		assert.Equal(t, []string{ids[2], ids[1], ids[0]}, got, "direction %s", dir)
+	}
+}
+
 // TestQueryRunsFiltersAndPagination exercises the WHERE / LIMIT / OFFSET
 // branches of the dispatched queries that the all-variants test glosses
 // over: status filter, task name filter, search filter, paging.

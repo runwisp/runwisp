@@ -4,17 +4,30 @@
 package main
 
 import (
+	"log/slog"
+
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 	"github.com/spf13/cobra"
 )
 
 var daemonCmd = &cobra.Command{
 	Use:   "daemon",
-	Short: "Start RunWisp in headless mode (no TUI)",
-	Long:  `Starts the scheduler, HTTP API, and web UI without the interactive terminal interface. Ideal for Docker containers and background services. For an attached TUI, run 'runwisp' with no subcommand.`,
+	Short: "Run RunWisp in the foreground without the TUI",
+	Long: `Runs the scheduler, HTTP API, and web UI in the foreground without the
+interactive terminal interface, until Ctrl+C or SIGTERM. This is what a
+service manager or a Docker container runs. For the TUI, run 'runwisp' with no
+subcommand; quitting it stops RunWisp too. To keep RunWisp running after you
+log out, install it with 'runwisp service install'.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		f, err := withAppDocument(flags, cmd.InOrStdin(), daemonApp)
 		if err != nil {
 			return err
+		}
+		if daemonApp {
+			// An SDK app's data dir sits in its project (storage/runwisp, .runwisp).
+			if err := datadir.IgnoreInGit(f.DataDir); err != nil {
+				slog.Warn("Could not write .gitignore in the data dir", "dir", f.DataDir, "err", err)
+			}
 		}
 		return runDaemon(modeStandalone, f, true)
 	},
@@ -24,4 +37,5 @@ var daemonApp bool
 
 func init() {
 	daemonCmd.Flags().BoolVar(&daemonApp, "app", false, appFlagUsage)
+	addNoHTTPFlag(daemonCmd)
 }

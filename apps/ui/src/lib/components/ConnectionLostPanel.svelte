@@ -67,8 +67,9 @@
             <Text size="sm" color="muted">
                 The UI can't reach the runner API at <span
                     class="rounded-[3px] bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-on-surface"
-                    >this site's origin</span
-                >. The daemon may be restarting or your network is down.
+                >
+                    this site's origin
+                </span>. The daemon may be restarting or your network is down.
             </Text>
         </div>
 
@@ -102,9 +103,9 @@
 
         {#if c.lastError}
             <details class="w-full max-w-md text-left">
-                <summary class="cursor-pointer text-xs text-on-surface-muted hover:text-on-surface"
-                    >Details</summary
-                >
+                <summary class="cursor-pointer text-xs text-on-surface-muted hover:text-on-surface">
+                    Details
+                </summary>
                 <pre
                     class="mt-2 overflow-x-auto rounded-[3px] bg-surface-sunken p-3 font-mono text-2xs text-on-surface-muted">{c.lastError}</pre>
             </details>

@@ -45,7 +45,9 @@ A mark after a task's name shows its state: `●` running, `✗` last run failed
 - **Web UI**: the address. <kbd>Enter</kbd> copies it.
 - **Password**: shown only when the daemon generated the password.
     <kbd>Enter</kbd> copies it.
-- **Recent activity**: the latest runs across all tasks.
+- **Recent activity**: the latest runs across all tasks. On a terminal at
+  least 143 columns wide, it also shows CPU, RAM and OUTPUT. Each run is colored
+  against its own task, as in [Task detail](#task-detail).
 
 Press <kbd>n</kbd> to open the notifications panel. If some tasks come from
 crontabs that cron still runs, the header shows how many are
@@ -67,11 +69,17 @@ Stop ask first too.
 
 ![TUI task detail for healthcheck-api: header with task name, cron schedule, next-fire countdown, and Run Now button; run history table below showing status, start time, duration, and trigger columns.](../../../assets/screenshots/tui-task-detail.png)
 
+Each run shows its duration, CPU time, peak memory, and how many lines it
+printed. A running run shows its live CPU and memory use and the lines printed so far instead. Duration, CPU and RAM turn amber or red when the run used much more
+than the task usually does. OUTPUT turns amber when it printed far more or far
+less than usual.
+
 - <kbd>f</kbd> filters the runs by status. A banner shows while a filter is active.
 - <kbd>i</kbd> shows the task's full definition and recent health.
 - <kbd>p</kbd> [pauses or resumes](/concepts/scheduling/#pausing-a-schedule) the task's schedule.
   <kbd>u</kbd> undoes it while its notice is showing.
-- <kbd>space</kbd> selects runs, <kbd>a</kbd> selects all that match the filter. Then <kbd>d</kbd>
+- <kbd>space</kbd> selects runs, <kbd>shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> selects the runs you
+  move over, and <kbd>a</kbd> selects all that match the filter. Then <kbd>d</kbd>
   deletes, <kbd>c</kbd> cancels, and <kbd>e</kbd>
   re-runs them. <kbd>u</kbd> undoes a delete while its notice is showing.
 
@@ -139,10 +147,10 @@ connection drops. The TUI reconnects by itself.
 ## Quitting
 
 Press <kbd>q</kbd>. If the TUI started the daemon (you ran `runwisp` and no
-daemon was running yet), it asks whether to keep the daemon running in the
-background or shut it down. <kbd>Esc</kbd> cancels.
-
-![TUI quit confirmation dialog: modal asking "Keep the daemon running in the background?" with Keep Running and Shut Down buttons.](../../../assets/screenshots/tui-quit-confirmation.png)
+daemon was running yet), quitting stops it. When runs are in progress, it first
+asks whether to interrupt them. <kbd>Esc</kbd> cancels. To keep RunWisp running
+after you close the terminal, install it as a service; see
+[Running on a server](/getting-started/server/).
 
 If the daemon was already running (a systemd or launchd service, `runwisp tui`,
 or `--url`), <kbd>q</kbd> closes the TUI right away and the daemon keeps

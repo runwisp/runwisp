@@ -29,6 +29,7 @@ const (
 	dlgCopy
 	dlgLogHistory
 	dlgNewRelease
+	dlgWarnings
 	dlgTaskDetail
 	dlgRunDetail
 	dlgHelp

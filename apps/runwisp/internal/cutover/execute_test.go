@@ -17,6 +17,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Cron runs the @reboot lines when the machine boots, so a take-over that
+// started RunWisp right away ran them a second time. Execute records them as
+// run this boot before the install, but only when cron was running them.
+func TestExecute_MarksBootTasksRanOnlyWhenCronWasRunning(t *testing.T) {
+	for _, active := range []bool{true, false} {
+		c, inst, _ := fixture{
+			crontabs:   map[string]string{"backup": oneJob},
+			cronUnit:   "cron.service",
+			cronActive: active,
+		}.build(t)
+
+		p, err := c.Compute(context.Background())
+		require.NoError(t, err)
+		_, err = c.Execute(context.Background(), p, &bytes.Buffer{})
+		require.NoError(t, err)
+
+		if active {
+			assert.Equal(t, []string{"write-config", "mark-boot", "install"}, inst.Calls)
+		} else {
+			assert.NotContains(t, inst.Calls, "mark-boot")
+		}
+	}
+}
+
 // TestExecute_WritesTheConfigBeforeInstallingTheUnit is the ordering that makes
 // the whole feature safe: a unit that starts before the config exists would come
 // up reading nothing, and cron is masked from inside that install.
@@ -34,8 +58,8 @@ func TestExecute_WritesTheConfigBeforeInstallingTheUnit(t *testing.T) {
 	res, err := c.Execute(context.Background(), p, &out)
 	require.NoError(t, err)
 
-	// after-install is where the service gets its stable Web UI password.
-	assert.Equal(t, []string{"write-config", "install", "after-install"}, inst.Calls)
+	// mark-boot: cron ran the @reboot lines this boot, so the first start must not.
+	assert.Equal(t, []string{"write-config", "mark-boot", "install"}, inst.Calls)
 	assert.True(t, inst.ConfigAtInstall, "the config must exist by the time Install runs")
 	assert.Equal(t, cfgPath, res.ConfigWritten)
 	assert.True(t, res.ServiceInstalled)
@@ -98,7 +122,7 @@ func TestExecute_WiresIncludeCronIntoAnExistingConfig(t *testing.T) {
 	res, err := c.Execute(context.Background(), p, &bytes.Buffer{})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"wire-cron", "install", "after-install"}, inst.Calls)
+	assert.Equal(t, []string{"wire-cron", "mark-boot", "install"}, inst.Calls)
 	assert.True(t, res.IncludeWired)
 	assert.Empty(t, res.ConfigWritten, "wiring is not scaffolding")
 
@@ -127,7 +151,7 @@ func TestExecute_SkipsSatisfiedConfigStep(t *testing.T) {
 	res, err := c.Execute(context.Background(), p, &bytes.Buffer{})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"install", "after-install"}, inst.Calls)
+	assert.Equal(t, []string{"mark-boot", "install"}, inst.Calls)
 	assert.Empty(t, res.ConfigWritten)
 	assert.False(t, res.IncludeWired)
 
@@ -155,7 +179,7 @@ func TestExecute_ReloadsOnlyWhenADaemonWasAlreadyRunning(t *testing.T) {
 		res, err := c.Execute(context.Background(), p, &bytes.Buffer{})
 		require.NoError(t, err)
 
-		assert.Equal(t, []string{"write-config", "install", "reload", "after-install"}, inst.Calls)
+		assert.Equal(t, []string{"write-config", "mark-boot", "install", "reload"}, inst.Calls)
 		assert.True(t, res.Reloaded)
 	})
 
@@ -198,7 +222,6 @@ func TestExecute_AbortAtTheInstallerPromptIsNotAnError(t *testing.T) {
 
 	assert.True(t, res.Aborted)
 	assert.False(t, res.ServiceInstalled)
-	assert.NotContains(t, inst.Calls, "after-install")
 	assert.False(t, res.Reloaded)
 	assert.NotContains(t, inst.Calls, "reload")
 	assert.Contains(t, out.String(), "cron.service is untouched")

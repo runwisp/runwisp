@@ -10,7 +10,7 @@ import { formatRelativeTimeWithAbsolute } from "@runwisp/ui";
 export const HELD_BY_CRON_HELP =
     "Held: a system cron daemon still owns this job, so RunWisp is not " +
     "running it; cron is. RunWisp records no history or output for it " +
-    "until cron is retired. Run `sudo runwisp takeover` to hand it over, " +
+    "until cron is retired. Run `runwisp takeover` to hand it over, " +
     "or stop cron and disable it at boot (for example " +
     "`sudo systemctl disable --now cron`): RunWisp picks it up on its own " +
     "within a minute.";
@@ -25,6 +25,22 @@ export function scheduleTimeZone(
 ): string | undefined {
     if (task.timezone) return task.timezone;
     return daemonZone ? daemonZone : undefined;
+}
+
+/**
+ * When the task runs next: "in 7 hours (02:30)", in its schedule zone. When
+ * that zone isn't the viewer's (the browser's), it is named, "(02:30 UTC)", so
+ * the time isn't read as local next to run times shown in the browser's zone.
+ */
+export function formatNextRun(
+    task: Pick<Task, "timezone">,
+    at: string | Date,
+    now: Date,
+    daemonZone: string,
+    viewerZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone,
+): string {
+    const zone = scheduleTimeZone(task, daemonZone);
+    return formatRelativeTimeWithAbsolute(at, now, zone, Boolean(zone) && zone !== viewerZone);
 }
 
 /** Whether the task has a cron schedule. */
@@ -115,7 +131,7 @@ export function noRunsMessage(
     if (hasCron(task) && task.nextRunAt && schedulingActive) {
         return {
             title: "No runs yet",
-            description: `The first run is ${formatRelativeTimeWithAbsolute(task.nextRunAt, now, scheduleTimeZone(task, daemonZone))}.`,
+            description: `The first run is ${formatNextRun(task, task.nextRunAt, now, daemonZone)}.`,
         };
     }
     if (isService(task.kind)) {

@@ -4,6 +4,8 @@
 package importer
 
 import (
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -79,6 +81,59 @@ func findNote(t *testing.T, r *Result, kind NoteKind) Note {
 	}
 	t.Fatalf("no note of kind %q in the report: %+v", kind.slug(), allNotes(r))
 	return Note{}
+}
+
+// TestCronOwnerUnknownNote: a piped crontab doesn't say whose it is, so its
+// jobs run as the daemon. The report says so once, unless the lines carry their
+// own user column.
+func TestCronOwnerUnknownNote(t *testing.T) {
+	res := parseCron(t, "30 2 * * * /usr/local/bin/backup.sh\n", CronOptions{OwnerUnknown: true})
+	if !hasNoteKind(res, NoteOwnerUnknown) {
+		t.Errorf("a piped per-user crontab should note its owner is unknown: %+v", allNotes(res))
+	}
+	res = parseCron(t, "30 2 * * * root /usr/local/bin/backup.sh\n", CronOptions{OwnerUnknown: true, System: true})
+	if hasNoteKind(res, NoteOwnerUnknown) {
+		t.Errorf("a system crontab names its users: %+v", allNotes(res))
+	}
+	res = parseCron(t, "30 2 * * * /usr/local/bin/backup.sh\n", CronOptions{})
+	if hasNoteKind(res, NoteOwnerUnknown) {
+		t.Errorf("a file with a known source gets no owner note: %+v", allNotes(res))
+	}
+}
+
+// TestCronProgramNotOnJobPath: in php:* images php lives in /usr/local/bin,
+// which cron's PATH (/usr/bin:/bin) leaves out, so the imported job fails every
+// run with exit 127 and the usual >/dev/null 2>&1 hides why. The import says so.
+func TestCronProgramNotOnJobPath(t *testing.T) {
+	bins := map[string][]string{"/usr/local/bin": {"php"}, "/usr/bin": {"curl"}, "/opt/app/bin": {"tool"}}
+	lookPath := func(name, pathList string) string {
+		for _, dir := range filepath.SplitList(pathList) {
+			if slices.Contains(bins[dir], name) {
+				return dir + "/" + name
+			}
+		}
+		return ""
+	}
+	opts := CronOptions{LookPath: lookPath, DaemonPATH: "/usr/local/bin:/usr/bin:/bin"}
+
+	res := parseCron(t, "* * * * * cd /srv/app && php artisan schedule:run >/dev/null 2>&1\n", opts)
+	n := findNote(t, res, NoteProgramNotOnPath)
+	mustContain(t, n.Message, "/usr/local/bin")
+	mustContain(t, res.TOML(), "# php is in /usr/local/bin")
+
+	for name, crontab := range map[string]string{
+		"on the job's PATH":       "* * * * * curl -s https://example.com\n",
+		"PATH set in the crontab": "PATH=/usr/local/bin:/usr/bin:/bin\n* * * * * php artisan schedule:run\n",
+		"an absolute path":        "* * * * * /usr/local/bin/php artisan schedule:run\n",
+		"on neither PATH":         "* * * * * tool --run\n",
+	} {
+		if res := parseCron(t, crontab, opts); hasNoteKind(res, NoteProgramNotOnPath) {
+			t.Errorf("%s: unexpected note %+v", name, allNotes(res))
+		}
+	}
+	if res := parseCron(t, "* * * * * php artisan schedule:run\n", CronOptions{}); hasNoteKind(res, NoteProgramNotOnPath) {
+		t.Error("without LookPath there is nothing to check")
+	}
 }
 
 func TestCronBasicFiveField(t *testing.T) {
@@ -399,13 +454,13 @@ func TestCronMailtoHandsOverTheNotifier(t *testing.T) {
 	}
 }
 
-// TestCronEmptyMailtoIsNotAGapToFill: MAILTO= means "mail nobody", so proposing
-// a mail notifier for it would invent a requirement the crontab disclaimed.
+// TestCronEmptyMailtoIsNotAGapToFill: MAILTO= means "mail nobody", which is what
+// RunWisp does anyway, so there is nothing to say about it.
 func TestCronEmptyMailtoIsNotAGapToFill(t *testing.T) {
-	res := parseCron(t, "MAILTO=\"\"\n0 4 * * * /bin/rollup\n", CronOptions{})
-	note := findNote(t, res, NoteMailto)
-	if strings.Contains(note.Message, "sendmail") {
-		t.Errorf("an empty MAILTO should not propose a notifier:\n%s", note.Message)
+	for _, in := range []string{"MAILTO=\"\"\n0 4 * * * /bin/rollup\n", "MAILTO=\n0 4 * * * /bin/rollup\n"} {
+		if res := parseCron(t, in, CronOptions{}); hasNoteKind(res, NoteMailto) {
+			t.Errorf("an empty MAILTO got a note: %+v", allNotes(res))
+		}
 	}
 }
 
@@ -1043,12 +1098,51 @@ func TestCronOutputRedirectIsNoted(t *testing.T) {
 		"/bin/job < input.txt":      "",
 		"/bin/job --level 2":        "",
 	} {
-		if got := outputRedirect(cmd); got != want {
-			t.Errorf("outputRedirect(%q) = %q, want %q", cmd, got, want)
+		if got := OutputRedirect(cmd); got != want {
+			t.Errorf("OutputRedirect(%q) = %q, want %q", cmd, got, want)
 		}
 	}
 	if hasNoteKind(parseCron(t, "15 3 * * * /srv/app/backup.sh 2>&1\n", CronOptions{}), NoteOutputRedirected) {
 		t.Error("2>&1 alone keeps the output in the run log")
+	}
+}
+
+// Cron mails whatever a job prints, so crontabs end jobs in >/dev/null 2>&1 to
+// keep quiet. RunWisp sends no mail, and a run whose output went to /dev/null
+// shows nothing, so the import drops that redirect and says so. A redirect to a
+// real file is a log someone keeps, and stdout alone to /dev/null still mails
+// stderr: both stay as written.
+func TestCronDropsTrailingDevNullRedirect(t *testing.T) {
+	for in, want := range map[string]string{
+		"/bin/job >/dev/null 2>&1":          "/bin/job",
+		"/bin/job > /dev/null 2>&1":         "/bin/job",
+		"/bin/job >> /dev/null 2>&1":        "/bin/job",
+		"/bin/job 1>/dev/null 2>&1":         "/bin/job",
+		"/bin/job &>/dev/null":              "/bin/job",
+		"/bin/job >/dev/null 2>/dev/null":   "/bin/job",
+		"/bin/job 2>/dev/null >/dev/null":   "/bin/job",
+		"a && b | c > /dev/null  2>&1":      "a && b | c",
+		"/bin/job >/dev/null":               "/bin/job >/dev/null",
+		"/bin/job 2>&1 >/dev/null":          "/bin/job 2>&1 >/dev/null",
+		"/bin/job >/dev/null 2>&1 &":        "/bin/job >/dev/null 2>&1 &",
+		"/bin/job >> /var/log/job.log 2>&1": "/bin/job >> /var/log/job.log 2>&1",
+		"sh -c 'job >/dev/null 2>&1'":       "sh -c 'job >/dev/null 2>&1'",
+		">/dev/null 2>&1":                   ">/dev/null 2>&1",
+	} {
+		if got, _ := dropDevNullRedirect(in); got != want {
+			t.Errorf("dropDevNullRedirect(%q) = %q, want %q", in, got, want)
+		}
+	}
+
+	res := parseCron(t, "* * * * * cd /srv/app && php artisan schedule:run >> /dev/null 2>&1\n", CronOptions{})
+	out := res.TOML()
+	mustContain(t, out, `run = "php artisan schedule:run"`)
+	mustContain(t, out, "# Dropped >> /dev/null 2>&1")
+	if !hasNoteKind(res, NoteDevNullDropped) || hasNoteKind(res, NoteOutputRedirected) {
+		t.Fatalf("expected only the dropped note, got %+v", allNotes(res))
+	}
+	if items := res.Items(); len(items) != 1 || !items[0].LiveEligible() {
+		t.Fatal("the job still runs live")
 	}
 }
 
@@ -1081,6 +1175,8 @@ func TestCronExistingSkipsAJobAnOlderReleaseImported(t *testing.T) {
 		{"cd and php", "* * * * * cd /var/www/parcel && php artisan payments:reconcile\n", "php", "cd /var/www/parcel && php artisan payments:reconcile"},
 		{"php only", "0 * * * * php artisan queue:prune\n", "php", "php artisan queue:prune"},
 		{"cd only", "30 2 * * * cd /srv && ./backup.sh\n", "backup", "cd /srv && ./backup.sh"},
+		{"with its /dev/null", "30 2 * * * cd /srv && ./backup.sh >/dev/null 2>&1\n", "backup", "./backup.sh >/dev/null 2>&1"},
+		{"cd and /dev/null", "30 2 * * * cd /srv && ./backup.sh >/dev/null 2>&1\n", "backup", "cd /srv && ./backup.sh >/dev/null 2>&1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := CronOptions{Existing: Owned{tc.owned: {Kind: model.KindTask, Run: tc.run}}}
@@ -1111,5 +1207,52 @@ func TestCronExistingLegacyMatchNeedsTheSameJob(t *testing.T) {
 			res := parseCron(t, line, CronOptions{Existing: Owned{"php": owned}})
 			mustContain(t, res.TOML(), "[tasks.payments-reconcile]")
 		})
+	}
+}
+
+// TestCronPerUserLegendIsNotADescription: the legend `crontab -e` writes into
+// every new per-user crontab, and Alpine's /etc/crontabs/root one, carry no user
+// column. They must not ride onto the first job, nor switch on system parsing.
+func TestCronPerUserLegendIsNotADescription(t *testing.T) {
+	for _, legend := range []string{"m h  dom mon dow   command", "min\thour\tday\tmonth\tweekday\tcommand"} {
+		out := parseCron(t, "# "+legend+"\n0 5 * * * /usr/bin/cleanup --all\n", CronOptions{Detect: true}).TOML()
+		mustNotContain(t, out, "description")
+		mustContain(t, out, `run = "/usr/bin/cleanup --all"`)
+		mustNotContain(t, out, "user =")
+	}
+}
+
+// TestCronEnvLineRejectsDigitFirstName: `0=Sun` is prose in a tutorial crontab,
+// not a variable, and an env key starting with a digit fails the TOML load.
+func TestCronEnvLineRejectsDigitFirstName(t *testing.T) {
+	if name, _, ok := cronEnvLine("0=Sun"); ok {
+		t.Fatalf("cronEnvLine(%q) accepted name %q", "0=Sun", name)
+	}
+	res := parseCron(t, "0=Sun\n0 5 * * * /usr/bin/cleanup\n", CronOptions{})
+	mustNotContain(t, res.TOML(), `"0"`)
+}
+
+// TestCronNotACrontab: a README or script fed to import cron has no line shaped
+// like a schedule followed by a command. Say so once instead of importing its
+// prose as tasks whose cron is "Edit your crontab with crontab".
+func TestCronNotACrontab(t *testing.T) {
+	in := "# My app\n\nEdit your crontab with crontab -e and add:\n\nThen run the installer.\n"
+	res := parseCron(t, in, CronOptions{})
+	if n := len(res.Items()); n != 0 {
+		t.Fatalf("expected no rows, got %d: %+v", n, res.Items())
+	}
+	mustNotContain(t, res.TOML(), "[tasks.")
+	if !hasNoteKind(res, NoteNotACrontab) {
+		t.Fatalf("expected a not-a-crontab note, got %+v", allNotes(res))
+	}
+
+	// One bad schedule in an otherwise cron-shaped file is still a crontab.
+	res = parseCron(t, "61 * * * * /usr/bin/job\n", CronOptions{})
+	if hasNoteKind(res, NoteNotACrontab) || len(res.Items()) != 1 {
+		t.Fatalf("a cron-shaped line was taken for prose: %+v", allNotes(res))
+	}
+	res = parseCron(t, "59 23 * JAN/DEC * /usr/bin/job\n", CronOptions{})
+	if hasNoteKind(res, NoteNotACrontab) {
+		t.Fatalf("month names were taken for prose: %+v", allNotes(res))
 	}
 }

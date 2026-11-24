@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { type FilterField, type FilterValues, isBlank } from "../components/filter-spec.js";
+import { formatLocalDay } from "./format.js";
 
 // Case-insensitive substring match against any of the given fields. Empty
 // query matches everything; nullish fields are skipped.
@@ -38,13 +39,13 @@ function matchSelect(cell: unknown, v: string): boolean {
     return Array.isArray(cell) ? cell.some((c) => toText(c) === v) : toText(cell) === v;
 }
 
-// Inclusive yyyy-mm-dd range. The ISO date portion sorts lexically, so a
-// string compare is enough.
+// Inclusive yyyy-mm-dd range in the viewer's local days, the same days the
+// date inputs show. yyyy-mm-dd sorts lexically, so a string compare is enough.
 function matchDateRange(cell: unknown, from: string | undefined, to: string | undefined): boolean {
     if (isBlank(from) && isBlank(to)) return true;
     const d = cell instanceof Date ? cell : new Date(toText(cell) ?? "");
     if (Number.isNaN(d.getTime())) return false;
-    const day = d.toISOString().slice(0, 10);
+    const day = formatLocalDay(d);
     return (isBlank(from) || day >= (from ?? "")) && (isBlank(to) || day <= (to ?? ""));
 }
 

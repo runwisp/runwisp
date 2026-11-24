@@ -62,16 +62,78 @@ func StarButtonAt(x, w int) bool {
 	return ok && x >= from && x < to
 }
 
+// NoticesY is the header row holding the notices (stale config, held and
+// paused tasks, config warnings) when there are any.
+const NoticesY = 2
+
+// noticesIndent and noticeSep frame the chips on the notices row.
+func noticesIndent() string {
+	return uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).Render("  ")
+}
+
+func noticeSep() string {
+	return uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted).Render("  \u00b7  ")
+}
+
+// notices returns the rendered chips of the header's notices row, and the
+// index of the config-warnings chip (-1 when there are no warnings).
+func notices(info uikit.StartupInfo) (parts []string, warnIdx int) {
+	muted := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted)
+	warn := uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning)
+	if info.StationEnabled {
+		parts = append(parts, muted.Render("Station connected"))
+	}
+	if info.ConfigStale {
+		// Warning color, not muted: a pending config change is actionable.
+		parts = append(parts, warn.Render("\u26a0 "+staleConfigLabel(info)+" changed \u2014 press R to reload"))
+	}
+	if n := HeldTaskCount(info.Tasks); n > 0 {
+		// Warning color: these are the operator's own jobs, loaded and listed, that
+		// RunWisp is deliberately not firing. The chip names the way out.
+		parts = append(parts, warn.Render(fmt.Sprintf("⏸ %d held by cron: `runwisp takeover`", n)))
+	}
+	if n := len(info.PausedTasks); n > 0 {
+		// Warning color like held: a forgotten pause silently stops a job.
+		parts = append(parts, warn.Render("⏸ "+textutil.Count(n, "schedule", "schedules")+" paused"))
+	}
+	warnIdx = -1
+	if n := len(info.ConfigWarnings); n > 0 {
+		// Warning color for the same reason as the stale notice: these name jobs the
+		// daemon is not running, and nothing else in the TUI would ever mention them.
+		// Clicking the chip (or w) lists them in full.
+		warnIdx = len(parts)
+		parts = append(parts, warn.Render("\u26a0 "+textutil.Count(n, "config warning", "config warnings")+": press w to view"))
+	}
+	return parts, warnIdx
+}
+
+// WarningsNoticeAt reports whether panel column x on NoticesY hits the
+// config-warnings chip.
+func WarningsNoticeAt(info uikit.StartupInfo, x int) bool {
+	parts, idx := notices(info)
+	if idx < 0 {
+		return false
+	}
+	from := lipgloss.Width(noticesIndent())
+	for _, p := range parts[:idx] {
+		from += lipgloss.Width(p) + lipgloss.Width(noticeSep())
+	}
+	return x >= from && x < from+lipgloss.Width(parts[idx])
+}
+
 // Fields returns the list of active fields based on the startup info.
 // hasLaunchTicket indicates whether the one-click browser open action is available.
 func Fields(info uikit.StartupInfo, hasLaunchTicket bool) []Field {
-	var fields []Field
-	if info.Port > 0 {
-		if hasLaunchTicket {
-			fields = append(fields, FieldOpenWebUI)
-		}
-		fields = append(fields, FieldWebUI)
+	// The password only gates HTTP logins. Without a port (--no-http) the
+	// socket is the only way in, so there is nothing to show.
+	if info.Port <= 0 {
+		return nil
 	}
+	var fields []Field
+	if hasLaunchTicket {
+		fields = append(fields, FieldOpenWebUI)
+	}
+	fields = append(fields, FieldWebUI)
 	// No password row to copy when auth is disabled — the daemon still mints
 	// one internally, but it gates nothing and must not be presented as a
 	// credential.
@@ -114,39 +176,8 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 	b.WriteString("\n")
 	lineCount++
 
-	var parts []string
-	if info.StationEnabled {
-		parts = append(parts, muted.Render("Station connected"))
-	}
-	if info.ConfigStale {
-		// Warning color, not muted \u2014 a pending config change is actionable.
-		warn := uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
-			Render("\u26a0 " + staleConfigLabel(info) + " changed \u2014 press R to reload")
-		parts = append(parts, warn)
-	}
-	if n := HeldTaskCount(info.Tasks); n > 0 {
-		// Warning color: these are the operator's own jobs, loaded and listed, that
-		// RunWisp is deliberately not firing. The chip names the way out.
-		warn := uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
-			Render(fmt.Sprintf("⏸ %d held by cron — `sudo runwisp takeover`", n))
-		parts = append(parts, warn)
-	}
-	if n := len(info.PausedTasks); n > 0 {
-		// Warning color like held: a forgotten pause silently stops a job.
-		warn := uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
-			Render("⏸ " + textutil.Count(n, "schedule", "schedules") + " paused")
-		parts = append(parts, warn)
-	}
-	if n := len(info.ConfigWarnings); n > 0 {
-		// Warning color for the same reason as the stale notice: these name jobs the
-		// daemon is not running, and nothing else in the TUI would ever mention them.
-		warn := uikit.OnBg(uikit.ColorBgLight, uikit.ColorWarning).
-			Render(fmt.Sprintf("\u26a0 %s \u2014 see `%s`", textutil.Count(n, "config warning", "config warnings"), warningsCommand(info)))
-		parts = append(parts, warn)
-	}
-	if len(parts) > 0 {
-		sub := muted.Render("  ") + strings.Join(parts, muted.Render("  \u00b7  "))
-		b.WriteString(uikit.PadLine(sub, w, uikit.ColorBgLight))
+	if parts, _ := notices(info); len(parts) > 0 {
+		b.WriteString(uikit.PadLine(noticesIndent()+strings.Join(parts, noticeSep()), w, uikit.ColorBgLight))
 		b.WriteString("\n")
 		lineCount++
 	}
@@ -154,6 +185,14 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
 	lineCount++
+
+	// Auth disabled: render a static, non-focusable Password row so the
+	// operator sees the security state at a glance instead of a masked value.
+	authOffRow := info.AuthDisabled && info.Port > 0
+	// No rows (--no-http): skip the spacers around them too.
+	if len(fields) == 0 && !authOffRow {
+		return b.String(), lineCount
+	}
 
 	b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
 	b.WriteString("\n")
@@ -163,16 +202,12 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 
 	writeFieldRows(&b, fields, info, w, homeCursor, homeHover)
 
-	// Auth disabled: render a static, non-focusable Password row so the
-	// operator sees the security state at a glance instead of a masked value.
-	if info.AuthDisabled {
+	if authOffRow {
 		renderFieldRow(&b, "Password", "disabled (RUNWISP_AUTH=off)", uikit.ColorWarning, w, false, false)
 	}
 
-	if len(fields) > 0 || info.AuthDisabled {
-		b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
-		b.WriteString("\n")
-	}
+	b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
+	b.WriteString("\n")
 
 	return b.String(), fieldsStartY
 }
@@ -495,19 +530,15 @@ func HeldTaskCount(tasks []model.Task) int {
 	return n
 }
 
-// warningsCommand names the command that prints the config warnings in full.
-// An app-supplied config has no runwisp.toml for `validate` to read, but
-// `status` prints the live warnings either way.
-func warningsCommand(info uikit.StartupInfo) string {
-	if info.AppConfig {
-		return "runwisp status"
-	}
-	return "runwisp validate"
-}
-
 // staleConfigLabel names what changed on disk. An app-supplied config has no
 // runwisp.toml; only its included and env files are watched.
 func staleConfigLabel(info uikit.StartupInfo) string {
+	switch {
+	case len(info.CronChanged) > 1:
+		return "crontabs"
+	case len(info.CronChanged) == 1:
+		return "crontab"
+	}
 	if info.AppConfig {
 		return "config files"
 	}

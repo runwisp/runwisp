@@ -28,8 +28,9 @@ package's plugin, which downloads the `runwisp` binary of the same version
 into `vendor/`. Without the plugin, it uses `runwisp` on `PATH`. Install it with
 `curl -fsSL https://get.runwisp.com | sh`, or set [`binary`](#binary).
 
-Scripted installs (CI, deploy scripts, `--no-interaction`) can't answer that
-question, so Composer skips the plugin. Allow it first:
+Scripted installs (a Dockerfile, CI, deploy scripts, `--no-interaction`) can't
+answer that question, so Composer stops with "blocked by your allow-plugins
+config". Allow the plugin first:
 
 ```bash
 composer config allow-plugins.runwisp/runwisp true
@@ -64,7 +65,7 @@ exit($runwisp->main());
 `php runwisp.php` is the worker. It starts RunWisp and prints where to find it:
 
 ```
-RunWisp dashboard: http://127.0.0.1:9477, password: vendor/bin/runwisp password --data .runwisp
+RunWisp dashboard: http://127.0.0.1:9477, get the password with: vendor/bin/runwisp password --data .runwisp
 ```
 
 Without a [`password`](#password) option, RunWisp picks a new password on each

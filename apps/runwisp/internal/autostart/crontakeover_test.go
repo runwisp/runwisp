@@ -8,6 +8,8 @@ package autostart
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -551,10 +553,28 @@ func TestInstall_NoopWithoutTakeOverFlagNeverProbesCron(t *testing.T) {
 	inst.deps.Euid = 0
 	opts := systemInstallOpts(binary)
 	takenOverUnitOnDisk(t, inst, fs, opts)
+	cmd.Expect("systemctl", []string{"is-enabled", "runwisp.service"}, []byte("enabled\n"), nil, nil)
 
 	out := &bytes.Buffer{}
 	require.NoError(t, inst.Install(context.Background(), opts, out))
-	assert.Zero(t, cmd.Remaining(), "no systemctl call scripted for a plain no-op re-install")
+	assert.Zero(t, cmd.Remaining(), "only the is-enabled check for a plain no-op re-install")
+}
+
+// A matching unit file that systemd never loaded is not installed: a take-over
+// that failed at daemon-reload left one behind, and a re-run printed "Already
+// installed" without ever enabling it.
+func TestInstall_NoopEnablesAUnitSystemdNeverLoaded(t *testing.T) {
+	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	takenOverUnitOnDisk(t, inst, fs, opts)
+	cmd.Expect("systemctl", []string{"is-enabled", "runwisp.service"}, []byte("disabled\n"), nil, errors.New("exit status 1"))
+	cmd.Expect("systemctl", []string{"daemon-reload"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"enable", "--now", "runwisp.service"}, nil, nil, nil)
+
+	out := &bytes.Buffer{}
+	require.NoError(t, inst.Install(context.Background(), opts, out))
+	assert.Zero(t, cmd.Remaining())
 }
 
 func TestComputeUninstallPlan_UnmasksOnlyOwnMarker(t *testing.T) {
@@ -613,6 +633,47 @@ func TestApplyUninstall_UnmasksAndRestartsCron(t *testing.T) {
 	assert.Zero(t, cmd.Remaining())
 	assert.Contains(t, out.String(), "Unmasking cron.service")
 	assert.Contains(t, out.String(), "Starting cron.service")
+}
+
+// failingRemoveFS fails Remove for one path, the way a non-root uninstall
+// fails to delete /etc/systemd/system/runwisp.service.
+type failingRemoveFS struct {
+	*autostarttest.FakeFS
+	path string
+}
+
+func (f failingRemoveFS) Remove(path string) error {
+	if path == f.path {
+		return fs.ErrPermission
+	}
+	return f.FakeFS.Remove(path)
+}
+
+// An uninstall whose unit removal failed after stop had already run left
+// RunWisp stopped and cron masked: nothing ran any job. Cron now comes back
+// however the steps after stop end.
+func TestApplyUninstall_RestoresCronWhenUnitRemovalFails(t *testing.T) {
+	inst, fakeFS, cmd, _, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	opts.maskedCronUnit = "cron.service"
+	body, err := inst.renderUnit(opts)
+	require.NoError(t, err)
+	unitPath := inst.unitPath(true)
+	require.NoError(t, fakeFS.WriteFile(unitPath, body, 0644))
+	inst.deps.FS = failingRemoveFS{FakeFS: fakeFS, path: unitPath}
+
+	cmd.Expect("systemctl", []string{"stop", "runwisp.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"disable", "runwisp.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"unmask", "cron.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"start", "cron.service"}, nil, nil, nil)
+
+	plan, err := inst.computeUninstallPlan(context.Background(), UninstallOptions{System: true})
+	require.NoError(t, err)
+
+	err = inst.applyUninstall(context.Background(), plan, UninstallOptions{System: true}, &bytes.Buffer{})
+	require.ErrorIs(t, err, fs.ErrPermission)
+	assert.Zero(t, cmd.Remaining(), "cron is unmasked and started even though the uninstall failed")
 }
 
 func TestStatus_CronRow_MaskedByUs(t *testing.T) {

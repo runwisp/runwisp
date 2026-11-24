@@ -24,14 +24,7 @@ const OUT_DIR = resolve(__dirname, "../../../docs/src/assets/screenshots");
 const FRAMES_DIR = process.env.RUNWISP_TUI_FRAMES;
 
 // Each docs PNG ↔ a captured frame of the same name (tui-<name>.ansi → tui-<name>.png).
-const SHOTS = [
-    "home",
-    "task-detail",
-    "info",
-    "run-detail",
-    "fullscreen-mode",
-    "quit-confirmation",
-] as const;
+const SHOTS = ["home", "task-detail", "info", "run-detail", "fullscreen-mode"] as const;
 
 interface RenderArgs {
     base64: string;

@@ -32,7 +32,7 @@ min_free_space: size =0(no check) — stop accepting log lines when partition fr
 ```
 name:                 string      — display label shown instead of the fingerprint (TUI, Web UI, tab title, notification footers); ${HOSTNAME} falls back to os hostname
 allow_station_dispatch: bool =false — accept peer-dispatched ad-hoc shell/container/compose runs (opt-in; one-shot, never edits TOML; HTTP & existing-task triggers always allowed)
-allow_station_upgrade: bool =false — let the Station upgrade the daemon to a release (from GitHub releases, checksum-verified) and restart it; only for self-replaced release binaries under systemd/launchd; restart-only (since 1.10)
+allow_station_upgrade: bool =false — let the Station upgrade the daemon to a release (from GitHub releases, checksum-verified) and restart it; only for self-replaced release binaries under systemd/launchd; restart-only (since 1.11)
 shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flight runs on shutdown
 timezone:             IANA string =host system zone — TZ for cron eval when a task pins none
 external_url:         string =last signed-in Web UI address — public Web UI base for notification deep-links; absolute http(s) w/ host; unset = detected from the latest browser password sign-in to the Web UI (persisted; `--url` clients and TUI-opened tabs don't count; never with RUNWISP_AUTH=off)
@@ -49,7 +49,8 @@ include:              []string    — glob(s) of extra TOML files merged at load
 include_cron:         []string    — glob(s) of REAL crontabs read as live task defs at every load/reload; root
                                     config only. Format is PATH-DERIVED, never flagged: /etc/crontab + **/cron.d/*
                                     = system format (6th field = user, job runs as them);
-                                    /var/spool/cron/crontabs/<u> and /var/spool/cron/<u> = per-user spool, jobs run
+                                    /var/spool/cron/crontabs/<u>, /var/spool/cron/<u>, /etc/crontabs/<u> (Alpine)
+                                    = per-user spool, jobs run
                                     as <u> taken from the FILENAME (requires a root daemon unless <u> IS the
                                     daemon's account; the file must also be owned by <u>, which is what makes the
                                     filename safe to trust); any other path = `crontab -l` dump, runs as the daemon.
@@ -66,9 +67,16 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     neither root nor the daemon's euid nor the run-as account, unresolvable run-as
                                     account, spool file the daemon can't become. A job RunWisp can't reproduce is
                                     SKIPPED (rest of the file still runs) and reported via config.Warnings by
-                                    file:line; derived name collisions rename to <base>-<crontab basename> and are
-                                    reported too. File-level notes are reported the same way: MAILTO= (suppressed
-                                    once a sendmail/smtp notifier exists) and a non-absolute SHELL=.
+                                    file:line. Task name = a <=4-word comment on the line above, slugged, else
+                                    the command's program (skipping wrappers, guards, `sleep`, and an echo/printf
+                                    piped into another program); jobs from a non-root user's spool crontab or a
+                                    cron.d file always get -<user|file basename> (unless the name contains it);
+                                    root's crontab and /etc/crontab stay bare. Repeats in one file get -2, -3. A
+                                    bare name another source already took gets -<crontab basename> (root's crontab
+                                    reads first, then /etc/crontab). Renames are not config warnings. File-level
+                                    notes are reported the same way: a non-empty MAILTO= (one line + docs link,
+                                    suppressed once a sendmail/smtp notifier exists) and a non-absolute SHELL=.
+                                    Cron-sourced tasks never count toward the same-second pile-up warning.
                                     Emitted per job for crond parity: env_base="clean", working_dir="~",
                                     catch_up=0 (crond never re-fires a missed tick; the missed row is still
                                     recorded), on_overlap="queue" (deliberately NOT crond's unbounded overlap).
@@ -92,7 +100,7 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     is-enabled on cron.service/crond.service/cronie.service, else a live pidfile
                                     naming a process that is actually alive), every task
                                     whose source_file is a path cron itself reads (/etc/crontab, **/cron.d/*,
-                                    /var/spool/cron[/crontabs]/*) is HELD (so are /etc/anacrontab tasks
+                                    /var/spool/cron[/crontabs]/*, /etc/crontabs/*) is HELD (so are /etc/anacrontab tasks
                                     while anacron.timer/anacron.service is active or enabled; without systemd,
                                     while cron is live). HELD means: loaded, listed, schedule shown, but
                                     NOT registered with the scheduler — no cron firing, no jitter plan, no
@@ -105,7 +113,7 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     way catch-up is re-anchored to the moment of release, so a hold window leaves
                                     no history and no missed-tick alerts.
                                     A crontab-format file OUTSIDE cron's own paths is NOT held (nothing to hand
-                                    over) and keeps a fire-twice warning instead. `sudo runwisp takeover` is the
+                                    over) and keeps a fire-twice warning instead. `runwisp takeover` is the
                                     one-command way out.
 ```
 
@@ -315,7 +323,7 @@ Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_VIEWER_PASSWORD` (op
 Official Docker image: `runwisp/runwisp` (alpine default + `-debian` variant, amd64/arm64; runs under tini as PID 1). Plain tags carry no Docker CLI; add `-docker` to the tag (e.g. `latest-docker`, `latest-debian-docker`) for a build with a Docker CLI + Compose plugin baked in, needed if `[compose.*]` or a task's `run =` shells out to `docker`/`docker compose` from inside the RunWisp container itself. Binds `0.0.0.0`, plain HTTP (daemon's `[daemon] tls` default of `off`; set `-e RUNWISP_TLS=auto` to opt into self-signed HTTPS), requires `RUNWISP_PASSWORD` or `RUNWISP_AUTH=off` set or the entrypoint refuses to start; mount a config directory at `/etc/runwisp` (the entrypoint writes a starter `runwisp.toml` into it when the file is missing, the directory is a writable mount point, and the data dir has no `runwisp.db` yet) and data at `/var/lib/runwisp`. See https://docs.runwisp.com/getting-started/docker/.
 
 ```
-runwisp                      — no subcommand: attach TUI to running daemon, else scaffold toml + spawn daemon + attach
+runwisp                      — no subcommand: attach TUI to running daemon (quit leaves it running), else scaffold toml + run the daemon in-process with the TUI (quit stops it; confirms if task runs are active)
                              — scaffold prompt (TTY only) also detects an adjacent compose file and/or a readable
                                crontab (DefaultCronPatterns: root gets /etc/crontab + /etc/cron.d/* + /etc/anacrontab + every spool,
                                others get only their own spool file) and offers to wire either/both into the starter (a compose-only directory defaults to a starter that schedules jobs in the stack's services, with the import-the-services starter as the second choice);
@@ -325,7 +333,7 @@ runwisp                      — no subcommand: attach TUI to running daemon, el
                                install the system service, mask cron) and the caller attaches to the systemd
                                daemon instead of spawning its own. When the take-over isn't possible the prompt
                                says so and offers the plain scaffold; those jobs are then held (see include_cron)
-runwisp daemon               — start headless daemon (no TUI); --app reads the config as a JSON document on stdin instead of runwisp.toml (what SDKs run)
+runwisp daemon               — start headless daemon (no TUI); --app reads the config as a JSON document on stdin instead of runwisp.toml (what SDKs run); --no-http skips the HTTP port (no web UI/remote API; TUI and CLI keep working over the socket; also on bare `runwisp` and `demo`)
 runwisp tui                  — attach a TUI to a running daemon
 runwisp validate             — validate runwisp.toml without starting anything; --json for the structured document (see above); --app validates a JSON document on stdin;
                                --explain adds each schedule in words + next 3 firings (zone-aware, DST marked; `schedules` in --json)
@@ -346,7 +354,7 @@ runwisp reload               — re-read runwisp.toml + reconcile live (== SIGHU
                                change — it only appears here.
 runwisp start <target...>    — start one or more tasks/services via the local socket (or --url); target = name or quoted glob ('*' = all controllable);
                                 service: un-parks + fills empty slots, running instances untouched; task: triggers a run, no-op if one is already active/queued
-runwisp restart              — stop + fresh start the daemon (applies restart-only settings, re-fires run_on_start (except "boot" tasks already run this boot)/catch-up); delegates to systemd/launchd if service-installed; --local to pin the per-user unit
+runwisp restart              — stop + fresh start the daemon (applies restart-only settings, re-fires run_on_start (except "boot" tasks already run this boot)/catch-up); delegates to systemd/launchd if service-installed, otherwise restarts in place (SIGUSR2: graceful shutdown, then re-exec under the same PID, so a Docker container or terminal keeps it); --local to pin the per-user unit
 runwisp restart <target...>  — restart one or more tasks/services via the local socket (or --url); target = name or quoted glob; daemon untouched, never delegates to systemd
                                 service: bounces every instance (starts it if stopped); task: cancels the active run, waits for it to end, triggers exactly one fresh run (409 if it doesn't drain in time)
 runwisp stop                 — shut the daemon down (delegates to systemd/launchd if service-installed); --local to pin the per-user unit
@@ -428,15 +436,19 @@ runwisp promote [TASK...]    — put a derived task's block in the root runwisp.
                                from held to unheld (HeldBy cron→none): the diff reports it Changed(ReasonSchedule),
                                so that reload has RunWisp take over its schedule. Emptied staging file is deleted.
 runwisp password             — print the daemon's ephemeral password (local socket; exit 5 under RUNWISP_AUTH=off, refuses if RUNWISP_PASSWORD set)
+                             — as root against the system service's data dir, a daemon that withholds the password
+                               falls back to the `password.conf` drop-in `service install` saved. A non-root caller
+                               while only the system service runs gets "Use `sudo runwisp password`".
                              — --viewer: print the read-only password instead, minting a random in-memory one on first call (refuses if RUNWISP_VIEWER_PASSWORD set)
 runwisp openapi              — print the OpenAPI 3.1 spec (JSON) to stdout
 runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-12) to stdout; published at https://docs.runwisp.com/config.schema.json
 runwisp station              — start in station mode; --token --url --env-file(=.env) --no-tui
-runwisp demo                 — boot a throwaway, fully-populated instance; --no-tui --seed-only --station --token --url --env-file
+runwisp demo                 — boot a throwaway, fully-populated instance; --no-tui (foreground, Ctrl+C stops it) --seed-only --station --token --url --env-file
 runwisp upgrade              — upgrade to the latest stable release via the install channel: homebrew → brew upgrade; deb/rpm package → [sudo] apt-get update + install --only-upgrade / dnf upgrade --refresh; global npm/bun/pnpm/yarn → that manager; script/tar.gz → download from GitHub, verify SHA-256, atomic in-place swap; docker/npx/project-local npm → refuses with instructions; dev build refuses. -y/--yes (needed without a TTY), --restart now|idle|later (idle = wait until no task runs are pending/running, services ignored; no TTY + no flag = later)
 runwisp service install      — install autostart; -y --print --dry-run --force --local --binary <path> --station --token <t> --url <u>
                              — DEFAULT scope is the system-wide singleton /etc/systemd/system/runwisp.service
-                               (Linux, root, no fingerprint in the name). Refuses without root, naming
+                               (Linux, root, no fingerprint in the name). Run as non-root it re-execs itself
+                               through sudo (same forwarding as takeover); without sudo on PATH it refuses, naming
                                `sudo` and `--local`. macOS has no system scope yet: --local is required.
                              — --local installs ~/.config/systemd/user/runwisp-<fingerprint>.service (Linux,
                                + loginctl enable-linger) or ~/Library/LaunchAgents/com.runwisp.daemon.<fp>.plist.
@@ -445,14 +457,18 @@ runwisp service install      — install autostart; -y --print --dry-run --force
                                requires the resolved config to be root-owned and not group/world-writable.
                                An auto-detected binary that isn't root-trusted (e.g. ~/.local/bin/runwisp) is
                                copied to /usr/local/bin/runwisp first and the unit runs the copy (--binary is
-                               never copied). Read-only systemctl probes never use sudo.
+                               never copied). A same-content copy under the sudo user's home is then replaced
+                               by a symlink to it (chowned to that user), so `runwisp` and `sudo runwisp` agree.
+                               Read-only systemctl probes never use sudo.
                              — unit lifecycle ONLY: it never touches cron. When a `takeover` would do something,
                                a successful install prints a note naming the live cron unit, its job count, and
-                               `sudo runwisp takeover`. There is no --take-over-cron flag.
+                               `runwisp takeover`. There is no --take-over-cron flag.
                              — Web UI password: when auth is on and RUNWISP_PASSWORD is unset, generates one into a
-                               0600 `<unit>.d/password.conf` drop-in (NOT the world-readable unit), restarts, prints
-                               it once. Idempotent: an existing drop-in or a set RUNWISP_PASSWORD is left untouched
-                               (re-install never rotates). launchd: no drop-in, skipped. Daemon is untouched.
+                               0600 `<unit>.d/password.conf` drop-in (NOT the world-readable unit) BEFORE
+                               daemon-reload + enable --now, so the first start already has it (no restart), and
+                               prints it once. Idempotent: an existing drop-in or a set RUNWISP_PASSWORD is left
+                               untouched (re-install never rotates). `sudo runwisp password` prints it again.
+                               launchd: no drop-in, skipped.
 runwisp takeover             — retire cron in one step; --dry-run --force -y --allow-skipped-cron-jobs --binary
                              — works from NOTHING: no runwisp.toml needed. Computes one plan (internal/cutover),
                                prints it, asks once, executes. Steps: write runwisp.toml reading the crontabs it
@@ -467,13 +483,21 @@ runwisp takeover             — retire cron in one step; --dry-run --force -y -
                                non-root (--dry-run included: reading every crontab needs root) it re-execs
                                `sudo <abs binary> takeover <args>`, forwarding non-secret RUNWISP_* settings.
                                Without sudo on PATH it only reports "needs root". Ends by printing the dashboard
-                               URL, `sudo runwisp password` and `sudo runwisp upgrade`.
+                               URL, an `ssh -L` tunnel line when run over SSH (SSH_CONNECTION is forwarded through
+                               sudo), `sudo runwisp password` and `sudo runwisp upgrade`.
+                             — when cron was running, tasks from @reboot lines (run_on_start="boot") are marked as
+                               already run for the current boot, so the first start doesn't fire them twice.
                              — a failed start restores cron to its pre-take-over state rather than leaving no
                                scheduler. Later crash loops: unit has StartLimitBurst=5/300s + OnFailure=
                                runwisp-cron-failsafe.service, which unmasks+starts cron only when runwisp.service
                                is "failed" and Result != timeout (so stop never triggers it). Uninstall restores
                                the recorded `# runwisp-cron-prior-state:` (masked stays masked, stopped stays stopped).
-                             — --dry-run ALWAYS prints a plan, blocked or not, then exits non-zero if blocked.
+                             — the plan lists each live job as `task ← file:line  command` (command cut to
+                               fit 80 cols) and says overlapping runs now queue (on_overlap="queue").
+                               --dry-run prints the same plan, then exits non-zero if blocked. A blocked plan
+                               prints what it found and the blockers, never the steps; with no cron jobs at
+                               all it prints only the blocker (no cron unit and no `crontab` binary: "no cron
+                               on this machine", pointing at `runwisp` / `runwisp service install`).
                                A finished take-over re-runs as a no-op (exit 0), so it is script-safe.
                              — blocked by (all reported at once, nothing written): not Linux/systemd; not root;
                                no cron jobs on the box; the config does not load; the config is not trusted for a
@@ -486,7 +510,11 @@ runwisp takeover             — retire cron in one step; --dry-run --force -y -
                              — off Linux it is blocked and names the manual route (`runwisp import cron
                                --write`, then `crontab -r`); masking cron needs systemd.
 runwisp service uninstall    — remove autostart; -y --purge (also data dir) --force --local
+                             — the system unit re-execs itself through sudo when not root. Cron is restored
+                               even when a later step (unit removal, daemon-reload) fails.
 runwisp service status       — show autostart status; --local
+                             — for the system unit, with no explicit flags or RUNWISP_* env, it checks the unit
+                               against the settings parsed from its own ExecStart (binary/config/data/host/port).
                              — install/status/uninstall/stop/restart all detect the installed scope; --local is
                                only needed to disambiguate when a system AND a per-user unit both exist
 ```

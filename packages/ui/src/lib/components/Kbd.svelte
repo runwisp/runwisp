@@ -40,7 +40,9 @@
         <kbd
             class="inline-flex items-center justify-center rounded-[3px] border font-mono {sizeClasses[
                 size
-            ]} {toneClasses[tone]}">{key}</kbd
+            ]} {toneClasses[tone]}"
         >
+            {key}
+        </kbd>
     {/each}
 </span>

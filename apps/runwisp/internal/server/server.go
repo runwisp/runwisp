@@ -66,11 +66,18 @@ type Server struct {
 	stats           *statsProvider
 	configStale     func() bool
 	configWarnings  func() []string
+	// cronChanged names the crontabs edited since the config was loaded; nil
+	// reports none. cronChangedLast is the set last announced in the bell,
+	// touched only by the metrics onSample callback like configStaleLast.
+	cronChanged     func() []string
+	cronChangedLast []string
 	// updateStatus reports (available, latestVersion) from the background update
 	// checker. nil (station mode, or check disabled) reports never-available.
 	updateStatus func() (bool, string)
 	// runUsage reports live CPU/memory per running run.
 	runUsage func() map[string]model.ResourceUsage
+	// runOutputLines reports how many lines each running run has printed.
+	runOutputLines func() map[string]int64
 	// configStaleLast tracks the last staleness value broadcast over the event
 	// bus so the collector goroutine only emits an EventConfigStale when it
 	// flips. Touched solely by the metrics onSample callback (single goroutine).
@@ -78,11 +85,14 @@ type Server struct {
 	metrics         *MetricsCollector
 	streams         *streamLimiter
 	logins          *loginThrottle
-	proxyWarn       sync.Once // resolveClientIP's once-only untrusted-proxy warning
-	httpServer      *http.Server
-	unixServer      *http.Server
-	metricsServer   *http.Server
-	socketPath      string
+	// apiTokenFailures counts wrong API tokens per client IP, shared by every
+	// route that accepts one so they all feed and honour one lockout.
+	apiTokenFailures *failureLimiter
+	proxyWarn        sync.Once // resolveClientIP's once-only untrusted-proxy warning
+	httpServer       *http.Server
+	unixServer       *http.Server
+	metricsServer    *http.Server
+	socketPath       string
 	// tlsCert/tlsKey, when both set, switch the main TCP listener to HTTPS via
 	// ServeTLS. Empty keeps the listener on plain HTTP. The Unix socket and the
 	// metrics listener are never wrapped (local-only / loopback-scrape).
@@ -97,6 +107,8 @@ type Server struct {
 	readyOnce      sync.Once
 	metricsEnabled bool
 	metricsListen  string
+	// noHTTP skips the TCP listener; the daemon serves only the Unix socket.
+	noHTTP bool
 	// reload re-reads runwisp.toml and reconciles the live task set. nil
 	// outside standalone mode (station mode has no local scheduler to reconcile),
 	// in which case POST /api/daemon/reload reports the operation is unavailable.
@@ -119,6 +131,7 @@ type Options struct {
 	Scheduler           *runtime.Scheduler
 	Host                string // Bind address (default: 127.0.0.1)
 	Port                int
+	NoHTTP              bool   // Serve only the Unix socket: no TCP listener, so no Web UI or remote API (`daemon --no-http`)
 	DataDir             string // Resolved data directory; disclosed via GET /api/daemon/identity (local only)
 	ConfigPath          string // Resolved runwisp.toml path; disclosed via GET /api/daemon/identity (local only)
 	AppConfig           bool   // The config comes from an app (`daemon --app`); ConfigPath only anchors it
@@ -138,9 +151,11 @@ type Options struct {
 	DaemonInfo          *model.DaemonInfo                     // Static identity/config info for /api/daemon
 	ConfigStale         func() bool                           // Per-request staleness probe for /api/daemon (optional; nil reports never-stale)
 	ConfigWarnings      func() []string                       // Per-request live-config warnings for /api/daemon (optional; nil reports none)
+	CronChanged         func() []string                       // Crontabs changed on disk since the config was loaded, for /api/daemon and the bell (optional; nil reports none)
 	UpdateStatus        func() (bool, string)                 // Per-request update-availability probe for /api/daemon (optional; nil reports never-available)
 	TaskUsage           func() map[string]model.ResourceUsage // Live CPU/memory per task (optional; nil reports none)
 	RunUsage            func() map[string]model.ResourceUsage // Live CPU/memory per running run, by run ID (optional; nil reports none)
+	RunOutputLines      func() map[string]int64               // Lines printed so far per running run, by run ID (optional; nil reports none)
 	DaemonLogBuffer     *DaemonLogBuffer                      // Ring buffer for daemon log streaming (optional)
 	MetricsEnabled      bool                                  // When false, /metrics is not mounted anywhere
 	MetricsListen       string                                // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
@@ -194,6 +209,7 @@ func New(opts Options) (*Server, error) {
 		detectedURL:       opts.DetectedExternalURL,
 		metricsEnabled:    opts.MetricsEnabled,
 		metricsListen:     opts.MetricsListen,
+		noHTTP:            opts.NoHTTP,
 		reload:            opts.Reload,
 		apps:              opts.Apps,
 		ready:             make(chan struct{}),
@@ -231,15 +247,21 @@ func New(opts Options) (*Server, error) {
 		s.configStale = neverStale
 	}
 	s.configWarnings = opts.ConfigWarnings
+	s.cronChanged = opts.CronChanged
 	s.updateStatus = opts.UpdateStatus
 	s.runUsage = opts.RunUsage
 	if s.runUsage == nil {
 		s.runUsage = noUsage
 	}
+	s.runOutputLines = opts.RunOutputLines
+	if s.runOutputLines == nil {
+		s.runOutputLines = noOutputLines
+	}
 	s.metrics = NewMetricsCollector(32) // ~2.5 min at 5s intervals; sampling starts in Start()
 	s.daemonLogBuffer = opts.DaemonLogBuffer
 	s.streams = newStreamLimiter(maxConcurrentStreams, maxStreamsPerIP)
 	s.logins = newLoginThrottle(time.Now)
+	s.apiTokenFailures = newFailureLimiter("API token")
 	if err := s.setupRoutes(); err != nil {
 		return nil, fmt.Errorf("setup routes: %w", err)
 	}
@@ -277,14 +299,19 @@ func (srv *Server) Start() error {
 	// socket above is already serving by now. A bind failure returns here and
 	// flows to the caller; readiness is never signalled, so probes fall through
 	// to the fatal path instead of waiting out their timeout.
-	tcpLn, err := net.Listen("tcp", srv.httpServer.Addr)
-	if err != nil {
-		return fmt.Errorf("listen tcp %s: %w", srv.httpServer.Addr, err)
+	var tcpLn net.Listener
+	if !srv.noHTTP {
+		tcpLn, err = net.Listen("tcp", srv.httpServer.Addr)
+		if err != nil {
+			return fmt.Errorf("listen tcp %s: %w", srv.httpServer.Addr, err)
+		}
 	}
 	srv.signalReady()
 
-	if err := srv.serveMain(tcpLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
+	if tcpLn != nil {
+		if err := srv.serveMain(tcpLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
 	}
 	if err := <-unixErrCh; err != nil {
 		return err

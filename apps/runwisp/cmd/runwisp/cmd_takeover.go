@@ -4,10 +4,11 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"os"
-	"runtime"
+	"strings"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/cutover"
@@ -74,10 +75,8 @@ there, use ` + "`runwisp import cron`" + ` and remove the crontab by hand.`,
 	// before resolvePathDefaults picks the non-root defaults. A dry run too: it
 	// only reads, but without root it cannot read the crontabs it would report.
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if runtime.GOOS == "linux" && os.Geteuid() != 0 {
-			if err := reexecAsRoot(cmd.ErrOrStderr(), "Taking over cron needs root."); err != nil {
-				return err
-			}
+		if err := elevateOnLinux(cmd.ErrOrStderr(), "Taking over cron needs root."); err != nil {
+			return err
 		}
 		return servicePathPreRun(cmd, args)
 	},
@@ -115,9 +114,9 @@ func runTakeover(cmd *cobra.Command, f Flags) error {
 	}
 	cutover.Render(out, plan)
 
-	// A blocked plan is still printed above (someone told their config does
-	// not load wants to know twelve jobs are waiting) and then exits non-zero, so a
-	// provisioning script cannot mistake it for a take-over that happened.
+	// A blocked plan prints what it found but no steps (see cutover.Render) and
+	// then exits non-zero, so a provisioning script cannot mistake it for a
+	// take-over that happened.
 	if plan.Blocked() {
 		return blockedCutoverError(plan)
 	}
@@ -156,20 +155,37 @@ func runTakeover(cmd *cobra.Command, f Flags) error {
 
 // printTakeoverDone answers what everyone asks next: where the dashboard is and
 // how to get in. The system daemon's socket is root's, so a plain
-// `runwisp password` from the operator's own shell cannot reach it. A password
-// saved in the unit's drop-in is one `runwisp password` won't disclose, so that
-// case points at the file. The upgrade line names binary, the copy the unit
-// runs: `upgrade` replaces the executable it runs from, so the operator's home
-// copy would upgrade a binary the service never starts.
+// `runwisp password` from the operator's own shell cannot reach it; as root it
+// prints the password the install saved. Every line names binary, the copy the
+// unit runs: `upgrade` replaces the executable it runs from, so the operator's
+// home copy would upgrade a binary the service never starts.
+//
+// Over SSH the loopback dashboard is out of reach from the operator's browser,
+// so the tunnel that reaches it is spelled out.
 func printTakeoverDone(out io.Writer, f Flags, binary string) {
 	url := localBindURL("http", f.Host, f.Port)
 	if cfg, err := config.Load(f.CfgFile); err == nil {
 		url = daemonListenURL(cfg, f)
 	}
-	password := sudoRunwisp("password")
-	if dropIn := systemUnitFile + ".d/password.conf"; fileExists(dropIn) {
-		password = "sudo cat " + dropIn
+	fmt.Fprintf(out, "\nDashboard:  %s\n", url)
+	if tunnel := sshTunnelHint(os.Getenv("SSH_CONNECTION"), cmp.Or(os.Getenv("SUDO_USER"), os.Getenv("USER")), f.Port); tunnel != "" {
+		fmt.Fprintf(out, "Tunnel:     %s\n", tunnel)
 	}
-	fmt.Fprintf(out, "\nDashboard:  %s\nPassword:   %s\nUpgrade:    %s\nReload:     %s (after crontab -e)\n",
-		url, password, sudoRunwispFor(binary, "upgrade"), sudoRunwispFor(binary, "reload"))
+	fmt.Fprintf(out, "Password:   %s\nUpgrade:    %s\nReload:     %s (after crontab -e)\n",
+		sudoRunwispFor(binary, "password"), sudoRunwispFor(binary, "upgrade"), sudoRunwispFor(binary, "reload"))
+}
+
+// sshTunnelHint is the ssh command that forwards port to this box's loopback,
+// built from SSH_CONNECTION ("client-ip client-port server-ip server-port").
+// "" when this isn't an SSH session.
+func sshTunnelHint(sshConnection, user string, port int) string {
+	fields := strings.Fields(sshConnection)
+	if len(fields) < 3 {
+		return ""
+	}
+	host := fields[2]
+	if user != "" {
+		host = user + "@" + host
+	}
+	return fmt.Sprintf("ssh -L %d:127.0.0.1:%d %s", port, port, host)
 }

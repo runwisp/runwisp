@@ -55,6 +55,23 @@ func TestPrintSystemStats_AllFields(t *testing.T) {
 	assert.Contains(t, out, "my-vps")
 }
 
+func TestRunStatus_NoHTTPDaemonNamesNoPort(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/api/daemon", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(model.DaemonInfo{ExternalURL: "https://cron.example.com", ExternalURLSource: "config"})
+	})
+	f := serveStatusSocket(t, mux)
+
+	var buf bytes.Buffer
+	require.NoError(t, runStatus(t.Context(), &buf, f, remoteFlags{}, false))
+	out := buf.String()
+	assert.Contains(t, out, "RunWisp is healthy (no HTTP port, started with --no-http)")
+	assert.NotContains(t, out, "Web UI:")
+}
+
 func TestRunStatus_HealthyWithSystem(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -127,6 +144,25 @@ func TestRunStatus_ConfigStaleWarns(t *testing.T) {
 	var buf bytes.Buffer
 	require.NoError(t, runStatus(t.Context(), &buf, f, remoteFlags{}, false))
 	assert.Contains(t, buf.String(), "runwisp.toml has changed")
+}
+
+// `crontab -e` makes the config stale too, and status names the crontab and
+// the command that applies it rather than blaming runwisp.toml.
+func TestRunStatus_CronChangedNamesTheCrontab(t *testing.T) {
+	t.Setenv("SUDO_USER", "")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/api/daemon", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(model.DaemonInfo{Port: 9477, ConfigStale: true, CronChanged: []string{"/var/spool/cron/crontabs/ops"}})
+	})
+	f := serveStatusSocket(t, mux)
+
+	var buf bytes.Buffer
+	require.NoError(t, runStatus(t.Context(), &buf, f, remoteFlags{}, false))
+	assert.Contains(t, buf.String(), "⚠ A crontab changed: /var/spool/cron/crontabs/ops. Run `runwisp reload` to apply it.")
+	assert.NotContains(t, buf.String(), "runwisp.toml")
 }
 
 func TestRunStatus_ConfigStaleInAppModeNamesIncludedFiles(t *testing.T) {
@@ -306,7 +342,10 @@ func TestRunStatusURLReachesTheRemoteDaemon(t *testing.T) {
 	var logins atomic.Int32
 	srv := httptest.NewServer(remoteAuth(mux, &logins))
 	defer srv.Close()
-	storeCachedToken(srv.URL, "", testSessions.IssueToken(time.Hour)) // one the daemon no longer accepts
+	// One the daemon no longer accepts. Its expiry must differ from freshToken's:
+	// a token is the expiry second plus a MAC, so an equal TTL can mint the same
+	// string when this runs in the same second as the package init.
+	storeCachedToken(srv.URL, "", testSessions.IssueToken(2*time.Hour))
 
 	// No socket in this data dir: only the remote daemon can answer.
 	f := Flags{DataDir: testutil.ShortTempDir(t)}

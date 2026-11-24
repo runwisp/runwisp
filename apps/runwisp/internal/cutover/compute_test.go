@@ -182,6 +182,22 @@ func TestCompute_NoCronJobsAnywhereIsTheOnlyNothingToReadRefusal(t *testing.T) {
 		"the old wording sent operators off to do RunWisp's job for it")
 }
 
+// TestCompute_NoCronAtAllSaysHowToStartFresh: a box with no cron unit and no
+// crontab binary has no cron to take over, and the operator needs the next step,
+// not a sentence about masking a scheduler that isn't there.
+func TestCompute_NoCronAtAllSaysHowToStartFresh(t *testing.T) {
+	c, _, _ := fixture{noCrontab: true}.build(t)
+
+	p, err := c.Compute(context.Background())
+	require.NoError(t, err)
+
+	assert.Equal(t, []BlockerKind{BlockerNoCronJobs}, blockerKinds(p))
+	b, _ := p.FirstBlocker()
+	assert.Equal(t, "no cron on this machine, nothing to take over", b.Title)
+	assert.Contains(t, b.Details, "To start fresh: `runwisp`, or `runwisp service install` to run it at boot.")
+	assert.NotContains(t, b.Details, "masking cron")
+}
+
 func TestCompute_BrokenConfigBlocksAndSaysNothingWasWritten(t *testing.T) {
 	c, _, _ := fixture{
 		config:     "[daemon\nthis is not toml",
@@ -403,6 +419,7 @@ func TestCompute_UntrustedConfigIsABlockerSoDryRunCanReportIt(t *testing.T) {
 		Trusted:       func(string) error { return assert.AnError },
 		Preflight:     func(context.Context) (bool, error) { return false, nil },
 		DaemonRunning: func() bool { return false },
+		SystemdBooted: func() bool { return true },
 	})
 
 	p, err := c.Compute(context.Background())
@@ -509,4 +526,59 @@ func TestCompute_CollectsEveryBlockerRatherThanTheFirst(t *testing.T) {
 	p, err := c.Compute(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, []BlockerKind{BlockerConfigUnloadable, BlockerCronSourcesFailed}, blockerKinds(p))
+}
+
+// In a container systemd is not PID 1, so the install step can only fail at
+// `systemctl daemon-reload`, after the config and unit are already written.
+// The plan has to stop before writing anything and name the by-hand route.
+func TestCompute_NoSystemdBlocksBeforeWritingAnything(t *testing.T) {
+	c, inst, _ := fixture{
+		noSystemd: true,
+		crontabs:  map[string]string{"backup": oneJob},
+	}.build(t)
+
+	p, err := c.Compute(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []BlockerKind{BlockerNoSystemd}, blockerKinds(p))
+	assert.Empty(t, p.Steps, "nothing to write on a box that cannot finish the job")
+	assert.False(t, p.NothingToDo())
+	assert.Empty(t, inst.Calls)
+	b, _ := p.FirstBlocker()
+	assert.Contains(t, b.Details, "include_cron")
+	assert.Contains(t, b.Details, "CMD")
+	assert.Contains(t, b.Details, "#in-a-container")
+
+	// The plan looked at nothing, so "No cron jobs found" would be a lie.
+	var out bytes.Buffer
+	Render(&out, p)
+	assert.Empty(t, out.String())
+}
+
+// A non-root user in a container gets the systemd answer, not a sudo command:
+// root cannot fix a missing init system, and images rarely have sudo.
+func TestCompute_NoSystemdOutranksNeedsRoot(t *testing.T) {
+	c, _, _ := fixture{noSystemd: true, euid: 1000, username: "www-data"}.build(t)
+
+	p, err := c.Compute(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, []BlockerKind{BlockerNoSystemd}, blockerKinds(p))
+}
+
+// A matching unit file on disk is not an installed service: systemd has to
+// have loaded and enabled it. A takeover that died at daemon-reload left the
+// file behind, and a re-run used to say "Nothing to do" while cron kept firing.
+func TestCompute_UnitFileSystemdNeverLoadedIsNotSatisfied(t *testing.T) {
+	c, _, cfgPath := fixture{
+		crontabs:      map[string]string{"backup": oneJob},
+		unitInstalled: true,
+		unitDisabled:  true,
+	}.build(t)
+	require.NoError(t, os.WriteFile(cfgPath, []byte(
+		"[daemon]\ninclude_cron = [\""+filepath.Join(filepath.Dir(cfgPath), "crontabs", "*")+"\"]\n"), 0o644))
+
+	p, err := c.Compute(context.Background())
+	require.NoError(t, err)
+	require.False(t, p.Blocked(), "%v", blockerKinds(p))
+	assert.True(t, p.pending(StepInstallService))
+	assert.False(t, p.NothingToDo())
 }

@@ -92,7 +92,7 @@ type Model struct {
 	// Cached header geometry, recomputed by recalcExecListHeight.
 	layout headerLayout
 
-	// Quit action chosen by the user (keep daemon or shut down).
+	// Quit action: leave the daemon running (attached) or shut it down (owned).
 	quitAction   uikit.QuitAction
 	shutdownFunc func() error
 	// shutdownErr records a failed daemon shutdown so the caller can report it
@@ -105,8 +105,9 @@ type Model struct {
 
 	mouse mouseState
 
-	// Frame coalescing: bursts of mouse motion/wheel events each trigger a full
-	// View() rebuild (Bubble Tea renders after every message). The first event
+	// Frame coalescing: Bubble Tea rebuilds the full View() after every message,
+	// so bursts (log lines, SSE events, mouse motion/wheel) are throttled; see
+	// Model.Update. The first event
 	// after an idle gap renders immediately (instant scroll feedback); events
 	// arriving within coalesceInterval of the last frame reuse the cached one and
 	// schedule a single trailing rebuild, so a flood rebuilds at ~60fps instead
@@ -125,7 +126,7 @@ type Model struct {
 	height int
 	ready  bool
 	// outOfProcess is set when the daemon runs outside this process (no local
-	// debug writer): its logs arrive over the API and quit offers no autostart hint.
+	// debug writer): its logs arrive over the API.
 	outOfProcess bool
 	// daemon decides what quitting does to the attached daemon (see requestQuit).
 	daemon DaemonOwnership
@@ -138,11 +139,9 @@ type DaemonOwnership int
 const (
 	// DaemonAttached: the TUI didn't start the daemon; quitting leaves it running.
 	DaemonAttached DaemonOwnership = iota
-	// DaemonStarted: this TUI started the daemon; quitting asks whether to keep it.
-	DaemonStarted
-	// DaemonThrowaway: the daemon only exists for this TUI session (`runwisp
-	// demo`); quitting always shuts it down.
-	DaemonThrowaway
+	// DaemonOwned: the daemon runs in this process and lives as long as the
+	// TUI; quitting shuts it down. Always-on is what a service is for.
+	DaemonOwned
 )
 
 // TUIConfig holds the dependencies needed to start the interactive TUI.
@@ -497,36 +496,28 @@ func (m Model) ShutdownErr() error {
 
 // requestQuit handles a quit key. Attached to a daemon the TUI didn't start
 // (a service, `runwisp tui`, --url) it quits right away and the daemon keeps
-// running. A throwaway demo daemon is shut down without asking. Only when this
-// TUI started a regular daemon does it ask whether to keep it running in the
-// background or shut it down. A daemon that has since come under systemd /
-// launchd is no longer the TUI's to stop, so it quits too.
+// running. A daemon this TUI owns is shut down, after a confirm when task runs
+// would be interrupted (see handleBusyTasks).
 func (m *Model) requestQuit() tea.Cmd {
-	if m.daemon == DaemonAttached || m.info.ServiceManaged {
+	if m.daemon == DaemonAttached {
 		return func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitKeepDaemon} }
 	}
-	if m.daemon == DaemonThrowaway {
-		return func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitShutdownDaemon} }
-	}
+	return m.streams.FetchBusyTasks()
+}
 
-	dialog := NewChoiceDialog(
-		"Quit",
-		"Keep the daemon running in the background?",
-		"Keep Running",
-		"Shut Down",
-		true,
-		func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitKeepDaemon} },
-		func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitShutdownDaemon} },
-	)
-	// Hint about autostart only in a fresh local session (the operator
-	// started this daemon by running ./runwisp).
-	if !m.outOfProcess {
-		dialog = dialog.WithNote(
-			"",
-			"Tip: `runwisp service install` makes it",
-			"survive a reboot (systemd / launchd).",
-		)
+// handleBusyTasks quits an owned daemon outright when nothing would be
+// interrupted, and asks first when task runs are in flight. A failed lookup
+// asks too: better one extra keypress than a silently killed run.
+func (m *Model) handleBusyTasks(msg uikit.BusyTasksMsg) tea.Cmd {
+	shutdown := func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitShutdownDaemon} }
+	if msg.Err == nil && len(msg.Tasks) == 0 {
+		return shutdown
 	}
+	message := "Quitting stops RunWisp and any runs in progress."
+	if msg.Err == nil {
+		message = "Quitting stops RunWisp and interrupts: " + strings.Join(msg.Tasks, ", ") + "."
+	}
+	dialog := NewConfirmDialog("Quit", message, shutdown).Danger()
 	m.dialogs.Show(dlgConfirm, dialog)
 	return nil
 }

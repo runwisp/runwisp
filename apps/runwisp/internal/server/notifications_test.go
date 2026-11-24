@@ -503,3 +503,42 @@ func TestUntrustedProxy_AnnouncedInBellOnce(t *testing.T) {
 	assert.Equal(t, untrustedProxyKind, u.Notification.Kind)
 	assert.Empty(t, updates, "announced once")
 }
+
+// `crontab -e` without a reload used to go unnoticed. The bell now says so,
+// once per set of changed crontabs, and the set is cleared by a reload.
+func TestCronChanged_AnnouncedInBellOncePerChange(t *testing.T) {
+	repo := new(mockNotificationRepository)
+	hub, updates := newNotificationHub(t)
+	repo.On("UpsertByFingerprint", mock.Anything, mock.MatchedBy(func(n *storage.Notification) bool {
+		return n.Kind == cronChangedKind && n.Fingerprint == cronChangedKind &&
+			strings.Contains(n.Body, "A crontab changed: /var/spool/cron/crontabs/ops.") &&
+			strings.Contains(n.Body, "runwisp reload")
+	}), 24*time.Hour, inapp.DefaultCoalesceLimit).Return(true, nil).Once()
+	repo.On("UpsertByFingerprint", mock.Anything, mock.MatchedBy(func(n *storage.Notification) bool {
+		return strings.Contains(n.Body, "Crontabs changed: /etc/cron.d/app, /var/spool/cron/crontabs/ops.")
+	}), 24*time.Hour, inapp.DefaultCoalesceLimit).Return(false, nil).Once()
+	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(1), nil)
+	s := notificationServer(t, repo, hub)
+
+	var changed []string
+	s.cronChanged = func() []string { return changed }
+
+	s.checkCronChanged(true)
+	assert.Empty(t, updates, "nothing changed, nothing to say")
+
+	changed = []string{"/var/spool/cron/crontabs/ops"}
+	s.checkCronChanged(true)
+	s.checkCronChanged(true)
+	assert.Equal(t, inapp.UpdateTypeCreated, requireUpdate(t, updates).Type)
+	assert.Empty(t, updates, "an unchanged set is not announced again")
+
+	changed = []string{"/etc/cron.d/app", "/var/spool/cron/crontabs/ops"}
+	s.checkCronChanged(true)
+	assert.Equal(t, inapp.UpdateTypeUpdated, requireUpdate(t, updates).Type)
+
+	// A reload makes the config fresh; the crontabs aren't even read then.
+	s.cronChanged = func() []string { panic("read while fresh") }
+	s.checkCronChanged(false)
+	assert.Empty(t, updates)
+	repo.AssertExpectations(t)
+}

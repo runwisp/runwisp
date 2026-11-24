@@ -7,6 +7,7 @@ import { appEventStream } from "$lib/stores/app-stream";
 import { createLogger } from "@runwisp/common";
 import { safeParseJSON } from "$lib/utils/parse";
 import type { ResourceUsage, Task } from "@runwisp/common";
+import type { RunLive } from "@runwisp/ui";
 
 // Live window for the metrics chart: seeded from /api/system/metrics, then
 // grown by pushed samples (one every ~5s). 120 is about 10 minutes.
@@ -24,6 +25,8 @@ class SystemStore {
     timezone = $state("");
     timezoneSource = $state("");
     configStale = $state(false);
+    // The daemon runs as root, so host commands that reach it need sudo.
+    runsAsRoot = $state(false);
     // Standalone assumptions until the first /api/daemon lands: a standalone
     // daemon must never flash a station chip or hide its scheduling UI during
     // hydration. Components read these reactively and self-correct.
@@ -42,6 +45,8 @@ class SystemStore {
     #taskUsage = $state<Record<string, ResourceUsage> | null>(null);
     // Live CPU/memory per running run, by run ID, from the same event.
     #runUsage = $state<Record<string, ResourceUsage>>({});
+    // Lines each running run has printed so far, by run ID, from the same event.
+    #runOutputLines = $state<Record<string, number>>({});
 
     #subscribed = false;
     #unsubscribes: (() => void)[] = [];
@@ -68,6 +73,10 @@ class SystemStore {
 
     runUsage(runId: string): ResourceUsage | undefined {
         return this.#runUsage[runId];
+    }
+
+    runLive(runId: string): RunLive {
+        return { usage: this.#runUsage[runId], outputLines: this.#runOutputLines[runId] };
     }
 
     disconnect(): void {
@@ -103,6 +112,7 @@ class SystemStore {
             this.timezone = info.resolvedTimezone;
             this.timezoneSource = info.timezoneSource;
             this.configStale = info.configStale;
+            this.runsAsRoot = info.runsAsRoot;
             this.stationEnabled = info.stationEnabled;
             this.schedulingActive = info.schedulingActive;
             this.updateAvailable = info.updateAvailable;
@@ -126,7 +136,7 @@ class SystemStore {
                     this.#logger.warn("Invalid system SSE payload", parsed.error);
                     return;
                 }
-                const { sample, uptime, tasks, runs } = parsed.data;
+                const { sample, uptime, tasks, runs, outputLines } = parsed.data;
                 this.cpuUsage = sample.cpuUsage;
                 this.memUsage = sample.memUsage;
                 this.metricsHistory = [...this.metricsHistory, sample].slice(
@@ -135,6 +145,7 @@ class SystemStore {
                 this.uptime = uptime;
                 this.#taskUsage = tasks ?? {};
                 this.#runUsage = runs ?? {};
+                this.#runOutputLines = outputLines ?? {};
             }),
             appEventStream.subscribe("config.stale", (data) => {
                 const parsed = safeParseJSON(data, configStaleEventSchema);

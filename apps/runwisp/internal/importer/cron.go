@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -39,6 +40,15 @@ type CronOptions struct {
 	// owner is its filename. Mutually exclusive with System: a file either names a
 	// user per line or has one for the whole file, never both.
 	User string
+	// LookPath returns where name is found on pathList, or "". With it set, a
+	// job whose program cron's PATH can't find but DaemonPATH can gets a note:
+	// it would fail every run with exit 127. Nil skips the check. Normally
+	// LookPathIn and the importing shell's own PATH.
+	LookPath   func(name, pathList string) string
+	DaemonPATH string
+	// OwnerUnknown says the crontab was piped in, so nothing tells whose it is.
+	// Its per-user jobs run as the daemon, and the report says so once.
+	OwnerUnknown bool
 	// UserExists reports whether a name identifies an account on this machine. Set
 	// it — normally to SystemUserExists — whenever the crontab being parsed belongs
 	// to the machine doing the parsing, so a system line missing its user column is
@@ -58,12 +68,19 @@ type CronOptions struct {
 	// `certbot` are accounts on some hosts and commands on all of them). Nil means
 	// exec.LookPath.
 	OnPath func(string) bool
-	// NameSuffix is the stable tie-breaker appended when a derived name collides,
-	// in place of the positional -2/-3. Set it to something derived from the source
-	// file (its basename, say) when parsing several crontabs whose set can change
-	// between loads; leave it empty for a one-off import, where -2 is stable
-	// because there is only one file in one order. See deduper.uniqueIn.
+	// NameSuffix names the source in a task name (see CronNameSuffix). With
+	// QualifyNames every derived name carries it (`report-ops`); without, only a
+	// name the live config or another source already owns does, in place of a
+	// positional -2. Either way a name is a function of its source rather than
+	// of how many files were read before it. Leave it empty for a one-off import
+	// of a file with no owner, where -2 is stable because there is only one
+	// file in one order.
 	NameSuffix string
+	// QualifyNames appends NameSuffix to every derived name: a user's crontab or
+	// a /etc/cron.d file, whose jobs belong to someone (see CronNameSuffix). An
+	// anacron job id or a bun-cron title is a name the operator chose, so it is
+	// kept as written.
+	QualifyNames bool
 	// Flavor is the cron implementation that has been running this crontab, when
 	// known. It decides what CRON_TZ means; see CronFlavor. Leave it unknown for a
 	// crontab that isn't this machine's.
@@ -113,7 +130,7 @@ func ParseCrontab(r io.Reader, opts CronOptions) (*Result, error) {
 	res := &Result{}
 	cp := &crontabParser{
 		res:   res,
-		names: newNamer(res, opts.Existing, opts.NameSuffix),
+		names: newNamer(res, opts.Existing, clashSuffix(opts)),
 		opts:  opts,
 		// system can be flipped on mid-parse when Detect spots the header legend.
 		system: opts.System,
@@ -131,6 +148,18 @@ func ParseCrontab(r io.Reader, opts CronOptions) (*Result, error) {
 	}
 
 	cp.bannerIfAmbiguous()
+	if cp.proseJobs && !cp.cronShaped {
+		// A README or a script, not a crontab: its rows would be prose read as
+		// schedules, so one note replaces them.
+		res.items, res.blocks = nil, nil
+		res.fileNote(NoteNotACrontab, "this doesn't look like a crontab: no line is a cron "+
+			"schedule followed by a command, so nothing was imported.")
+	}
+	if opts.OwnerUnknown && opts.User == "" && !cp.system && len(res.items) > 0 {
+		res.fileNote(NoteOwnerUnknown, "A piped crontab doesn't say whose it is, so these jobs run as "+
+			"the daemon's user. If they belong to another account, add user = \"<name>\" to each task, "+
+			"or import the file itself (runwisp import cron /var/spool/cron/crontabs/<name>).")
+	}
 	return cp.res, nil
 }
 
@@ -174,6 +203,10 @@ type crontabParser struct {
 	// command; approxPeriod says its period was only approximated.
 	jobName      string
 	approxPeriod bool
+	// cronShaped is set once any job line's schedule looks like cron fields,
+	// valid or not; proseJobs once one splits like a job but its "schedule" is
+	// words. With the second and not the first, the file isn't a crontab.
+	cronShaped, proseJobs bool
 }
 
 // addItem opens a report row for the line currently being fed, stamped with its
@@ -209,18 +242,21 @@ func (cp *crontabParser) feedLine(raw string) {
 
 func (cp *crontabParser) handleComment(line string) {
 	comment := strings.TrimSpace(strings.TrimPrefix(line, "#"))
-	// The column legend system crontabs print above their jobs
-	// (`# m h dom mon dow user command`, or Debian's `# * * * * * user-name
-	// command to be executed`) is never a job description — drop it in every
-	// mode, or it rides onto the next job as one. Only when sniffing does it
-	// also flip on system parsing; forcing the format leaves that decision to
-	// the caller, but the legend still must not become a description.
-	if isCronHeaderLegend(comment) {
-		if cp.opts.Detect && !cp.system {
+	// The column legend crontabs print above their jobs (`# m h dom mon dow
+	// command`, `# m h dom mon dow user command`, or Debian's `# * * * * *
+	// user-name command to be executed`) is never a job description: drop it in
+	// every mode, or it rides onto the next job as one. Only a legend with a user
+	// column, and only when sniffing, also flips on system parsing; forcing the
+	// format leaves that decision to the caller.
+	if legend, hasUser := isCronHeaderLegend(comment); legend {
+		if hasUser && cp.opts.Detect && !cp.system {
 			cp.system = true
 		}
 		cp.pendingComment = ""
 		return
+	}
+	if isCrontabSpoolHeader(comment) && cp.line == cp.res.headerLines+1 {
+		cp.res.headerLines++
 	}
 	if isCrontabSpoolHeader(comment) || isCommentedOutJob(comment) || isRunwispMarker(comment) {
 		cp.pendingComment = ""
@@ -326,7 +362,8 @@ func (cp *crontabParser) noteCronTZIgnored(value string) {
 // from and a route — at which point the mail their crontab was sending has been
 // off for a week.
 //
-// An empty MAILTO is cron's "mail nobody", which is not a gap to fill.
+// An empty MAILTO is cron's "mail nobody", which RunWisp already matches, so it
+// gets no note at all.
 //
 // The importer stops at telling: writing [notifiers.mta] would mean an import
 // reaching into daemon-wide settings, which is the line Phase A drew when it
@@ -334,9 +371,6 @@ func (cp *crontabParser) noteCronTZIgnored(value string) {
 // identity to choose, not a machine-owned staging file's.
 func (cp *crontabParser) noteMailto(addr string) {
 	if addr == "" {
-		cp.res.fileNote(NoteMailto,
-			"crontab sets an empty MAILTO, which tells crond to mail nobody. "+
-				"Nothing to carry over — RunWisp is silent by default too.")
 		return
 	}
 	cp.res.fileNote(NoteMailto,
@@ -361,6 +395,30 @@ func (cp *crontabParser) bannerIfAmbiguous() {
 		"  `runwisp import cron --system`.")
 }
 
+// nameJob picks the task name for a job line from the derived base, the
+// pending comment, and the job's legacy names. It also returns the description
+// to keep: a bun-cron marker names the job, so it isn't kept as one.
+func (cp *crontabParser) nameJob(base, command, asWritten string, id OwnedEntry) (string, string, []namedEntry) {
+	description := cp.pendingComment
+	if cp.jobName != "" {
+		base = finalizeTaskName(strings.ReplaceAll(cp.jobName, ".", "-"), base)
+		return base, description, cp.legacyNames(base, base, command, asWritten, id)
+	}
+	if title, bun := strings.CutPrefix(description, "bun-cron: "); bun {
+		// Bun.cron() marks each job it writes with "# bun-cron: <title>"; the title names it.
+		base = finalizeTaskName(title, base)
+		return base, "", cp.legacyNames(base, base, command, asWritten, id)
+	}
+	legacy := cp.legacyNames(legacyCronName(command), cronName110(command), command, asWritten, id)
+	if slug := commentName(description); slug != "" {
+		base = finalizeTaskName(slug, base)
+	}
+	if cp.opts.QualifyNames {
+		base = qualifiedName(base, cp.opts.NameSuffix)
+	}
+	return base, description, legacy
+}
+
 // importJob turns one schedule+command line into its [tasks.NAME] block plus,
 // when the crontab set SHELL / CRON_TZ / env vars in effect above it, the
 // matching per-task fields and a [tasks.NAME.env] child block. Cron applies
@@ -380,6 +438,7 @@ func (cp *crontabParser) importJob(line string) bool {
 	if !ok {
 		return false
 	}
+	cp.noteShape(j)
 	if cp.noteSuspectUserColumn(line, j.user) {
 		return true // a row was added; nothing to emit for a line this shape
 	}
@@ -393,33 +452,24 @@ func (cp *crontabParser) importJob(line string) bool {
 	command := cc.run
 	// A leading `cd DIR &&` becomes the task's working_dir; what is left is the
 	// command RunWisp runs, so it is also what identifies the entry on re-import.
-	cwd, run := splitLeadingCd(command)
+	cwd, asWritten := splitLeadingCd(command)
+	// Cron mails what a job prints, so `>/dev/null 2>&1` was there to keep it
+	// quiet. RunWisp sends no mail, and output thrown away is output no run log
+	// can show, so the redirect goes. See dropDevNullRedirect.
+	run, devNull := dropDevNullRedirect(asWritten)
 	cc.run = run
 
-	base, oldBase := deriveCronName(command), legacyCronName(command)
+	base := deriveCronName(command)
 	if why, noop := noopGuard(command, cp.opts.HostStat); noop {
 		cp.addItem(base).note(NoteNoopHere, why+", so its guard makes it do nothing on this box")
 		return true
-	}
-	if cp.jobName != "" {
-		base = finalizeTaskName(strings.ReplaceAll(cp.jobName, ".", "-"), base)
-		oldBase = base
-	}
-	description := cp.pendingComment
-	// Bun.cron() marks each job it writes with "# bun-cron: <title>"; the title names it.
-	if title, ok := strings.CutPrefix(description, "bun-cron: "); ok {
-		base = finalizeTaskName(title, base)
-		oldBase = base
-		description = ""
 	}
 	// The per-line user column, or the whole file's owner for a spool crontab.
 	// applyOwner resolves which, so buildJob doesn't have to know the difference.
 	owner := cp.applyOwner(j)
 	id := OwnedEntry{Kind: model.KindTask, Run: run, User: owner, Schedule: cronSchedule(j.schedule, j.runOnStart)}
-	// RunWisp 1.8 and earlier kept the cd in run and named PHP console jobs `php`.
-	legacy := namedEntry{name: oldBase, id: id}
-	legacy.id.Run = command
-	ref, name, skip := cp.names.resolve(base, base, id, cp.line, legacy)
+	base, description, legacy := cp.nameJob(base, command, asWritten, id)
+	ref, name, skip := cp.names.resolve(base, base, id, cp.line, legacy...)
 	if skip {
 		return true
 	}
@@ -433,12 +483,18 @@ func (cp *crontabParser) importJob(line string) bool {
 	// The note only lives in this import's report; the comment above the table
 	// travels with it through promote, so a failed run with an empty log still
 	// says where its output went.
-	if target := outputRedirect(run); target != "" {
+	if devNull != "" {
+		ref.note(NoteDevNullDropped,
+			"dropped "+devNull+": cron used it to stop mail, and RunWisp sends none, so the run's log shows the output.")
+		b.lead = append(b.lead, "Dropped "+devNull+" so the run's log shows the output; RunWisp sends no cron mail.")
+	}
+	if target := OutputRedirect(run); target != "" {
 		ref.note(NoteOutputRedirected,
 			"its output goes to "+target+", so RunWisp can't show it in the run's log. "+
 				"Remove the redirect to capture it.")
 		b.lead = append(b.lead, "Output goes to "+target+"; RunWisp can't show it. Remove the redirect to capture it.")
 	}
+	cp.noteProgramNotOnPath(&b, ref, run)
 	if description != "" {
 		b.set("description", tomlString(description))
 	}
@@ -475,6 +531,74 @@ func (cp *crontabParser) importJob(line string) bool {
 	}
 	ref.emit(name, model.KindTask, id.Schedule, run, blocks...)
 	return true
+}
+
+// noteProgramNotOnPath flags a job whose program cron's PATH can't find but the
+// daemon's can, the php:* image case: php is in /usr/local/bin, cron's PATH is
+// /usr/bin:/bin, and every run exits 127 with the "not found" usually sent to
+// /dev/null. Real cron fails the same way; the note says why before it does.
+func (cp *crontabParser) noteProgramNotOnPath(b *block, ref itemRef, run string) {
+	if cp.opts.LookPath == nil {
+		return
+	}
+	tokens := strings.Fields(run)
+	prog, _ := firstCommandProgram(tokens, noLauncher, false)
+	// ponytail: firstCommandProgram returns a basename, so a bare token equal to
+	// it stands in for "named without a path". A path-qualified program with the
+	// same name also appearing bare as an argument is checked by mistake.
+	if prog == "" || !slices.Contains(tokens, prog) {
+		return
+	}
+	jobPath := cp.env["PATH"]
+	if jobPath == "" {
+		jobPath = model.CleanEnvPath
+	}
+	if cp.opts.LookPath(prog, jobPath) != "" {
+		return
+	}
+	found := cp.opts.LookPath(prog, cp.opts.DaemonPATH)
+	if found == "" {
+		return
+	}
+	dir := filepath.Dir(found)
+	ref.note(NoteProgramNotOnPath, prog+" is in "+dir+", which is not on the job's PATH ("+jobPath+
+		"), so every run fails with exit 127 (command not found), as it does under cron. "+
+		"Add PATH="+dir+":"+jobPath+" to the crontab.")
+	b.lead = append(b.lead, prog+" is in "+dir+", not on this task's PATH ("+jobPath+"); set PATH in the crontab or in env.")
+}
+
+// noLauncher treats every program as itself, for callers that want the program
+// a job runs rather than the name it gets.
+func noLauncher(string) (func([]string) string, bool) { return nil, false }
+
+// legacyNames are the names older releases gave this job, so a task one of them
+// imported or promoted is recognized as this job rather than run twice:
+//   - v18 is RunWisp 1.8 and earlier's name, which kept the cd in run and named
+//     PHP console jobs `php`.
+//   - v110 is the 1.9/1.10 name: bare, or with the source's suffix when another
+//     file had taken it first. Its in-file -2 is left out: that one depended on
+//     line order in a way this release no longer reproduces.
+func (cp *crontabParser) legacyNames(v18, v110, command, asWritten string, id OwnedEntry) []namedEntry {
+	old := id
+	old.Run = command
+	// RunWisp 1.10 and earlier kept the /dev/null redirect in run.
+	kept := id
+	kept.Run = asWritten
+	out := []namedEntry{{name: v18, id: old}, {name: v110, id: id}, {name: v110, id: kept}}
+	if cp.opts.NameSuffix != "" {
+		out = append(out, namedEntry{name: v110 + "-" + cp.opts.NameSuffix, id: id}, namedEntry{name: v110 + "-" + cp.opts.NameSuffix, id: kept})
+	}
+	return out
+}
+
+// clashSuffix is what a name another source already owns gets appended. A
+// qualified source's names already carry its suffix, so a clash there (rare:
+// /etc/cron.d/ops against ops's crontab) is numbered instead of doubling it.
+func clashSuffix(opts CronOptions) string {
+	if opts.QualifyNames {
+		return ""
+	}
+	return opts.NameSuffix
 }
 
 // cronJobLine is one crontab job line, split into the parts RunWisp maps.
@@ -557,8 +681,9 @@ func (cp *crontabParser) applyCommand(b *block, ref itemRef, cc cronCommand) {
 			"TODO: crond also piped "+strconv.Quote(cc.stdin)+" to this on stdin.")
 		ref.note(NotePercentStdin,
 			"crond ended the command at the first '%' and piped "+strconv.Quote(cc.stdin)+
-				" to it on standard input. RunWisp has no stdin field — fold the input into "+
-				"the command itself (a here-doc, or `printf … | cmd`).")
+				" to it on standard input. If you meant a literal %, write \\% in the crontab. "+
+				"For input, RunWisp has no stdin field: fold it into the command itself "+
+				"(a here-doc, or `printf … | cmd`).")
 		return
 	}
 	b.set("run", tomlVerbatimString(cc.run))
@@ -824,26 +949,59 @@ func isCrontabSpoolHeader(comment string) bool {
 	return strings.Contains(inner, " installed on ") || strings.HasPrefix(inner, "Cron version")
 }
 
-// isCronHeaderLegend reports whether a comment is the column legend that system
-// crontabs print above their jobs. Two shapes ship on real boxes and both are
-// matched: the field-name key `# m h dom mon dow user command`, and the one
-// Debian/Ubuntu's own /etc/crontab prints, `# * * * * * user-name command to be
-// executed`. Both carry a "user"/"user-name" column word next to "command";
-// requiring that pair plus either the day-field words or a five-star schedule
-// placeholder keeps it from matching prose.
-func isCronHeaderLegend(comment string) bool {
+// isCronHeaderLegend reports whether a comment is the column legend crontabs
+// print above their jobs, and whether that legend has a user column. The shapes
+// that ship on real boxes: the field-name key `# m h dom mon dow command` that
+// `crontab -e` writes (with `user` before `command` in /etc/crontab), Alpine's
+// `# min hour day month weekday command`, and Debian/Ubuntu's `# * * * * *
+// user-name command to be executed`. Requiring "command" plus the day-field
+// words or a five-star schedule placeholder keeps it from matching prose.
+func isCronHeaderLegend(comment string) (legend, hasUser bool) {
 	fields := strings.Fields(strings.ToLower(comment))
 	words := map[string]bool{}
 	for _, w := range fields {
 		words[w] = true
 	}
-	if !words["command"] || !(words["user"] || words["user-name"]) {
-		return false
+	if !words["command"] || !(words["dom"] || words["dow"] || words["weekday"] || startsWithFiveStars(fields)) {
+		return false, false
 	}
-	if words["dom"] || words["dow"] {
+	return true, words["user"] || words["user-name"]
+}
+
+// noteShape records whether a job line's schedule reads as cron fields or as
+// words, for the not-a-crontab check at the end of ParseCrontab.
+func (cp *crontabParser) noteShape(j cronJobLine) {
+	if j.runOnStart || looksLikeCronFields(j.schedule) {
+		cp.cronShaped = true
+	} else {
+		cp.proseJobs = true
+	}
+}
+
+// looksLikeCronFields reports whether a schedule is made of cron field
+// characters and month or weekday names, valid or not: `61 * * * *` and
+// `* * * JAN/DEC *` do, `Edit your crontab with crontab` doesn't.
+func looksLikeCronFields(schedule string) bool {
+	if strings.HasPrefix(schedule, "@") {
 		return true
 	}
-	return startsWithFiveStars(fields)
+	for _, word := range strings.FieldsFunc(strings.ToLower(schedule), func(r rune) bool {
+		return strings.ContainsRune(" \t0123456789*/,-?#", r)
+	}) {
+		if !cronNames[word] {
+			return false
+		}
+	}
+	return true
+}
+
+// cronNames are the month and weekday names and special letters a cron field
+// may hold.
+var cronNames = map[string]bool{
+	"jan": true, "feb": true, "mar": true, "apr": true, "may": true, "jun": true,
+	"jul": true, "aug": true, "sep": true, "oct": true, "nov": true, "dec": true,
+	"sun": true, "mon": true, "tue": true, "wed": true, "thu": true, "fri": true, "sat": true,
+	"l": true, "w": true, "lw": true, "h": true, // last, weekday, hashed
 }
 
 // startsWithFiveStars reports whether the first five tokens are all "*", the
@@ -913,14 +1071,15 @@ func isLikelyUsername(s string) bool {
 
 // cronEnvLine reports whether line is a cron environment assignment and, if so,
 // returns its name and unquoted value. Cron assignments have the form
-// `NAME = value` where NAME is a bare identifier and "=" precedes the value.
+// `NAME = value` where NAME is a bare identifier (not starting with a digit)
+// and "=" precedes the value.
 func cronEnvLine(line string) (name, value string, ok bool) {
 	name, value, ok = strings.Cut(line, "=")
 	if !ok {
 		return "", "", false
 	}
 	name = strings.TrimSpace(name)
-	if name == "" || strings.ContainsAny(name, " \t/") {
+	if name == "" || strings.ContainsAny(name, " \t/") || (name[0] >= '0' && name[0] <= '9') {
 		return "", "", false
 	}
 	for _, rn := range name {

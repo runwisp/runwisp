@@ -19,12 +19,13 @@ package cutover
 
 import (
 	"context"
-	"io"
+	"os/exec"
 	"os/user"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/configedit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronprobe"
 )
 
 // Deps is every seam a cutover needs. GOOS is injected and Installer is an
@@ -46,7 +47,10 @@ type Deps struct {
 	BinaryProblem error
 
 	GOOS string
-	Euid int
+	// SystemdBooted reports whether systemd is PID 1. Defaults to
+	// cronprobe.SystemdBooted.
+	SystemdBooted func() bool
+	Euid          int
 	// Username is the account running the process, for the unprivileged
 	// default cron patterns. "" offers no per-user spool pattern.
 	Username string
@@ -62,6 +66,9 @@ type Deps struct {
 	// Trusted checks that an existing config is safe to bake into a root-run
 	// unit. Defaults to a config.AssertFileTrusted wrapper.
 	Trusted func(path string) error
+	// HasCrontab reports whether a `crontab` binary is on PATH, which with no
+	// cron unit means this box has no cron at all. Defaults to exec.LookPath.
+	HasCrontab func() bool
 	// WriteConfig scaffolds a new config at path reading patterns. Defaults to
 	// writing config.CronStarterConfig; the first-run flow overrides it so a single
 	// "yes" can fold in an adjacent docker-compose import too.
@@ -81,9 +88,11 @@ type Deps struct {
 	DaemonRunning func() bool
 	// Reload hands the held jobs to a daemon that was already running.
 	Reload func(ctx context.Context) error
-	// AfterInstall (optional) runs last, once the unit is installed and started: the
-	// service's stable Web UI password lives in a drop-in cmd/runwisp writes.
-	AfterInstall func(ctx context.Context, out io.Writer)
+	// MarkBootRan (optional) records, for the config at cfgPath, that its
+	// cron-sourced run_on_start = "boot" tasks already ran this boot. Execute
+	// calls it when cron was running, before RunWisp first starts: cron ran the
+	// @reboot lines when the machine booted, and a take-over is not a reboot.
+	MarkBootRan func(cfgPath string) error
 
 	// AllowSkippedCronJobs proceeds even though some cron sources won't load.
 	// Those jobs stay stopped.
@@ -99,12 +108,21 @@ type Cutover struct {
 // New fills in the production defaults for any seam the caller left nil, so a
 // caller only overrides what it actually needs to fake.
 func New(deps Deps) *Cutover {
+	if deps.SystemdBooted == nil {
+		deps.SystemdBooted = cronprobe.SystemdBooted
+	}
 	if deps.Scan == nil {
 		deps.Scan = config.ScanCronSources
 	}
 	if deps.Trusted == nil {
 		deps.Trusted = func(path string) error {
 			return config.AssertFileTrusted(path, "the config file")
+		}
+	}
+	if deps.HasCrontab == nil {
+		deps.HasCrontab = func() bool {
+			_, err := exec.LookPath("crontab")
+			return err == nil
 		}
 	}
 	if deps.WriteConfig == nil {

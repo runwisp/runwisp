@@ -331,6 +331,25 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
         expect(src.total).toBe(3);
     });
 
+    // A new run has no duration yet, so it sorts first when shortest-first and
+    // last when longest-first, matching where the server would rank it.
+    it("places a new run by duration sort", async () => {
+        const shortest = await loadedWithRuns({ sortField: "duration", sortDirection: "asc" }, [
+            makeRun("a"),
+        ]);
+        expect(runsApi.getAll).toHaveBeenCalledWith(
+            expect.objectContaining({ sortField: "duration", sortDirection: "asc" }),
+        );
+        shortest.upsert(makeRun("new", { status: "running" }));
+        expect(shortest.items.map((r) => r.id)).toEqual(["new", "a"]);
+
+        const longest = await loadedWithRuns({ sortField: "duration", sortDirection: "desc" }, [
+            makeRun("a"),
+        ]);
+        longest.upsert(makeRun("new", { status: "running" }));
+        expect(longest.items.map((r) => r.id)).toEqual(["a", "new"]);
+    });
+
     // The arrival animation must fire only for runs that arrive live, never for
     // rows a page fetch loaded, and must expire so a later click stays instant.
     it("marks only live-inserted runs fresh, for a short window", async () => {

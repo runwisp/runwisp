@@ -24,8 +24,9 @@
         <div class="h-px flex-1 bg-outline"></div>
         <span
             class="font-mono text-xs font-medium tracking-wider text-on-surface-faint uppercase select-none"
-            >{label}</span
         >
+            {label}
+        </span>
         <div class="h-px flex-1 bg-outline"></div>
     </div>
 {:else}

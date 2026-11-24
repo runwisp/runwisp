@@ -128,6 +128,21 @@ test.describe("runs page", () => {
             .toBe(true);
     });
 
+    test("shift+click selects the range of runs in between", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        for (let i = 0; i < 3; i++) await seedEndedRun(page, "echo-task", daemonState.token);
+
+        await page.goto("/runs");
+        const boxes = page.getByRole("checkbox", { name: /Select run from/ });
+        await boxes.first().check();
+        await boxes.nth(2).click({ modifiers: ["Shift"] });
+
+        await expect(page.getByText("3 selected")).toBeVisible();
+        await expect(boxes.nth(1)).toBeChecked();
+    });
+
     test("a deep-linked run below the fold scrolls into view", async ({
         authenticatedPage: page,
         daemonState,

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { TRIGGERS, type Trigger } from "@runwisp/common";
-import { formatCalendarDate, formatDateTime } from "../../utils/format.js";
+import { formatCalendarDate, formatDateTime, formatLocalDay } from "../../utils/format.js";
 import { TRIGGER_LABELS } from "./run-helpers.js";
 import { RUN_STATUS_CONFIG } from "./status-config.js";
 
@@ -15,6 +15,8 @@ export interface RunsListFilters {
     search: string;
     statuses: string[];
     sortDirection: "asc" | "desc" | "";
+    // Unset sorts by creation time; "duration" sorts by how long each run took.
+    sortField?: "duration" | undefined;
     // Optional dimensions explicitly admit `undefined` so a dimension can be
     // cleared by reassignment (`{ ...f, x: undefined }`) under the project's
     // exactOptionalPropertyTypes, a fresh object reference is what re-triggers
@@ -227,12 +229,7 @@ export function dayEndIso(dateStr: string): string | undefined {
 }
 
 /** An RFC3339 instant → the local `YYYY-MM-DD` it falls on (for date inputs). */
-export function isoToDayInput(iso: string): string {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${String(d.getFullYear())}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
+export const isoToDayInput: (iso: string) => string = formatLocalDay;
 
 /**
  * True when the bounds describe exactly one calendar day (its 00:00 → end of

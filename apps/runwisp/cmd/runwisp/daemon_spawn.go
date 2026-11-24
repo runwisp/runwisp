@@ -9,8 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -18,7 +16,6 @@ import (
 	"log/slog"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 )
 
@@ -44,77 +41,6 @@ func pollHealth(client *apiclient.Client, timeout time.Duration) error {
 		return nil
 	}
 	return lastErr
-}
-
-// spawnDaemon starts a new daemon process in the background, detached from the
-// current terminal session so it survives after the TUI exits. station spawns
-// the headless `station` subcommand instead of the standalone daemon.
-func spawnDaemon(f Flags, station bool) error {
-	subcommand := []string{"daemon"}
-	if station {
-		subcommand = []string{"station", "--no-tui"}
-	}
-	return spawnDaemonProcess(daemonSpawnArgs(subcommand, f), f.DataDir)
-}
-
-// daemonSpawnArgs builds the argument list for a spawned daemon, prefixed by
-// the given subcommand ("daemon", or "station --no-tui"). It carries the full
-// effective config — including --host and --socket — so the child binds exactly
-// where the launcher probed instead of silently re-defaulting to loopback / the
-// default socket path.
-func daemonSpawnArgs(subcommand []string, f Flags) []string {
-	args := append([]string{}, subcommand...)
-	args = append(args,
-		"--config", f.CfgFile,
-		"--data", f.DataDir,
-		"--port", strconv.Itoa(f.Port),
-		"--host", f.Host,
-	)
-	if f.Socket != "" {
-		args = append(args, "--socket", f.Socket)
-	}
-	return args
-}
-
-// spawnDaemonProcess execs `runwisp <args...>` as a detached background process
-// (new session, stdio redirected to the data dir's daemon.log) so it outlives
-// the foreground process that launched it. The leading arg selects the
-// subcommand — "daemon" for standalone, "station --no-tui" for station mode.
-func spawnDaemonProcess(args []string, dataDir string) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("cannot find executable: %w", err)
-	}
-
-	cmd := exec.Command(exe, args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-
-	// runwisp is launching this daemon itself, so it is not init-managed.
-	// Strip any leaked service-manager markers (e.g. INVOCATION_ID inherited
-	// from a systemd-scoped terminal) so the daemon doesn't self-report as
-	// service-managed and hide the TUI's "Shut Down" quit option.
-	cmd.Env = autostart.WithoutServiceEnv(os.Environ())
-
-	// Redirect daemon stdout/stderr to a log file (truncated per spawn so
-	// failure output only contains this session).
-	logPath := datadir.LogPath(dataDir)
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-	if err != nil {
-		return fmt.Errorf("cannot open daemon log file: %w", err)
-	}
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-
-	if err := cmd.Start(); err != nil {
-		logFile.Close()
-		return fmt.Errorf("cannot start daemon process: %w", err)
-	}
-
-	if err := cmd.Process.Release(); err != nil {
-		slog.Warn("Failed to release daemon process", "err", err)
-	}
-	logFile.Close()
-	return nil
 }
 
 // shutdownDaemon sends SIGTERM to the daemon process and waits for it to

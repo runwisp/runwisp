@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { APIPaths, Run, RunStatus, Trigger } from "@runwisp/common";
+import type { APIPaths, ResourceUsage, Run, RunStatus, Trigger } from "@runwisp/common";
 import { formatBytes, formatDuration } from "../../utils/format.js";
 
 export interface RunVerdict {
@@ -119,6 +119,26 @@ export function runUsageLabel(run: Pick<Run, "peakMemoryBytes" | "cpuTimeMs">): 
     const parts: string[] = [];
     if (run.cpuTimeMs !== undefined) parts.push("CPU " + formatDuration(run.cpuTimeMs));
     if (run.peakMemoryBytes !== undefined) parts.push("RAM " + formatBytes(run.peakMemoryBytes));
+    return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+/** What a running run is doing right now, from the latest system sample. */
+export interface RunLive {
+    usage: ResourceUsage | undefined;
+    outputLines: number | undefined;
+}
+
+/** "CPU 12% · 48 MB · 3 lines" for a running run, undefined when nothing is known yet. */
+export function runLiveLabel(live: RunLive | undefined): string | undefined {
+    if (!live) return undefined;
+    const parts: string[] = [];
+    if (live.usage) {
+        parts.push(
+            `CPU ${String(Math.round(live.usage.cpuPercent))}%`,
+            formatBytes(live.usage.memoryBytes),
+        );
+    }
+    if (live.outputLines !== undefined) parts.push(formatLines(live.outputLines));
     return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
@@ -279,6 +299,48 @@ export function runOutputScale(
     return { max: Math.max(...lines), band: outputBand(runs) };
 }
 
+/** What a task's runs are judged against: its usage and output scales and its usual duration in ms. */
+export interface TaskRunScales {
+    usage: RunUsageScale | undefined;
+    output: OutputScale | undefined;
+    durationUsual: number | undefined;
+}
+
+type ScaledRun = Pick<
+    Run,
+    | "taskName"
+    | "status"
+    | "cpuTimeMs"
+    | "peakMemoryBytes"
+    | "stdoutLines"
+    | "stderrLines"
+    | "startedAt"
+    | "endedAt"
+>;
+
+/**
+ * Each task's scales over the runs given, keyed by task name, so a list that
+ * mixes tasks judges every run against its own task's runs. Mirrors the TUI's
+ * ExecWindow.Baselines.
+ */
+export function runScalesByTask(runs: readonly ScaledRun[]): Map<string, TaskRunScales> {
+    const byTask = new Map<string, ScaledRun[]>();
+    for (const run of runs) {
+        const group = byTask.get(run.taskName) ?? [];
+        group.push(run);
+        byTask.set(run.taskName, group);
+    }
+    const scales = new Map<string, TaskRunScales>();
+    for (const [task, taskRuns] of byTask) {
+        scales.set(task, {
+            usage: runUsageScale(taskRuns),
+            output: runOutputScale(taskRuns),
+            durationUsual: usualDuration(taskRuns),
+        });
+    }
+    return scales;
+}
+
 const compactNumber = new Intl.NumberFormat("en", {
     notation: "compact",
     maximumFractionDigits: 1,
@@ -316,14 +378,43 @@ export function runPhaseOrder(status: string): number {
     return 2;
 }
 
+/**
+ * Where a run's output went when its task's command redirected it
+ * (`Task.outputRedirect`), for an empty log; undefined when it wasn't.
+ */
+export function outputRedirectHint(target: string | undefined): string | undefined {
+    if (!target) return undefined;
+    if (target === "/dev/null") return "Output is discarded (sent to /dev/null).";
+    return `Output goes to ${target}; RunWisp can't show it.`;
+}
+
+type RunExitFields = Pick<Run, "status" | "endReason" | "exitCode" | "stdoutLines" | "stderrLines">;
+
+/**
+ * A failed run whose process never started (its working directory, user or
+ * shell couldn't be set up): there is no exit code, the stored -1 is a
+ * placeholder. Only a run whose process started has line counts, so a
+ * process killed by a signal (also -1) still reads as an exit. Mirrors Go's
+ * `Run.NeverStarted`.
+ */
+export function runNeverStarted(run: RunExitFields): boolean {
+    if (run.status !== "ended" || run.exitCode >= 0 || run.stdoutLines !== undefined) return false;
+    return run.endReason === "failed" || run.endReason === "start_failed";
+}
+
+/** A failed run's exit readout: "exit N", or "didn't start" when it never ran. */
+export function runExitLabel(run: RunExitFields): string {
+    return runNeverStarted(run) ? "didn't start" : "exit " + String(run.exitCode);
+}
+
 /** Right-hand mono readout of a run row: live / queued / exit N / duration. */
 export function runRowReadout(
-    run: Pick<Run, "status" | "exitCode" | "startedAt" | "endedAt">,
+    run: RunExitFields & Pick<Run, "startedAt" | "endedAt">,
     displayed: RunStatus,
 ): string {
     if (run.status === "running") return "live";
     if (run.status === "pending") return "queued";
-    if (displayed === "failed" || displayed === "crashed") return "exit " + String(run.exitCode);
+    if (displayed === "failed" || displayed === "crashed") return runExitLabel(run);
     return runDuration(run) ?? "—";
 }
 
@@ -351,4 +442,23 @@ export function highlightParts(text: string, query: string): HighlightParts {
         match: windowed.slice(fi, fi + q.length),
         after: windowed.slice(fi + q.length),
     };
+}
+
+/**
+ * Ids of the rows from the range start to `toId`, inclusive, in list order.
+ * The start is the first of `anchorId` / `openId` still in the list; null when
+ * `toId` or both starts are missing, so the caller falls back to a plain toggle.
+ */
+export function rangeIds(
+    ids: readonly string[],
+    anchorId: string | null,
+    openId: string | null,
+    toId: string,
+): string[] | null {
+    const to = ids.indexOf(toId);
+    const from = [anchorId, openId]
+        .map((id) => (id === null ? -1 : ids.indexOf(id)))
+        .find((i) => i !== -1);
+    if (to === -1 || from === undefined) return null;
+    return ids.slice(Math.min(from, to), Math.max(from, to) + 1);
 }

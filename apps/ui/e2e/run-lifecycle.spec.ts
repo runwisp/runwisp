@@ -34,6 +34,11 @@ test.describe("run lifecycle", () => {
         await expect(runVerdict(page, "running")).toBeVisible({ timeout: 30_000 });
         await expect(page.getByText("slow-start")).toBeVisible({ timeout: 10_000 });
         await expect(page.getByText("Streaming", { exact: true })).toBeVisible();
+        // Its row in the history rail shows what it has printed so far, from the
+        // next system sample.
+        await expect(page.getByRole("main").getByTestId("run-row-live")).toContainText("line", {
+            timeout: 15_000,
+        });
 
         const running = await getLatestRun(page, "slow-task", daemonState.token);
         expect(running, "slow-task should have a run").toBeDefined();

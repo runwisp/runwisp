@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -801,60 +802,101 @@ func TestSystemdStatus_SystemWide_NoLingerRowAndSudoJournalHint(t *testing.T) {
 	assert.Zero(t, cmd.Remaining(), "checkLinger must not be called for a system-wide unit")
 }
 
-func TestSystemdEnsurePasswordDropIn_WritesOnceThenSkips(t *testing.T) {
-	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
-	opts := defaultInstallOpts(binary)
-	opts.System = true
+// enableWatcher runs check right before `enable --now` reaches the fake runner.
+type enableWatcher struct {
+	*FakeRunner
+	check func()
+}
 
-	// First call writes the drop-in and daemon-reloads (Euid 1000 → sudo).
-	cmd.Expect("sudo", []string{"systemctl", "daemon-reload"}, nil, nil, nil)
-	path, wrote, err := inst.EnsurePasswordDropIn(context.Background(), opts, "hunter2")
-	require.NoError(t, err)
-	assert.True(t, wrote)
-	assert.Equal(t, "/etc/systemd/system/runwisp.service.d/password.conf", path)
+func (w enableWatcher) Run(ctx context.Context, name string, args ...string) ([]byte, []byte, error) {
+	if slices.Contains(args, "enable") {
+		w.check()
+	}
+	return w.FakeRunner.Run(ctx, name, args...)
+}
+
+// The password drop-in used to be written after `enable --now`, followed by a
+// restart: the service started twice within a second, and the first start
+// fired run_on_start tasks only to kill them. It is now written before the
+// unit's first start, with nothing restarted afterwards.
+func TestSystemdInstall_SavesPasswordBeforeFirstStart(t *testing.T) {
+	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	opts.PreConfirmed = true
+	opts.Password = "%h%%pw"
+	require.NoError(t, fs.WriteFile(opts.Config, []byte("[scheduler]\n"), 0644))
+	path := "/etc/systemd/system/runwisp.service.d/password.conf"
+	savedAtEnable := false
+	inst.deps.Cmd = enableWatcher{FakeRunner: cmd, check: func() {
+		_, err := fs.Stat(path)
+		savedAtEnable = err == nil
+	}}
+
+	cmd.Expect("systemctl", []string{"daemon-reload"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"enable", "--now", "runwisp.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"is-active", "runwisp.service"}, []byte("active\n"), nil, nil)
+	out := &bytes.Buffer{}
+	require.NoError(t, inst.Install(context.Background(), opts, out))
+	assert.True(t, savedAtEnable, "the password is on disk before the unit first starts")
+	assert.Zero(t, cmd.Remaining(), "no restart: every scripted call consumed, nothing else made")
+	for _, c := range cmd.Log() {
+		assert.NotContains(t, c.Args, "restart")
+	}
 
 	info, err := fs.Stat(path)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "secret must be 0600, not world-readable")
 	body, err := fs.ReadFile(path)
 	require.NoError(t, err)
-	assert.Contains(t, string(body), `Environment="RUNWISP_PASSWORD=hunter2"`)
-	assert.Contains(t, string(body), ManagedMarker)
-	assert.Zero(t, cmd.Remaining())
+	lines := strings.Split(string(body), "\n")
+	assert.Equal(t, ManagedMarker, lines[0], "ownership detection reads the first line")
+	assert.Equal(t, "# To rotate, change RUNWISP_PASSWORD below and run: sudo systemctl restart runwisp", lines[1])
+	assert.Contains(t, string(body), `Environment="RUNWISP_PASSWORD=%%h%%%%pw"`,
+		"systemd '%' specifiers must be doubled like systemdEscape does for every other value")
+	pw, ok := DropInValue(body, "RUNWISP_PASSWORD")
+	assert.True(t, ok)
+	assert.Equal(t, opts.Password, pw, "DropInValue reads back what was written")
+	assert.Contains(t, out.String(), "sudo runwisp password")
 
-	// Second call finds the drop-in and refuses to rotate — no write, no reload.
-	path2, wrote2, err := inst.EnsurePasswordDropIn(context.Background(), opts, "different")
-	require.NoError(t, err)
-	assert.False(t, wrote2)
-	assert.Equal(t, path, path2)
+	// A re-install never rotates a saved password.
+	require.NoError(t, inst.savePassword(InstallOptions{System: true, Password: "different"}, &bytes.Buffer{}))
 	body2, err := fs.ReadFile(path)
 	require.NoError(t, err)
 	assert.Equal(t, body, body2, "existing password must be left untouched")
-	assert.Zero(t, cmd.Remaining(), "skip path must not daemon-reload")
 }
 
-// TestSystemdEnsurePasswordDropIn_EscapesPercentSpecifier proves that a
-// password containing a systemd '%' specifier can't break out of its
-// Environment="..." line — the same escaping envDropInContent already
-// applies to every other RUNWISP_* value via systemdEscape.
-func TestSystemdEnsurePasswordDropIn_EscapesPercentSpecifier(t *testing.T) {
-	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
-	opts := defaultInstallOpts(binary)
-	opts.System = true
+// A system unit copied from ~/.local/bin left two binaries: `runwisp` ran the
+// user's copy and `upgrade` upgraded it, while the service kept the old one.
+func TestLinkUserCopy_ReplacesTheHomeCopyWithALink(t *testing.T) {
+	home := t.TempDir()
+	src := filepath.Join(home, ".local", "bin", "runwisp")
+	require.NoError(t, os.MkdirAll(filepath.Dir(src), 0o755))
+	require.NoError(t, os.WriteFile(src, []byte("bin"), 0o755))
+	dst := filepath.Join(t.TempDir(), "runwisp")
+	require.NoError(t, os.WriteFile(dst, []byte("bin"), 0o755))
+	owner := sudoOwner{Home: home, UID: os.Getuid(), GID: os.Getgid()}
 
-	cmd.Expect("sudo", []string{"systemctl", "daemon-reload"}, nil, nil, nil)
-	path, wrote, err := inst.EnsurePasswordDropIn(context.Background(), opts, "%h%%pw")
+	linked, err := linkUserCopy(src, dst, owner)
 	require.NoError(t, err)
-	assert.True(t, wrote)
+	assert.True(t, linked)
+	target, err := os.Readlink(src)
+	require.NoError(t, err)
+	assert.Equal(t, dst, target)
 
-	body, err := fs.ReadFile(path)
+	linked, err = linkUserCopy(src, dst, owner)
 	require.NoError(t, err)
-	assert.Contains(t, string(body), `Environment="RUNWISP_PASSWORD=%%h%%%%pw"`,
-		"systemd '%' specifiers must be doubled like systemdEscape does for every other value")
+	assert.False(t, linked, "already a link")
+
+	other := filepath.Join(t.TempDir(), "runwisp")
+	require.NoError(t, os.WriteFile(other, []byte("bin"), 0o755))
+	linked, err = linkUserCopy(other, dst, owner)
+	require.NoError(t, err)
+	assert.False(t, linked, "a binary outside the sudo user's home is left alone")
 }
 
 // TestSystemdWriteEnvDropIn_WritesRefreshesAndRemoves is the #251 regression at
-// the installer layer: unlike EnsurePasswordDropIn, the env drop-in must
+// the installer layer: unlike the password drop-in, the env drop-in must
 // refresh on every install so a changed or removed RUNWISP_* value actually
 // takes effect, and it must go away entirely once nothing is captured.
 func TestSystemdWriteEnvDropIn_WritesRefreshesAndRemoves(t *testing.T) {

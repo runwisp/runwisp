@@ -342,9 +342,9 @@
                         <div
                             class="mt-2 rounded-[3px] border border-danger-soft-border bg-danger-soft/80 px-3 py-2 text-xs text-danger-soft-text"
                         >
-                            Last run exited with code <span class="font-mono tabular-nums"
-                                >{exitCode}</span
-                            >
+                            Last run exited with code <span class="font-mono tabular-nums">
+                                {exitCode}
+                            </span>
                         </div>
                     {/if}
                 </button>
