@@ -449,3 +449,19 @@ func TestRenderTaskHeader_NarrowNeverOverflows(t *testing.T) {
 		}
 	}
 }
+
+// With --no-http the password gates nothing: the socket is the only way in.
+func TestRenderHomeHeader_NoHTTPHidesPassword(t *testing.T) {
+	for _, info := range []uikit.StartupInfo{
+		{PasswordEphemeral: true, Password: "Kj2x9pQ7mN4vL8rT5wYz1c"},
+		{AuthDisabled: true, PasswordEphemeral: true, Password: "Kj2x9pQ7mN4vL8rT5wYz1c"},
+	} {
+		assert.Empty(t, Fields(info, true))
+		header, _ := RenderHeader(info, true, 80, -1, -1, false)
+		assert.NotContains(t, header, "Password")
+		assert.NotContains(t, header, "Web UI")
+		withRows, _ := RenderHeader(uikit.StartupInfo{Port: 9477}, false, 80, -1, -1, false)
+		assert.Equal(t, strings.Count(withRows, "\n")-3, strings.Count(header, "\n"),
+			"no rows means no spacer lines around them either")
+	}
+}

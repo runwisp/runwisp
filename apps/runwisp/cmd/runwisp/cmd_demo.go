@@ -45,6 +45,7 @@ seeded (the Station owns it); RUNWISP_STATION_TOKEN is required, as for ` + "`ru
 
 With --no-tui the demo runs in the foreground without the TUI, handy over SSH
 when you only want the Web UI. Ctrl+C stops it.`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runDemo(cmd, flags)
 	},
@@ -56,6 +57,7 @@ func init() {
 	demoCmd.Flags().StringVar(&demoFlags.Token, "token", "", "station token, with --station (overrides RUNWISP_STATION_TOKEN)")
 	demoCmd.Flags().StringVar(&demoFlags.URL, "url", "", "station API URL, with --station (overrides RUNWISP_STATION_URL)")
 	demoCmd.Flags().StringVar(&demoFlags.EnvFile, "env-file", ".env", "path to .env file, with --station")
+	addNoHTTPFlag(demoCmd)
 	demoCmd.Flags().BoolVar(&demoFlags.SeedOnly, "seed-only", false, "write the demo config to --config and seed --data, then exit without starting a daemon or TUI (for tooling that boots its own daemon)")
 }
 
@@ -140,6 +142,9 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 // can't bind. A throwaway demo on the default port just moves to a free one; an
 // explicit --port is still honored or rejected.
 func demoResolvePort(cmd *cobra.Command, f *Flags) error {
+	if f.NoHTTP {
+		return nil
+	}
 	bindErr := probePortAvailable(f.Host, f.Port)
 	if bindErr == nil {
 		return nil

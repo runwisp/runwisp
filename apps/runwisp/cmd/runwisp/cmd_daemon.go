@@ -37,4 +37,5 @@ var daemonApp bool
 
 func init() {
 	daemonCmd.Flags().BoolVar(&daemonApp, "app", false, appFlagUsage)
+	addNoHTTPFlag(daemonCmd)
 }

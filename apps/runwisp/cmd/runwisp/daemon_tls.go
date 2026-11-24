@@ -34,7 +34,7 @@ type tlsSetup struct {
 // generation failure aborts startup loudly instead of silently falling back to
 // cleartext on an exposed bind.
 func resolveTLS(f Flags, d config.Daemon) (tlsSetup, error) {
-	if tlsScheme(d, f.Host) == "http" {
+	if f.NoHTTP || tlsScheme(d, f.Host) == "http" {
 		return tlsSetup{Scheme: "http"}, nil
 	}
 

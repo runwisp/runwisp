@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -87,4 +88,9 @@ func TestPrintRestartedPointsAtTheWebUI(t *testing.T) {
 	var out bytes.Buffer
 	printRestarted(&out, Flags{DataDir: t.TempDir(), CfgFile: cfg})
 	assert.Contains(t, out.String(), "web UI at ")
+}
+
+func TestDaemonListenURLIsEmptyWithoutHTTP(t *testing.T) {
+	cfg := &config.Config{Daemon: config.Daemon{ExternalURL: "https://cron.example.com"}}
+	assert.Empty(t, daemonListenURL(cfg, Flags{NoHTTP: true, Port: 9477}))
 }

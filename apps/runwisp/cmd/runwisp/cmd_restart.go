@@ -256,9 +256,14 @@ func restartViaService(out io.Writer, installer autostart.Installer, opts autost
 
 // printRestarted confirms the restart and points at the web UI, on the port
 // the daemon reports (it may differ from this command's --port). The URL is
-// best-effort — an unreadable config just drops the suffix.
+// best-effort — an unreadable config just drops the suffix, and so does a
+// daemon reporting port 0 (`daemon --no-http`, no web UI to point at).
 func printRestarted(out io.Writer, f Flags) {
-	if info, err := apiclient.NewUnix(localAPISocketPath(f)).GetDaemonInfo(context.Background()); err == nil && info.Port != 0 {
+	if info, err := apiclient.NewUnix(localAPISocketPath(f)).GetDaemonInfo(context.Background()); err == nil {
+		if info.Port == 0 {
+			fmt.Fprintln(out, "Daemon restarted.")
+			return
+		}
 		f.Port = info.Port
 	}
 	if cfg, err := config.Load(f.CfgFile); err == nil {

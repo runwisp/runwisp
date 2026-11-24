@@ -65,10 +65,13 @@ func runStatus(ctx context.Context, out io.Writer, f Flags, rf remoteFlags, asJS
 	}
 
 	info, infoErr := client.GetDaemonInfo(ctx)
-	if infoErr == nil {
+	switch {
+	case infoErr == nil && info.Port == 0:
+		fmt.Fprintln(out, "RunWisp is healthy (no HTTP port, started with --no-http)")
+	case infoErr == nil:
 		fmt.Fprintf(out, "RunWisp is healthy at :%d\n", info.Port)
 		printWebUIAddress(out, info)
-	} else {
+	default:
 		fmt.Fprintln(out, "RunWisp is healthy")
 	}
 

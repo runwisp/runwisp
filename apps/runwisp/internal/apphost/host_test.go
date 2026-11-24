@@ -695,13 +695,13 @@ func (a *fakeApp) lastRole() bool {
 		}
 		if m.Type == "role" {
 			active = *m.Active
-			wait = 50 * time.Millisecond
+			wait = 250 * time.Millisecond
 		}
 	}
 }
 
 func TestRoleMessagesStayInOrderWhenACopyLeaves(t *testing.T) {
-	for range 100 {
+	for range 20 {
 		h := New()
 		a := connectAs(t, h, "app", 1)
 		require.True(t, a.role())

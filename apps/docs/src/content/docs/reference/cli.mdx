@@ -81,6 +81,10 @@ offers to create a starter file.
 If another RunWisp daemon already holds the port, it offers to connect to that
 one or to stop it and start here.
 
+| Flag        | Description                                                                                                  |
+| ----------- | ------------------------------------------------------------------------------------------------------------ |
+| `--no-http` | When it runs the daemon here, don't open the HTTP port, so there is no web UI and no remote API. Since 1.11. |
+
 ### `runwisp daemon`
 
 ```bash
@@ -91,9 +95,10 @@ Starts the daemon in the foreground with no TUI. Use it under Docker, systemd,
 or any init system. Exits non-zero if the config is missing, instead of
 prompting.
 
-| Flag    | Description                                                                                                                                                                              |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--app` | Read the config as a JSON document on stdin instead of `runwisp.toml`, with the same keys. [SDKs](/sdk/) start the daemon this way. It stops 10 seconds after the app leaves. Since 1.7. |
+| Flag        | Description                                                                                                                                                                              |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--app`     | Read the config as a JSON document on stdin instead of `runwisp.toml`, with the same keys. [SDKs](/sdk/) start the daemon this way. It stops 10 seconds after the app leaves. Since 1.7. |
+| `--no-http` | Don't open the HTTP port, so there is no web UI and no remote API. The TUI and the CLI still work through the [control socket](#control-socket). Since 1.11.                             |
 
 ### `runwisp tui`
 
@@ -649,6 +654,7 @@ lives in a temp directory that's deleted when the daemon stops.
 | ------------- | --------------------------------------------------------------------------------------- |
 | `--no-tui`    | Run in the foreground without the TUI. <kbd>Ctrl</kbd>+<kbd>C</kbd> stops it.           |
 | `--seed-only` | Write the demo config to `--config`, seed `--data`, and exit without starting anything. |
+| `--no-http`   | Don't open the HTTP port, so there is no web UI. Since 1.11.                            |
 
 ### `runwisp station`
 

@@ -65,13 +65,16 @@ func StarButtonAt(x, w int) bool {
 // Fields returns the list of active fields based on the startup info.
 // hasLaunchTicket indicates whether the one-click browser open action is available.
 func Fields(info uikit.StartupInfo, hasLaunchTicket bool) []Field {
-	var fields []Field
-	if info.Port > 0 {
-		if hasLaunchTicket {
-			fields = append(fields, FieldOpenWebUI)
-		}
-		fields = append(fields, FieldWebUI)
+	// The password only gates HTTP logins. Without a port (--no-http) the
+	// socket is the only way in, so there is nothing to show.
+	if info.Port <= 0 {
+		return nil
 	}
+	var fields []Field
+	if hasLaunchTicket {
+		fields = append(fields, FieldOpenWebUI)
+	}
+	fields = append(fields, FieldWebUI)
 	// No password row to copy when auth is disabled — the daemon still mints
 	// one internally, but it gates nothing and must not be presented as a
 	// credential.
@@ -155,6 +158,14 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 	b.WriteString("\n")
 	lineCount++
 
+	// Auth disabled: render a static, non-focusable Password row so the
+	// operator sees the security state at a glance instead of a masked value.
+	authOffRow := info.AuthDisabled && info.Port > 0
+	// No rows (--no-http): skip the spacers around them too.
+	if len(fields) == 0 && !authOffRow {
+		return b.String(), lineCount
+	}
+
 	b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
 	b.WriteString("\n")
 	lineCount++
@@ -163,16 +174,12 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 
 	writeFieldRows(&b, fields, info, w, homeCursor, homeHover)
 
-	// Auth disabled: render a static, non-focusable Password row so the
-	// operator sees the security state at a glance instead of a masked value.
-	if info.AuthDisabled {
+	if authOffRow {
 		renderFieldRow(&b, "Password", "disabled (RUNWISP_AUTH=off)", uikit.ColorWarning, w, false, false)
 	}
 
-	if len(fields) > 0 || info.AuthDisabled {
-		b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
-		b.WriteString("\n")
-	}
+	b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
+	b.WriteString("\n")
 
 	return b.String(), fieldsStartY
 }
