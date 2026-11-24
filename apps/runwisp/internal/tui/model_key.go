@@ -68,14 +68,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleSidebarFilterKey(msg)
 	}
 	if msg.String() == "/" {
-		// `/` filters tasks when the sidebar is focused, and searches logs of the
-		// focused task otherwise.
-		if m.panelFocus == uikit.PanelSidebar {
-			m.sidebar.StartFilter()
-			return m, nil
-		}
-		if m.canOpenLogSearch() {
-			return m.openLogSearch()
+		if newM, cmd, handled := m.handleSlashKey(); handled {
+			return newM, cmd
 		}
 	}
 	if m.runListFocused() {
@@ -95,6 +89,20 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m.delegateKeyToFocusedView(msg)
+}
+
+// handleSlashKey: `/` filters tasks when the sidebar is focused, and searches
+// logs of the focused task otherwise.
+func (m Model) handleSlashKey() (tea.Model, tea.Cmd, bool) {
+	if m.panelFocus == uikit.PanelSidebar {
+		m.sidebar.StartFilter()
+		return m, nil, true
+	}
+	if m.canOpenLogSearch() {
+		newM, cmd := m.openLogSearch()
+		return newM, cmd, true
+	}
+	return m, nil, false
 }
 
 // delegateKeyToFocusedView forwards msg to whichever sub-component currently

@@ -36,9 +36,9 @@ export function createLogSession(findRun: (runId: string) => Run | undefined) {
     }
 
     // One run's matches for the console's find bar.
-    async function searchLog(runId: string, query: FindQuery): Promise<FindPage> {
+    function searchLog(runId: string, query: FindQuery): Promise<FindPage> {
         const run = findRun(runId);
-        if (!run) return { items: [] };
+        if (!run) return Promise.resolve({ items: [] });
         return tasksApi.searchLogs(run.taskName, { ...query, runId });
     }
 

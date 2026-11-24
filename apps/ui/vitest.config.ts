@@ -43,6 +43,7 @@ export default defineConfig({
                 "**/packages/ui/src/lib/utils/clipboard.svelte.ts",
                 "**/packages/ui/src/lib/utils/theme.svelte.ts",
                 "**/packages/ui/src/lib/log-console/ansi.ts",
+                "**/packages/ui/src/lib/log-console/log-find.svelte.ts",
                 "**/packages/ui/src/lib/log-console/highlight-scroll.ts",
                 "**/packages/ui/src/lib/log-console/types.ts",
                 "**/packages/ui/src/lib/log-console/LogCache.svelte.ts",

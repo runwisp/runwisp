@@ -40,7 +40,7 @@ export function compileFind(
     caseSensitive: boolean,
 ): Finder | { error: string } | null {
     if (!q) return null;
-    const source = regex ? q : q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const source = regex ? q : q.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
     const flags = caseSensitive ? "" : "i";
     let single: RegExp;
     let global: RegExp;
@@ -193,7 +193,7 @@ export class LogFind {
         if (found.length > 0)
             this.matches = mergeLines(
                 this.matches,
-                found.sort((a, b) => a - b),
+                found.toSorted((a, b) => a - b),
             );
     }
 
