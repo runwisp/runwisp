@@ -4,10 +4,15 @@
 package logfind
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -126,4 +131,54 @@ func TestFind_ViewPaintsEveryCell(t *testing.T) {
 		assert.NotContains(t, view, "\x1b[m ", "a space right after a reset has no background")
 		assert.False(t, strings.HasPrefix(view, " "), "the leading space needs a background")
 	}
+}
+
+func TestFind_FirstLastPrevEdit(t *testing.T) {
+	m := newTestFind()
+	assert.Equal(t, "run-1", m.RunID())
+	assert.Nil(t, m.First())
+	assert.Nil(t, m.Last())
+	assert.Nil(t, m.Prev())
+
+	m.matches = []int64{4, 9, 20}
+	assert.Equal(t, int64(4), jumpLine(t, m.First()))
+	assert.Equal(t, int64(20), jumpLine(t, m.Last()))
+	m.current = 9
+	assert.Equal(t, int64(4), jumpLine(t, m.Prev()))
+
+	m.editing = false
+	assert.NotNil(t, m.Edit())
+	assert.True(t, m.Editing())
+}
+
+func TestFind_SearchCmdPagesAndReportsErrors(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		assert.Equal(t, "run-1", r.URL.Query().Get("runId"))
+		if calls == 3 {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		body := server.LogSearchBody{Items: []server.LogSearchHit{{N: int64(calls * 10)}}}
+		if calls == 1 {
+			body.NextCursor = "c2"
+		}
+		_ = json.NewEncoder(w).Encode(body)
+	}))
+	defer srv.Close()
+
+	m := New(apiclient.New(srv.URL, ""), "task", "run-1")
+	m, _ = typeQuery(m, "x")
+
+	res, ok := m.searchCmd(7)().(resultsMsg)
+	require.True(t, ok)
+	assert.Equal(t, 7, res.seq)
+	assert.Equal(t, []int64{10, 20}, res.lines)
+	assert.Equal(t, int64(20), res.lastHit)
+	assert.NoError(t, res.err)
+
+	res, ok = m.searchCmd(8)().(resultsMsg)
+	require.True(t, ok)
+	assert.Error(t, res.err)
 }
