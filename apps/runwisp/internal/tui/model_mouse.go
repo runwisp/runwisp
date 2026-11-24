@@ -164,6 +164,9 @@ func (m Model) handleHomePageClick(x, y int) (tea.Model, tea.Cmd) {
 		if y == home.StarButtonY && home.StarButtonAt(x-uikit.SidebarWidth, m.contentWidth()) {
 			return m, func() tea.Msg { return browseMsg(home.RepoURL) }
 		}
+		if y == home.NoticesY && home.WarningsNoticeAt(m.info, x-uikit.SidebarWidth) {
+			return m, m.showConfigWarnings()
+		}
 		fieldsStartY := m.layout.homeFieldsY
 		fields := home.Fields(m.info, m.hasLaunchTicket())
 		fieldIdx := y - fieldsStartY

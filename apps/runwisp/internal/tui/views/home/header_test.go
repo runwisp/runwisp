@@ -258,13 +258,25 @@ func TestRenderHeader_AppConfigNotices(t *testing.T) {
 		ConfigWarnings: []string{"tasks a, b fire in the same second"},
 	}
 	header, _ := RenderHeader(info, false, 120, -1, -1, false)
-	assert.Contains(t, header, "see `runwisp status`")
-	assert.NotContains(t, header, "runwisp validate")
+	assert.Contains(t, header, "1 config warning: press w to view")
 	assert.NotContains(t, header, "runwisp.toml")
+}
 
-	info.AppConfig = false
-	header, _ = RenderHeader(info, false, 120, -1, -1, false)
-	assert.Contains(t, header, "see `runwisp validate`")
+// The warnings chip is clickable; its span sits after the other notices.
+func TestWarningsNoticeAt(t *testing.T) {
+	info := uikit.StartupInfo{ConfigWarnings: []string{"w1", "w2"}}
+	assert.True(t, WarningsNoticeAt(info, 2), "chip starts after the indent")
+	assert.False(t, WarningsNoticeAt(info, 1))
+
+	info.ConfigStale = true
+	assert.False(t, WarningsNoticeAt(info, 2), "stale notice comes first")
+	header, _ := RenderHeader(info, false, 200, -1, -1, false)
+	row := ansi.Strip(strings.Split(header, "\n")[NoticesY])
+	x := lipgloss.Width(row[:strings.Index(row, "\u26a0 2 config")])
+	assert.True(t, WarningsNoticeAt(info, x))
+	assert.False(t, WarningsNoticeAt(info, x-1))
+
+	assert.False(t, WarningsNoticeAt(uikit.StartupInfo{}, 2), "no warnings, no chip")
 }
 
 func TestRenderHeader_ConfigFresh_NoNotice(t *testing.T) {

@@ -49,6 +49,7 @@ var globalKeyHandlers = map[string]keyHandlerFn{
 	"[":         handleKeyPrevAnchor,
 	"]":         handleKeyNextAnchor,
 	"?":         handleKeyHelp,
+	"w":         handleKeyW,
 }
 
 // handleKey processes keyboard input. Global shortcuts are dispatched through
@@ -142,6 +143,15 @@ func handleKeyQuit(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 func handleKeyHelp(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	m.dialogs.Show(dlgHelp, &HelpDialog{readOnly: m.readOnly})
 	return m, nil, true
+}
+
+// handleKeyW lists the config warnings the Home header counts. Elsewhere, or
+// with none to show, it falls through.
+func handleKeyW(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
+	if m.execView == nil && m.sidebar.ActivePage() == uikit.PageHome && len(m.info.ConfigWarnings) > 0 {
+		return m, m.showConfigWarnings(), true
+	}
+	return m, nil, false
 }
 
 func handleKeyN(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {

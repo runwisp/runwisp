@@ -29,6 +29,7 @@ func oneOfEachDialog() []dialog {
 		dlgCopy:       NewCopyDialog("Title", "value"),
 		dlgLogHistory: NewLogHistoryDialog(0, [][]string{{"frame"}}, "committed"),
 		dlgNewRelease: NewNewReleaseDialog("1.0.0", "v2.0.0"),
+		dlgWarnings:   &WarningsDialog{warnings: []string{"w"}},
 		dlgTaskDetail: NewTaskDetailDialog("alpha", &model.Task{Name: "alpha"}),
 		dlgRunDetail:  NewRunDetailDialog(&model.Run{ID: "r1", TaskName: "t1"}, false, 1),
 		dlgHelp:       &HelpDialog{},

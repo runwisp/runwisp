@@ -121,6 +121,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case uikit.TaskStateMsg:
 		if msg.Err == nil {
 			m.info.PausedTasks = msg.Paused
+			m.recalcExecListHeight() // the paused notice can add or drop a header row
 			m.info.TaskUsage = msg.Usage
 			m.infoView.SetTaskUsage(msg.Usage)
 			m.info.StoppedServices = msg.Stopped
@@ -591,6 +592,7 @@ func (m Model) handleSchedulePause(msg uikit.SchedulePauseMsg) (tea.Model, tea.C
 		delete(paused, msg.TaskName)
 	}
 	m.info.PausedTasks = paused
+	m.recalcExecListHeight() // the paused notice can add or drop a header row
 	undo := m.streams.SetSchedulePaused(msg.TaskName, !msg.Paused)
 	label := fmt.Sprintf("%s the schedule of '%s' · press u to undo", verb, msg.TaskName)
 	return m, tea.Batch(m.streams.FetchTaskState(), m.dialogs.FlashUndo(label, undo, flashLong))
@@ -725,6 +727,15 @@ func (m *Model) applyDaemonInfo(info model.DaemonInfo) {
 	}
 	m.sidebar.SetUpdate(info.UpdateAvailable, info.LatestVersion)
 	m.sidebar.SetLabel(m.info.Label())
+	// The poll can add or drop the header's notices row (stale config, config
+	// warnings); a stale height would push the view a row past the screen.
+	m.recalcExecListHeight()
+}
+
+// showConfigWarnings opens the modal listing the config warnings in full.
+func (m *Model) showConfigWarnings() tea.Cmd {
+	m.dialogs.Show(dlgWarnings, &WarningsDialog{warnings: m.info.ConfigWarnings})
+	return nil
 }
 
 // reloadConfig triggers an explicit config reload from inside the TUI. The
