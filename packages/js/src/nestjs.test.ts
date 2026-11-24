@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
+/* eslint-disable @typescript-eslint/no-deprecated -- these tests exercise the deprecated node-cron options on purpose. */
 
 import { Logger, Module, type DynamicModule } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";

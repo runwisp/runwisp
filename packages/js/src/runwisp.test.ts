@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
+/* eslint-disable @typescript-eslint/no-deprecated -- these tests exercise the deprecated node-cron options on purpose. */
 
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
