@@ -106,4 +106,16 @@ test.describe("dashboard", () => {
         await tasksGrid.getByRole("button", { name: /echo-task/ }).click();
         await expect(page.getByRole("heading", { name: "echo-task", level: 1 })).toBeVisible();
     });
+
+    test("browser title follows client-side navigation", async ({ authenticatedPage: page }) => {
+        await page.goto("/notifications");
+        await expect(page).toHaveTitle(/^Notifications · /);
+
+        const sidebar = page.locator("#app-sidebar");
+        await sidebar.getByRole("link", { name: "echo-task", exact: true }).click();
+        await expect(page).toHaveTitle(/^echo-task · /);
+
+        await sidebar.getByRole("link", { name: "All Runs", exact: true }).click();
+        await expect(page).not.toHaveTitle(/echo-task/);
+    });
 });

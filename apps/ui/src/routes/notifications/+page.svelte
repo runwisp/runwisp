@@ -4,7 +4,7 @@
 <script lang="ts">
     import { Bell } from "@lucide/svelte";
     import { EmptyState, ErrorState, Link, PageHeader, Skeleton } from "@runwisp/ui";
-    import { authStore, notificationStore, systemStore } from "$lib/stores";
+    import { authStore, notificationStore } from "$lib/stores";
     import NotificationItem from "$lib/components/NotificationItem.svelte";
 
     let items = $derived(notificationStore.items);
@@ -28,10 +28,6 @@
         Mark all read
     </button>
 {/snippet}
-
-<svelte:head>
-    <title>{systemStore.title("Notifications")}</title>
-</svelte:head>
 
 <div class="mx-auto max-w-3xl space-y-4">
     <PageHeader

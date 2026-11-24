@@ -70,6 +70,10 @@
         $page.url.pathname.startsWith("/tasks/") ? $page.params.id : undefined,
     );
 
+    // One title per route, owned here: a <title> in a page's own svelte:head
+    // is not restored when navigating away, so the previous page's title stuck.
+    let pageTitle = $derived(activePage === "notifications" ? "Notifications" : activeTaskName);
+
     let activeTask = $derived(taskStore.items.find((t) => t.name === activeTaskName));
 
     let navTasks = $derived(
@@ -101,7 +105,7 @@
 </script>
 
 <svelte:head>
-    <title>{systemStore.title()}</title>
+    <title>{systemStore.title(pageTitle)}</title>
     <meta
         name="description"
         content="Web-based task scheduling and process supervision with real-time monitoring"

@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `runwisp takeover` lists every cron job with the task it becomes and where it comes from, and says that overlapping runs now queue.
+- The web UI's browser tab title names the task you are on, or Notifications, instead of keeping the previous page's title.
 - A blocked `runwisp takeover` prints only what stops it, and on a machine without cron it says so and how to start fresh.
 - `status`, `reload` and `validate` no longer warn about cron task renames, an empty `MAILTO`, or crontab jobs that start at the same second. A crontab's `MAILTO` warning is one line with a link.
 - "Run now" on a running task with `on_overlap = "skip"`, or on a task whose queue is full, answers 409 with the reason instead of a 500 "Failed to trigger run".
