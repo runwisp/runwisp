@@ -125,6 +125,27 @@ func (e *ExecList) ToggleSelectCursor() {
 	}
 }
 
+// ExtendSelection is shift+↑/↓: it ticks the run under the cursor, moves the
+// cursor by delta, and ticks the run it lands on. Add-only, so holding shift
+// and walking the list marks every row passed. Like ToggleSelectCursor it drops
+// select-all into an explicit set. A no-op when the cursor row isn't loaded.
+func (e *ExecList) ExtendSelection(delta int) {
+	run := e.SelectedRun()
+	if run == nil {
+		return
+	}
+	if e.selectAll {
+		e.selectAll = false
+		e.selected = make(map[string]struct{})
+	}
+	e.selected[run.ID] = struct{}{}
+	e.cursor = min(max(e.cursor+delta, 0), e.TotalCount()-1)
+	if run := e.SelectedRun(); run != nil {
+		e.selected[run.ID] = struct{}{}
+	}
+	e.ensureVisible()
+}
+
 // SelectAllMatching marks every run matching the active filter as selected. The
 // explicit set is cleared since select-all subsumes it.
 func (e *ExecList) SelectAllMatching() {

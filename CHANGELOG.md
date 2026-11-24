@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Run lists can sort by duration, longest or shortest first: from the sort menu in the web UI, and with `o` in the TUI, which also gets oldest first.
 - After `crontab -e`, `runwisp status`, `runwisp list`, the TUI and the notification bell name the crontab that changed and say to run `runwisp reload`.
+- Select a range of runs with shift+click in the web UI and shift+↑/↓ in the TUI.
 - A run with no output whose command redirects it (`>> /var/log/backup.log`) says where the output went, in the web UI and the TUI.
 
 ### Changed

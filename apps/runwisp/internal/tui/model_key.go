@@ -595,7 +595,8 @@ func (m Model) runListFocused() bool {
 }
 
 // handleRunListSelectionKey routes the run-list multi-select keys while the
-// executions list is focused: space toggles the cursor row, `a` selects every
+// executions list is focused: space toggles the cursor row, shift+↑/↓ extends
+// the selection as the cursor moves, `a` selects every
 // run matching the active filter, and — once a selection exists — `d` deletes
 // (undoably), `c` cancels, `e` reruns, and esc clears it. Keys it doesn't own
 // return handled=false so normal handling continues.
@@ -606,6 +607,14 @@ func (m Model) handleRunListSelectionKey(msg tea.KeyPressMsg) (Model, tea.Cmd, b
 	}
 	if msg.Code == tea.KeySpace {
 		m.execList.ToggleSelectCursor()
+		return m, nil, true
+	}
+	switch msg.String() {
+	case "shift+up":
+		m.execList.ExtendSelection(-1)
+		return m, nil, true
+	case "shift+down":
+		m.execList.ExtendSelection(1)
 		return m, nil, true
 	}
 	if msg.String() == "a" {
