@@ -342,7 +342,10 @@ func TestRunStatusURLReachesTheRemoteDaemon(t *testing.T) {
 	var logins atomic.Int32
 	srv := httptest.NewServer(remoteAuth(mux, &logins))
 	defer srv.Close()
-	storeCachedToken(srv.URL, "", testSessions.IssueToken(time.Hour)) // one the daemon no longer accepts
+	// One the daemon no longer accepts. Its expiry must differ from freshToken's:
+	// a token is the expiry second plus a MAC, so an equal TTL can mint the same
+	// string when this runs in the same second as the package init.
+	storeCachedToken(srv.URL, "", testSessions.IssueToken(2*time.Hour))
 
 	// No socket in this data dir: only the remote daemon can answer.
 	f := Flags{DataDir: testutil.ShortTempDir(t)}

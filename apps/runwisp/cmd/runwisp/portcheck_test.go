@@ -107,6 +107,13 @@ func TestDemoResolvePort(t *testing.T) {
 		f := Flags{Host: "256.256.256.256", Port: taken}
 		require.ErrorContains(t, demoResolvePort(newCmd(), &f), "find a free port")
 	})
+	t.Run("no-http leaves a taken port alone", func(t *testing.T) {
+		cmd := newCmd()
+		require.NoError(t, cmd.Flags().Set("port", strconv.Itoa(taken)))
+		f := Flags{Host: "127.0.0.1", Port: taken, NoHTTP: true}
+		require.NoError(t, demoResolvePort(cmd, &f))
+		require.Equal(t, taken, f.Port)
+	})
 	t.Run("explicit port taken is an error", func(t *testing.T) {
 		cmd := newCmd()
 		require.NoError(t, cmd.Flags().Set("port", strconv.Itoa(taken)))

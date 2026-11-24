@@ -121,6 +121,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flags.logLevelRaw, "log-level", "", "log verbosity: debug, info, warn, error (env: RUNWISP_LOG_LEVEL)")
 	rootCmd.PersistentFlags().StringVar(&flags.logFormatRaw, "log-format", "", "log format: auto, text, json (env: RUNWISP_LOG_FORMAT)")
 
+	addNoHTTPFlag(rootCmd)
+
 	rootCmd.AddCommand(daemonCmd)
 	rootCmd.AddCommand(stationCmd)
 	rootCmd.AddCommand(tuiCmd)
@@ -263,4 +265,11 @@ func defaultConfigPath(euid int, env string) string {
 // defaultDataDir is defaultConfigPath's counterpart for --data.
 func defaultDataDir(euid int, env string) string {
 	return resolveDefaultPath(env, "/var/lib/runwisp", ".runwisp", euid)
+}
+
+// addNoHTTPFlag gives a daemon-hosting command (runwisp, daemon, demo) the
+// --no-http flag. Local, not persistent: only a command that runs the daemon
+// can act on it.
+func addNoHTTPFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&flags.NoHTTP, "no-http", false, "don't open the HTTP port (no Web UI or remote API); the TUI and CLI still work over the control socket")
 }

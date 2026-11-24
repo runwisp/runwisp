@@ -61,6 +61,9 @@ func runDefault(ctx context.Context, f Flags) error {
 // ensurePortFreeOrHandle probes the bind port before starting a daemon.
 // Returns start=true when the caller should run its own daemon.
 func ensurePortFreeOrHandle(ctx context.Context, f Flags) (start bool, err error) {
+	if f.NoHTTP {
+		return true, nil
+	}
 	bindErr := probePortAvailable(f.Host, f.Port)
 	if bindErr == nil {
 		return true, nil
