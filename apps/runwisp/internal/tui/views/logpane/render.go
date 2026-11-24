@@ -167,6 +167,10 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 		Width(lnw + 1).
 		Bold(true)
 
+	matchGutterStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorPrimary).
+		Width(lnw + 1).
+		Bold(true)
+
 	for i := o.start; i < o.end; i++ {
 		absLineNum := p.absoluteLineNumber(i)
 		isHL := p.HighlightLine != 0 && int64(absLineNum) == p.HighlightLine
@@ -175,9 +179,14 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 		isAnchor := row.FrameCount > 0
 		isCursor := p.Cursor == i
 
+		text, isMatch := p.markFindMatches(row.Text, isHL)
+
 		marker := " "
-		if isAnchor {
+		switch {
+		case isAnchor:
 			marker = "↻"
+		case isMatch:
+			marker = "•"
 		}
 		gutterStyle := lineNumStyle
 		switch {
@@ -187,9 +196,11 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 			gutterStyle = cursorGutterStyle
 		case isAnchor:
 			gutterStyle = anchorGutterStyle
+		case isMatch:
+			gutterStyle = matchGutterStyle
 		}
 		lineNum := gutterStyle.Render(fmt.Sprintf("%*d%s", lnw, absLineNum, marker))
-		sliced, clippedRight := uikit.SliceLineColumns(row.Text, p.HScroll, textAreaWidth)
+		sliced, clippedRight := uikit.SliceLineColumns(text, p.HScroll, textAreaWidth)
 		sliced = trimTrailingCellIfClipped(sliced, clippedRight)
 
 		textStyle := styleForStream(row.Stream, o.stdoutStyle, o.stderrStyle, o.systemStyle)
@@ -206,6 +217,42 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 		o.b.WriteString(lineNum + lineContent)
 		o.b.WriteString("\n")
 	}
+}
+
+// findMatchStyle tints a find match amber, the web console's colour for it.
+// It closes with a full reset, which composeLineContent turns back into the
+// row's own style.
+var findMatchStyle = lipgloss.NewStyle().
+	Background(uikit.ColorFindMatch).
+	Foreground(uikit.ColorTextBright)
+
+// markFindMatches returns text with its find matches marked, and whether it
+// matched. On the current match's row, which is already drawn amber, the
+// matches are drawn in reverse instead. A matching row is drawn from its
+// ANSI-stripped text, so its own colours drop out while the find is active.
+// ponytail: keeping them would mean mapping offsets back through the escapes.
+func (p *Pane) markFindMatches(text string, current bool) (string, bool) {
+	if p.FindRanges == nil {
+		return text, false
+	}
+	spans := p.FindRanges(text)
+	if len(spans) == 0 {
+		return text, false
+	}
+	plain := ansi.Strip(text)
+	var b strings.Builder
+	last := 0
+	for _, sp := range spans {
+		b.WriteString(plain[last:sp[0]])
+		if current {
+			b.WriteString("\x1b[7m" + plain[sp[0]:sp[1]] + "\x1b[27m")
+		} else {
+			b.WriteString(findMatchStyle.Render(plain[sp[0]:sp[1]]))
+		}
+		last = sp[1]
+	}
+	b.WriteString(plain[last:])
+	return b.String(), true
 }
 
 // trimTrailingCellIfClipped frees one display cell off the end of sliced so

@@ -12,6 +12,7 @@
     import { LogFetcher } from "../log-console/LogFetcher.svelte.js";
     import { createHighlightScroll } from "../log-console/highlight-scroll.js";
     import type { FetchLogsFn, LogEvent } from "../log-console/types.js";
+    import type { LogFind } from "../log-console/log-find.svelte.js";
     import { LINE_HEIGHT as lineHeight, WrapLayout } from "../log-console/wrap-layout.svelte.js";
     import { outputRedirectHint } from "./dashboard/run-helpers.js";
 
@@ -62,6 +63,10 @@
         // Open at the first line instead of following the tail (e.g. a run that
         // had already finished when its page opened). Read once at mount.
         startAtTop?: boolean;
+        // Find-in-log state from the console's find bar. When open, matches
+        // are highlighted, the current one is revealed and tinted, and the
+        // scrollbar gets a tick per match.
+        find?: LogFind | undefined;
     }
 
     let {
@@ -77,6 +82,7 @@
         outputRedirect,
         wrap = $bindable(false),
         startAtTop = false,
+        find,
     }: Props = $props();
 
     let redirectHint = $derived(outputRedirectHint(outputRedirect));
@@ -90,6 +96,7 @@
     let fetcher: LogFetcher | null = $state(null);
     let containerEl: HTMLDivElement | null = $state(null);
     let rulerEl: HTMLSpanElement | null = $state(null);
+    let surfaceEl: HTMLDivElement | null = $state(null);
     let scrollTop = $state(0);
     let containerHeight = $state(0);
     let containerWidth = $state(0);
@@ -324,6 +331,25 @@
         scrollTop = 0;
     }
 
+    // Centres `line` in the viewport and leaves follow mode. With
+    // onlyIfOffscreen, a line already comfortably on screen stays put, so
+    // stepping through nearby find matches doesn't jolt the view.
+    function revealLine(line: number, opts: { smooth?: boolean; onlyIfOffscreen?: boolean } = {}) {
+        if (!containerEl) return;
+        const top = lineTop(line);
+        if (
+            opts.onlyIfOffscreen &&
+            top >= scrollTop + lineHeight &&
+            top + lineHeightPx(line) <= scrollTop + containerHeight - lineHeight
+        ) {
+            return;
+        }
+        const targetY = top - containerHeight / 2 + lineHeight / 2;
+        const clamped = Math.max(0, Math.min(targetY, totalHeight - containerHeight));
+        containerEl.scrollTo({ top: clamped, behavior: opts.smooth ? "smooth" : "auto" });
+        followTail = false;
+    }
+
     // Search-hit deep-link: scroll the viewport so the highlighted line is
     // centred, once per highlightLine, and pulse a one-shot flash class for
     // ~1.5s. createHighlightScroll keeps later layout changes (new lines on a
@@ -332,11 +358,7 @@
         line: () => highlightLine,
         ready: (line) => containerEl !== null && containerHeight > 0 && line < cache.totalLines,
         reveal: (line) => {
-            if (!containerEl) return;
-            const targetY = lineTop(line) - containerHeight / 2 + lineHeight / 2;
-            const clamped = Math.max(0, Math.min(targetY, totalHeight - containerHeight));
-            containerEl.scrollTo({ top: clamped, behavior: "smooth" });
-            followTail = false;
+            revealLine(line, { smooth: true });
             flashLine = line;
             if (flashTimer !== null) clearTimeout(flashTimer);
             flashTimer = setTimeout(() => {
@@ -349,6 +371,110 @@
         },
     });
     $effect(syncHighlightScroll);
+
+    // Find: the selected match, once per selection, as soon as the layout can
+    // place it (a run that just opened may still be loading its tail).
+    let findTarget = $derived(find?.open ? find.target : null);
+    let currentMatch = $derived(findTarget?.line ?? null);
+    let revealedFind: { line: number } | null = null;
+    // The match whose text still has to be scrolled into view sideways; set on
+    // reveal, consumed by the highlight pass once the row is rendered.
+    let pendingSideReveal: number | null = null;
+    $effect(() => {
+        const t = findTarget;
+        if (!t || t === revealedFind) return;
+        if (!containerEl || containerHeight <= 0 || t.line >= cache.totalLines) return;
+        revealedFind = t;
+        untrack(() => {
+            revealLine(t.line, { onlyIfOffscreen: true });
+            pendingSideReveal = t.line;
+        });
+    });
+
+    // Paint find matches inside the visible rows with the CSS Custom Highlight
+    // API: ranges over the rendered text, no DOM changes, so ANSI colour spans
+    // stay intact. Browsers without it still get the current-row tint.
+    const canHighlight = typeof CSS !== "undefined" && "highlights" in CSS;
+    $effect(() => {
+        const finder = find?.open ? find.finder : null;
+        const current = currentMatch;
+        void renderedLines;
+        if (!canHighlight || !surfaceEl || !finder || "error" in finder) return;
+        const all: Range[] = [];
+        const cur: Range[] = [];
+        for (const el of surfaceEl.querySelectorAll<HTMLElement>("[data-find-line]")) {
+            const isCurrent = Number(el.dataset.findLine) === current;
+            for (const range of textRanges(el, finder.ranges(el.textContent))) {
+                (isCurrent ? cur : all).push(range);
+            }
+        }
+        CSS.highlights.set("rw-find", new Highlight(...all));
+        CSS.highlights.set("rw-find-current", new Highlight(...cur));
+        const first = cur[0];
+        if (first && pendingSideReveal === current) {
+            pendingSideReveal = null;
+            if (!wrap) untrack(() => revealSideways(first));
+        }
+        return () => {
+            CSS.highlights.delete("rw-find");
+            CSS.highlights.delete("rw-find-current");
+        };
+    });
+
+    // Maps [start, end) offsets in el's text onto DOM Ranges across its text nodes.
+    function textRanges(el: HTMLElement, spans: Array<[number, number]>): Range[] {
+        if (spans.length === 0) return [];
+        const nodes: Array<{ node: Text; start: number }> = [];
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let offset = 0;
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            if (n instanceof Text) {
+                nodes.push({ node: n, start: offset });
+                offset += n.data.length;
+            }
+        }
+        const ranges: Range[] = [];
+        for (const [start, end] of spans) {
+            // The last text node starting at or before each offset holds it.
+            const a = nodes.findLast((t) => t.start <= start);
+            const b = nodes.findLast((t) => t.start <= end);
+            if (!a || !b) continue;
+            const range = document.createRange();
+            range.setStart(a.node, Math.min(start - a.start, a.node.data.length));
+            range.setEnd(b.node, Math.min(end - b.start, b.node.data.length));
+            ranges.push(range);
+        }
+        return ranges;
+    }
+
+    // Unwrapped long lines: scroll sideways so the current match is in view.
+    function revealSideways(range: Range) {
+        if (!containerEl) return;
+        const box = containerEl.getBoundingClientRect();
+        const rect = range.getBoundingClientRect();
+        const left = box.left + gutterWidth;
+        if (rect.left < left || rect.right > box.right) {
+            containerEl.scrollLeft += rect.left - left - (box.width - gutterWidth) / 3;
+        }
+    }
+
+    // Scrollbar ticks: one per match, at its share of the scroll height,
+    // merged when they'd land on the same 2px of track.
+    let findTicks = $derived.by(() => {
+        if (!find?.open || totalHeight <= 0 || containerHeight <= 0) return [];
+        // Matches are ascending, so equal slots are always adjacent.
+        const ticks: Array<{ pct: number; current: boolean }> = [];
+        let lastSlot = -1;
+        for (const n of find.matches) {
+            const pct = (lineTop(n) / totalHeight) * 100;
+            const slot = Math.round((pct * containerHeight) / 200);
+            if (n === currentMatch || slot !== lastSlot) {
+                lastSlot = slot;
+                ticks.push({ pct, current: n === currentMatch });
+            }
+        }
+        return ticks;
+    });
 
     $effect(() => {
         if (!containerEl) return;
@@ -389,213 +515,240 @@
         </div>
     {/if}
 
-    <div
-        bind:this={containerEl}
-        class="flex-1 overflow-auto"
-        onscroll={onScroll}
-        data-content-height={contentHeight}
-    >
+    <div class="relative flex min-h-0 flex-1 flex-col">
         <div
-            class="relative"
-            style="height: {totalHeight}px; min-height: 100%; width: {surfaceWidth}px; min-width: 100%;"
+            bind:this={containerEl}
+            class="min-h-0 flex-1 overflow-auto"
+            onscroll={onScroll}
+            data-content-height={contentHeight}
         >
-            {#if cache.firstAvailableLine > 0}
-                <div
-                    class="absolute right-0 left-0 flex items-center text-term-warn"
-                    style="top: 0px; height: {lineHeight}px; background-color: color-mix(in srgb, var(--rw-term-warn) 15%, transparent);"
-                >
+            <div
+                bind:this={surfaceEl}
+                class="relative"
+                style="height: {totalHeight}px; min-height: 100%; width: {surfaceWidth}px; min-width: 100%;"
+            >
+                {#if cache.firstAvailableLine > 0}
                     <div
-                        class="sticky left-0 z-10 flex-shrink-0 pr-3 text-right select-none"
-                        style="width: {gutterWidth}px;"
-                    ></div>
-                    <div class="sticky flex-shrink-0 pr-4 text-xs" style="left: {gutterWidth}px;">
-                        Log truncated: {cache.firstAvailableLine.toLocaleString()} earlier line{cache.firstAvailableLine ===
-                        1
-                            ? ""
-                            : "s"} removed due to size limits
-                    </div>
-                </div>
-            {/if}
-
-            {#each renderedLines as line (line.num)}
-                {@const isAnchor = canExpand && line.frameCount > 0}
-                <div
-                    class="log-line absolute right-0 left-0 flex {wrap
-                        ? 'items-start'
-                        : 'items-center'} {flashLine === line.num ? 'log-line--flash' : ''}"
-                    style="top: {lineTop(line.num)}px; height: {lineHeightPx(line.num)}px;"
-                >
-                    <div
-                        class="sticky left-0 z-10 flex flex-shrink-0 items-center justify-end gap-1 bg-[var(--rw-con-bg)] pr-3 text-right text-[var(--rw-con-gutter)] select-none"
-                        style="width: {gutterWidth}px;"
-                    >
-                        {#if isAnchor}
-                            <button
-                                type="button"
-                                class="frame-toggle {frames.line === line.num
-                                    ? 'text-aurora-400'
-                                    : 'text-[var(--rw-con-dim)] hover:text-aurora-400'}"
-                                title="{line.frameCount} earlier frame{line.frameCount === 1
-                                    ? ''
-                                    : 's'}, click to {frames.line === line.num ? 'hide' : 'rewind'}"
-                                aria-label="Toggle frame history for line {line.num + 1}"
-                                aria-expanded={frames.line === line.num}
-                                onclick={() => frames.toggle(line.num)}
-                            >
-                                ↻
-                            </button>
-                        {/if}
-                        {line.num + 1}
-                    </div>
-                    <div class="min-w-0 flex-1 pr-4 text-[var(--rw-con-text)]">
-                        {#if line.text !== undefined}
-                            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                            <span class={lineTextClass}>{@html ansiLineToHtml(line.text)}</span>
-                        {:else}
-                            <span class="text-[var(--rw-con-dim)] italic">Loading...</span>
-                        {/if}
-                    </div>
-                </div>
-            {/each}
-
-            {#if frames.line !== null}
-                <FrameHistoryBlock
-                    history={frames}
-                    top={lineTop(frames.line) + lineHeightPx(frames.line)}
-                    {gutterWidth}
-                />
-            {/if}
-
-            {#each overlayRows as row, i (i)}
-                <div
-                    class="log-line log-line--live absolute right-0 left-0 flex items-center"
-                    style="top: {lineTop(cache.totalLines + i)}px; height: {lineHeight}px;"
-                >
-                    <div
-                        class="sticky left-0 z-10 flex-shrink-0 bg-[var(--rw-con-bg)] pr-3 text-right text-[var(--rw-con-gutter)] select-none"
-                        style="width: {gutterWidth}px;"
-                    >
-                        ⋯
-                    </div>
-                    <!-- The cursor rides the end of the last live overlay row so a
-                         still-being-appended line shows the caret inline, the way a
-                         terminal parks it before the next byte arrives. -->
-                    <div class="flex-1 pr-4 text-[var(--rw-con-text)]">
-                        <AnsiLine
-                            text={row}
-                        />{#if !cache.finished && i === overlayRows.length - 1}<span
-                                class="stream-cursor"
-                                aria-hidden="true"
-                            ></span>{/if}
-                    </div>
-                </div>
-            {/each}
-
-            <!-- Streaming cursor on a fresh line: shown only when the last
-                 committed line ended with a newline (no live tail). When output
-                 is still being appended mid-line, the cursor rides the end of the
-                 last overlay row instead (see the overlay loop above). -->
-            {#if isStreaming && overlayRows.length === 0}
-                <div
-                    class="streaming-indicator absolute right-0 left-0 flex items-center"
-                    style="top: {lineTop(cache.totalLines)}px; height: {lineHeight}px;"
-                >
-                    <div
-                        class="sticky left-0 z-10 flex-shrink-0 bg-[var(--rw-con-bg)] pr-3 text-right text-[var(--rw-con-gutter)] select-none"
-                        style="width: {gutterWidth}px;"
-                    >
-                        {cache.totalLines + 1}
-                    </div>
-                    <div class="flex-1 pr-4">
-                        <span class="stream-cursor" aria-hidden="true"></span>
-                    </div>
-                </div>
-            {/if}
-
-            {#if cache.finished && cache.totalLines > 0}
-                <!-- Pinned to the visible width, not the scroll surface: one very
-                     long line would otherwise centre the marker far off-screen. -->
-                <div
-                    class="sentinel absolute right-0 left-0 select-none"
-                    style="top: {lineTop(cache.totalLines)}px; height: {lineHeight * 2}px;"
-                >
-                    <div
-                        class="sticky left-0 flex justify-center px-4"
-                        style:width={containerWidth ? `${String(containerWidth)}px` : "100%"}
-                    >
-                        <span
-                            class="mt-[14px] border-t border-dashed pt-3 text-center text-[11px] tracking-wide {endTone ===
-                            'warn'
-                                ? 'sentinel--warn'
-                                : 'sentinel--muted'}"
-                        >
-                            ── {endLabel} ──
-                        </span>
-                    </div>
-                </div>
-            {/if}
-
-            {#if cache.totalLines > 0}
-                {#each Array.from({ length: BLANK_LINES_AT_END }, (_, i) => i) as i (i)}
-                    <div
-                        class="absolute right-0 left-0 flex items-center"
-                        style="top: {lineTop(
-                            cache.finished
-                                ? cache.totalLines + 2 + i
-                                : cache.totalLines +
-                                      overlayRows.length +
-                                      (isStreaming && overlayRows.length === 0 ? 1 : 0) +
-                                      i,
-                        )}px; height: {lineHeight}px;"
+                        class="absolute right-0 left-0 flex items-center text-term-warn"
+                        style="top: 0px; height: {lineHeight}px; background-color: color-mix(in srgb, var(--rw-term-warn) 15%, transparent);"
                     >
                         <div
-                            class="sticky left-0 z-10 flex-shrink-0 bg-[var(--rw-con-bg)] pr-3 text-right opacity-0 select-none"
+                            class="sticky left-0 z-10 flex-shrink-0 pr-3 text-right select-none"
+                            style="width: {gutterWidth}px;"
+                        ></div>
+                        <div
+                            class="sticky flex-shrink-0 pr-4 text-xs"
+                            style="left: {gutterWidth}px;"
+                        >
+                            Log truncated: {cache.firstAvailableLine.toLocaleString()} earlier line{cache.firstAvailableLine ===
+                            1
+                                ? ""
+                                : "s"} removed due to size limits
+                        </div>
+                    </div>
+                {/if}
+
+                {#each renderedLines as line (line.num)}
+                    {@const isAnchor = canExpand && line.frameCount > 0}
+                    <div
+                        class="log-line absolute right-0 left-0 flex {wrap
+                            ? 'items-start'
+                            : 'items-center'} {flashLine === line.num
+                            ? 'log-line--flash'
+                            : ''} {currentMatch === line.num ? 'log-line--current' : ''}"
+                        style="top: {lineTop(line.num)}px; height: {lineHeightPx(line.num)}px;"
+                    >
+                        <div
+                            class="sticky left-0 z-10 flex flex-shrink-0 items-center justify-end gap-1 bg-[var(--rw-con-bg)] pr-3 text-right text-[var(--rw-con-gutter)] select-none"
                             style="width: {gutterWidth}px;"
                         >
-                            ~
+                            {#if isAnchor}
+                                <button
+                                    type="button"
+                                    class="frame-toggle {frames.line === line.num
+                                        ? 'text-aurora-400'
+                                        : 'text-[var(--rw-con-dim)] hover:text-aurora-400'}"
+                                    title="{line.frameCount} earlier frame{line.frameCount === 1
+                                        ? ''
+                                        : 's'}, click to {frames.line === line.num
+                                        ? 'hide'
+                                        : 'rewind'}"
+                                    aria-label="Toggle frame history for line {line.num + 1}"
+                                    aria-expanded={frames.line === line.num}
+                                    onclick={() => frames.toggle(line.num)}
+                                >
+                                    ↻
+                                </button>
+                            {/if}
+                            {line.num + 1}
+                        </div>
+                        <div
+                            class="min-w-0 flex-1 pr-4 text-[var(--rw-con-text)]"
+                            data-find-line={line.num}
+                        >
+                            {#if line.text !== undefined}
+                                <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                                <span class={lineTextClass}>{@html ansiLineToHtml(line.text)}</span>
+                            {:else}
+                                <span class="text-[var(--rw-con-dim)] italic">Loading...</span>
+                            {/if}
                         </div>
                     </div>
                 {/each}
-            {/if}
 
-            {#if cache.totalLines === 0 && overlayRows.length === 0 && !loading && !fetcher?.isFetching}
-                <div
-                    class="absolute inset-0 flex items-center justify-center text-[var(--rw-con-dim)]"
-                >
-                    <div class="text-center">
-                        {#if unavailable}
-                            <div class="mb-1 text-lg">Log unavailable</div>
-                            <div class="text-sm text-[var(--rw-con-gutter)]">
-                                It can't be loaded right now.
-                            </div>
-                        {:else if cache.finished}
-                            <div class="mb-1 text-lg">No output</div>
-                            <div class="text-sm text-[var(--rw-con-gutter)]">
-                                {redirectHint ?? "The run ended without printing anything."}
-                            </div>
-                        {:else}
-                            <div class="mb-1 text-lg">No output yet</div>
-                            <div class="text-sm text-[var(--rw-con-gutter)]">
-                                Waiting for logs...
-                            </div>
-                        {/if}
-                    </div>
-                </div>
-            {/if}
+                {#if frames.line !== null}
+                    <FrameHistoryBlock
+                        history={frames}
+                        top={lineTop(frames.line) + lineHeightPx(frames.line)}
+                        {gutterWidth}
+                    />
+                {/if}
 
-            {#if cache.totalLines === 0 && (loading || fetcher?.isFetching)}
-                <div
-                    class="absolute inset-0 flex items-center justify-center text-[var(--rw-con-dim)]"
-                >
-                    <div class="flex items-center gap-2">
-                        <span class="dot" style="animation-delay: 0ms;"></span>
-                        <span class="dot" style="animation-delay: 150ms;"></span>
-                        <span class="dot" style="animation-delay: 300ms;"></span>
-                        <span class="ml-2">Loading logs...</span>
+                {#each overlayRows as row, i (i)}
+                    <div
+                        class="log-line log-line--live absolute right-0 left-0 flex items-center"
+                        style="top: {lineTop(cache.totalLines + i)}px; height: {lineHeight}px;"
+                    >
+                        <div
+                            class="sticky left-0 z-10 flex-shrink-0 bg-[var(--rw-con-bg)] pr-3 text-right text-[var(--rw-con-gutter)] select-none"
+                            style="width: {gutterWidth}px;"
+                        >
+                            ⋯
+                        </div>
+                        <!-- The cursor rides the end of the last live overlay row so a
+                         still-being-appended line shows the caret inline, the way a
+                         terminal parks it before the next byte arrives. -->
+                        <div class="flex-1 pr-4 text-[var(--rw-con-text)]">
+                            <AnsiLine
+                                text={row}
+                            />{#if !cache.finished && i === overlayRows.length - 1}<span
+                                    class="stream-cursor"
+                                    aria-hidden="true"
+                                ></span>{/if}
+                        </div>
                     </div>
-                </div>
-            {/if}
+                {/each}
+
+                <!-- Streaming cursor on a fresh line: shown only when the last
+                 committed line ended with a newline (no live tail). When output
+                 is still being appended mid-line, the cursor rides the end of the
+                 last overlay row instead (see the overlay loop above). -->
+                {#if isStreaming && overlayRows.length === 0}
+                    <div
+                        class="streaming-indicator absolute right-0 left-0 flex items-center"
+                        style="top: {lineTop(cache.totalLines)}px; height: {lineHeight}px;"
+                    >
+                        <div
+                            class="sticky left-0 z-10 flex-shrink-0 bg-[var(--rw-con-bg)] pr-3 text-right text-[var(--rw-con-gutter)] select-none"
+                            style="width: {gutterWidth}px;"
+                        >
+                            {cache.totalLines + 1}
+                        </div>
+                        <div class="flex-1 pr-4">
+                            <span class="stream-cursor" aria-hidden="true"></span>
+                        </div>
+                    </div>
+                {/if}
+
+                {#if cache.finished && cache.totalLines > 0}
+                    <!-- Pinned to the visible width, not the scroll surface: one very
+                     long line would otherwise centre the marker far off-screen. -->
+                    <div
+                        class="sentinel absolute right-0 left-0 select-none"
+                        style="top: {lineTop(cache.totalLines)}px; height: {lineHeight * 2}px;"
+                    >
+                        <div
+                            class="sticky left-0 flex justify-center px-4"
+                            style:width={containerWidth ? `${String(containerWidth)}px` : "100%"}
+                        >
+                            <span
+                                class="mt-[14px] border-t border-dashed pt-3 text-center text-[11px] tracking-wide {endTone ===
+                                'warn'
+                                    ? 'sentinel--warn'
+                                    : 'sentinel--muted'}"
+                            >
+                                ── {endLabel} ──
+                            </span>
+                        </div>
+                    </div>
+                {/if}
+
+                {#if cache.totalLines > 0}
+                    {#each Array.from({ length: BLANK_LINES_AT_END }, (_, i) => i) as i (i)}
+                        <div
+                            class="absolute right-0 left-0 flex items-center"
+                            style="top: {lineTop(
+                                cache.finished
+                                    ? cache.totalLines + 2 + i
+                                    : cache.totalLines +
+                                          overlayRows.length +
+                                          (isStreaming && overlayRows.length === 0 ? 1 : 0) +
+                                          i,
+                            )}px; height: {lineHeight}px;"
+                        >
+                            <div
+                                class="sticky left-0 z-10 flex-shrink-0 bg-[var(--rw-con-bg)] pr-3 text-right opacity-0 select-none"
+                                style="width: {gutterWidth}px;"
+                            >
+                                ~
+                            </div>
+                        </div>
+                    {/each}
+                {/if}
+
+                {#if cache.totalLines === 0 && overlayRows.length === 0 && !loading && !fetcher?.isFetching}
+                    <div
+                        class="absolute inset-0 flex items-center justify-center text-[var(--rw-con-dim)]"
+                    >
+                        <div class="text-center">
+                            {#if unavailable}
+                                <div class="mb-1 text-lg">Log unavailable</div>
+                                <div class="text-sm text-[var(--rw-con-gutter)]">
+                                    It can't be loaded right now.
+                                </div>
+                            {:else if cache.finished}
+                                <div class="mb-1 text-lg">No output</div>
+                                <div class="text-sm text-[var(--rw-con-gutter)]">
+                                    {redirectHint ?? "The run ended without printing anything."}
+                                </div>
+                            {:else}
+                                <div class="mb-1 text-lg">No output yet</div>
+                                <div class="text-sm text-[var(--rw-con-gutter)]">
+                                    Waiting for logs...
+                                </div>
+                            {/if}
+                        </div>
+                    </div>
+                {/if}
+
+                {#if cache.totalLines === 0 && (loading || fetcher?.isFetching)}
+                    <div
+                        class="absolute inset-0 flex items-center justify-center text-[var(--rw-con-dim)]"
+                    >
+                        <div class="flex items-center gap-2">
+                            <span class="dot" style="animation-delay: 0ms;"></span>
+                            <span class="dot" style="animation-delay: 150ms;"></span>
+                            <span class="dot" style="animation-delay: 300ms;"></span>
+                            <span class="ml-2">Loading logs...</span>
+                        </div>
+                    </div>
+                {/if}
+            </div>
         </div>
+
+        {#if findTicks.length > 0}
+            <div
+                class="pointer-events-none absolute top-0 right-0 bottom-0 w-[10px]"
+                aria-hidden="true"
+            >
+                {#each findTicks as tick (tick.pct)}
+                    <div
+                        class="find-tick {tick.current ? 'find-tick--current' : ''}"
+                        style="top: {tick.pct}%;"
+                    ></div>
+                {/each}
+            </div>
+        {/if}
     </div>
 
     <LogConsoleFooter
@@ -629,6 +782,32 @@
        console text colour, never a theme-flipping fill. */
     .log-line:hover {
         background-color: color-mix(in srgb, var(--rw-con-text) 4%, transparent);
+    }
+
+    /* The selected find match: a steady tint, unlike the one-shot flash. */
+    .log-line--current {
+        background-color: color-mix(in srgb, var(--rw-term-warn) 14%, transparent);
+    }
+
+    :global(::highlight(rw-find)) {
+        background-color: color-mix(in srgb, var(--rw-term-warn) 40%, transparent);
+        color: inherit;
+    }
+    :global(::highlight(rw-find-current)) {
+        background-color: var(--rw-term-warn);
+        color: var(--rw-con-bg);
+    }
+
+    .find-tick {
+        position: absolute;
+        right: 1px;
+        left: 1px;
+        height: 2px;
+        background-color: color-mix(in srgb, var(--rw-term-warn) 70%, transparent);
+    }
+    .find-tick--current {
+        height: 3px;
+        background-color: var(--color-aurora-400);
     }
 
     .log-line--flash {

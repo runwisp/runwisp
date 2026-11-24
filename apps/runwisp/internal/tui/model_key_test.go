@@ -1560,6 +1560,9 @@ func TestHandleLogSearchSelect_JumpsInPlaceIfSameRunOpen(t *testing.T) {
 	ls := logsearch.New(m.streams.client, "task-x")
 	m.logSearch = &ls
 	ev := execlist.NewExecView(&model.Run{ID: "r-here", TaskName: "task-x"})
+	for n := range int64(10) {
+		ev.Pane.AppendLogLine(n, "stdout", "line", 0)
+	}
 	m.execView = &ev
 
 	newM, cmd := m.handleLogSearchSelect(logsearch.SelectMsg{TaskName: "task-x", RunID: "r-here", Line: 7})

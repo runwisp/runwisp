@@ -350,3 +350,19 @@ func TestScanTask_CursorAdvancesPastLineZeroHit(t *testing.T) {
 		t.Fatalf("paging with MaxHits=1: want %v, got %v", want, got)
 	}
 }
+
+func TestScanRun_MatchesTextSplitByColourCodes(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "a.log")
+	writeLog(t, logPath, "plain", "\x1b[31merror\x1b[0m: boom")
+	m, _ := NewMatcher("error: boom", false, false)
+	hits, _, err := ScanRun(context.Background(), RunRef{ID: "r", LogPath: logPath}, m, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || hits[0].N != 1 {
+		t.Fatalf("want one hit on line 1, got %+v", hits)
+	}
+	if hits[0].Text != "\x1b[31merror\x1b[0m: boom" {
+		t.Fatalf("hit text should keep its colour codes, got %q", hits[0].Text)
+	}
+}

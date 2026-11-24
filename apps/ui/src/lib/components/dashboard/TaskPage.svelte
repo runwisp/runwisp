@@ -126,7 +126,7 @@
         // previous query's results, while this one is in flight.
         outputMatches = null;
         try {
-            const hits = await tasksApi.searchLogs(task.name, {
+            const { items: hits } = await tasksApi.searchLogs(task.name, {
                 q: query,
                 regex: false,
                 case: false,
@@ -325,6 +325,7 @@
                 onStop={!taskIsService && !readOnly ? () => (stopConfirmOpen = true) : undefined}
                 onBack={rail.phone ? rail.back : undefined}
                 {highlightLine}
+                findSeed={outputSearchActive ? outputQuery.trim() : undefined}
                 outputRedirect={task.outputRedirect}
                 getInstanceCount={() => instanceCount}
                 getLiveUsage={(id) => systemStore.runUsage(id)}

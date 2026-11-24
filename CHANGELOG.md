@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A run with no output whose command redirects it (`>> /var/log/backup.log`) says where the output went, in the web UI and the TUI.
 - `--no-http` on `runwisp daemon`, `runwisp` and `runwisp demo` runs the daemon without the HTTP port, for servers you only manage from the TUI and the CLI.
 - The TUI lists config warnings in full when you click the header's warning notice or press `w` on Home.
+- Find text in the log of the run you have open, with Ctrl+F in the web UI and the TUI, including while the run is still printing.
 
 ### Changed
 
@@ -38,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `runwisp demo` starts without a config warning about tasks starting at the same second.
 - The TUI Home page no longer shifts a row when a config warning, stale-config or paused-schedule notice appears or goes away.
+- Log search finds text that colour codes split, such as a red `error:`.
+- Picking a TUI log search result older than the loaded part of the log now scrolls to it.
 - `runwisp takeover` lists every cron job with the task it becomes and where it comes from, and says that overlapping runs now queue.
 - The web UI's browser tab title names the task you are on, or Notifications, instead of keeping the previous page's title.
 - A blocked `runwisp takeover` prints only what stops it, and on a machine without cron it says so and how to start fresh.

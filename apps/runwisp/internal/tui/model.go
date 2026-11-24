@@ -17,6 +17,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/home"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/info"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/logfind"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/logsearch"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/notifications"
 )
@@ -61,6 +62,8 @@ type Model struct {
 	streams       StreamManager
 	notifications notifications.Panel
 	logSearch     *logsearch.Model
+	// logFind is the open run's find bar (ctrl+f), nil when no find is active.
+	logFind *logfind.Model
 	// pendingHighlight, when non-zero, is the 1-based gutter line number the
 	// next exec-view fetch should land on (line index N is gutter N+1). Set when a search hit is
 	// selected for a run that's not yet open; consumed by the log
@@ -240,6 +243,7 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 	ev.SetFocused(true)
 	ev.HeaderFocus = execlist.HeaderFocusBack
 	m.execView = &ev
+	m.logFind = nil
 	m.execList.SetFocused(false)
 
 	cmds := []tea.Cmd{m.markRunNotificationsRead(run.ID)}
@@ -303,6 +307,7 @@ func (m *Model) toggleSelectedNotificationRead() tea.Cmd {
 func (m *Model) closeExecView() tea.Cmd {
 	m.streams.CancelLogStream()
 	m.execView = nil
+	m.logFind = nil
 	if m.panelFocus == uikit.PanelMain {
 		m.execList.SetFocused(true)
 	}

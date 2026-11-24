@@ -44,12 +44,17 @@ export function ansiLineToHtml(text: string): string {
 const ANSI_ESCAPE = /\x1b\[[0-9;?]*[A-Za-z]/g;
 const TAB_WIDTH = 8;
 
+// Remove ANSI escape sequences, leaving the text a reader sees.
+export function stripAnsi(text: string): string {
+    return text.replace(ANSI_ESCAPE, "");
+}
+
 // Count the visible columns a log line occupies once ANSI escape sequences
 // are stripped. Tabs are charged the full tab width, an over-estimate that
 // only adds trailing slack to the horizontal scroll surface, never clips.
 export function visibleColumns(text: string): number {
     let columns = 0;
-    for (const ch of text.replace(ANSI_ESCAPE, "")) {
+    for (const ch of stripAnsi(text)) {
         columns += ch === "\t" ? TAB_WIDTH : 1;
     }
     return columns;

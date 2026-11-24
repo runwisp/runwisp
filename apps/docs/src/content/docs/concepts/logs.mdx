@@ -142,16 +142,31 @@ in pages.
         On the task page, type into **Search output across runs…**. The buttons next
         to it turn on case sensitivity and regular expressions. Click a result to
         jump to that line in the log.
+
+        To find text in the run you have open, press <kbd>Ctrl+F</kbd> (or <kbd>/</kbd>,
+        or click **Find** above the log). It lands on the first match.
+        <kbd>Enter</kbd> and <kbd>Shift+Enter</kbd> step through the matches,
+        <kbd>Home</kbd> and <kbd>End</kbd> go to the first and last, and
+        <kbd>Page Up</kbd> and <kbd>Page Down</kbd> jump by a tenth of them (at least
+        10). Lines that print while you search are matched too. Press <kbd>Ctrl+F</kbd> again in the find box for the browser's own find.
     </TabItem>
     <TabItem label="TUI" icon="seti:shell">
         Press <kbd>/</kbd> with a task selected. Press <kbd>enter</kbd> on a result
         to jump to that line.
+
+        To find text in the run you have open, press <kbd>ctrl+f</kbd>, type, and
+        press <kbd>enter</kbd> to land on the first match. <kbd>n</kbd> and
+        <kbd>N</kbd> step through the matches, <kbd>home</kbd> and <kbd>end</kbd> go
+        to the first and last, and <kbd>pgup</kbd> and <kbd>pgdn</kbd> jump by a tenth
+        of them (at least 10). Lines that print while you search are matched too. <kbd>esc</kbd> takes you
+        back to the query, and <kbd>esc</kbd> again clears the find.
     </TabItem>
     <TabItem label="REST API" icon="cloud-download">
         `GET /api/tasks/{taskName}/log/search?q=...`. Optional: `regex=true` (RE2
         syntax), `case=true`, `runId=<id>` for one run, `limit` (1 to 1000,
         default 200), and `cursor` with the `nextCursor` from the previous page.
     </TabItem>
+
 </Tabs>
 
 A bad query (an empty `q`, a broken regular expression) is rejected with a

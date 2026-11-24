@@ -55,6 +55,9 @@ var (
 
 	ColorErrorHover   = lipgloss.Color("#ff7568") // --rw-danger-hover
 	ColorWarningHover = lipgloss.Color("#ecb845") // --rw-warning-hover
+	// ColorFindMatch tints a find match in the log, the web console's
+	// --rw-term-warn at 40% over its background.
+	ColorFindMatch = lipgloss.Color("#624e23")
 
 	// Terminal shades, for the CLI only. CLI output paints no background, so
 	// it lands on the terminal's own, light or dark, and the bright accents

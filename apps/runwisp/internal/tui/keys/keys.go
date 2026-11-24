@@ -96,6 +96,8 @@ var (
 	TopEnd      = Binding{Keys: "g / G", Desc: "jump to top / end"}
 	Page        = Binding{Keys: "pgup/pgdn", Desc: "page through logs", Bar: "pgup/pgdn page"}
 	FrameHist   = Binding{Keys: "[ / ] · enter", Desc: "prev/next redraw · view frame history"}
+	Find        = Binding{Keys: "ctrl+f", Desc: "find in this run's log", Bar: "^F find"}
+	FindStep    = Binding{Keys: "n / N · home / end · pgup / pgdn", Desc: "find: next / previous, first / last, jump 10%"}
 	Scroll      = Binding{Bar: "↑↓ scroll"}
 	Pan         = Binding{Bar: "←→ pan"}
 	BackToList  = Binding{Bar: "esc/⌫ back"}
@@ -130,7 +132,7 @@ var OverlaySections = []Section{
 	{Title: "Navigate", Bindings: []Binding{Move, SwitchPanel, Open, Back, FilterTasks}},
 	{Title: "Task", Bindings: []Binding{Run, Stop, Pause, OpenRun, TaskInfo, Undo}},
 	{Title: "Run list", Bindings: []Binding{Filter, Sort, Select, SelectRange, SelectAll, BulkDelete, BulkCancel, BulkRerun, ClearSelect}},
-	{Title: "Exec view", Bindings: []Binding{Retry, DownloadDel, Fullscreen, TopEnd, Page, FrameHist}},
+	{Title: "Exec view", Bindings: []Binding{Retry, DownloadDel, Fullscreen, TopEnd, Page, FrameHist, Find, FindStep}},
 	{Title: "Run dialog", Bindings: []Binding{FlagToggle, ChooseOpt, IncludeOmit, RunCancel}},
 	{Title: "Notifications", Bindings: []Binding{NotifOpen, NotifRead, NotifReadAll, NotifCollapse}},
 }

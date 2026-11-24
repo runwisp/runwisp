@@ -170,12 +170,13 @@ export const tasksApi = {
         return unwrap(data);
     },
 
-    /** Matching lines across a task's runs, newest run first. */
+    /** Matching lines across a task's runs (or one run, with `runId`), newest run first. */
     searchLogs: async (taskName: string, query: LogSearchQuery) => {
         const { data } = await apiClient.GET("/api/tasks/{taskName}/log/search", {
             params: { path: { taskName }, query },
         });
-        return unwrap(data).items ?? [];
+        const body = unwrap(data);
+        return { items: body.items ?? [], nextCursor: body.nextCursor };
     },
 
     getLogLineHistory: async (runId: string, lineNumber: number): Promise<string[][]> => {

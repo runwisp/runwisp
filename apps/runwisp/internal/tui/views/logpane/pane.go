@@ -71,6 +71,10 @@ type Pane struct {
 	// anchor line is selected. Moved between frame-history anchor lines with the
 	// bracket keys; the selected anchor's history opens on enter.
 	Cursor int
+	// FindRanges, when set, returns the [start, end) byte offsets of find
+	// matches in a line's ANSI-stripped text. Matching rows get a gutter mark
+	// and their matches drawn in reverse video. Nil when no find is active.
+	FindRanges func(text string) [][]int
 	// regions holds the live overlay frame per stream (stdout/stderr). Rendered
 	// after the committed lines as an in-place animating tail.
 	regions map[string]regionFrame
@@ -281,22 +285,23 @@ func (p *Pane) ScrollUp(n int) {
 	}
 }
 
-// JumpToLine centres the pane on the given absolute line and stores it as
-// the current HighlightLine. Used by search-result deep-links. If the line
-// is not in the loaded buffer, only the highlight is recorded; the caller
-// should refetch around that anchor and call this again after the fetch
-// completes.
+// JumpToLine stores the given absolute line as the current HighlightLine and,
+// when it is off-screen, centres the pane on it. A line already on screen is
+// left where it is, so stepping through nearby find matches doesn't scroll.
+// If the line is not in the loaded buffer, only the highlight is recorded; the
+// caller should refetch around that anchor and call this again after the
+// fetch completes.
 func (p *Pane) JumpToLine(absLine int64) {
 	p.HighlightLine = absLine
 	bufIdx := int(absLine) - p.FirstLoadedLine - 1
 	if bufIdx < 0 || bufIdx >= len(p.Lines) {
 		return
 	}
-	target := max(bufIdx-p.VisibleLines()/2, 0)
-	ms := p.maxScroll()
-	target = min(target, ms)
-	p.Scroll = target
 	p.Follow = false
+	if bufIdx >= p.Scroll && bufIdx < p.Scroll+p.VisibleLines() {
+		return
+	}
+	p.Scroll = min(max(bufIdx-p.VisibleLines()/2, 0), p.maxScroll())
 }
 
 // shiftCursor adjusts the anchor cursor's buffer index after lines are added or

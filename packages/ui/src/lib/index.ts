@@ -82,6 +82,7 @@ export { default as TaskCard } from "./components/TaskCard.svelte";
 
 export { default as LogConsole } from "./components/LogConsole.svelte";
 export type { FetchLogsFn, LogEvent, LogSlice } from "./log-console/types.js";
+export type { FindPage, FindQuery, SearchLogFn } from "./log-console/log-find.svelte.js";
 
 export { default as RunDetailPanel } from "./components/dashboard/RunDetailPanel.svelte";
 export { default as RunsList } from "./components/dashboard/RunsList.svelte";
