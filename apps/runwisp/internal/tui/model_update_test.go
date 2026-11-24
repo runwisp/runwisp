@@ -844,7 +844,7 @@ func TestHandleLogTailLoaded_PendingHighlightAppliedToMatchingRun(t *testing.T) 
 
 	updated, _ := m.handleLogTailLoaded(uikit.LogTailLoadedMsg{
 		RunID:     "r-a",
-		Lines:     []server.LogLineEntry{{N: 1, Text: "l1"}, {N: 10, Text: "l10"}},
+		Lines:     contiguousLines(1, 10),
 		Finalized: true,
 	})
 	got := updated.(Model)
@@ -916,9 +916,12 @@ func TestHandleLogLine_PendingHighlightAppliedToMatchingRun(t *testing.T) {
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 
+	for n := range int64(4) {
+		m.execView.Pane.AppendLogLine(n, "stdout", "line", 0)
+	}
 	updated, _ := m.handleLogLine(uikit.LogLineMsg{
 		RunID: "r-a",
-		Line:  server.LogLineEntry{N: 10, Text: "hello", Stream: "stdout"},
+		Line:  server.LogLineEntry{N: 4, Text: "hello", Stream: "stdout"},
 	})
 	got := updated.(Model)
 	if got.execView.Pane.HighlightLine != 5 {
@@ -1523,4 +1526,14 @@ func TestHandleSSEEvent_AutoOpensViewedSingleInstanceService(t *testing.T) {
 	if m.execView == nil || m.execView.RunID() != "r-svc" {
 		t.Fatalf("expected the service run to auto-open, got %+v", m.execView)
 	}
+}
+
+// contiguousLines returns log entries numbered from..to inclusive, the way a
+// real page arrives.
+func contiguousLines(from, to int64) []server.LogLineEntry {
+	var lines []server.LogLineEntry
+	for n := from; n <= to; n++ {
+		lines = append(lines, server.LogLineEntry{N: n, Text: fmt.Sprintf("l%d", n)})
+	}
+	return lines
 }

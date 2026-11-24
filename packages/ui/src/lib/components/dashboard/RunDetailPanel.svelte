@@ -15,6 +15,7 @@
     import { prefersReducedMotion } from "../../actions/row-motion.js";
     import type { RunMotion } from "../../utils/run-motion.js";
     import type { LogEvent, LogSlice } from "../../log-console/types.js";
+    import type { SearchLogFn } from "../../log-console/log-find.svelte.js";
     import { TickingNow } from "../../utils/ticking-now.svelte.js";
     import { displayStatus, type ResourceUsage, type Run } from "@runwisp/common";
     import RunActions from "./RunActions.svelte";
@@ -29,6 +30,8 @@
         fetchLogs,
         streamLogs,
         fetchLineHistory,
+        searchLog,
+        findSeed,
         showTaskName = false,
         onDelete,
         onRun,
@@ -62,6 +65,10 @@
         // Resolves the prior whole-region frames of a settled progress bar /
         // redraw line so the log console can offer inline rewind. Optional.
         fetchLineHistory?: (runId: string, lineNum: number) => Promise<string[][]>;
+        // Searches one run's log; turns on the console's find bar. Optional.
+        searchLog?: SearchLogFn | undefined;
+        // Query the find bar opens with on each shown run (see RunConsoleFrame).
+        findSeed?: string | undefined;
         showTaskName?: boolean;
         onDelete?: ((runId: string) => void) | undefined;
         // Start a new run with default options. When set, the action cluster's
@@ -309,6 +316,8 @@
             {fetchLogs}
             {streamLogs}
             {fetchLineHistory}
+            {searchLog}
+            {findSeed}
             {highlightLine}
             {outputRedirect}
         />

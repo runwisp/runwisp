@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import type { LogEvent } from "@runwisp/ui";
+import type { FindPage, FindQuery, LogEvent } from "@runwisp/ui";
 import { parseLogPage, streamRunLog, type LogStreamInitialState } from "$lib/logs";
 import { tasksApi } from "$lib/api";
 import type { Run } from "@runwisp/common";
@@ -35,5 +35,12 @@ export function createLogSession(findRun: (runId: string) => Run | undefined) {
         return tasksApi.getLogLineHistory(runId, lineNum);
     }
 
-    return { fetchLogs, streamLogs, fetchLineHistory };
+    // One run's matches for the console's find bar.
+    async function searchLog(runId: string, query: FindQuery): Promise<FindPage> {
+        const run = findRun(runId);
+        if (!run) return { items: [] };
+        return tasksApi.searchLogs(run.taskName, { ...query, runId });
+    }
+
+    return { fetchLogs, streamLogs, fetchLineHistory, searchLog };
 }

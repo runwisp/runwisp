@@ -19,6 +19,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/execlist"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/logfind"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/logpane"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/logsearch"
 )
@@ -71,7 +72,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case uikit.SSEDisconnectedMsg:
 		return m.handleSSEDisconnected(msg)
 	case uikit.LogOlderLoadedMsg:
-		m.handleLogOlderLoaded(msg)
+		return m, m.handleLogOlderLoaded(msg)
 	case uikit.LogTailLoadedMsg:
 		return m.handleLogTailLoaded(msg)
 	case uikit.LogStreamConnectedMsg:
@@ -138,6 +139,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleBulkDeleteResult(msg)
 	case logsearch.SelectMsg:
 		return m.handleLogSearchSelect(msg)
+	case logfind.JumpMsg:
+		m.pendingHighlight = msg.Line + 1
+		m.pendingHighlightRun = msg.RunID
+		return m, m.resolvePendingHighlight(msg.RunID)
 	case uikit.TickMsg:
 		return m.handleTick()
 	case coalesceFlushMsg:
@@ -166,13 +171,20 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case uikit.TaskSummaryMsg:
 		m.dialogs.ApplyTaskSummary(msg)
 	default:
-		// Async results and cursor blinks for the open log-search overlay; it
-		// only ever sees key presses otherwise, so its results never landed.
+		// Async results and cursor blinks for the open log-search overlay and
+		// find bar; they only ever see key presses otherwise.
+		var cmds []tea.Cmd
 		if m.logSearch != nil {
 			newLS, cmd := m.logSearch.Update(msg)
 			m.logSearch = &newLS
-			return m, cmd
+			cmds = append(cmds, cmd)
 		}
+		if m.logFind != nil {
+			newLF, cmd := m.logFind.Update(msg)
+			m.setLogFind(&newLF)
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
 	}
 	return m, nil
 }
@@ -353,14 +365,11 @@ func (m Model) handleLogTailLoaded(msg uikit.LogTailLoadedMsg) (tea.Model, tea.C
 	}
 	for _, l := range msg.Lines {
 		m.execView.Pane.AppendLogLine(l.N, l.Stream, l.Text, l.FrameCount)
+		m.ingestFindLine(msg.RunID, l.N, l.Text)
 	}
-	if n := len(msg.Lines); m.pendingHighlight != 0 && m.pendingHighlightRun == msg.RunID && n > 0 && msg.Lines[n-1].N+1 >= m.pendingHighlight {
-		m.execView.Pane.JumpToLine(m.pendingHighlight)
-		m.pendingHighlight = 0
-		m.pendingHighlightRun = ""
-	}
+	revealCmd := m.resolvePendingHighlight(msg.RunID)
 	if msg.Finalized {
-		return m, nil
+		return m, revealCmd
 	}
 	// Live stream anchor: the line after the last seeded one. The stream's own
 	// disk backfill from this anchor closes the fetch↔subscribe race, and its
@@ -389,15 +398,10 @@ func (m Model) handleLogLine(msg uikit.LogLineMsg) (tea.Model, tea.Cmd) {
 		return m, m.streams.ContinueListeningLog(msg.RunID)
 	}
 	m.execView.Pane.AppendLogLine(msg.Line.N, msg.Line.Stream, msg.Line.Text, msg.Line.FrameCount)
+	m.ingestFindLine(msg.RunID, msg.Line.N, msg.Line.Text)
 	// If a search hit selected this run, jump as soon as the target line
-	// lands in the buffer. The pending marker is cleared so subsequent
-	// scroll input isn't yanked back to the hit.
-	if m.pendingHighlight != 0 && m.pendingHighlightRun == msg.RunID && msg.Line.N+1 >= m.pendingHighlight {
-		m.execView.Pane.JumpToLine(m.pendingHighlight)
-		m.pendingHighlight = 0
-		m.pendingHighlightRun = ""
-	}
-	return m, m.streams.ContinueListeningLog(msg.RunID)
+	// lands in the buffer.
+	return m, tea.Batch(m.resolvePendingHighlight(msg.RunID), m.streams.ContinueListeningLog(msg.RunID))
 }
 
 func (m Model) handleLogRegion(msg uikit.LogRegionMsg) (tea.Model, tea.Cmd) {
@@ -437,9 +441,9 @@ func (m Model) handleLogDone(msg uikit.LogDoneMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) handleLogOlderLoaded(msg uikit.LogOlderLoadedMsg) {
+func (m *Model) handleLogOlderLoaded(msg uikit.LogOlderLoadedMsg) tea.Cmd {
 	if !m.viewingRun(msg.RunID) {
-		return
+		return nil
 	}
 	m.execView.LoadingOlder = false
 	m.execView.Pane.SetFirstAvailable(int(msg.FirstAvailable))
@@ -460,6 +464,61 @@ func (m *Model) handleLogOlderLoaded(msg uikit.LogOlderLoadedMsg) {
 	if msg.Total > 0 {
 		m.execView.Pane.SetTotalLines(int(msg.Total))
 	}
+	// A search hit further back keeps paging older lines in until it lands.
+	return m.resolvePendingHighlight(msg.RunID)
+}
+
+// revealContext is how many lines above a search hit get loaded with it, so
+// the jump shows what led up to the match.
+const revealContext = 50
+
+// resolvePendingHighlight moves the pending search hit along: it jumps once
+// the line is in the buffer, and pages older lines in while it lies above the
+// loaded range. A line past the loaded end waits for the tail or live stream.
+// The pending marker is cleared once used, so later scrolling isn't yanked
+// back to the hit.
+func (m *Model) resolvePendingHighlight(runID string) tea.Cmd {
+	if m.pendingHighlight == 0 || m.pendingHighlightRun != runID || !m.viewingRun(runID) {
+		return nil
+	}
+	p := &m.execView.Pane
+	idx := int(m.pendingHighlight) - p.FirstLoadedLine - 1
+	switch {
+	case len(p.Lines) == 0 || idx >= len(p.Lines) || m.execView.LoadingOlder:
+		return nil
+	case idx >= 0 || p.FirstLoadedLine <= p.FirstAvailable:
+		// Loaded, or rotated away (then the nearest line left is the best we can do).
+		p.JumpToLine(max(m.pendingHighlight, int64(p.FirstLoadedLine)+1))
+		m.pendingHighlight = 0
+		m.pendingHighlightRun = ""
+		return nil
+	}
+	before := int64(p.FirstLoadedLine)
+	from := max(m.pendingHighlight-1-revealContext, int64(p.FirstAvailable), 0)
+	m.execView.LoadingOlder = true
+	return m.streams.FetchOlderLogs(runID, before, min(before-from, server.LogPageMaxLimit))
+}
+
+// ingestFindLine lets an active find match a line as it arrives.
+func (m *Model) ingestFindLine(runID string, n int64, text string) {
+	if m.logFind != nil && m.logFind.RunID() == runID {
+		m.logFind.Ingest(n, text)
+	}
+}
+
+// setLogFind stores the find state and points the log pane's highlighting at
+// it (nil clears both).
+func (m *Model) setLogFind(lf *logfind.Model) {
+	m.logFind = lf
+	if m.execView == nil {
+		return
+	}
+	if lf == nil {
+		m.execView.Pane.FindRanges = nil
+		m.execView.Pane.HighlightLine = 0
+		return
+	}
+	m.execView.Pane.FindRanges = lf.Ranges
 }
 
 func (m *Model) handleDebugLog(msg uikit.DebugLogMsg) {

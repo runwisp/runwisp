@@ -742,6 +742,31 @@ func TestLogPane_JumpToLine_InBuffer_CentresAndHighlights(t *testing.T) {
 	}
 }
 
+// A line already on screen is highlighted where it is: re-centring on every
+// find step scrolls the pane by a few rows each time, which the terminal
+// renderer draws as a scroll-region shift that flickers.
+func TestLogPane_JumpToLine_VisibleLineDoesNotScroll(t *testing.T) {
+	p := newTestPane(100_000)
+	for i := 0; i < 200; i++ {
+		p.AppendLine(int64(i), "stdout", "v")
+	}
+	p.Follow = true
+	p.Scroll = 50
+
+	p.JumpToLine(int64(50 + p.VisibleLines())) // last visible row (1-based)
+	if p.Scroll != 50 {
+		t.Fatalf("Scroll moved for a visible line: got %d want 50", p.Scroll)
+	}
+	if p.Follow {
+		t.Fatal("Follow should be cleared after jump")
+	}
+
+	p.JumpToLine(int64(50 + p.VisibleLines() + 1)) // just below the window
+	if want := 50 + p.VisibleLines() - p.VisibleLines()/2; p.Scroll != want {
+		t.Fatalf("off-screen line should be centred: got Scroll %d want %d", p.Scroll, want)
+	}
+}
+
 func TestLogPane_JumpToLine_OutOfBuffer_OnlyRecordsHighlight(t *testing.T) {
 	p := newTestPane(100_000)
 	p.FirstLoadedLine = 100

@@ -7,10 +7,12 @@ import (
 	"cmp"
 	"context"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
 	"golang.org/x/sync/errgroup"
 )
@@ -85,7 +87,7 @@ func ScanRun(ctx context.Context, run RunRef, m Matcher, maxHits int, firstN int
 		if rec.LineNum < firstN {
 			return true
 		}
-		if !m.Match([]byte(rec.Text)) {
+		if !m.Match([]byte(VisibleText(rec.Text))) {
 			return true
 		}
 		hits = append(hits, Hit{
@@ -102,6 +104,16 @@ func ScanRun(ctx context.Context, run RunRef, m Matcher, maxHits int, firstN int
 		return true
 	})
 	return hits, more, err
+}
+
+// VisibleText returns line with its ANSI escape sequences removed, so a query
+// matches what the operator sees even when colour codes split the words.
+// Lines without an ESC byte (the common case) are returned as-is.
+func VisibleText(line string) string {
+	if strings.IndexByte(line, 0x1b) < 0 {
+		return line
+	}
+	return ansi.Strip(line)
 }
 
 // ScanTask scans `runs` in newest-first order (caller-supplied), running up

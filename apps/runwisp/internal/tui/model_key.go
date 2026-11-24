@@ -9,6 +9,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/home"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/logfind"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/logsearch"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/notifications"
 )
@@ -25,6 +26,8 @@ var globalKeyHandlers = map[string]keyHandlerFn{
 	keyCtrlC:    handleKeyQuit,
 	"q":         handleKeyQuit,
 	"n":         handleKeyN,
+	"N":         handleKeyPrevMatch,
+	"ctrl+f":    handleKeyFind,
 	"a":         handleKeyA,
 	"esc":       handleKeyEsc,
 	"backspace": handleKeyBackspace,
@@ -57,6 +60,9 @@ var globalKeyHandlers = map[string]keyHandlerFn{
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.logSearch != nil {
 		return m.handleLogSearchKey(msg)
+	}
+	if m.findTakesKey(msg) {
+		return m.handleLogFindKey(msg)
 	}
 	if m.sidebar.Filtering() {
 		return m.handleSidebarFilterKey(msg)
@@ -155,6 +161,9 @@ func handleKeyW(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 }
 
 func handleKeyN(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
+	if m.execView != nil && m.logFind != nil {
+		return m, m.logFind.Next(), true
+	}
 	if m.execView == nil && m.sidebar.ActivePage() == uikit.PageHome {
 		m.notifications.Toggle()
 		m.updateLayout()
@@ -177,6 +186,11 @@ func handleKeyEsc(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 		m.notifications.Toggle()
 		m.updateLayout()
 		return m, nil, true
+	}
+	// With a find active, esc goes back to editing the query; esc there
+	// clears the find (handleLogFindKey), and the next esc goes back as usual.
+	if m.execView != nil && m.logFind != nil {
+		return m, m.logFind.Edit(), true
 	}
 	if m.execView != nil {
 		if m.execView.Fullscreen() {
@@ -714,6 +728,57 @@ func (m Model) handleLogSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// handleKeyPrevMatch steps the active find to the previous match.
+func handleKeyPrevMatch(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
+	if m.execView != nil && m.logFind != nil {
+		return m, m.logFind.Prev(), true
+	}
+	return m, nil, false
+}
+
+// handleKeyFind opens the find bar for the open run, or puts the cursor back
+// in it when a find is already active.
+func handleKeyFind(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
+	if m.execView == nil || m.panelFocus == uikit.PanelSidebar {
+		return m, nil, false
+	}
+	if m.logFind != nil {
+		return m, m.logFind.Edit(), true
+	}
+	ev := m.execView
+	lf := logfind.New(m.streams.client, ev.Run.TaskName, ev.Run.ID)
+	m.setLogFind(&lf)
+	return m, nil, true
+}
+
+// findTakesKey reports whether the find bar takes msg: every key but ctrl+c
+// while its query is being edited, and home/end/pgup/pgdown (first, last and
+// jump between matches) whenever a find is active.
+func (m Model) findTakesKey(msg tea.KeyPressMsg) bool {
+	if m.logFind == nil {
+		return false
+	}
+	switch msg.String() {
+	case keyCtrlC:
+		return false
+	case "home", "end", "pgup", "pgdown":
+		return true
+	}
+	return m.logFind.Editing()
+}
+
+// handleLogFindKey routes keys to the find bar while its input is focused.
+// Esc clears the find altogether.
+func (m Model) handleLogFindKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "esc" {
+		m.setLogFind(nil)
+		return m, nil
+	}
+	newLF, cmd := m.logFind.Update(msg)
+	m.setLogFind(&newLF)
+	return m, cmd
+}
+
 // handleLogSearchSelect is invoked when the user presses Enter on a hit.
 // Closes the overlay, opens the run (if not already), and records the line
 // number the pane should land on once its buffer is ready.
@@ -722,11 +787,8 @@ func (m Model) handleLogSearchSelect(msg logsearch.SelectMsg) (tea.Model, tea.Cm
 	m.pendingHighlight = msg.Line
 	m.pendingHighlightRun = msg.RunID
 	if m.currentRun() != nil && m.execView.Run.ID == msg.RunID {
-		// Already open — jump immediately and clear the pending marker.
-		m.execView.Pane.JumpToLine(msg.Line)
-		m.pendingHighlight = 0
-		m.pendingHighlightRun = ""
-		return m, nil
+		// Already open: jump now, or page older lines in towards the hit.
+		return m, m.resolvePendingHighlight(msg.RunID)
 	}
 	return m, m.openRunByID(msg.RunID)
 }

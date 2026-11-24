@@ -2,10 +2,18 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { untrack } from "svelte";
-    import { Maximize2, Minimize2, Terminal as TerminalIcon, TextWrap } from "@lucide/svelte";
+    import { tick, untrack } from "svelte";
+    import {
+        Maximize2,
+        Minimize2,
+        Search,
+        Terminal as TerminalIcon,
+        TextWrap,
+    } from "@lucide/svelte";
     import Kbd from "../Kbd.svelte";
     import LogConsole from "../LogConsole.svelte";
+    import LogFindBar from "../../log-console/LogFindBar.svelte";
+    import { LogFind, type SearchLogFn } from "../../log-console/log-find.svelte.js";
     import { portal } from "../../actions/portal.js";
     import { isLogEvent, type LogEvent, type LogSlice } from "../../log-console/types.js";
     import { extractErrorMessage } from "../../utils/error.js";
@@ -23,6 +31,8 @@
         fetchLineHistory,
         highlightLine,
         outputRedirect,
+        searchLog,
+        findSeed,
     }: {
         run: Run;
         /** The task's outputRedirect, explaining an empty log. */
@@ -43,6 +53,11 @@
             | undefined;
         fetchLineHistory: ((runId: string, lineNum: number) => Promise<string[][]>) | undefined;
         highlightLine: number | null;
+        /** Searches one run's log; enables the console's find bar when set. */
+        searchLog?: SearchLogFn | undefined;
+        /** A query to open the find bar with whenever a run is shown (e.g. the
+         *  page's search across runs), so the reader lands on the hit. */
+        findSeed?: string | undefined;
     } = $props();
 
     const TAIL_LINES = 1000;
@@ -52,6 +67,51 @@
     let endMarker = $derived(runEndMarker(status));
 
     let logConsole = $state<{ onStream: (event: LogEvent) => void } | null>(null);
+
+    // Find in this run's log. Lives outside the per-run console so the query
+    // carries over to the next run and through maximize.
+    const find = new LogFind((id, query) =>
+        searchLog ? searchLog(id, query) : Promise.resolve({ items: [] }),
+    );
+    let findInput = $state<HTMLInputElement | null>(null);
+
+    function feed(event: LogEvent) {
+        if (logConsole) logConsole.onStream(event);
+        find.ingest(event.lines);
+    }
+
+    async function openFind() {
+        find.open = true;
+        await tick();
+        findInput?.focus();
+        findInput?.select();
+    }
+
+    // Search as the query, its options or the run change (debounced).
+    $effect(() => {
+        const id = runId;
+        void find.query;
+        void find.regex;
+        void find.caseSensitive;
+        if (!find.open) return;
+        const timer = setTimeout(() => {
+            untrack(() => {
+                void find.search(id);
+            });
+        }, 150);
+        return () => clearTimeout(timer);
+    });
+
+    // Opening a run while the page searches across runs: open find on the
+    // same query so the reader lands on the match.
+    $effect(() => {
+        void runId;
+        const seed = untrack(() => findSeed);
+        if (seed && searchLog && untrack(() => !find.open)) {
+            find.query = seed;
+            find.open = true;
+        }
+    });
 
     // Message from the most recent seed-fetch failure (session expiry, daemon
     // restart mid-request, ...), surfaced to LogConsole instead of letting a
@@ -81,7 +141,7 @@
             const seed = await fetchLogs(id, -TAIL_LINES, -1);
             if (isCancelled()) return null;
             if (!isLogEvent(seed)) return { fromLine: -TAIL_LINES };
-            if (logConsole) logConsole.onStream(seed);
+            feed(seed);
             return seed.finished // ended run: nothing live to follow
                 ? null
                 : { fromLine: seed.sizeLines > 0 ? seed.sizeLines : -TAIL_LINES };
@@ -118,13 +178,7 @@
                 if (cancelled) return;
                 seededRunId = id;
                 if (!seeded) return;
-                cleanup = stream(
-                    id,
-                    (event: LogEvent) => {
-                        if (logConsole) logConsole.onStream(event);
-                    },
-                    { fromLine: seeded.fromLine },
-                );
+                cleanup = stream(id, feed, { fromLine: seeded.fromLine });
             })();
         });
 
@@ -144,7 +198,24 @@
     // here so the toolbar toggle and the <LogConsole> share one source of truth.
     let consoleWrap = $state(false);
 
+    // Ctrl/Cmd+F, or `/` outside a text field, opens find: the console is
+    // windowed, so the browser's own find can't see most of the log. Ctrl+F
+    // pressed inside the find box falls through to the browser's find.
+    function opensFind(event: KeyboardEvent): boolean {
+        if (!searchLog || event.altKey) return false;
+        const mod = event.metaKey || event.ctrlKey;
+        if (mod && !event.shiftKey && event.key.toLowerCase() === "f") {
+            return document.activeElement !== findInput;
+        }
+        return !mod && event.key === "/" && !isTypingTarget(event.target);
+    }
+
     function handleKeydown(event: KeyboardEvent) {
+        if (opensFind(event)) {
+            event.preventDefault();
+            void openFind();
+            return;
+        }
         if (event.key === "Escape" && consoleMaximized) {
             consoleMaximized = false;
             return;
@@ -237,6 +308,21 @@
             {/if}
         </div>
         <div class="flex shrink-0 items-center gap-3">
+            {#if searchLog}
+                <button
+                    type="button"
+                    onclick={() => (find.open ? find.close() : void openFind())}
+                    class="flex cursor-pointer items-center gap-1.5 rounded-[3px] px-2 py-1 hover:bg-[var(--rw-con-gutter)]/30 hover:text-[var(--rw-con-text)] {find.open
+                        ? 'text-[var(--rw-con-text)]'
+                        : 'text-[var(--rw-con-dim)]'}"
+                    title="Find in this log (Ctrl+F)"
+                    aria-pressed={find.open}
+                    aria-label="Find in this log"
+                >
+                    <Search size={13} />
+                    <span class="hidden @sm:inline">Find</span>
+                </button>
+            {/if}
             <button
                 type="button"
                 onclick={() => (consoleWrap = !consoleWrap)}
@@ -267,8 +353,12 @@
             </button>
         </div>
     </div>
+    {#if find.open}
+        <LogFindBar {find} bind:input={findInput} onClose={() => find.close()} />
+    {/if}
     {#key run.id}
         <LogConsole
+            {find}
             bind:this={logConsole}
             fetchLogs={(f: number, t: number) => fetchLogs(run.id, f, t)}
             fetchLineHistory={fetchLineHistory

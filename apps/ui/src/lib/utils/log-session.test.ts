@@ -8,6 +8,7 @@ const { api, logs } = vi.hoisted(() => ({
     api: {
         getLogPage: vi.fn(() => Promise.resolve({ page: "raw" })),
         getLogLineHistory: vi.fn(() => Promise.resolve([["frame"]])),
+        searchLogs: vi.fn(() => Promise.resolve({ items: [{ n: 4 }], nextCursor: undefined })),
     },
     logs: {
         parseLogPage: vi.fn(() => ({ lines: { 3: "parsed" }, sizeLines: 4, finished: false })),
@@ -52,5 +53,15 @@ describe("createLogSession", () => {
 
         await expect(session.fetchLineHistory("gone", 2)).resolves.toEqual([]);
         await expect(session.fetchLineHistory("r1", 2)).resolves.toEqual([["frame"]]);
+    });
+
+    it("searches one run's log under its task, and nothing for an unknown run", async () => {
+        const query = { q: "err", regex: false, case: false, limit: 1000 };
+        await expect(session.searchLog("gone", query)).resolves.toEqual({ items: [] });
+        await expect(session.searchLog("r1", query)).resolves.toEqual({
+            items: [{ n: 4 }],
+            nextCursor: undefined,
+        });
+        expect(api.searchLogs).toHaveBeenCalledWith(known.taskName, { ...query, runId: "r1" });
     });
 });

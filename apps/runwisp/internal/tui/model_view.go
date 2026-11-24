@@ -58,6 +58,9 @@ func (m Model) View() tea.View {
 // renderHelpBar builds the bottom help bar, dropping low-priority hints until
 // it fits the terminal, and fills the line width with the bar background.
 func (m Model) renderHelpBar() string {
+	if m.logFind != nil && m.execView != nil {
+		return m.logFind.View(m.width)
+	}
 	text := m.buildHelpText().fit(m.width - uikit.HelpBarStyle.GetHorizontalFrameSize())
 	return uikit.PadLine(uikit.HelpBarStyle.Render(text), m.width, uikit.ColorBgLight)
 }

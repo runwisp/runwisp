@@ -50,6 +50,7 @@ export default defineConfig({
                 "schedule-pause.spec.ts",
                 "task-controls.spec.ts",
                 "task-strip.spec.ts",
+                "log-find.spec.ts",
             ],
             use: { ...devices["Desktop Chrome"] },
         },
