@@ -5,6 +5,7 @@ package tui
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -60,6 +61,33 @@ func TestHandleRunListSelectionKey_SelectAll(t *testing.T) {
 	sel, ok := got.execList.SelectionSelector()
 	if !ok || !sel.MatchAll {
 		t.Fatalf("expected a MatchAll selector after select-all, got ok=%v matchAll=%v", ok, sel.MatchAll)
+	}
+}
+
+func TestHandleRunListSelectionKey_ShiftArrowsExtendSelection(t *testing.T) {
+	m := runListModel(t, "a", "b", "c", "d")
+	shiftDown := tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift}
+	for range 2 {
+		var handled bool
+		m, _, handled = m.handleRunListSelectionKey(shiftDown)
+		if !handled {
+			t.Fatal("shift+down should extend the selection")
+		}
+	}
+	if m.execList.Cursor() != 2 {
+		t.Fatalf("cursor = %d, want 2", m.execList.Cursor())
+	}
+	sel, _ := m.execList.SelectionSelector()
+	if !slices.Equal(sel.IDs, []string{"a", "b", "c"}) {
+		t.Fatalf("selected %v, want [a b c]", sel.IDs)
+	}
+
+	// From select-all, extending starts an explicit set.
+	m.execList.SelectAllMatching()
+	m, _, _ = m.handleRunListSelectionKey(tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModShift})
+	sel, _ = m.execList.SelectionSelector()
+	if sel.MatchAll || !slices.Equal(sel.IDs, []string{"b", "c"}) {
+		t.Fatalf("after select-all + shift+up got matchAll=%v ids=%v, want explicit [b c]", sel.MatchAll, sel.IDs)
 	}
 }
 

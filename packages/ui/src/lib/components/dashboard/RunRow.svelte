@@ -45,6 +45,7 @@
         durationUsual,
         live,
         onselect,
+        onshiftselect,
     }: {
         run: Run;
         active: boolean;
@@ -68,6 +69,8 @@
         /** A running run's live CPU, memory and lines printed so far, undefined for none. */
         live: string | undefined;
         onselect: (runId: string) => void;
+        /** Shift+click: extend the bulk selection to this row instead of opening it. */
+        onshiftselect?: ((runId: string) => void) | undefined;
     } = $props();
 
     const dstatus = $derived(displayStatus(run.status, run.endReason));
@@ -134,7 +137,10 @@
         : 'px-3 py-[11px]'} {active
         ? 'border-outline bg-surface-raised shadow-sm'
         : 'border-transparent hover:border-outline-hover hover:bg-surface-sunken'}"
-    onclick={() => onselect(run.id)}
+    onclick={(e) => {
+        if (e.shiftKey && onshiftselect) onshiftselect(run.id);
+        else onselect(run.id);
+    }}
 >
     {#if showTaskName}
         <!-- Cross-task /runs variant: the same readout language as the task

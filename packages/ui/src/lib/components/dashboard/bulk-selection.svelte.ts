@@ -23,6 +23,14 @@ export class BulkSelection {
         if (!ids.delete(id)) ids.add(id);
     }
 
+    /** Ticks every id (range select). In "all" mode that means dropping opt-outs. */
+    selectMany(ids: Iterable<string>): void {
+        for (const id of ids) {
+            if (this.#all) this.#except.delete(id);
+            else this.#explicit.add(id);
+        }
+    }
+
     clear(): void {
         this.#all = false;
         this.#explicit.clear();

@@ -78,6 +78,7 @@ var (
 // act on it and only appear in the bar once one or more runs are selected.
 var (
 	Select      = Binding{Keys: "space", Desc: "select / deselect the run under the cursor", Bar: "space select", Writes: true}
+	SelectRange = Binding{Keys: "shift+↑↓", Desc: "extend the selection up / down", Writes: true}
 	SelectAll   = Binding{Keys: "a", Desc: "select all runs matching the filter", Bar: "a select all", Writes: true}
 	BulkDelete  = Binding{Keys: "d", Desc: "delete selected runs (undoable)", Bar: "d delete", Writes: true}
 	BulkCancel  = Binding{Keys: "c", Desc: "cancel selected runs", Bar: "c cancel", Writes: true}
@@ -127,7 +128,7 @@ var OverlaySections = []Section{
 	{Title: "Global", Bindings: []Binding{Help, Quit, NotifPanel, ReloadConfig, SearchLogs}},
 	{Title: "Navigate", Bindings: []Binding{Move, SwitchPanel, Open, Back, FilterTasks}},
 	{Title: "Task", Bindings: []Binding{Run, Stop, Pause, OpenRun, TaskInfo, Undo}},
-	{Title: "Run list", Bindings: []Binding{Filter, Sort, Select, SelectAll, BulkDelete, BulkCancel, BulkRerun, ClearSelect}},
+	{Title: "Run list", Bindings: []Binding{Filter, Sort, Select, SelectRange, SelectAll, BulkDelete, BulkCancel, BulkRerun, ClearSelect}},
 	{Title: "Exec view", Bindings: []Binding{Retry, DownloadDel, Fullscreen, TopEnd, Page, FrameHist}},
 	{Title: "Run dialog", Bindings: []Binding{FlagToggle, ChooseOpt, IncludeOmit, RunCancel}},
 	{Title: "Notifications", Bindings: []Binding{NotifOpen, NotifRead, NotifReadAll, NotifCollapse}},

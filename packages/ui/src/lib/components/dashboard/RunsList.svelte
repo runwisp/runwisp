@@ -32,7 +32,13 @@
         runFilterParams,
         type RunsListFilters,
     } from "./run-filters.js";
-    import { instanceSuffix, runLiveLabel, runScalesByTask, type RunLive } from "./run-helpers.js";
+    import {
+        instanceSuffix,
+        runLiveLabel,
+        rangeIds,
+        runScalesByTask,
+        type RunLive,
+    } from "./run-helpers.js";
     import { formatDateTime } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
@@ -200,6 +206,33 @@
     function selectRun(runId: string) {
         selectedRunId = runId;
         onselect?.(runId);
+    }
+
+    // Shift+click range select: ticks every row between the anchor and the
+    // clicked row, in the order the rail shows them. The anchor is the last row
+    // toggled with a plain click, or else the open run, so "open a run, then
+    // shift+click another" works like a file manager.
+    let anchorId: string | null = null;
+    const shownRuns = $derived(outputSearchActive ? matchedRuns : items);
+
+    function toggleRow(runId: string) {
+        selection.toggle(runId);
+        anchorId = runId;
+    }
+
+    function selectRange(runId: string) {
+        const ids = rangeIds(
+            shownRuns.map((r: Run) => r.id),
+            anchorId,
+            selectedRunId ?? null,
+            runId,
+        );
+        if (!ids) {
+            toggleRow(runId);
+            return;
+        }
+        selection.selectMany(ids);
+        anchorId = runId;
     }
 
     let selectedRuns = $derived(items.filter((r: Run) => selection.isSelected(r.id)));
@@ -532,8 +565,14 @@
         <input
             type="checkbox"
             checked={selection.isSelected(run.id)}
-            onchange={() => selection.toggle(run.id)}
-            onclick={(e) => e.stopPropagation()}
+            onclick={(e) => {
+                e.stopPropagation();
+                if (e.shiftKey) selectRange(run.id);
+                else toggleRow(run.id);
+                // The browser already flipped the box; a range over a ticked
+                // row leaves the state unchanged, so put the box back in step.
+                e.currentTarget.checked = selection.isSelected(run.id);
+            }}
             aria-label={`Select run from ${formatDateTime(run.startedAt ?? run.createdAt)}`}
             class="size-3.5 cursor-pointer rounded border-outline accent-primary opacity-0 {selectionActive
                 ? 'opacity-100'
@@ -558,5 +597,6 @@
         durationUsual={scale?.durationUsual}
         live={usageBars && run.status === "running" ? runLiveLabel(getLive(run.id)) : undefined}
         onselect={selectRun}
+        onshiftselect={bulkActions ? selectRange : undefined}
     />
 {/snippet}

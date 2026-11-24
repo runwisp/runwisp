@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Run } from "@runwisp/common";
 import {
+    rangeIds,
     runDuration,
     runStartDelay,
     RUN_VERDICTS,
@@ -442,5 +443,24 @@ describe("runScalesByTask", () => {
             output: runOutputScale(runs),
             durationUsual: usualDuration(runs),
         });
+    });
+});
+
+describe("rangeIds", () => {
+    const ids = ["a", "b", "c", "d", "e"];
+
+    it("spans the anchor to the target in either direction", () => {
+        expect(rangeIds(ids, "b", null, "d")).toEqual(["b", "c", "d"]);
+        expect(rangeIds(ids, "d", null, "b")).toEqual(["b", "c", "d"]);
+    });
+
+    it("falls back to the open run when the anchor is missing or gone", () => {
+        expect(rangeIds(ids, null, "c", "e")).toEqual(["c", "d", "e"]);
+        expect(rangeIds(ids, "zz", "c", "a")).toEqual(["a", "b", "c"]);
+    });
+
+    it("returns null without a usable start or target", () => {
+        expect(rangeIds(ids, null, null, "c")).toBeNull();
+        expect(rangeIds(ids, "a", null, "zz")).toBeNull();
     });
 });

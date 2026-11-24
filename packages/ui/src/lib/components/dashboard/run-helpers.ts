@@ -443,3 +443,22 @@ export function highlightParts(text: string, query: string): HighlightParts {
         after: windowed.slice(fi + q.length),
     };
 }
+
+/**
+ * Ids of the rows from the range start to `toId`, inclusive, in list order.
+ * The start is the first of `anchorId` / `openId` still in the list; null when
+ * `toId` or both starts are missing, so the caller falls back to a plain toggle.
+ */
+export function rangeIds(
+    ids: readonly string[],
+    anchorId: string | null,
+    openId: string | null,
+    toId: string,
+): string[] | null {
+    const to = ids.indexOf(toId);
+    const from = [anchorId, openId]
+        .map((id) => (id === null ? -1 : ids.indexOf(id)))
+        .find((i) => i !== -1);
+    if (to === -1 || from === undefined) return null;
+    return ids.slice(Math.min(from, to), Math.max(from, to) + 1);
+}
