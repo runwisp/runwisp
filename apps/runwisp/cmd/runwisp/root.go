@@ -33,6 +33,8 @@ type Flags struct {
 	Socket    string
 	Host      string
 	Port      int
+	// NoHTTP is `daemon --no-http`: serve only the control socket.
+	NoHTTP bool
 
 	// logLevelRaw and logFormatRaw hold the raw CLI flag values; PersistentPreRunE
 	// resolves them (with RUNWISP_LOG_LEVEL / RUNWISP_LOG_FORMAT env fallbacks)

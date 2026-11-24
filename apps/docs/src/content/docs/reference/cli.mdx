@@ -91,9 +91,10 @@ Starts the daemon in the foreground with no TUI. Use it under Docker, systemd,
 or any init system. Exits non-zero if the config is missing, instead of
 prompting.
 
-| Flag    | Description                                                                                                                                                                              |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--app` | Read the config as a JSON document on stdin instead of `runwisp.toml`, with the same keys. [SDKs](/sdk/) start the daemon this way. It stops 10 seconds after the app leaves. Since 1.7. |
+| Flag        | Description                                                                                                                                                                              |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--app`     | Read the config as a JSON document on stdin instead of `runwisp.toml`, with the same keys. [SDKs](/sdk/) start the daemon this way. It stops 10 seconds after the app leaves. Since 1.7. |
+| `--no-http` | Don't open the HTTP port, so there is no web UI and no remote API. The TUI and the CLI still work through the [control socket](#control-socket). Since 1.11.                             |
 
 ### `runwisp tui`
 

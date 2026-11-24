@@ -107,6 +107,8 @@ type Server struct {
 	readyOnce      sync.Once
 	metricsEnabled bool
 	metricsListen  string
+	// noHTTP skips the TCP listener; the daemon serves only the Unix socket.
+	noHTTP bool
 	// reload re-reads runwisp.toml and reconciles the live task set. nil
 	// outside standalone mode (station mode has no local scheduler to reconcile),
 	// in which case POST /api/daemon/reload reports the operation is unavailable.
@@ -129,6 +131,7 @@ type Options struct {
 	Scheduler           *runtime.Scheduler
 	Host                string // Bind address (default: 127.0.0.1)
 	Port                int
+	NoHTTP              bool   // Serve only the Unix socket: no TCP listener, so no Web UI or remote API (`daemon --no-http`)
 	DataDir             string // Resolved data directory; disclosed via GET /api/daemon/identity (local only)
 	ConfigPath          string // Resolved runwisp.toml path; disclosed via GET /api/daemon/identity (local only)
 	AppConfig           bool   // The config comes from an app (`daemon --app`); ConfigPath only anchors it
@@ -206,6 +209,7 @@ func New(opts Options) (*Server, error) {
 		detectedURL:       opts.DetectedExternalURL,
 		metricsEnabled:    opts.MetricsEnabled,
 		metricsListen:     opts.MetricsListen,
+		noHTTP:            opts.NoHTTP,
 		reload:            opts.Reload,
 		apps:              opts.Apps,
 		ready:             make(chan struct{}),
@@ -295,14 +299,19 @@ func (srv *Server) Start() error {
 	// socket above is already serving by now. A bind failure returns here and
 	// flows to the caller; readiness is never signalled, so probes fall through
 	// to the fatal path instead of waiting out their timeout.
-	tcpLn, err := net.Listen("tcp", srv.httpServer.Addr)
-	if err != nil {
-		return fmt.Errorf("listen tcp %s: %w", srv.httpServer.Addr, err)
+	var tcpLn net.Listener
+	if !srv.noHTTP {
+		tcpLn, err = net.Listen("tcp", srv.httpServer.Addr)
+		if err != nil {
+			return fmt.Errorf("listen tcp %s: %w", srv.httpServer.Addr, err)
+		}
 	}
 	srv.signalReady()
 
-	if err := srv.serveMain(tcpLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
+	if tcpLn != nil {
+		if err := srv.serveMain(tcpLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
 	}
 	if err := <-unixErrCh; err != nil {
 		return err

@@ -55,6 +55,23 @@ func TestPrintSystemStats_AllFields(t *testing.T) {
 	assert.Contains(t, out, "my-vps")
 }
 
+func TestRunStatus_NoHTTPDaemonNamesNoPort(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/api/daemon", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(model.DaemonInfo{ExternalURL: "https://cron.example.com", ExternalURLSource: "config"})
+	})
+	f := serveStatusSocket(t, mux)
+
+	var buf bytes.Buffer
+	require.NoError(t, runStatus(t.Context(), &buf, f, remoteFlags{}, false))
+	out := buf.String()
+	assert.Contains(t, out, "RunWisp is healthy (no HTTP port, started with --no-http)")
+	assert.NotContains(t, out, "Web UI:")
+}
+
 func TestRunStatus_HealthyWithSystem(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

@@ -333,7 +333,7 @@ runwisp                      — no subcommand: attach TUI to running daemon (qu
                                install the system service, mask cron) and the caller attaches to the systemd
                                daemon instead of spawning its own. When the take-over isn't possible the prompt
                                says so and offers the plain scaffold; those jobs are then held (see include_cron)
-runwisp daemon               — start headless daemon (no TUI); --app reads the config as a JSON document on stdin instead of runwisp.toml (what SDKs run)
+runwisp daemon               — start headless daemon (no TUI); --app reads the config as a JSON document on stdin instead of runwisp.toml (what SDKs run); --no-http skips the HTTP port (no web UI/remote API; TUI and CLI keep working over the socket)
 runwisp tui                  — attach a TUI to a running daemon
 runwisp validate             — validate runwisp.toml without starting anything; --json for the structured document (see above); --app validates a JSON document on stdin;
                                --explain adds each schedule in words + next 3 firings (zone-aware, DST marked; `schedules` in --json)

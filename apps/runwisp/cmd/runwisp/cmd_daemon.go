@@ -29,12 +29,17 @@ log out, install it with 'runwisp service install'.`,
 				slog.Warn("Could not write .gitignore in the data dir", "dir", f.DataDir, "err", err)
 			}
 		}
+		f.NoHTTP = daemonNoHTTP
 		return runDaemon(modeStandalone, f, true)
 	},
 }
 
-var daemonApp bool
+var (
+	daemonApp    bool
+	daemonNoHTTP bool
+)
 
 func init() {
 	daemonCmd.Flags().BoolVar(&daemonApp, "app", false, appFlagUsage)
+	daemonCmd.Flags().BoolVar(&daemonNoHTTP, "no-http", false, "don't open the HTTP port (no Web UI or remote API); the TUI and CLI still work over the control socket")
 }
