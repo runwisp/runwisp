@@ -32,7 +32,13 @@
         runFilterParams,
         type RunsListFilters,
     } from "./run-filters.js";
-    import { instanceSuffix, runLiveLabel, runScalesByTask, type RunLive } from "./run-helpers.js";
+    import {
+        instanceSuffix,
+        runLiveLabel,
+        rangeIds,
+        runScalesByTask,
+        type RunLive,
+    } from "./run-helpers.js";
     import { formatDateTime } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
@@ -215,17 +221,16 @@
     }
 
     function selectRange(runId: string) {
-        const to = shownRuns.findIndex((r: Run) => r.id === runId);
-        const from = [anchorId, selectedRunId]
-            .map((id) => shownRuns.findIndex((r: Run) => r.id === id))
-            .find((i) => i !== -1);
-        if (to === -1 || from === undefined) {
+        const ids = rangeIds(
+            shownRuns.map((r: Run) => r.id),
+            anchorId,
+            selectedRunId ?? null,
+            runId,
+        );
+        if (!ids) {
             toggleRow(runId);
             return;
         }
-        const ids = shownRuns
-            .slice(Math.min(from, to), Math.max(from, to) + 1)
-            .map((r: Run) => r.id);
         selection.selectMany(ids);
         anchorId = runId;
     }
