@@ -460,5 +460,8 @@ func TestRenderHomeHeader_NoHTTPHidesPassword(t *testing.T) {
 		header, _ := RenderHeader(info, true, 80, -1, -1, false)
 		assert.NotContains(t, header, "Password")
 		assert.NotContains(t, header, "Web UI")
+		withRows, _ := RenderHeader(uikit.StartupInfo{Port: 9477}, false, 80, -1, -1, false)
+		assert.Equal(t, strings.Count(withRows, "\n")-3, strings.Count(header, "\n"),
+			"no rows means no spacer lines around them either")
 	}
 }

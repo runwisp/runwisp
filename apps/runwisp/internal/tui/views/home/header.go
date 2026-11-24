@@ -158,6 +158,14 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 	b.WriteString("\n")
 	lineCount++
 
+	// Auth disabled: render a static, non-focusable Password row so the
+	// operator sees the security state at a glance instead of a masked value.
+	authOffRow := info.AuthDisabled && info.Port > 0
+	// No rows (--no-http): skip the spacers around them too.
+	if len(fields) == 0 && !authOffRow {
+		return b.String(), lineCount
+	}
+
 	b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
 	b.WriteString("\n")
 	lineCount++
@@ -166,17 +174,12 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 
 	writeFieldRows(&b, fields, info, w, homeCursor, homeHover)
 
-	// Auth disabled: render a static, non-focusable Password row so the
-	// operator sees the security state at a glance instead of a masked value.
-	authOffRow := info.AuthDisabled && info.Port > 0
 	if authOffRow {
 		renderFieldRow(&b, "Password", "disabled (RUNWISP_AUTH=off)", uikit.ColorWarning, w, false, false)
 	}
 
-	if len(fields) > 0 || authOffRow {
-		b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
-		b.WriteString("\n")
-	}
+	b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
+	b.WriteString("\n")
 
 	return b.String(), fieldsStartY
 }
