@@ -262,6 +262,7 @@ echo "[restore-test] all 142 tables match production"
 group             = "Health"
 description       = "Probes the public API every five minutes. Two retries before paging on-call."
 cron              = "*/5 * * * *"
+jitter            = "1m" # spread off the top of the minute other jobs share
 timeout           = "30s"
 retry_attempts    = 2
 retry_delay       = "10s"
@@ -292,6 +293,7 @@ echo "[tls] $host cert valid; expires $exp"
 group       = "Health"
 description = "Warms the edge cache and asserts it answers within the 2s SLA; a cold origin occasionally blows the budget and the run is killed."
 cron        = "*/15 * * * *"
+jitter      = "2m"
 timeout     = "2s"
 keep_runs   = 30
 notify = ["slack-ops"]

@@ -5,7 +5,11 @@ package tui
 
 import (
 	"errors"
+	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/home"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
@@ -63,5 +67,45 @@ func TestHandleReloadResult_AdoptsNewTimezone(t *testing.T) {
 	}
 	if got.loc.String() != "Asia/Tokyo" {
 		t.Fatalf("location = %v, want Asia/Tokyo", got.loc)
+	}
+}
+
+// A poll that brings the first config warning adds a header row; the layout
+// must re-measure or the view overflows the screen and clicks land a row off.
+func TestHandleDaemonInfo_NewWarningRemeasuresHeader(t *testing.T) {
+	m := newTestModel(nil)
+	m.width, m.height = 120, 40
+	m.updateLayout()
+	before := m.layout.homeH
+	m.handleDaemonInfo(uikit.DaemonInfoMsg{
+		Info: &model.DaemonInfo{ConfigWarnings: []string{"line 3: bad schedule"}},
+	})
+	if m.layout.homeH != before+1 {
+		t.Fatalf("homeH = %d, want %d", m.layout.homeH, before+1)
+	}
+}
+
+func TestWarningsChipClickAndKeyOpenDialog(t *testing.T) {
+	m := newTestModel(nil)
+	m.width, m.height = 120, 40
+	m.info.ConfigWarnings = []string{"line 3: bad schedule"}
+	m.updateLayout()
+
+	newM, _ := m.handleHomePageClick(uikit.SidebarWidth+2, home.NoticesY)
+	if clicked := newM.(Model); !clicked.dialogs.Has(dlgWarnings) {
+		t.Fatal("clicking the warnings chip should open the warnings dialog")
+	}
+
+	got, _, handled := handleKeyW(m, tea.KeyPressMsg{Code: 'w', Text: "w"})
+	if !handled || !got.dialogs.Has(dlgWarnings) {
+		t.Fatal("w should open the warnings dialog")
+	}
+	if view := got.dialogs.RenderOverlays("", 120, 40); !strings.Contains(view, "line 3: bad schedule") {
+		t.Fatal("dialog should list the warning text")
+	}
+
+	m.info.ConfigWarnings = nil
+	if _, _, handled := handleKeyW(m, tea.KeyPressMsg{Code: 'w', Text: "w"}); handled {
+		t.Fatal("w with no warnings should fall through")
 	}
 }
