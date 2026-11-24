@@ -157,7 +157,7 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 	// retrieve it via `runwisp password` (CLI) or by selecting Home →
 	// Password in the TUI. Anything that captures stderr (journald, log
 	// shippers, screen-share recordings) therefore never sees the value.
-	if info.PasswordEphemeral {
+	if info.PasswordEphemeral && info.Port > 0 {
 		fmt.Fprintf(w, "  %s\n", dimStyle.Render("🔑  Ephemeral password generated in memory."))
 		fmt.Fprintf(w, "    %s\n", dimStyle.Render("Run `runwisp password` to retrieve it, or open Home in the TUI."))
 		fmt.Fprintln(w)
