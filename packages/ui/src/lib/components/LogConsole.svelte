@@ -59,6 +59,9 @@
         // linear layout to a prefix-sum-of-row-counts layout. Off by default to
         // preserve the original horizontal-scroll behaviour for wide output.
         wrap?: boolean;
+        // Open at the first line instead of following the tail (e.g. a run that
+        // had already finished when its page opened). Read once at mount.
+        startAtTop?: boolean;
     }
 
     let {
@@ -73,6 +76,7 @@
         unavailable = false,
         outputRedirect,
         wrap = $bindable(false),
+        startAtTop = false,
     }: Props = $props();
 
     let redirectHint = $derived(outputRedirectHint(outputRedirect));
@@ -94,7 +98,7 @@
     let charWidth = $state(8);
     // True while the viewport is pinned to the end of the log: new lines scroll
     // into view. Scrolling away from the bottom turns it off.
-    let followTail = $state(true);
+    let followTail = $state(untrack(() => !startAtTop));
     let isStreaming = $derived(!cache.finished && cache.totalLines > 0);
 
     const OVERSCAN = 50;
