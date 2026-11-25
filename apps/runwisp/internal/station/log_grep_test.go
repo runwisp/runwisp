@@ -278,3 +278,19 @@ func TestLogGrep_BusyPastTheConcurrencyLimit(t *testing.T) {
 		require.True(t, st.Result(t, id, nil).Ok)
 	}
 }
+
+// Hits from many runs share frames: a frame goes out every 250 ms, or when
+// the next hit would not fit.
+func TestLogGrep_BatchesHitsAcrossRuns(t *testing.T) {
+	st := stationtest.New(t)
+	h := newHarness(t, st, nil)
+	for i := range 50 {
+		grepRunAt(t, h, fmt.Sprint("e", i), "job", time.Duration(i)*time.Second, "a hit")
+	}
+	h.start(t)
+
+	hits, res := grepResult(t, st, protocol.LogGrep{Terms: []protocol.LogGrepTerm{word("hit")}, MaxHits: 100, TimeoutMs: 5000})
+	require.Len(t, hits, 50)
+	assert.Equal(t, protocol.StoppedDone, res.Stopped)
+	assert.Less(t, st.Count("log:grep:hits"), 5, "not a frame per run")
+}

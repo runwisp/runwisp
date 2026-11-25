@@ -90,7 +90,7 @@ func (s *session) grep(ctx context.Context, g *grepScan, req protocol.LogGrep) (
 				slog.Debug("log:grep skipped a run", "executionId", run.ExecutionID, "err", err)
 			}
 			g.progress.RunsScanned++
-			if len(g.batch) > 0 || time.Since(g.lastFlush) >= grepFlushInterval {
+			if time.Since(g.lastFlush) >= grepFlushInterval {
 				g.flush()
 			}
 			return true
