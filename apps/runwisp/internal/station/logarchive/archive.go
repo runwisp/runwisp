@@ -120,6 +120,10 @@ func putChunk(ctx context.Context, client *http.Client, target Target, data []by
 	return size, nil
 }
 
+// gzipFile compresses the log at path into an unlinked temp file in the
+// block layout described in blocks.go. The header holds the block table, so
+// the deflate stream is spooled to a second temp file first; memory stays
+// bounded for any log size.
 func gzipFile(path string) (*os.File, int64, error) {
 	src, err := os.Open(path)
 	if err != nil {
@@ -127,39 +131,62 @@ func gzipFile(path string) (*os.File, int64, error) {
 	}
 	defer src.Close()
 
-	tmp, err := os.CreateTemp("", "runwisp-log-*.gz")
+	deflated, err := unlinkedTemp("runwisp-log-*.deflate")
 	if err != nil {
 		return nil, 0, fmt.Errorf("logarchive: create compressed log spool: %w", err)
 	}
-	tmpPath := tmp.Name()
-	keep := false
-	defer func() {
-		if !keep {
-			_ = tmp.Close()
-			_ = os.Remove(tmpPath)
-		}
-	}()
-
-	gz := gzip.NewWriter(tmp)
-	if _, err := io.Copy(gz, src); err != nil {
-		_ = gz.Close()
+	defer deflated.Close()
+	blocks, crc, rawSize, err := deflateBlocks(deflated, src)
+	if err != nil {
 		return nil, 0, fmt.Errorf("logarchive: gzip log file: %w", err)
 	}
-	if err := gz.Close(); err != nil {
-		return nil, 0, fmt.Errorf("logarchive: close gzip writer: %w", err)
+
+	tmp, err := unlinkedTemp("runwisp-log-*.gz")
+	if err != nil {
+		return nil, 0, fmt.Errorf("logarchive: create compressed log spool: %w", err)
+	}
+	if err := writeMember(tmp, deflated, blocks, crc, rawSize); err != nil {
+		_ = tmp.Close()
+		return nil, 0, fmt.Errorf("logarchive: gzip log file: %w", err)
 	}
 	info, err := tmp.Stat()
 	if err != nil {
+		_ = tmp.Close()
 		return nil, 0, fmt.Errorf("logarchive: stat compressed log spool: %w", err)
 	}
-	// Keep the open descriptor for retries, but remove the directory entry so a
-	// crash during upload cannot leave a stale compressed copy on disk. CreateTemp
-	// uses mode 0600, so the spool is private while it exists.
-	if err := os.Remove(tmpPath); err != nil {
-		return nil, 0, fmt.Errorf("logarchive: unlink compressed log spool: %w", err)
-	}
-	keep = true
 	return tmp, info.Size(), nil
+}
+
+// writeMember writes the gzip member: header, the spooled deflate stream,
+// trailer.
+func writeMember(dst io.Writer, deflated io.ReadSeeker, blocks []archiveBlock, crc uint32, rawSize int64) error {
+	if _, err := dst.Write(gzipHeader(blocks)); err != nil {
+		return err
+	}
+	if _, err := deflated.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	if _, err := io.Copy(dst, deflated); err != nil {
+		return err
+	}
+	_, err := dst.Write(gzipTrailer(crc, rawSize))
+	return err
+}
+
+// unlinkedTemp creates a temp file and removes its directory entry at once:
+// the open descriptor keeps it readable for retries, and a crash can't leave
+// a stale compressed copy on disk. CreateTemp uses mode 0600, so the spool
+// is private while it has a name.
+func unlinkedTemp(pattern string) (*os.File, error) {
+	f, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Remove(f.Name()); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
 }
 
 func putOnce(ctx context.Context, client *http.Client, target Target, compressed io.ReaderAt, size int64) error {
