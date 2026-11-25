@@ -250,3 +250,31 @@ func TestGrepRing_KeepsTheLastLinesInOrder(t *testing.T) {
 	assert.Nil(t, r.lines(), "a new run starts without context")
 	assert.Nil(t, (&grepRing{}).lines(), "context 0 keeps nothing")
 }
+
+func TestLogGrep_BusyPastTheConcurrencyLimit(t *testing.T) {
+	st := stationtest.New(t)
+	h := newHarness(t, st, nil)
+	endlessRun(t, h)
+	h.start(t)
+
+	req := protocol.LogGrep{Terms: []protocol.LogGrepTerm{word("absent")}, MaxHits: 10, TimeoutMs: 60000}
+	var running []string
+	for range grepConcurrency {
+		id := st.Command(t, "log:grep", req, "log.grep")
+		st.Wait(t, "log:grep:hits", func(e protocol.Envelope) bool { return e.ReplyTo == id })
+		running = append(running, id)
+	}
+	res := st.Result(t, st.Command(t, "log:grep", req, "log.grep"), nil)
+	require.NotNil(t, res.Error)
+	assert.Equal(t, protocol.ErrorCodeBusy, res.Error.Code)
+	assert.True(t, res.Error.Retryable)
+
+	st.Send(t, "log:grep:cancel", "", protocol.LogGrepCancel{Search: running[0]})
+	require.True(t, st.Result(t, running[0], nil).Ok)
+	id := st.Command(t, "log:grep", req, "log.grep")
+	st.Wait(t, "log:grep:hits", func(e protocol.Envelope) bool { return e.ReplyTo == id })
+	for _, id := range append(running[1:], id) {
+		st.Send(t, "log:grep:cancel", "", protocol.LogGrepCancel{Search: id})
+		require.True(t, st.Result(t, id, nil).Ok)
+	}
+}

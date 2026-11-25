@@ -7,12 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logsearch"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
@@ -28,6 +30,9 @@ const (
 	grepMaxContext   = 5
 	// grepClockLines is how many lines go by between looks at the clock.
 	grepClockLines = 1024
+	// grepConcurrency is how many log:greps run at once. Each takes a core
+	// and the disk while it lasts, and the daemon's runs come first.
+	grepConcurrency = 2
 )
 
 var errGrepTimeout = errors.New("log:grep timed out")
@@ -35,12 +40,35 @@ var errGrepTimeout = errors.New("log:grep timed out")
 // grepLogs serves log:grep: it scans the station executions' local logs one
 // run at a time, newest first, streaming hits as log:grep:hits until every
 // run is scanned, a cap or the timeout is reached, or log:grep:cancel (or the
-// session's end) stops it.
+// session's end) stops it. Past grepConcurrency greps it answers busy.
 func (s *session) grepLogs(ctx context.Context, id string, req protocol.LogGrep) (any, error) {
 	g, err := s.newGrepScan(id, req)
 	if err != nil {
 		return nil, err
 	}
+	select {
+	case s.client.grepSlots <- struct{}{}:
+		defer func() { <-s.client.grepSlots }()
+	default:
+		return nil, &StationError{Code: protocol.ErrorCodeBusy, Message: fmt.Sprintf("%d log searches are already running", grepConcurrency), Retryable: true}
+	}
+	// The scan runs on a goroutine of its own because lowerThreadPriority
+	// keeps that goroutine's thread for good.
+	var res any
+	scanned := make(chan struct{})
+	go func() {
+		defer close(scanned)
+		defer crashguard.Guard()
+		lowerThreadPriority()
+		res, err = s.grep(ctx, g, req)
+	}()
+	<-scanned
+	return res, err
+}
+
+// grep runs scan g of log:grep req.
+func (s *session) grep(ctx context.Context, g *grepScan, req protocol.LogGrep) (any, error) {
+	id := g.replyTo
 	ctx, cancel := context.WithTimeoutCause(ctx, time.Duration(req.TimeoutMs)*time.Millisecond, errGrepTimeout)
 	defer cancel()
 	ctx, done := s.track(ctx, id)

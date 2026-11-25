@@ -110,6 +110,8 @@ type Client struct {
 	reloadCh   chan struct{}
 	// upgradeMu lets one agent:upgrade run at a time.
 	upgradeMu sync.Mutex
+	// grepSlots holds a token per running log:grep (see grepConcurrency).
+	grepSlots chan struct{}
 }
 
 func NewClient(cfg Config, deps Dependencies) (*Client, error) {
@@ -137,6 +139,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		startedAt: deps.Now(),
 		token:     cfg.StationToken,
 		reloadCh:  make(chan struct{}, 1),
+		grepSlots: make(chan struct{}, grepConcurrency),
 	}
 	client.uploader = NewLogUploader(deps.PendingUploadRepo, deps.RunRepo, deps.LogDir, deps.Now, client.requestUploads)
 	client.uploader.TrustHost(logarchive.HostPort(cfg.BaseURL))
