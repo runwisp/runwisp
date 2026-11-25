@@ -16,7 +16,7 @@ type Envelope struct {
 	Type string `json:"type"`
 	// Set on commands only. The receiver answers with one `result` whose replyTo is this id.
 	ID string `json:"id,omitzero"`
-	// Set on `result` and on `log:lines`. The command this answers.
+	// Set on `result`, `log:lines` and `log:grep:hits`. The command this answers.
 	ReplyTo string `json:"replyTo,omitzero"`
 	// Features the receiver must have to act on this command. A receiver
 	// missing any of them answers `unsupported` without acting.
@@ -38,8 +38,9 @@ type Hello struct {
 	// Optional features this daemon understands, by name, with whether
 	// each can be used right now. A name that's absent is not understood.
 	// v1.0 names: exec.shell, exec.container, exec.compose, exec.http,
-	// exec.config, agent.restart, agent.upgrade. Everything else in
-	// this spec is baseline and has no feature name.
+	// exec.config, agent.restart, agent.upgrade. Added later: log.grep
+	// (log:grep). Everything else in this spec is baseline and has no
+	// feature name.
 	Features map[string]*FeatureStatus `json:"features"`
 	// Operator-set labels (`[daemon] labels`). May be empty.
 	Labels map[string]string `json:"labels"`
@@ -574,6 +575,93 @@ type LogSearchResult struct {
 	Hits      []LogLine `json:"hits"`
 	NextLine  int64     `json:"nextLine,omitzero"`
 	Exhausted bool      `json:"exhausted"`
+}
+
+// Greps the local logs of the daemon's station executions, newest run
+// first, one run at a time. Hits stream as log:grep:hits (replyTo = this
+// command's id); a LogGrepResult ends it once every run is scanned, a
+// cap or timeoutMs is reached, or after log:grep:cancel.
+type LogGrep struct {
+	// The query as the user typed it. Informational.
+	Query string `json:"query,omitzero"`
+	// A line matches when it matches every term. Compiled by the station; the daemon never parses query.
+	Terms []LogGrepTerm `json:"terms"`
+	// False means the parts are already lowercased (strings.ToLower) and the daemon matches the lowercased line.
+	CaseSensitive bool `json:"caseSensitive,omitzero"`
+	// Tasks to search; empty = all. An entry is a task's TaskRef.id as
+	// sent in execution:dispatch, or a task name of the daemon's own
+	// (the taskName of a config spec).
+	Tasks []string `json:"tasks,omitzero"`
+	// Unix ms; only runs that started at or after it. 0 = no bound.
+	Since int64 `json:"since,omitzero"`
+	// Unix ms; only runs that started at or before it. 0 = no bound.
+	Until int64 `json:"until,omitzero"`
+	// Lines before and after each hit, 0-5.
+	Context int `json:"context,omitzero"`
+	// Stop after this many hits.
+	MaxHits int `json:"maxHits"`
+	// Stop after this many bytes of hit text (lines and context). 0 = no limit.
+	MaxBytes int `json:"maxBytes,omitzero"`
+	// The daemon stops on its own after this long.
+	TimeoutMs int `json:"timeoutMs"`
+}
+
+// One term: its literal parts in order, separated by `*` (any run of
+// characters on the line, including none). A word character is a
+// Unicode letter or digit; everything else separates words.
+type LogGrepTerm struct {
+	// Non-empty literal pieces between the wildcards, in order.
+	Parts []string `json:"parts"`
+	// The first part must begin at a word start.
+	WordStart bool `json:"wordStart,omitzero"`
+	// The last part must end at a word end.
+	WordEnd bool `json:"wordEnd,omitzero"`
+}
+
+type LogGrepHits struct {
+	Hits     []LogGrepHit     `json:"hits"`
+	Progress *LogGrepProgress `json:"progress"`
+}
+
+// A matching line and its context. Each line's text is cut to 4 KiB, with continued set.
+type LogGrepHit struct {
+	ExecutionID string    `json:"executionId"`
+	Line        *LogLine  `json:"line"`
+	Before      []LogLine `json:"before,omitzero"`
+	After       []LogLine `json:"after,omitzero"`
+}
+
+type LogGrepProgress struct {
+	RunsScanned  int   `json:"runsScanned"`
+	RunsTotal    int   `json:"runsTotal"`
+	BytesScanned int64 `json:"bytesScanned"`
+}
+
+type LogGrepCancel struct {
+	// The log:grep command's id.
+	Search string `json:"search"`
+}
+
+// Open. Why the grep ended.
+type Stopped string
+
+const (
+	StoppedDone      Stopped = "done"
+	StoppedMaxHits   Stopped = "maxHits"
+	StoppedMaxBytes  Stopped = "maxBytes"
+	StoppedTimeout   Stopped = "timeout"
+	StoppedCancelled Stopped = "cancelled"
+)
+
+var StoppedValues = []Stopped{StoppedDone, StoppedMaxHits, StoppedMaxBytes, StoppedTimeout, StoppedCancelled}
+
+// Fields of the `result` answering log:grep.
+type LogGrepResult struct {
+	Progress *LogGrepProgress `json:"progress"`
+	// Hits sent.
+	Hits int `json:"hits"`
+	// Open. Why the grep ended.
+	Stopped Stopped `json:"stopped"`
 }
 
 type UploadRequest struct {

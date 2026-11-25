@@ -1,0 +1,36 @@
+{
+  "type": "log:grep",
+  "id": "s31",
+  "requires": [
+    "log.grep"
+  ],
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "query": "*exception \"order 4711\"",
+    "terms": [
+      {
+        "parts": [
+          "exception"
+        ],
+        "wordEnd": true
+      },
+      {
+        "parts": [
+          "order 4711"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "tasks": [
+      "01JC8Y0A7Q4M2N5P6R7S8T9V0W",
+      "backup"
+    ],
+    "since": 1762300800000,
+    "until": 1762916400000,
+    "context": 2,
+    "maxHits": 500,
+    "maxBytes": 1048576,
+    "timeoutMs": 30000
+  }
+}

@@ -45,8 +45,8 @@ info:
     Every frame is an `Envelope`; the message's payload is its `data`.
     A frame with an `id` is a COMMAND and gets exactly one `result` with
     `replyTo` set to that id (a log subscription first streams `log:lines`
-    frames with the same `replyTo`, then ends with its `result`). Ids are
-    unique per sender per connection.
+    frames with the same `replyTo`, and a log:grep streams `log:grep:hits`
+    frames, before its `result`). Ids are unique per sender per connection.
 
     ## Session
 
@@ -93,6 +93,8 @@ channels:
           - $ref: "#/components/messages/logSubscribe"
           - $ref: "#/components/messages/logUnsubscribe"
           - $ref: "#/components/messages/logSearch"
+          - $ref: "#/components/messages/logGrep"
+          - $ref: "#/components/messages/logGrepCancel"
           - $ref: "#/components/messages/serviceApply"
           - $ref: "#/components/messages/serviceControl"
           - $ref: "#/components/messages/serviceRemove"
@@ -114,6 +116,7 @@ channels:
           - $ref: "#/components/messages/tasksSync"
           - $ref: "#/components/messages/executionUpdate"
           - $ref: "#/components/messages/logLines"
+          - $ref: "#/components/messages/logGrepHits"
           - $ref: "#/components/messages/uploadRequest"
           - $ref: "#/components/messages/serviceStatus"
 
@@ -212,6 +215,18 @@ components:
       name: log:search
       summary: station -> daemon, command. Grep one execution's log.
       payload: { $ref: "#/components/schemas/LogSearch" }
+    logGrep:
+      name: log:grep
+      summary: station -> daemon, command. Grep many executions' logs. Feature log.grep.
+      payload: { $ref: "#/components/schemas/LogGrep" }
+    logGrepHits:
+      name: log:grep:hits
+      summary: daemon -> station. Hits for the log:grep named in replyTo.
+      payload: { $ref: "#/components/schemas/LogGrepHits" }
+    logGrepCancel:
+      name: log:grep:cancel
+      summary: station -> daemon. End a log:grep; the daemon sends its result.
+      payload: { $ref: "#/components/schemas/LogGrepCancel" }
     uploadRequest:
       name: upload:request
       summary: daemon -> station, command. Signed upload targets.
@@ -251,7 +266,7 @@ components:
           description: Set on commands only. The receiver answers with one `result` whose replyTo is this id.
         replyTo:
           type: string
-          description: Set on `result` and on `log:lines`. The command this answers.
+          description: Set on `result`, `log:lines` and `log:grep:hits`. The command this answers.
         requires:
           type: array
           items: { type: string }
@@ -285,8 +300,9 @@ components:
             Optional features this daemon understands, by name, with whether
             each can be used right now. A name that's absent is not understood.
             v1.0 names: exec.shell, exec.container, exec.compose, exec.http,
-            exec.config, agent.restart, agent.upgrade. Everything else in
-            this spec is baseline and has no feature name.
+            exec.config, agent.restart, agent.upgrade. Added later: log.grep
+            (log:grep). Everything else in this spec is baseline and has no
+            feature name.
         labels:
           type: object
           additionalProperties: { type: string }
@@ -947,6 +963,101 @@ components:
         nextLine: { type: integer, format: int64 }
         exhausted: { type: boolean }
       required: [hits, exhausted]
+
+    LogGrep:
+      type: object
+      description: |
+        Greps the local logs of the daemon's station executions, newest run
+        first, one run at a time. Hits stream as log:grep:hits (replyTo = this
+        command's id); a LogGrepResult ends it once every run is scanned, a
+        cap or timeoutMs is reached, or after log:grep:cancel.
+      properties:
+        query: { type: string, description: The query as the user typed it. Informational. }
+        terms:
+          type: array
+          items: { $ref: "#/components/schemas/LogGrepTerm" }
+          description: A line matches when it matches every term. Compiled by the station; the daemon never parses query.
+        caseSensitive:
+          type: boolean
+          description: False means the parts are already lowercased (strings.ToLower) and the daemon matches the lowercased line.
+        tasks:
+          type: array
+          items: { type: string }
+          description: |
+            Tasks to search; empty = all. An entry is a task's TaskRef.id as
+            sent in execution:dispatch, or a task name of the daemon's own
+            (the taskName of a config spec).
+        since: { type: integer, format: int64, description: "Unix ms; only runs that started at or after it. 0 = no bound." }
+        until: { type: integer, format: int64, description: "Unix ms; only runs that started at or before it. 0 = no bound." }
+        context: { type: integer, description: "Lines before and after each hit, 0-5." }
+        maxHits: { type: integer, description: Stop after this many hits. }
+        maxBytes: { type: integer, description: "Stop after this many bytes of hit text (lines and context). 0 = no limit." }
+        timeoutMs: { type: integer, description: The daemon stops on its own after this long. }
+      required: [terms, maxHits, timeoutMs]
+
+    LogGrepTerm:
+      type: object
+      description: |
+        One term: its literal parts in order, separated by `*` (any run of
+        characters on the line, including none). A word character is a
+        Unicode letter or digit; everything else separates words.
+      properties:
+        parts:
+          type: array
+          items: { type: string }
+          description: Non-empty literal pieces between the wildcards, in order.
+        wordStart: { type: boolean, description: The first part must begin at a word start. }
+        wordEnd: { type: boolean, description: The last part must end at a word end. }
+      required: [parts]
+
+    LogGrepHits:
+      type: object
+      properties:
+        hits:
+          type: array
+          items: { $ref: "#/components/schemas/LogGrepHit" }
+        progress: { $ref: "#/components/schemas/LogGrepProgress" }
+      required: [hits, progress]
+
+    LogGrepHit:
+      type: object
+      description: A matching line and its context. Each line's text is cut to 4 KiB, with continued set.
+      properties:
+        executionId: { type: string }
+        line: { $ref: "#/components/schemas/LogLine" }
+        before:
+          type: array
+          items: { $ref: "#/components/schemas/LogLine" }
+        after:
+          type: array
+          items: { $ref: "#/components/schemas/LogLine" }
+      required: [executionId, line]
+
+    LogGrepProgress:
+      type: object
+      properties:
+        runsScanned: { type: integer }
+        runsTotal: { type: integer }
+        bytesScanned: { type: integer, format: int64 }
+      required: [runsScanned, runsTotal, bytesScanned]
+
+    LogGrepCancel:
+      type: object
+      properties:
+        search: { type: string, description: The log:grep command's id. }
+      required: [search]
+
+    LogGrepResult:
+      type: object
+      description: Fields of the `result` answering log:grep.
+      properties:
+        progress: { $ref: "#/components/schemas/LogGrepProgress" }
+        hits: { type: integer, description: Hits sent. }
+        stopped:
+          type: string
+          description: Open. Why the grep ended.
+          enum: [done, maxHits, maxBytes, timeout, cancelled]
+      required: [progress, hits, stopped]
 
     UploadRequest:
       type: object

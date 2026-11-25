@@ -1,0 +1,37 @@
+{
+  "type": "log:grep:hits",
+  "replyTo": "s31",
+  "sentAt": "2026-11-12T10:00:00.123Z",
+  "data": {
+    "hits": [
+      {
+        "executionId": "ex_01JC8Y5T",
+        "line": {
+          "n": 42,
+          "stream": "stderr",
+          "text": "RuntimeException: order 4711 not found"
+        },
+        "before": [
+          {
+            "n": 41,
+            "stream": "stdout",
+            "text": "loading order 4711"
+          }
+        ],
+        "after": [
+          {
+            "n": 43,
+            "stream": "stderr",
+            "text": "    at Orders.load(Orders.java:88)",
+            "continued": true
+          }
+        ]
+      }
+    ],
+    "progress": {
+      "runsScanned": 3,
+      "runsTotal": 120,
+      "bytesScanned": 5242880
+    }
+  }
+}

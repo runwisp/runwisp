@@ -34,6 +34,9 @@
       "agent.upgrade": {
         "available": false,
         "reason": "station upgrades disabled (set [daemon] allow_station_upgrade = true to enable)"
+      },
+      "log.grep": {
+        "available": true
       }
     },
     "labels": {},
