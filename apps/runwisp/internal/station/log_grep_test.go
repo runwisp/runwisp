@@ -7,6 +7,7 @@ package station
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -224,4 +225,28 @@ func TestLogGrep_TimeoutStopsTheScan(t *testing.T) {
 	require.True(t, st.Result(t, id, &res).Ok)
 	assert.Equal(t, protocol.StoppedTimeout, res.Stopped)
 	assert.Zero(t, res.Hits)
+}
+
+func TestGrepRing_KeepsTheLastLinesInOrder(t *testing.T) {
+	r := grepRing{ring: make([]ringLine, 3)}
+	assert.Nil(t, r.lines())
+	long := strings.Repeat("é", grepMaxLineBytes) // 2 bytes a rune
+	for n := range int64(6) {
+		text := fmt.Sprint("line ", n)
+		if n == 4 {
+			text = long
+		}
+		r.push(n, logutil.StreamStdout, []byte(text))
+	}
+	lines := r.lines()
+	require.Len(t, lines, 3)
+	assert.Equal(t, []int64{3, 4, 5}, []int64{lines[0].N, lines[1].N, lines[2].N})
+	assert.Equal(t, "line 3", lines[0].Text)
+	assert.Equal(t, long[:grepMaxLineBytes], lines[1].Text, "cut as a hit line is")
+	assert.True(t, lines[1].Continued)
+	assert.Equal(t, "line 5", lines[2].Text)
+
+	r.reset()
+	assert.Nil(t, r.lines(), "a new run starts without context")
+	assert.Nil(t, (&grepRing{}).lines(), "context 0 keeps nothing")
 }

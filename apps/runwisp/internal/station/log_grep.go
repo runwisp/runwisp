@@ -9,7 +9,6 @@ import (
 	"errors"
 	"log/slog"
 	"math"
-	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -27,6 +26,8 @@ const (
 	// grepMaxLineBytes cuts the text of each hit and context line.
 	grepMaxLineBytes = 4 << 10
 	grepMaxContext   = 5
+	// grepClockLines is how many lines go by between looks at the clock.
+	grepClockLines = 1024
 )
 
 var errGrepTimeout = errors.New("log:grep timed out")
@@ -102,6 +103,10 @@ type grepScan struct {
 	batchBytes int
 	reported   protocol.LogGrepProgress // progress as of the last frame
 	lastFlush  time.Time
+	lines      int // lines read, to pace the clock
+
+	buf    []byte   // the line scanner's buffer, shared by every run
+	before grepRing // the run's last lines, for before-context
 }
 
 func (s *session) newGrepScan(id string, req protocol.LogGrep) (*grepScan, error) {
@@ -132,6 +137,8 @@ func (s *session) newGrepScan(id string, req protocol.LogGrep) (*grepScan, error
 		maxBytes:  max(req.MaxBytes, 0),
 		budget:    s.maxFrameBytes() - len(empty),
 		lastFlush: time.Now(),
+		buf:       make([]byte, logutil.ScanBufferSize),
+		before:    grepRing{ring: make([]ringLine, min(max(req.Context, 0), grepMaxContext))},
 	}, nil
 }
 
@@ -139,8 +146,9 @@ func (s *session) newGrepScan(id string, req protocol.LogGrep) (*grepScan, error
 // maxHits are found no new line matches, and the scan stops when the open
 // hits have their after-context.
 func (g *grepScan) scanRun(ctx context.Context, executionID, path string) error {
+	g.before.reset()
 	r := &runGrep{g: g, executionID: executionID}
-	err := logutil.ScanLines(ctx, path, r.visit)
+	err := logutil.ScanLineBytes(ctx, path, g.buf, r.visit)
 	for _, h := range r.open { // the log ended before their after-context did
 		g.add(h)
 	}
@@ -151,29 +159,30 @@ func (g *grepScan) scanRun(ctx context.Context, executionID, path string) error 
 type runGrep struct {
 	g           *grepScan
 	executionID string
-	before      []protocol.LogLine     // the last context lines, oldest first
 	open        []*protocol.LogGrepHit // hits still reading their after-context
 }
 
-func (r *runGrep) visit(rec logutil.LogLineRecord) bool {
+// visit matches one line. text is only valid during the call: a line that
+// becomes a hit or context is copied, every other line is not.
+func (r *runGrep) visit(n int64, stream string, text []byte) bool {
 	g := r.g
-	g.progress.BytesScanned += int64(len(rec.Text)) + 1
-	line := grepLine(rec)
-	r.extend(line)
-	if g.matched < g.maxHits && g.terms.Match(logsearch.VisibleText(rec.Text)) {
+	g.progress.BytesScanned += int64(len(text)) + 1
+	if len(r.open) > 0 {
+		r.extend(grepLine(n, stream, text))
+	}
+	if g.matched < g.maxHits && g.terms.Match(logsearch.VisibleBytes(text)) {
 		g.matched++
-		h := &protocol.LogGrepHit{ExecutionID: r.executionID, Line: &line, Before: slices.Clone(r.before)}
+		line := grepLine(n, stream, text)
+		h := &protocol.LogGrepHit{ExecutionID: r.executionID, Line: &line, Before: g.before.lines()}
 		if g.context == 0 {
 			g.add(h)
 		} else {
 			r.open = append(r.open, h)
 		}
 	}
-	if g.context > 0 {
-		r.before = append(r.before, line)
-		r.before = r.before[max(len(r.before)-g.context, 0):]
-	}
-	if time.Since(g.lastFlush) >= grepFlushInterval {
+	g.before.push(n, stream, text)
+	// Reading the clock costs more than matching a short line.
+	if g.lines++; g.lines%grepClockLines == 0 && time.Since(g.lastFlush) >= grepFlushInterval {
 		g.flush()
 	}
 	return !g.over() && (g.matched < g.maxHits || len(r.open) > 0)
@@ -268,18 +277,59 @@ func (g *grepScan) stopReason(ctx context.Context) protocol.Stopped {
 	}
 }
 
-// grepLine is rec as a hit or context line, its text cut to grepMaxLineBytes
-// on a rune boundary.
-func grepLine(rec logutil.LogLineRecord) protocol.LogLine {
-	line := protocol.LogLine{N: rec.LineNum, Stream: protocol.LogStream(rec.Stream), Text: rec.Text}
-	if len(line.Text) > grepMaxLineBytes {
+// grepLine is a hit or context line, its text cut to grepMaxLineBytes on a
+// rune boundary.
+func grepLine(n int64, stream string, text []byte) protocol.LogLine {
+	line := protocol.LogLine{N: n, Stream: protocol.LogStream(stream)}
+	if len(text) > grepMaxLineBytes {
 		cut := grepMaxLineBytes
-		for cut > 0 && !utf8.RuneStart(line.Text[cut]) {
+		for cut > 0 && !utf8.RuneStart(text[cut]) {
 			cut--
 		}
-		line.Text, line.Continued = line.Text[:cut], true
+		text, line.Continued = text[:cut], true
 	}
+	line.Text = string(text)
 	return line
+}
+
+// grepRing holds a run's last lines for before-context in buffers it reuses,
+// each line's text cut to the grepMaxLineBytes+1 bytes grepLine needs to cut
+// and flag it.
+type grepRing struct {
+	ring      []ringLine
+	next, len int
+}
+
+type ringLine struct {
+	n      int64
+	stream string
+	text   []byte
+}
+
+func (r *grepRing) reset() { r.next, r.len = 0, 0 }
+
+func (r *grepRing) push(n int64, stream string, text []byte) {
+	if len(r.ring) == 0 {
+		return
+	}
+	l := &r.ring[r.next]
+	l.n, l.stream = n, stream
+	l.text = append(l.text[:0], text[:min(len(text), grepMaxLineBytes+1)]...)
+	r.next = (r.next + 1) % len(r.ring)
+	r.len = min(r.len+1, len(r.ring))
+}
+
+// lines returns the held lines oldest first, or nil if there are none.
+func (r *grepRing) lines() []protocol.LogLine {
+	if r.len == 0 {
+		return nil
+	}
+	out := make([]protocol.LogLine, r.len)
+	for i := range out {
+		l := &r.ring[(r.next-r.len+i+len(r.ring))%len(r.ring)]
+		out[i] = grepLine(l.n, l.stream, l.text)
+	}
+	return out
 }
 
 func hitTextBytes(h *protocol.LogGrepHit) int {

@@ -40,7 +40,7 @@ func TestTerms_Conformance(t *testing.T) {
 			}
 			m, err := NewTerms(terms, c.CaseSensitive)
 			require.NoError(t, err)
-			assert.Equal(t, c.Match, m.Match(c.Line), "line %q", c.Line)
+			assert.Equal(t, c.Match, m.Match([]byte(c.Line)), "line %q", c.Line)
 		})
 	}
 }

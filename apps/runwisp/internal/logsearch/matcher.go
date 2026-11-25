@@ -64,10 +64,17 @@ func (s *Substring) Match(line []byte) bool {
 	if !s.caseFold {
 		return bytes.Contains(line, s.needle)
 	}
-	if cap(s.caseFoldScratch) < len(line) {
-		s.caseFoldScratch = make([]byte, len(line))
+	s.caseFoldScratch = foldInto(s.caseFoldScratch, line)
+	return bytes.Contains(s.caseFoldScratch, s.needle)
+}
+
+// foldInto writes line lowercased the way strings.ToLower does into scratch,
+// growing it as needed, and returns the result.
+func foldInto(scratch, line []byte) []byte {
+	if cap(scratch) < len(line) {
+		scratch = make([]byte, len(line))
 	} else {
-		s.caseFoldScratch = s.caseFoldScratch[:len(line)]
+		scratch = scratch[:len(line)]
 	}
 	// ASCII fast path. Falls through to unicode for non-ASCII bytes — keeps
 	// case-folding correct for UTF-8 input without paying the unicode cost
@@ -77,7 +84,7 @@ func (s *Substring) Match(line []byte) bool {
 			if b >= 'A' && b <= 'Z' {
 				b += 'a' - 'A'
 			}
-			s.caseFoldScratch[i] = b
+			scratch[i] = b
 			continue
 		}
 		// Unicode-aware fallback: drop to per-rune ToLower for the whole
@@ -89,17 +96,17 @@ func (s *Substring) Match(line []byte) bool {
 		// panic on long non-ASCII lines.
 		lowered := strings.Map(unicode.ToLower, string(line[i:]))
 		need := i + len(lowered)
-		if cap(s.caseFoldScratch) < need {
+		if cap(scratch) < need {
 			grown := make([]byte, need)
-			copy(grown, s.caseFoldScratch[:i])
-			s.caseFoldScratch = grown
+			copy(grown, scratch[:i])
+			scratch = grown
 		} else {
-			s.caseFoldScratch = s.caseFoldScratch[:need]
+			scratch = scratch[:need]
 		}
-		copy(s.caseFoldScratch[i:], lowered)
+		copy(scratch[i:], lowered)
 		break
 	}
-	return bytes.Contains(s.caseFoldScratch, s.needle)
+	return scratch
 }
 
 // utf8MaxASCII is one past the highest single-byte ASCII codepoint. Anything

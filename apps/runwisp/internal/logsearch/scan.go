@@ -4,6 +4,7 @@
 package logsearch
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"slices"
@@ -114,6 +115,14 @@ func VisibleText(line string) string {
 		return line
 	}
 	return ansi.Strip(line)
+}
+
+// VisibleBytes is VisibleText for bytes; it copies only a line with escapes.
+func VisibleBytes(line []byte) []byte {
+	if bytes.IndexByte(line, 0x1b) < 0 {
+		return line
+	}
+	return []byte(ansi.Strip(string(line)))
 }
 
 // ScanTask scans `runs` in newest-first order (caller-supplied), running up

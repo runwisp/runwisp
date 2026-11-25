@@ -22,10 +22,14 @@ const (
 	maxLogLineSize = 1024 * 1024
 )
 
-// newLineScanner returns a line scanner over r sized for log files.
-func newLineScanner(r io.Reader) *bufio.Scanner {
+// newLineScanner returns a line scanner over r sized for log files. buf, if
+// not nil, is its starting buffer, so one buffer can serve many scans.
+func newLineScanner(r io.Reader, buf []byte) *bufio.Scanner {
+	if buf == nil {
+		buf = make([]byte, ScanBufferSize)
+	}
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, ScanBufferSize), maxLogLineSize)
+	scanner.Buffer(buf, maxLogLineSize)
 	return scanner
 }
 
@@ -66,15 +70,20 @@ func FormatLine(text, stream string) string {
 //   - anything else → ("stdout", line as-is)
 //
 // The trailing newline (if any) is stripped from the returned text.
-func ParseStreamPrefix(line string) (stream, text string) {
-	trimmed := strings.TrimSuffix(line, "\n")
-	if rest, ok := strings.CutPrefix(trimmed, "[ERR] "); ok {
+//
+// It takes a string or bytes alike, so a scan can parse the scanner's buffer
+// without copying it.
+func ParseStreamPrefix[S ~string | ~[]byte](line S) (stream string, text S) {
+	if n := len(line); n > 0 && line[n-1] == '\n' {
+		line = line[:n-1]
+	}
+	if rest, ok := cutPrefix(line, "[ERR] "); ok {
 		return StreamStderr, rest
 	}
-	if rest, ok := stripSystemPrefix(trimmed); ok {
+	if rest, ok := stripSystemPrefix(line); ok {
 		return StreamSystem, rest
 	}
-	return StreamStdout, trimmed
+	return StreamStdout, line
 }
 
 // SystemLine formats msg as a run log's system line, the form
@@ -95,22 +104,32 @@ func AppendSystemLine(logPath string, now time.Time, msg string) error {
 }
 
 // stripSystemPrefix peels an optional "[<ts>] " prefix followed by "[SYSTEM] ".
-// Returns (rest, true) on match, ("", false) otherwise. Never panics.
-func stripSystemPrefix(line string) (string, bool) {
-	rest := line
-	if strings.HasPrefix(rest, "[") {
-		end := strings.Index(rest, "] ")
-		if end > 0 {
-			head := rest[1:end]
-			if head != "SYSTEM" && len(head) >= 19 {
-				rest = rest[end+2:]
+// Returns (rest, true) on match, (zero, false) otherwise. Never panics.
+func stripSystemPrefix[S ~string | ~[]byte](line S) (rest S, ok bool) {
+	rest = line
+	if len(rest) > 0 && rest[0] == '[' {
+		for end := 1; end+1 < len(rest); end++ {
+			if rest[end] == ']' && rest[end+1] == ' ' {
+				// A timestamp has at least 19 characters ("SYSTEM" has 6).
+				if end > 19 {
+					rest = rest[end+2:]
+				}
+				break
 			}
 		}
 	}
-	if r, ok := strings.CutPrefix(rest, "[SYSTEM] "); ok {
+	if r, ok := cutPrefix(rest, "[SYSTEM] "); ok {
 		return r, true
 	}
-	return "", false
+	return rest[:0], false
+}
+
+// cutPrefix is strings.CutPrefix for a string or bytes.
+func cutPrefix[S ~string | ~[]byte](s S, prefix string) (S, bool) {
+	if len(s) < len(prefix) || string(s[:len(prefix)]) != prefix {
+		return s, false
+	}
+	return s[len(prefix):], true
 }
 
 // LogLineRecord is one line read back from disk by ReadLineRange. LineNum is
@@ -201,7 +220,7 @@ func readCurrentSegment(file *os.File, indices []int64, meta LogMeta, startLine,
 	if _, err := file.Seek(startOffset, io.SeekStart); err != nil {
 		return nil, err
 	}
-	scanner := newLineScanner(file)
+	scanner := newLineScanner(file, nil)
 	return collectLines(scanner, startLine, limit)
 }
 
@@ -276,7 +295,7 @@ func readSegmentRange(path string, segmentStart, startAt, limit int64) ([]LogLin
 		return nil, err
 	}
 
-	scanner := newLineScanner(f)
+	scanner := newLineScanner(f, nil)
 	return collectLines(scanner, segmentStart+int64(skip), limit)
 }
 
@@ -289,13 +308,22 @@ func readSegmentRange(path string, segmentStart, startAt, limit int64) ([]LogLin
 // (treated as success — ScanLines returns nil). ctx.Err() is checked
 // between lines so a cancelled context aborts within one iteration.
 func ScanLines(ctx context.Context, logPath string, visit func(LogLineRecord) bool) error {
+	return ScanLineBytes(ctx, logPath, nil, func(n int64, stream string, text []byte) bool {
+		return visit(LogLineRecord{LineNum: n, Stream: stream, Text: string(text)})
+	})
+}
+
+// ScanLineBytes is ScanLines without a copy per line: text points into the
+// scan buffer and is valid only until visit returns. buf, if not nil, is
+// the scan buffer, so one buffer can serve the scans of many runs.
+func ScanLineBytes(ctx context.Context, logPath string, buf []byte, visit func(n int64, stream string, text []byte) bool) error {
 	meta := ReadLogMeta(logPath)
 
-	done, err := scanSegment(ctx, PrevPath(logPath), meta.PrevStart, visit)
+	done, err := scanSegment(ctx, PrevPath(logPath), meta.PrevStart, buf, visit)
 	if err != nil || done {
 		return err
 	}
-	_, err = scanSegment(ctx, logPath, meta.RotatedLines, visit)
+	_, err = scanSegment(ctx, logPath, meta.RotatedLines, buf, visit)
 	return err
 }
 
@@ -303,7 +331,7 @@ func ScanLines(ctx context.Context, logPath string, visit func(LogLineRecord) bo
 // Returns (done=true, nil) when visit asked to stop, so the caller can
 // short-circuit subsequent segments. Returns (false, nil) if the file does
 // not exist — rotation may not have produced a .prev yet.
-func scanSegment(ctx context.Context, path string, startLine int64, visit func(LogLineRecord) bool) (bool, error) {
+func scanSegment(ctx context.Context, path string, startLine int64, buf []byte, visit func(n int64, stream string, text []byte) bool) (bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -313,14 +341,14 @@ func scanSegment(ctx context.Context, path string, startLine int64, visit func(L
 	}
 	defer f.Close()
 
-	scanner := newLineScanner(f)
+	scanner := newLineScanner(f, buf)
 	current := startLine
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
-		stream, text := ParseStreamPrefix(scanner.Text())
-		if !visit(LogLineRecord{LineNum: current, Stream: stream, Text: text}) {
+		stream, text := ParseStreamPrefix(scanner.Bytes())
+		if !visit(current, stream, text) {
 			return true, nil
 		}
 		current++
