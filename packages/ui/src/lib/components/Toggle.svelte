@@ -28,13 +28,33 @@
         onchange?.(checked);
     }
 
+    // Exact pixel geometry: track = 2 * thumb + 4 (1px border + 1px gap each side),
+    // so the thumb travels exactly one thumb width.
     const sizeClasses: Record<
         "sm" | "md" | "lg",
-        { track: string; thumb: string; translate: string; text: string }
+        { track: string; thumb: string; translate: string; grip: string; text: string }
     > = {
-        sm: { track: "h-5 w-9", thumb: "h-4 w-4", translate: "translate-x-4", text: "text-sm" },
-        md: { track: "h-6 w-11", thumb: "h-5 w-5", translate: "translate-x-5", text: "text-sm" },
-        lg: { track: "h-7 w-14", thumb: "h-6 w-6", translate: "translate-x-7", text: "text-base" },
+        sm: {
+            track: "h-[18px] w-8",
+            thumb: "size-3.5",
+            translate: "translate-x-3.5",
+            grip: "h-1.5",
+            text: "text-sm",
+        },
+        md: {
+            track: "h-[22px] w-10",
+            thumb: "size-[18px]",
+            translate: "translate-x-[18px]",
+            grip: "h-2",
+            text: "text-sm",
+        },
+        lg: {
+            track: "h-7 w-[52px]",
+            thumb: "size-6",
+            translate: "translate-x-6",
+            grip: "h-2.5",
+            text: "text-base",
+        },
     };
 
     const sizeConfig = $derived(sizeClasses[size]);
@@ -53,21 +73,27 @@
         {disabled}
         onclick={toggle}
         class="
-			relative inline-flex shrink-0 items-center rounded-full
+			relative block shrink-0 rounded-[3px] border
 			{sizeConfig.track}
+			shadow-[inset_0_1px_0_rgb(0_0_0/0.1)]
 			focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
-			{checked ? 'bg-primary' : 'bg-outline-hover'}
+			{checked ? 'border-primary-active bg-primary' : 'border-outline-hover bg-surface-sunken'}
 			{disabled ? 'cursor-not-allowed' : 'cursor-pointer'}
 		"
     >
         <span
             class="
-				inline-block rounded-full bg-surface-raised shadow-sm
+				absolute top-px left-px flex items-center justify-center gap-0.5 rounded-[3px] border
+				{checked ? 'border-primary-active' : 'border-outline-hover'} bg-surface-raised
+				shadow-[inset_0_-1px_0_rgb(0_0_0/0.08),0_1px_0_rgb(0_0_0/0.06)]
 				{sizeConfig.thumb}
-				transform transition-transform duration-[120ms]
-				{checked ? sizeConfig.translate : 'translate-x-0.5'}
+				transform transition-transform duration-150 ease-out
+				{checked ? sizeConfig.translate : 'translate-x-0'}
 			"
-        ></span>
+        >
+            <span class="w-px rounded-full {sizeConfig.grip} bg-outline"></span>
+            <span class="w-px rounded-full {sizeConfig.grip} bg-outline"></span>
+        </span>
     </button>
 
     {#if label || description}
