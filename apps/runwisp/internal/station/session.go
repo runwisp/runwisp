@@ -98,7 +98,7 @@ type session struct {
 	params      sessionParams
 	reconfigure chan struct{}
 	pending     map[string]chan protocol.Envelope // outgoing commands by id
-	subs        map[string]context.CancelFunc     // log subscriptions by command id
+	subs        map[string]context.CancelFunc     // log subscriptions and greps by command id
 	advertised  advertisedAgent                   // what hello / agent:update last said
 	dirty       map[string]struct{}               // services whose status changed
 	servicesDue chan struct{}
@@ -407,12 +407,11 @@ func (s *session) handleFrame(payload []byte) (err error) {
 		return &goodbyeError{g}
 	case typeLogUnsubscribe:
 		u, err := decodeData[protocol.LogUnsubscribe](env)
-		if err == nil {
-			s.unsubscribe(u.Subscription)
-		}
-		if env.ID != "" {
-			s.reply(env.ID, nil, err, false)
-		}
+		s.cancelCommand(env, u.Subscription, err)
+		return nil
+	case typeLogGrepCancel:
+		c, err := decodeData[protocol.LogGrepCancel](env)
+		s.cancelCommand(env, c.Search, err)
 		return nil
 	}
 	if env.ID == "" {
@@ -422,6 +421,18 @@ func (s *session) handleFrame(payload []byte) (err error) {
 	}
 	s.runCommand(env)
 	return nil
+}
+
+// cancelCommand acts on log:unsubscribe or log:grep:cancel: it ends the
+// command named target unless the frame failed to decode, and answers the
+// frame if it carries an id.
+func (s *session) cancelCommand(env protocol.Envelope, target string, decodeErr error) {
+	if decodeErr == nil {
+		s.unsubscribe(target)
+	}
+	if env.ID != "" {
+		s.reply(env.ID, nil, decodeErr, false)
+	}
 }
 
 // runCommand answers one command with exactly one result. An unknown command,

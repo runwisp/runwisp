@@ -78,6 +78,13 @@ var commands = map[string]command{
 		}
 		return s.client.searchLog(ctx, q, s.maxFrameBytes())
 	}},
+	typeLogGrep: {async: true, run: func(ctx context.Context, s *session, env protocol.Envelope) (any, error) {
+		q, err := decodeData[protocol.LogGrep](env)
+		if err != nil {
+			return nil, err
+		}
+		return s.grepLogs(ctx, env.ID, q)
+	}},
 	typeAgentRestart: {run: func(_ context.Context, s *session, _ protocol.Envelope) (any, error) {
 		return s.client.restart()
 	}},

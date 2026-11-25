@@ -55,8 +55,8 @@ func (s *session) streamLog(ctx context.Context, id string, req protocol.LogSubs
 	return s.streamRun(ctx, id, run, req.FromLine, req.Limit, req.Follow), nil
 }
 
-// track registers subscription id so log:unsubscribe can cancel it; done
-// unregisters it.
+// track registers command id (a log:subscribe or log:grep) so
+// log:unsubscribe or log:grep:cancel can cancel it; done unregisters it.
 func (s *session) track(ctx context.Context, id string) (_ context.Context, done func()) {
 	ctx, cancel := context.WithCancel(ctx)
 	s.mu.Lock()
@@ -176,7 +176,8 @@ func (sub *logSubscription) tail(ctx context.Context, live <-chan events.LogLine
 	}
 }
 
-// unsubscribe ends the subscription started by command id, if it still runs.
+// unsubscribe ends the log:subscribe or log:grep started by command id, if it
+// still runs.
 func (s *session) unsubscribe(id string) {
 	s.mu.Lock()
 	cancel := s.subs[id]

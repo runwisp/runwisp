@@ -38,7 +38,8 @@ func TestSession_HelloDescribesTheDaemon(t *testing.T) {
 	assert.False(t, hello.Features["exec.container"].Available)
 	assert.False(t, hello.Features["agent.restart"].Available)
 	assert.False(t, hello.Features["agent.upgrade"].Available)
-	assert.Len(t, hello.Features, 7)
+	assert.Equal(t, &protocol.FeatureStatus{Available: true}, hello.Features["log.grep"])
+	assert.Len(t, hello.Features, 8)
 }
 
 // Container engines are probed before hello: a host without Docker reports
