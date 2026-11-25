@@ -9,7 +9,6 @@ import (
 	"errors"
 	"log/slog"
 	"math"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -18,7 +17,6 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logsearch"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
@@ -29,17 +27,9 @@ const (
 	// grepMaxLineBytes cuts the text of each hit and context line.
 	grepMaxLineBytes = 4 << 10
 	grepMaxContext   = 5
-	// grepRunsPage is how many runs one listing query reads.
-	grepRunsPage = 500
 )
 
 var errGrepTimeout = errors.New("log:grep timed out")
-
-// grepRun is one run a log:grep scans.
-type grepRun struct {
-	executionID string
-	path        string
-}
 
 // grepLogs serves log:grep: it scans the station executions' local logs one
 // run at a time, newest first, streaming hits as log:grep:hits until every
@@ -55,23 +45,30 @@ func (s *session) grepLogs(ctx context.Context, id string, req protocol.LogGrep)
 	ctx, done := s.track(ctx, id)
 	defer done()
 
-	runs, err := s.client.grepRuns(ctx, req)
+	// runsTotal is exact: the count reads only the index entries in range,
+	// about 50 ms for a million runs, and the runs stream a page at a time.
+	repo, q := s.client.deps.RunRepo, grepQuery(req)
+	total, err := repo.CountGrepRuns(ctx, q)
+	if err == nil {
+		g.progress.RunsTotal = total
+		err = repo.GrepRuns(ctx, q, func(run storage.GrepRun) bool {
+			if g.over() || g.matched >= g.maxHits || ctx.Err() != nil {
+				return false
+			}
+			path := logutil.ResolveRunLogPath(s.client.deps.LogDir, run.TaskName, run.ID, run.CreatedAt)
+			if err := g.scanRun(ctx, run.ExecutionID, path); err != nil && ctx.Err() == nil {
+				// Retention may remove a log mid-scan; the other runs still count.
+				slog.Debug("log:grep skipped a run", "executionId", run.ExecutionID, "err", err)
+			}
+			g.progress.RunsScanned++
+			if len(g.batch) > 0 || time.Since(g.lastFlush) >= grepFlushInterval {
+				g.flush()
+			}
+			return true
+		})
+	}
 	if err != nil && ctx.Err() == nil {
 		return nil, &StationError{Code: protocol.ErrorCodeInternal, Message: "failed to list the runs to search", Retryable: true, Err: err}
-	}
-	g.progress.RunsTotal = len(runs)
-	for _, run := range runs {
-		if g.over() || g.matched >= g.maxHits || ctx.Err() != nil {
-			break
-		}
-		if err := g.scanRun(ctx, run); err != nil && ctx.Err() == nil {
-			// Retention may remove a log mid-scan; the other runs still count.
-			slog.Debug("log:grep skipped a run", "executionId", run.executionID, "err", err)
-		}
-		g.progress.RunsScanned++
-		if len(g.batch) > 0 || time.Since(g.lastFlush) >= grepFlushInterval {
-			g.flush()
-		}
 	}
 	if len(g.batch) > 0 {
 		g.flush()
@@ -138,11 +135,12 @@ func (s *session) newGrepScan(id string, req protocol.LogGrep) (*grepScan, error
 	}, nil
 }
 
-// scanRun greps one run's log. Once maxHits are found no new line matches,
-// and the scan stops when the open hits have their after-context.
-func (g *grepScan) scanRun(ctx context.Context, run grepRun) error {
-	r := &runGrep{g: g, executionID: run.executionID}
-	err := logutil.ScanLines(ctx, run.path, r.visit)
+// scanRun greps the log of one run, a missing log being an empty one. Once
+// maxHits are found no new line matches, and the scan stops when the open
+// hits have their after-context.
+func (g *grepScan) scanRun(ctx context.Context, executionID, path string) error {
+	r := &runGrep{g: g, executionID: executionID}
+	err := logutil.ScanLines(ctx, path, r.visit)
 	for _, h := range r.open { // the log ended before their after-context did
 		g.add(h)
 	}
@@ -295,70 +293,28 @@ func hitTextBytes(h *protocol.LogGrepHit) int {
 	return n
 }
 
-// grepRuns lists the runs a log:grep scans, newest start first: station
-// executions (execution_id set, not deleted) whose log is on disk, filtered
-// by task and by start time.
-func (client *Client) grepRuns(ctx context.Context, req protocol.LogGrep) ([]grepRun, error) {
-	tasks := grepTaskNames(req.Tasks)
-	seen := map[string]bool{} // a run inserted mid-listing shifts the pages
-	var out []grepRun
-	for offset := 0; ; offset += grepRunsPage {
-		page, err := client.deps.RunRepo.QueryRuns(ctx, storage.RunQuery{
-			Limit: grepRunsPage, Offset: offset, SortField: storage.SortColumnStartedAt, SortDirection: storage.SortDesc,
-		})
-		if err != nil {
-			return out, err
-		}
-		for i := range page {
-			run := &page[i]
-			if seen[run.ID] || !grepWants(run, req, tasks) {
-				continue
-			}
-			path := logutil.ResolveRunLogPath(client.deps.LogDir, run.TaskName, run.ID, run.CreatedAt)
-			if _, err := os.Stat(path); err != nil {
-				continue
-			}
-			seen[run.ID] = true
-			out = append(out, grepRun{executionID: *run.ExecutionID, path: path})
-		}
-		// Pages run newest start first, so one ending before since ends the list.
-		if len(page) < grepRunsPage || (req.Since > 0 && grepRunStart(&page[len(page)-1]) < req.Since) {
-			return out, nil
-		}
+// grepQuery selects the runs log:grep req scans. until is inclusive to the
+// millisecond, so the exclusive bound is the millisecond after it.
+func grepQuery(req protocol.LogGrep) storage.GrepRunsQuery {
+	q := storage.GrepRunsQuery{TaskNames: grepTaskNames(req.Tasks)}
+	if req.Since > 0 {
+		q.Since = time.UnixMilli(req.Since)
 	}
-}
-
-// grepWants reports whether log:grep req covers run, its log aside.
-func grepWants(run *model.Run, req protocol.LogGrep, tasks map[string]bool) bool {
-	if run.ExecutionID == nil || *run.ExecutionID == "" || (tasks != nil && !tasks[run.TaskName]) {
-		return false
+	if req.Until > 0 {
+		q.Before = time.UnixMilli(req.Until + 1)
 	}
-	start := grepRunStart(run)
-	return (req.Since <= 0 || start >= req.Since) && (req.Until <= 0 || start <= req.Until)
-}
-
-// grepRunStart is when run started in unix ms, or when it was created if it
-// never started: the order the runs list sorts by.
-func grepRunStart(run *model.Run) int64 {
-	if run.StartedAt != nil {
-		return run.StartedAt.UnixMilli()
-	}
-	return run.CreatedAt.UnixMilli()
+	return q
 }
 
 // grepTaskNames maps log:grep's tasks to the run task names they cover: an
 // entry is a task name of the daemon's own (a config dispatch's runs carry
 // it), or a station task's TaskRef.id, whose inline dispatches file their
 // runs under sanitizeStationTaskName(id). nil means every task.
-func grepTaskNames(tasks []string) map[string]bool {
-	if len(tasks) == 0 {
-		return nil
-	}
-	names := make(map[string]bool, 2*len(tasks))
+func grepTaskNames(tasks []string) []string {
+	var names []string
 	for _, t := range tasks {
 		if t = strings.TrimSpace(t); t != "" {
-			names[t] = true
-			names[sanitizeStationTaskName(t)] = true
+			names = append(names, t, sanitizeStationTaskName(t))
 		}
 	}
 	return names

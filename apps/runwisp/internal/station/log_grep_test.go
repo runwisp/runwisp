@@ -110,8 +110,9 @@ func TestLogGrep_FiltersRunsNewestFirstWithContext(t *testing.T) {
 	assert.Equal(t, []protocol.LogLine{{N: 2, Stream: protocol.LogStreamStdout, Text: "retry"}}, hits[1].After)
 	assert.Equal(t, protocol.StoppedDone, res.Stopped)
 	assert.Equal(t, 2, res.Hits)
-	assert.Equal(t, 2, res.Progress.RunsTotal)
-	assert.Equal(t, 2, res.Progress.RunsScanned)
+	// e5 has no log on disk: it counts as scanned, with no bytes.
+	assert.Equal(t, 3, res.Progress.RunsTotal)
+	assert.Equal(t, 3, res.Progress.RunsScanned)
 	assert.Positive(t, res.Progress.BytesScanned)
 }
 

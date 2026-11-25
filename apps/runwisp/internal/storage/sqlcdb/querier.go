@@ -13,6 +13,9 @@ type Querier interface {
 	// Only moves forward: a backdated row (a missed tick, a jittered run) must not
 	// pull the anchor back behind a run already recorded.
 	BumpTaskLastRun(ctx context.Context, arg BumpTaskLastRunParams) error
+	// How many runs ListGrepRuns pages through from the start, read from
+	// idx_runs_grep alone.
+	CountGrepRuns(ctx context.Context, arg CountGrepRunsParams) (int64, error)
 	CountRunsFiltered(ctx context.Context, arg CountRunsFilteredParams) (int64, error)
 	CountUnreadNotifications(ctx context.Context) (int64, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
@@ -57,6 +60,18 @@ type Querier interface {
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	InsertOutboxUpdate(ctx context.Context, arg InsertOutboxUpdateParams) (int64, error)
+	// One keyset page of station executions for log:grep, newest start first:
+	// the runs sorting below the cursor (before_start, before_id) that started at
+	// or after since. Times are bound as text in the stored format; sort_key is
+	// the row's raw start text, the next page's cursor. INDEXED BY pins
+	// idx_runs_grep: without statistics the planner would take
+	// idx_runs_deleted_at and sort every row instead. SQLite bounds an index
+	// scan by a plain comparison on the start but not by the row value, so the
+	// row value only breaks ties under the redundant start <= before_start; the
+	// || '' makes sqlc bind text where CAST would stop the index from bounding
+	// the scan. The page size is fixed because sqlc numbers a parameter after a
+	// slice wrongly.
+	ListGrepRuns(ctx context.Context, arg ListGrepRunsParams) ([]ListGrepRunsRow, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	ListNotifications(ctx context.Context, limit int64) ([]Notification, error)

@@ -43,8 +43,11 @@ type ExternalRunGetter interface {
 	GetRunByExecutionID(ctx context.Context, executionID string) (*model.Run, error)
 	// GetRun returns the run with the given id, or storage.ErrNotFound.
 	GetRun(ctx context.Context, id string) (*model.Run, error)
-	// QueryRuns lists runs matching q, newest first by default.
-	QueryRuns(ctx context.Context, q storage.RunQuery) ([]model.Run, error)
+	// GrepRuns calls yield with every run q selects, newest start first,
+	// until yield returns false.
+	GrepRuns(ctx context.Context, q storage.GrepRunsQuery, yield func(storage.GrepRun) bool) error
+	// CountGrepRuns counts the runs GrepRuns yields for q.
+	CountGrepRuns(ctx context.Context, q storage.GrepRunsQuery) (int, error)
 }
 
 // EventSubscriber is the subset of the in-process event hub the station bridge

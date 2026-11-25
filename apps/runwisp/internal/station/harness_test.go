@@ -4,6 +4,7 @@
 package station
 
 import (
+	"cmp"
 	"context"
 	"path/filepath"
 	"slices"
@@ -54,19 +55,38 @@ func (m *memRuns) GetRun(_ context.Context, id string) (*model.Run, error) {
 	return m.find(func(r *model.Run) bool { return r.ID == id })
 }
 
-// QueryRuns honours the task name filter and paging, newest first.
-func (m *memRuns) QueryRuns(_ context.Context, q storage.RunQuery) ([]model.Run, error) {
+// grepRuns is what storage's GrepRuns selects, newest start first.
+func (m *memRuns) grepRuns(q storage.GrepRunsQuery) []storage.GrepRun {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var out []model.Run
+	start := func(r *model.Run) time.Time { return *cmp.Or(r.StartedAt, &r.CreatedAt) }
+	var runs []*model.Run
 	for _, run := range m.runs {
-		if q.Filter.TaskName == "" || run.TaskName == q.Filter.TaskName {
-			out = append(out, *run)
+		at := start(run)
+		if run.ExecutionID != nil && (len(q.TaskNames) == 0 || slices.Contains(q.TaskNames, run.TaskName)) &&
+			(q.Since.IsZero() || !at.Before(q.Since)) && (q.Before.IsZero() || at.Before(q.Before)) {
+			runs = append(runs, run)
 		}
 	}
-	slices.SortFunc(out, func(a, b model.Run) int { return b.CreatedAt.Compare(a.CreatedAt) })
-	out = out[min(q.Offset, len(out)):]
-	return out[:min(q.Limit, len(out))], nil
+	slices.SortFunc(runs, func(a, b *model.Run) int { return cmp.Or(start(b).Compare(start(a)), cmp.Compare(b.ID, a.ID)) })
+	out := make([]storage.GrepRun, len(runs))
+	for i, r := range runs {
+		out[i] = storage.GrepRun{ID: r.ID, ExecutionID: *r.ExecutionID, TaskName: r.TaskName, CreatedAt: r.CreatedAt}
+	}
+	return out
+}
+
+func (m *memRuns) GrepRuns(_ context.Context, q storage.GrepRunsQuery, yield func(storage.GrepRun) bool) error {
+	for _, r := range m.grepRuns(q) {
+		if !yield(r) {
+			break
+		}
+	}
+	return nil
+}
+
+func (m *memRuns) CountGrepRuns(_ context.Context, q storage.GrepRunsQuery) (int, error) {
+	return len(m.grepRuns(q)), nil
 }
 
 // harness is a station client wired to a scripted station, an in-memory run

@@ -13,6 +13,43 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
+const countGrepRuns = `-- name: CountGrepRuns :one
+SELECT COUNT(*) FROM runs INDEXED BY idx_runs_grep
+WHERE execution_id IS NOT NULL AND deleted_at IS NULL
+  AND COALESCE(started_at, created_at) < ?1 || ''
+  AND COALESCE(started_at, created_at) >= ?2 || ''
+  AND (?3 OR task_name IN (/*SLICE:task_names*/?))
+`
+
+type CountGrepRunsParams struct {
+	BeforeStart *string     `json:"before_start"`
+	Since       *string     `json:"since"`
+	AllTasks    interface{} `json:"all_tasks"`
+	TaskNames   []string    `json:"task_names"`
+}
+
+// How many runs ListGrepRuns pages through from the start, read from
+// idx_runs_grep alone.
+func (q *Queries) CountGrepRuns(ctx context.Context, arg CountGrepRunsParams) (int64, error) {
+	query := countGrepRuns
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.BeforeStart)
+	queryParams = append(queryParams, arg.Since)
+	queryParams = append(queryParams, arg.AllTasks)
+	if len(arg.TaskNames) > 0 {
+		for _, v := range arg.TaskNames {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:task_names*/?", strings.Repeat(",?", len(arg.TaskNames))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:task_names*/?", "NULL", 1)
+	}
+	row := q.db.QueryRowContext(ctx, query, queryParams...)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countRunsFiltered = `-- name: CountRunsFiltered :one
 SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
@@ -385,6 +422,91 @@ func (q *Queries) GetRunningRuns(ctx context.Context) ([]Run, error) {
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGrepRuns = `-- name: ListGrepRuns :many
+SELECT id, execution_id, task_name, created_at, started_at,
+  CAST(COALESCE(started_at, created_at) AS TEXT) AS sort_key
+FROM runs INDEXED BY idx_runs_grep
+WHERE execution_id IS NOT NULL AND deleted_at IS NULL
+  AND COALESCE(started_at, created_at) <= ?1 || ''
+  AND (COALESCE(started_at, created_at), id) < (?1 || '', ?2 || '')
+  AND COALESCE(started_at, created_at) >= ?3 || ''
+  AND (?4 OR task_name IN (/*SLICE:task_names*/?))
+ORDER BY COALESCE(started_at, created_at) DESC, id DESC
+LIMIT 500
+`
+
+type ListGrepRunsParams struct {
+	BeforeStart *string     `json:"before_start"`
+	BeforeID    *string     `json:"before_id"`
+	Since       *string     `json:"since"`
+	AllTasks    interface{} `json:"all_tasks"`
+	TaskNames   []string    `json:"task_names"`
+}
+
+type ListGrepRunsRow struct {
+	ID          string     `json:"id"`
+	ExecutionID *string    `json:"execution_id"`
+	TaskName    string     `json:"task_name"`
+	CreatedAt   time.Time  `json:"created_at"`
+	StartedAt   *time.Time `json:"started_at"`
+	SortKey     string     `json:"sort_key"`
+}
+
+// One keyset page of station executions for log:grep, newest start first:
+// the runs sorting below the cursor (before_start, before_id) that started at
+// or after since. Times are bound as text in the stored format; sort_key is
+// the row's raw start text, the next page's cursor. INDEXED BY pins
+// idx_runs_grep: without statistics the planner would take
+// idx_runs_deleted_at and sort every row instead. SQLite bounds an index
+// scan by a plain comparison on the start but not by the row value, so the
+// row value only breaks ties under the redundant start <= before_start; the
+// || ” makes sqlc bind text where CAST would stop the index from bounding
+// the scan. The page size is fixed because sqlc numbers a parameter after a
+// slice wrongly.
+func (q *Queries) ListGrepRuns(ctx context.Context, arg ListGrepRunsParams) ([]ListGrepRunsRow, error) {
+	query := listGrepRuns
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.BeforeStart)
+	queryParams = append(queryParams, arg.BeforeID)
+	queryParams = append(queryParams, arg.Since)
+	queryParams = append(queryParams, arg.AllTasks)
+	if len(arg.TaskNames) > 0 {
+		for _, v := range arg.TaskNames {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:task_names*/?", strings.Repeat(",?", len(arg.TaskNames))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:task_names*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListGrepRunsRow{}
+	for rows.Next() {
+		var i ListGrepRunsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExecutionID,
+			&i.TaskName,
+			&i.CreatedAt,
+			&i.StartedAt,
+			&i.SortKey,
 		); err != nil {
 			return nil, err
 		}
