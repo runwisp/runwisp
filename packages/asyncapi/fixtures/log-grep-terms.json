@@ -1,0 +1,900 @@
+[
+  {
+    "name": "*Exception matches a word ending in it",
+    "terms": [
+      {
+        "parts": [
+          "exception"
+        ],
+        "wordStart": false,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "java.lang.RuntimeException: boom",
+    "match": true
+  },
+  {
+    "name": "*Exception does not match a word starting with it",
+    "terms": [
+      {
+        "parts": [
+          "exception"
+        ],
+        "wordStart": false,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "ExceptionHandler started",
+    "match": false
+  },
+  {
+    "name": "whole word matches exactly that word",
+    "terms": [
+      {
+        "parts": [
+          "errorexception"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "ErrorException: bad state",
+    "match": true
+  },
+  {
+    "name": "whole word does not match inside a longer word",
+    "terms": [
+      {
+        "parts": [
+          "errorexception"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "MyErrorExceptionFactory",
+    "match": false
+  },
+  {
+    "name": "status*error across spaces",
+    "terms": [
+      {
+        "parts": [
+          "status",
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "status: 500 internal error",
+    "match": true
+  },
+  {
+    "name": "status*error with no spaces",
+    "terms": [
+      {
+        "parts": [
+          "status",
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "status=error",
+    "match": true
+  },
+  {
+    "name": "status*error where * matches nothing",
+    "terms": [
+      {
+        "parts": [
+          "status",
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "statuserror",
+    "match": true
+  },
+  {
+    "name": "status*error needs the parts in order",
+    "terms": [
+      {
+        "parts": [
+          "status",
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "error status",
+    "match": false
+  },
+  {
+    "name": "status*error needs a word end after error",
+    "terms": [
+      {
+        "parts": [
+          "status",
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "status: 500 internal errors",
+    "match": false
+  },
+  {
+    "name": "last part retries later occurrences for its word end",
+    "terms": [
+      {
+        "parts": [
+          "status",
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "status: errors, then error",
+    "match": true
+  },
+  {
+    "name": "single part retries later occurrences",
+    "terms": [
+      {
+        "parts": [
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "errors error",
+    "match": true
+  },
+  {
+    "name": "single part fails when no occurrence is a whole word",
+    "terms": [
+      {
+        "parts": [
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "errors errored",
+    "match": false
+  },
+  {
+    "name": "first part retries later occurrences for its word start",
+    "terms": [
+      {
+        "parts": [
+          "error",
+          "code"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "xerror error code",
+    "match": true
+  },
+  {
+    "name": "underscore separates words",
+    "terms": [
+      {
+        "parts": [
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "my_error_code",
+    "match": true
+  },
+  {
+    "name": "hyphen separates words",
+    "terms": [
+      {
+        "parts": [
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "fatal-error-42",
+    "match": true
+  },
+  {
+    "name": "dot separates words",
+    "terms": [
+      {
+        "parts": [
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "pkg.error.Handler",
+    "match": true
+  },
+  {
+    "name": "slash separates words",
+    "terms": [
+      {
+        "parts": [
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "/var/log/error/app.log",
+    "match": true
+  },
+  {
+    "name": "colon separates words",
+    "terms": [
+      {
+        "parts": [
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "time:error:code",
+    "match": true
+  },
+  {
+    "name": "digits are word characters",
+    "terms": [
+      {
+        "parts": [
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "error42",
+    "match": false
+  },
+  {
+    "name": "letters before the term block a word start",
+    "terms": [
+      {
+        "parts": [
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "superError",
+    "match": false
+  },
+  {
+    "name": "UUID matches as a whole token",
+    "terms": [
+      {
+        "parts": [
+          "3f2a9c1e-7b4d-4e8a-9c21-5d6e7f8a9b0c"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "processing job 3f2a9c1e-7b4d-4e8a-9c21-5d6e7f8a9b0c done",
+    "match": true
+  },
+  {
+    "name": "UUID in upper case matches case-insensitively",
+    "terms": [
+      {
+        "parts": [
+          "3f2a9c1e-7b4d-4e8a-9c21-5d6e7f8a9b0c"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "job=3F2A9C1E-7B4D-4E8A-9C21-5D6E7F8A9B0C",
+    "match": true
+  },
+  {
+    "name": "UUID glued to more hex does not match",
+    "terms": [
+      {
+        "parts": [
+          "3f2a9c1e-7b4d-4e8a-9c21-5d6e7f8a9b0c"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "id=a3f2a9c1e-7b4d-4e8a-9c21-5d6e7f8a9b0c",
+    "match": false
+  },
+  {
+    "name": "a UUID's first group is a word of its own",
+    "terms": [
+      {
+        "parts": [
+          "3f2a9c1e"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "id=3f2a9c1e-7b4d-4e8a-9c21-5d6e7f8a9b0c",
+    "match": true
+  },
+  {
+    "name": "short hash with trailing * matches a longer hash",
+    "terms": [
+      {
+        "parts": [
+          "a1b2c3d"
+        ],
+        "wordStart": true,
+        "wordEnd": false
+      }
+    ],
+    "caseSensitive": false,
+    "line": "commit a1b2c3d4e5f6 merged",
+    "match": true
+  },
+  {
+    "name": "short hash with trailing * still needs a word start",
+    "terms": [
+      {
+        "parts": [
+          "a1b2c3d"
+        ],
+        "wordStart": true,
+        "wordEnd": false
+      }
+    ],
+    "caseSensitive": false,
+    "line": "commit xa1b2c3d4e5f6",
+    "match": false
+  },
+  {
+    "name": "order number matches as a whole number",
+    "terms": [
+      {
+        "parts": [
+          "4711"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "order #4711 shipped",
+    "match": true
+  },
+  {
+    "name": "order number does not match a longer number",
+    "terms": [
+      {
+        "parts": [
+          "4711"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "order 47110 shipped",
+    "match": false
+  },
+  {
+    "name": "leading and trailing * match inside a word",
+    "terms": [
+      {
+        "parts": [
+          "rror"
+        ],
+        "wordStart": false,
+        "wordEnd": false
+      }
+    ],
+    "caseSensitive": false,
+    "line": "Errors everywhere",
+    "match": true
+  },
+  {
+    "name": "empty line matches nothing",
+    "terms": [
+      {
+        "parts": [
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "",
+    "match": false
+  },
+  {
+    "name": "Unicode lowercasing folds Cyrillic",
+    "terms": [
+      {
+        "parts": [
+          "ошибка"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "ОШИБКА: диск заполнен",
+    "match": true
+  },
+  {
+    "name": "Unicode lowercasing folds Greek",
+    "terms": [
+      {
+        "parts": [
+          "σφαλμα"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "ΣΦΑΛΜΑ συστήματος",
+    "match": true
+  },
+  {
+    "name": "Unicode lowercasing folds Latin with diacritics",
+    "terms": [
+      {
+        "parts": [
+          "über"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "Grüße ÜBER alles",
+    "match": true
+  },
+  {
+    "name": "simple lowercasing does not expand ß",
+    "terms": [
+      {
+        "parts": [
+          "straße"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "STRASSE gesperrt",
+    "match": false
+  },
+  {
+    "name": "non-ASCII letters are word characters",
+    "terms": [
+      {
+        "parts": [
+          "café"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "cafés open",
+    "match": false
+  },
+  {
+    "name": "non-ASCII word followed by punctuation",
+    "terms": [
+      {
+        "parts": [
+          "café"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "le café.",
+    "match": true
+  },
+  {
+    "name": "CJK letters are word characters, so * is needed inside a run",
+    "terms": [
+      {
+        "parts": [
+          "错误"
+        ],
+        "wordStart": false,
+        "wordEnd": false
+      }
+    ],
+    "caseSensitive": false,
+    "line": "发生错误了",
+    "match": true
+  },
+  {
+    "name": "CJK term anchored at word edges fails inside a run",
+    "terms": [
+      {
+        "parts": [
+          "错误"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "发生错误了",
+    "match": false
+  },
+  {
+    "name": "case-sensitive term misses another case",
+    "terms": [
+      {
+        "parts": [
+          "Error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": true,
+    "line": "error occurred",
+    "match": false
+  },
+  {
+    "name": "case-sensitive term matches its own case",
+    "terms": [
+      {
+        "parts": [
+          "Error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": true,
+    "line": "Error occurred",
+    "match": true
+  },
+  {
+    "name": "case-sensitive upper-case term",
+    "terms": [
+      {
+        "parts": [
+          "ERROR"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": true,
+    "line": "ERROR: disk full",
+    "match": true
+  },
+  {
+    "name": "case-sensitive Unicode term misses another case",
+    "terms": [
+      {
+        "parts": [
+          "Über"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": true,
+    "line": "über alles",
+    "match": false
+  },
+  {
+    "name": "case-insensitive matches upper-case line",
+    "terms": [
+      {
+        "parts": [
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "ERROR: disk full",
+    "match": true
+  },
+  {
+    "name": "all terms must match",
+    "terms": [
+      {
+        "parts": [
+          "timeout"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      },
+      {
+        "parts": [
+          "db"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "db connection timeout after 30s",
+    "match": true
+  },
+  {
+    "name": "a missing term fails the line",
+    "terms": [
+      {
+        "parts": [
+          "timeout"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      },
+      {
+        "parts": [
+          "db"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "connection timeout after 30s",
+    "match": false
+  },
+  {
+    "name": "terms match in any order",
+    "terms": [
+      {
+        "parts": [
+          "timeout"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      },
+      {
+        "parts": [
+          "connection"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "connection timeout",
+    "match": true
+  },
+  {
+    "name": "a hyphenated word holds a whole word",
+    "terms": [
+      {
+        "parts": [
+          "error"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      },
+      {
+        "parts": [
+          "fatal"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "error: non-fatal",
+    "match": true
+  },
+  {
+    "name": "phrase with spaces matches as one term",
+    "terms": [
+      {
+        "parts": [
+          "order not found"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "ERROR order not found: 4711",
+    "match": true
+  },
+  {
+    "name": "phrase needs its exact words",
+    "terms": [
+      {
+        "parts": [
+          "order not found"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "order was not found",
+    "match": false
+  },
+  {
+    "name": "phrase with a * inside",
+    "terms": [
+      {
+        "parts": [
+          "connection ",
+          " refused"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "connection to db refused",
+    "match": true
+  },
+  {
+    "name": "phrase parts do not overlap around *",
+    "terms": [
+      {
+        "parts": [
+          "connection ",
+          " refused"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "connection refused",
+    "match": false
+  },
+  {
+    "name": "middle parts match in order",
+    "terms": [
+      {
+        "parts": [
+          "user",
+          "id",
+          "denied"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "user 42 with id 7 was denied",
+    "match": true
+  },
+  {
+    "name": "middle part missing",
+    "terms": [
+      {
+        "parts": [
+          "user",
+          "id",
+          "denied"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "user 42 was denied",
+    "match": false
+  },
+  {
+    "name": "parts never overlap",
+    "terms": [
+      {
+        "parts": [
+          "ab",
+          "ba"
+        ],
+        "wordStart": false,
+        "wordEnd": false
+      }
+    ],
+    "caseSensitive": false,
+    "line": "aba",
+    "match": false
+  },
+  {
+    "name": "parts adjacent without overlap",
+    "terms": [
+      {
+        "parts": [
+          "ab",
+          "ba"
+        ],
+        "wordStart": false,
+        "wordEnd": false
+      }
+    ],
+    "caseSensitive": false,
+    "line": "abba",
+    "match": true
+  },
+  {
+    "name": "number at the line end",
+    "terms": [
+      {
+        "parts": [
+          "500"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "HTTP 500",
+    "match": true
+  },
+  {
+    "name": "number inside a longer number",
+    "terms": [
+      {
+        "parts": [
+          "500"
+        ],
+        "wordStart": true,
+        "wordEnd": true
+      }
+    ],
+    "caseSensitive": false,
+    "line": "HTTP 5000",
+    "match": false
+  }
+]
