@@ -293,7 +293,7 @@ func TestResolveDispatchTask_ShellInlineUpserted(t *testing.T) {
 // upserted.
 func TestResolveDispatchTask_ContainerRejectedWhenDispatchDisabled(t *testing.T) {
 	avail := executor.Availability{
-		Container: executor.BackendStatus{Available: false, Reason: "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)", Policy: true},
+		Container: executor.BackendStatus{Available: false, Reason: "station dispatch disabled (set RUNWISP_ALLOW=station-dispatch to enable)", Policy: true},
 	}
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
 	h := &InboundHandler{
@@ -328,11 +328,11 @@ func TestResolveDispatchTask_ContainerInlineUpsertedWhenEnabled(t *testing.T) {
 }
 
 // TestResolveDispatchTask_HTTPRejectedWithoutDispatch confirms HTTP-type
-// dispatch is gated by allow_station_dispatch like shell/container/compose: it
+// dispatch is gated by RUNWISP_ALLOW=station-dispatch like shell/container/compose: it
 // still makes a peer-directed network call, so it's not exempt from the opt-in.
 func TestResolveDispatchTask_HTTPRejectedWithoutDispatch(t *testing.T) {
 	avail := executor.Availability{
-		HTTP: executor.BackendStatus{Available: false, Reason: "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)", Policy: true},
+		HTTP: executor.BackendStatus{Available: false, Reason: "station dispatch disabled (set RUNWISP_ALLOW=station-dispatch to enable)", Policy: true},
 	}
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
 	h := &InboundHandler{
@@ -350,7 +350,7 @@ func TestResolveDispatchTask_HTTPRejectedWithoutDispatch(t *testing.T) {
 }
 
 // TestResolveDispatchTask_HTTPAllowedWithDispatch confirms HTTP-type dispatch
-// succeeds once the operator opts in via allow_station_dispatch.
+// succeeds once the operator opts in via RUNWISP_ALLOW=station-dispatch.
 func TestResolveDispatchTask_HTTPAllowedWithDispatch(t *testing.T) {
 	avail := executor.Availability{
 		HTTP: executor.BackendStatus{Available: true},
@@ -592,7 +592,7 @@ func TestResolveDispatchTask_ConfigTaskOverlay(t *testing.T) {
 
 	_, _, err = h.resolveDispatchTask(payload(&protocol.RunOptions{Env: map[string]string{"A": "2"}}))
 	var ce *StationError
-	require.ErrorAs(t, err, &ce, "a real env override needs allow_station_dispatch")
+	require.ErrorAs(t, err, &ce, "a real env override needs RUNWISP_ALLOW=station-dispatch")
 	assert.Equal(t, protocol.ErrorCodeForbidden, ce.Code)
 
 	_, _, err = h.resolveDispatchTask(payload(&protocol.RunOptions{Failures: []string{"bogus"}}))

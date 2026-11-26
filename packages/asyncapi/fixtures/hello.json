@@ -16,7 +16,7 @@
       },
       "exec.container": {
         "available": false,
-        "reason": "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)"
+        "reason": "station dispatch disabled (set RUNWISP_ALLOW=station-dispatch to enable)"
       },
       "exec.compose": {
         "available": false,
@@ -33,7 +33,7 @@
       },
       "agent.upgrade": {
         "available": false,
-        "reason": "station upgrades disabled (set [daemon] allow_station_upgrade = true to enable)"
+        "reason": "station upgrades disabled (set RUNWISP_ALLOW=station-upgrade to enable)"
       },
       "log.grep": {
         "available": true

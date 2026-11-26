@@ -398,7 +398,7 @@ type HTTPBody struct {
 
 // Run the daemon's own task `taskName`. The dispatch's timeoutMs and
 // options apply to this run only; an env that differs from the task's
-// own needs the task's allow_station_dispatch.
+// own needs the task's RUNWISP_ALLOW=station-dispatch.
 type ConfigSpec struct {
 	Type     string `json:"type"`
 	TaskName string `json:"taskName"`

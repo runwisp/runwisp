@@ -591,7 +591,7 @@ func TestRoutingExecutor_Availability_ContainerGatedOnDispatch(t *testing.T) {
 	disabled := newTestExecutor(t, Options{Docker: &recordingBackend{}})
 	status := disabled.Availability().Container
 	assert.False(t, status.Available, "container must require the dispatch opt-in even with a backend present")
-	assert.Contains(t, status.Reason, "allow_station_dispatch")
+	assert.Contains(t, status.Reason, "RUNWISP_ALLOW=station-dispatch")
 
 	enabled := newTestExecutor(t, Options{StationDispatchEnabled: true, Docker: &recordingBackend{}})
 	assert.True(t, enabled.Availability().Container.Available)
@@ -622,7 +622,7 @@ func TestRoutingExecutor_ProbedAvailability(t *testing.T) {
 	// A type the policy refuses isn't probed and keeps its policy reason.
 	off := &probingBackend{}
 	disabled := newTestExecutor(t, Options{Docker: off, Compose: off})
-	assert.Contains(t, disabled.ProbedAvailability(t.Context()).Container.Reason, "allow_station_dispatch")
+	assert.Contains(t, disabled.ProbedAvailability(t.Context()).Container.Reason, "RUNWISP_ALLOW=station-dispatch")
 	assert.Zero(t, off.probed.Load())
 }
 

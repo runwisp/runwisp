@@ -115,20 +115,16 @@ func applyTLSEnvOverride(cfg *Config) error {
 	return nil
 }
 
-// ApplyDaemonEnv applies the env overrides only the daemon reads:
-// RUNWISP_TRUSTED_PROXIES (comma-separated) for [daemon] trusted_proxies and
-// RUNWISP_ALLOW_STATION_DISPATCH for [daemon] allow_station_dispatch. The
+// ApplyDaemonEnv applies the env settings only the daemon reads:
+// RUNWISP_ALLOW (what a connected station may do here, see applyAllow) and
+// RUNWISP_TRUSTED_PROXIES (comma-separated) for [daemon] trusted_proxies. The
 // daemon calls it at boot and on every reload, so a reload sees no change to
-// either while an env var pins it (allow_station_dispatch isn't reloadable).
+// either while an env var pins it.
 // It stays out of Load so a stray value in the operator's shell can't fail
 // `validate`, `list`, `import` and the other commands that never serve.
 func ApplyDaemonEnv(cfg *Config) error {
-	if raw := strings.TrimSpace(os.Getenv("RUNWISP_ALLOW_STATION_DISPATCH")); raw != "" {
-		on, err := strconv.ParseBool(raw)
-		if err != nil {
-			return fmt.Errorf("invalid RUNWISP_ALLOW_STATION_DISPATCH %q: must be true or false", raw)
-		}
-		cfg.Daemon.AllowStationDispatch = on
+	if err := applyAllow(cfg); err != nil {
+		return err
 	}
 	raw := strings.TrimSpace(os.Getenv("RUNWISP_TRUSTED_PROXIES"))
 	if raw == "" {
@@ -139,6 +135,43 @@ func ApplyDaemonEnv(cfg *Config) error {
 		return fmt.Errorf("RUNWISP_TRUSTED_PROXIES: %w", err)
 	}
 	cfg.Daemon.TrustedProxies = proxies
+	return nil
+}
+
+// stationDefaults is what RUNWISP_ALLOW=station-defaults grants. It grows
+// as the station gets new powers, so an operator who chose the defaults gets
+// them with the daemon upgrade; listing the grants pins them instead.
+var stationDefaults = []string{"station-dispatch", "station-upgrade"}
+
+// applyAllow sets the station grants from RUNWISP_ALLOW, a comma-separated
+// list of station-defaults, station-dispatch and station-upgrade. They are
+// env only: the station's connect command sets them, with no runwisp.toml to
+// edit. Unset grants nothing.
+func applyAllow(cfg *Config) error {
+	if os.Getenv("RUNWISP_ALLOW_STATION_DISPATCH") != "" {
+		return fmt.Errorf("RUNWISP_ALLOW_STATION_DISPATCH was replaced by RUNWISP_ALLOW=station-dispatch")
+	}
+	cfg.Daemon.AllowStationDispatch, cfg.Daemon.AllowStationUpgrade = false, false
+	var grants []string
+	for item := range strings.SplitSeq(os.Getenv("RUNWISP_ALLOW"), ",") {
+		switch item = strings.TrimSpace(item); item {
+		case "":
+		case "station-defaults":
+			grants = append(grants, stationDefaults...)
+		default:
+			grants = append(grants, item)
+		}
+	}
+	for _, g := range grants {
+		switch g {
+		case "station-dispatch":
+			cfg.Daemon.AllowStationDispatch = true
+		case "station-upgrade":
+			cfg.Daemon.AllowStationUpgrade = true
+		default:
+			return fmt.Errorf("invalid RUNWISP_ALLOW item %q: use station-defaults, station-dispatch or station-upgrade", g)
+		}
+	}
 	return nil
 }
 

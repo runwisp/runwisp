@@ -80,7 +80,7 @@ func TestInitExecutor_BuildsExecutorWithEventBus(t *testing.T) {
 	exec := initExecutor(cfg, bus, f.LogDir(), "", nil, nil)
 	require.NotNil(t, exec)
 	avail := exec.Availability()
-	// HTTP requires the allow_station_dispatch opt-in (not set here); Config flips
+	// HTTP requires the RUNWISP_ALLOW=station-dispatch opt-in (not set here); Config flips
 	// on with at least one local task regardless of the opt-in.
 	assert.False(t, avail.HTTP.Available)
 	assert.True(t, avail.Config.Available)

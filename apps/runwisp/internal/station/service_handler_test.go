@@ -108,12 +108,12 @@ func TestHandleServiceApply_UnavailableBackendRejected(t *testing.T) {
 }
 
 // TestHandleServiceApply_HTTPRejectedWithoutDispatch confirms an HTTP-type
-// station-created service is gated by allow_station_dispatch just like
+// station-created service is gated by RUNWISP_ALLOW=station-dispatch just like
 // shell/container/compose: HTTP still makes a peer-directed network call and a
 // persistent auto-restarting service, so it is not exempt from the opt-in.
 func TestHandleServiceApply_HTTPRejectedWithoutDispatch(t *testing.T) {
 	avail := executor.Availability{
-		HTTP: executor.BackendStatus{Available: false, Reason: "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)", Policy: true},
+		HTTP: executor.BackendStatus{Available: false, Reason: "station dispatch disabled (set RUNWISP_ALLOW=station-dispatch to enable)", Policy: true},
 	}
 	h := newDispatchHandler(avail, nil)
 	err := h.HandleServiceApply(protocol.ServiceApply{
@@ -129,7 +129,7 @@ func TestHandleServiceApply_HTTPRejectedWithoutDispatch(t *testing.T) {
 }
 
 // TestHandleServiceApply_HTTPAllowedWithDispatch confirms HTTP-type service
-// creation succeeds once the operator opts in via allow_station_dispatch.
+// creation succeeds once the operator opts in via RUNWISP_ALLOW=station-dispatch.
 func TestHandleServiceApply_HTTPAllowedWithDispatch(t *testing.T) {
 	h := newDispatchHandler(executor.Availability{HTTP: executor.BackendStatus{Available: true}}, nil)
 	runner := h.taskManager.(*fakeTaskRunner)
@@ -478,7 +478,7 @@ func TestHandleServiceApply_MergeUnavailableBackendRejected(t *testing.T) {
 }
 
 // Regression: a peer must not reshape the spawn environment of a TOML-defined
-// service while allow_station_dispatch is off. env can change what a disk-defined
+// service while RUNWISP_ALLOW=station-dispatch is off. env can change what a disk-defined
 // command actually executes (NODE_OPTIONS, GIT_SSH_COMMAND, *_proxy) and it
 // overlays on top of the inherited env, so it belongs on the same availability
 // gate as a script override. Before the fix the gate was only consulted when the

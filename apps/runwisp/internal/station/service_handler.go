@@ -310,7 +310,7 @@ func (h *InboundHandler) mergeServiceApply(task *model.Task, svc protocol.Servic
 }
 
 // checkEnvOverrideAllowed puts a peer-supplied env override on the same
-// allow_station_dispatch surface as a script override. env can change what a
+// RUNWISP_ALLOW=station-dispatch surface as a script override. env can change what a
 // disk-defined command actually executes (NODE_OPTIONS, GIT_SSH_COMMAND,
 // *_proxy) and it overlays on top of the inherited environment, so a peer must
 // not reshape a TOML service's spawn env without the opt-in.

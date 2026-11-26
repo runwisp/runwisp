@@ -15,12 +15,14 @@ import (
 // can't catch these because the key is valid *somewhere else* in the schema.
 // Keyed on the failing key's immediate table + leaf name.
 var misplacedKeyHints = map[string]string{
-	"defaults.on_overlap":     "on_overlap is a per-task setting — move it under [tasks.<name>] or [services.<name>]",
-	"defaults.timezone":       "set the daemon-wide timezone in [daemon] timezone, or a per-task timezone under [tasks.<name>]",
-	"daemon.host":             "host is set with the --host flag (or RUNWISP_HOST), not in [daemon]",
-	"daemon.port":             "port is set with the --port flag (or RUNWISP_PORT), not in [daemon]",
-	"notify.keep_occurrences": "keep_occurrences was renamed to coalesce_limit",
-	"notify.coalesce_every":   "coalesce_every was renamed to coalesce_limit",
+	"defaults.on_overlap":           "on_overlap is a per-task setting — move it under [tasks.<name>] or [services.<name>]",
+	"defaults.timezone":             "set the daemon-wide timezone in [daemon] timezone, or a per-task timezone under [tasks.<name>]",
+	"daemon.host":                   "host is set with the --host flag (or RUNWISP_HOST), not in [daemon]",
+	"daemon.port":                   "port is set with the --port flag (or RUNWISP_PORT), not in [daemon]",
+	"daemon.allow_station_dispatch": "allow_station_dispatch was replaced by RUNWISP_ALLOW=station-dispatch in the daemon's environment",
+	"daemon.allow_station_upgrade":  "allow_station_upgrade was replaced by RUNWISP_ALLOW=station-upgrade in the daemon's environment",
+	"notify.keep_occurrences":       "keep_occurrences was renamed to coalesce_limit",
+	"notify.coalesce_every":         "coalesce_every was renamed to coalesce_limit",
 }
 
 // removedTableHints maps a whole removed top-level table name to guidance on

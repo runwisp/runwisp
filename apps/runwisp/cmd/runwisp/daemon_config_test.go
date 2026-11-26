@@ -32,38 +32,51 @@ func TestLoadConfig_MissingWithStationReturnsDefaults(t *testing.T) {
 	require.NotNil(t, cfg)
 }
 
-// RUNWISP_ALLOW_STATION_DISPATCH overrides [daemon] allow_station_dispatch on
-// every load, with or without a runwisp.toml, so a reload sees no change.
-func TestLoadConfig_AllowStationDispatchEnv(t *testing.T) {
+// RUNWISP_ALLOW grants the station's powers on every load, with or without a
+// runwisp.toml, so a reload sees no change. The old TOML keys and env var fail
+// loudly instead of being ignored.
+func TestLoadConfig_Allow(t *testing.T) {
 	dir := t.TempDir()
 	withFile := filepath.Join(dir, "runwisp.toml")
-	require.NoError(t, os.WriteFile(withFile, []byte("[daemon]\nallow_station_dispatch = true\n\n[tasks.example]\nrun = \"echo hi\"\n"), 0o600))
+	require.NoError(t, os.WriteFile(withFile, []byte("[tasks.example]\nrun = \"echo hi\"\n"), 0o600))
 	noFile := filepath.Join(dir, "missing.toml")
 
 	for _, tc := range []struct {
-		env            string
-		withFile, none bool
+		env               string
+		dispatch, upgrade bool
 	}{
-		{env: "", withFile: true, none: false},
-		{env: "true", withFile: true, none: true},
-		{env: "false", withFile: false, none: false},
-		{env: "1", withFile: true, none: true},
+		{env: ""},
+		{env: "station-dispatch", dispatch: true},
+		{env: "station-upgrade", upgrade: true},
+		{env: " station-dispatch , station-upgrade ", dispatch: true, upgrade: true},
+		{env: "station-defaults", dispatch: true, upgrade: true},
 	} {
-		t.Setenv("RUNWISP_ALLOW_STATION_DISPATCH", tc.env)
-		cfg, err := loadConfig(config.FileSource(withFile), true)
-		require.NoError(t, err, tc.env)
-		assert.Equal(t, tc.withFile, cfg.Daemon.AllowStationDispatch, "with a file, env %q", tc.env)
-		cfg, err = loadConfig(config.FileSource(noFile), true)
-		require.NoError(t, err, tc.env)
-		assert.Equal(t, tc.none, cfg.Daemon.AllowStationDispatch, "without a file, env %q", tc.env)
+		t.Setenv("RUNWISP_ALLOW", tc.env)
+		for _, path := range []string{withFile, noFile} {
+			cfg, err := loadConfig(config.FileSource(path), true)
+			require.NoError(t, err, tc.env)
+			assert.Equal(t, tc.dispatch, cfg.Daemon.AllowStationDispatch, "dispatch, env %q, %s", tc.env, path)
+			assert.Equal(t, tc.upgrade, cfg.Daemon.AllowStationUpgrade, "upgrade, env %q, %s", tc.env, path)
+		}
 	}
 
-	t.Setenv("RUNWISP_ALLOW_STATION_DISPATCH", "yes please")
-	for _, path := range []string{withFile, noFile} {
-		_, err := loadConfig(config.FileSource(path), true)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "RUNWISP_ALLOW_STATION_DISPATCH")
-	}
+	t.Setenv("RUNWISP_ALLOW", "station-dispatch,everything")
+	_, err := loadConfig(config.FileSource(withFile), true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `"everything"`)
+
+	t.Setenv("RUNWISP_ALLOW", "")
+	t.Setenv("RUNWISP_ALLOW_STATION_DISPATCH", "true")
+	_, err = loadConfig(config.FileSource(withFile), true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "RUNWISP_ALLOW=station-dispatch")
+
+	t.Setenv("RUNWISP_ALLOW_STATION_DISPATCH", "")
+	old := filepath.Join(dir, "old.toml")
+	require.NoError(t, os.WriteFile(old, []byte("[daemon]\nallow_station_dispatch = true\n"), 0o600))
+	_, err = loadConfig(config.FileSource(old), true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "replaced by RUNWISP_ALLOW=station-dispatch")
 }
 
 func TestLoadConfig_MissingWithoutStationErrors(t *testing.T) {

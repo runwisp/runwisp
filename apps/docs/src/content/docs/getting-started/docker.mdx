@@ -281,7 +281,7 @@ and Compose tasks on the host:
 
 ```bash
 docker run -d --name runwisp --restart=unless-stopped \
-  -e RUNWISP_STATION_URL=… -e RUNWISP_STATION_TOKEN=… -e RUNWISP_ALLOW_STATION_DISPATCH=true \
+  -e RUNWISP_STATION_URL=… -e RUNWISP_STATION_TOKEN=… -e RUNWISP_ALLOW=station-defaults \
   -v /var/run/docker.sock:/var/run/docker.sock -v runwisp-data:/var/lib/runwisp \
   runwisp/runwisp:latest-docker station
 ```
@@ -289,9 +289,8 @@ docker run -d --name runwisp --restart=unless-stopped \
 - The Station shows you the URL and token to paste in.
 - No `runwisp.toml` is needed: the Station manages the tasks. Mount one at
   `/etc/runwisp` to add tasks of your own.
-- `RUNWISP_ALLOW_STATION_DISPATCH=true` lets the Station run commands it
-  sends, not only your own tasks. See
-  [`allow_station_dispatch`](/configuration/daemon/#allow_station_dispatch).
+- `RUNWISP_ALLOW=station-defaults` lets the Station run tasks it creates, not
+  only your own. See [`RUNWISP_ALLOW`](/reference/cli/#runwisp-station).
 - Without `RUNWISP_PASSWORD`, the local Web UI listens only inside the
   container. Set a password and publish port `9477` to open it from outside.
 - Keep the `runwisp-data` volume: it holds the identity the Station knows this

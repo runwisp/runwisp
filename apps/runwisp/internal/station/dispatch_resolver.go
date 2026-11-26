@@ -36,7 +36,7 @@ func (h *InboundHandler) resolveDispatchTask(dispatch protocol.ExecutionDispatch
 		// so it honors the same gates via the same rule (model.Task.CheckTrigger).
 		// [services.*] is never manually triggered (checked first — without it,
 		// naming a service here would reserve it an extra instance outside its
-		// restart policy, bypassing the allow_station_dispatch gate meant for that).
+		// restart policy, bypassing the RUNWISP_ALLOW=station-dispatch gate meant for that).
 		// manual_trigger=false makes a task cron/schedule-only everywhere, not
 		// just over HTTP.
 		switch task.CheckTrigger() {
@@ -73,7 +73,7 @@ func (h *InboundHandler) resolveDispatchTask(dispatch protocol.ExecutionDispatch
 // run options (failures, env, graceful stop, log cap) and the timeout. The task's own definition is untouched, so the TOML's schedules and
 // local triggers keep running it as written. A station that predates
 // overrides echoes the TOML's own synced values back, which the overlay
-// re-applies unchanged; env goes through the same allow_station_dispatch gate
+// re-applies unchanged; env goes through the same RUNWISP_ALLOW=station-dispatch gate
 // as a service's only when it differs from the TOML's, so that echo never
 // trips it. An invalid list rejects the dispatch here, before a run exists.
 func (h *InboundHandler) configOverlay(task *model.Task, dispatch protocol.ExecutionDispatch) (func(*model.Task), error) {

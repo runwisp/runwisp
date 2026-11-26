@@ -83,7 +83,7 @@ func TestWaitInput_ImmediateReturnWhenNothingPending(t *testing.T) {
 }
 
 // TestRequestSelfRestart_RejectsWithoutStationDispatchOptIn is the bug-first
-// regression for agent:restart bypassing allow_station_dispatch: restarting the
+// regression for agent:restart bypassing RUNWISP_ALLOW=station-dispatch: restarting the
 // daemon process is at least as sensitive as the ad-hoc dispatch that flag
 // already gates (see internal/station/dispatch_resolver.go), so it must be
 // refused the same way — regardless of whether the daemon happens to be
@@ -94,7 +94,7 @@ func TestRequestSelfRestart_RejectsWithoutStationDispatchOptIn(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected requestSelfRestart(false) to be rejected")
 	}
-	const want = "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)"
+	const want = "station dispatch disabled (set RUNWISP_ALLOW=station-dispatch to enable)"
 	if err.Error() != want {
 		t.Fatalf("err = %q, want %q", err.Error(), want)
 	}

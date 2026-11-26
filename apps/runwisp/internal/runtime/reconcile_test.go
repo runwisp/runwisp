@@ -51,7 +51,6 @@ func TestCheckNonReloadable_RejectsRestartOnlySettings(t *testing.T) {
 		{"tls_key", func(d *config.Daemon) { d.TLSKey = "/k.pem" }, "[daemon] tls"},
 		{"metrics_enabled", func(d *config.Daemon) { d.MetricsEnabled = true }, "[daemon] metrics"},
 		{"metrics_listen", func(d *config.Daemon) { d.MetricsListen = "127.0.0.1:9478" }, "[daemon] metrics"},
-		{"allow_station_dispatch", func(d *config.Daemon) { d.AllowStationDispatch = true }, "[daemon] allow_station_dispatch"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

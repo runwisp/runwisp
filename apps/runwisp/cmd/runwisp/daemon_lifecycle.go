@@ -125,7 +125,7 @@ func requestSelfRestart(allowStationDispatch bool, fatalCh chan<- error) error {
 // dashboard can explain a restart it can't do instead of sending one.
 func selfRestartBlocker(allowStationDispatch bool) error {
 	if !allowStationDispatch {
-		return errors.New("station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)")
+		return errors.New("station dispatch disabled (set RUNWISP_ALLOW=station-dispatch to enable)")
 	}
 	if !autostart.RunningUnderServiceManager() {
 		return errors.New("daemon is not managed by a service manager; restart it manually")
@@ -143,7 +143,7 @@ var errUpgradeRestart = errors.New("upgraded by the station; exiting so the serv
 // manager must be there to start the new one.
 func stationUpgradeBlocker(allowStationUpgrade bool) error {
 	if !allowStationUpgrade {
-		return errors.New("station upgrades disabled (set [daemon] allow_station_upgrade = true to enable)")
+		return errors.New("station upgrades disabled (set RUNWISP_ALLOW=station-upgrade to enable)")
 	}
 	if !isReleaseBuild(version.Version) {
 		return errors.New("this runwisp was built from source")

@@ -888,11 +888,9 @@ func (w *storageWire) toStorage() (Storage, error) {
 // make adding a crontab require a restart. Only the root config may set them;
 // either key in an included file is a hard error.
 type daemonWire struct {
-	Name                 string `toml:"name,omitempty"`
-	AllowStationDispatch bool   `toml:"allow_station_dispatch,omitempty"`
-	AllowStationUpgrade  bool   `toml:"allow_station_upgrade,omitempty"`
-	ShutdownTimeout      string `toml:"shutdown_timeout,omitempty"`
-	ExternalURL          string `toml:"external_url,omitempty"`
+	Name            string `toml:"name,omitempty"`
+	ShutdownTimeout string `toml:"shutdown_timeout,omitempty"`
+	ExternalURL     string `toml:"external_url,omitempty"`
 	// CheckUpdates is a pointer so an omitted key (nil → default true) is
 	// distinguishable from an explicit `check_updates = false`.
 	CheckUpdates *bool  `toml:"check_updates,omitempty"`
@@ -964,22 +962,20 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 		checkUpdates = *w.CheckUpdates
 	}
 	return Daemon{
-		Name:                 strings.TrimSpace(w.Name),
-		AllowStationDispatch: w.AllowStationDispatch,
-		AllowStationUpgrade:  w.AllowStationUpgrade,
-		ShutdownTimeout:      shutdown,
-		ExternalURL:          externalURL,
-		CheckUpdates:         checkUpdates,
-		HeartbeatURL:         heartbeatURL,
-		LogOutput:            w.LogOutput,
-		MetricsEnabled:       metricsEnabled,
-		MetricsListen:        metricsListen,
-		TLS:                  tlsMode,
-		TLSCert:              strings.TrimSpace(w.TLSCert),
-		TLSKey:               strings.TrimSpace(w.TLSKey),
-		TrustedProxies:       trustedProxies,
-		APITokens:            w.APITokens,
-		ViewerAPITokens:      w.ViewerAPITokens,
+		Name:            strings.TrimSpace(w.Name),
+		ShutdownTimeout: shutdown,
+		ExternalURL:     externalURL,
+		CheckUpdates:    checkUpdates,
+		HeartbeatURL:    heartbeatURL,
+		LogOutput:       w.LogOutput,
+		MetricsEnabled:  metricsEnabled,
+		MetricsListen:   metricsListen,
+		TLS:             tlsMode,
+		TLSCert:         strings.TrimSpace(w.TLSCert),
+		TLSKey:          strings.TrimSpace(w.TLSKey),
+		TrustedProxies:  trustedProxies,
+		APITokens:       w.APITokens,
+		ViewerAPITokens: w.ViewerAPITokens,
 	}, nil
 }
 

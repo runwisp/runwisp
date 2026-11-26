@@ -7,8 +7,7 @@ description: "Daemon-wide settings: name, shutdown_timeout, timezone, external_u
 
 `[daemon]` holds settings for the whole daemon. The table is optional.
 [`runwisp reload`](/operations/reload/) applies a change to any key except the
-TLS, metrics, `allow_station_dispatch`, and `allow_station_upgrade` ones, which
-need `runwisp restart`.
+TLS and metrics ones, which need `runwisp restart`.
 
 The config path, data directory, and listen address are
 [command-line flags](/reference/cli/#global-options), because they are needed
@@ -301,47 +300,6 @@ changes state gets `403`.
 ```toml title="runwisp.toml"
 [daemon]
 viewer_api_tokens = ["${RUNWISP_VIEWER_API_TOKEN}"]
-```
-
-### `allow_station_dispatch`
-
-**type**: `boolean` **default**: `false`
-
-Lets a connected control-plane peer start **ad-hoc** runs: one-shot commands
-that are not in your config. Without it, the peer can only watch runs and
-trigger tasks defined in `runwisp.toml`.
-
-- Ad-hoc runs never change your task definitions. They are logged and stored
-  like any other run.
-- They run with the daemon's privileges. Enable this only if you need it.
-- The `RUNWISP_ALLOW_STATION_DISPATCH` env var (`true` or `false`) overrides
-  this key.
-
-```toml title="runwisp.toml"
-[daemon]
-allow_station_dispatch = true
-```
-
-### `allow_station_upgrade`
-
-**type**: `boolean` **default**: `false` **since**: `1.11`
-
-Lets the connected Station upgrade this daemon to a RunWisp release. The daemon
-downloads the release from GitHub, the same place `runwisp upgrade` uses (never
-from an address the Station names), checks its SHA-256 checksum, replaces its
-binary, and restarts.
-
-It works only when all of these hold. Otherwise the Station shows you why:
-
-- The binary is an official release that RunWisp replaces itself, installed by
-  the install script or from the `tar.gz`. Homebrew, npm, and Linux package
-  installs are upgraded by their package manager.
-- The daemon runs under a service manager (systemd or launchd), which starts the
-  new binary after the restart.
-
-```toml title="runwisp.toml"
-[daemon]
-allow_station_upgrade = true
 ```
 
 ### `include`

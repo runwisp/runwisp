@@ -139,7 +139,7 @@ final class WorkerTest extends TestCase
         $pid = self::$daemon->identity()['pid'];
         $run = self::$daemon->call('POST', '/api/tasks/linger/run')['body'];
         self::assertIsArray($run);
-        file_put_contents(self::$data . '.daemon.json', '{"allow_station_dispatch": true}');
+        file_put_contents(self::$data . '.daemon.json', '{"metrics_enabled": true}');
         try {
             $reload = self::reload();
         } finally {

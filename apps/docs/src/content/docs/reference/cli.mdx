@@ -52,6 +52,7 @@ Besides the `RUNWISP_*` twins of the global options above:
 | `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDRs. Overrides [`[daemon] trusted_proxies`](/configuration/daemon/#trusted_proxies).                                        |
 | `RUNWISP_STATION_TOKEN`   | Token for `runwisp station`.                                                                                                                  |
 | `RUNWISP_STATION_URL`     | Control-plane URL for `runwisp station`.                                                                                                      |
+| `RUNWISP_ALLOW`           | What the Station may do on this host. See [`runwisp station`](#runwisp-station).                                                              |
 | `RUNWISP_DEBUG_ADDR`      | Loopback address (like `127.0.0.1:6060`) for Go `pprof` profiles. Non-loopback addresses are refused.                                         |
 
 ## Control socket
@@ -668,6 +669,22 @@ same flags.
 - The Station can replace the token. The daemon stores the new token in its
   database and uses it from then on. Configuring a different token than the one
   it replaced makes the daemon use yours again.
+
+Without `RUNWISP_ALLOW`, the Station can watch runs and trigger the tasks in
+your `runwisp.toml`, nothing more. `RUNWISP_ALLOW` is a comma-separated list
+that grants more:
+
+| Item               | Grants                                                                                                                                                                                                                                          |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `station-defaults` | Everything below. New grants join it in later releases, so a daemon with `station-defaults` gets them when it upgrades. List the items to pin them.                                                                                             |
+| `station-dispatch` | Run tasks created in the Station, and restart the daemon. Those runs never change your `runwisp.toml`, are logged and stored like any other run, and run with the daemon's privileges.                                                          |
+| `station-upgrade`  | Upgrade the daemon to a RunWisp release, downloaded from GitHub like `runwisp upgrade` and checked against its SHA-256 checksum. Works only for the install script or `tar.gz` binary under systemd or launchd; the Station says why otherwise. |
+
+The variable is read at startup, so a change needs `runwisp restart`.
+
+```bash
+RUNWISP_ALLOW=station-defaults runwisp station
+```
 
 ### `runwisp completion`
 

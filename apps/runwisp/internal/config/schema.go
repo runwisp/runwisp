@@ -263,14 +263,13 @@ type NotificationRoute struct {
 // take precedence over auto self-signing on any bind.
 type Daemon struct {
 	Name string
-	// AllowStationDispatch lets the station run ad-hoc work here. Default
-	// false; RUNWISP_ALLOW_STATION_DISPATCH overrides it (ApplyDaemonEnv).
+	// AllowStationDispatch lets the station run ad-hoc work here, and
+	// AllowStationUpgrade lets it upgrade this daemon to a release
+	// (agent:upgrade). Both come from RUNWISP_ALLOW only (ApplyDaemonEnv).
 	AllowStationDispatch bool
-	// AllowStationUpgrade lets the station upgrade this daemon to a release
-	// (agent:upgrade). Default false.
-	AllowStationUpgrade bool
-	ShutdownTimeout     time.Duration
-	ExternalURL         string
+	AllowStationUpgrade  bool
+	ShutdownTimeout      time.Duration
+	ExternalURL          string
 	// CheckUpdates gates the daemon's outbound poll of concierge.runwisp.com for
 	// a newer release (surfaced as a Web UI / TUI indicator, never auto-applied).
 	// Default true; set false to keep the daemon fully offline.

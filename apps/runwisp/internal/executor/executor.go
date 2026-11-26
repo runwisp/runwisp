@@ -137,7 +137,7 @@ type Options struct {
 // not gate local runwisp.toml tasks, which resolve backends directly and always
 // have full access.
 //
-// StationDispatchEnabled is the operator opt-in (daemon.allow_station_dispatch).
+// StationDispatchEnabled is the operator opt-in (RUNWISP_ALLOW=station-dispatch).
 // The policy is a whitelist: only config-backed
 // dispatch (triggering an existing TOML task) is permitted without it, since
 // that's the sole type that doesn't run peer-supplied code or make a
@@ -162,7 +162,7 @@ func New(opts Options) *RoutingExecutor {
 
 	// HTTP and the code-executing types require the dispatch opt-in.
 	if !opts.StationDispatchEnabled {
-		const reason = "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)"
+		const reason = "station dispatch disabled (set RUNWISP_ALLOW=station-dispatch to enable)"
 		disabled := BackendStatus{Available: false, Reason: reason, Policy: true}
 		avail.HTTP, avail.Shell, avail.Container, avail.Compose = disabled, disabled, disabled, disabled
 	} else {

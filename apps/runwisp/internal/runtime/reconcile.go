@@ -530,9 +530,9 @@ func tasksByName(cfg *config.Config) map[string]*model.Task {
 }
 
 // CheckNonReloadable rejects a reload that changes a restart-only [daemon] key:
-// TLS and the dedicated metrics listener are bound once at boot, and the
-// station dispatch gate is fixed into the executor and station client at boot,
-// so they require a full `runwisp restart`. Server bind host/port are CLI
+// TLS and the dedicated metrics listener are bound once at boot, so they
+// require a full `runwisp restart`. The RUNWISP_ALLOW grants are fixed at boot
+// too, but come from the environment, which a reload can't change. Server bind host/port are CLI
 // flags, not config, so they can't change here. Exported for the daemon's test
 // that every [daemon] key is either restart-only or applied by its SettingsHook.
 func CheckNonReloadable(old, updated *config.Config) error {
@@ -542,10 +542,6 @@ func CheckNonReloadable(old, updated *config.Config) error {
 		return nonReloadableErr("[daemon] tls")
 	case o.MetricsEnabled != n.MetricsEnabled || o.MetricsListen != n.MetricsListen:
 		return nonReloadableErr("[daemon] metrics")
-	case o.AllowStationDispatch != n.AllowStationDispatch:
-		return nonReloadableErr("[daemon] allow_station_dispatch")
-	case o.AllowStationUpgrade != n.AllowStationUpgrade:
-		return nonReloadableErr("[daemon] allow_station_upgrade")
 	case !reflect.DeepEqual(o, n):
 		return nonReloadableErr("[daemon]")
 	}

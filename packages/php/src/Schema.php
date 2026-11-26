@@ -31,8 +31,6 @@ namespace RunWisp;
  * }
  * @phpstan-type DaemonConfig array{
  *     name?: string,
- *     allow_station_dispatch?: bool,
- *     allow_station_upgrade?: bool,
  *     shutdown_timeout?: string,
  *     external_url?: string,
  *     check_updates?: bool,

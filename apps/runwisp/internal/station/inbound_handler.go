@@ -76,7 +76,7 @@ func (h *InboundHandler) setAvailability(avail executor.Availability) {
 
 // liveAvailability is the boot-time availability with Config recomputed from
 // the current TOML task set, which a reload can grow from or shrink to empty.
-// The other types are fixed at boot by allow_station_dispatch, except that
+// The other types are fixed at boot by RUNWISP_ALLOW=station-dispatch, except that
 // container and compose are re-probed on each connect (setAvailability).
 func (h *InboundHandler) liveAvailability() executor.Availability {
 	h.availMu.Lock()
