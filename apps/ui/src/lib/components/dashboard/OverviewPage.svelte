@@ -11,6 +11,8 @@
         buildTaskOverviews,
         countTaskOverviews,
         filterTaskOverviews,
+        inTaskGroup,
+        listTaskGroups,
         sortRunsByStartDesc,
         type OverviewTaskFilter,
         type OverviewTaskSortKey,
@@ -52,6 +54,8 @@
         runningRuns,
         totalRuns,
         tasks,
+        group,
+        onGroupChange,
         onViewAllRuns,
         onTaskClick,
         onRunClick,
@@ -62,6 +66,9 @@
         runningRuns: Run[];
         totalRuns: number;
         tasks: Task[];
+        /** The group picked in the task list (`?group=`), if any. */
+        group: string | undefined;
+        onGroupChange: (group: string | undefined) => void;
         onViewAllRuns: () => void;
         onTaskClick: (taskName: string) => void;
         onRunClick: (taskName: string, runId: string) => void;
@@ -102,9 +109,15 @@
 
     let getInstanceCount = $derived(instanceCountResolver(tasks));
     let taskOverviews = $derived(buildTaskOverviews(tasks, recentRuns, runningRuns));
-    let taskCounts = $derived(countTaskOverviews(taskOverviews));
+    let taskGroups = $derived(listTaskGroups(taskOverviews));
+    // A group that no longer exists (renamed, then reloaded) shows everything.
+    let selectedGroup = $derived(taskGroups.some((g) => g.name === group) ? group : undefined);
+    // The group narrows the list and its tab counts; the panels above stay
+    // global, so a failure in another group is still on screen.
+    let groupOverviews = $derived(inTaskGroup(taskOverviews, selectedGroup));
+    let taskCounts = $derived(countTaskOverviews(groupOverviews));
     let filteredTasks = $derived(
-        filterTaskOverviews(taskOverviews, searchQuery, taskFilter, sortBy),
+        filterTaskOverviews(groupOverviews, searchQuery, taskFilter, sortBy),
     );
     let attentionTasks = $derived(
         filterTaskOverviews(taskOverviews, "", "attention", "attention").slice(0, ATTENTION_LIMIT),
@@ -179,6 +192,9 @@
             bind:taskFilter
             bind:sortBy
             {taskCounts}
+            {taskGroups}
+            {selectedGroup}
+            {onGroupChange}
             filterOptions={taskFilters}
             {sortOptions}
             {schedulingActive}

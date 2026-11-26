@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Fold task groups in the web UI sidebar.** Click a group's name to fold it; the browser remembers it, and a folded group still shows how many of its tasks failed. The overview's task list can show one group at a time, and the pick stays in the address bar (`/?group=Backups`). ([#504](https://github.com/runwisp/runwisp/issues/504), thanks [@marckilgore-beep](https://github.com/marckilgore-beep))
+
 ## [1.11.0] - 2026-11-25
 
 ### Added

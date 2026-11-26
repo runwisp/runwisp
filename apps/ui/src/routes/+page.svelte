@@ -4,6 +4,7 @@
 <script lang="ts">
     import { untrack } from "svelte";
     import { goto } from "$app/navigation";
+    import { page } from "$app/stores";
     import { resolve } from "$app/paths";
     import { OverviewPage, OverviewSkeleton } from "$lib/components/dashboard";
     import { RunMotion, type DaemonStats } from "@runwisp/ui";
@@ -146,6 +147,22 @@
         }
     });
 
+    // The task list's group filter lives in the URL (/?group=Backups), so a
+    // reload keeps it and an operator can bookmark their area.
+    let group = $derived($page.url.searchParams.get("group") ?? undefined);
+
+    function handleGroupChange(next: string | undefined) {
+        const url = new URL($page.url);
+        if (next) url.searchParams.set("group", next);
+        else url.searchParams.delete("group");
+        // eslint-disable-next-line svelte/no-navigation-without-resolve
+        void goto(`${resolve("/")}${url.search}`, {
+            replaceState: true,
+            keepFocus: true,
+            noScroll: true,
+        });
+    }
+
     async function handleTaskClick(taskName: string) {
         await goto(resolve(`/tasks/${taskName}`));
     }
@@ -163,6 +180,8 @@
         runningRuns={dashState.runningRuns}
         totalRuns={dashState.totalRuns}
         tasks={taskStore.items}
+        {group}
+        onGroupChange={handleGroupChange}
         onViewAllRuns={() => goto(resolve("/runs"))}
         onTaskClick={handleTaskClick}
         onRunClick={handleRunClick}

@@ -18,7 +18,7 @@
     import AuthModal from "$lib/components/AuthModal.svelte";
     import AppLayout from "$lib/layouts/AppLayout.svelte";
     import { ToastContainer } from "@runwisp/ui";
-    import { taskIcon } from "$lib/utils/task";
+    import { taskGroup, taskIcon } from "$lib/utils/task";
 
     let { children } = $props();
 
@@ -79,8 +79,9 @@
     let navTasks = $derived(
         taskStore.items.map((t) => ({
             name: t.name,
-            group: t.group ?? "Tasks",
+            group: taskGroup(t),
             icon: taskIcon(t),
+            failing: t.lastRun?.isFailure === true,
         })),
     );
 

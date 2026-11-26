@@ -5,6 +5,7 @@
     import {
         Activity,
         ArrowLeft,
+        ChevronRight,
         RotateCcwClock,
         Eye,
         Menu,
@@ -24,7 +25,7 @@
     import NotificationBell from "$lib/components/NotificationBell.svelte";
     import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
     import { authStore, headerSearchStore, systemStore, taskBarStore } from "$lib/stores";
-    import { StoredFlag } from "$lib/utils/stored-flag.svelte";
+    import { StoredFlag, StoredSet } from "$lib/utils/stored-flag.svelte";
     import { Badge, ThemeToggle, Logo, Heading } from "@runwisp/ui";
     import type { Task } from "@runwisp/common";
 
@@ -46,25 +47,50 @@
             name: string;
             group: string;
             icon: Component;
+            /** Its latest run failed. */
+            failing: boolean;
         }[];
         /** The task list hasn't loaded yet: show placeholders, not an empty list. */
         tasksLoading?: boolean;
         children: Snippet;
     } = $props();
 
-    type TaskGroup = { name: string; tasks: typeof tasks };
+    type TaskGroup = {
+        name: string;
+        /** The tasks shown: all of them, or only the open one while folded. */
+        tasks: typeof tasks;
+        count: number;
+        open: boolean;
+        failing: number;
+    };
 
     let showGroupHeaders = $derived(new Set(tasks.map((t) => t.group)).size > 1);
 
+    // Groups the operator folded, remembered per browser. Everything starts open.
+    const collapsedGroups = new StoredSet("runwisp:sidebar-collapsed-groups");
+
     // One group per task group when there are several; otherwise a single
     // "Tasks" section, so a lone custom group name isn't shown as a header.
+    // A folded group still shows the task whose page is open, so the sidebar
+    // never loses track of where you are.
     let taskGroups: TaskGroup[] = $derived.by(() => {
-        if (!showGroupHeaders) return [{ name: "Tasks", tasks }];
+        if (!showGroupHeaders) {
+            return [{ name: "Tasks", tasks, count: tasks.length, open: true, failing: 0 }];
+        }
         const groups: Record<string, typeof tasks> = {};
         for (const task of tasks) {
             (groups[task.group] ??= []).push(task);
         }
-        return Object.entries(groups).map(([name, groupTasks]) => ({ name, tasks: groupTasks }));
+        return Object.entries(groups).map(([name, groupTasks]) => {
+            const open = !collapsedGroups.has(name);
+            return {
+                name,
+                tasks: open ? groupTasks : groupTasks.filter((t) => t.name === activeTaskName),
+                count: groupTasks.length,
+                open,
+                failing: groupTasks.filter((t) => t.failing).length,
+            };
+        });
     });
 
     let sidebarOpen = $state(false);
@@ -237,15 +263,44 @@
                     {/each}
                 </div>
             {:else}
-                {#each taskGroups as group (group.name)}
-                    <div
-                        class="mb-2 px-3 font-mono text-2xs font-medium tracking-[0.16em] text-on-surface-faint uppercase {showGroupHeaders
-                            ? 'mt-4 first:mt-0'
-                            : ''}"
+                {#each taskGroups as group, i (group.name)}
+                    {#if showGroupHeaders}
+                        <button
+                            type="button"
+                            aria-expanded={group.open}
+                            aria-controls="sidebar-group-{i}"
+                            class="mt-4 mb-2 flex w-full items-center gap-1.5 rounded-[3px] px-3 py-0.5 font-mono text-2xs font-medium tracking-[0.16em] text-on-surface-faint uppercase first:mt-0 hover:text-primary"
+                            onclick={() => collapsedGroups.toggle(group.name)}
+                        >
+                            <ChevronRight
+                                size={12}
+                                class="-ml-1 shrink-0 {group.open ? 'rotate-90' : ''}"
+                                aria-hidden="true"
+                            />
+                            <span class="min-w-0 text-left wrap-break-word">{group.name}</span>
+                            <!-- Folding a group never hides a failure. -->
+                            {#if !group.open && group.failing > 0}
+                                <span
+                                    class="rounded-[3px] bg-danger-soft px-1.5 py-0.5 tracking-normal text-danger-soft-text normal-case tabular-nums"
+                                    title="{group.failing} failing"
+                                >
+                                    {group.failing} failing
+                                </span>
+                            {/if}
+                            <span class="ml-auto tracking-normal tabular-nums">{group.count}</span>
+                        </button>
+                    {:else}
+                        <div
+                            class="mb-2 px-3 font-mono text-2xs font-medium tracking-[0.16em] text-on-surface-faint uppercase"
+                        >
+                            {group.name}
+                        </div>
+                    {/if}
+                    <nav
+                        id="sidebar-group-{i}"
+                        aria-label={showGroupHeaders ? group.name : undefined}
+                        class="space-y-0.5 {showGroupHeaders ? 'mb-2' : 'mb-8'}"
                     >
-                        {group.name}
-                    </div>
-                    <nav class="space-y-0.5 {showGroupHeaders ? 'mb-2' : 'mb-8'}">
                         {#each group.tasks as task (task.name)}
                             {@render navLink(
                                 resolve(`/tasks/${task.name}`),

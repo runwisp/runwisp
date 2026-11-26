@@ -43,6 +43,11 @@ export function formatNextRun(
     return formatRelativeTimeWithAbsolute(at, now, zone, Boolean(zone) && zone !== viewerZone);
 }
 
+/** The sidebar section and overview filter a task belongs to: its `group`, else "Tasks". */
+export function taskGroup(task: Pick<Task, "group">): string {
+    return task.group ?? "Tasks";
+}
+
 /** Whether the task has a cron schedule. */
 export function hasCron(task: Pick<Task, "cron">): task is Pick<Task, "cron"> & { cron: string } {
     return Boolean(task.cron?.trim());
