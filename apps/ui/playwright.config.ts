@@ -51,6 +51,7 @@ export default defineConfig({
                 "task-controls.spec.ts",
                 "task-strip.spec.ts",
                 "log-find.spec.ts",
+                "task-groups.spec.ts",
             ],
             use: { ...devices["Desktop Chrome"] },
         },

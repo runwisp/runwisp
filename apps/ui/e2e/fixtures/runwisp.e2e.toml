@@ -4,6 +4,7 @@
 include = ["runwisp.d/*.toml"]
 
 [tasks.echo-task]
+group = "Smoke"
 description = "Emits a few lines of stdout for basic streaming tests"
 run = """
 echo "echo-line-1"
@@ -12,6 +13,7 @@ echo "echo-line-3"
 """
 
 [tasks.fail-task]
+group = "Smoke"
 description = "Exits non-zero after a little output"
 run = """
 echo "fail-line-1"

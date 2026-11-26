@@ -20,6 +20,7 @@
     import type {
         OverviewTaskCounts,
         OverviewTaskFilter,
+        OverviewTaskGroup,
         OverviewTaskSortKey,
         OverviewTaskState,
         TaskOverview,
@@ -110,6 +111,9 @@
         taskFilter = $bindable(),
         sortBy = $bindable(),
         taskCounts,
+        taskGroups,
+        selectedGroup,
+        onGroupChange,
         filterOptions,
         sortOptions,
         now,
@@ -122,68 +126,95 @@
         taskFilter: OverviewTaskFilter;
         sortBy: OverviewTaskSortKey;
         taskCounts: OverviewTaskCounts;
+        taskGroups: OverviewTaskGroup[];
+        selectedGroup: string | undefined;
+        onGroupChange: (group: string | undefined) => void;
         filterOptions: FilterOption[];
         sortOptions: SortOption[];
         now: Date;
         schedulingActive: boolean;
         onTaskClick: (taskName: string) => void;
     } = $props();
+
+    const ALL_GROUPS = "";
+
+    // One task group means no `group` in use: nothing to pick.
+    let showGroups = $derived(taskGroups.length > 1);
+    let groupOptions = $derived([
+        { value: ALL_GROUPS, label: "All groups" },
+        ...taskGroups.map((g) => ({ value: g.name, label: `${g.name} (${String(g.count)})` })),
+    ]);
+
+    function pickGroup(value: unknown) {
+        onGroupChange(typeof value === "string" && value !== ALL_GROUPS ? value : undefined);
+    }
 </script>
 
 <div class="space-y-4">
-    <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div class="flex items-center gap-3">
+    <!-- Two rows that wrap as whole blocks: the pickers drop under the heading,
+         and the search drops under the filter chips, so no control ends up
+         stranded on a line of its own. -->
+    <div class="space-y-3">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
             <Heading level={2} size="sm">Tasks</Heading>
             <span class="font-mono text-xs text-on-surface-muted tabular-nums">
                 {taskOverviews.length} total
             </span>
+            <div class="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
+                {#if showGroups}
+                    <div class="min-w-40 flex-1 sm:w-44 sm:flex-none">
+                        <Select
+                            size="sm"
+                            value={selectedGroup ?? ALL_GROUPS}
+                            options={groupOptions}
+                            onchange={pickGroup}
+                        />
+                    </div>
+                {/if}
+                <div class="min-w-40 flex-1 sm:w-40 sm:flex-none">
+                    <Select size="sm" bind:value={sortBy} options={sortOptions} />
+                </div>
+            </div>
         </div>
 
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div class="relative w-full sm:w-64">
-                <Input
-                    type="text"
-                    placeholder="Search tasks..."
-                    bind:value={searchQuery}
-                    class="w-full pl-9 text-sm"
-                />
-                <Search
-                    class="absolute top-1/2 left-3 -translate-y-1/2 text-on-surface-faint"
-                    size={14}
-                />
-            </div>
-
-            <div class="flex items-center gap-2">
-                <div class="flex flex-wrap gap-1.5">
-                    {#each filterOptions as filter (filter.value)}
-                        <button
+        <div class="flex flex-wrap items-center gap-2">
+            <div class="flex flex-wrap gap-1.5">
+                {#each filterOptions as filter (filter.value)}
+                    <button
+                        class={[
+                            "inline-flex h-8.5 items-center gap-1.5 rounded-[3px] border px-2.5 font-mono text-xs font-medium ",
+                            taskFilter === filter.value
+                                ? "border-primary-soft-border bg-primary-soft text-primary-soft-text"
+                                : "border-outline bg-surface-raised text-on-surface-muted hover:border-outline-hover hover:text-primary",
+                        ]}
+                        onclick={() => (taskFilter = filter.value)}
+                    >
+                        {filter.label}
+                        <span
                             class={[
-                                "inline-flex items-center gap-1.5 rounded-[3px] border px-2.5 py-1 font-mono text-xs font-medium ",
+                                "rounded-[3px] px-1.5 py-0.5 font-mono text-2xs font-semibold tabular-nums",
                                 taskFilter === filter.value
-                                    ? "border-primary-soft-border bg-primary-soft text-primary-soft-text"
-                                    : "border-outline bg-surface-raised text-on-surface-muted hover:border-outline-hover hover:text-primary",
+                                    ? "bg-surface-raised text-primary-soft-text"
+                                    : "bg-surface-sunken text-on-surface-muted",
                             ]}
-                            onclick={() => (taskFilter = filter.value)}
                         >
-                            {filter.label}
-                            <span
-                                class={[
-                                    "rounded-[3px] px-1.5 py-0.5 font-mono text-2xs font-semibold tabular-nums",
-                                    taskFilter === filter.value
-                                        ? "bg-surface-raised text-primary-soft-text"
-                                        : "bg-surface-sunken text-on-surface-muted",
-                                ]}
-                            >
-                                {taskCounts[filter.value]}
-                            </span>
-                        </button>
-                    {/each}
-                </div>
-
-                <div class="w-40">
-                    <Select bind:value={sortBy} options={sortOptions} />
-                </div>
+                            {taskCounts[filter.value]}
+                        </span>
+                    </button>
+                {/each}
             </div>
+
+            <Input
+                type="text"
+                size="sm"
+                placeholder="Search tasks..."
+                bind:value={searchQuery}
+                class="min-w-48 flex-1"
+            >
+                {#snippet leadingIcon()}
+                    <Search size={14} />
+                {/snippet}
+            </Input>
         </div>
     </div>
 

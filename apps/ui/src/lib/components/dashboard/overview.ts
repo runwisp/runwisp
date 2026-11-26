@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { displayStatus, isService, type RunStatus, type Run, type Task } from "@runwisp/common";
-import { hasCron, isServiceStopped } from "$lib/utils/task";
+import { hasCron, isServiceStopped, taskGroup } from "$lib/utils/task";
 
 export type OverviewTaskState =
     "attention" | "running" | "stopped" | "paused" | "scheduled" | "manual" | "idle";
@@ -83,6 +83,30 @@ export function countTaskOverviews(taskOverviews: TaskOverview[]): OverviewTaskC
         scheduled: count("scheduled"),
         manual: count("manual"),
     };
+}
+
+export interface OverviewTaskGroup {
+    name: string;
+    count: number;
+}
+
+/** The task groups in config order, each with how many tasks it holds. */
+export function listTaskGroups(taskOverviews: TaskOverview[]): OverviewTaskGroup[] {
+    const counts = new Map<string, number>();
+    for (const { task } of taskOverviews) {
+        const name = taskGroup(task);
+        counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    return [...counts].map(([name, count]) => ({ name, count }));
+}
+
+/** The tasks in `group`, or all of them when no group is picked. */
+export function inTaskGroup(
+    taskOverviews: TaskOverview[],
+    group: string | undefined,
+): TaskOverview[] {
+    if (!group) return taskOverviews;
+    return taskOverviews.filter(({ task }) => taskGroup(task) === group);
 }
 
 export function filterTaskOverviews(

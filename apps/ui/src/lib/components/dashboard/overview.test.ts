@@ -7,6 +7,8 @@ import {
     buildTaskOverviews,
     countTaskOverviews,
     filterTaskOverviews,
+    inTaskGroup,
+    listTaskGroups,
     sortRunsByStartDesc,
     type TaskOverview,
 } from "./overview";
@@ -501,5 +503,55 @@ describe("filterTaskOverviews sort tie-breaking", () => {
         const noRun = makeOverview("z-without", "idle");
         const result = filterTaskOverviews([withRun, noRun], "", "all", "last_activity");
         expect(result.at(0)?.task.name).toBe("a-with");
+    });
+});
+
+// ─── task groups ──────────────────────────────────────────────────────────────
+
+describe("listTaskGroups", () => {
+    it("lists groups in config order with their task counts", () => {
+        const overviews = buildTaskOverviews(
+            [
+                makeTask("b1", { group: "Backups" }),
+                makeTask("s1", { group: "Status" }),
+                makeTask("b2", { group: "Backups" }),
+                makeTask("loose"),
+            ],
+            [],
+            [],
+        );
+        expect(listTaskGroups(overviews)).toEqual([
+            { name: "Backups", count: 2 },
+            { name: "Status", count: 1 },
+            { name: "Tasks", count: 1 },
+        ]);
+    });
+});
+
+describe("inTaskGroup", () => {
+    const overviews = buildTaskOverviews(
+        [makeTask("b1", { group: "Backups" }), makeTask("loose")],
+        [],
+        [],
+    );
+
+    it("keeps only the picked group, ungrouped tasks under Tasks", () => {
+        expect(inTaskGroup(overviews, "Backups").map((t) => t.task.name)).toEqual(["b1"]);
+        expect(inTaskGroup(overviews, "Tasks").map((t) => t.task.name)).toEqual(["loose"]);
+    });
+
+    it("keeps everything when no group is picked", () => {
+        expect(inTaskGroup(overviews, undefined)).toHaveLength(2);
+    });
+
+    it("feeds per-group tab counts", () => {
+        const failing = makeRun("b1", { isFailure: true, endReason: "failed", exitCode: 1 });
+        const withFailure = buildTaskOverviews(
+            [makeTask("b1", { group: "Backups" }), makeTask("loose")],
+            [failing],
+            [],
+        );
+        expect(countTaskOverviews(inTaskGroup(withFailure, "Backups")).attention).toBe(1);
+        expect(countTaskOverviews(inTaskGroup(withFailure, "Tasks")).attention).toBe(0);
     });
 });

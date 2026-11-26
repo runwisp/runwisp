@@ -29,3 +29,38 @@ export class StoredFlag {
         }
     }
 }
+
+/** A reactive set of strings the browser remembers across reloads (folded sections). */
+export class StoredSet {
+    #values = $state<string[]>([]);
+    readonly #key: string;
+
+    constructor(key: string) {
+        this.#key = key;
+        try {
+            const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");
+            if (Array.isArray(parsed)) {
+                this.#values = parsed.filter((v): v is string => typeof v === "string");
+            }
+        } catch {
+            // no storage, or a corrupt value: start empty
+        }
+    }
+
+    has(value: string): boolean {
+        return this.#values.includes(value);
+    }
+
+    toggle(value: string): void {
+        const next = this.has(value)
+            ? this.#values.filter((v) => v !== value)
+            : [...this.#values, value];
+        this.#values = next;
+        try {
+            if (next.length > 0) localStorage.setItem(this.#key, JSON.stringify(next));
+            else localStorage.removeItem(this.#key);
+        } catch {
+            // not persisted; still applies for this page
+        }
+    }
+}
