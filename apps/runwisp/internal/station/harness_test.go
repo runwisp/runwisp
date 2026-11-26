@@ -55,7 +55,8 @@ func (m *memRuns) GetRun(_ context.Context, id string) (*model.Run, error) {
 	return m.find(func(r *model.Run) bool { return r.ID == id })
 }
 
-// grepRuns is what storage's GrepRuns selects, newest start first.
+// grepRuns is what storage's GrepRuns selects, newest start first, but for
+// the runs it selects by a pending log archive.
 func (m *memRuns) grepRuns(q storage.GrepRunsQuery) []storage.GrepRun {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -63,7 +64,8 @@ func (m *memRuns) grepRuns(q storage.GrepRunsQuery) []storage.GrepRun {
 	var runs []*model.Run
 	for _, run := range m.runs {
 		at := start(run)
-		if run.ExecutionID != nil && (len(q.TaskNames) == 0 || slices.Contains(q.TaskNames, run.TaskName)) &&
+		station := run.ExecutionID != nil || slices.Contains(q.ServiceTasks, run.TaskName)
+		if station && (len(q.TaskNames) == 0 || slices.Contains(q.TaskNames, run.TaskName)) &&
 			(q.Since.IsZero() || !at.Before(q.Since)) && (q.Before.IsZero() || at.Before(q.Before)) {
 			runs = append(runs, run)
 		}
@@ -71,7 +73,7 @@ func (m *memRuns) grepRuns(q storage.GrepRunsQuery) []storage.GrepRun {
 	slices.SortFunc(runs, func(a, b *model.Run) int { return cmp.Or(start(b).Compare(start(a)), cmp.Compare(b.ID, a.ID)) })
 	out := make([]storage.GrepRun, len(runs))
 	for i, r := range runs {
-		out[i] = storage.GrepRun{ID: r.ID, ExecutionID: *r.ExecutionID, TaskName: r.TaskName, CreatedAt: r.CreatedAt}
+		out[i] = storage.GrepRun{ID: r.ID, ExecutionID: r.ExecutionID, TaskName: r.TaskName, CreatedAt: r.CreatedAt}
 	}
 	return out
 }

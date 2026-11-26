@@ -18,6 +18,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logsearch"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
@@ -76,7 +77,7 @@ func (s *session) grep(ctx context.Context, g *grepScan, req protocol.LogGrep) (
 
 	// runsTotal is exact: the count reads only the index entries in range,
 	// about 50 ms for a million runs, and the runs stream a page at a time.
-	repo, q := s.client.deps.RunRepo, grepQuery(req)
+	repo, q := s.client.deps.RunRepo, grepQuery(req, s.client.deps.TaskManager.ListServiceTasks())
 	total, err := repo.CountGrepRuns(ctx, q)
 	if err == nil {
 		g.progress.RunsTotal = total
@@ -84,10 +85,11 @@ func (s *session) grep(ctx context.Context, g *grepScan, req protocol.LogGrep) (
 			if g.over() || g.matched >= g.maxHits || ctx.Err() != nil {
 				return false
 			}
+			executionID := executionIDOf(&model.Run{ID: run.ID, ExecutionID: run.ExecutionID})
 			path := logutil.ResolveRunLogPath(s.client.deps.LogDir, run.TaskName, run.ID, run.CreatedAt)
-			if err := g.scanRun(ctx, run.ExecutionID, path); err != nil && ctx.Err() == nil {
+			if err := g.scanRun(ctx, executionID, path); err != nil && ctx.Err() == nil {
 				// Retention may remove a log mid-scan; the other runs still count.
-				slog.Debug("log:grep skipped a run", "executionId", run.ExecutionID, "err", err)
+				slog.Debug("log:grep skipped a run", "executionId", executionID, "err", err)
 			}
 			g.progress.RunsScanned++
 			if time.Since(g.lastFlush) >= grepFlushInterval {
@@ -371,10 +373,15 @@ func hitTextBytes(h *protocol.LogGrepHit) int {
 	return n
 }
 
-// grepQuery selects the runs log:grep req scans. until is inclusive to the
-// millisecond, so the exclusive bound is the millisecond after it.
-func grepQuery(req protocol.LogGrep) storage.GrepRunsQuery {
+// grepQuery selects the runs log:grep req scans: the station executions,
+// dispatched or of services (the station hears of a service instance's run,
+// see EventBridge.handleRunEvent). until is inclusive to the millisecond, so
+// the exclusive bound is the millisecond after it.
+func grepQuery(req protocol.LogGrep, services []*model.Task) storage.GrepRunsQuery {
 	q := storage.GrepRunsQuery{TaskNames: grepTaskNames(req.Tasks)}
+	for _, svc := range services {
+		q.ServiceTasks = append(q.ServiceTasks, svc.Name)
+	}
 	if req.Since > 0 {
 		q.Since = time.UnixMilli(req.Since)
 	}
@@ -385,9 +392,11 @@ func grepQuery(req protocol.LogGrep) storage.GrepRunsQuery {
 }
 
 // grepTaskNames maps log:grep's tasks to the run task names they cover: an
-// entry is a task name of the daemon's own (a config dispatch's runs carry
-// it), or a station task's TaskRef.id, whose inline dispatches file their
-// runs under sanitizeStationTaskName(id). nil means every task.
+// entry is a task name of the daemon's own (a config dispatch's runs and a
+// service instance's carry it; the station knows a service run's task by it,
+// see executionUpdate), or a station task's TaskRef.id, whose inline
+// dispatches and services file their runs under sanitizeStationTaskName(id).
+// nil means every task.
 func grepTaskNames(tasks []string) []string {
 	var names []string
 	for _, t := range tasks {

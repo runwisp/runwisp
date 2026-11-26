@@ -6,6 +6,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -65,7 +66,7 @@ func TestGrepRuns_PagesNewestFirstWithFilters(t *testing.T) {
 	for i := 1; i < len(all); i++ {
 		require.Greater(t, all[i-1].ID, all[i].ID, "newest first, no run twice")
 	}
-	assert.Equal(t, "exec-1998", all[0].ExecutionID)
+	assert.Equal(t, new("exec-1998"), all[0].ExecutionID)
 	assert.Equal(t, "task-48", all[0].TaskName)
 	assert.True(t, grepFillStart.Add(1998*2600*time.Millisecond).Equal(all[0].CreatedAt))
 	n, err := db.CountGrepRuns(t.Context(), GrepRunsQuery{})
@@ -83,6 +84,21 @@ func TestGrepRuns_PagesNewestFirstWithFilters(t *testing.T) {
 	n, err = db.CountGrepRuns(t.Context(), q)
 	require.NoError(t, err)
 	assert.Equal(t, 5, n)
+
+	// Service instance runs have no execution id and are station executions
+	// too: task-49's (all local, as i % 10 == 9) once it is a service, and
+	// task-9's 1009, whose log archive is pending. task-9's 1059 stays local.
+	_, err = db.db.Exec(`INSERT INTO pending_log_uploads (execution_id, inserted_at_unix) VALUES (?, 0)`, fmt.Sprintf("%026d", 1009))
+	require.NoError(t, err)
+	q.TaskNames, q.ServiceTasks = append(q.TaskNames, "task-9"), []string{"task-49"}
+	ids = nil
+	for _, r := range collectGrepRuns(t, db, q) {
+		ids = append(ids, strings.TrimLeft(r.ID, "0"))
+	}
+	assert.Equal(t, []string{"1099", "1051", "1050", "1049", "1017", "1009", "1001", "1000"}, ids)
+	n, err = db.CountGrepRuns(t.Context(), q)
+	require.NoError(t, err)
+	assert.Equal(t, 8, n)
 
 	// Run 3 never started: it is placed by created_at, after run 2.
 	got = collectGrepRuns(t, db, GrepRunsQuery{Before: grepFillAt(4), TaskNames: []string{"task-3", "task-2"}})
@@ -134,9 +150,10 @@ func grepRunsPlans(t testing.TB, db *SQLiteDatabase) map[string]string {
 	}
 	for _, tasks := range [][]string{nil, {"task-1", "station-task-1"}} {
 		suffix := map[bool]string{true: " all tasks", false: " some tasks"}[tasks == nil]
-		_, _ = q.ListGrepRuns(t.Context(), sqlcdb.ListGrepRunsParams{BeforeStart: new("9"), BeforeID: new(""), Since: new(""), AllTasks: tasks == nil, TaskNames: tasks})
+		services := []string{"service-1"}
+		_, _ = q.ListGrepRuns(t.Context(), sqlcdb.ListGrepRunsParams{BeforeStart: new("9"), BeforeID: new(""), Since: new(""), AllTasks: tasks == nil, TaskNames: tasks, ServiceTasks: services})
 		explain("page" + suffix)
-		_, _ = q.CountGrepRuns(t.Context(), sqlcdb.CountGrepRunsParams{BeforeStart: new("9"), Since: new(""), AllTasks: tasks == nil, TaskNames: tasks})
+		_, _ = q.CountGrepRuns(t.Context(), sqlcdb.CountGrepRunsParams{BeforeStart: new("9"), Since: new(""), AllTasks: tasks == nil, TaskNames: tasks, ServiceTasks: services})
 		explain("count" + suffix)
 	}
 	return plans

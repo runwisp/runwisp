@@ -967,8 +967,8 @@ components:
     LogGrep:
       type: object
       description: |
-        Greps the local logs of the daemon's station executions, newest run
-        first, one run at a time. Hits stream as log:grep:hits (replyTo = this
+        Greps the local logs of the daemon's station executions, dispatched
+        or service instances' runs, newest run first, one run at a time. Hits stream as log:grep:hits (replyTo = this
         command's id); a LogGrepResult ends it once every run is scanned, a
         cap or timeoutMs is reached, or after log:grep:cancel.
       properties:
@@ -985,8 +985,9 @@ components:
           items: { type: string }
           description: |
             Tasks to search; empty = all. An entry is a task's TaskRef.id as
-            sent in execution:dispatch, or a task name of the daemon's own
-            (the taskName of a config spec).
+            sent in execution:dispatch or service:apply, or a task name of
+            the daemon's own (the taskName of a config spec, or a service
+            run's taskId in execution:update).
         since: { type: integer, format: int64, description: "Unix ms; only runs that started at or after it. 0 = no bound." }
         until: { type: integer, format: int64, description: "Unix ms; only runs that started at or before it. 0 = no bound." }
         context: { type: integer, description: "Lines before and after each hit, 0-5." }

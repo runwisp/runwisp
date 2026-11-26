@@ -577,8 +577,8 @@ type LogSearchResult struct {
 	Exhausted bool      `json:"exhausted"`
 }
 
-// Greps the local logs of the daemon's station executions, newest run
-// first, one run at a time. Hits stream as log:grep:hits (replyTo = this
+// Greps the local logs of the daemon's station executions, dispatched
+// or service instances' runs, newest run first, one run at a time. Hits stream as log:grep:hits (replyTo = this
 // command's id); a LogGrepResult ends it once every run is scanned, a
 // cap or timeoutMs is reached, or after log:grep:cancel.
 type LogGrep struct {
@@ -589,8 +589,9 @@ type LogGrep struct {
 	// False means the parts are already lowercased (strings.ToLower) and the daemon matches the lowercased line.
 	CaseSensitive bool `json:"caseSensitive,omitzero"`
 	// Tasks to search; empty = all. An entry is a task's TaskRef.id as
-	// sent in execution:dispatch, or a task name of the daemon's own
-	// (the taskName of a config spec).
+	// sent in execution:dispatch or service:apply, or a task name of
+	// the daemon's own (the taskName of a config spec, or a service
+	// run's taskId in execution:update).
 	Tasks []string `json:"tasks,omitzero"`
 	// Unix ms; only runs that started at or after it. 0 = no bound.
 	Since int64 `json:"since,omitzero"`

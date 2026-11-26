@@ -62,15 +62,18 @@ type Querier interface {
 	InsertOutboxUpdate(ctx context.Context, arg InsertOutboxUpdateParams) (int64, error)
 	// One keyset page of station executions for log:grep, newest start first:
 	// the runs sorting below the cursor (before_start, before_id) that started at
-	// or after since. Times are bound as text in the stored format; sort_key is
-	// the row's raw start text, the next page's cursor. INDEXED BY pins
-	// idx_runs_grep: without statistics the planner would take
-	// idx_runs_deleted_at and sort every row instead. SQLite bounds an index
-	// scan by a plain comparison on the start but not by the row value, so the
-	// row value only breaks ties under the redundant start <= before_start; the
-	// || '' makes sqlc bind text where CAST would stop the index from bounding
-	// the scan. The page size is fixed because sqlc numbers a parameter after a
-	// slice wrongly.
+	// or after since. A station execution is a run the station hears of: a
+	// dispatched one (an execution id), or a service instance's run, which the
+	// daemon starts itself: one of service_tasks, or one whose log archive is
+	// still pending (its service since removed). Times are bound as text in the
+	// stored format; sort_key is the row's raw start text, the next page's
+	// cursor. INDEXED BY pins idx_runs_grep: without statistics the planner
+	// would take idx_runs_deleted_at and sort every row instead. SQLite bounds an
+	// index scan by a plain comparison on the start but not by the row value, so
+	// the row value only breaks ties under the redundant start <= before_start;
+	// the || '' makes sqlc bind text where CAST would stop the index from
+	// bounding the scan. The slices come last and the page size is fixed because
+	// sqlc numbers a parameter after a slice wrongly.
 	ListGrepRuns(ctx context.Context, arg ListGrepRunsParams) ([]ListGrepRunsRow, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later

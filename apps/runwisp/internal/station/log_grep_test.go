@@ -117,6 +117,33 @@ func TestLogGrep_FiltersRunsNewestFirstWithContext(t *testing.T) {
 	assert.Positive(t, res.Progress.BytesScanned)
 }
 
+// A service instance's run has no execution id: the station knows it by its
+// run id, under its task's name, so a plain task entry covers it. A running
+// one is read up to what its log holds now; a local run stays unsearched.
+func TestLogGrep_SearchesServiceRuns(t *testing.T) {
+	st := stationtest.New(t)
+	h := newHarness(t, st, nil)
+	h.runner.tasks["web"] = &model.Task{Name: "web", Kind: model.KindService, Run: "serve"}
+	h.runner.tasks["station-api"] = &model.Task{Name: "station-api", Kind: model.KindService, Run: "serve"}
+	old := grepRunAt(t, h, "", "web", 0, "ERROR old instance")
+	api := grepRunAt(t, h, "", "station-api", time.Minute, "ERROR api")
+	grepRunAt(t, h, "", "backup", 2*time.Minute, "ERROR local run")
+	grepRunAt(t, h, "e1", "other", 2*time.Minute, "ERROR other task")
+	started := grepDay.Add(3 * time.Minute)
+	live := openRunLog(t, h, &model.Run{ID: "run-web-live", TaskName: "web", Status: model.PhaseRunning, CreatedAt: started, StartedAt: &started})
+	h.start(t)
+	for _, text := range []string{"boot", "ERROR live instance"} {
+		_, err := live.writer.WriteLineEvent(text, logutil.StreamStdout)
+		require.NoError(t, err)
+	}
+
+	hits, res := grepResult(t, st, protocol.LogGrep{
+		Terms: []protocol.LogGrepTerm{word("error")}, Tasks: []string{"web", "api", "backup"}, MaxHits: 100, TimeoutMs: 5000,
+	})
+	assert.Equal(t, []string{"run-web-live:ERROR live instance", api.ID + ":ERROR api", old.ID + ":ERROR old instance"}, hitLines(hits))
+	assert.Equal(t, 3, res.Progress.RunsTotal)
+}
+
 func TestLogGrep_MaxHitsKeepsTheLastHitsContext(t *testing.T) {
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)

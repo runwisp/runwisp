@@ -291,23 +291,28 @@ DELETE FROM runs WHERE id IN (sqlc.slice('ids'));
 -- name: ListGrepRuns :many
 -- One keyset page of station executions for log:grep, newest start first:
 -- the runs sorting below the cursor (before_start, before_id) that started at
--- or after since. Times are bound as text in the stored format; sort_key is
--- the row's raw start text, the next page's cursor. INDEXED BY pins
--- idx_runs_grep: without statistics the planner would take
--- idx_runs_deleted_at and sort every row instead. SQLite bounds an index
--- scan by a plain comparison on the start but not by the row value, so the
--- row value only breaks ties under the redundant start <= before_start; the
--- || '' makes sqlc bind text where CAST would stop the index from bounding
--- the scan. The page size is fixed because sqlc numbers a parameter after a
--- slice wrongly.
+-- or after since. A station execution is a run the station hears of: a
+-- dispatched one (an execution id), or a service instance's run, which the
+-- daemon starts itself: one of service_tasks, or one whose log archive is
+-- still pending (its service since removed). Times are bound as text in the
+-- stored format; sort_key is the row's raw start text, the next page's
+-- cursor. INDEXED BY pins idx_runs_grep: without statistics the planner
+-- would take idx_runs_deleted_at and sort every row instead. SQLite bounds an
+-- index scan by a plain comparison on the start but not by the row value, so
+-- the row value only breaks ties under the redundant start <= before_start;
+-- the || '' makes sqlc bind text where CAST would stop the index from
+-- bounding the scan. The slices come last and the page size is fixed because
+-- sqlc numbers a parameter after a slice wrongly.
 SELECT id, execution_id, task_name, created_at, started_at,
   CAST(COALESCE(started_at, created_at) AS TEXT) AS sort_key
 FROM runs INDEXED BY idx_runs_grep
-WHERE execution_id IS NOT NULL AND deleted_at IS NULL
+WHERE deleted_at IS NULL
   AND COALESCE(started_at, created_at) <= sqlc.arg(before_start) || ''
   AND (COALESCE(started_at, created_at), id) < (sqlc.arg(before_start) || '', sqlc.arg(before_id) || '')
   AND COALESCE(started_at, created_at) >= sqlc.arg(since) || ''
   AND (sqlc.arg(all_tasks) OR task_name IN (sqlc.slice(task_names)))
+  AND (execution_id IS NOT NULL OR task_name IN (sqlc.slice(service_tasks))
+    OR id IN (SELECT execution_id FROM pending_log_uploads))
 ORDER BY COALESCE(started_at, created_at) DESC, id DESC
 LIMIT 500;
 
@@ -315,7 +320,9 @@ LIMIT 500;
 -- How many runs ListGrepRuns pages through from the start, read from
 -- idx_runs_grep alone.
 SELECT COUNT(*) FROM runs INDEXED BY idx_runs_grep
-WHERE execution_id IS NOT NULL AND deleted_at IS NULL
+WHERE deleted_at IS NULL
   AND COALESCE(started_at, created_at) < sqlc.arg(before_start) || ''
   AND COALESCE(started_at, created_at) >= sqlc.arg(since) || ''
-  AND (sqlc.arg(all_tasks) OR task_name IN (sqlc.slice(task_names)));
+  AND (sqlc.arg(all_tasks) OR task_name IN (sqlc.slice(task_names)))
+  AND (execution_id IS NOT NULL OR task_name IN (sqlc.slice(service_tasks))
+    OR id IN (SELECT execution_id FROM pending_log_uploads));
