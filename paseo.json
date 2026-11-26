@@ -1,8 +1,0 @@
-{
-  "worktree": {
-    "setup": [
-      "git pull origin main",
-      "bun install"
-    ]
-  }
-}

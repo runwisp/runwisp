@@ -24,8 +24,8 @@ const DebugAddrEnv = "RUNWISP_DEBUG_ADDR"
 // debugServer is an opt-in, loopback-only net/http/pprof endpoint, used to
 // profile memory and CPU (e.g. `go tool pprof http://127.0.0.1:6060/debug/pprof/heap`).
 // It deliberately does NOT ride on the authenticated REST/UI server: profiles
-// expose process memory, and that surface is untrusted (see TRUST MODEL). It is
-// loopback-only and off by default.
+// expose process memory, and that surface is untrusted (see "Trust model" in
+// AGENTS.md). It is loopback-only and off by default.
 type debugServer struct {
 	srv  *http.Server
 	addr string // actual bound address (host:port), resolved after Listen

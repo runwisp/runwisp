@@ -13,9 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Find in the run log.** Ctrl+F searches the log of the run you have open, in the web UI and the TUI, even while the run is still printing.
 - **Select a range of runs** with shift+click in the web UI and shift+↑/↓ in the TUI.
-- **Sort runs by duration**, longest or shortest first: from the sort menu in the web UI, and with `o` in the TUI, which also gets oldest first.
+- **Sort runs by duration**, longest or shortest first: from the sort menu in the web UI, and with `o` in the TUI, which also gets oldest first. ([#484](https://github.com/runwisp/runwisp/issues/484), thanks [@kzshantonu](https://github.com/kzshantonu))
 - **RunWisp notices when you edit a crontab.** After `crontab -e`, `runwisp status`, `runwisp list`, the TUI and the notification bell name the crontab that changed and say to run `runwisp reload`.
-- **`--no-http`** on `runwisp daemon`, `runwisp` and `runwisp demo` runs the daemon without the HTTP port, for servers you only manage from the TUI and the CLI.
+- **`--no-http`** on `runwisp daemon`, `runwisp` and `runwisp demo` runs the daemon without the HTTP port, for servers you only manage from the TUI and the CLI. ([#494](https://github.com/runwisp/runwisp/issues/494), thanks [@jniggemann](https://github.com/jniggemann))
 - A run with no output whose command redirects it (`>> /var/log/backup.log`) says where the output went, in the web UI and the TUI.
 - The TUI lists config warnings in full when you click the header's warning notice or press `w` on Home.
 
@@ -65,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- On a terminal 143 columns or wider, the TUI Home run list also shows CPU, RAM and OUTPUT, with live CPU, memory and output lines for running runs. Home and the Web UI's Runs page color each run against its own task's usual run, and the Runs page shows the CPU, RAM and output bars. Running runs in the Web UI's run lists show the same live values.
+- On a terminal 143 columns or wider, the TUI Home run list also shows CPU, RAM and OUTPUT, with live CPU, memory and output lines for running runs. Home and the Web UI's Runs page color each run against its own task's usual run, and the Runs page shows the CPU, RAM and output bars. Running runs in the Web UI's run lists show the same live values. ([#467](https://github.com/runwisp/runwisp/issues/467), thanks [@jniggemann](https://github.com/jniggemann))
 
 ### Fixed
 
@@ -168,8 +168,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A hook `run` takes `tail=N` and returns the last N lines of the run's log with the run, so a CI job holding only a hook token can show why a run failed.
 - `runwisp start`, `stop` and `restart` take `--token` (or `RUNWISP_HOOK_TOKEN`) with `--url`, so a task that runs as another user can restart a service through its hook token.
 - `runwisp status` and `runwisp list` take `--url` and `--password` to ask a remote daemon, and `RUNWISP_URL` now applies to them too.
-- Runs record how many lines they printed. The TUI run list has an OUTPUT column and the Web UI's task page a third bar next to CPU and RAM, both amber when a run printed far more or far less than the task usually does, such as a silent backup that printed a warning.
-- A task's run durations are colored like CPU and RAM in the TUI run list and the Web UI's task page: amber from 1.5× the task's usual run, red from twice it. The TUI task details show the usual duration.
+- Runs record how many lines they printed. The TUI run list has an OUTPUT column and the Web UI's task page a third bar next to CPU and RAM, both amber when a run printed far more or far less than the task usually does, such as a silent backup that printed a warning. ([#436](https://github.com/runwisp/runwisp/issues/436), thanks [@jniggemann](https://github.com/jniggemann))
+- A task's run durations are colored like CPU and RAM in the TUI run list and the Web UI's task page: amber from 1.5× the task's usual run, red from twice it. The TUI task details show the usual duration. ([#437](https://github.com/runwisp/runwisp/issues/437), thanks [@jniggemann](https://github.com/jniggemann))
 - `[daemon] heartbeat_url` pings a dead man's switch such as healthchecks.io every minute, so you hear about it when the daemon itself is down.
 - A `recovered` notification tells you when a task succeeds after a failed run. It goes wherever the task's failures go, the bell included.
 
@@ -228,7 +228,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp restart` checks the config first and leaves the daemon running when the config is invalid, instead of stopping it for one that can't start.
 - Live logs and Web UI updates stream through nginx as they happen, instead of arriving in one burst.
 - A non-root `runwisp list` or `runwisp run` on a box with the system service says to use sudo, instead of failing on a missing `runwisp.toml`.
-- Opening a dropdown menu in the Web UI no longer scrolls the page. Thanks @dahool.
+- Opening a dropdown menu in the Web UI no longer scrolls the page. ([#435](https://github.com/runwisp/runwisp/pull/435), thanks [@dahool](https://github.com/dahool))
 - A failure that comes back after a successful run alerts again and gets a new bell row, instead of being held in the earlier failure's `coalesce_window`.
 - `runwisp takeover` ends with the upgrade command for the binary the service runs, not for the copy in your home directory.
 - Errors from the daemon, like a rejected `runwisp reload`, print the reason instead of the raw JSON response.
@@ -271,8 +271,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cron expressions accept `L` (last day of the month), `LW`, `15W` (nearest weekday) and `FRI#3` / `FRI#L` (nth or last weekday).
 - `runwisp validate --explain` describes each schedule in plain words and lists its next 3 firings in the scheduler's zone, marking times a daylight saving change moves or skips.
 - `runwisp validate` and daemon startup suggest a `jitter` when three or more tasks would start at the same second.
-- The TUI run list shows each run's CPU time and peak memory, colored by how it compares with the task's usual run, so an unusually heavy run stands out.
-- The TUI task info (`i`) shows the task's timeout, log limit, retention and usual CPU and memory, and opens with the first lines of its `run` command; press `c` for the whole command.
+- The TUI run list shows each run's CPU time and peak memory, colored by how it compares with the task's usual run, so an unusually heavy run stands out. ([#398](https://github.com/runwisp/runwisp/issues/398), thanks [@jniggemann](https://github.com/jniggemann))
+- The TUI task info (`i`) shows the task's timeout, log limit, retention and usual CPU and memory, and opens with the first lines of its `run` command; press `c` for the whole command. ([#399](https://github.com/runwisp/runwisp/issues/399), thanks [@jniggemann](https://github.com/jniggemann))
 - `runwisp import cron` names jobs that Bun's `Bun.cron()` wrote into a crontab after their title.
 
 ### Changed
@@ -307,7 +307,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Each run in the Web UI run list shows small CPU and RAM bars, colored by how it compares with the task's usual run, so an unusually heavy run stands out.
 - **Details** on the Web UI task page shows the task's configuration in `runwisp.toml` key names, including its `run` command and environment.
 - Scrolling a run's output folds the task strip into the top bar to give the log more room. Scroll back up to bring it back.
-- `[daemon] name` gives each daemon a name you recognize in the TUI, the Web UI, the browser tab title and notification footers, in place of the fingerprint. `name = "${HOSTNAME}"` uses the machine's hostname.
+- `[daemon] name` gives each daemon a name you recognize in the TUI, the Web UI, the browser tab title and notification footers, in place of the fingerprint. `name = "${HOSTNAME}"` uses the machine's hostname. ([#389](https://github.com/runwisp/runwisp/issues/389), thanks [@jniggemann](https://github.com/jniggemann))
 - Notification links work out of the box: without `external_url`, RunWisp links to the address you last signed in to the Web UI from.
 - Cron tasks accept `autostart = false`: the schedule starts paused until you resume it from the Web UI, the TUI or `runwisp resume`.
 - Cron ranges can wrap around: `22-2` in the hour field runs from 22:00 to 02:00, and `FRI-MON` runs Friday to Monday.
@@ -387,7 +387,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The Web UI works on your phone**: check why a job failed without reaching for a laptop. Tap a run and its log fills the screen, the back arrow takes you to the list. On narrow windows the sidebar tucks into a menu, and up to 1600px wide you can fold the sidebar and run list away to give the log more room.
 - The Web UI and the TUI show live CPU and memory use for running tasks and services, and each run records its peak memory and CPU time. Live use is also exported as the `runwisp_task_cpu_percent` and `runwisp_task_memory_bytes` metrics.
 - The Docker image writes a starter `runwisp.toml` on first start when you mount an empty config directory at `/etc/runwisp`.
-- `runwisp start`, `stop` and `restart` take `--attach` to follow the targets' logs right after, like `runwisp logs -f`.
+- `runwisp start`, `stop` and `restart` take `--attach` to follow the targets' logs right after, like `runwisp logs -f`. ([#345](https://github.com/runwisp/runwisp/issues/345), thanks [@hash-bang](https://github.com/hash-bang))
 
 ### Changed
 
@@ -436,14 +436,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Quitting the TUI no longer asks about the daemon when it attached to one that was already running, such as a service or `runwisp tui`. The keep running / shut down choice only appears when the TUI started the daemon.
+- Quitting the TUI no longer asks about the daemon when it attached to one that was already running, such as a service or `runwisp tui`. The keep running / shut down choice only appears when the TUI started the daemon. ([#326](https://github.com/runwisp/runwisp/issues/326), thanks [@jniggemann](https://github.com/jniggemann))
 - Release binaries and Docker images are now built with Go 1.27.1, and the bundled SQLite driver, Docker client and other dependencies are on their latest releases.
 
 ### Fixed
 
 - Web UI pages now show loading skeletons while data arrives, instead of flashing a blank screen, a false "No runs yet", or the task you just left.
-- The TUI shows run and next-run times in the daemon's timezone, even when it runs in a container or under a service user in another zone.
-- The TUI sorts task groups by group name and shows a task's `description` in its detail view (`i`).
+- The TUI shows run and next-run times in the daemon's timezone, even when it runs in a container or under a service user in another zone. ([#329](https://github.com/runwisp/runwisp/issues/329), thanks [@jniggemann](https://github.com/jniggemann))
+- The TUI sorts task groups by group name and shows a task's `description` in its detail view (`i`). ([#327](https://github.com/runwisp/runwisp/issues/327), [#328](https://github.com/runwisp/runwisp/issues/328), thanks [@jniggemann](https://github.com/jniggemann))
 - The TUI reconnects to the run-event stream when the daemon was not ready at the first retry, search results jump to the matching log line, and older log lines load when you scroll to the top with the mouse wheel or on a rotated log.
 - Changing the run list's status filter in the TUI now clears the run selection, so bulk actions only touch runs you can see.
 - Stopping a run, or a selection of runs, now follows `manual_trigger = false` the same way stopping its task does.
@@ -471,7 +471,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release tarballs, checksums and Docker images now ship with signed build provenance you can check with `gh attestation verify`.
 - **`failures` accepts `output:<regex>` tokens**: a run whose stdout or stderr matches the pattern is marked failed, even if it exits 0. For example, `failures = ["+output:(?i)error"]`.
 - **Pause a cron task's schedule** from the schedule chip on its Web UI page, `p` in the TUI, `runwisp pause`/`resume`, or `POST /api/tasks/{task}/pause` and `.../resume`. Skipped ticks are not caught up, manual runs still work, and the pause survives reloads and restarts. Needs `manual_trigger = true`; `runwisp status` lists paused tasks.
-- **`runwisp logs <target...>`** prints the output of tasks, services, and runs from the CLI (`-n N` for the last lines, `-n +N` for the first), or follows it live with `-f`. `--json` prints one record per line for scripts.
+- **`runwisp logs <target...>`** prints the output of tasks, services, and runs from the CLI (`-n N` for the last lines, `-n +N` for the first), or follows it live with `-f`. `--json` prints one record per line for scripts. ([#313](https://github.com/runwisp/runwisp/issues/313), thanks [@hash-bang](https://github.com/hash-bang))
 
 ### Changed
 
@@ -497,9 +497,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Crontabs read by `runwisp import cron` or `include_cron` no longer turn `TZ=` into the task's `timezone`; it goes into `env`, since cron only passes it to the job. `CRON_TZ=` is kept in `env` too, and sets `timezone` except on Debian/Ubuntu, whose cron ignores it.
 - A cron job with the same command as a job in another crontab, or for another user, now runs as its own task (renamed, like `backup-zeta`) in `include_cron`, `runwisp takeover` and `runwisp import cron`.
 - `runwisp takeover` now lists a symlink in `/etc/cron.d` as a job that won't run and stops on it, since RunWisp doesn't read cron sources through symlinks.
-- The TUI now shows a Delete button on failed runs, next to Retry.
+- The TUI now shows a Delete button on failed runs, next to Retry. ([#298](https://github.com/runwisp/runwisp/issues/298), thanks [@jniggemann](https://github.com/jniggemann))
 - The TUI run header fits an 80-column terminal: its Stop, Retry, and Delete buttons were pushed off-screen.
-- In the TUI, opening a notification whose run was deleted now says the run no longer exists, instead of closing the panel and showing nothing.
+- In the TUI, opening a notification whose run was deleted now says the run no longer exists, instead of closing the panel and showing nothing. ([#306](https://github.com/runwisp/runwisp/issues/306), thanks [@jniggemann](https://github.com/jniggemann))
 - In the TUI, stopping a service from a run opened on the Home page now works.
 - In the TUI, restarting a service now leaves the old run and opens the fresh instance (or returns to the task), instead of staying on the dead run with a Stop button.
 - The Web UI task list now picks up `runwisp reload` without a page refresh.
@@ -528,7 +528,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`runwisp start`**, plus `stop`/`restart` now also accept a task or service target: `runwisp start|stop|restart <target...>`. A target is a name, a shell-style glob (`'*'` for everything), or — for `stop` — a run ID. Multiple targets can be given at once. `--url`/`--password` (or `RUNWISP_URL`/`RUNWISP_PASSWORD`) dispatch to a remote daemon, same as `runwisp run`.
+- **`runwisp start`**, plus `stop`/`restart` now also accept a task or service target: `runwisp start|stop|restart <target...>`. A target is a name, a shell-style glob (`'*'` for everything), or — for `stop` — a run ID. Multiple targets can be given at once. `--url`/`--password` (or `RUNWISP_URL`/`RUNWISP_PASSWORD`) dispatch to a remote daemon, same as `runwisp run`. ([#261](https://github.com/runwisp/runwisp/issues/261), thanks [@hash-bang](https://github.com/hash-bang))
 - `start`/`stop`/`restart` now work on tasks, not just services: `start` triggers a run (no-op if one's already active or queued), `stop` cancels the active run and drops anything queued, `restart` does both in sequence. `manual_trigger = false` now locks all three verbs for tasks too, matching services.
 - New `POST /api/tasks/{task}/start` endpoint.
 - **The Web UI asks for quick feedback** after an hour of uptime, at most once a month: a one-tap rating plus an optional note, sent to the maintainers. It can be dismissed, and `check_updates = false` turns it off.
@@ -560,7 +560,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Web UI login now works over plain HTTP on non-localhost addresses (e.g. a LAN IP), where browsers hide WebCrypto.
 - The Web UI login screen no longer clears the password field when you're rate limited.
 - The Web UI no longer flashes offline every few seconds when served over unsigned HTTPS.
-- **Long group and service names in the TUI sidebar no longer overflow the panel** — they're truncated to fit. (@hash-bang)
+- **Long group and service names in the TUI sidebar no longer overflow the panel** — they're truncated to fit. ([#267](https://github.com/runwisp/runwisp/pull/267), thanks [@hash-bang](https://github.com/hash-bang))
 - `on_overlap = "kill"` with `max_concurrent > 1` now cancels only the excess runs instead of killing every live run when triggers arrive faster than runs stop.
 - A day-of-week cron step like `1/2` now includes Sunday (matching vixie cron) instead of silently dropping it, so imported crontabs keep their full schedule.
 - An explicit `timeout = "0s"` or `jitter = "0s"` on a task now opts out of an inherited `[defaults]` value (run with no timeout / no jitter) instead of being overridden by the default.
@@ -582,7 +582,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp import systemd` converts systemd `.service` units into `runwisp.toml`** — a unit with `Restart=` becomes a service, a `Type=oneshot` unit a task — flagging anything it can't model (multiple `ExecStart`, `Type=notify`, sandboxing, socket activation) with inline `# TODO`s. See [From systemd](https://docs.runwisp.com/coming-from/systemd/).
 - **`[daemon] trusted_proxies`** sets the reverse-proxy CIDR allowlist in TOML; the `RUNWISP_TRUSTED_PROXIES` env var still works and overrides it. Catch-all ranges (`0.0.0.0/0`, `::/0`) are rejected at config load.
 - **`runwisp service install` now sets a stable Web UI password.** With auth on, it persists a password into a `0600` drop-in beside the unit — a freshly generated one (printed once), or your own `RUNWISP_PASSWORD` if you set it at install time — so a managed daemon no longer mints a new password — logging every session out — on each restart. Re-installing never rotates it.
-- **`runwisp service install` now carries your `RUNWISP_*` environment into the service** — `RUNWISP_AUTH`, `RUNWISP_TLS`, `RUNWISP_PASSWORD`, and the rest, into a `0600` drop-in beside the unit, refreshed on every re-install. A systemd unit or launchd plist never inherited these before, so they were silently dropped.
+- **`runwisp service install` now carries your `RUNWISP_*` environment into the service** — `RUNWISP_AUTH`, `RUNWISP_TLS`, `RUNWISP_PASSWORD`, and the rest, into a `0600` drop-in beside the unit, refreshed on every re-install. A systemd unit or launchd plist never inherited these before, so they were silently dropped. ([#251](https://github.com/runwisp/runwisp/issues/251), thanks [@hash-bang](https://github.com/hash-bang))
 - **`[defaults]` now accepts `restart_delay`, `restart_backoff`, `catch_up`, and `graceful_stop`**, so you can set these fleet-wide once instead of repeating them on every unit.
 - **Compose per-service overrides (`[compose.<alias>.<svc>]`) can now set `failures`**, matching what `[services.*]` already allows.
 

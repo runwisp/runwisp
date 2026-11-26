@@ -1,9 +1,9 @@
-# RunWisp — Agent Directives
+# RunWisp agent directives
 
 **License**: GPL-3.0-or-later (`apps/`) · Apache-2.0 (`packages/`) · **Status**: 1.0 · semver (breaking changes require a major bump)
 **Stack**: Go 1.27 daemon, Svelte 5 (runes) + Tailwind UI, Bun workspaces + moon (`moon run`), embedded SQLite (`database/sql` + `modernc.org/sqlite`), AsyncAPI-defined optional control-plane protocol.
 
-## 🎯 PRODUCT VISION (read this first — it outranks everything below)
+## Product vision (read this first; it outranks everything below)
 
 RunWisp replaces **crond + supervisord** with one small Go binary that a single developer can drop on a VPS, a Raspberry Pi, or into a Docker image and immediately see _what ran, when, why it failed, and what it printed_.
 
@@ -16,7 +16,7 @@ RunWisp replaces **crond + supervisord** with one small Go binary that a single 
 5. **Built for the individual and the small team.** Every core capability ships in the binary: scheduling, supervision, observability, web UI, TUI, REST. No artificial limits, no feature flags gating basics.
 6. **Boring in prod.** Predictable resource use, graceful shutdown, recoverable state after crash or kill -9. Prefer a simple mechanism that's easy to reason about over a clever one that saves 5%.
 
-## 🚫 NON-GOALS
+## Non-goals
 
 - **DAGs / workflow orchestration** — that's Dagu/Airflow/Temporal. RunWisp tasks are independent units.
 - **Clustering, leader election, HA failover, cross-instance coordination** — one daemon owns its tasks. Anything involving multiple daemons acting in concert is out of scope for the daemon itself; operators who want that can build it on top of the REST API / control-plane protocol.
@@ -28,7 +28,7 @@ RunWisp replaces **crond + supervisord** with one small Go binary that a single 
 
 When in doubt, ask: _"Does this help **one** operator run **their** tasks on **one** machine better?"_ If no, it probably doesn't belong in `apps/runwisp`.
 
-## 🧭 INVARIANTS (violating any of these is a bug, regardless of what a test says)
+## Invariants (violating any of these is a bug, regardless of what a test says)
 
 - **Supported platforms**: Linux, macOS, WSL. These are first-class — builds, tests, manual smoke. Native Windows is out of scope.
 - **Config reload is explicit, never automatic.** The operator picks up TOML changes with `runwisp reload` (→ `POST /api/daemon/reload` over the local socket) or `SIGHUP`; both converge on one reconcile path (`internal/runtime/reconcile.go`). Reload is **validate-first / atomic**: the whole config is re-loaded and re-validated before any live state is touched, and on any error — parse failure, validation failure, or a change to a non-reloadable setting (the listener settings `[daemon]` `tls`/`tls_cert`/`tls_key`/`metrics_enabled`/`metrics_listen`, and `allow_station_dispatch` / `allow_station_upgrade`, which are fixed into the executor and station client at boot; bind host/port are CLI flags) — the reload is rejected and the daemon is left exactly as it was. Everything else applies live: notifications (`[notify]`, `[notifiers.*]`, `[[route]]`) are rebuilt and swapped, `[storage]` and the remaining `[daemon]` keys are pushed into their subsystems, and a `timezone` change re-bases the scheduler. Reload adds/changes/removes tasks live but is **not** a restart: added tasks get no `run_on_start` and no catch-up, and in-flight runs finish under the definition they started with. No file-watchers, no auto-reload — the daemon only ever reloads when the operator asks.
@@ -39,7 +39,7 @@ When in doubt, ask: _"Does this help **one** operator run **their** tasks on **o
 - **Generated code is write-once**: `internal/generated/protocol/` is regenerated from `packages/asyncapi/asyncapi.yaml`. Never hand-edit. If you need a new message, edit the AsyncAPI spec.
 - **Embedded assets stay embedded**: The web UI ships inside the binary. No "download assets at runtime", no CDN fallback.
 
-## 🔐 TRUST MODEL
+## Trust model
 
 - The daemon runs **with the privilege of whoever started it**, executing **user-authored shell** from TOML. Therefore:
   - TOML is trusted input; the REST API / UI is not. An `--app` config document is trusted like TOML: only the local socket (owner-only perms) accepts it, and only from the app connection.
@@ -47,14 +47,14 @@ When in doubt, ask: _"Does this help **one** operator run **their** tasks on **o
   - Secrets (the password and the session key derived from it) stay in memory or under the data dir (`internal/datadir/`) with restrictive perms; never log them; never transmit them over any outbound integration.
 - CHAP (challenge-response) auth is the login boundary. A signed session token (`internal/server/auth`) is the session. Don't bypass either for "convenience" endpoints. The only sanctioned bypass is the explicit operator opt-in `RUNWISP_AUTH=off`, which disables the boundary wholesale, warns loudly at startup, and is mutually exclusive with `RUNWISP_PASSWORD`.
 
-## 🧠 DECISION HEURISTICS (use when the spec is silent)
+## Decision heuristics (use when the spec is silent)
 
 1. **Does it make a failure more visible?** → Yes = lean toward it.
 2. **Does it add a runtime dependency or a required network call?** → Yes = reject or make it strictly optional.
 3. **Does it add state that must survive restart?** → It goes through `internal/storage/` (`database/sql` + `modernc.org/sqlite`), gets a ULID, and has a reconciliation path on boot.
 4. **Can a solo dev understand it by reading `runwisp.toml` + the web UI?** → If no, simplify or document.
 
-## 🚨 TECHNICAL DEBT & HYGIENE (HIGHEST PRIORITY)
+## Technical debt and hygiene (highest priority)
 
 1. **Boy Scout Rule**: When modifying a file, fix adjacent violations (broken naming, dead code, leaked concerns, missing types).
 2. **Aggressive Extraction**: Duplicated logic across 2+ files lands in the most specific shared location — `internal/<closest>`, `packages/common`, or a new `internal/` package if scope is wider than one caller.
@@ -64,7 +64,7 @@ When in doubt, ask: _"Does this help **one** operator run **their** tasks on **o
    - Use `if (!x)` for falsy checks. NEVER write `x === null || x === undefined`.
 5. **Formatting**: both `.editorconfig` and Prettier are in play, and they agree — don't hand-align against either. `.editorconfig` sets editor defaults for every file type (Go/Makefile = tabs, TS/Svelte/CSS = 4-space, `charset`/`eol`/final-newline); Prettier (`prettier.base.cjs`, per-workspace configs) is the enforced formatter for the JS/TS/Svelte/CSS/MD/Astro tree, run via `bun run format` (part of `bun run ci`). Go is formatted by `gofmt`, not Prettier.
 
-## 🏗 ARCHITECTURE & BOUNDARIES
+## Architecture and boundaries
 
 - `packages/common`: Shared types, constants (Apache-2.0). _No duplicating these in apps._
 - `packages/asyncapi`: `asyncapi.yaml` is the **single source of truth** for the optional control-plane WebSocket protocol. Generates Go types into `apps/runwisp/internal/generated/protocol/`. **Never hand-write message types.**
@@ -106,7 +106,7 @@ When in doubt, ask: _"Does this help **one** operator run **their** tasks on **o
 - `apps/docs`: Astro/Starlight docs site (`apps/docs/src/content/docs/`).
 - `packages/assets`: Repo-level binary assets (README screenshots). Not a TS package.
 
-## 💾 DATA MODEL & I/O
+## Data model and I/O
 
 - **Embedded SQLite** (`database/sql` + `modernc.org/sqlite`) is the only persistent store. No external DB, no KV, no Redis. Migrations are forward-only; old daemons must tolerate reading rows written by slightly newer ones where feasible.
 - **IDs**: Monotonic ULIDs exclusively. No auto-increment integers on user-visible entities, no UUIDv4.
@@ -114,7 +114,7 @@ When in doubt, ask: _"Does this help **one** operator run **their** tasks on **o
 - **Clock & time**: use injected clock interfaces in `internal/runtime/`. Cron expressions respect the daemon's local TZ unless explicitly scoped (document any TZ change as user-facing).
 - **Events**: `internal/events/` is in-memory, best-effort, per-process. It is **not** a durability mechanism — if something must survive restart, it lives in SQLite or on disk.
 
-## 🛰 OPTIONAL CONTROL-PLANE INTEGRATION (`internal/station/`)
+## Optional control-plane integration (`internal/station/`)
 
 The daemon can optionally connect outbound to a control-plane peer that speaks the protocol in `packages/asyncapi/asyncapi.yaml`. Rules:
 
@@ -128,19 +128,19 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
   5. **Token rotation** — the peer may replace the runner token; the daemon stores it durably before acknowledging, and a different token configured by the operator always wins over a stored one.
 - **Backpressure.** If the peer is slow or disconnected, bound the buffer and drop — never block task execution or local event delivery.
 
-## ⚙️ FUNCTION & STATE DESIGN
+## Function and state design
 
 1. **No global mutable state.** Pass dependencies via constructors / function parameters. Package-level constants and immutable defaults are fine.
 2. **Pure where possible.** Validators, mappers, predicates, formatters: standalone pure functions.
 3. **Group state with its lifecycle.** Mutable state lives on a struct (Go) or class (TS) that owns it and has a clear start/stop or open/close — connections, caches, schedulers, dispatchers. Other code observes via interfaces, never reaches in.
 
-## 🧪 TESTING PHILOSOPHY
+## Testing philosophy
 
 - **Unit tests**: no server, no real SQLite file, no real network, no real clock, no real FS. Use `internal/testutil/` fakes. The notify package keeps its own fakes under `internal/notify/testutil/`.
 - **E2E tests**: `apps/runwisp/tests/e2e/` exercises the real binary. Hermetic — isolated data dir and ephemeral ports per test.
 - **Bug-first**: a fix isn't done until there's a test that would have caught the bug before the fix.
 
-## 🤖 AGENT EXECUTION RULES
+## Agent execution rules
 
 1. **Validation**: `bun run ci` is the **only** validation command you must run — it chains generate → format → check → latest-deps check → test → test-e2e (build is covered via `test-e2e`'s binary dependency). Run it from repo root before wrapping up any session that touched code. Don't bother with `bun run build` / `bun run test` / `bun run check` / `bun run generate` individually unless you're iterating on a single stage — `bun run ci` supersedes them. Tasks are moon targets (`moon run <project>:<task>`); moon caches each task by input hash, so re-runs are cheap.
 2. **TOML schema changes require**: docs (`apps/docs/src/content/docs/configuration/`), the JSON Schema (`apps/runwisp/internal/config/config.schema.json` — `TestSchemaCoversWireTags` fails until every new `toml` tag is covered), the agent reference (`apps/docs/src/agents/reference.md`), OpenAPI (`apps/runwisp/openapi.json` via `bun run generate`), `CHANGELOG.md`, the README config reference if user-visible, and a `**since**` marker on the new key (see `apps/docs/STYLE.md`).
