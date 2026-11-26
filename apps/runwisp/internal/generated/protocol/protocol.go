@@ -593,9 +593,9 @@ type LogGrep struct {
 	// the daemon's own (the taskName of a config spec, or a service
 	// run's taskId in execution:update).
 	Tasks []string `json:"tasks,omitzero"`
-	// Unix ms; only runs that started at or after it. 0 = no bound.
+	// Unix ms; only runs that overlap [since, until]: still running, or ended at or after since. 0 = no bound.
 	Since int64 `json:"since,omitzero"`
-	// Unix ms; only runs that started at or before it. 0 = no bound.
+	// Unix ms; only runs that overlap [since, until]: started at or before until. 0 = no bound.
 	Until int64 `json:"until,omitzero"`
 	// Lines before and after each hit, 0-5.
 	Context int `json:"context,omitzero"`

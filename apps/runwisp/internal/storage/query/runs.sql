@@ -316,9 +316,27 @@ WHERE deleted_at IS NULL
 ORDER BY COALESCE(started_at, created_at) DESC, id DESC
 LIMIT 500;
 
+-- name: ListGrepRunsStartedBefore :many
+-- The station executions for log:grep that started before before (the
+-- lesser of since and the range's end) but overlap the range: still running
+-- (no ended_at) or ended at or after since. They sort after every run
+-- ListGrepRuns pages through, so they follow it, newest start first. The
+-- range on idx_runs_grep_end covers the runs that ended since since, about as
+-- many as ListGrepRuns reads, and only those that started before it, a few
+-- per run running at since, are sorted. Filters as in ListGrepRuns.
+SELECT id, execution_id, task_name, created_at
+FROM runs INDEXED BY idx_runs_grep_end
+WHERE deleted_at IS NULL
+  AND COALESCE(ended_at, '9') >= sqlc.arg(since) || ''
+  AND COALESCE(started_at, created_at) < sqlc.arg(before) || ''
+  AND (sqlc.arg(all_tasks) OR task_name IN (sqlc.slice(task_names)))
+  AND (execution_id IS NOT NULL OR task_name IN (sqlc.slice(service_tasks))
+    OR id IN (SELECT execution_id FROM pending_log_uploads))
+ORDER BY COALESCE(started_at, created_at) DESC, id DESC;
+
 -- name: CountGrepRuns :one
 -- How many runs ListGrepRuns pages through from the start, read from
--- idx_runs_grep alone.
+-- idx_runs_grep alone. ListGrepRunsStartedBefore's runs come on top.
 SELECT COUNT(*) FROM runs INDEXED BY idx_runs_grep
 WHERE deleted_at IS NULL
   AND COALESCE(started_at, created_at) < sqlc.arg(before_start) || ''

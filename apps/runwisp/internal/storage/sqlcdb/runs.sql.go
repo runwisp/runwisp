@@ -32,7 +32,7 @@ type CountGrepRunsParams struct {
 }
 
 // How many runs ListGrepRuns pages through from the start, read from
-// idx_runs_grep alone.
+// idx_runs_grep alone. ListGrepRunsStartedBefore's runs come on top.
 func (q *Queries) CountGrepRuns(ctx context.Context, arg CountGrepRunsParams) (int64, error) {
 	query := countGrepRuns
 	var queryParams []interface{}
@@ -532,6 +532,89 @@ func (q *Queries) ListGrepRuns(ctx context.Context, arg ListGrepRunsParams) ([]L
 			&i.CreatedAt,
 			&i.StartedAt,
 			&i.SortKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGrepRunsStartedBefore = `-- name: ListGrepRunsStartedBefore :many
+SELECT id, execution_id, task_name, created_at
+FROM runs INDEXED BY idx_runs_grep_end
+WHERE deleted_at IS NULL
+  AND COALESCE(ended_at, '9') >= ?1 || ''
+  AND COALESCE(started_at, created_at) < ?2 || ''
+  AND (?3 OR task_name IN (/*SLICE:task_names*/?))
+  AND (execution_id IS NOT NULL OR task_name IN (/*SLICE:service_tasks*/?)
+    OR id IN (SELECT execution_id FROM pending_log_uploads))
+ORDER BY COALESCE(started_at, created_at) DESC, id DESC
+`
+
+type ListGrepRunsStartedBeforeParams struct {
+	Since        *string     `json:"since"`
+	Before       *string     `json:"before"`
+	AllTasks     interface{} `json:"all_tasks"`
+	TaskNames    []string    `json:"task_names"`
+	ServiceTasks []string    `json:"service_tasks"`
+}
+
+type ListGrepRunsStartedBeforeRow struct {
+	ID          string    `json:"id"`
+	ExecutionID *string   `json:"execution_id"`
+	TaskName    string    `json:"task_name"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// The station executions for log:grep that started before before (the
+// lesser of since and the range's end) but overlap the range: still running
+// (no ended_at) or ended at or after since. They sort after every run
+// ListGrepRuns pages through, so they follow it, newest start first. The
+// range on idx_runs_grep_end covers the runs that ended since since, about as
+// many as ListGrepRuns reads, and only those that started before it, a few
+// per run running at since, are sorted. Filters as in ListGrepRuns.
+func (q *Queries) ListGrepRunsStartedBefore(ctx context.Context, arg ListGrepRunsStartedBeforeParams) ([]ListGrepRunsStartedBeforeRow, error) {
+	query := listGrepRunsStartedBefore
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.Since)
+	queryParams = append(queryParams, arg.Before)
+	queryParams = append(queryParams, arg.AllTasks)
+	if len(arg.TaskNames) > 0 {
+		for _, v := range arg.TaskNames {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:task_names*/?", strings.Repeat(",?", len(arg.TaskNames))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:task_names*/?", "NULL", 1)
+	}
+	if len(arg.ServiceTasks) > 0 {
+		for _, v := range arg.ServiceTasks {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:service_tasks*/?", strings.Repeat(",?", len(arg.ServiceTasks))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:service_tasks*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListGrepRunsStartedBeforeRow{}
+	for rows.Next() {
+		var i ListGrepRunsStartedBeforeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExecutionID,
+			&i.TaskName,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

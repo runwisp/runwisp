@@ -23,10 +23,11 @@ var grepFillStart = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // fillGrepRuns inserts n runs. Run i is task-(i%50), except every 100000th
 // (offset 7), which is "rare"; every tenth has no execution id and every
-// 97th is deleted. Run 3 never started, so it sorts by created_at.
+// 97th is deleted. Run 3 never started, so it sorts by created_at. Each run
+// ends a second after it started (run 3 1.5 s after its creation).
 func fillGrepRuns(t testing.TB, db *SQLiteDatabase, n int) {
 	t.Helper()
-	_, err := db.db.Exec(`INSERT INTO runs (id, execution_id, task_name, status, triggered_by, created_at, started_at, deleted_at)
+	_, err := db.db.Exec(`INSERT INTO runs (id, execution_id, task_name, status, triggered_by, created_at, started_at, ended_at, deleted_at)
 WITH RECURSIVE seq(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM seq WHERE i < ? - 1)
 SELECT printf('%026d', i),
   CASE WHEN i % 10 != 9 THEN 'exec-' || i END,
@@ -34,8 +35,9 @@ SELECT printf('%026d', i),
   'ended', 'schedule',
   strftime('%Y-%m-%d %H:%M:%f', ? + i * 2.6, 'unixepoch') || '+00:00',
   CASE WHEN i != 3 THEN strftime('%Y-%m-%d %H:%M:%f', ? + i * 2.6 + 0.5, 'unixepoch') || '+00:00' END,
+  strftime('%Y-%m-%d %H:%M:%f', ? + i * 2.6 + 1.5, 'unixepoch') || '+00:00',
   CASE WHEN i % 97 = 0 THEN '2026-06-01 00:00:00+00:00' END
-FROM seq`, n, grepFillStart.Unix(), grepFillStart.Unix())
+FROM seq`, n, grepFillStart.Unix(), grepFillStart.Unix(), grepFillStart.Unix())
 	require.NoError(t, err)
 }
 
@@ -110,6 +112,44 @@ func TestGrepRuns_PagesNewestFirstWithFilters(t *testing.T) {
 	assert.Equal(t, 3, stopped)
 }
 
+// A run that started before Since is searched while it overlaps the range:
+// still running, or ended at or after Since.
+func TestGrepRuns_IncludesRunsOverlappingSince(t *testing.T) {
+	db, err := New(":memory:")
+	require.NoError(t, err)
+	defer db.Close()
+	fillGrepRuns(t, db, 2000)
+	at := func(i int) string { return grepFillAt(i).UTC().Format(storedTimeLayout) }
+	for _, r := range []struct {
+		id, status, started string
+		ended               any
+	}{
+		{"svc-running", "running", at(10), nil},     // a service still running
+		{"svc-ended-in", "ended", at(20), at(1050)}, // ended inside the range
+		{"svc-ended-before", "ended", at(30), at(999)},
+		{"svc-after", "running", at(1200), nil}, // starts after the range
+	} {
+		_, err := db.db.Exec(`INSERT INTO runs (id, task_name, status, triggered_by, created_at, started_at, ended_at)
+VALUES (?, 'svc', ?, 'schedule', ?, ?, ?)`, r.id, r.status, r.started, r.started, r.ended)
+		require.NoError(t, err)
+	}
+
+	q := GrepRunsQuery{Since: grepFillAt(1000), Before: grepFillAt(1100), TaskNames: []string{"svc", "task-1"}, ServiceTasks: []string{"svc"}}
+	var ids []string
+	for _, r := range collectGrepRuns(t, db, q) {
+		ids = append(ids, strings.TrimLeft(r.ID, "0"))
+	}
+	assert.Equal(t, []string{"1051", "1001", "svc-ended-in", "svc-running"}, ids)
+	n, err := db.CountGrepRuns(t.Context(), q)
+	require.NoError(t, err)
+	assert.Equal(t, 4, n)
+
+	// Without a Since every run that started by Before counts.
+	q.Since = time.Time{}
+	got := collectGrepRuns(t, db, q)
+	assert.Len(t, got, 22+3, "task-1's 22 runs and svc's 3 that started by Before")
+}
+
 // recordingDB records the queries sqlc sends instead of running them.
 type recordingDB struct {
 	sqlcdb.DBTX
@@ -155,17 +195,26 @@ func grepRunsPlans(t testing.TB, db *SQLiteDatabase) map[string]string {
 		explain("page" + suffix)
 		_, _ = q.CountGrepRuns(t.Context(), sqlcdb.CountGrepRunsParams{BeforeStart: new("9"), Since: new(""), AllTasks: tasks == nil, TaskNames: tasks, ServiceTasks: services})
 		explain("count" + suffix)
+		_, _ = q.ListGrepRunsStartedBefore(t.Context(), sqlcdb.ListGrepRunsStartedBeforeParams{Since: new("2026"), Before: new("2026"), AllTasks: tasks == nil, TaskNames: tasks, ServiceTasks: services})
+		explain("started before" + suffix)
 	}
 	return plans
 }
 
-// Every grep query walks idx_runs_grep in order: no table scan, no sort.
+// Every grep query walks idx_runs_grep in order: no table scan, no sort. The
+// runs that started before the range are found by a range on
+// idx_runs_grep_end; only the few that pass its filters are sorted.
 func TestGrepRuns_QueriesUseTheIndex(t *testing.T) {
 	db, err := New(":memory:")
 	require.NoError(t, err)
 	defer db.Close()
 	fillGrepRuns(t, db, 1000)
 	for name, plan := range grepRunsPlans(t, db) {
+		if strings.HasPrefix(name, "started before") {
+			assert.Contains(t, plan, "SEARCH runs USING INDEX idx_runs_grep_end (<expr>>?)", name)
+			assert.NotContains(t, plan, "SCAN runs", name)
+			continue
+		}
 		assert.Contains(t, plan, "SEARCH runs USING INDEX idx_runs_grep (<expr>>? AND <expr><?)", name)
 		assert.NotContains(t, plan, "TEMP B-TREE", name)
 	}

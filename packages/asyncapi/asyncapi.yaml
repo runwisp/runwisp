@@ -988,8 +988,8 @@ components:
             sent in execution:dispatch or service:apply, or a task name of
             the daemon's own (the taskName of a config spec, or a service
             run's taskId in execution:update).
-        since: { type: integer, format: int64, description: "Unix ms; only runs that started at or after it. 0 = no bound." }
-        until: { type: integer, format: int64, description: "Unix ms; only runs that started at or before it. 0 = no bound." }
+        since: { type: integer, format: int64, description: "Unix ms; only runs that overlap [since, until]: still running, or ended at or after since. 0 = no bound." }
+        until: { type: integer, format: int64, description: "Unix ms; only runs that overlap [since, until]: started at or before until. 0 = no bound." }
         context: { type: integer, description: "Lines before and after each hit, 0-5." }
         maxHits: { type: integer, description: Stop after this many hits. }
         maxBytes: { type: integer, description: "Stop after this many bytes of hit text (lines and context). 0 = no limit." }
