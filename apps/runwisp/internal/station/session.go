@@ -47,6 +47,9 @@ type sessionParams struct {
 	heartbeatTimeout  time.Duration
 	statsInterval     time.Duration
 	maxFrameBytes     int
+	// connectionID is the station's id for this session, logged so the two
+	// sides' logs can be matched.
+	connectionID string
 }
 
 func paramsFromWelcome(w protocol.Welcome) sessionParams {
@@ -55,6 +58,7 @@ func paramsFromWelcome(w protocol.Welcome) sessionParams {
 		heartbeatTimeout:  defaultHeartbeatTimeout,
 		statsInterval:     time.Duration(max(w.StatsIntervalMs, 0)) * time.Millisecond,
 		maxFrameBytes:     defaultMaxFrameBytes,
+		connectionID:      w.ConnectionID,
 	}
 	if hb := w.Heartbeat; hb != nil {
 		if hb.IntervalMs > 0 {
@@ -142,7 +146,7 @@ func (s *session) run(parent context.Context) error {
 	loop(s.servicesLoop)
 
 	s.client.attach(s)
-	slog.Info("station session started")
+	slog.Info("station session started", "connectionId", s.params.connectionID)
 	go s.afterWelcome()
 
 	select {

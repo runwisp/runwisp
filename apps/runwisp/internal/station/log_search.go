@@ -142,7 +142,7 @@ func (g *grepScan) finish(ctx context.Context) (any, error) {
 		return nil, errSessionClosed
 	}
 	progress := g.progress
-	return protocol.LogSearchResult{Progress: &progress, Hits: g.sent, Stopped: g.stopReason(ctx)}, nil
+	return protocol.LogSearchResult{Progress: &progress, Stopped: g.stopReason(ctx)}, nil
 }
 
 // grepScan is one log:search's matching, caps and batching.

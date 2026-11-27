@@ -802,7 +802,9 @@ components:
           type: integer
           nullable: true
           description: Set on a service instance's run. 0-based instance slot.
-        status: { $ref: "#/components/schemas/ExecutionStatus" }
+        status:
+          $ref: "#/components/schemas/ExecutionStatus"
+          description: running or finished. A dispatch's result is its acceptance; accepted appears only in hello's inventory.
         startedAt: { type: integer, format: int64, description: Unix ms. }
         finishedAt: { type: integer, format: int64, description: Unix ms. }
         reason:
@@ -991,7 +993,6 @@ components:
       description: Fields of the `result` answering log:search.
       properties:
         progress: { $ref: "#/components/schemas/LogSearchProgress" }
-        hits: { type: integer, description: Hits sent. }
         stopped:
           type: string
           description: Open. Why the search ended.
@@ -1000,7 +1001,7 @@ components:
           type: integer
           format: int64
           description: With executionId, when the search stopped before the log's end, the line after the last hit sent. 0 = nothing left.
-      required: [progress, hits, stopped]
+      required: [progress, stopped]
 
     UploadRequest:
       type: object

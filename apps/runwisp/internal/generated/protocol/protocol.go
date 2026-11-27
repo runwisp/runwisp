@@ -446,8 +446,9 @@ type ExecutionUpdate struct {
 	// Set on a service instance's run. The service, as in service:status.taskId.
 	TaskID string `json:"taskId,omitzero"`
 	// Set on a service instance's run. 0-based instance slot.
-	Instance *int            `json:"instance,omitzero"`
-	Status   ExecutionStatus `json:"status"`
+	Instance *int `json:"instance,omitzero"`
+	// running or finished. A dispatch's result is its acceptance; accepted appears only in hello's inventory.
+	Status ExecutionStatus `json:"status"`
 	// Unix ms.
 	StartedAt int64 `json:"startedAt,omitzero"`
 	// Unix ms.
@@ -616,8 +617,6 @@ var StoppedValues = []Stopped{StoppedDone, StoppedMaxHits, StoppedMaxBytes, Stop
 // Fields of the `result` answering log:search.
 type LogSearchResult struct {
 	Progress *LogSearchProgress `json:"progress"`
-	// Hits sent.
-	Hits int `json:"hits"`
 	// Open. Why the search ended.
 	Stopped Stopped `json:"stopped"`
 	// With executionId, when the search stopped before the log's end, the line after the last hit sent. 0 = nothing left.
