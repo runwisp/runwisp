@@ -85,16 +85,17 @@ func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *mode
 }
 
 // isServiceStopped reports whether an operator has flagged this service as
-// stopped via the REST / TUI controls. The flag is in-memory only and is
-// cleared on daemon restart.
+// stopped via the REST / TUI controls, or a reload removed it while its
+// restart was pending. The flag is in-memory only and is cleared on daemon
+// restart.
 func (m *defaultTaskManager) isServiceStopped(taskName string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	ts, exists := m.tasks[taskName]
-	if !exists || ts.supervisor == nil {
-		return false
+	if !exists {
+		return true
 	}
-	return ts.supervisor.IsStopped()
+	return ts.supervisor != nil && ts.supervisor.IsStopped()
 }
 
 // waitForDelay sleeps for the given duration, returning false if stop (nil for

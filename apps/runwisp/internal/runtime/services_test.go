@@ -705,3 +705,15 @@ func TestServiceCleanExitBeforeHealthyGoesFatal(t *testing.T) {
 	}, 2*time.Second, 5*time.Millisecond, "a service that keeps exiting 0 at once must reach FATAL")
 	assert.Equal(t, int64(3), execCalls.Load())
 }
+
+// A reload can remove a service while one of its restarts waits out the
+// delay; the restart must then stand down instead of failing with
+// "task not found".
+func TestIsServiceStopped_RemovedService(t *testing.T) {
+	djm, _, _ := newTestManager(t)
+	djm.UpsertTask(serviceTask("svc", 1))
+	assert.False(t, djm.isServiceStopped("svc"))
+
+	djm.RemoveTask("svc")
+	assert.True(t, djm.isServiceStopped("svc"))
+}
