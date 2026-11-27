@@ -896,5 +896,21 @@
     "caseSensitive": false,
     "line": "HTTP 5000",
     "match": false
+  },
+  {
+    "name": "a case-insensitive term's own case doesn't matter",
+    "terms": [
+      {
+        "parts": [
+          "Disk",
+          "FULL"
+        ],
+        "wordStart": false,
+        "wordEnd": false
+      }
+    ],
+    "caseSensitive": false,
+    "line": "disk is full",
+    "match": true
   }
 ]

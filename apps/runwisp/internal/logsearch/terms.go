@@ -6,6 +6,7 @@ package logsearch
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 )
@@ -20,9 +21,9 @@ type Term struct {
 }
 
 // Terms matches a line that matches every term. The station compiles the
-// terms; with caseSensitive false their parts arrive lowercased
-// (strings.ToLower) and Match lowercases the line the same way, into a
-// buffer it reuses: a Terms serves one goroutine.
+// terms; with caseSensitive false NewTerms lowercases their parts and Match
+// the line the same way (strings.ToLower), into a buffer it reuses: a Terms
+// serves one goroutine.
 type Terms struct {
 	terms   []term
 	fold    bool
@@ -51,6 +52,9 @@ func NewTerms(terms []Term, caseSensitive bool) (*Terms, error) {
 		for j, p := range t.Parts {
 			if p == "" {
 				return nil, errors.New("logsearch: a term has an empty part")
+			}
+			if !caseSensitive {
+				p = strings.ToLower(p)
 			}
 			compiled[i].parts[j] = []byte(p)
 		}

@@ -548,9 +548,8 @@ type LogSearch struct {
 	Terms []LogSearchTerm `json:"terms,omitzero"`
 	// RE2. When set, a line matches when it matches regex, and terms is ignored.
 	Regex string `json:"regex,omitzero"`
-	// False means terms' parts are already lowercased (strings.ToLower)
-	// and the daemon matches the lowercased line, and regex matches
-	// case-insensitively.
+	// False: terms and regex ignore case (terms' parts and the line are
+	// both lowercased, as Go's strings.ToLower does).
 	CaseSensitive bool `json:"caseSensitive,omitzero"`
 	// Search only this execution's log; tasks, since and until are ignored.
 	ExecutionID string `json:"executionId,omitzero"`
