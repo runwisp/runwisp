@@ -44,7 +44,8 @@ info:
     selecting `runwisp.v1` doesn't speak this protocol. Text frames carry one
     JSON message each. Binary frames are reserved and ignored. Both sides
     offer `permessage-deflate` without context takeover; a peer may decline
-    it. Frame size limits count decompressed bytes.
+    it. Frame size limits count decompressed bytes: the station's is
+    `welcome.maxFrameBytes`; a daemon accepts frames up to 16 MiB.
 
     ## Envelope
 
@@ -771,6 +772,10 @@ components:
 
     ExecutionStop:
       type: object
+      description: |
+        Stops a running execution, or one accepted and still waiting to start;
+        either finishes with reason stopped. Stopping a finished execution
+        succeeds; one the daemon never had is refused with not_found.
       properties:
         executionId: { type: string }
       required: [executionId]

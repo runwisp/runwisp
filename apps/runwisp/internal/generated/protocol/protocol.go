@@ -417,6 +417,9 @@ type ExecutionDispatch struct {
 	LogStream bool `json:"logStream,omitzero"`
 }
 
+// Stops a running execution, or one accepted and still waiting to start;
+// either finishes with reason stopped. Stopping a finished execution
+// succeeds; one the daemon never had is refused with not_found.
 type ExecutionStop struct {
 	ExecutionID string `json:"executionId"`
 }

@@ -448,11 +448,28 @@ func (m *defaultTaskManager) TerminateRun(runID string) error {
 // ID, or a service instance's run by its own run ID (the id the station knows
 // it by; the supervisor restarts the instance per its policy). force kills its process at once; a positive grace kills it once grace
 // has passed, when that comes before the end of its own graceful-stop window.
+// A run still waiting in its task's overlap queue leaves the queue and ends
+// stopped without ever starting.
 func (m *defaultTaskManager) StopRunByExecutionID(executionID string, grace time.Duration, force bool) error {
+	// Deferred ahead of the lock so it runs after Unlock (see retireOrphaned).
+	var dequeued *model.Run
+	defer func() {
+		if dequeued != nil {
+			m.gate.onComplete(dequeued.ID)
+			m.publishTerminal(events.EventRunFailed, dequeued, "")
+		}
+	}()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	for _, ts := range m.allTaskStates() {
+		if i := slices.IndexFunc(ts.queue, func(r *model.Run) bool { return matchesExecution(ts.task, r, executionID) }); i >= 0 {
+			dequeued = ts.queue[i]
+			ts.queue = slices.Delete(ts.queue, i, i+1)
+			dequeued.End(ts.task, model.ReasonStopped, -1, m.clock())
+			m.persistence.PersistExisting(dequeued)
+			return nil
+		}
 		for _, ar := range ts.active {
 			if !matchesExecution(ts.task, ar.Run, executionID) {
 				continue

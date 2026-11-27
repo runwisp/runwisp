@@ -1432,6 +1432,32 @@ func TestStopRunByExecutionID_MatchesActiveRun(t *testing.T) {
 	require.NoError(t, jm.StopRunByExecutionID("ext-123", 0, false))
 }
 
+// A run still waiting in the overlap queue is taken out of it and ends
+// stopped: it never starts once the slot frees.
+func TestStopRunByExecutionID_DequeuesQueuedRun(t *testing.T) {
+	jm, exec, eb := newGatedManager(t)
+	jm.UpsertTask(testTask("task1", model.PolicyQueue, 1))
+	failed := watchRuns(eb, events.EventRunFailed)
+
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByStation, ExecutionID: "ext-1"})
+	require.NoError(t, err)
+	exec.WaitStarted(t)
+	queued, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByStation, ExecutionID: "ext-2"})
+	require.NoError(t, err)
+	require.Equal(t, model.PhasePending, queued.Status)
+
+	require.NoError(t, jm.StopRunByExecutionID("ext-2", 0, false))
+	failed.waitFor(t, 1)
+	stopped := failed.snapshot()[0]
+	assert.Equal(t, queued.ID, stopped.ID)
+	require.NotNil(t, stopped.EndReason)
+	assert.Equal(t, model.ReasonStopped, *stopped.EndReason)
+
+	exec.ReleaseAll()
+	require.Eventually(t, func() bool { return jm.GetActiveRunCount("task1") == 0 }, time.Second, time.Millisecond)
+	assert.Equal(t, 1, exec.Calls(), "the stopped run must not start")
+}
+
 func TestStopService_TaskNotFound(t *testing.T) {
 	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
 	defer jm.Shutdown()
