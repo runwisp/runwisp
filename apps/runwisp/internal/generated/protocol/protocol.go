@@ -167,12 +167,16 @@ type AgentUpdate struct {
 	Features map[string]*FeatureStatus `json:"features,omitzero"`
 }
 
+// The daemon's host, sampled when sent. A value the daemon can't
+// measure on its platform is absent, never a stand-in.
 type AgentStats struct {
-	// Percent, 0-100.
-	CpuUsage      float64 `json:"cpuUsage,omitzero"`
-	MemTotalBytes int64   `json:"memTotalBytes,omitzero"`
-	MemUsedBytes  int64   `json:"memUsedBytes,omitzero"`
-	CpuCores      int     `json:"cpuCores,omitzero"`
+	// The host's 1-minute load average, as the OS reports it (not a percent).
+	Load1 *float64 `json:"load1,omitzero"`
+	// Host memory.
+	MemTotalBytes int64 `json:"memTotalBytes,omitzero"`
+	// Host memory in use (total minus available).
+	MemUsedBytes int64 `json:"memUsedBytes,omitzero"`
+	CpuCores     int   `json:"cpuCores,omitzero"`
 	// Daemon process uptime.
 	UptimeMs int64 `json:"uptimeMs,omitzero"`
 }

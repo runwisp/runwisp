@@ -115,6 +115,9 @@ type SystemStats struct {
 	OS       string  `json:"os" doc:"Operating system (e.g. linux, darwin, windows)"`
 	Arch     string  `json:"arch" doc:"CPU architecture (e.g. amd64, arm64)"`
 	WorkDir  string  `json:"workDir" doc:"Working directory of the daemon process"`
+	// Load1 and HostMetrics are for agent:stats; see MetricsSample.
+	Load1       float64 `json:"-"`
+	HostMetrics bool    `json:"-"`
 }
 
 // MetricsSample is a single timestamped snapshot of system resource usage.
@@ -127,4 +130,9 @@ type MetricsSample struct {
 	MemUsage  float64 `json:"memUsage" doc:"Memory usage percentage (0-100)"`
 	MemUsed   uint64  `json:"memUsed" doc:"Used memory in bytes"`
 	MemTotal  uint64  `json:"memTotal" doc:"Total memory in bytes"`
+	// Load1 is the 1-minute load average CPUUsage is derived from.
+	// HostMetrics is false where the platform has no host backend: the
+	// memory fields are then the daemon's own Go heap, and Load1 is 0.
+	Load1       float64 `json:"-"`
+	HostMetrics bool    `json:"-"`
 }

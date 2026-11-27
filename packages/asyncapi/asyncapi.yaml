@@ -463,10 +463,16 @@ components:
 
     AgentStats:
       type: object
+      description: |
+        The daemon's host, sampled when sent. A value the daemon can't
+        measure on its platform is absent, never a stand-in.
       properties:
-        cpuUsage: { type: number, description: "Percent, 0-100." }
-        memTotalBytes: { type: integer, format: int64 }
-        memUsedBytes: { type: integer, format: int64 }
+        load1:
+          type: number
+          nullable: true
+          description: The host's 1-minute load average, as the OS reports it (not a percent).
+        memTotalBytes: { type: integer, format: int64, description: Host memory. }
+        memUsedBytes: { type: integer, format: int64, description: Host memory in use (total minus available). }
         cpuCores: { type: integer }
         uptimeMs: { type: integer, format: int64, description: Daemon process uptime. }
 

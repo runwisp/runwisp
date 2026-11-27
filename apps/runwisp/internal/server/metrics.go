@@ -105,6 +105,14 @@ func populatePlatformStats(stats *model.SystemStats) {
 	stats.MemUsed = s.MemUsed
 	stats.MemUsage = s.MemUsage
 	stats.CPUUsage = s.CPUUsage
+	stats.Load1 = s.Load1
+	stats.HostMetrics = s.HostMetrics
+}
+
+// loadPercent expresses a 1-minute load average as a percentage of the core
+// count, capped at 100: what cpuUsage reports.
+func loadPercent(load1 float64) float64 {
+	return min(load1/float64(runtime.NumCPU())*100, 100)
 }
 
 func populateFallbackSample(s *model.MetricsSample) {

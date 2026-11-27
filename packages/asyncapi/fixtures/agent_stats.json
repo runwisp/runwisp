@@ -1,7 +1,7 @@
 {
   "type": "agent:stats",
   "data": {
-    "cpuUsage": 12.5,
+    "load1": 0.5,
     "memTotalBytes": 8589934592,
     "memUsedBytes": 3539053052,
     "cpuCores": 4,

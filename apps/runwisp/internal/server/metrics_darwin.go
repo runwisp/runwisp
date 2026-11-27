@@ -7,7 +7,6 @@ package server
 
 import (
 	"encoding/binary"
-	"runtime"
 	"syscall"
 	"unsafe"
 
@@ -55,15 +54,15 @@ func populatePlatformSample(s *model.MetricsSample) {
 	s.MemTotal = total
 	s.MemUsed = total - available
 	s.MemUsage = float64(s.MemUsed) / float64(total) * 100
+	s.HostMetrics = true
 
-	s.CPUUsage = loadCPUPercent()
+	s.Load1 = loadAvg1()
+	s.CPUUsage = loadPercent(s.Load1)
 }
 
-// loadCPUPercent reads the 1-minute load average via sysctl vm.loadavg and
-// expresses it as a percentage of the core count, capped at 100 — identical to
-// the Linux path. The sysctl returns a struct loadavg { fixpt_t ldavg[3]; long
+// loadAvg1 reads the 1-minute load average via sysctl vm.loadavg. The sysctl returns a struct loadavg { fixpt_t ldavg[3]; long
 // fscale; } (little-endian on both amd64 and arm64); load = ldavg[0] / fscale.
-func loadCPUPercent() float64 {
+func loadAvg1() float64 {
 	raw, err := unix.SysctlRaw("vm.loadavg")
 	if err != nil || len(raw) < 16 {
 		return 0
@@ -81,12 +80,7 @@ func loadCPUPercent() float64 {
 		return 0
 	}
 
-	load1 := float64(ldavg0) / float64(fscale)
-	usage := (load1 / float64(runtime.NumCPU())) * 100
-	if usage > 100 {
-		usage = 100
-	}
-	return usage
+	return float64(ldavg0) / float64(fscale)
 }
 
 // vmPageCounts returns the free and inactive page counts from the mach VM

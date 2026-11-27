@@ -192,11 +192,14 @@ func TestSession_StatsFollowWelcome(t *testing.T) {
 	st := stationtest.New(t)
 	st.Welcome.StatsIntervalMs = 10
 	h := newHarness(t, st, nil)
-	h.client.deps.SystemStats = func() model.SystemStats { return model.SystemStats{CPUCores: 4} }
+	h.client.deps.SystemStats = func() model.SystemStats { return model.SystemStats{CPUCores: 4, MemTotal: 1 << 20, MemUsed: 1 << 19} }
 	h.start(t)
 
 	stats := stationtest.Decode[protocol.AgentStats](t, st, "agent:stats", nil)
 	assert.Equal(t, 4, stats.CpuCores)
+	// No host backend: the memory is the daemon's heap, so none is sent.
+	assert.Nil(t, stats.Load1)
+	assert.Zero(t, stats.MemTotalBytes)
 }
 
 // The outbox survives a daemon restart: an update the station never acked is

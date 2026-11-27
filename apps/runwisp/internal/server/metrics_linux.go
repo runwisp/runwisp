@@ -8,7 +8,6 @@ package server
 import (
 	"bufio"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -21,17 +20,14 @@ import (
 func populatePlatformSample(s *model.MetricsSample) {
 	memTotal, memAvailable := getMemInfo()
 	if memTotal > 0 {
+		s.HostMetrics = true
 		s.MemTotal = memTotal
 		s.MemUsed = memTotal - memAvailable
 		s.MemUsage = float64(s.MemUsed) / float64(s.MemTotal) * 100
 	}
 
-	load1 := getLoadAvg()
-	usage := (load1 / float64(runtime.NumCPU())) * 100
-	if usage > 100 {
-		usage = 100
-	}
-	s.CPUUsage = usage
+	s.Load1 = getLoadAvg()
+	s.CPUUsage = loadPercent(s.Load1)
 }
 
 func getMemInfo() (uint64, uint64) {
