@@ -690,6 +690,18 @@ func TestHandleServiceRemove_DropsExistingService(t *testing.T) {
 	assert.Equal(t, []string{"heartbeat"}, runner.removed)
 }
 
+// Regression: service:apply registers a station-declared service under its
+// sanitized name, not the bare taskId; remove has to find it there.
+func TestHandleServiceRemove_DropsAppliedService(t *testing.T) {
+	h := newDispatchHandler(shellAvailable(), nil)
+	runner := h.taskManager.(*fakeTaskRunner)
+	require.NoError(t, h.HandleServiceApply(protocol.ServiceApply{TaskID: "01JSVC", Spec: shellScript(t, "serve"),
+		Settings: &protocol.ServiceSettings{Instances: 1}}))
+
+	require.NoError(t, h.HandleServiceRemove(protocol.ServiceRemove{TaskID: "01JSVC"}))
+	assert.Equal(t, []string{sanitizeStationTaskName("01JSVC")}, runner.removed)
+}
+
 // Regression: a TOML-defined [services.*] entry resolves through the same
 // bare-name lookup as a station-declared service (both are Kind == KindService
 // in the same registry), so resolveServiceTarget alone can't tell them apart.

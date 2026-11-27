@@ -135,12 +135,11 @@ func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControl) e
 // reconciler's diff baseline still has it). A taskId that matches nothing is a
 // no-op (the desired end state, service-gone, already holds).
 func (h *InboundHandler) HandleServiceRemove(message protocol.ServiceRemove) error {
-	name, existing, err := h.resolveServiceTarget(message.TaskID)
+	// existing is only a bare-name hit; a station-declared service lives under
+	// its sanitized name, so look that up rather than trust it.
+	name, _, err := h.resolveServiceTarget(message.TaskID)
 	if err != nil {
 		return err
-	}
-	if !existing {
-		return nil
 	}
 	task, ok := h.taskManager.GetTask(name)
 	if !ok {
