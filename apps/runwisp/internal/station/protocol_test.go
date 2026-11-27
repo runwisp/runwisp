@@ -121,3 +121,25 @@ func TestTracker_InventoryCoversLiveAndUnacked(t *testing.T) {
 	}, inv)
 	assert.NotNil(t, NewExecutionTracker().Inventory(nil), "an empty inventory is [] on the wire")
 }
+
+// encodeFrame's spliced envelope is the one json.Marshal builds.
+func TestEncodeFrame_MatchesMarshal(t *testing.T) {
+	for _, c := range []struct {
+		typ, id, replyTo string
+		data             any
+	}{
+		{"ping", "", "", nil},
+		{"result", "", "s<1>", protocol.Result{Ok: true}},
+		{"log:lines", "", "s2", protocol.LogLines{Lines: []protocol.LogLine{{N: 1, Text: "a \"b\"  "}}}},
+		{"execution:stop", "d\"3", "", (*protocol.ExecutionStop)(nil)},
+	} {
+		got, err := encodeFrame(c.typ, c.id, c.replyTo, c.data)
+		require.NoError(t, err)
+		want := protocol.Envelope{Type: c.typ, ID: c.id, ReplyTo: c.replyTo}
+		if c.data != nil {
+			want.Data, _ = json.Marshal(c.data)
+		}
+		wantRaw, _ := json.Marshal(want)
+		assert.Equal(t, string(wantRaw), string(got), c.typ)
+	}
+}

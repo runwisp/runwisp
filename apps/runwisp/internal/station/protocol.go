@@ -48,16 +48,23 @@ const (
 )
 
 // encodeFrame builds one envelope. data may be nil for an empty payload.
+// The payload is spliced in after the header rather than marshalled as the
+// envelope's json.RawMessage, which json re-scans and copies: that costs
+// more than encoding a log batch itself.
 func encodeFrame(typ, id, replyTo string, data any) ([]byte, error) {
-	env := protocol.Envelope{Type: typ, ID: id, ReplyTo: replyTo}
-	if data != nil {
-		raw, err := json.Marshal(data)
-		if err != nil {
-			return nil, fmt.Errorf("encode %s: %w", typ, err)
-		}
-		env.Data = raw
+	head, err := json.Marshal(protocol.Envelope{Type: typ, ID: id, ReplyTo: replyTo})
+	if err != nil || data == nil {
+		return head, err
 	}
-	return json.Marshal(env)
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("encode %s: %w", typ, err)
+	}
+	frame := make([]byte, 0, len(head)+len(`,"data":`)+len(raw))
+	frame = append(frame, head[:len(head)-1]...) // without its closing brace
+	frame = append(frame, `,"data":`...)
+	frame = append(frame, raw...)
+	return append(frame, '}'), nil
 }
 
 // decodeData decodes an envelope's payload. Unknown fields are ignored (the
