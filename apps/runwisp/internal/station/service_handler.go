@@ -114,7 +114,7 @@ func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControl) e
 	case "restart":
 		err = h.taskManager.RestartServiceInstances(taskName)
 	default:
-		return newError(protocol.ErrorCodeInvalid, "unknown service action %q", message.Action)
+		return newError(protocol.ErrorCodeUnsupported, "unknown service action %q", message.Action)
 	}
 	if err != nil {
 		return newError(protocol.ErrorCodeConflict, "%s", err.Error())

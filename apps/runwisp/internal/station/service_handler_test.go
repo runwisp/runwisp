@@ -188,8 +188,8 @@ func TestHandleServiceControl_MissingTaskIDRejected(t *testing.T) {
 }
 
 func TestHandleServiceControl_UnknownActionRejected(t *testing.T) {
-	// An action this daemon doesn't know decodes as-is and is rejected, never
-	// mapped onto a known action.
+	// An action this daemon doesn't know (a newer station's) decodes as-is and
+	// is refused as unsupported, never mapped onto a known action.
 	var msg protocol.ServiceControl
 	require.NoError(t, json.Unmarshal([]byte(`{"type":"service:control","taskId":"svc-1","action":"pause"}`), &msg))
 	h := newDispatchHandler(shellAvailable(), nil)
@@ -197,7 +197,7 @@ func TestHandleServiceControl_UnknownActionRejected(t *testing.T) {
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, protocol.ErrorCodeInvalid, ce.Code)
+	assert.Equal(t, protocol.ErrorCodeUnsupported, ce.Code)
 }
 
 func TestHandleServiceControl_RunnerErrorIsConflict(t *testing.T) {

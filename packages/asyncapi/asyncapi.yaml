@@ -1074,10 +1074,15 @@ components:
     ServiceAction:
       $id: ServiceAction
       type: string
+      description: Open; an unknown action is refused with `unsupported`.
       enum: [start, stop, restart]
 
     ServiceRemove:
       type: object
+      description: |
+        Removes a service the station declared; a taskId the daemon doesn't
+        hold succeeds. A service from the daemon's own config is refused with
+        `forbidden`.
       properties:
         taskId: { type: string }
       required: [taskId]

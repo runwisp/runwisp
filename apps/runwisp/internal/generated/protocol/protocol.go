@@ -675,6 +675,7 @@ type ServiceControl struct {
 	Action ServiceAction `json:"action"`
 }
 
+// Open; an unknown action is refused with `unsupported`.
 type ServiceAction string
 
 const (
@@ -685,6 +686,9 @@ const (
 
 var ServiceActionValues = []ServiceAction{ServiceActionStart, ServiceActionStop, ServiceActionRestart}
 
+// Removes a service the station declared; a taskId the daemon doesn't
+// hold succeeds. A service from the daemon's own config is refused with
+// `forbidden`.
 type ServiceRemove struct {
 	TaskID string `json:"taskId"`
 }
