@@ -10,7 +10,9 @@
 // never existed — a released CHANGELOG entry links it by mistake. The
 // Symfony-style rewrite merged the three cron pages into one, deploy hooks into
 // remote triggers, the notification model and per-task pages into one guide,
-// and moved [notify] and [[route]] into the configuration reference.
+// and moved [notify] and [[route]] into the configuration reference. The
+// install page became the quick start and the TUI tour moved into Getting started.
+// API reference pages follow renamed OpenAPI operationIds to their current operation.
 // Every entry points at its final target: no redirect chains.
 //
 // Shared between astro.config.mjs (browser redirects) and
@@ -36,4 +38,19 @@ export const redirects = {
     "/notifications/per-task": "/notifications/",
     "/notifications/global": "/configuration/notify/",
     "/notifications/routes": "/configuration/routes/",
+    "/getting-started/install": "/getting-started/quick-start/",
+    "/concepts/tui-tour": "/getting-started/tui-tour/",
+    "/api/operations/triggerrun": "/api/operations/runtask/",
+    "/api/operations/restartservice": "/api/operations/restarttask/",
+    "/api/operations/stopservice": "/api/operations/stoptask/",
+    "/api/operations/getrunbyid": "/api/operations/getrun/",
+    "/api/operations/getallruns": "/api/operations/listruns/",
+    "/api/operations/gettasks": "/api/operations/listtasks/",
+    "/api/operations/listtaskruns": "/api/operations/listruns/",
+    "/api/operations/gettaskruns": "/api/operations/listruns/",
+    "/api/operations/bulkcancelruns": "/api/operations/bulkstopruns/",
+    "/api/operations/getinfo": "/api/operations/getdaemoninfo/",
+    "/api/operations/getinstance": "/api/operations/getdaemonidentity/",
+    "/api/operations/streamnotifications": "/api/operations/streamappevents/",
+    "/api/operations/streamruns": "/api/operations/streamappevents/",
 };
