@@ -159,11 +159,17 @@ func (s *chunkStream) next(final bool) ([]byte, bool, error) {
 		s.file = f
 	}
 	rotated := false
+	want := int64(logChunkMaxBytes)
 	if held, err := s.file.Stat(); err == nil {
 		cur, statErr := os.Stat(s.path)
 		rotated = statErr == nil && !os.SameFile(held, cur)
+		// Size the buffer to what is there: most ticks find a few lines or none.
+		want = min(want, held.Size()-s.off)
 	}
-	buf := make([]byte, logChunkMaxBytes)
+	if want <= 0 {
+		return nil, rotated, nil
+	}
+	buf := make([]byte, want)
 	n, err := s.file.ReadAt(buf, s.off)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, rotated, err
