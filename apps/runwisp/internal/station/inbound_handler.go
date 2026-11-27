@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
@@ -33,7 +32,6 @@ type InboundHandler struct {
 	appendUpdate func(*protocol.ExecutionUpdate)
 	uploader     *LogUploader
 	tracker      *ExecutionTracker
-	now          func() time.Time
 }
 
 // InboundHandlerDeps bundles the collaborators an InboundHandler needs.
@@ -46,15 +44,9 @@ type InboundHandlerDeps struct {
 	AppendUpdate func(*protocol.ExecutionUpdate)
 	Uploader     *LogUploader
 	Tracker      *ExecutionTracker
-	// Now defaults to time.Now; it decides whether a dispatch's notAfter passed.
-	Now func() time.Time
 }
 
 func NewInboundHandler(deps InboundHandlerDeps) *InboundHandler {
-	now := deps.Now
-	if now == nil {
-		now = time.Now
-	}
 	return &InboundHandler{
 		taskManager:  deps.TaskManager,
 		runRepo:      deps.RunRepo,
@@ -64,7 +56,6 @@ func NewInboundHandler(deps InboundHandlerDeps) *InboundHandler {
 		appendUpdate: deps.AppendUpdate,
 		uploader:     deps.Uploader,
 		tracker:      deps.Tracker,
-		now:          now,
 	}
 }
 
@@ -101,10 +92,6 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, d protocol
 	if h.isDuplicateDispatch(ctx, executionID) {
 		slog.Info("duplicate execution dispatch accepted again", "executionId", executionID)
 		return nil
-	}
-	if notAfter := time.UnixMilli(d.NotAfter); d.NotAfter > 0 && h.now().After(notAfter) {
-		h.tracker.Release(executionID)
-		return newError(protocol.ErrorCodeExpired, "dispatch arrived after its notAfter (%s)", notAfter.UTC().Format(time.RFC3339))
 	}
 
 	// Record the pending archive BEFORE the run starts: a crash after the
@@ -177,8 +164,7 @@ func (h *InboundHandler) HandleExecutionStop(ctx context.Context, stop protocol.
 	if err != nil {
 		return err
 	}
-	grace := time.Duration(stop.GracefulStopMs) * time.Millisecond
-	if err := h.taskManager.StopRunByExecutionID(executionID, grace, stop.Force); err == nil {
+	if err := h.taskManager.StopRunByExecutionID(executionID, 0, false); err == nil {
 		return nil
 	}
 

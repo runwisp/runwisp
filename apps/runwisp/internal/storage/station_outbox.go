@@ -5,8 +5,6 @@ package storage
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage/sqlcdb"
 )
@@ -37,8 +35,6 @@ type StationOutboxRepository interface {
 	// AckOutboxUpdates deletes every update with seq <= seq.
 	AckOutboxUpdates(ctx context.Context, seq int64) error
 	ListOutboxExecutions(ctx context.Context) ([]OutboxExecution, error)
-	// OutboxLastSeq is the highest seq ever assigned, 0 when none was.
-	OutboxLastSeq(ctx context.Context) (int64, error)
 }
 
 func (db *SQLiteDatabase) AppendOutboxUpdate(ctx context.Context, executionID string, finished bool, payload []byte) (int64, error) {
@@ -75,16 +71,4 @@ func (db *SQLiteDatabase) ListOutboxExecutions(ctx context.Context) ([]OutboxExe
 		out[i] = OutboxExecution{ExecutionID: r.ExecutionID, Finished: r.Finished != 0}
 	}
 	return out, nil
-}
-
-// OutboxLastSeq reads sqlite_sequence, which AUTOINCREMENT keeps at the highest
-// seq ever used even once every row is deleted. Raw SQL because sqlc doesn't
-// model that internal table.
-func (db *SQLiteDatabase) OutboxLastSeq(ctx context.Context) (int64, error) {
-	var seq int64
-	err := db.db.QueryRowContext(ctx, `SELECT seq FROM sqlite_sequence WHERE name = 'station_outbox'`).Scan(&seq)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, nil
-	}
-	return seq, err
 }

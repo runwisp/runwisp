@@ -85,11 +85,3 @@ func (o *outbox) executions(ctx context.Context) []storage.OutboxExecution {
 	}
 	return execs
 }
-
-func (o *outbox) lastSeq(ctx context.Context) int64 {
-	seq, err := o.repo.OutboxLastSeq(ctx)
-	if err != nil {
-		slog.Warn("failed to read the last execution update seq", "err", err)
-	}
-	return seq
-}

@@ -10,8 +10,6 @@
       "id": "tsk_01JC8Y6V",
       "name": "backup"
     },
-    "attempt": 2,
-    "priority": 5,
     "spec": {
       "type": "shell",
       "script": "pg_dump app > /backups/app.sql",
@@ -31,7 +29,6 @@
         "+timeout"
       ]
     },
-    "logStream": true,
-    "notAfter": 1794477600000
+    "logStream": true
   }
 }

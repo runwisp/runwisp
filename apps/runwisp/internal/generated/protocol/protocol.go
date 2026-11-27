@@ -17,6 +17,8 @@ type Envelope struct {
 	ID string `json:"id,omitzero"`
 	// Set on `result`, `log:lines` and `log:search:hits`. The command this answers.
 	ReplyTo string `json:"replyTo,omitzero"`
+	// Set on a `result` whose command failed; `data` is then absent.
+	Error *ErrorInfo `json:"error,omitzero"`
 	// Features the receiver must have to act on this command. A receiver
 	// missing any of them answers `unsupported` without acting.
 	Requires []string `json:"requires,omitzero"`
@@ -44,8 +46,6 @@ type Hello struct {
 	MaxConcurrent int `json:"maxConcurrent"`
 	// Hash of the task catalog the daemon would send in tasks:sync.
 	TasksHash string `json:"tasksHash"`
-	// Highest execution:update seq this install has ever assigned (0 = none).
-	LastSeq int64 `json:"lastSeq"`
 	// Every execution the daemon still owns: accepted and not yet
 	// running, running, or finished with an update not yet acked. An
 	// execution the station believes active on this install and absent
@@ -125,25 +125,17 @@ const (
 
 var GoodbyeCodeValues = []GoodbyeCode{GoodbyeCodeUnauthorized, GoodbyeCodeRevoked, GoodbyeCodeDisabled, GoodbyeCodeLimitReached, GoodbyeCodeUnsupportedProtocol, GoodbyeCodeOverloaded, GoodbyeCodeDraining, GoodbyeCodeDuplicateInstance, GoodbyeCodeShutdown, GoodbyeCodeProtocolError}
 
-// Command-specific result fields sit next to `ok` and `error` in the same
-// object (see the *Result schemas).
-type Result struct {
-	Ok    bool       `json:"ok"`
-	Error *ErrorInfo `json:"error,omitzero"`
-}
-
 type ErrorInfo struct {
 	Code    ErrorCode `json:"code"`
 	Message string    `json:"message"`
 	// Authoritative, so a code added later is still handled right.
-	Retryable    bool `json:"retryable"`
-	RetryAfterMs int  `json:"retryAfterMs,omitzero"`
+	Retryable bool `json:"retryable"`
 }
 
 // Open. `invalid` malformed; `unauthorized`; `forbidden` refused by local
 // policy; `not_found`; `conflict`; `unsupported` unknown command or
 // missing required feature; `unavailable` backend missing; `busy` at
-// capacity; `expired` notAfter passed; `internal`.
+// capacity; `internal`.
 type ErrorCode string
 
 const (
@@ -155,11 +147,10 @@ const (
 	ErrorCodeUnsupported  ErrorCode = "unsupported"
 	ErrorCodeUnavailable  ErrorCode = "unavailable"
 	ErrorCodeBusy         ErrorCode = "busy"
-	ErrorCodeExpired      ErrorCode = "expired"
 	ErrorCodeInternal     ErrorCode = "internal"
 )
 
-var ErrorCodeValues = []ErrorCode{ErrorCodeInvalid, ErrorCodeUnauthorized, ErrorCodeForbidden, ErrorCodeNotFound, ErrorCodeConflict, ErrorCodeUnsupported, ErrorCodeUnavailable, ErrorCodeBusy, ErrorCodeExpired, ErrorCodeInternal}
+var ErrorCodeValues = []ErrorCode{ErrorCodeInvalid, ErrorCodeUnauthorized, ErrorCodeForbidden, ErrorCodeNotFound, ErrorCodeConflict, ErrorCodeUnsupported, ErrorCodeUnavailable, ErrorCodeBusy, ErrorCodeInternal}
 
 type Ack struct {
 	Seq int64 `json:"seq"`
@@ -172,13 +163,6 @@ type Cancel struct {
 	Command string `json:"command"`
 }
 
-// Any field set replaces the current value.
-type SessionUpdate struct {
-	Heartbeat *Heartbeat `json:"heartbeat,omitzero"`
-	// null = leave as is, 0 = stop sending agent:stats.
-	StatsIntervalMs *int `json:"statsIntervalMs,omitzero"`
-}
-
 // Fields set replace what hello said.
 type AgentUpdate struct {
 	Agent         *AgentInfo                `json:"agent,omitzero"`
@@ -189,9 +173,7 @@ type AgentUpdate struct {
 
 type AgentStats struct {
 	// Percent, 0-100.
-	CpuUsage float64 `json:"cpuUsage,omitzero"`
-	// Percent, 0-100.
-	MemUsage      float64 `json:"memUsage,omitzero"`
+	CpuUsage      float64 `json:"cpuUsage,omitzero"`
 	MemTotalBytes int64   `json:"memTotalBytes,omitzero"`
 	MemUsedBytes  int64   `json:"memUsedBytes,omitzero"`
 	CpuCores      int     `json:"cpuCores,omitzero"`
@@ -209,7 +191,8 @@ type AgentUpgrade struct {
 }
 
 // Replace the runner token. The daemon stores it durably before
-// answering ok; the station may revoke the old token after that.
+// answering; the station may revoke the old token after a result
+// without error.
 type AgentCredentials struct {
 	Token string `json:"token"`
 }
@@ -419,14 +402,12 @@ type RunOptions struct {
 	Failures []string `json:"failures,omitzero"`
 }
 
-// Idempotent by executionId: a repeat gets ok again without a second
+// Idempotent by executionId: a repeat succeeds again without a second
 // run. Rejections: not_found (no such config task), forbidden (local
-// policy), unavailable (backend missing), busy (retryable), expired.
+// policy), unavailable (backend missing), busy (retryable).
 type ExecutionDispatch struct {
 	ExecutionID string            `json:"executionId"`
 	Task        *TaskRef          `json:"task"`
-	Attempt     int               `json:"attempt,omitzero"`
-	Priority    int               `json:"priority,omitzero"`
 	Spec        ExecutionSpec     `json:"spec"`
 	Inputs      map[string]string `json:"inputs,omitzero"`
 	// 0 = no timeout (config spec - the task's own).
@@ -434,8 +415,6 @@ type ExecutionDispatch struct {
 	Options   *RunOptions `json:"options,omitzero"`
 	// Upload the log in chunks while running (upload:request purpose log.chunk).
 	LogStream bool `json:"logStream,omitzero"`
-	// Unix ms. Refuse with `expired` instead of starting after this time. 0 = no deadline.
-	NotAfter int64 `json:"notAfter,omitzero"`
 }
 
 type TaskRef struct {
@@ -445,11 +424,6 @@ type TaskRef struct {
 
 type ExecutionStop struct {
 	ExecutionID string `json:"executionId"`
-	Reason      string `json:"reason,omitzero"`
-	// Overrides the run's own window. 0 = keep it.
-	GracefulStopMs int `json:"gracefulStopMs,omitzero"`
-	// Kill now.
-	Force bool `json:"force,omitzero"`
 }
 
 // CLOSED. accepted (not started yet), running, finished.
@@ -686,8 +660,6 @@ type UploadTarget struct {
 	// Send exactly these headers with the upload.
 	Headers map[string]string `json:"headers,omitzero"`
 	Key     string            `json:"key"`
-	// Unix ms.
-	ExpiresAt int64 `json:"expiresAt,omitzero"`
 }
 
 // Idempotent upsert of a service. Re-sent after reconnect. spec null

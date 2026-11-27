@@ -31,9 +31,8 @@ var payloadTypes = map[string]func() any{
 	"goodbye":            func() any { return &protocol.Goodbye{} },
 	"ping":               nil,
 	"pong":               nil,
-	"result":             func() any { return &protocol.Result{} },
+	"result":             nil, // the fixture is a refusal: error, no data
 	"ack":                func() any { return &protocol.Ack{} },
-	"session:update":     func() any { return &protocol.SessionUpdate{} },
 	"cancel":             func() any { return &protocol.Cancel{} },
 	"agent:update":       func() any { return &protocol.AgentUpdate{} },
 	"agent:stats":        func() any { return &protocol.AgentStats{} },

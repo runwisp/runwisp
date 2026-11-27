@@ -127,33 +127,28 @@ func (s *Station) react(ctx context.Context, conn *websocket.Conn, env protocol.
 		_ = json.Unmarshal(env.Data, &u)
 		_ = s.write(ctx, conn, "ack", "", "", protocol.Ack{Seq: u.Seq})
 	case env.ID != "":
-		_ = s.write(ctx, conn, "result", "", env.ID, s.result(env))
+		fields, failure := s.result(env)
+		_ = s.writeEnv(ctx, conn, protocol.Envelope{Type: "result", ReplyTo: env.ID, Error: failure}, fields)
 	}
 	return true
 }
 
-func (s *Station) result(env protocol.Envelope) json.RawMessage {
-	var fields any
-	var failure *protocol.ErrorInfo
-	if s.Answer != nil {
-		fields, failure = s.Answer(env)
+func (s *Station) result(env protocol.Envelope) (any, *protocol.ErrorInfo) {
+	if s.Answer == nil {
+		return nil, nil
 	}
+	fields, failure := s.Answer(env)
 	if failure != nil {
-		raw, _ := json.Marshal(protocol.Result{Error: failure})
-		return raw
+		return nil, failure
 	}
-	obj := map[string]any{}
-	if fields != nil {
-		raw, _ := json.Marshal(fields)
-		_ = json.Unmarshal(raw, &obj)
-	}
-	obj["ok"] = true
-	raw, _ := json.Marshal(obj)
-	return raw
+	return fields, nil
 }
 
 func (s *Station) write(ctx context.Context, conn *websocket.Conn, typ, id, replyTo string, data any) error {
-	env := protocol.Envelope{Type: typ, ID: id, ReplyTo: replyTo}
+	return s.writeEnv(ctx, conn, protocol.Envelope{Type: typ, ID: id, ReplyTo: replyTo}, data)
+}
+
+func (s *Station) writeEnv(ctx context.Context, conn *websocket.Conn, env protocol.Envelope, data any) error {
 	if data != nil {
 		raw, err := json.Marshal(data)
 		if err != nil {
@@ -220,16 +215,19 @@ func (s *Station) Command(t testing.TB, typ string, data any, requires ...string
 	return id
 }
 
-// Result waits for the result of command id and decodes it into out (which
-// may be nil); it returns the result's ok and error.
-func (s *Station) Result(t testing.TB, id string, out any) protocol.Result {
+// Result is a command's outcome as Result reports it.
+type Result struct {
+	Ok    bool
+	Error *protocol.ErrorInfo
+}
+
+// Result waits for the result of command id and decodes its data into out
+// (which may be nil).
+func (s *Station) Result(t testing.TB, id string, out any) Result {
 	t.Helper()
 	env := s.Wait(t, "result", func(e protocol.Envelope) bool { return e.ReplyTo == id })
-	var res protocol.Result
-	if err := json.Unmarshal(env.Data, &res); err != nil {
-		t.Fatalf("stationtest: malformed result: %v", err)
-	}
-	if out != nil {
+	res := Result{Ok: env.Error == nil, Error: env.Error}
+	if out != nil && len(env.Data) > 0 {
 		if err := json.Unmarshal(env.Data, out); err != nil {
 			t.Fatalf("stationtest: decode result: %v", err)
 		}

@@ -194,7 +194,7 @@ func (s *session) newGrepScan(id string, req protocol.LogSearch) (*grepScan, err
 		return nil, newError(protocol.ErrorCodeInvalid, "%s", err.Error())
 	}
 	// A frame's bytes beyond its hits: measured on the largest progress.
-	empty, err := encodeFrame(typeLogSearchHits, "", id, protocol.LogSearchHits{Hits: []protocol.LogSearchHit{}, Progress: &protocol.LogSearchProgress{
+	empty, err := encodeFrame(protocol.Envelope{Type: typeLogSearchHits, ReplyTo: id}, protocol.LogSearchHits{Hits: []protocol.LogSearchHit{}, Progress: &protocol.LogSearchProgress{
 		RunsScanned: math.MaxInt, RunsTotal: math.MaxInt, BytesScanned: math.MaxInt64,
 	}})
 	if err != nil {

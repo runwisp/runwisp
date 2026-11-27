@@ -39,10 +39,9 @@ const (
 var (
 	errSessionClosed    = &StationError{Code: protocol.ErrorCodeUnavailable, Message: "station session closed", Retryable: true}
 	errHeartbeatTimeout = errors.New("heartbeat timeout: nothing heard from the station")
-	errReconfigured     = errors.New("session parameters changed")
 )
 
-// sessionParams are the welcome's knobs, changeable by session:update.
+// sessionParams are the welcome's knobs.
 type sessionParams struct {
 	heartbeatInterval time.Duration
 	heartbeatTimeout  time.Duration
@@ -96,7 +95,6 @@ type session struct {
 
 	mu          sync.Mutex
 	params      sessionParams
-	reconfigure chan struct{}
 	pending     map[string]chan protocol.Envelope // outgoing commands by id
 	subs        map[string]context.CancelFunc     // log subscriptions and greps by command id
 	advertised  advertisedAgent                   // what hello / agent:update last said
@@ -122,7 +120,6 @@ func newSession(parent context.Context, client *Client, conn *websocket.Conn, we
 		out:         make(chan outFrame, outboundQueueSize),
 		helloHash:   hello.TasksHash,
 		params:      paramsFromWelcome(welcome),
-		reconfigure: make(chan struct{}, 1),
 		pending:     map[string]chan protocol.Envelope{},
 		subs:        map[string]context.CancelFunc{},
 		advertised:  advertisedAgent{agent: *hello.Agent, features: hello.Features},
@@ -191,7 +188,7 @@ func (s *session) afterWelcome() {
 // sayGoodbye tells the station the daemon is shutting down, so it marks the
 // runner offline at once instead of waiting out the heartbeat.
 func (s *session) sayGoodbye() {
-	frame, err := encodeFrame(typeGoodbye, "", "", protocol.Goodbye{Code: protocol.GoodbyeCodeShutdown, Message: "daemon shutting down", Retry: true})
+	frame, err := encodeFrame(protocol.Envelope{Type: typeGoodbye}, protocol.Goodbye{Code: protocol.GoodbyeCodeShutdown, Message: "daemon shutting down", Retry: true})
 	if err != nil {
 		return
 	}
@@ -232,14 +229,9 @@ func (s *session) writeLoop() error {
 	}
 }
 
-// timersLoop sends pings and agent:stats and closes a silent session. It
-// restarts its tickers when session:update changes the parameters.
+// timersLoop sends pings and agent:stats and closes a silent session.
 func (s *session) timersLoop() error {
-	for {
-		if err := s.runTimers(s.currentParams()); !errors.Is(err, errReconfigured) {
-			return err
-		}
-	}
+	return s.runTimers(s.currentParams())
 }
 
 func (s *session) runTimers(p sessionParams) error {
@@ -257,8 +249,6 @@ func (s *session) runTimers(p sessionParams) error {
 		select {
 		case <-s.ctx.Done():
 			return nil
-		case <-s.reconfigure:
-			return errReconfigured
 		case <-ping.C:
 			// A dropped ping is harmless: a full queue means the station is
 			// hearing from us anyway.
@@ -352,20 +342,6 @@ func (s *session) currentParams() sessionParams {
 
 func (s *session) maxFrameBytes() int {
 	return s.currentParams().maxFrameBytes
-}
-
-// updateParams applies a session:update.
-func (s *session) updateParams(u protocol.SessionUpdate) {
-	s.mu.Lock()
-	s.params.applyHeartbeat(u.Heartbeat)
-	if u.StatsIntervalMs != nil {
-		s.params.statsInterval = time.Duration(max(*u.StatsIntervalMs, 0)) * time.Millisecond
-	}
-	s.mu.Unlock()
-	select {
-	case s.reconfigure <- struct{}{}:
-	default:
-	}
 }
 
 // handleFrame acts on one inbound frame. It is the funnel every peer frame
@@ -472,22 +448,33 @@ type followUp struct {
 
 // reply sends a command's result. waitWritten blocks until the frame is on
 // the wire.
-func (s *session) reply(id string, fields any, err error, waitWritten bool) {
-	data, mErr := resultData(fields, err)
-	if mErr != nil {
-		data, _ = resultData(nil, newError(protocol.ErrorCodeInternal, "encode result: %v", mErr))
+func (s *session) reply(id string, data any, err error, waitWritten bool) {
+	env := protocol.Envelope{Type: typeResult, ReplyTo: id}
+	if err != nil {
+		env.Error, data = errorInfo(err), nil
 	}
-	if sendErr := s.send(typeResult, "", id, data, waitWritten); sendErr != nil {
+	frame, encErr := encodeFrame(env, data)
+	if encErr != nil {
+		env.Error = errorInfo(newError(protocol.ErrorCodeInternal, "encode result: %v", encErr))
+		frame, _ = encodeFrame(env, nil)
+	}
+	if sendErr := s.queue(frame, waitWritten); sendErr != nil {
 		slog.Debug("failed to send command result", "replyTo", id, "error", sendErr.Error())
 	}
 }
 
 // send queues a frame, waiting while the outbound queue is full.
 func (s *session) send(typ, id, replyTo string, data any, waitWritten bool) error {
-	frame, err := encodeFrame(typ, id, replyTo, data)
+	frame, err := encodeFrame(protocol.Envelope{Type: typ, ID: id, ReplyTo: replyTo}, data)
 	if err != nil {
 		return err
 	}
+	return s.queue(frame, waitWritten)
+}
+
+// queue hands an encoded frame to the writer. waitWritten blocks until it is
+// on the wire.
+func (s *session) queue(frame []byte, waitWritten bool) error {
 	f := outFrame{data: frame}
 	if waitWritten {
 		f.written = make(chan error, 1)
@@ -513,7 +500,7 @@ func (s *session) trySend(typ string, data any) bool {
 	if s.ctx.Err() != nil {
 		return false
 	}
-	frame, err := encodeFrame(typ, "", "", data)
+	frame, err := encodeFrame(protocol.Envelope{Type: typ}, data)
 	if err != nil {
 		return false
 	}
@@ -566,16 +553,8 @@ func (s *session) deliverResult(env protocol.Envelope) {
 
 // decodeResult turns a result into T, or into the StationError it carries.
 func decodeResult[T any](env protocol.Envelope) (T, error) {
-	var zero T
-	res, err := decodeData[protocol.Result](env)
-	if err != nil {
-		return zero, err
-	}
-	if !res.Ok {
-		info := res.Error
-		if info == nil {
-			info = &protocol.ErrorInfo{Code: protocol.ErrorCodeInternal, Message: "station refused without a reason"}
-		}
+	if info := env.Error; info != nil {
+		var zero T
 		return zero, &StationError{Code: info.Code, Message: info.Message, Retryable: info.Retryable}
 	}
 	return decodeData[T](env)

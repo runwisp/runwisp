@@ -126,7 +126,7 @@ func (d *fakeDaemon) session(ctx context.Context, instanceID, logBody string) er
 		return fmt.Errorf("bad dispatch: %s", dispatchEnv.Data)
 	}
 	slog.Info("dispatch received", "executionId", dispatch.ExecutionID)
-	if err := d.write(ctx, "result", "", dispatchEnv.ID, protocol.Result{Ok: true}); err != nil {
+	if err := d.write(ctx, "result", "", dispatchEnv.ID, nil); err != nil {
 		return err
 	}
 
@@ -180,12 +180,12 @@ func (d *fakeDaemon) archive(ctx context.Context, executionID, logBody string) (
 	if err != nil {
 		return nil, fmt.Errorf("wait for upload targets: %w", err)
 	}
-	var res struct {
-		protocol.Result
-		protocol.UploadRequestResult
+	var res protocol.UploadRequestResult
+	if env.Error != nil {
+		return nil, fmt.Errorf("upload:request refused: %s", env.Error.Message)
 	}
-	if err := json.Unmarshal(env.Data, &res); err != nil || !res.Ok {
-		return nil, fmt.Errorf("upload:request refused: %s", env.Data)
+	if err := json.Unmarshal(env.Data, &res); err != nil {
+		return nil, fmt.Errorf("bad upload:request result: %w", err)
 	}
 	if len(res.Uploads) == 0 {
 		slog.Warn("station declined the log archive")
@@ -239,8 +239,8 @@ func (d *fakeDaemon) await(ctx context.Context, match func(protocol.Envelope) bo
 				return protocol.Envelope{}, fmt.Errorf("station said goodbye: %s", env.Data)
 			case env.ID != "":
 				slog.Info("refusing command", "type", env.Type)
-				refusal := protocol.Result{Error: &protocol.ErrorInfo{Code: protocol.ErrorCodeUnsupported, Message: "fake daemon"}}
-				if err := d.write(ctx, "result", "", env.ID, refusal); err != nil {
+				refusal := protocol.Envelope{Type: "result", ReplyTo: env.ID, Error: &protocol.ErrorInfo{Code: protocol.ErrorCodeUnsupported, Message: "fake daemon"}}
+				if err := d.send(ctx, refusal); err != nil {
 					return protocol.Envelope{}, err
 				}
 			default:
@@ -264,12 +264,16 @@ func (d *fakeDaemon) write(ctx context.Context, typ, id, replyTo string, data an
 		}
 		env.Data = raw
 	}
+	return d.send(ctx, env)
+}
+
+func (d *fakeDaemon) send(ctx context.Context, env protocol.Envelope) error {
 	raw, err := json.Marshal(env)
 	if err != nil {
 		return err
 	}
 	if err := d.conn.Write(ctx, websocket.MessageText, raw); err != nil {
-		return fmt.Errorf("send %s: %w", typ, err)
+		return fmt.Errorf("send %s: %w", env.Type, err)
 	}
 	return nil
 }

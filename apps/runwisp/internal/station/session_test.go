@@ -87,8 +87,8 @@ func TestSession_UnknownCommandIsUnsupported(t *testing.T) {
 	assert.Equal(t, protocol.ErrorCodeUnsupported, res.Error.Code)
 	assert.False(t, res.Error.Retryable)
 
-	id = st.Command(t, "session:update", protocol.SessionUpdate{})
-	assert.True(t, st.Result(t, id, nil).Ok)
+	id = st.Command(t, "service:control", protocol.ServiceControl{TaskID: "web", Action: protocol.ServiceActionStart})
+	assert.True(t, st.Result(t, id, nil).Ok, "the session carries on")
 }
 
 func TestSession_RequiresMissingFeatureIsUnsupported(t *testing.T) {
@@ -107,7 +107,7 @@ func TestSession_RequiresMissingFeatureIsUnsupported(t *testing.T) {
 	assert.Empty(t, h.runner.triggered, "a refused command does nothing")
 }
 
-func TestSession_DispatchAcceptedThenExpired(t *testing.T) {
+func TestSession_DispatchIsIdempotent(t *testing.T) {
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)
 	h.runner.trigRun = &model.Run{ID: "r1"}
@@ -121,13 +121,6 @@ func TestSession_DispatchAcceptedThenExpired(t *testing.T) {
 	// A re-sent dispatch is accepted again without a second run.
 	id = st.Command(t, "execution:dispatch", protocol.ExecutionDispatch{ExecutionID: "e1", Spec: spec})
 	assert.True(t, st.Result(t, id, nil).Ok)
-	assert.Equal(t, []string{"e1"}, h.runner.triggeredIDs())
-
-	past := time.Now().Add(-time.Minute)
-	id = st.Command(t, "execution:dispatch", protocol.ExecutionDispatch{ExecutionID: "e2", Spec: spec, NotAfter: past.UnixMilli()})
-	res := st.Result(t, id, nil)
-	require.NotNil(t, res.Error)
-	assert.Equal(t, protocol.ErrorCodeExpired, res.Error.Code)
 	assert.Equal(t, []string{"e1"}, h.runner.triggeredIDs())
 }
 
@@ -175,14 +168,13 @@ func TestSession_ServiceStatusAfterWelcome(t *testing.T) {
 	assert.Equal(t, []protocol.ServiceInstance{{Index: 0, State: protocol.ServiceInstanceStateRunning, ExecutionID: "r1"}}, status.Instances)
 }
 
-func TestSession_StatsFollowSessionUpdate(t *testing.T) {
+func TestSession_StatsFollowWelcome(t *testing.T) {
 	st := stationtest.New(t)
+	st.Welcome.StatsIntervalMs = 10
 	h := newHarness(t, st, nil)
 	h.client.deps.SystemStats = func() model.SystemStats { return model.SystemStats{CPUCores: 4} }
 	h.start(t)
 
-	id := st.Command(t, "session:update", protocol.SessionUpdate{StatsIntervalMs: new(10)})
-	require.True(t, st.Result(t, id, nil).Ok)
 	stats := stationtest.Decode[protocol.AgentStats](t, st, "agent:stats", nil)
 	assert.Equal(t, 4, stats.CpuCores)
 }
@@ -211,7 +203,6 @@ func TestOutbox_ResentAfterRestartUntilAcked(t *testing.T) {
 	h2 := newHarness(t, st2, db)
 	h2.run(t)
 	hello := stationtest.Decode[protocol.Hello](t, st2, "hello", nil)
-	assert.Equal(t, int64(1), hello.LastSeq)
 	assert.Equal(t, []protocol.InventoryEntry{{ExecutionID: "e1", Status: protocol.ExecutionStatusFinished}}, hello.Executions)
 
 	again := stationtest.Decode[protocol.ExecutionUpdate](t, st2, "execution:update", nil)

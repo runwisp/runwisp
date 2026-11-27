@@ -2,9 +2,6 @@
   "type": "execution:stop",
   "id": "s23",
   "data": {
-    "executionId": "ex_01JC8Y5T",
-    "reason": "stopped from the dashboard",
-    "gracefulStopMs": 10000,
-    "force": true
+    "executionId": "ex_01JC8Y5T"
   }
 }

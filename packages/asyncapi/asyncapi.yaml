@@ -52,8 +52,10 @@ info:
     A frame with an `id` is a COMMAND and gets exactly one `result` with
     `replyTo` set to that id (a log subscription first streams `log:lines`
     frames with the same `replyTo`, and a log:search streams
-    `log:search:hits` frames, before its `result`). Ids are unique per sender
-    per connection. The station ends a streaming command early with `cancel`;
+    `log:search:hits` frames, before its `result`). A result's `data` is the
+    command's own result (its `...Result` schema; absent when it has none);
+    a failed command's result carries `error` instead. Ids are unique per
+    sender per connection. The station ends a streaming command early with `cancel`;
     the command still ends with its `result`.
 
     ## Session
@@ -96,7 +98,6 @@ channels:
           - $ref: "#/components/messages/pong"
           - $ref: "#/components/messages/result"
           - $ref: "#/components/messages/ack"
-          - $ref: "#/components/messages/sessionUpdate"
           - $ref: "#/components/messages/executionDispatch"
           - $ref: "#/components/messages/executionStop"
           - $ref: "#/components/messages/cancel"
@@ -152,16 +153,14 @@ components:
       payload: { $ref: "#/components/schemas/Empty" }
     result:
       name: result
-      summary: The single reply to a command; `replyTo` names it.
-      payload: { $ref: "#/components/schemas/Result" }
+      summary: The single reply to a command; `replyTo` names it, envelope `error` says it failed.
+      payload:
+        type: object
+        description: The command's own result fields (its `...Result` schema), or absent.
     ack:
       name: ack
       summary: station -> daemon. Every execution:update up to seq is applied.
       payload: { $ref: "#/components/schemas/Ack" }
-    sessionUpdate:
-      name: session:update
-      summary: station -> daemon, command. Changes session parameters.
-      payload: { $ref: "#/components/schemas/SessionUpdate" }
     cancel:
       name: cancel
       summary: station -> daemon. End the streaming command named in `command` early; it still sends its result.
@@ -198,7 +197,7 @@ components:
     # --- executions ----------------------------------------------------------
     executionDispatch:
       name: execution:dispatch
-      summary: station -> daemon, command. Run one execution. Result ok = accepted.
+      summary: station -> daemon, command. Run one execution. A result without error = accepted.
       payload: { $ref: "#/components/schemas/ExecutionDispatch" }
     executionStop:
       name: execution:stop
@@ -266,6 +265,9 @@ components:
         replyTo:
           type: string
           description: Set on `result`, `log:lines` and `log:search:hits`. The command this answers.
+        error:
+          $ref: "#/components/schemas/ErrorInfo"
+          description: Set on a `result` whose command failed; `data` is then absent.
         requires:
           type: array
           items: { type: string }
@@ -307,10 +309,6 @@ components:
         tasksHash:
           type: string
           description: Hash of the task catalog the daemon would send in tasks:sync.
-        lastSeq:
-          type: integer
-          format: int64
-          description: Highest execution:update seq this install has ever assigned (0 = none).
         executions:
           type: array
           items: { $ref: "#/components/schemas/InventoryEntry" }
@@ -319,7 +317,7 @@ components:
             running, running, or finished with an update not yet acked. An
             execution the station believes active on this install and absent
             here was lost by the daemon.
-      required: [instanceId, agent, features, labels, maxConcurrent, tasksHash, lastSeq, executions]
+      required: [instanceId, agent, features, labels, maxConcurrent, tasksHash, executions]
 
     AgentInfo:
       type: object
@@ -408,16 +406,6 @@ components:
         - shutdown
         - protocol_error
 
-    Result:
-      type: object
-      description: |
-        Command-specific result fields sit next to `ok` and `error` in the same
-        object (see the *Result schemas).
-      properties:
-        ok: { type: boolean }
-        error: { $ref: "#/components/schemas/ErrorInfo" }
-      required: [ok]
-
     ErrorInfo:
       type: object
       properties:
@@ -426,7 +414,6 @@ components:
         retryable:
           type: boolean
           description: Authoritative, so a code added later is still handled right.
-        retryAfterMs: { type: integer }
       required: [code, message, retryable]
 
     ErrorCode:
@@ -436,7 +423,7 @@ components:
         Open. `invalid` malformed; `unauthorized`; `forbidden` refused by local
         policy; `not_found`; `conflict`; `unsupported` unknown command or
         missing required feature; `unavailable` backend missing; `busy` at
-        capacity; `expired` notAfter passed; `internal`.
+        capacity; `internal`.
       enum:
         - invalid
         - unauthorized
@@ -446,7 +433,6 @@ components:
         - unsupported
         - unavailable
         - busy
-        - expired
         - internal
 
     Ack:
@@ -463,16 +449,6 @@ components:
       properties:
         command: { type: string, description: The id of the command to end. }
       required: [command]
-
-    SessionUpdate:
-      type: object
-      description: Any field set replaces the current value.
-      properties:
-        heartbeat: { $ref: "#/components/schemas/Heartbeat" }
-        statsIntervalMs:
-          type: integer
-          nullable: true
-          description: null = leave as is, 0 = stop sending agent:stats.
 
     # =========================================================================
     # Agent
@@ -494,7 +470,6 @@ components:
       type: object
       properties:
         cpuUsage: { type: number, description: "Percent, 0-100." }
-        memUsage: { type: number, description: "Percent, 0-100." }
         memTotalBytes: { type: integer, format: int64 }
         memUsedBytes: { type: integer, format: int64 }
         cpuCores: { type: integer }
@@ -515,7 +490,8 @@ components:
       type: object
       description: |
         Replace the runner token. The daemon stores it durably before
-        answering ok; the station may revoke the old token after that.
+        answering; the station may revoke the old token after a result
+        without error.
       properties:
         token: { type: string }
       required: [token]
@@ -780,14 +756,12 @@ components:
     ExecutionDispatch:
       type: object
       description: |
-        Idempotent by executionId: a repeat gets ok again without a second
+        Idempotent by executionId: a repeat succeeds again without a second
         run. Rejections: not_found (no such config task), forbidden (local
-        policy), unavailable (backend missing), busy (retryable), expired.
+        policy), unavailable (backend missing), busy (retryable).
       properties:
         executionId: { type: string }
         task: { $ref: "#/components/schemas/TaskRef" }
-        attempt: { type: integer }
-        priority: { type: integer }
         spec: { $ref: "#/components/schemas/ExecutionSpec" }
         inputs:
           type: object
@@ -797,10 +771,6 @@ components:
         logStream:
           type: boolean
           description: Upload the log in chunks while running (upload:request purpose log.chunk).
-        notAfter:
-          type: integer
-          format: int64
-          description: Unix ms. Refuse with `expired` instead of starting after this time. 0 = no deadline.
       required: [executionId, task, spec]
 
     TaskRef:
@@ -814,11 +784,6 @@ components:
       type: object
       properties:
         executionId: { type: string }
-        reason: { type: string }
-        gracefulStopMs:
-          type: integer
-          description: Overrides the run's own window. 0 = keep it.
-        force: { type: boolean, description: Kill now. }
       required: [executionId]
 
     ExecutionStatus:
@@ -1083,7 +1048,6 @@ components:
           additionalProperties: { type: string }
           description: Send exactly these headers with the upload.
         key: { type: string }
-        expiresAt: { type: integer, format: int64, description: Unix ms. }
       required: [url, method, key]
 
     # =========================================================================

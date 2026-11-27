@@ -46,36 +46,24 @@ func TestProtocolEnumsMatchModel(t *testing.T) {
 		enumStrings(protocol.LogStreamValues))
 }
 
-func TestResultData_FlattensFieldsNextToOk(t *testing.T) {
-	raw, err := resultData(protocol.LogSubscribeResult{NextLine: 7, Eof: true}, nil)
+func TestErrorInfo_CarriesCodeAndRetryable(t *testing.T) {
+	frame, err := encodeFrame(protocol.Envelope{Type: "result", ReplyTo: "s1", Error: errorInfo(newError(protocol.ErrorCodeNotFound, "execution %s not found", "e1"))}, nil)
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"ok":true,"nextLine":7,"eof":true}`, string(raw))
-
-	raw, err = resultData(nil, nil)
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"ok":true}`, string(raw))
-}
-
-func TestResultData_ErrorCarriesCodeAndRetryable(t *testing.T) {
-	raw, err := resultData(nil, newError(protocol.ErrorCodeNotFound, "execution %s not found", "e1"))
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"ok":false,"error":{"code":"not_found","message":"execution e1 not found","retryable":false}}`, string(raw))
+	assert.JSONEq(t, `{"type":"result","replyTo":"s1","error":{"code":"not_found","message":"execution e1 not found","retryable":false}}`, string(frame))
 
 	// Anything that isn't a StationError is an internal, retryable failure.
-	raw, err = resultData(nil, errors.New("disk on fire"))
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"ok":false,"error":{"code":"internal","message":"disk on fire","retryable":true}}`, string(raw))
+	assert.Equal(t, &protocol.ErrorInfo{Code: protocol.ErrorCodeInternal, Message: "disk on fire", Retryable: true}, errorInfo(errors.New("disk on fire")))
 }
 
 func TestDecodeResult_MapsRefusalToStationError(t *testing.T) {
-	env := protocol.Envelope{Type: "result", Data: json.RawMessage(`{"ok":false,"error":{"code":"busy","message":"later","retryable":true}}`)}
+	env := protocol.Envelope{Type: "result", Error: &protocol.ErrorInfo{Code: protocol.ErrorCodeBusy, Message: "later", Retryable: true}}
 	_, err := decodeResult[protocol.UploadRequestResult](env)
 	se, ok := errors.AsType[*StationError](err)
 	require.True(t, ok)
 	assert.Equal(t, protocol.ErrorCodeBusy, se.Code)
 	assert.True(t, se.Retryable)
 
-	env.Data = json.RawMessage(`{"ok":true,"uploads":[{"url":"https://u","method":"PUT","key":"k"}]}`)
+	env.Error, env.Data = nil, json.RawMessage(`{"uploads":[{"url":"https://u","method":"PUT","key":"k"}]}`)
 	res, err := decodeResult[protocol.UploadRequestResult](env)
 	require.NoError(t, err)
 	require.Len(t, res.Uploads, 1)
@@ -125,21 +113,22 @@ func TestTracker_InventoryCoversLiveAndUnacked(t *testing.T) {
 // encodeFrame's spliced envelope is the one json.Marshal builds.
 func TestEncodeFrame_MatchesMarshal(t *testing.T) {
 	for _, c := range []struct {
-		typ, id, replyTo string
-		data             any
+		env  protocol.Envelope
+		data any
 	}{
-		{"ping", "", "", nil},
-		{"result", "", "s<1>", protocol.Result{Ok: true}},
-		{"log:lines", "", "s2", protocol.LogLines{Lines: []protocol.LogLine{{N: 1, Text: "a \"b\"  "}}}},
-		{"execution:stop", "d\"3", "", (*protocol.ExecutionStop)(nil)},
+		{protocol.Envelope{Type: "ping"}, nil},
+		{protocol.Envelope{Type: "result", ReplyTo: "s<1>"}, protocol.UploadRequestResult{Uploads: []protocol.UploadTarget{}}},
+		{protocol.Envelope{Type: "result", ReplyTo: "s9", Error: &protocol.ErrorInfo{Code: protocol.ErrorCodeBusy}}, nil},
+		{protocol.Envelope{Type: "log:lines", ReplyTo: "s2"}, protocol.LogLines{Lines: []protocol.LogLine{{N: 1, Text: "a \"b\"  "}}}},
+		{protocol.Envelope{Type: "execution:stop", ID: "d\"3"}, (*protocol.ExecutionStop)(nil)},
 	} {
-		got, err := encodeFrame(c.typ, c.id, c.replyTo, c.data)
+		got, err := encodeFrame(c.env, c.data)
 		require.NoError(t, err)
-		want := protocol.Envelope{Type: c.typ, ID: c.id, ReplyTo: c.replyTo}
+		want := c.env
 		if c.data != nil {
 			want.Data, _ = json.Marshal(c.data)
 		}
 		wantRaw, _ := json.Marshal(want)
-		assert.Equal(t, string(wantRaw), string(got), c.typ)
+		assert.Equal(t, string(wantRaw), string(got), c.env.Type)
 	}
 }

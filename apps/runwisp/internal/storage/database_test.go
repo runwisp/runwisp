@@ -1305,10 +1305,6 @@ func TestStationOutbox_SeqSurvivesAckAndReopen(t *testing.T) {
 	db, err := New(path)
 	require.NoError(t, err)
 
-	last, err := db.OutboxLastSeq(ctx)
-	require.NoError(t, err)
-	assert.Zero(t, last, "a fresh install has assigned no seq")
-
 	seqA, err := db.AppendOutboxUpdate(ctx, "e1", false, []byte(`{"a":1}`))
 	require.NoError(t, err)
 	seqB, err := db.AppendOutboxUpdate(ctx, "e1", true, []byte(`{"a":2}`))
@@ -1337,9 +1333,6 @@ func TestStationOutbox_SeqSurvivesAckAndReopen(t *testing.T) {
 	db, err = New(path)
 	require.NoError(t, err)
 	defer db.Close()
-	last, err = db.OutboxLastSeq(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, int64(3), last)
 	s4, err := db.AppendOutboxUpdate(ctx, "e3", false, []byte(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, int64(4), s4, "seq keeps growing across ack and restart")

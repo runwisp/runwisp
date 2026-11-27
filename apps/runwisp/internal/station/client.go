@@ -80,7 +80,7 @@ type Dependencies struct {
 	SystemStats func() model.SystemStats
 	// InstanceName returns the live [daemon] name, reported in hello.
 	InstanceName func() string
-	// Now is the wall-clock source for persisted timestamps and notAfter.
+	// Now is the wall-clock source for persisted timestamps.
 	// Production wires time.Now; tests inject a fixed clock.
 	Now func() time.Time
 }
@@ -155,7 +155,6 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		AppendUpdate: client.outbox.append,
 		Uploader:     client.uploader,
 		Tracker:      client.tracker,
-		Now:          deps.Now,
 	})
 	client.bridge = NewEventBridge(client)
 	slog.Info("station integration enabled", "baseURL", cfg.BaseURL.String(), "fingerprint", cfg.Fingerprint)
@@ -296,7 +295,7 @@ func (client *Client) dial(ctx context.Context) (*websocket.Conn, error) {
 func handshake(ctx context.Context, conn *websocket.Conn, hello protocol.Hello) (protocol.Welcome, error) {
 	hsCtx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
-	frame, err := encodeFrame(typeHello, "", "", hello)
+	frame, err := encodeFrame(protocol.Envelope{Type: typeHello}, hello)
 	if err != nil {
 		return protocol.Welcome{}, err
 	}
@@ -355,7 +354,6 @@ func (client *Client) buildHello(ctx context.Context) protocol.Hello {
 		Labels:        map[string]string{},
 		MaxConcurrent: 0,
 		TasksHash:     hash,
-		LastSeq:       client.outbox.lastSeq(ctx),
 		Executions:    client.tracker.Inventory(client.outbox.executions(ctx)),
 	}
 }

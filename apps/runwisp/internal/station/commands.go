@@ -22,13 +22,6 @@ type command struct {
 // commands are the station commands this daemon understands. Anything else
 // with an id is answered unsupported.
 var commands = map[string]command{
-	typeSessionUpdate: {run: func(_ context.Context, s *session, env protocol.Envelope) (any, error) {
-		u, err := decodeData[protocol.SessionUpdate](env)
-		if err == nil {
-			s.updateParams(u)
-		}
-		return nil, err
-	}},
 	typeExecDispatch: {run: func(ctx context.Context, s *session, env protocol.Envelope) (any, error) {
 		d, err := decodeData[protocol.ExecutionDispatch](env)
 		if err != nil {

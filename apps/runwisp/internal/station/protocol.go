@@ -25,7 +25,6 @@ const (
 	typePong             = "pong"
 	typeResult           = "result"
 	typeAck              = "ack"
-	typeSessionUpdate    = "session:update"
 	typeAgentUpdate      = "agent:update"
 	typeAgentStats       = "agent:stats"
 	typeAgentRestart     = "agent:restart"
@@ -47,18 +46,19 @@ const (
 	typeServiceStatus    = "service:status"
 )
 
-// encodeFrame builds one envelope. data may be nil for an empty payload.
-// The payload is spliced in after the header rather than marshalled as the
-// envelope's json.RawMessage, which json re-scans and copies: that costs
-// more than encoding a log batch itself.
-func encodeFrame(typ, id, replyTo string, data any) ([]byte, error) {
-	head, err := json.Marshal(protocol.Envelope{Type: typ, ID: id, ReplyTo: replyTo})
+// encodeFrame builds one frame from env's header fields and data (nil for
+// none). The payload is spliced in after the header rather than marshalled
+// as the envelope's json.RawMessage, which json re-scans and copies: that
+// costs more than encoding a log batch itself.
+func encodeFrame(env protocol.Envelope, data any) ([]byte, error) {
+	env.Data = nil
+	head, err := json.Marshal(env)
 	if err != nil || data == nil {
 		return head, err
 	}
 	raw, err := json.Marshal(data)
 	if err != nil {
-		return nil, fmt.Errorf("encode %s: %w", typ, err)
+		return nil, fmt.Errorf("encode %s: %w", env.Type, err)
 	}
 	frame := make([]byte, 0, len(head)+len(`,"data":`)+len(raw))
 	frame = append(frame, head[:len(head)-1]...) // without its closing brace
@@ -78,26 +78,6 @@ func decodeData[T any](env protocol.Envelope) (T, error) {
 		return out, newError(protocol.ErrorCodeInvalid, "malformed %s: %v", env.Type, err)
 	}
 	return out, nil
-}
-
-// resultData is a result's payload: ok, error, and the command's own result
-// fields (a struct, or nil) flattened next to them.
-func resultData(fields any, err error) (json.RawMessage, error) {
-	if err != nil {
-		return json.Marshal(protocol.Result{Ok: false, Error: errorInfo(err)})
-	}
-	obj := map[string]json.RawMessage{}
-	if fields != nil {
-		raw, mErr := json.Marshal(fields)
-		if mErr != nil {
-			return nil, mErr
-		}
-		if mErr := json.Unmarshal(raw, &obj); mErr != nil {
-			return nil, fmt.Errorf("result fields must be an object: %w", mErr)
-		}
-	}
-	obj["ok"] = json.RawMessage("true")
-	return json.Marshal(obj)
 }
 
 // newServiceStatus builds a service:status snapshot of a supervised service.
@@ -140,7 +120,6 @@ func unixMs(t *time.Time) int64 {
 func toAgentStats(s model.SystemStats, uptime time.Duration) protocol.AgentStats {
 	return protocol.AgentStats{
 		CpuUsage:      s.CPUUsage,
-		MemUsage:      s.MemUsage,
 		MemTotalBytes: int64(s.MemTotal),
 		MemUsedBytes:  int64(s.MemUsed),
 		CpuCores:      s.CPUCores,
