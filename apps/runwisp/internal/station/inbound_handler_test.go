@@ -35,7 +35,7 @@ func newTestHandler(t *testing.T) (*InboundHandler, *fakeTaskRunner, *memRuns, *
 }
 
 func shellDispatch(id string) protocol.ExecutionDispatch {
-	return protocol.ExecutionDispatch{ExecutionID: id, Task: &protocol.TaskRef{ID: "t"}, Spec: []byte(`{"type":"shell","script":"true"}`)}
+	return protocol.ExecutionDispatch{ExecutionID: id, TaskID: "t", Spec: []byte(`{"type":"shell","script":"true"}`)}
 }
 
 func TestDispatch_FinishedDuplicateStoresItsUpdateAgain(t *testing.T) {

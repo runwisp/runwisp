@@ -757,7 +757,7 @@ components:
         policy), unavailable (backend missing), busy (retryable).
       properties:
         executionId: { type: string }
-        task: { $ref: "#/components/schemas/TaskRef" }
+        taskId: { type: string, description: The station's task this runs. }
         spec: { $ref: "#/components/schemas/ExecutionSpec" }
         inputs:
           type: object
@@ -767,14 +767,7 @@ components:
         logStream:
           type: boolean
           description: Upload the log in chunks while running (upload:request purpose log.chunk).
-      required: [executionId, task, spec]
-
-    TaskRef:
-      type: object
-      properties:
-        id: { type: string }
-        name: { type: string }
-      required: [id, name]
+      required: [executionId, taskId, spec]
 
     ExecutionStop:
       type: object
@@ -935,10 +928,10 @@ components:
           type: array
           items: { type: string }
           description: |
-            Tasks to search; empty = all. An entry is a task's TaskRef.id as
-            sent in execution:dispatch or service:apply, or a task name of
-            the daemon's own (the taskName of a config spec, or a service
-            run's taskId in execution:update).
+            Tasks to search; empty = all. An entry is a taskId as sent in
+            execution:dispatch or service:apply, or a task name of the
+            daemon's own (the taskName of a config spec, or a service run's
+            taskId in execution:update).
         since: { type: integer, format: int64, description: "Unix ms; only runs that overlap [since, until]: still running, or ended at or after since. 0 = no bound." }
         until: { type: integer, format: int64, description: "Unix ms; only runs that overlap [since, until]: started at or before until. 0 = no bound." }
         context: { type: integer, description: "Lines before and after each hit, 0-5." }
@@ -1055,14 +1048,15 @@ components:
         Idempotent upsert of a service. Re-sent after reconnect. spec null
         keeps the daemon's own command for a service from its config.
       properties:
-        taskId: { type: string }
-        taskName: { type: string }
+        taskId:
+          type: string
+          description: The station's task, or the name of a service the daemon defines itself.
         spec:
           $ref: "#/components/schemas/ExecutionSpec"
           description: null (or absent) keeps the daemon's own command.
         settings: { $ref: "#/components/schemas/ServiceSettings" }
         options: { $ref: "#/components/schemas/RunOptions" }
-      required: [taskId, taskName, settings]
+      required: [taskId, settings]
 
     ServiceControl:
       type: object

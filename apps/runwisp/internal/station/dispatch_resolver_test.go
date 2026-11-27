@@ -278,8 +278,8 @@ func TestResolveDispatchTask_ShellInlineUpserted(t *testing.T) {
 	}
 
 	name, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{
-		Task: &protocol.TaskRef{ID: "my-task"},
-		Spec: shellScript(t, "echo hello"),
+		TaskID: "my-task",
+		Spec:   shellScript(t, "echo hello"),
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, name)
@@ -302,7 +302,7 @@ func TestResolveDispatchTask_ContainerRejectedWhenDispatchDisabled(t *testing.T)
 		availability: avail,
 	}
 
-	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "evil"}, Spec: containerScript(t, "rm -rf /")})
+	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{TaskID: "evil", Spec: containerScript(t, "rm -rf /")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -321,7 +321,7 @@ func TestResolveDispatchTask_ContainerInlineUpsertedWhenEnabled(t *testing.T) {
 		availability: avail,
 	}
 
-	name, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "build"}, Spec: containerScript(t, "echo hi")})
+	name, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{TaskID: "build", Spec: containerScript(t, "echo hi")})
 	require.NoError(t, err)
 	assert.NotEmpty(t, name)
 	assert.Len(t, runner.upserted, 1)
@@ -341,7 +341,7 @@ func TestResolveDispatchTask_HTTPRejectedWithoutDispatch(t *testing.T) {
 		availability: avail,
 	}
 
-	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "probe"}, Spec: httpScript(t, "https://example.com")})
+	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{TaskID: "probe", Spec: httpScript(t, "https://example.com")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -362,7 +362,7 @@ func TestResolveDispatchTask_HTTPAllowedWithDispatch(t *testing.T) {
 		availability: avail,
 	}
 
-	name, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "probe"}, Spec: httpScript(t, "https://example.com")})
+	name, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{TaskID: "probe", Spec: httpScript(t, "https://example.com")})
 	require.NoError(t, err)
 	assert.NotEmpty(t, name)
 }
@@ -382,8 +382,8 @@ func TestResolveDispatchTask_RejectsConfigTaskNameCollision(t *testing.T) {
 	runner := h.taskManager.(*fakeTaskRunner)
 
 	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{
-		Task: &protocol.TaskRef{ID: "sync"},
-		Spec: httpScript(t, "https://attacker.example/p"),
+		TaskID: "sync",
+		Spec:   httpScript(t, "https://attacker.example/p"),
 	})
 	require.Error(t, err)
 	var ce *StationError
@@ -402,8 +402,8 @@ func TestResolveDispatchTask_EphemeralNameCollisionAllowed(t *testing.T) {
 	runner := h.taskManager.(*fakeTaskRunner)
 
 	name, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{
-		Task: &protocol.TaskRef{ID: "probe"},
-		Spec: httpScript(t, "https://example.com"),
+		TaskID: "probe",
+		Spec:   httpScript(t, "https://example.com"),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "station-probe", name)
@@ -438,37 +438,32 @@ func mustBuildDynamicStationTask(t *testing.T, dispatch protocol.ExecutionDispat
 
 func TestBuildDynamicStationTask_UsesTaskID(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "my-task"}}, def)
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{TaskID: "my-task"}, def)
 	assert.Equal(t, "station-my-task", task.Name)
 }
 
-func TestBuildDynamicStationTask_FallsBackToTaskName(t *testing.T) {
-	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{Task: &protocol.TaskRef{Name: "backup"}}, def)
-	assert.Equal(t, "station-backup", task.Name)
-}
-
-func TestBuildDynamicStationTask_DefaultsToStationInline(t *testing.T) {
-	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{}, def)
-	assert.Equal(t, "station-inline", task.Name)
+func TestBuildDynamicStationTask_RequiresTaskID(t *testing.T) {
+	_, err := buildDynamicStationTask(protocol.ExecutionDispatch{}, &model.ShellExecution{Script: "echo hi"})
+	se, ok := errors.AsType[*StationError](err)
+	require.True(t, ok)
+	assert.Equal(t, protocol.ErrorCodeInvalid, se.Code)
 }
 
 func TestBuildDynamicStationTask_LeavesConcurrencyToStation(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "t"}}, def)
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{TaskID: "t"}, def)
 	assert.Equal(t, config.MaxConcurrentCap, task.MaxConcurrent)
 }
 
 func TestBuildDynamicStationTask_SetsTimeout(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "t"}, TimeoutMs: 5000}, def)
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{TaskID: "t", TimeoutMs: 5000}, def)
 	assert.Equal(t, 5000*time.Millisecond, task.TimeoutValue())
 }
 
 func TestBuildDynamicStationTask_ZeroTimeoutIgnored(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "t"}, TimeoutMs: 0}, def)
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{TaskID: "t", TimeoutMs: 0}, def)
 	assert.Nil(t, task.Timeout)
 	assert.Equal(t, time.Duration(0), task.TimeoutValue())
 }
@@ -477,7 +472,7 @@ func TestBuildDynamicStationTask_AppliesTaskConfig(t *testing.T) {
 	logOnFull := "drop_old"
 	def := &model.ShellExecution{Script: "echo hi"}
 	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{
-		Task: &protocol.TaskRef{ID: "t"},
+		TaskID: "t",
 		Options: &protocol.RunOptions{
 			Env:            map[string]string{"KEY": "val"},
 			GracefulStopMs: 3000,
@@ -494,7 +489,7 @@ func TestBuildDynamicStationTask_AppliesTaskConfig(t *testing.T) {
 
 func TestBuildDynamicStationTask_NilTaskConfigLeavesDefaults(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{Task: &protocol.TaskRef{ID: "t"}, Options: nil}, def)
+	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{TaskID: "t", Options: nil}, def)
 	assert.Empty(t, task.Env)
 	assert.Zero(t, task.GracefulStopValue())
 	assert.Zero(t, task.LogMaxSize)
@@ -504,7 +499,7 @@ func TestBuildDynamicStationTask_NilTaskConfigLeavesDefaults(t *testing.T) {
 func TestBuildDynamicStationTask_FailuresReplaceDefault(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
 	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{
-		Task:    &protocol.TaskRef{ID: "t"},
+		TaskID:  "t",
 		Options: &protocol.RunOptions{Failures: []string{"2-3"}},
 	}, def)
 
@@ -516,7 +511,7 @@ func TestBuildDynamicStationTask_FailuresReplaceDefault(t *testing.T) {
 func TestBuildDynamicStationTask_FailuresDeltaAdjustsDefault(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
 	task := mustBuildDynamicStationTask(t, protocol.ExecutionDispatch{
-		Task:    &protocol.TaskRef{ID: "t"},
+		TaskID:  "t",
 		Options: &protocol.RunOptions{Failures: []string{"-timeout", "+stopped"}},
 	}, def)
 
@@ -530,7 +525,7 @@ func TestResolveDispatchTask_RejectsInvalidFailures(t *testing.T) {
 	runner := h.taskManager.(*fakeTaskRunner)
 
 	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{
-		Task:    &protocol.TaskRef{ID: "probe"},
+		TaskID:  "probe",
 		Spec:    httpScript(t, "https://example.com"),
 		Options: &protocol.RunOptions{Failures: []string{"bogus"}},
 	})
@@ -619,7 +614,7 @@ func TestResolveDispatchTask_RejectsReservedInputKeys(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			h := newDispatchHandler(executor.Availability{Shell: executor.BackendStatus{Available: true}}, map[string]*model.Task{})
 			_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{
-				Task:   &protocol.TaskRef{ID: "job"},
+				TaskID: "job",
 				Spec:   shellScript(t, "echo hi"),
 				Inputs: map[string]string{"GREETING": "hi", key: "x"},
 			})
@@ -633,7 +628,7 @@ func TestResolveDispatchTask_RejectsReservedInputKeys(t *testing.T) {
 
 	h := newDispatchHandler(executor.Availability{Shell: executor.BackendStatus{Available: true}}, map[string]*model.Task{})
 	_, _, err := h.resolveDispatchTask(protocol.ExecutionDispatch{
-		Task:   &protocol.TaskRef{ID: "job"},
+		TaskID: "job",
 		Spec:   shellScript(t, "echo hi"),
 		Inputs: map[string]string{"GREETING": "hi", "path": "lowercase is a different variable", "MY_PATH": "x"},
 	})

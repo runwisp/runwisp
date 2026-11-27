@@ -113,7 +113,7 @@ func TestSession_DispatchIsIdempotent(t *testing.T) {
 	h.start(t)
 
 	spec := []byte(`{"type":"shell","script":"echo hi"}`)
-	id := st.Command(t, "execution:dispatch", protocol.ExecutionDispatch{ExecutionID: "e1", Task: &protocol.TaskRef{ID: "t1"}, Spec: spec}, "exec.shell")
+	id := st.Command(t, "execution:dispatch", protocol.ExecutionDispatch{ExecutionID: "e1", TaskID: "t1", Spec: spec}, "exec.shell")
 	assert.True(t, st.Result(t, id, nil).Ok)
 	assert.Equal(t, []string{"e1"}, h.runner.triggeredIDs())
 

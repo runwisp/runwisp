@@ -405,20 +405,16 @@ type RunOptions struct {
 // run. Rejections: not_found (no such config task), forbidden (local
 // policy), unavailable (backend missing), busy (retryable).
 type ExecutionDispatch struct {
-	ExecutionID string            `json:"executionId"`
-	Task        *TaskRef          `json:"task"`
-	Spec        ExecutionSpec     `json:"spec"`
-	Inputs      map[string]string `json:"inputs,omitzero"`
+	ExecutionID string `json:"executionId"`
+	// The station's task this runs.
+	TaskID string            `json:"taskId"`
+	Spec   ExecutionSpec     `json:"spec"`
+	Inputs map[string]string `json:"inputs,omitzero"`
 	// 0 = no timeout (config spec - the task's own).
 	TimeoutMs int         `json:"timeoutMs,omitzero"`
 	Options   *RunOptions `json:"options,omitzero"`
 	// Upload the log in chunks while running (upload:request purpose log.chunk).
 	LogStream bool `json:"logStream,omitzero"`
-}
-
-type TaskRef struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
 }
 
 type ExecutionStop struct {
@@ -554,10 +550,10 @@ type LogSearch struct {
 	ExecutionID string `json:"executionId,omitzero"`
 	// With executionId, start at this absolute line, to resume where nextLine left off.
 	FromLine int64 `json:"fromLine,omitzero"`
-	// Tasks to search; empty = all. An entry is a task's TaskRef.id as
-	// sent in execution:dispatch or service:apply, or a task name of
-	// the daemon's own (the taskName of a config spec, or a service
-	// run's taskId in execution:update).
+	// Tasks to search; empty = all. An entry is a taskId as sent in
+	// execution:dispatch or service:apply, or a task name of the
+	// daemon's own (the taskName of a config spec, or a service run's
+	// taskId in execution:update).
 	Tasks []string `json:"tasks,omitzero"`
 	// Unix ms; only runs that overlap [since, until]: still running, or ended at or after since. 0 = no bound.
 	Since int64 `json:"since,omitzero"`
@@ -664,8 +660,8 @@ type UploadTarget struct {
 // Idempotent upsert of a service. Re-sent after reconnect. spec null
 // keeps the daemon's own command for a service from its config.
 type ServiceApply struct {
-	TaskID   string `json:"taskId"`
-	TaskName string `json:"taskName"`
+	// The station's task, or the name of a service the daemon defines itself.
+	TaskID string `json:"taskId"`
 	// null (or absent) keeps the daemon's own command.
 	Spec     ExecutionSpec    `json:"spec,omitzero"`
 	Settings *ServiceSettings `json:"settings"`

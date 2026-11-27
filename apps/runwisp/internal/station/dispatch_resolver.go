@@ -4,7 +4,6 @@
 package station
 
 import (
-	"cmp"
 	"encoding/json"
 	"maps"
 	"slices"
@@ -127,13 +126,9 @@ func (h *InboundHandler) parseAvailableDef(spec json.RawMessage) (model.Executio
 }
 
 func buildDynamicStationTask(dispatch protocol.ExecutionDispatch, execDef model.ExecutionDef) (*model.Task, error) {
-	ref := cmp.Or(dispatch.Task, &protocol.TaskRef{})
-	taskName := sanitizeStationTaskName(ref.ID)
+	taskName := sanitizeStationTaskName(dispatch.TaskID)
 	if taskName == "" {
-		taskName = sanitizeStationTaskName(ref.Name)
-	}
-	if taskName == "" {
-		taskName = "station-inline"
+		return nil, newError(protocol.ErrorCodeInvalid, "taskId is required")
 	}
 
 	task := &model.Task{

@@ -6,7 +6,6 @@
   ],
   "data": {
     "taskId": "tsk_01JC8Y7W",
-    "taskName": "web",
     "spec": {
       "type": "shell",
       "script": "node server.js"

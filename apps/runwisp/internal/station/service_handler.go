@@ -35,7 +35,7 @@ func (h *InboundHandler) HandleServiceApply(svc protocol.ServiceApply) error {
 		svc.Settings = &protocol.ServiceSettings{}
 	}
 
-	name, existing, err := h.resolveServiceTarget(svc.TaskID, svc.TaskName)
+	name, existing, err := h.resolveServiceTarget(svc.TaskID)
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func (h *InboundHandler) HandleServiceApply(svc protocol.ServiceApply) error {
 // restart policy, changeable only by editing runwisp.toml and reloading, the
 // same gate resolveDispatchTask enforces for a manual_trigger = false task.
 func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControl) error {
-	taskName, _, err := h.resolveServiceTarget(message.TaskID, "")
+	taskName, _, err := h.resolveServiceTarget(message.TaskID)
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControl) e
 // reconciler's diff baseline still has it). A taskId that matches nothing is a
 // no-op (the desired end state, service-gone, already holds).
 func (h *InboundHandler) HandleServiceRemove(message protocol.ServiceRemove) error {
-	name, existing, err := h.resolveServiceTarget(message.TaskID, "")
+	name, existing, err := h.resolveServiceTarget(message.TaskID)
 	if err != nil {
 		return err
 	}
@@ -240,7 +240,7 @@ func checkServiceInstances(name string, instances int) error {
 	return nil
 }
 
-// resolveServiceTarget maps a station-supplied taskId/taskName onto a registered
+// resolveServiceTarget maps a station-supplied taskId onto a registered
 // task name. A synced TOML service is addressed by its bare name, so a literal
 // registry hit against a *service* means "merge onto this existing definition"
 // (existing=true). A station-declared service carries a ULID with no literal
@@ -252,12 +252,8 @@ func checkServiceInstances(name string, instances int) error {
 // disk-defined run= of — a task that isn't a service. This upholds the "run=
 // comes from disk only" invariant against a control-plane peer aiming a
 // service:apply at an ordinary task's name.
-func (h *InboundHandler) resolveServiceTarget(taskID, taskName string) (name string, existing bool, err error) {
-	for _, raw := range []string{taskID, taskName} {
-		n := strings.TrimSpace(raw)
-		if n == "" {
-			continue
-		}
+func (h *InboundHandler) resolveServiceTarget(taskID string) (name string, existing bool, err error) {
+	if n := strings.TrimSpace(taskID); n != "" {
 		if t, ok := h.taskManager.GetTask(n); ok {
 			if !t.Kind.IsService() {
 				return "", false, newError(protocol.ErrorCodeConflict, "task %q is not a service; a station service message cannot target it", n)
@@ -265,10 +261,7 @@ func (h *InboundHandler) resolveServiceTarget(taskID, taskName string) (name str
 			return n, true, nil
 		}
 	}
-	if n := sanitizeStationTaskName(taskID); n != "" {
-		return n, false, nil
-	}
-	return sanitizeStationTaskName(taskName), false, nil
+	return sanitizeStationTaskName(taskID), false, nil
 }
 
 // mergeServiceApply overlays the fields a service:apply carries onto an

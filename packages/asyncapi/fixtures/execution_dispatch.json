@@ -6,10 +6,7 @@
   ],
   "data": {
     "executionId": "ex_01JC8Y5T",
-    "task": {
-      "id": "tsk_01JC8Y6V",
-      "name": "backup"
-    },
+    "taskId": "tsk_01JC8Y6V",
     "spec": {
       "type": "shell",
       "script": "pg_dump app > /backups/app.sql",
