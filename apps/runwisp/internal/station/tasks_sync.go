@@ -173,8 +173,9 @@ func composeRef(c *model.TaskComposeRef) *protocol.ComposeRef {
 
 // tasksHash identifies a task catalog: hello carries it so a station that
 // already has this exact catalog skips the tasks:sync.
-func tasksHash(defs []protocol.TaskDefinition) string {
-	payload, err := json.Marshal(defs)
+func tasksHash(catalog protocol.TasksSync) string {
+	catalog.Hash = ""
+	payload, err := json.Marshal(catalog)
 	if err != nil {
 		return ""
 	}

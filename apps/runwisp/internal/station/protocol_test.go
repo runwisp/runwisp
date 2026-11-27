@@ -132,3 +132,21 @@ func TestEncodeFrame_MatchesMarshal(t *testing.T) {
 		assert.Equal(t, string(wantRaw), string(got), c.env.Type)
 	}
 }
+
+// The station knows a service it declared by its own taskId and a TOML one by
+// its name, in service:status, execution:update and tasks:sync alike.
+func TestServiceTaskID(t *testing.T) {
+	declared := &model.Task{Name: "station-01JC8Y7W", Kind: model.KindService, StationTaskID: "01JC8Y7W"}
+	toml := &model.Task{Name: "station-web", Kind: model.KindService}
+	client := &Client{deps: Dependencies{TaskManager: &fakeTaskRunner{tasks: map[string]*model.Task{declared.Name: declared, toml.Name: toml}}}}
+
+	assert.Equal(t, "01JC8Y7W", client.serviceTaskID("station-01JC8Y7W"))
+	assert.Equal(t, "station-web", client.serviceTaskID("station-web"), "a TOML service keeps its name, prefix or not")
+	assert.Equal(t, "01JC8Y9A", client.serviceTaskID("station-01JC8Y9A"), "one not re-declared since a restart")
+	assert.Equal(t, "web", client.serviceTaskID("web"))
+
+	tasks, services := client.snapshotForSync()
+	assert.Equal(t, []string{"01JC8Y7W"}, services)
+	assert.Contains(t, tasks, "station-web")
+	assert.NotContains(t, tasks, "station-01JC8Y7W")
+}

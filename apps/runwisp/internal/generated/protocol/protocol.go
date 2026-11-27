@@ -192,8 +192,14 @@ type AgentCredentials struct {
 }
 
 type TasksSync struct {
-	Hash  string           `json:"hash"`
+	// Identifies tasks and services together.
+	Hash string `json:"hash"`
+	// The daemon's own tasks and services (runwisp.toml), by name.
 	Tasks []TaskDefinition `json:"tasks"`
+	// The taskId of every service the station declared (service:apply)
+	// that this daemon still holds. One the station no longer has is
+	// removed with service:remove.
+	Services []string `json:"services"`
 }
 
 // Fields of the `result` answering tasks:sync.
@@ -441,7 +447,7 @@ var ExecutionStatusValues = []ExecutionStatus{ExecutionStatusAccepted, Execution
 type ExecutionUpdate struct {
 	Seq         int64  `json:"seq"`
 	ExecutionID string `json:"executionId"`
-	// Set on a service instance's run. The service, as in service:status.
+	// Set on a service instance's run. The service, as in service:status.taskId.
 	TaskID string `json:"taskId,omitzero"`
 	// Set on a service instance's run. 0-based instance slot.
 	Instance *int            `json:"instance,omitzero"`
@@ -687,6 +693,7 @@ type ServiceRemove struct {
 
 // Sent on change and after welcome. Lives as long as the connection.
 type ServiceStatus struct {
+	// The taskId of service:apply for a service the station declared, else the daemon's own task name.
 	TaskID           string            `json:"taskId"`
 	State            ServiceState      `json:"state"`
 	DesiredInstances int               `json:"desiredInstances"`

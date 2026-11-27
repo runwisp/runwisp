@@ -80,8 +80,9 @@ func decodeData[T any](env protocol.Envelope) (T, error) {
 	return out, nil
 }
 
-// newServiceStatus builds a service:status snapshot of a supervised service.
-func newServiceStatus(snapshot model.ServiceSnapshot) protocol.ServiceStatus {
+// newServiceStatus builds a service:status snapshot of the supervised service
+// the station knows as taskID.
+func newServiceStatus(taskID string, snapshot model.ServiceSnapshot) protocol.ServiceStatus {
 	instances := make([]protocol.ServiceInstance, 0, len(snapshot.Instances))
 	for _, inst := range snapshot.Instances {
 		item := protocol.ServiceInstance{
@@ -100,7 +101,7 @@ func newServiceStatus(snapshot model.ServiceSnapshot) protocol.ServiceStatus {
 		instances = append(instances, item)
 	}
 	return protocol.ServiceStatus{
-		TaskID:           snapshot.TaskName,
+		TaskID:           taskID,
 		State:            protocol.ServiceState(snapshot.State),
 		DesiredInstances: snapshot.DesiredInstances,
 		RunningInstances: snapshot.RunningInstances,

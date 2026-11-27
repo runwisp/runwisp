@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -152,7 +154,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		LogDir:       deps.LogDir,
 		Availability: deps.Availability,
 		LocalTasks:   deps.LocalTasks,
-		AppendUpdate: client.outbox.append,
+		AppendUpdate: client.appendUpdate,
 		Uploader:     client.uploader,
 		Tracker:      client.tracker,
 	})
@@ -172,7 +174,7 @@ func (client *Client) RecoverArchiveBacklog(ctx context.Context) {
 		if err != nil || run == nil || !run.Status.IsTerminal() {
 			continue
 		}
-		client.outbox.append(executionUpdate(run))
+		client.appendUpdate(executionUpdate(run))
 	}
 }
 
@@ -346,7 +348,7 @@ func (client *Client) probeAvailability(ctx context.Context) {
 // buildHello describes this daemon: identity, features, catalog hash and
 // every execution it still owns.
 func (client *Client) buildHello(ctx context.Context) protocol.Hello {
-	_, hash := client.taskCatalog()
+	hash := client.taskCatalog().Hash
 	return protocol.Hello{
 		InstanceID: client.config.Fingerprint,
 		Agent:      client.agentInfo(),
@@ -439,17 +441,17 @@ func (client *Client) watchReloads(ctx context.Context) (stop func()) {
 func (client *Client) syncTasks(sess *session, force bool) {
 	client.syncMu.Lock()
 	defer client.syncMu.Unlock()
-	defs, hash := client.taskCatalogLocked()
-	if !force && hash == client.syncedHash {
+	catalog := client.taskCatalogLocked()
+	if !force && catalog.Hash == client.syncedHash {
 		return
 	}
 	ctx, cancel := context.WithTimeout(sess.ctx, tasksSyncTimeout)
 	defer cancel()
-	env, err := sess.command(ctx, typeTasksSync, protocol.TasksSync{Hash: hash, Tasks: defs})
+	env, err := sess.command(ctx, typeTasksSync, catalog)
 	if err == nil {
 		var summary protocol.TasksSyncResult
 		if summary, err = decodeResult[protocol.TasksSyncResult](env); err == nil {
-			client.syncedHash = hash
+			client.syncedHash = catalog.Hash
 			slog.Info("task catalog synced", "added", summary.Added, "updated", summary.Updated, "removed", summary.Removed, "total", summary.Total)
 			return
 		}
@@ -459,16 +461,18 @@ func (client *Client) syncTasks(sess *session, force bool) {
 	}
 }
 
-// taskCatalog returns the tasks:sync rows and their hash.
-func (client *Client) taskCatalog() ([]protocol.TaskDefinition, string) {
+// taskCatalog returns the tasks:sync payload.
+func (client *Client) taskCatalog() protocol.TasksSync {
 	client.syncMu.Lock()
 	defer client.syncMu.Unlock()
 	return client.taskCatalogLocked()
 }
 
-func (client *Client) taskCatalogLocked() ([]protocol.TaskDefinition, string) {
-	defs := buildTaskDefinitions(client.snapshotForSync(), client.daemonZone())
-	return defs, tasksHash(defs)
+func (client *Client) taskCatalogLocked() protocol.TasksSync {
+	tasks, services := client.snapshotForSync()
+	catalog := protocol.TasksSync{Tasks: buildTaskDefinitions(tasks, client.daemonZone()), Services: services}
+	catalog.Hash = tasksHash(catalog)
+	return catalog
 }
 
 // daemonZone is the zone tasks without their own timezone are synced in. The
@@ -491,14 +495,15 @@ func (client *Client) daemonZone() string {
 	return "UTC"
 }
 
-// snapshotForSync builds the task set reported in tasks:sync: the TOML tasks
-// plus every supervised service the task manager holds that the TOML doesn't
-// cover. The extras are station-declared services (service:apply, named
-// "station-<id>"); reporting them tells the station they are live here, which
-// gates their deletion. One-shot station executions are left out by the
-// ListServiceTasks filter: they are never a live task on this runner.
-func (client *Client) snapshotForSync() map[string]*model.Task {
+// snapshotForSync builds what tasks:sync reports: the TOML tasks plus every
+// supervised service the task manager holds that the TOML doesn't cover, and
+// apart from them the taskIds of the station-declared services
+// (service:apply); reporting those tells the station they are live here,
+// which gates their deletion. One-shot station executions are left out by
+// the ListServiceTasks filter: they are never a live task on this runner.
+func (client *Client) snapshotForSync() (map[string]*model.Task, []string) {
 	snapshot := map[string]*model.Task{}
+	services := []string{}
 	if client.deps.LocalTasks != nil {
 		for name, task := range client.deps.LocalTasks.Snapshot() {
 			if task != nil {
@@ -510,11 +515,43 @@ func (client *Client) snapshotForSync() map[string]*model.Task {
 		if svc == nil {
 			continue
 		}
-		if _, ok := snapshot[svc.Name]; !ok {
+		if svc.StationTaskID != "" {
+			services = append(services, svc.StationTaskID)
+		} else if _, ok := snapshot[svc.Name]; !ok {
 			snapshot[svc.Name] = svc
 		}
 	}
-	return snapshot
+	slices.Sort(services)
+	return snapshot, services
+}
+
+// serviceTaskID is the taskId a service is known by on the wire: the
+// station's for one it declared, else the task's own name. A station-declared
+// service isn't registered again until the station re-applies it after a
+// daemon restart, so an update for its run read back from before then names
+// it by the "station-" name no TOML task holds (sanitizeStationTaskName), and
+// that prefix is taken off. Station task ids pass the sanitizing unchanged.
+func (client *Client) serviceTaskID(name string) string {
+	task, ok := client.deps.TaskManager.GetTask(name)
+	if ok {
+		if task.StationTaskID != "" {
+			return task.StationTaskID
+		}
+		return name
+	}
+	if id, ok := strings.CutPrefix(name, stationTaskPrefix); ok {
+		return id
+	}
+	return name
+}
+
+// appendUpdate stores an execution update for delivery, naming a service
+// run's task the way the station knows it.
+func (client *Client) appendUpdate(update *protocol.ExecutionUpdate) {
+	if update != nil && update.TaskID != "" {
+		update.TaskID = client.serviceTaskID(update.TaskID)
+	}
+	client.outbox.append(update)
 }
 
 // goodbyeError ends a session the station closed with goodbye.

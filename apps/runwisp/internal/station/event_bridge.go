@@ -86,7 +86,7 @@ func (b *EventBridge) handleRunEvent(ctx context.Context, event events.Event) {
 			slog.Warn("failed to record the service run's log for archival", "executionId", executionID, "err", err)
 		}
 	}
-	b.client.outbox.append(update)
+	b.client.appendUpdate(update)
 
 	if running {
 		logFilePath := logutil.ResolveRunLogPath(b.client.deps.LogDir, run.TaskName, run.ID, run.CreatedAt)
@@ -109,6 +109,6 @@ func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run) {
 	if archived := b.client.uploader.Archive(ctx, run, chunks); archived != nil {
 		update := executionUpdate(run)
 		update.Log = archived
-		b.client.outbox.append(update)
+		b.client.appendUpdate(update)
 	}
 }

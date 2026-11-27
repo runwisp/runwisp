@@ -175,7 +175,7 @@ func (s *session) afterWelcome() {
 	defer crashguard.Guard()
 	s.sendAgentUpdateIfChanged()
 	s.client.syncTasks(s, false)
-	s.client.uploader.RetryPending(s.ctx, s.client.tracker.Known, s.client.outbox.append)
+	s.client.uploader.RetryPending(s.ctx, s.client.tracker.Known, s.client.appendUpdate)
 }
 
 // sayGoodbye tells the station the daemon is shutting down, so it marks the
@@ -307,7 +307,7 @@ func (s *session) servicesLoop() error {
 			if !ok {
 				continue
 			}
-			if err := s.send(typeServiceStatus, "", "", newServiceStatus(snapshot)); err != nil {
+			if err := s.send(typeServiceStatus, "", "", newServiceStatus(s.client.serviceTaskID(name), snapshot)); err != nil {
 				return nil
 			}
 		}

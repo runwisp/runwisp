@@ -33,7 +33,7 @@ var spawnFields = map[string]bool{
 	"RetryBackoff": false, "KeepRuns": false, "KeepFor": false, "EnvFile": false,
 	"SecretsFile": false, "HookTokens": false, "Compose": false, "Source": false,
 	"SourceFile": false, "HeldBy": false, "OutputRedirect": false, "FailureSpec": false, "Ephemeral": false,
-	"StationDeclared": false,
+	"StationTaskID": false,
 }
 
 func TestSpawnConfigClassifiesEveryTaskField(t *testing.T) {

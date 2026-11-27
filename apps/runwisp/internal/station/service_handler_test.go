@@ -247,16 +247,17 @@ func TestHandleServiceApply_InvalidScriptRejected(t *testing.T) {
 	assert.Equal(t, protocol.ErrorCodeInvalid, ce.Code)
 }
 
-// Covers buildServiceTask's name fallbacks and defaults: an empty taskId falls
-// back to taskName, a sub-one instance count is clamped to 1, and the optional
-// logOnFull knob is overlaid onto the task.
-func TestHandleServiceApply_NameFallbackAndDefaults(t *testing.T) {
+// Covers buildServiceTask's naming and defaults: the task is named after the
+// sanitized taskId and keeps the taskId itself, a sub-one instance count is
+// clamped to 1, and the optional logOnFull knob is overlaid onto the task.
+func TestHandleServiceApply_NameAndDefaults(t *testing.T) {
 	logOnFull := "kill"
 	h := newDispatchHandler(shellAvailable(), nil)
 	runner := h.taskManager.(*fakeTaskRunner)
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
-		TaskName: "Fallback Svc",
+		TaskID:   " Fallback Svc ",
+		TaskName: "web",
 		Spec:     shellScript(t, "sleep 1"),
 		// clamped to 1
 		Options:  &protocol.RunOptions{LogOnFull: logOnFull},
@@ -266,6 +267,7 @@ func TestHandleServiceApply_NameFallbackAndDefaults(t *testing.T) {
 	require.Len(t, runner.upserted, 1)
 	task := runner.upserted[0]
 	assert.Equal(t, "station-Fallback_Svc", task.Name)
+	assert.Equal(t, "Fallback Svc", task.StationTaskID)
 	assert.Equal(t, 1, task.Instances)
 	assert.Equal(t, "kill", task.LogOnFull)
 }
@@ -285,17 +287,20 @@ func TestHandleServiceApply_RejectsInvalidFailures(t *testing.T) {
 	assert.Empty(t, runner.upserted)
 }
 
-func TestHandleServiceApply_DefaultsToStationServiceName(t *testing.T) {
+// A new service needs the taskId the station will know it by.
+func TestHandleServiceApply_RequiresTaskID(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), nil)
 	runner := h.taskManager.(*fakeTaskRunner)
 
 	err := h.HandleServiceApply(protocol.ServiceApply{
+		TaskName: "web",
 		Spec:     shellScript(t, "sleep 1"),
 		Settings: &protocol.ServiceSettings{Instances: 1},
 	})
-	require.NoError(t, err)
-	require.Len(t, runner.upserted, 1)
-	assert.Equal(t, "station-service", runner.upserted[0].Name)
+	var se *StationError
+	require.ErrorAs(t, err, &se)
+	assert.Equal(t, protocol.ErrorCodeInvalid, se.Code)
+	assert.Empty(t, runner.upserted)
 }
 
 // A service:apply addressed by the bare name of a synced TOML service merges the
@@ -694,7 +699,7 @@ func TestHandleServiceApply_MergeRejectsInstanceCountAboveCap(t *testing.T) {
 // from the runner, so a station-managed service doesn't leak a taskState +
 // supervisor goroutine once the control plane retires it.
 func TestHandleServiceRemove_DropsExistingService(t *testing.T) {
-	existing := &model.Task{Name: "heartbeat", Kind: model.KindService, ExecutionDef: &model.ShellExecution{Script: "heartbeat.sh"}, StationDeclared: true}
+	existing := &model.Task{Name: "heartbeat", Kind: model.KindService, ExecutionDef: &model.ShellExecution{Script: "heartbeat.sh"}, StationTaskID: "heartbeat"}
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
 

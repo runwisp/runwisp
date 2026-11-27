@@ -245,10 +245,13 @@ func applyRunOptions(task *model.Task, cfg *protocol.RunOptions) error {
 	return nil
 }
 
+// stationTaskPrefix starts the local name of every task the station declares.
+const stationTaskPrefix = "station-"
+
 func sanitizeStationTaskName(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""
 	}
-	return strings.Trim("station-"+model.SanitizeTaskName(raw), "-_")
+	return strings.Trim(stationTaskPrefix+model.SanitizeTaskName(raw), "-_")
 }

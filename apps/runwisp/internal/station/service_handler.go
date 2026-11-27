@@ -129,7 +129,7 @@ func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControl) e
 // rejects a non-service name, so a remove can never delete an ordinary TOML
 // task, but a bare-name hit there matches ANY service, TOML-defined or
 // station-declared, since both live in the same registry under the same name.
-// Removal itself is gated separately below on StationDeclared: a TOML-defined
+// Removal itself is gated separately below on StationTaskID: a TOML-defined
 // [services.*] entry is owned by disk (removing it here would desync the
 // running task set from runwisp.toml with no reload path back, since the
 // reconciler's diff baseline still has it). A taskId that matches nothing is a
@@ -148,7 +148,7 @@ func (h *InboundHandler) HandleServiceRemove(message protocol.ServiceRemove) err
 		// (service-gone) already holds.
 		return nil
 	}
-	if !task.StationDeclared {
+	if task.StationTaskID == "" {
 		return newError(protocol.ErrorCodeForbidden, "service %q is defined in runwisp.toml; the station cannot remove it", name)
 	}
 	h.taskManager.RemoveTask(name)
@@ -158,9 +158,13 @@ func (h *InboundHandler) HandleServiceRemove(message protocol.ServiceRemove) err
 
 // buildServiceTask maps a service:apply payload onto a supervisable model.Task.
 // The task name is derived the same way as an inline execution (sanitized
-// taskId, falling back to taskName) so control messages and status reports
-// resolve to the same registered task.
+// taskId) so control messages resolve to the same registered task; status
+// reports carry the taskId itself.
 func (h *InboundHandler) buildServiceTask(svc protocol.ServiceApply) (*model.Task, error) {
+	taskID := strings.TrimSpace(svc.TaskID)
+	if taskID == "" {
+		return nil, newError(protocol.ErrorCodeInvalid, "taskId is required")
+	}
 	if specAbsent(svc.Spec) {
 		return nil, newError(protocol.ErrorCodeInvalid, "spec is required for a service this daemon doesn't define")
 	}
@@ -170,14 +174,7 @@ func (h *InboundHandler) buildServiceTask(svc protocol.ServiceApply) (*model.Tas
 	}
 	settings := svc.Settings
 
-	taskName := sanitizeStationTaskName(svc.TaskID)
-	if taskName == "" {
-		taskName = sanitizeStationTaskName(svc.TaskName)
-	}
-	if taskName == "" {
-		taskName = "station-service"
-	}
-
+	taskName := sanitizeStationTaskName(taskID)
 	if err := checkServiceInstances(taskName, settings.Instances); err != nil {
 		return nil, err
 	}
@@ -194,7 +191,7 @@ func (h *InboundHandler) buildServiceTask(svc protocol.ServiceApply) (*model.Tas
 		// Declared by the control plane, not TOML: only such a service may
 		// later be torn down by service:remove (see resolveServiceTarget /
 		// HandleServiceRemove).
-		StationDeclared: true,
+		StationTaskID: taskID,
 		// The protocol has no manual_trigger-equivalent field, so this must be
 		// explicit: the zero value is false, which would lock the station out of
 		// controlling the very service it just declared.

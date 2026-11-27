@@ -270,15 +270,15 @@ type Task struct {
 	// Runtime-only: never serialized to API/UI/station/TOML.
 	Ephemeral bool `toml:"-" json:"-"`
 
-	// StationDeclared marks a service the control plane created at runtime via
-	// service:apply (never from TOML, never in the config registry). Only such
-	// a service may be torn down by service:remove: a TOML-defined
-	// [services.*] entry is owned by disk. Deliberately distinct from
-	// Ephemeral: that flag hooks the run-manager's one-shot reaper, which would
-	// wrongly delete a station service the moment it's idle (stopped) rather than
-	// only on an explicit remove. Runtime-only: never serialized to
-	// API/UI/station/TOML.
-	StationDeclared bool `toml:"-" json:"-"`
+	// StationTaskID is set on a service the control plane created at runtime via
+	// service:apply (never from TOML, never in the config registry): the
+	// station's taskId, which the station knows the service by. Only such a
+	// service may be torn down by service:remove: a TOML-defined [services.*]
+	// entry is owned by disk. Deliberately distinct from Ephemeral: that flag
+	// hooks the run-manager's one-shot reaper, which would wrongly delete a
+	// station service the moment it's idle (stopped) rather than only on an
+	// explicit remove. Runtime-only: never serialized to API/UI/station/TOML.
+	StationTaskID string `toml:"-" json:"-"`
 }
 
 // Held reports whether something other than RunWisp owns this task's firing.

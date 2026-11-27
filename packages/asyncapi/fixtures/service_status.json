@@ -1,7 +1,7 @@
 {
   "type": "service:status",
   "data": {
-    "taskId": "station-tsk_01JC8Y7W",
+    "taskId": "01JC8Y7W5K3M9P2Q4R6S8T0V1X",
     "state": "degraded",
     "desiredInstances": 2,
     "runningInstances": 1,
