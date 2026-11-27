@@ -71,7 +71,7 @@ func writeBenchLog(b *testing.B, path string, size int64) int64 {
 // byte is read and matched.
 func benchGrep(b *testing.B, paths []string, total int64) {
 	s := grepBenchSession(b)
-	req := protocol.LogGrep{Terms: []protocol.LogGrepTerm{word("nomatchhere")}, MaxHits: 500, TimeoutMs: 28000, Context: 2}
+	req := protocol.LogSearch{Terms: []protocol.LogSearchTerm{word("nomatchhere")}, MaxHits: 500, TimeoutMs: 28000, Context: 2}
 	b.SetBytes(total)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -81,7 +81,7 @@ func benchGrep(b *testing.B, paths []string, total int64) {
 			b.Fatal(err)
 		}
 		for _, path := range paths {
-			if err := g.scanRun(b.Context(), "bench", path); err != nil {
+			if err := g.scanRun(b.Context(), "bench", path, 0); err != nil {
 				b.Fatal(err)
 			}
 		}

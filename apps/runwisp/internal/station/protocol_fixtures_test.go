@@ -20,9 +20,9 @@ import (
 // station so both sides decode the same frames.
 const fixturesDir = "../../../../packages/asyncapi/fixtures"
 
-// grepTermsFixture sits with the envelopes but is a list of log:grep matcher
+// grepTermsFixture sits with the envelopes but is a list of log:search matcher
 // cases (logsearch runs them), not a message.
-const grepTermsFixture = "log-grep-terms.json"
+const grepTermsFixture = "log-search-terms.json"
 
 // payloadTypes decodes each message's data; nil means it carries none.
 var payloadTypes = map[string]func() any{
@@ -34,6 +34,7 @@ var payloadTypes = map[string]func() any{
 	"result":             func() any { return &protocol.Result{} },
 	"ack":                func() any { return &protocol.Ack{} },
 	"session:update":     func() any { return &protocol.SessionUpdate{} },
+	"cancel":             func() any { return &protocol.Cancel{} },
 	"agent:update":       func() any { return &protocol.AgentUpdate{} },
 	"agent:stats":        func() any { return &protocol.AgentStats{} },
 	"agent:restart":      func() any { return &protocol.Empty{} },
@@ -44,12 +45,9 @@ var payloadTypes = map[string]func() any{
 	"execution:stop":     func() any { return &protocol.ExecutionStop{} },
 	"execution:update":   func() any { return &protocol.ExecutionUpdate{} },
 	"log:subscribe":      func() any { return &protocol.LogSubscribe{} },
-	"log:unsubscribe":    func() any { return &protocol.LogUnsubscribe{} },
 	"log:lines":          func() any { return &protocol.LogLines{} },
 	"log:search":         func() any { return &protocol.LogSearch{} },
-	"log:grep":           func() any { return &protocol.LogGrep{} },
-	"log:grep:hits":      func() any { return &protocol.LogGrepHits{} },
-	"log:grep:cancel":    func() any { return &protocol.LogGrepCancel{} },
+	"log:search:hits":    func() any { return &protocol.LogSearchHits{} },
 	"upload:request":     func() any { return &protocol.UploadRequest{} },
 	"service:apply":      func() any { return &protocol.ServiceApply{} },
 	"service:control":    func() any { return &protocol.ServiceControl{} },

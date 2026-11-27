@@ -10,7 +10,7 @@ import (
 	"unicode/utf8"
 )
 
-// Term is one compiled log:grep term: the literal parts between `*`
+// Term is one compiled log:search term: the literal parts between `*`
 // wildcards, in order, and whether its ends must sit on word edges. A `*`
 // matches any run of characters on the line, including none.
 type Term struct {

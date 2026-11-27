@@ -31,27 +31,37 @@ const (
 	grepMaxContext   = 5
 	// grepClockLines is how many lines go by between looks at the clock.
 	grepClockLines = 1024
-	// grepConcurrency is how many log:greps run at once. Each takes a core
-	// and the disk while it lasts, and the daemon's runs come first.
+	// grepConcurrency is how many many-run log:searches run at once. Each
+	// takes a core and the disk while it lasts, and the daemon's runs come
+	// first.
 	grepConcurrency = 2
 )
 
-var errGrepTimeout = errors.New("log:grep timed out")
+var errGrepTimeout = errors.New("log:search timed out")
 
-// grepLogs serves log:grep: it scans the station executions' local logs one
-// run at a time, newest first, streaming hits as log:grep:hits until every
-// run is scanned, a cap or the timeout is reached, or log:grep:cancel (or the
-// session's end) stops it. Past grepConcurrency greps it answers busy.
-func (s *session) grepLogs(ctx context.Context, id string, req protocol.LogGrep) (any, error) {
+// searchLogs serves log:search: it scans the station executions' local logs
+// (one execution's, or many one run at a time, newest first), streaming hits
+// as log:search:hits until every run is scanned, a cap or the timeout is
+// reached, or cancel (or the session's end) stops it. Past grepConcurrency
+// many-run searches it answers busy.
+func (s *session) searchLogs(ctx context.Context, id string, req protocol.LogSearch) (any, error) {
 	g, err := s.newGrepScan(id, req)
 	if err != nil {
 		return nil, err
 	}
-	select {
-	case s.client.grepSlots <- struct{}{}:
-		defer func() { <-s.client.grepSlots }()
-	default:
-		return nil, &StationError{Code: protocol.ErrorCodeBusy, Message: fmt.Sprintf("%d log searches are already running", grepConcurrency), Retryable: true}
+	if req.ExecutionID != "" {
+		// One run's log is a bounded scan, like a log:subscribe replay, so it
+		// takes no slot: a run's search never waits on a fleet-wide one.
+		if g.run, err = s.client.lookupRun(ctx, req.ExecutionID); err != nil {
+			return nil, err
+		}
+	} else {
+		select {
+		case s.client.grepSlots <- struct{}{}:
+			defer func() { <-s.client.grepSlots }()
+		default:
+			return nil, &StationError{Code: protocol.ErrorCodeBusy, Message: fmt.Sprintf("%d log searches are already running", grepConcurrency), Retryable: true}
+		}
 	}
 	// The scan runs on a goroutine of its own because lowerThreadPriority
 	// keeps that goroutine's thread for good.
@@ -67,14 +77,17 @@ func (s *session) grepLogs(ctx context.Context, id string, req protocol.LogGrep)
 	return res, err
 }
 
-// grep runs scan g of log:grep req.
-func (s *session) grep(ctx context.Context, g *grepScan, req protocol.LogGrep) (any, error) {
+// grep runs scan g of log:search req.
+func (s *session) grep(ctx context.Context, g *grepScan, req protocol.LogSearch) (any, error) {
 	id := g.replyTo
 	ctx, cancel := context.WithTimeoutCause(ctx, time.Duration(req.TimeoutMs)*time.Millisecond, errGrepTimeout)
 	defer cancel()
 	ctx, done := s.track(ctx, id)
 	defer done()
 
+	if g.run != nil {
+		return s.grepRun(ctx, g, req)
+	}
 	// runsTotal is exact: the count reads only the index entries in range,
 	// about 50 ms for a million runs, and the runs stream a page at a time.
 	repo, q := s.client.deps.RunRepo, grepQuery(req, s.client.deps.TaskManager.ListServiceTasks())
@@ -87,9 +100,9 @@ func (s *session) grep(ctx context.Context, g *grepScan, req protocol.LogGrep) (
 			}
 			executionID := executionIDOf(&model.Run{ID: run.ID, ExecutionID: run.ExecutionID})
 			path := logutil.ResolveRunLogPath(s.client.deps.LogDir, run.TaskName, run.ID, run.CreatedAt)
-			if err := g.scanRun(ctx, executionID, path); err != nil && ctx.Err() == nil {
+			if err := g.scanRun(ctx, executionID, path, 0); err != nil && ctx.Err() == nil {
 				// Retention may remove a log mid-scan; the other runs still count.
-				slog.Debug("log:grep skipped a run", "executionId", executionID, "err", err)
+				slog.Debug("log:search skipped a run", "executionId", executionID, "err", err)
 			}
 			g.progress.RunsScanned++
 			if time.Since(g.lastFlush) >= grepFlushInterval {
@@ -101,6 +114,36 @@ func (s *session) grep(ctx context.Context, g *grepScan, req protocol.LogGrep) (
 	if err != nil && ctx.Err() == nil {
 		return nil, &StationError{Code: protocol.ErrorCodeInternal, Message: "failed to list the runs to search", Retryable: true, Err: err}
 	}
+	return g.finish(ctx)
+}
+
+// grepRun scans the one run g.run of log:search req from req.FromLine on.
+// nextLine resumes it: after the last hit sent when a cap stopped it (no
+// later line was matched), else after the last line read.
+func (s *session) grepRun(ctx context.Context, g *grepScan, req protocol.LogSearch) (any, error) {
+	g.progress.RunsTotal = 1
+	path := logutil.ResolveRunLogPath(s.client.deps.LogDir, g.run.TaskName, g.run.ID, g.run.CreatedAt)
+	if err := g.scanRun(ctx, req.ExecutionID, path, req.FromLine); err != nil && ctx.Err() == nil {
+		slog.Debug("log:search read part of a run", "executionId", req.ExecutionID, "err", err)
+	}
+	g.progress.RunsScanned = 1
+	res, err := g.finish(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := res.(protocol.LogSearchResult)
+	switch out.Stopped {
+	case protocol.StoppedDone:
+	case protocol.StoppedMaxHits, protocol.StoppedMaxBytes:
+		out.NextLine = g.lastSent + 1
+	default:
+		out.NextLine = max(g.readTo, req.FromLine)
+	}
+	return out, nil
+}
+
+// finish sends the last hits and builds the result.
+func (g *grepScan) finish(ctx context.Context) (any, error) {
 	if len(g.batch) > 0 {
 		g.flush()
 	}
@@ -108,30 +151,33 @@ func (s *session) grep(ctx context.Context, g *grepScan, req protocol.LogGrep) (
 		return nil, errSessionClosed
 	}
 	progress := g.progress
-	return protocol.LogGrepResult{Progress: &progress, Hits: g.sent, Stopped: g.stopReason(ctx)}, nil
+	return protocol.LogSearchResult{Progress: &progress, Hits: g.sent, Stopped: g.stopReason(ctx)}, nil
 }
 
-// grepScan is one log:grep's matching, caps and batching.
+// grepScan is one log:search's matching, caps and batching.
 type grepScan struct {
 	sess     *session
 	replyTo  string
-	terms    *logsearch.Terms
+	match    logsearch.Matcher
+	run      *model.Run // the one run searched, nil when searching many
 	context  int
 	maxHits  int
 	maxBytes int
 	// budget is the bytes of hits one frame holds under maxFrameBytes.
 	budget int
 
-	progress protocol.LogGrepProgress
-	matched  int // hits found, counting those still gathering after-context
-	sent     int // hits queued for the station
-	bytes    int // text bytes of the hits sent
+	progress protocol.LogSearchProgress
+	matched  int   // hits found, counting those still gathering after-context
+	sent     int   // hits queued for the station
+	lastSent int64 // line of the last hit queued
+	readTo   int64 // the line after the last one read
+	bytes    int   // text bytes of the hits sent
 	stop     protocol.Stopped
 	closed   bool // the session ended
 
-	batch      []protocol.LogGrepHit
+	batch      []protocol.LogSearchHit
 	batchBytes int
-	reported   protocol.LogGrepProgress // progress as of the last frame
+	reported   protocol.LogSearchProgress // progress as of the last frame
 	lastFlush  time.Time
 	lines      int // lines read, to pace the clock
 
@@ -139,20 +185,16 @@ type grepScan struct {
 	before grepRing // the run's last lines, for before-context
 }
 
-func (s *session) newGrepScan(id string, req protocol.LogGrep) (*grepScan, error) {
+func (s *session) newGrepScan(id string, req protocol.LogSearch) (*grepScan, error) {
 	if req.MaxHits <= 0 || req.TimeoutMs <= 0 {
 		return nil, newError(protocol.ErrorCodeInvalid, "maxHits and timeoutMs must be positive")
 	}
-	terms := make([]logsearch.Term, len(req.Terms))
-	for i, t := range req.Terms {
-		terms[i] = logsearch.Term{Parts: t.Parts, WordStart: t.WordStart, WordEnd: t.WordEnd}
-	}
-	matcher, err := logsearch.NewTerms(terms, req.CaseSensitive)
+	matcher, err := searchMatcher(req)
 	if err != nil {
 		return nil, newError(protocol.ErrorCodeInvalid, "%s", err.Error())
 	}
 	// A frame's bytes beyond its hits: measured on the largest progress.
-	empty, err := encodeFrame(typeLogGrepHits, "", id, protocol.LogGrepHits{Hits: []protocol.LogGrepHit{}, Progress: &protocol.LogGrepProgress{
+	empty, err := encodeFrame(typeLogSearchHits, "", id, protocol.LogSearchHits{Hits: []protocol.LogSearchHit{}, Progress: &protocol.LogSearchProgress{
 		RunsScanned: math.MaxInt, RunsTotal: math.MaxInt, BytesScanned: math.MaxInt64,
 	}})
 	if err != nil {
@@ -161,7 +203,7 @@ func (s *session) newGrepScan(id string, req protocol.LogGrep) (*grepScan, error
 	return &grepScan{
 		sess:      s,
 		replyTo:   id,
-		terms:     matcher,
+		match:     matcher,
 		context:   min(max(req.Context, 0), grepMaxContext),
 		maxHits:   req.MaxHits,
 		maxBytes:  max(req.MaxBytes, 0),
@@ -172,12 +214,45 @@ func (s *session) newGrepScan(id string, req protocol.LogGrep) (*grepScan, error
 	}, nil
 }
 
-// scanRun greps the log of one run, a missing log being an empty one. Once
-// maxHits are found no new line matches, and the scan stops when the open
-// hits have their after-context.
-func (g *grepScan) scanRun(ctx context.Context, executionID, path string) error {
+// searchMatcher is req's matcher: its regex when set, else its terms.
+func searchMatcher(req protocol.LogSearch) (logsearch.Matcher, error) {
+	if req.Regex != "" {
+		return logsearch.NewMatcher(req.Regex, true, req.CaseSensitive)
+	}
+	terms := make([]logsearch.Term, len(req.Terms))
+	for i, t := range req.Terms {
+		terms[i] = logsearch.Term{Parts: t.Parts, WordStart: t.WordStart, WordEnd: t.WordEnd}
+	}
+	return logsearch.NewTerms(terms, req.CaseSensitive)
+}
+
+// lookupRun finds the run of a station execution. One the daemon accepted
+// but hasn't started yet is unavailable (retryable); an unknown one is
+// not_found.
+func (client *Client) lookupRun(ctx context.Context, executionID string) (*model.Run, error) {
+	id, err := requireExecutionID(executionID)
+	if err != nil {
+		return nil, err
+	}
+	run, err := client.handler.findRun(ctx, id)
+	switch {
+	case err == nil && run != nil:
+		return run, nil
+	case err != nil && !errors.Is(err, storage.ErrNotFound):
+		return nil, &StationError{Code: protocol.ErrorCodeInternal, Message: "failed to look up the execution", Retryable: true, Err: err}
+	case client.tracker.Known(id):
+		return nil, &StationError{Code: protocol.ErrorCodeUnavailable, Message: "execution has not started yet", Retryable: true}
+	default:
+		return nil, newError(protocol.ErrorCodeNotFound, "execution not found")
+	}
+}
+
+// scanRun greps the log of one run from line from on, a missing log being an
+// empty one. Once maxHits are found no new line matches, and the scan stops
+// when the open hits have their after-context.
+func (g *grepScan) scanRun(ctx context.Context, executionID, path string, from int64) error {
 	g.before.reset()
-	r := &runGrep{g: g, executionID: executionID}
+	r := &runGrep{g: g, executionID: executionID, from: from}
 	err := logutil.ScanLineBytes(ctx, path, g.buf, r.visit)
 	for _, h := range r.open { // the log ended before their after-context did
 		g.add(h)
@@ -189,21 +264,29 @@ func (g *grepScan) scanRun(ctx context.Context, executionID, path string) error 
 type runGrep struct {
 	g           *grepScan
 	executionID string
-	open        []*protocol.LogGrepHit // hits still reading their after-context
+	from        int64                    // lines below it are context only
+	open        []*protocol.LogSearchHit // hits still reading their after-context
 }
 
 // visit matches one line. text is only valid during the call: a line that
 // becomes a hit or context is copied, every other line is not.
 func (r *runGrep) visit(n int64, stream string, text []byte) bool {
 	g := r.g
+	if n < r.from {
+		if n >= r.from-int64(g.context) { // only the lines before-context can reach
+			g.before.push(n, stream, text)
+		}
+		return true
+	}
 	g.progress.BytesScanned += int64(len(text)) + 1
+	g.readTo = n + 1
 	if len(r.open) > 0 {
 		r.extend(grepLine(n, stream, text))
 	}
-	if g.matched < g.maxHits && g.terms.Match(logsearch.VisibleBytes(text)) {
+	if g.matched < g.maxHits && g.match.Match(logsearch.VisibleBytes(text)) {
 		g.matched++
 		line := grepLine(n, stream, text)
-		h := &protocol.LogGrepHit{ExecutionID: r.executionID, Line: &line, Before: g.before.lines()}
+		h := &protocol.LogSearchHit{ExecutionID: r.executionID, Line: &line, Before: g.before.lines()}
 		if g.context == 0 {
 			g.add(h)
 		} else {
@@ -235,7 +318,7 @@ func (r *runGrep) extend(line protocol.LogLine) {
 
 // add queues a complete hit, sending the batch first when the hit would push
 // the frame past its budget. Reaching maxBytes stops the grep.
-func (g *grepScan) add(h *protocol.LogGrepHit) {
+func (g *grepScan) add(h *protocol.LogSearchHit) {
 	if g.over() {
 		return
 	}
@@ -246,6 +329,7 @@ func (g *grepScan) add(h *protocol.LogGrepHit) {
 	g.batch = append(g.batch, *h)
 	g.batchBytes += n + 1 // and its comma
 	g.sent++
+	g.lastSent = h.Line.N
 	g.bytes += hitTextBytes(h)
 	if g.maxBytes > 0 && g.bytes >= g.maxBytes {
 		g.stop = protocol.StoppedMaxBytes
@@ -254,7 +338,7 @@ func (g *grepScan) add(h *protocol.LogGrepHit) {
 
 // fit returns h's encoded size, first dropping its outermost context lines
 // until it fits in a frame on its own.
-func (g *grepScan) fit(h *protocol.LogGrepHit) int {
+func (g *grepScan) fit(h *protocol.LogSearchHit) int {
 	for {
 		raw, err := json.Marshal(h)
 		if err != nil || len(raw) <= g.budget || len(h.Before)+len(h.After) == 0 {
@@ -277,10 +361,10 @@ func (g *grepScan) flush() {
 	}
 	hits := g.batch
 	if hits == nil {
-		hits = []protocol.LogGrepHit{}
+		hits = []protocol.LogSearchHit{}
 	}
 	progress := g.progress
-	if err := g.sess.send(typeLogGrepHits, "", g.replyTo, protocol.LogGrepHits{Hits: hits, Progress: &progress}, false); err != nil {
+	if err := g.sess.send(typeLogSearchHits, "", g.replyTo, protocol.LogSearchHits{Hits: hits, Progress: &progress}, false); err != nil {
 		g.closed = true
 	}
 	g.batch, g.batchBytes, g.reported = nil, 0, progress
@@ -362,7 +446,7 @@ func (r *grepRing) lines() []protocol.LogLine {
 	return out
 }
 
-func hitTextBytes(h *protocol.LogGrepHit) int {
+func hitTextBytes(h *protocol.LogSearchHit) int {
 	n := len(h.Line.Text)
 	for _, l := range h.Before {
 		n += len(l.Text)
@@ -373,11 +457,11 @@ func hitTextBytes(h *protocol.LogGrepHit) int {
 	return n
 }
 
-// grepQuery selects the runs log:grep req scans: the station executions,
+// grepQuery selects the runs log:search req scans: the station executions,
 // dispatched or of services (the station hears of a service instance's run,
 // see EventBridge.handleRunEvent). until is inclusive to the millisecond, so
 // the exclusive bound is the millisecond after it.
-func grepQuery(req protocol.LogGrep, services []*model.Task) storage.GrepRunsQuery {
+func grepQuery(req protocol.LogSearch, services []*model.Task) storage.GrepRunsQuery {
 	q := storage.GrepRunsQuery{TaskNames: grepTaskNames(req.Tasks)}
 	for _, svc := range services {
 		q.ServiceTasks = append(q.ServiceTasks, svc.Name)
@@ -391,7 +475,7 @@ func grepQuery(req protocol.LogGrep, services []*model.Task) storage.GrepRunsQue
 	return q
 }
 
-// grepTaskNames maps log:grep's tasks to the run task names they cover: an
+// grepTaskNames maps log:search's tasks to the run task names they cover: an
 // entry is a task name of the daemon's own (a config dispatch's runs and a
 // service instance's carry it; the station knows a service run's task by it,
 // see executionUpdate), or a station task's TaskRef.id, whose inline

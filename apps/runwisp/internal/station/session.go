@@ -405,13 +405,9 @@ func (s *session) handleFrame(payload []byte) (err error) {
 			return err
 		}
 		return &goodbyeError{g}
-	case typeLogUnsubscribe:
-		u, err := decodeData[protocol.LogUnsubscribe](env)
-		s.cancelCommand(env, u.Subscription, err)
-		return nil
-	case typeLogGrepCancel:
-		c, err := decodeData[protocol.LogGrepCancel](env)
-		s.cancelCommand(env, c.Search, err)
+	case typeCancel:
+		c, err := decodeData[protocol.Cancel](env)
+		s.cancelCommand(env, c.Command, err)
 		return nil
 	}
 	if env.ID == "" {
@@ -423,7 +419,7 @@ func (s *session) handleFrame(payload []byte) (err error) {
 	return nil
 }
 
-// cancelCommand acts on log:unsubscribe or log:grep:cancel: it ends the
+// cancelCommand acts on cancel: it ends the
 // command named target unless the frame failed to decode, and answers the
 // frame if it carries an id.
 func (s *session) cancelCommand(env protocol.Envelope, target string, decodeErr error) {

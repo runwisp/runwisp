@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package logsearch performs on-demand substring, regex or word-term
-// (log:grep) search across the on-disk log files of runs. There is no
+// (log:search) search across the on-disk log files of runs. There is no
 // in-memory index, no background goroutine, and no state survives a request.
 package logsearch
 

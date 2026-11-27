@@ -144,7 +144,7 @@ func executionUpdate(run *model.Run) *protocol.ExecutionUpdate {
 	if run == nil {
 		return nil
 	}
-	update := &protocol.ExecutionUpdate{ExecutionID: executionIDOf(run), StartedAt: run.StartedAt}
+	update := &protocol.ExecutionUpdate{ExecutionID: executionIDOf(run), StartedAt: unixMs(run.StartedAt)}
 	if run.ExecutionID == nil {
 		update.TaskID = run.TaskName
 		update.Instance = new(run.InstanceIndex)
@@ -158,7 +158,7 @@ func executionUpdate(run *model.Run) *protocol.ExecutionUpdate {
 		return nil
 	}
 	update.Status = protocol.ExecutionStatusFinished
-	update.FinishedAt = run.EndedAt
+	update.FinishedAt = unixMs(run.EndedAt)
 	update.Reason = string(*run.EndReason)
 	update.IsFailure = new(run.IsFailure)
 	update.ExitCode = new(run.ExitCode)

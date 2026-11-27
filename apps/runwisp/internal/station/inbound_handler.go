@@ -102,9 +102,9 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, d protocol
 		slog.Info("duplicate execution dispatch accepted again", "executionId", executionID)
 		return nil
 	}
-	if d.NotAfter != nil && h.now().After(*d.NotAfter) {
+	if notAfter := time.UnixMilli(d.NotAfter); d.NotAfter > 0 && h.now().After(notAfter) {
 		h.tracker.Release(executionID)
-		return newError(protocol.ErrorCodeExpired, "dispatch arrived after its notAfter (%s)", d.NotAfter.UTC().Format(time.RFC3339))
+		return newError(protocol.ErrorCodeExpired, "dispatch arrived after its notAfter (%s)", notAfter.UTC().Format(time.RFC3339))
 	}
 
 	// Record the pending archive BEFORE the run starts: a crash after the

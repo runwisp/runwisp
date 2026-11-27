@@ -23,6 +23,10 @@
 #   5. The major version is the WebSocket subprotocol (`runwisp.v1`). There is
 #      no version number inside messages. A v2 would be offered next to v1.
 #   6. Regenerate Go/TS types from this file; never hand-edit the output.
+#
+# Pre-freeze: v1 is not frozen yet. Until the maintainers declare the freeze
+# (before Station's first public release), rules 1 and 3 do not apply and v1
+# may break. Once frozen, the rules above bind as written.
 # =============================================================================
 asyncapi: 2.6.0
 info:
@@ -45,8 +49,10 @@ info:
     Every frame is an `Envelope`; the message's payload is its `data`.
     A frame with an `id` is a COMMAND and gets exactly one `result` with
     `replyTo` set to that id (a log subscription first streams `log:lines`
-    frames with the same `replyTo`, and a log:grep streams `log:grep:hits`
-    frames, before its `result`). Ids are unique per sender per connection.
+    frames with the same `replyTo`, and a log:search streams
+    `log:search:hits` frames, before its `result`). Ids are unique per sender
+    per connection. The station ends a streaming command early with `cancel`;
+    the command still ends with its `result`.
 
     ## Session
 
@@ -71,7 +77,8 @@ info:
     ## Conventions
 
     Durations are integer milliseconds (`...Ms`), sizes integer bytes, times
-    RFC 3339 UTC strings, ids opaque strings up to 128 bytes. Log text is
+    integer Unix milliseconds (UTC, no time zone; 0 or absent = unset), ids
+    opaque strings up to 128 bytes. Log text is
     valid UTF-8 (invalid bytes become U+FFFD). Arrays are `[]`, never `null`.
 
 defaultContentType: application/json
@@ -90,11 +97,9 @@ channels:
           - $ref: "#/components/messages/sessionUpdate"
           - $ref: "#/components/messages/executionDispatch"
           - $ref: "#/components/messages/executionStop"
+          - $ref: "#/components/messages/cancel"
           - $ref: "#/components/messages/logSubscribe"
-          - $ref: "#/components/messages/logUnsubscribe"
           - $ref: "#/components/messages/logSearch"
-          - $ref: "#/components/messages/logGrep"
-          - $ref: "#/components/messages/logGrepCancel"
           - $ref: "#/components/messages/serviceApply"
           - $ref: "#/components/messages/serviceControl"
           - $ref: "#/components/messages/serviceRemove"
@@ -116,7 +121,7 @@ channels:
           - $ref: "#/components/messages/tasksSync"
           - $ref: "#/components/messages/executionUpdate"
           - $ref: "#/components/messages/logLines"
-          - $ref: "#/components/messages/logGrepHits"
+          - $ref: "#/components/messages/logSearchHits"
           - $ref: "#/components/messages/uploadRequest"
           - $ref: "#/components/messages/serviceStatus"
 
@@ -155,6 +160,10 @@ components:
       name: session:update
       summary: station -> daemon, command. Changes session parameters.
       payload: { $ref: "#/components/schemas/SessionUpdate" }
+    cancel:
+      name: cancel
+      summary: station -> daemon. End the streaming command named in `command` early; it still sends its result.
+      payload: { $ref: "#/components/schemas/Cancel" }
 
     # --- agent ---------------------------------------------------------------
     agentUpdate:
@@ -203,30 +212,18 @@ components:
       name: log:subscribe
       summary: station -> daemon, command. Stream an execution's log lines.
       payload: { $ref: "#/components/schemas/LogSubscribe" }
-    logUnsubscribe:
-      name: log:unsubscribe
-      summary: station -> daemon. End a log:subscribe subscription; the daemon sends its result.
-      payload: { $ref: "#/components/schemas/LogUnsubscribe" }
     logLines:
       name: log:lines
       summary: daemon -> station. Lines for the subscription named in replyTo.
       payload: { $ref: "#/components/schemas/LogLines" }
     logSearch:
       name: log:search
-      summary: station -> daemon, command. Grep one execution's log.
+      summary: station -> daemon, command. Search one execution's log, or many.
       payload: { $ref: "#/components/schemas/LogSearch" }
-    logGrep:
-      name: log:grep
-      summary: station -> daemon, command. Grep many executions' logs. Feature log.grep.
-      payload: { $ref: "#/components/schemas/LogGrep" }
-    logGrepHits:
-      name: log:grep:hits
-      summary: daemon -> station. Hits for the log:grep named in replyTo.
-      payload: { $ref: "#/components/schemas/LogGrepHits" }
-    logGrepCancel:
-      name: log:grep:cancel
-      summary: station -> daemon. End a log:grep; the daemon sends its result.
-      payload: { $ref: "#/components/schemas/LogGrepCancel" }
+    logSearchHits:
+      name: log:search:hits
+      summary: daemon -> station. Hits for the log:search named in replyTo.
+      payload: { $ref: "#/components/schemas/LogSearchHits" }
     uploadRequest:
       name: upload:request
       summary: daemon -> station, command. Signed upload targets.
@@ -266,17 +263,13 @@ components:
           description: Set on commands only. The receiver answers with one `result` whose replyTo is this id.
         replyTo:
           type: string
-          description: Set on `result`, `log:lines` and `log:grep:hits`. The command this answers.
+          description: Set on `result`, `log:lines` and `log:search:hits`. The command this answers.
         requires:
           type: array
           items: { type: string }
           description: |
             Features the receiver must have to act on this command. A receiver
             missing any of them answers `unsupported` without acting.
-        sentAt:
-          type: string
-          format: date-time
-          description: Sender's clock. Informational.
         data:
           type: object
           description: The payload, per message type. May be absent when empty.
@@ -300,9 +293,8 @@ components:
             Optional features this daemon understands, by name, with whether
             each can be used right now. A name that's absent is not understood.
             v1.0 names: exec.shell, exec.container, exec.compose, exec.http,
-            exec.config, agent.restart, agent.upgrade. Added later: log.grep
-            (log:grep). Everything else in this spec is baseline and has no
-            feature name.
+            exec.config, agent.restart, agent.upgrade. Everything else in this
+            spec is baseline and has no feature name.
         labels:
           type: object
           additionalProperties: { type: string }
@@ -460,6 +452,15 @@ components:
       properties:
         seq: { type: integer, format: int64 }
       required: [seq]
+
+    Cancel:
+      type: object
+      description: |
+        Ends a streaming command (log:subscribe, log:search) early. An id that
+        names no running command is ignored.
+      properties:
+        command: { type: string, description: The id of the command to end. }
+      required: [command]
 
     SessionUpdate:
       type: object
@@ -795,10 +796,9 @@ components:
           type: boolean
           description: Upload the log in chunks while running (upload:request purpose log.chunk).
         notAfter:
-          type: string
-          format: date-time
-          nullable: true
-          description: Refuse with `expired` instead of starting after this time.
+          type: integer
+          format: int64
+          description: Unix ms. Refuse with `expired` instead of starting after this time. 0 = no deadline.
       required: [executionId, task, spec]
 
     TaskRef:
@@ -847,8 +847,8 @@ components:
           nullable: true
           description: Set on a service instance's run. 0-based instance slot.
         status: { $ref: "#/components/schemas/ExecutionStatus" }
-        startedAt: { type: string, format: date-time, nullable: true }
-        finishedAt: { type: string, format: date-time, nullable: true }
+        startedAt: { type: integer, format: int64, description: Unix ms. }
+        finishedAt: { type: integer, format: int64, description: Unix ms. }
         reason:
           type: string
           description: |
@@ -891,7 +891,7 @@ components:
         Streams log:lines (replyTo = this command's id) from fromLine on, then,
         with follow, live lines with no gap or overlap. Ends with a result
         (LogSubscribeResult): when limit lines were sent, when the run finished
-        and all lines were sent, or after log:unsubscribe.
+        and all lines were sent, or after `cancel`.
       properties:
         executionId: { type: string }
         fromLine: { type: integer, format: int64, description: "First absolute line; 0 = start; negative = the last -fromLine lines (a tail)." }
@@ -904,12 +904,6 @@ components:
       properties:
         nextLine: { type: integer, format: int64 }
         eof: { type: boolean, description: The run is finished and every line was sent. }
-
-    LogUnsubscribe:
-      type: object
-      properties:
-        subscription: { type: string, description: The log:subscribe command's id. }
-      required: [subscription]
 
     LogLines:
       type: object
@@ -945,41 +939,35 @@ components:
 
     LogSearch:
       type: object
-      properties:
-        executionId: { type: string }
-        query: { type: string }
-        regex: { type: boolean, description: RE2. }
-        caseSensitive: { type: boolean }
-        fromLine: { type: integer, format: int64 }
-        limit: { type: integer, format: int64 }
-      required: [executionId, query]
-
-    LogSearchResult:
-      type: object
-      properties:
-        hits:
-          type: array
-          items: { $ref: "#/components/schemas/LogLine" }
-        nextLine: { type: integer, format: int64 }
-        exhausted: { type: boolean }
-      required: [hits, exhausted]
-
-    LogGrep:
-      type: object
       description: |
-        Greps the local logs of the daemon's station executions, dispatched
-        or service instances' runs, newest run first, one run at a time. Hits stream as log:grep:hits (replyTo = this
-        command's id); a LogGrepResult ends it once every run is scanned, a
-        cap or timeoutMs is reached, or after log:grep:cancel.
+        Searches the local logs of the daemon's station executions, dispatched
+        or service instances' runs: with executionId that run alone, else
+        every run tasks, since and until select, newest first, one run at a
+        time. Hits stream as log:search:hits (replyTo = this command's id); a
+        LogSearchResult ends it once every run is scanned, a cap or timeoutMs
+        is reached, or after `cancel`. With executionId, an unknown execution
+        is refused with not_found and one not started yet with unavailable.
       properties:
-        query: { type: string, description: The query as the user typed it. Informational. }
         terms:
           type: array
-          items: { $ref: "#/components/schemas/LogGrepTerm" }
-          description: A line matches when it matches every term. Compiled by the station; the daemon never parses query.
+          items: { $ref: "#/components/schemas/LogSearchTerm" }
+          description: A line matches when it matches every term. Compiled by the station from the user's query.
+        regex:
+          type: string
+          description: RE2. When set, a line matches when it matches regex, and terms is ignored.
         caseSensitive:
           type: boolean
-          description: False means the parts are already lowercased (strings.ToLower) and the daemon matches the lowercased line.
+          description: |
+            False means terms' parts are already lowercased (strings.ToLower)
+            and the daemon matches the lowercased line, and regex matches
+            case-insensitively.
+        executionId:
+          type: string
+          description: Search only this execution's log; tasks, since and until are ignored.
+        fromLine:
+          type: integer
+          format: int64
+          description: With executionId, start at this absolute line, to resume where nextLine left off.
         tasks:
           type: array
           items: { type: string }
@@ -994,9 +982,9 @@ components:
         maxHits: { type: integer, description: Stop after this many hits. }
         maxBytes: { type: integer, description: "Stop after this many bytes of hit text (lines and context). 0 = no limit." }
         timeoutMs: { type: integer, description: The daemon stops on its own after this long. }
-      required: [terms, maxHits, timeoutMs]
+      required: [maxHits, timeoutMs]
 
-    LogGrepTerm:
+    LogSearchTerm:
       type: object
       description: |
         One term: its literal parts in order, separated by `*` (any run of
@@ -1011,16 +999,16 @@ components:
         wordEnd: { type: boolean, description: The last part must end at a word end. }
       required: [parts]
 
-    LogGrepHits:
+    LogSearchHits:
       type: object
       properties:
         hits:
           type: array
-          items: { $ref: "#/components/schemas/LogGrepHit" }
-        progress: { $ref: "#/components/schemas/LogGrepProgress" }
+          items: { $ref: "#/components/schemas/LogSearchHit" }
+        progress: { $ref: "#/components/schemas/LogSearchProgress" }
       required: [hits, progress]
 
-    LogGrepHit:
+    LogSearchHit:
       type: object
       description: A matching line and its context. Each line's text is cut to 4 KiB, with continued set.
       properties:
@@ -1034,7 +1022,7 @@ components:
           items: { $ref: "#/components/schemas/LogLine" }
       required: [executionId, line]
 
-    LogGrepProgress:
+    LogSearchProgress:
       type: object
       properties:
         runsScanned: { type: integer }
@@ -1042,22 +1030,20 @@ components:
         bytesScanned: { type: integer, format: int64 }
       required: [runsScanned, runsTotal, bytesScanned]
 
-    LogGrepCancel:
+    LogSearchResult:
       type: object
+      description: Fields of the `result` answering log:search.
       properties:
-        search: { type: string, description: The log:grep command's id. }
-      required: [search]
-
-    LogGrepResult:
-      type: object
-      description: Fields of the `result` answering log:grep.
-      properties:
-        progress: { $ref: "#/components/schemas/LogGrepProgress" }
+        progress: { $ref: "#/components/schemas/LogSearchProgress" }
         hits: { type: integer, description: Hits sent. }
         stopped:
           type: string
-          description: Open. Why the grep ended.
+          description: Open. Why the search ended.
           enum: [done, maxHits, maxBytes, timeout, cancelled]
+        nextLine:
+          type: integer
+          format: int64
+          description: With executionId, when the search stopped before the log's end, the line after the last hit sent. 0 = nothing left.
       required: [progress, hits, stopped]
 
     UploadRequest:
@@ -1095,7 +1081,7 @@ components:
           additionalProperties: { type: string }
           description: Send exactly these headers with the upload.
         key: { type: string }
-        expiresAt: { type: string, format: date-time }
+        expiresAt: { type: integer, format: int64, description: Unix ms. }
       required: [url, method, key]
 
     # =========================================================================
@@ -1159,7 +1145,7 @@ components:
         index: { type: integer }
         state: { $ref: "#/components/schemas/ServiceInstanceState" }
         pid: { type: integer, nullable: true }
-        startedAt: { type: string, format: date-time, nullable: true }
+        startedAt: { type: integer, format: int64, description: Unix ms. }
         restartCount: { type: integer, description: "Exits since the last healthy run, operator actions included." }
         startFails: { type: integer, description: Failed starts in a row since the last healthy run. }
         lastExitCode: { type: integer, nullable: true }

@@ -94,7 +94,7 @@ func TestExecutionUpdate_FinishedCarriesOutcome(t *testing.T) {
 	assert.Equal(t, "timeout", u.Reason, "the reason goes out as the daemon's EndReason")
 	assert.Equal(t, new(true), u.IsFailure)
 	assert.Equal(t, new(-1), u.ExitCode)
-	assert.Equal(t, &ended, u.FinishedAt)
+	assert.Equal(t, ended.UnixMilli(), u.FinishedAt)
 
 	run.Status, run.EndReason = model.PhaseRunning, nil
 	u = executionUpdate(run)

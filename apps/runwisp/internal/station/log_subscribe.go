@@ -55,8 +55,8 @@ func (s *session) streamLog(ctx context.Context, id string, req protocol.LogSubs
 	return s.streamRun(ctx, id, run, req.FromLine, req.Limit, req.Follow), nil
 }
 
-// track registers command id (a log:subscribe or log:grep) so
-// log:unsubscribe or log:grep:cancel can cancel it; done unregisters it.
+// track registers command id (a log:subscribe or log:search) so
+// cancel can end it; done unregisters it.
 func (s *session) track(ctx context.Context, id string) (_ context.Context, done func()) {
 	ctx, cancel := context.WithCancel(ctx)
 	s.mu.Lock()
@@ -176,7 +176,7 @@ func (sub *logSubscription) tail(ctx context.Context, live <-chan events.LogLine
 	}
 }
 
-// unsubscribe ends the log:subscribe or log:grep started by command id, if it
+// unsubscribe ends the log:subscribe or log:search started by command id, if it
 // still runs.
 func (s *session) unsubscribe(id string) {
 	s.mu.Lock()
@@ -252,6 +252,10 @@ func (sub *logSubscription) addLive(le events.LogLineEvent) bool {
 	}
 	return sub.add(protocol.LogLine{N: le.LineNum, Ts: le.Timestamp, Stream: protocol.LogStream(le.Stream), Text: le.Text, Continued: le.Continued})
 }
+
+// lineFrameOverhead is a generous estimate of one log line's JSON framing
+// beyond its text, for keeping a frame under maxFrameBytes.
+const lineFrameOverhead = 96
 
 // add appends a line to the batch, sending the batch first when the line
 // would push it past the frame budget.

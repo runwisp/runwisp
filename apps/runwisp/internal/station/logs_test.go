@@ -155,7 +155,7 @@ func TestLogSubscribe_NegativeFromLineIsATail(t *testing.T) {
 	assert.Equal(t, int64(6), res.NextLine)
 }
 
-func TestLogSubscribe_UnsubscribeEndsWithResult(t *testing.T) {
+func TestLogSubscribe_CancelEndsWithResult(t *testing.T) {
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)
 	log := newRunLog(t, h, "e1")
@@ -164,7 +164,7 @@ func TestLogSubscribe_UnsubscribeEndsWithResult(t *testing.T) {
 
 	id := st.Command(t, "log:subscribe", protocol.LogSubscribe{ExecutionID: "e1", Follow: true})
 	collectLines(t, st, id, 3)
-	st.Send(t, "log:unsubscribe", "", protocol.LogUnsubscribe{Subscription: id})
+	st.Send(t, "cancel", "", protocol.Cancel{Command: id})
 	var res protocol.LogSubscribeResult
 	require.True(t, st.Result(t, id, &res).Ok)
 	assert.Equal(t, protocol.LogSubscribeResult{NextLine: 3}, res)
@@ -188,17 +188,34 @@ func TestLogSearch(t *testing.T) {
 	log.write(t, 0, 20, nil)
 	h.start(t)
 
-	id := st.Command(t, "log:search", protocol.LogSearch{ExecutionID: "e1", Query: "line 1", Limit: 3})
-	var res protocol.LogSearchResult
-	require.True(t, st.Result(t, id, &res).Ok)
-	assert.Equal(t, []int64{1, 10, 11}, lineNumbers(res.Hits))
-	assert.False(t, res.Exhausted)
+	literal := []protocol.LogSearchTerm{{Parts: []string{"line 1"}}}
+	hits, res := grepResult(t, st, protocol.LogSearch{ExecutionID: "e1", Terms: literal, MaxHits: 3, TimeoutMs: 5000})
+	assert.Equal(t, []string{"e1:line 1", "e1:line 10", "e1:line 11"}, hitLines(hits))
+	assert.Equal(t, protocol.StoppedMaxHits, res.Stopped)
 	assert.Equal(t, int64(12), res.NextLine)
 
-	id = st.Command(t, "log:search", protocol.LogSearch{ExecutionID: "e1", Query: "(", Regex: true})
+	// Resuming at nextLine finds the rest; a regex matches instead of terms.
+	hits, res = grepResult(t, st, protocol.LogSearch{ExecutionID: "e1", Regex: `LINE 1\d`, FromLine: 12, MaxHits: 100, TimeoutMs: 5000})
+	assert.Equal(t, []string{"e1:line 12", "e1:line 13", "e1:line 14", "e1:line 15", "e1:line 16", "e1:line 17", "e1:line 18", "e1:line 19"}, hitLines(hits))
+	assert.Equal(t, protocol.StoppedDone, res.Stopped)
+	assert.Zero(t, res.NextLine)
+	assert.Equal(t, protocol.LogSearchProgress{RunsScanned: 1, RunsTotal: 1, BytesScanned: res.Progress.BytesScanned}, *res.Progress)
+
+	// Before-context reaches back past fromLine.
+	hits, _ = grepResult(t, st, protocol.LogSearch{ExecutionID: "e1", Regex: `line 12$`, FromLine: 12, Context: 2, MaxHits: 1, TimeoutMs: 5000})
+	require.Len(t, hits, 1)
+	require.Len(t, hits[0].Before, 2)
+	assert.Equal(t, []int64{10, 11}, []int64{hits[0].Before[0].N, hits[0].Before[1].N})
+
+	id := st.Command(t, "log:search", protocol.LogSearch{ExecutionID: "e1", Regex: "(", MaxHits: 1, TimeoutMs: 1000})
 	bad := st.Result(t, id, nil)
 	require.NotNil(t, bad.Error)
 	assert.Equal(t, protocol.ErrorCodeInvalid, bad.Error.Code)
+
+	id = st.Command(t, "log:search", protocol.LogSearch{ExecutionID: "nope", Terms: literal, MaxHits: 1, TimeoutMs: 1000})
+	bad = st.Result(t, id, nil)
+	require.NotNil(t, bad.Error)
+	assert.Equal(t, protocol.ErrorCodeNotFound, bad.Error.Code)
 }
 
 // uploadTarget is an upload endpoint that records what it received.
@@ -402,7 +419,7 @@ func TestServiceRun_ReportedAsExecution(t *testing.T) {
 	publishRun(h.bus, events.EventRunStarted, &model.Run{ID: "r1", TaskName: "web", InstanceIndex: 1, Status: model.PhaseRunning, StartedAt: &started})
 
 	up := stationtest.Decode[protocol.ExecutionUpdate](t, st, "execution:update", nil)
-	assert.Equal(t, protocol.ExecutionUpdate{Seq: 1, ExecutionID: "r1", TaskID: "web", Instance: new(1), Status: protocol.ExecutionStatusRunning, StartedAt: &started}, up)
+	assert.Equal(t, protocol.ExecutionUpdate{Seq: 1, ExecutionID: "r1", TaskID: "web", Instance: new(1), Status: protocol.ExecutionStatusRunning, StartedAt: started.UnixMilli()}, up)
 	assert.Equal(t, 1, st.Count("execution:update"), "the CLI run is not reported")
 	assert.True(t, h.client.tracker.Known("r1"))
 	assert.True(t, h.client.uploader.isPending("r1"), "its log is archived when it ends")

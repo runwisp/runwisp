@@ -38,8 +38,7 @@ func TestSession_HelloDescribesTheDaemon(t *testing.T) {
 	assert.False(t, hello.Features["exec.container"].Available)
 	assert.False(t, hello.Features["agent.restart"].Available)
 	assert.False(t, hello.Features["agent.upgrade"].Available)
-	assert.Equal(t, &protocol.FeatureStatus{Available: true}, hello.Features["log.grep"])
-	assert.Len(t, hello.Features, 8)
+	assert.Len(t, hello.Features, 7)
 }
 
 // Container engines are probed before hello: a host without Docker reports
@@ -124,7 +123,7 @@ func TestSession_DispatchAcceptedThenExpired(t *testing.T) {
 	assert.Equal(t, []string{"e1"}, h.runner.triggeredIDs())
 
 	past := time.Now().Add(-time.Minute)
-	id = st.Command(t, "execution:dispatch", protocol.ExecutionDispatch{ExecutionID: "e2", Spec: spec, NotAfter: &past})
+	id = st.Command(t, "execution:dispatch", protocol.ExecutionDispatch{ExecutionID: "e2", Spec: spec, NotAfter: past.UnixMilli()})
 	res := st.Result(t, id, nil)
 	require.NotNil(t, res.Error)
 	assert.Equal(t, protocol.ErrorCodeExpired, res.Error.Code)

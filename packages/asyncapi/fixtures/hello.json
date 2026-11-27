@@ -1,6 +1,5 @@
 {
   "type": "hello",
-  "sentAt": "2026-11-12T10:00:00.123Z",
   "data": {
     "instanceId": "7f3c2a9e-1b4d-4e8a-9c21-5d6e7f8a9b0c",
     "agent": {
@@ -34,9 +33,6 @@
       "agent.upgrade": {
         "available": false,
         "reason": "station upgrades disabled (set RUNWISP_ALLOW=station-upgrade to enable)"
-      },
-      "log.grep": {
-        "available": true
       }
     },
     "labels": {},

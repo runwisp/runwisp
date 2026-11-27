@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// grepTermsCases is the log:grep matcher conformance list, shared with the
+// grepTermsCases is the log:search matcher conformance list, shared with the
 // station, whose own matcher runs the same cases.
-const grepTermsCases = "../../../../packages/asyncapi/fixtures/log-grep-terms.json"
+const grepTermsCases = "../../../../packages/asyncapi/fixtures/log-search-terms.json"
 
 func TestTerms_Conformance(t *testing.T) {
 	raw, err := os.ReadFile(grepTermsCases)

@@ -1,6 +1,5 @@
 {
   "type": "service:status",
-  "sentAt": "2026-11-12T10:00:00.123Z",
   "data": {
     "taskId": "station-tsk_01JC8Y7W",
     "state": "degraded",
@@ -11,7 +10,7 @@
         "index": 0,
         "state": "running",
         "pid": 4242,
-        "startedAt": "2026-11-12T09:58:00Z",
+        "startedAt": 1794477480000,
         "restartCount": 0,
         "startFails": 0,
         "executionId": "01JC8Y9A2B3C4D5E6F7G8H9J0K"

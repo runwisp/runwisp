@@ -110,7 +110,7 @@ type Client struct {
 	reloadCh   chan struct{}
 	// upgradeMu lets one agent:upgrade run at a time.
 	upgradeMu sync.Mutex
-	// grepSlots holds a token per running log:grep (see grepConcurrency).
+	// grepSlots holds a token per running many-run log:search (see grepConcurrency).
 	grepSlots chan struct{}
 }
 

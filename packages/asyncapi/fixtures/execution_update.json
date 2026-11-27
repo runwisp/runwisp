@@ -1,14 +1,13 @@
 {
   "type": "execution:update",
-  "sentAt": "2026-11-12T10:00:00.123Z",
   "data": {
     "seq": 42,
     "executionId": "01JC8Y9A2B3C4D5E6F7G8H9J0K",
     "taskId": "web",
     "instance": 1,
     "status": "finished",
-    "startedAt": "2026-11-12T03:00:00Z",
-    "finishedAt": "2026-11-12T03:04:12Z",
+    "startedAt": 1794452400000,
+    "finishedAt": 1794452652000,
     "reason": "failed",
     "isFailure": true,
     "exitCode": 1,

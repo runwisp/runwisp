@@ -7,7 +7,6 @@ package protocol
 
 import (
 	"encoding/json"
-	"time"
 )
 
 // Every frame. The message payload is `data`.
@@ -16,13 +15,11 @@ type Envelope struct {
 	Type string `json:"type"`
 	// Set on commands only. The receiver answers with one `result` whose replyTo is this id.
 	ID string `json:"id,omitzero"`
-	// Set on `result`, `log:lines` and `log:grep:hits`. The command this answers.
+	// Set on `result`, `log:lines` and `log:search:hits`. The command this answers.
 	ReplyTo string `json:"replyTo,omitzero"`
 	// Features the receiver must have to act on this command. A receiver
 	// missing any of them answers `unsupported` without acting.
 	Requires []string `json:"requires,omitzero"`
-	// Sender's clock. Informational.
-	SentAt string `json:"sentAt,omitzero"`
 	// The payload, per message type. May be absent when empty.
 	Data json.RawMessage `json:"data,omitzero"`
 }
@@ -38,9 +35,8 @@ type Hello struct {
 	// Optional features this daemon understands, by name, with whether
 	// each can be used right now. A name that's absent is not understood.
 	// v1.0 names: exec.shell, exec.container, exec.compose, exec.http,
-	// exec.config, agent.restart, agent.upgrade. Added later: log.grep
-	// (log:grep). Everything else in this spec is baseline and has no
-	// feature name.
+	// exec.config, agent.restart, agent.upgrade. Everything else in this
+	// spec is baseline and has no feature name.
 	Features map[string]*FeatureStatus `json:"features"`
 	// Operator-set labels (`[daemon] labels`). May be empty.
 	Labels map[string]string `json:"labels"`
@@ -167,6 +163,13 @@ var ErrorCodeValues = []ErrorCode{ErrorCodeInvalid, ErrorCodeUnauthorized, Error
 
 type Ack struct {
 	Seq int64 `json:"seq"`
+}
+
+// Ends a streaming command (log:subscribe, log:search) early. An id that
+// names no running command is ignored.
+type Cancel struct {
+	// The id of the command to end.
+	Command string `json:"command"`
 }
 
 // Any field set replaces the current value.
@@ -431,8 +434,8 @@ type ExecutionDispatch struct {
 	Options   *RunOptions `json:"options,omitzero"`
 	// Upload the log in chunks while running (upload:request purpose log.chunk).
 	LogStream bool `json:"logStream,omitzero"`
-	// Refuse with `expired` instead of starting after this time.
-	NotAfter *time.Time `json:"notAfter,omitzero"`
+	// Unix ms. Refuse with `expired` instead of starting after this time. 0 = no deadline.
+	NotAfter int64 `json:"notAfter,omitzero"`
 }
 
 type TaskRef struct {
@@ -474,10 +477,12 @@ type ExecutionUpdate struct {
 	// Set on a service instance's run. The service, as in service:status.
 	TaskID string `json:"taskId,omitzero"`
 	// Set on a service instance's run. 0-based instance slot.
-	Instance   *int            `json:"instance,omitzero"`
-	Status     ExecutionStatus `json:"status"`
-	StartedAt  *time.Time      `json:"startedAt,omitzero"`
-	FinishedAt *time.Time      `json:"finishedAt,omitzero"`
+	Instance *int            `json:"instance,omitzero"`
+	Status   ExecutionStatus `json:"status"`
+	// Unix ms.
+	StartedAt int64 `json:"startedAt,omitzero"`
+	// Unix ms.
+	FinishedAt int64 `json:"finishedAt,omitzero"`
 	// Open. Set when finished: succeeded, failed, stopped, timeout,
 	// crashed, skipped, log_overflow, queue_full, dst_skipped,
 	// daemon_stopped, missed, start_failed, unhealthy, ... A receiver
@@ -507,7 +512,7 @@ type LogArchive struct {
 // Streams log:lines (replyTo = this command's id) from fromLine on, then,
 // with follow, live lines with no gap or overlap. Ends with a result
 // (LogSubscribeResult): when limit lines were sent, when the run finished
-// and all lines were sent, or after log:unsubscribe.
+// and all lines were sent, or after `cancel`.
 type LogSubscribe struct {
 	ExecutionID string `json:"executionId"`
 	// First absolute line; 0 = start; negative = the last -fromLine lines (a tail).
@@ -521,11 +526,6 @@ type LogSubscribeResult struct {
 	NextLine int64 `json:"nextLine,omitzero"`
 	// The run is finished and every line was sent.
 	Eof bool `json:"eof,omitzero"`
-}
-
-type LogUnsubscribe struct {
-	// The log:subscribe command's id.
-	Subscription string `json:"subscription"`
 }
 
 type LogLines struct {
@@ -561,33 +561,26 @@ const (
 
 var LogStreamValues = []LogStream{LogStreamStdout, LogStreamStderr, LogStreamSystem}
 
+// Searches the local logs of the daemon's station executions, dispatched
+// or service instances' runs: with executionId that run alone, else
+// every run tasks, since and until select, newest first, one run at a
+// time. Hits stream as log:search:hits (replyTo = this command's id); a
+// LogSearchResult ends it once every run is scanned, a cap or timeoutMs
+// is reached, or after `cancel`. With executionId, an unknown execution
+// is refused with not_found and one not started yet with unavailable.
 type LogSearch struct {
-	ExecutionID string `json:"executionId"`
-	Query       string `json:"query"`
-	// RE2.
-	Regex         bool  `json:"regex,omitzero"`
-	CaseSensitive bool  `json:"caseSensitive,omitzero"`
-	FromLine      int64 `json:"fromLine,omitzero"`
-	Limit         int64 `json:"limit,omitzero"`
-}
-
-type LogSearchResult struct {
-	Hits      []LogLine `json:"hits"`
-	NextLine  int64     `json:"nextLine,omitzero"`
-	Exhausted bool      `json:"exhausted"`
-}
-
-// Greps the local logs of the daemon's station executions, dispatched
-// or service instances' runs, newest run first, one run at a time. Hits stream as log:grep:hits (replyTo = this
-// command's id); a LogGrepResult ends it once every run is scanned, a
-// cap or timeoutMs is reached, or after log:grep:cancel.
-type LogGrep struct {
-	// The query as the user typed it. Informational.
-	Query string `json:"query,omitzero"`
-	// A line matches when it matches every term. Compiled by the station; the daemon never parses query.
-	Terms []LogGrepTerm `json:"terms"`
-	// False means the parts are already lowercased (strings.ToLower) and the daemon matches the lowercased line.
+	// A line matches when it matches every term. Compiled by the station from the user's query.
+	Terms []LogSearchTerm `json:"terms,omitzero"`
+	// RE2. When set, a line matches when it matches regex, and terms is ignored.
+	Regex string `json:"regex,omitzero"`
+	// False means terms' parts are already lowercased (strings.ToLower)
+	// and the daemon matches the lowercased line, and regex matches
+	// case-insensitively.
 	CaseSensitive bool `json:"caseSensitive,omitzero"`
+	// Search only this execution's log; tasks, since and until are ignored.
+	ExecutionID string `json:"executionId,omitzero"`
+	// With executionId, start at this absolute line, to resume where nextLine left off.
+	FromLine int64 `json:"fromLine,omitzero"`
 	// Tasks to search; empty = all. An entry is a task's TaskRef.id as
 	// sent in execution:dispatch or service:apply, or a task name of
 	// the daemon's own (the taskName of a config spec, or a service
@@ -610,7 +603,7 @@ type LogGrep struct {
 // One term: its literal parts in order, separated by `*` (any run of
 // characters on the line, including none). A word character is a
 // Unicode letter or digit; everything else separates words.
-type LogGrepTerm struct {
+type LogSearchTerm struct {
 	// Non-empty literal pieces between the wildcards, in order.
 	Parts []string `json:"parts"`
 	// The first part must begin at a word start.
@@ -619,31 +612,26 @@ type LogGrepTerm struct {
 	WordEnd bool `json:"wordEnd,omitzero"`
 }
 
-type LogGrepHits struct {
-	Hits     []LogGrepHit     `json:"hits"`
-	Progress *LogGrepProgress `json:"progress"`
+type LogSearchHits struct {
+	Hits     []LogSearchHit     `json:"hits"`
+	Progress *LogSearchProgress `json:"progress"`
 }
 
 // A matching line and its context. Each line's text is cut to 4 KiB, with continued set.
-type LogGrepHit struct {
+type LogSearchHit struct {
 	ExecutionID string    `json:"executionId"`
 	Line        *LogLine  `json:"line"`
 	Before      []LogLine `json:"before,omitzero"`
 	After       []LogLine `json:"after,omitzero"`
 }
 
-type LogGrepProgress struct {
+type LogSearchProgress struct {
 	RunsScanned  int   `json:"runsScanned"`
 	RunsTotal    int   `json:"runsTotal"`
 	BytesScanned int64 `json:"bytesScanned"`
 }
 
-type LogGrepCancel struct {
-	// The log:grep command's id.
-	Search string `json:"search"`
-}
-
-// Open. Why the grep ended.
+// Open. Why the search ended.
 type Stopped string
 
 const (
@@ -656,13 +644,15 @@ const (
 
 var StoppedValues = []Stopped{StoppedDone, StoppedMaxHits, StoppedMaxBytes, StoppedTimeout, StoppedCancelled}
 
-// Fields of the `result` answering log:grep.
-type LogGrepResult struct {
-	Progress *LogGrepProgress `json:"progress"`
+// Fields of the `result` answering log:search.
+type LogSearchResult struct {
+	Progress *LogSearchProgress `json:"progress"`
 	// Hits sent.
 	Hits int `json:"hits"`
-	// Open. Why the grep ended.
+	// Open. Why the search ended.
 	Stopped Stopped `json:"stopped"`
+	// With executionId, when the search stopped before the log's end, the line after the last hit sent. 0 = nothing left.
+	NextLine int64 `json:"nextLine,omitzero"`
 }
 
 type UploadRequest struct {
@@ -694,9 +684,10 @@ type UploadTarget struct {
 	URL    string `json:"url"`
 	Method string `json:"method"`
 	// Send exactly these headers with the upload.
-	Headers   map[string]string `json:"headers,omitzero"`
-	Key       string            `json:"key"`
-	ExpiresAt time.Time         `json:"expiresAt,omitzero"`
+	Headers map[string]string `json:"headers,omitzero"`
+	Key     string            `json:"key"`
+	// Unix ms.
+	ExpiresAt int64 `json:"expiresAt,omitzero"`
 }
 
 // Idempotent upsert of a service. Re-sent after reconnect. spec null
@@ -751,10 +742,11 @@ const (
 var ServiceStateValues = []ServiceState{ServiceStateRunning, ServiceStateDegraded, ServiceStateStopped, ServiceStateFatal}
 
 type ServiceInstance struct {
-	Index     int                  `json:"index"`
-	State     ServiceInstanceState `json:"state"`
-	Pid       *int                 `json:"pid,omitzero"`
-	StartedAt *time.Time           `json:"startedAt,omitzero"`
+	Index int                  `json:"index"`
+	State ServiceInstanceState `json:"state"`
+	Pid   *int                 `json:"pid,omitzero"`
+	// Unix ms.
+	StartedAt int64 `json:"startedAt,omitzero"`
 	// Exits since the last healthy run, operator actions included.
 	RestartCount int `json:"restartCount"`
 	// Failed starts in a row since the last healthy run.

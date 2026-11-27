@@ -35,13 +35,11 @@ const (
 	typeExecDispatch     = "execution:dispatch"
 	typeExecStop         = "execution:stop"
 	typeExecUpdate       = "execution:update"
+	typeCancel           = "cancel"
 	typeLogSubscribe     = "log:subscribe"
-	typeLogUnsubscribe   = "log:unsubscribe"
 	typeLogLines         = "log:lines"
 	typeLogSearch        = "log:search"
-	typeLogGrep          = "log:grep"
-	typeLogGrepHits      = "log:grep:hits"
-	typeLogGrepCancel    = "log:grep:cancel"
+	typeLogSearchHits    = "log:search:hits"
 	typeUploadRequest    = "upload:request"
 	typeServiceApply     = "service:apply"
 	typeServiceControl   = "service:control"
@@ -51,7 +49,7 @@ const (
 
 // encodeFrame builds one envelope. data may be nil for an empty payload.
 func encodeFrame(typ, id, replyTo string, data any) ([]byte, error) {
-	env := protocol.Envelope{Type: typ, ID: id, ReplyTo: replyTo, SentAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	env := protocol.Envelope{Type: typ, ID: id, ReplyTo: replyTo}
 	if data != nil {
 		raw, err := json.Marshal(data)
 		if err != nil {
@@ -102,7 +100,7 @@ func newServiceStatus(snapshot model.ServiceSnapshot) protocol.ServiceStatus {
 		item := protocol.ServiceInstance{
 			Index:        inst.Index,
 			State:        protocol.ServiceInstanceState(inst.State),
-			StartedAt:    inst.StartedAt,
+			StartedAt:    unixMs(inst.StartedAt),
 			RestartCount: inst.RestartCount,
 			StartFails:   inst.StartFails,
 			LastExitCode: inst.LastExitCode,
@@ -121,6 +119,14 @@ func newServiceStatus(snapshot model.ServiceSnapshot) protocol.ServiceStatus {
 		RunningInstances: snapshot.RunningInstances,
 		Instances:        instances,
 	}
+}
+
+// unixMs is t as the protocol's Unix milliseconds, 0 for none.
+func unixMs(t *time.Time) int64 {
+	if t == nil || t.IsZero() {
+		return 0
+	}
+	return t.UnixMilli()
 }
 
 // toAgentStats maps the daemon's host snapshot onto agent:stats.

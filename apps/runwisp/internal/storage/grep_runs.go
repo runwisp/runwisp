@@ -17,7 +17,7 @@ const grepRunsPage = 500
 // New). Every stored time is UTC, so in this layout text order is time order.
 const storedTimeLayout = "2006-01-02 15:04:05.999999999-07:00"
 
-// GrepRunsQuery selects the runs log:grep scans: station executions (not
+// GrepRunsQuery selects the runs log:search scans: station executions (not
 // deleted) that overlap [Since, Before), of the tasks named in TaskNames: they
 // started before Before and are still running or ended at or after Since. A
 // run that never started counts from its creation. Zero times and an empty
@@ -32,7 +32,7 @@ type GrepRunsQuery struct {
 	ServiceTasks []string
 }
 
-// GrepRun is one run log:grep scans. ExecutionID is nil for a service
+// GrepRun is one run log:search scans. ExecutionID is nil for a service
 // instance's run.
 type GrepRun struct {
 	ID          string

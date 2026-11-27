@@ -69,10 +69,7 @@ function objectToZod(schema) {
     }
     if (schema.properties) {
         const props = Object.entries(schema.properties).map(([key, value]) => {
-            let zType = typeToZod(
-                value,
-                key.endsWith("At") && key !== "sentAt",
-            );
+            let zType = typeToZod(value);
             if (value.nullable) zType += ".nullable()";
             if (!schema.required?.includes(key)) zType += ".optional()";
             return `"${key}": ${zType}`;
@@ -85,7 +82,7 @@ function objectToZod(schema) {
     return "z.unknown()";
 }
 
-function typeToZod(schema, isDate = false) {
+function typeToZod(schema) {
     if (!schema) return "z.unknown()";
     if (schema.oneOf) {
         return `z.union([${schema.oneOf.map((sub) => typeToZod(sub)).join(", ")}])`;
@@ -97,12 +94,7 @@ function typeToZod(schema, isDate = false) {
     if (schema.enum && schema.description?.startsWith("CLOSED"))
         return `z.enum([${schema.enum.map((value) => JSON.stringify(value)).join(", ")}])`;
     if (schema.enum) return "z.string()";
-    if (schema.type === "string") {
-        if (schema.format === "date-time") {
-            return isDate ? "z.coerce.date()" : "z.string()";
-        }
-        return "z.string()";
-    }
+    if (schema.type === "string") return "z.string()";
     if (schema.type === "integer" || schema.type === "number") {
         return numberToZod(schema);
     }

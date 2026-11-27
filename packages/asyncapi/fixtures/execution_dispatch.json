@@ -4,7 +4,6 @@
   "requires": [
     "exec.shell"
   ],
-  "sentAt": "2026-11-12T10:00:00.123Z",
   "data": {
     "executionId": "ex_01JC8Y5T",
     "task": {
@@ -33,6 +32,6 @@
       ]
     },
     "logStream": true,
-    "notAfter": "2026-11-12T10:00:00Z"
+    "notAfter": 1794477600000
   }
 }

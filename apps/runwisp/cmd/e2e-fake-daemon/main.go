@@ -130,16 +130,16 @@ func (d *fakeDaemon) session(ctx context.Context, instanceID, logBody string) er
 		return err
 	}
 
-	startedAt := time.Now().UTC()
-	if err := d.update(ctx, protocol.ExecutionUpdate{ExecutionID: dispatch.ExecutionID, Status: protocol.ExecutionStatusRunning, StartedAt: &startedAt}); err != nil {
+	startedAt := time.Now().UnixMilli()
+	if err := d.update(ctx, protocol.ExecutionUpdate{ExecutionID: dispatch.ExecutionID, Status: protocol.ExecutionStatusRunning, StartedAt: startedAt}); err != nil {
 		return err
 	}
-	finishedAt := time.Now().UTC()
+	finishedAt := time.Now().UnixMilli()
 	finished := protocol.ExecutionUpdate{
 		ExecutionID: dispatch.ExecutionID,
 		Status:      protocol.ExecutionStatusFinished,
-		StartedAt:   &startedAt,
-		FinishedAt:  &finishedAt,
+		StartedAt:   startedAt,
+		FinishedAt:  finishedAt,
 		Reason:      "succeeded",
 		IsFailure:   new(false),
 		ExitCode:    new(0),
@@ -256,7 +256,7 @@ func (d *fakeDaemon) nextID() string {
 }
 
 func (d *fakeDaemon) write(ctx context.Context, typ, id, replyTo string, data any) error {
-	env := protocol.Envelope{Type: typ, ID: id, ReplyTo: replyTo, SentAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	env := protocol.Envelope{Type: typ, ID: id, ReplyTo: replyTo}
 	if data != nil {
 		raw, err := json.Marshal(data)
 		if err != nil {

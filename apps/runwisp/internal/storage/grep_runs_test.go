@@ -221,7 +221,7 @@ func TestGrepRuns_QueriesUseTheIndex(t *testing.T) {
 }
 
 // BenchmarkGrepRuns pages through a million runs (a month at one run every
-// 2.6 s) the way log:grep does.
+// 2.6 s) the way log:search does.
 func BenchmarkGrepRuns(b *testing.B) {
 	db, err := New(filepath.Join(b.TempDir(), "runs.db"))
 	require.NoError(b, err)

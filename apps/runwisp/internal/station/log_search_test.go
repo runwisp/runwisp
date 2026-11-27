@@ -47,26 +47,27 @@ func grepRunAt(t *testing.T, h *harness, executionID, task string, offset time.D
 }
 
 // word is a whole-word, case-folded term.
-func word(w string) protocol.LogGrepTerm {
-	return protocol.LogGrepTerm{Parts: []string{w}, WordStart: true, WordEnd: true}
+func word(w string) protocol.LogSearchTerm {
+	return protocol.LogSearchTerm{Parts: []string{w}, WordStart: true, WordEnd: true}
 }
 
-// grepResult runs log:grep and returns its hits, in order, and its result.
+// grepResult runs log:search and returns its hits, in order, and its result.
 // Every hits frame must fit the welcome's maxFrameBytes.
-func grepResult(t *testing.T, st *stationtest.Station, req protocol.LogGrep) ([]protocol.LogGrepHit, protocol.LogGrepResult) {
+func grepResult(t *testing.T, st *stationtest.Station, req protocol.LogSearch) ([]protocol.LogSearchHit, protocol.LogSearchResult) {
 	t.Helper()
-	id := st.Command(t, "log:grep", req, "log.grep")
-	var res protocol.LogGrepResult
+	earlier := st.Count("log:search:hits")
+	id := st.Command(t, "log:search", req)
+	var res protocol.LogSearchResult
 	r := st.Result(t, id, &res)
-	require.True(t, r.Ok, "log:grep failed: %+v", r.Error)
+	require.True(t, r.Ok, "log:search failed: %+v", r.Error)
 	// Frames go out in order, so every hits frame is in before the result.
-	var hits []protocol.LogGrepHit
-	for range st.Count("log:grep:hits") {
-		frame := st.Wait(t, "log:grep:hits", func(e protocol.Envelope) bool { return e.ReplyTo == id })
+	var hits []protocol.LogSearchHit
+	for range st.Count("log:search:hits") - earlier {
+		frame := st.Wait(t, "log:search:hits", func(e protocol.Envelope) bool { return e.ReplyTo == id })
 		raw, err := json.Marshal(frame)
 		require.NoError(t, err)
 		require.LessOrEqual(t, len(raw), st.Welcome.MaxFrameBytes)
-		var batch protocol.LogGrepHits
+		var batch protocol.LogSearchHits
 		require.NoError(t, json.Unmarshal(frame.Data, &batch))
 		require.NotNil(t, batch.Hits)
 		hits = append(hits, batch.Hits...)
@@ -74,7 +75,7 @@ func grepResult(t *testing.T, st *stationtest.Station, req protocol.LogGrep) ([]
 	return hits, res
 }
 
-func hitLines(hits []protocol.LogGrepHit) []string {
+func hitLines(hits []protocol.LogSearchHit) []string {
 	out := make([]string, len(hits))
 	for i, h := range hits {
 		out[i] = h.ExecutionID + ":" + h.Line.Text
@@ -82,7 +83,7 @@ func hitLines(hits []protocol.LogGrepHit) []string {
 	return out
 }
 
-func TestLogGrep_FiltersRunsNewestFirstWithContext(t *testing.T) {
+func TestLogSearch_FiltersRunsNewestFirstWithContext(t *testing.T) {
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)
 	grepRunAt(t, h, "e1", "station-T1", time.Minute, "boot", "ERROR disk full", "retry", "ok")
@@ -94,8 +95,8 @@ func TestLogGrep_FiltersRunsNewestFirstWithContext(t *testing.T) {
 	grepRunAt(t, h, "e6", "backup", time.Hour, "ERROR after until")
 	h.start(t)
 
-	hits, res := grepResult(t, st, protocol.LogGrep{
-		Terms:     []protocol.LogGrepTerm{word("error")},
+	hits, res := grepResult(t, st, protocol.LogSearch{
+		Terms:     []protocol.LogSearchTerm{word("error")},
 		Tasks:     []string{"T1", "backup"},
 		Since:     grepDay.UnixMilli(),
 		Until:     grepDay.Add(30 * time.Minute).UnixMilli(),
@@ -120,7 +121,7 @@ func TestLogGrep_FiltersRunsNewestFirstWithContext(t *testing.T) {
 // A service instance's run has no execution id: the station knows it by its
 // run id, under its task's name, so a plain task entry covers it. A running
 // one is read up to what its log holds now; a local run stays unsearched.
-func TestLogGrep_SearchesServiceRuns(t *testing.T) {
+func TestLogSearch_SearchesServiceRuns(t *testing.T) {
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)
 	h.runner.tasks["web"] = &model.Task{Name: "web", Kind: model.KindService, Run: "serve"}
@@ -137,21 +138,21 @@ func TestLogGrep_SearchesServiceRuns(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	hits, res := grepResult(t, st, protocol.LogGrep{
-		Terms: []protocol.LogGrepTerm{word("error")}, Tasks: []string{"web", "api", "backup"}, MaxHits: 100, TimeoutMs: 5000,
+	hits, res := grepResult(t, st, protocol.LogSearch{
+		Terms: []protocol.LogSearchTerm{word("error")}, Tasks: []string{"web", "api", "backup"}, MaxHits: 100, TimeoutMs: 5000,
 	})
 	assert.Equal(t, []string{"run-web-live:ERROR live instance", api.ID + ":ERROR api", old.ID + ":ERROR old instance"}, hitLines(hits))
 	assert.Equal(t, 3, res.Progress.RunsTotal)
 }
 
-func TestLogGrep_MaxHitsKeepsTheLastHitsContext(t *testing.T) {
+func TestLogSearch_MaxHitsKeepsTheLastHitsContext(t *testing.T) {
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)
 	grepRunAt(t, h, "e1", "job", 0, "hit 0", "hit 1", "hit 2", "hit 3", "hit 4", "hit 5")
 	grepRunAt(t, h, "e0", "job", -time.Minute, "hit older run")
 	h.start(t)
 
-	hits, res := grepResult(t, st, protocol.LogGrep{Terms: []protocol.LogGrepTerm{word("hit")}, Context: 2, MaxHits: 3, TimeoutMs: 5000})
+	hits, res := grepResult(t, st, protocol.LogSearch{Terms: []protocol.LogSearchTerm{word("hit")}, Context: 2, MaxHits: 3, TimeoutMs: 5000})
 	require.Equal(t, []string{"e1:hit 0", "e1:hit 1", "e1:hit 2"}, hitLines(hits))
 	assert.Equal(t, []string{"hit 3", "hit 4"}, []string{hits[2].After[0].Text, hits[2].After[1].Text})
 	assert.Equal(t, protocol.StoppedMaxHits, res.Stopped)
@@ -159,13 +160,13 @@ func TestLogGrep_MaxHitsKeepsTheLastHitsContext(t *testing.T) {
 	assert.Equal(t, 1, res.Progress.RunsScanned, "a cap ends the scan")
 }
 
-func TestLogGrep_MaxBytes(t *testing.T) {
+func TestLogSearch_MaxBytes(t *testing.T) {
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)
 	grepRunAt(t, h, "e1", "job", 0, "hit 0", "hit 1", "hit 2", "hit 3")
 	h.start(t)
 
-	hits, res := grepResult(t, st, protocol.LogGrep{Terms: []protocol.LogGrepTerm{word("hit")}, MaxHits: 100, MaxBytes: 12, TimeoutMs: 5000})
+	hits, res := grepResult(t, st, protocol.LogSearch{Terms: []protocol.LogSearchTerm{word("hit")}, MaxHits: 100, MaxBytes: 12, TimeoutMs: 5000})
 	assert.Len(t, hits, 3, "5 + 5 + 5 bytes reach 12")
 	assert.Equal(t, protocol.StoppedMaxBytes, res.Stopped)
 	assert.Equal(t, 3, res.Hits)
@@ -173,7 +174,7 @@ func TestLogGrep_MaxBytes(t *testing.T) {
 
 // Long lines are cut to 4 KiB, and a hit whose context would overflow the
 // frame loses context lines instead.
-func TestLogGrep_FramesStayUnderMaxFrameBytes(t *testing.T) {
+func TestLogSearch_FramesStayUnderMaxFrameBytes(t *testing.T) {
 	st := stationtest.New(t)
 	st.Welcome.MaxFrameBytes = minMaxFrameBytes
 	h := newHarness(t, st, nil)
@@ -181,7 +182,7 @@ func TestLogGrep_FramesStayUnderMaxFrameBytes(t *testing.T) {
 	grepRunAt(t, h, "e1", "job", 0, long, long, long, long)
 	h.start(t)
 
-	hits, res := grepResult(t, st, protocol.LogGrep{Terms: []protocol.LogGrepTerm{word("needle")}, Context: 5, MaxHits: 100, TimeoutMs: 5000})
+	hits, res := grepResult(t, st, protocol.LogSearch{Terms: []protocol.LogSearchTerm{word("needle")}, Context: 5, MaxHits: 100, TimeoutMs: 5000})
 	require.Len(t, hits, 4)
 	assert.Equal(t, 4, res.Hits)
 	for _, hit := range hits {
@@ -191,12 +192,12 @@ func TestLogGrep_FramesStayUnderMaxFrameBytes(t *testing.T) {
 	}
 }
 
-func TestLogGrep_InvalidTerms(t *testing.T) {
+func TestLogSearch_InvalidTerms(t *testing.T) {
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)
 	h.start(t)
 
-	id := st.Command(t, "log:grep", protocol.LogGrep{Terms: []protocol.LogGrepTerm{{Parts: []string{""}}}, MaxHits: 1, TimeoutMs: 1000}, "log.grep")
+	id := st.Command(t, "log:search", protocol.LogSearch{Terms: []protocol.LogSearchTerm{{Parts: []string{""}}}, MaxHits: 1, TimeoutMs: 1000})
 	res := st.Result(t, id, nil)
 	require.NotNil(t, res.Error)
 	assert.Equal(t, protocol.ErrorCodeInvalid, res.Error.Code)
@@ -224,31 +225,31 @@ func endlessRun(t *testing.T, h *harness) {
 	}()
 }
 
-func TestLogGrep_CancelStopsTheScan(t *testing.T) {
+func TestLogSearch_CancelStopsTheScan(t *testing.T) {
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)
 	endlessRun(t, h)
 	h.start(t)
 
-	id := st.Command(t, "log:grep", protocol.LogGrep{Terms: []protocol.LogGrepTerm{word("absent")}, MaxHits: 10, TimeoutMs: 60000}, "log.grep")
+	id := st.Command(t, "log:search", protocol.LogSearch{Terms: []protocol.LogSearchTerm{word("absent")}, MaxHits: 10, TimeoutMs: 60000})
 	// Progress frames while it scans: the grep is past registering itself.
-	st.Wait(t, "log:grep:hits", func(e protocol.Envelope) bool { return e.ReplyTo == id })
-	st.Send(t, "log:grep:cancel", "", protocol.LogGrepCancel{Search: id})
-	var res protocol.LogGrepResult
+	st.Wait(t, "log:search:hits", func(e protocol.Envelope) bool { return e.ReplyTo == id })
+	st.Send(t, "cancel", "", protocol.Cancel{Command: id})
+	var res protocol.LogSearchResult
 	require.True(t, st.Result(t, id, &res).Ok)
 	assert.Equal(t, protocol.StoppedCancelled, res.Stopped)
 	assert.Equal(t, 1, res.Progress.RunsTotal)
 	assert.Positive(t, res.Progress.BytesScanned)
 }
 
-func TestLogGrep_TimeoutStopsTheScan(t *testing.T) {
+func TestLogSearch_TimeoutStopsTheScan(t *testing.T) {
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)
 	endlessRun(t, h)
 	h.start(t)
 
-	id := st.Command(t, "log:grep", protocol.LogGrep{Terms: []protocol.LogGrepTerm{word("absent")}, MaxHits: 10, TimeoutMs: 100}, "log.grep")
-	var res protocol.LogGrepResult
+	id := st.Command(t, "log:search", protocol.LogSearch{Terms: []protocol.LogSearchTerm{word("absent")}, MaxHits: 10, TimeoutMs: 100})
+	var res protocol.LogSearchResult
 	require.True(t, st.Result(t, id, &res).Ok)
 	assert.Equal(t, protocol.StoppedTimeout, res.Stopped)
 	assert.Zero(t, res.Hits)
@@ -278,37 +279,37 @@ func TestGrepRing_KeepsTheLastLinesInOrder(t *testing.T) {
 	assert.Nil(t, (&grepRing{}).lines(), "context 0 keeps nothing")
 }
 
-func TestLogGrep_BusyPastTheConcurrencyLimit(t *testing.T) {
+func TestLogSearch_BusyPastTheConcurrencyLimit(t *testing.T) {
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)
 	endlessRun(t, h)
 	h.start(t)
 
-	req := protocol.LogGrep{Terms: []protocol.LogGrepTerm{word("absent")}, MaxHits: 10, TimeoutMs: 60000}
+	req := protocol.LogSearch{Terms: []protocol.LogSearchTerm{word("absent")}, MaxHits: 10, TimeoutMs: 60000}
 	var running []string
 	for range grepConcurrency {
-		id := st.Command(t, "log:grep", req, "log.grep")
-		st.Wait(t, "log:grep:hits", func(e protocol.Envelope) bool { return e.ReplyTo == id })
+		id := st.Command(t, "log:search", req)
+		st.Wait(t, "log:search:hits", func(e protocol.Envelope) bool { return e.ReplyTo == id })
 		running = append(running, id)
 	}
-	res := st.Result(t, st.Command(t, "log:grep", req, "log.grep"), nil)
+	res := st.Result(t, st.Command(t, "log:search", req), nil)
 	require.NotNil(t, res.Error)
 	assert.Equal(t, protocol.ErrorCodeBusy, res.Error.Code)
 	assert.True(t, res.Error.Retryable)
 
-	st.Send(t, "log:grep:cancel", "", protocol.LogGrepCancel{Search: running[0]})
+	st.Send(t, "cancel", "", protocol.Cancel{Command: running[0]})
 	require.True(t, st.Result(t, running[0], nil).Ok)
-	id := st.Command(t, "log:grep", req, "log.grep")
-	st.Wait(t, "log:grep:hits", func(e protocol.Envelope) bool { return e.ReplyTo == id })
+	id := st.Command(t, "log:search", req)
+	st.Wait(t, "log:search:hits", func(e protocol.Envelope) bool { return e.ReplyTo == id })
 	for _, id := range append(running[1:], id) {
-		st.Send(t, "log:grep:cancel", "", protocol.LogGrepCancel{Search: id})
+		st.Send(t, "cancel", "", protocol.Cancel{Command: id})
 		require.True(t, st.Result(t, id, nil).Ok)
 	}
 }
 
 // Hits from many runs share frames: a frame goes out every 250 ms, or when
 // the next hit would not fit.
-func TestLogGrep_BatchesHitsAcrossRuns(t *testing.T) {
+func TestLogSearch_BatchesHitsAcrossRuns(t *testing.T) {
 	st := stationtest.New(t)
 	h := newHarness(t, st, nil)
 	for i := range 50 {
@@ -316,8 +317,8 @@ func TestLogGrep_BatchesHitsAcrossRuns(t *testing.T) {
 	}
 	h.start(t)
 
-	hits, res := grepResult(t, st, protocol.LogGrep{Terms: []protocol.LogGrepTerm{word("hit")}, MaxHits: 100, TimeoutMs: 5000})
+	hits, res := grepResult(t, st, protocol.LogSearch{Terms: []protocol.LogSearchTerm{word("hit")}, MaxHits: 100, TimeoutMs: 5000})
 	require.Len(t, hits, 50)
 	assert.Equal(t, protocol.StoppedDone, res.Stopped)
-	assert.Less(t, st.Count("log:grep:hits"), 5, "not a frame per run")
+	assert.Less(t, st.Count("log:search:hits"), 5, "not a frame per run")
 }

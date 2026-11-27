@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// grepNice is the nice value of a log:grep's thread. A nicer thread also gets
+// grepNice is the nice value of a log:search's thread. A nicer thread also gets
 // a lower disk priority from the schedulers that keep one (BFQ).
 const grepNice = 10
 

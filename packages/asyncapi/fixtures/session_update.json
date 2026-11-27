@@ -1,7 +1,6 @@
 {
   "type": "session:update",
   "id": "s18",
-  "sentAt": "2026-11-12T10:00:00.123Z",
   "data": {
     "heartbeat": {
       "intervalMs": 20000,

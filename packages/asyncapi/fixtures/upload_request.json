@@ -1,7 +1,6 @@
 {
   "type": "upload:request",
   "id": "d8",
-  "sentAt": "2026-11-12T10:00:00.123Z",
   "data": {
     "executionId": "ex_01JC8Y5T",
     "purpose": "log.chunk",

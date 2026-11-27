@@ -60,7 +60,7 @@ type Querier interface {
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	InsertOutboxUpdate(ctx context.Context, arg InsertOutboxUpdateParams) (int64, error)
-	// One keyset page of station executions for log:grep, newest start first:
+	// One keyset page of station executions for log:search, newest start first:
 	// the runs sorting below the cursor (before_start, before_id) that started at
 	// or after since. A station execution is a run the station hears of: a
 	// dispatched one (an execution id), or a service instance's run, which the
@@ -75,7 +75,7 @@ type Querier interface {
 	// bounding the scan. The slices come last and the page size is fixed because
 	// sqlc numbers a parameter after a slice wrongly.
 	ListGrepRuns(ctx context.Context, arg ListGrepRunsParams) ([]ListGrepRunsRow, error)
-	// The station executions for log:grep that started before before (the
+	// The station executions for log:search that started before before (the
 	// lesser of since and the range's end) but overlap the range: still running
 	// (no ended_at) or ended at or after since. They sort after every run
 	// ListGrepRuns pages through, so they follow it, newest start first. The

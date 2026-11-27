@@ -4,7 +4,6 @@
   "requires": [
     "agent.upgrade"
   ],
-  "sentAt": "2026-11-12T10:00:00.123Z",
   "data": {
     "version": "v1.12.1"
   }
