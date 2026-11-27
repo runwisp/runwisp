@@ -41,12 +41,14 @@ var commands = map[string]command{
 		return nil, s.client.handler.HandleExecutionStop(ctx, stop)
 	}),
 	typeServiceApply: handle(false, func(s *session, _ context.Context, _ string, svc protocol.ServiceApply) (any, error) {
+		defer s.rescanServices()
 		return nil, s.client.handler.HandleServiceApply(svc)
 	}),
 	typeServiceControl: handle(false, func(s *session, _ context.Context, _ string, ctl protocol.ServiceControl) (any, error) {
 		return nil, s.client.handler.HandleServiceControl(ctl)
 	}),
 	typeServiceRemove: handle(false, func(s *session, _ context.Context, _ string, rm protocol.ServiceRemove) (any, error) {
+		defer s.rescanServices()
 		return nil, s.client.handler.HandleServiceRemove(rm)
 	}),
 	typeLogSubscribe: handle(true, (*session).streamLog),

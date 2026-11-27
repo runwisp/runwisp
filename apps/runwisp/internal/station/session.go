@@ -97,6 +97,7 @@ type session struct {
 	subs        map[string]context.CancelFunc     // log subscriptions and greps by command id
 	advertised  advertisedAgent                   // what hello / agent:update last said
 	dirty       map[string]struct{}               // services whose status changed
+	rescan      bool                              // recheck every service, removed ones included
 	servicesDue chan struct{}
 }
 
@@ -289,39 +290,80 @@ func (s *session) outboxLoop() error {
 
 // servicesLoop sends every service's status after welcome, then the latest
 // status of each service that changed. Snapshots coalesce, so a burst of
-// lifecycle events sends one frame per service.
+// lifecycle events sends one frame per service. A service it reported that
+// no longer exists gets one last status with state removed.
 func (s *session) servicesLoop() error {
-	for _, svc := range s.client.deps.TaskManager.ListServiceTasks() {
-		if svc != nil {
-			s.serviceChanged(svc.Name)
-		}
-	}
+	reported := map[string]struct{}{}
+	s.rescanServices()
 	for {
 		select {
 		case <-s.ctx.Done():
 			return nil
 		case <-s.servicesDue:
 		}
-		s.mu.Lock()
-		names := s.dirty
-		s.dirty = map[string]struct{}{}
-		s.mu.Unlock()
-		for name := range maps.Keys(names) {
-			snapshot, ok := s.client.deps.TaskManager.ServiceSnapshot(name)
+		for name := range maps.Keys(s.dueServices(reported)) {
+			status, ok := s.serviceStatus(name, reported)
 			if !ok {
 				continue
 			}
-			if err := s.send(typeServiceStatus, "", "", newServiceStatus(s.client.serviceTaskID(name), snapshot)); err != nil {
+			if err := s.send(typeServiceStatus, "", "", status); err != nil {
 				return nil
 			}
 		}
 	}
 }
 
+// dueServices takes the services to report on: the changed ones, and after a
+// rescan every service plus every one reported (some may be gone).
+func (s *session) dueServices(reported map[string]struct{}) map[string]struct{} {
+	s.mu.Lock()
+	names, rescan := s.dirty, s.rescan
+	s.dirty, s.rescan = map[string]struct{}{}, false
+	s.mu.Unlock()
+	if rescan {
+		for _, svc := range s.client.deps.TaskManager.ListServiceTasks() {
+			if svc != nil {
+				names[svc.Name] = struct{}{}
+			}
+		}
+		maps.Copy(names, reported)
+	}
+	return names
+}
+
+// serviceStatus is the status to send for service name, keeping reported
+// (the services the station has a status of) up to date. ok is false for a
+// service that's gone and was never reported: there's nothing to send.
+func (s *session) serviceStatus(name string, reported map[string]struct{}) (protocol.ServiceStatus, bool) {
+	taskID := s.client.serviceTaskID(name)
+	if snapshot, ok := s.client.deps.TaskManager.ServiceSnapshot(name); ok {
+		reported[name] = struct{}{}
+		return newServiceStatus(taskID, snapshot), true
+	}
+	if _, was := reported[name]; !was {
+		return protocol.ServiceStatus{}, false
+	}
+	delete(reported, name)
+	return protocol.ServiceStatus{TaskID: taskID, State: protocol.ServiceStateRemoved, Instances: []protocol.ServiceInstance{}}, true
+}
+
 func (s *session) serviceChanged(name string) {
 	s.mu.Lock()
 	s.dirty[name] = struct{}{}
 	s.mu.Unlock()
+	s.wakeServices()
+}
+
+// rescanServices has servicesLoop recheck every service: after an apply, a
+// remove or a reload, which add or drop services without a run event.
+func (s *session) rescanServices() {
+	s.mu.Lock()
+	s.rescan = true
+	s.mu.Unlock()
+	s.wakeServices()
+}
+
+func (s *session) wakeServices() {
 	select {
 	case s.servicesDue <- struct{}{}:
 	default:

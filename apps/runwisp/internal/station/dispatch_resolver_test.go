@@ -141,7 +141,8 @@ func (f *fakeTaskRunner) RestartServiceInstances(taskName string) error {
 func (f *fakeTaskRunner) ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.snapshot, f.snapshotOK
+	_, exists := f.tasks[taskName]
+	return f.snapshot, f.snapshotOK && exists
 }
 
 func newDispatchHandler(avail executor.Availability, tasks map[string]*model.Task) *InboundHandler {

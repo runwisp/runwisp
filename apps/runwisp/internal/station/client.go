@@ -424,6 +424,7 @@ func (client *Client) watchReloads(ctx context.Context) (stop func()) {
 			case <-client.reloadCh:
 				if sess := client.current(); sess != nil {
 					sess.sendAgentUpdateIfChanged()
+					sess.rescanServices()
 					client.syncTasks(sess, false)
 				}
 			}

@@ -82,7 +82,7 @@ type Welcome struct {
 	Heartbeat *Heartbeat `json:"heartbeat"`
 	// How often to send agent:stats. 0 = don't.
 	StatsIntervalMs int `json:"statsIntervalMs"`
-	// Largest frame the station accepts. The daemon splits or truncates to stay under it.
+	// Largest frame the station accepts; at least 64 KiB. The daemon batches log lines and search hits to fit, and drops any other frame over it.
 	MaxFrameBytes int `json:"maxFrameBytes"`
 	// False means send tasks:sync now.
 	TasksHashKnown bool `json:"tasksHashKnown"`
@@ -182,7 +182,7 @@ type AgentStats struct {
 // restart. The result is sent before the restart. Refused with
 // `forbidden` unless the operator allowed it locally.
 type AgentUpgrade struct {
-	// Release tag, e.g. v1.10.2.
+	// Release, e.g. 1.10.2 or v1.10.2.
 	Version string `json:"version"`
 }
 
@@ -694,7 +694,10 @@ type ServiceRemove struct {
 	TaskID string `json:"taskId"`
 }
 
-// Sent on change and after welcome. Lives as long as the connection.
+// Sent on change and after welcome. Lives as long as the connection. A
+// service the daemon no longer has (removed, or dropped from its config)
+// gets one last status with state removed and no instances; the station
+// forgets it.
 type ServiceStatus struct {
 	// The taskId of service:apply for a service the station declared, else the daemon's own task name.
 	TaskID           string            `json:"taskId"`
@@ -704,7 +707,7 @@ type ServiceStatus struct {
 	Instances        []ServiceInstance `json:"instances"`
 }
 
-// Open. running, degraded, stopped, fatal.
+// Open. running, degraded, stopped, fatal, removed (the service is gone).
 type ServiceState string
 
 const (
@@ -712,9 +715,10 @@ const (
 	ServiceStateDegraded ServiceState = "degraded"
 	ServiceStateStopped  ServiceState = "stopped"
 	ServiceStateFatal    ServiceState = "fatal"
+	ServiceStateRemoved  ServiceState = "removed"
 )
 
-var ServiceStateValues = []ServiceState{ServiceStateRunning, ServiceStateDegraded, ServiceStateStopped, ServiceStateFatal}
+var ServiceStateValues = []ServiceState{ServiceStateRunning, ServiceStateDegraded, ServiceStateStopped, ServiceStateFatal, ServiceStateRemoved}
 
 type ServiceInstance struct {
 	Index int                  `json:"index"`

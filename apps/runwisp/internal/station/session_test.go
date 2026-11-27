@@ -169,6 +169,25 @@ func TestSession_ServiceStatusAfterWelcome(t *testing.T) {
 	assert.Equal(t, []protocol.ServiceInstance{{Index: 0, State: protocol.ServiceInstanceStateRunning, ExecutionID: "r1"}}, status.Instances)
 }
 
+// A service the station removes gets one last status, removed, so the
+// station stops showing its last state.
+func TestSession_ServiceStatusRemoved(t *testing.T) {
+	st := stationtest.New(t)
+	h := newHarness(t, st, nil)
+	name := sanitizeStationTaskName("svc1")
+	h.runner.tasks[name] = &model.Task{Name: name, StationTaskID: "svc1", Kind: model.KindService, Run: "serve"}
+	h.runner.snapshot = model.ServiceSnapshot{TaskName: name, State: model.ServiceStopped, DesiredInstances: 1,
+		Instances: []model.ServiceInstanceStatus{{Index: 0, State: model.ServiceInstanceStopped}}}
+	h.runner.snapshotOK = true
+	h.start(t)
+	require.Equal(t, protocol.ServiceStateStopped, stationtest.Decode[protocol.ServiceStatus](t, st, "service:status", nil).State)
+
+	id := st.Command(t, "service:remove", protocol.ServiceRemove{TaskID: "svc1"})
+	require.Nil(t, st.Result(t, id, nil).Error)
+	status := stationtest.Decode(t, st, "service:status", func(s protocol.ServiceStatus) bool { return s.State != protocol.ServiceStateStopped })
+	assert.Equal(t, protocol.ServiceStatus{TaskID: "svc1", State: protocol.ServiceStateRemoved, Instances: []protocol.ServiceInstance{}}, status)
+}
+
 func TestSession_StatsFollowWelcome(t *testing.T) {
 	st := stationtest.New(t)
 	st.Welcome.StatsIntervalMs = 10

@@ -37,7 +37,8 @@ func TestProtocolEnumsMatchModel(t *testing.T) {
 		[]string{string(model.PolicyQueue), string(model.PolicySkip), string(model.PolicyKill)},
 		enumStrings(protocol.OverlapPolicyValues))
 	assert.ElementsMatch(t,
-		[]string{model.ServiceRunning, model.ServiceDegraded, model.ServiceStopped, model.ServiceFatal},
+		// removed is wire-only: the model has no state for a service that's gone.
+		[]string{model.ServiceRunning, model.ServiceDegraded, model.ServiceStopped, model.ServiceFatal, string(protocol.ServiceStateRemoved)},
 		enumStrings(protocol.ServiceStateValues))
 	assert.ElementsMatch(t,
 		[]string{model.ServiceInstanceRunning, model.ServiceInstanceRestarting, model.ServiceInstanceStopped, model.ServiceInstanceFatal},
