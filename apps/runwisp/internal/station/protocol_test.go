@@ -6,6 +6,7 @@ package station
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -108,6 +109,22 @@ func TestTracker_InventoryCoversLiveAndUnacked(t *testing.T) {
 		{ExecutionID: "running", Status: protocol.ExecutionStatusRunning},
 	}, inv)
 	assert.NotNil(t, NewExecutionTracker().Inventory(nil), "an empty inventory is [] on the wire")
+}
+
+// A hello past maxInventory keeps every live execution and the oldest
+// finished ones.
+func TestTracker_InventoryBounded(t *testing.T) {
+	tr := NewExecutionTracker()
+	require.True(t, tr.Reserve("zz-live"))
+	outbox := make([]storage.OutboxExecution, maxInventory+10)
+	for i := range outbox {
+		outbox[i].ExecutionID = fmt.Sprintf("f%05d", i)
+	}
+	inv := tr.Inventory(outbox)
+	require.Len(t, inv, maxInventory)
+	assert.Equal(t, "f00000", inv[0].ExecutionID)
+	assert.Equal(t, fmt.Sprintf("f%05d", maxInventory-2), inv[maxInventory-2].ExecutionID)
+	assert.Equal(t, protocol.InventoryEntry{ExecutionID: "zz-live", Status: protocol.ExecutionStatusAccepted}, inv[maxInventory-1])
 }
 
 // encodeFrame's spliced envelope is the one json.Marshal builds.

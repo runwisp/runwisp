@@ -93,13 +93,22 @@ func (t *ExecutionTracker) Remove(executionID string) {
 	delete(t.live, executionID)
 }
 
+// maxInventory bounds hello's executions, keeping the hello far under the
+// 1 MiB a station accepts: a daemon away for days with a service in a crash
+// loop piles up finished runs in its outbox, and a hello over the limit could
+// never reconnect.
+const maxInventory = 4096
+
 // Inventory lists every execution the daemon still owns for hello: accepted,
 // running, or finished with an update the station hasn't acked (inOutbox).
-// Never nil, so it marshals as a JSON array.
+// Past maxInventory it keeps every live one and the oldest finished ones (ids
+// are ULIDs): the station only holds active the runs it knew of before the
+// daemon went away. Never nil, so it marshals as a JSON array.
 func (t *ExecutionTracker) Inventory(inOutbox []storage.OutboxExecution) []protocol.InventoryEntry {
 	t.mu.Lock()
 	byID := maps.Clone(t.live)
 	t.mu.Unlock()
+	keep := maxInventory - len(byID) // the finished ones listed, after every live one
 	for _, e := range inOutbox {
 		if _, live := byID[e.ExecutionID]; !live {
 			// The terminal update is stored before the run leaves the tracker,
@@ -112,6 +121,15 @@ func (t *ExecutionTracker) Inventory(inOutbox []storage.OutboxExecution) []proto
 		out = append(out, protocol.InventoryEntry{ExecutionID: id, Status: status})
 	}
 	slices.SortFunc(out, func(a, b protocol.InventoryEntry) int { return cmp.Compare(a.ExecutionID, b.ExecutionID) })
+	if len(out) > maxInventory {
+		out = slices.DeleteFunc(out, func(e protocol.InventoryEntry) bool {
+			if e.Status != protocol.ExecutionStatusFinished {
+				return false
+			}
+			keep--
+			return keep < 0
+		})
+	}
 	return out
 }
 

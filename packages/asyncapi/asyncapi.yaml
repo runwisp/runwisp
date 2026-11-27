@@ -44,8 +44,11 @@ info:
     selecting `runwisp.v1` doesn't speak this protocol. Text frames carry one
     JSON message each. Binary frames are reserved and ignored. Both sides
     offer `permessage-deflate` without context takeover; a peer may decline
-    it. Frame size limits count decompressed bytes: the station's is
-    `welcome.maxFrameBytes`; a daemon accepts frames up to 16 MiB.
+    it. Frame size limits count decompressed bytes: a station accepts a
+    hello up to 1 MiB and later frames up to `welcome.maxFrameBytes`; a
+    daemon accepts frames up to 16 MiB. A frame over its receiver's limit
+    closes the connection, so the sender drops it instead (a command's result
+    that would be too large goes out as an `internal` error).
 
     ## Envelope
 
@@ -310,7 +313,9 @@ components:
             Every execution the daemon still owns: accepted and not yet
             running, running, or finished with an update not yet acked. An
             execution the station believes active on this install and absent
-            here was lost by the daemon.
+            here was lost by the daemon. At most 4096 entries: past that,
+            every live one and the oldest finished ones; one left out still
+            gets its updates, which settle it.
       required: [instanceId, agent, features, tasksHash, executions]
 
     AgentInfo:

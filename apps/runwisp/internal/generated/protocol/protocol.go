@@ -45,7 +45,9 @@ type Hello struct {
 	// Every execution the daemon still owns: accepted and not yet
 	// running, running, or finished with an update not yet acked. An
 	// execution the station believes active on this install and absent
-	// here was lost by the daemon.
+	// here was lost by the daemon. At most 4096 entries: past that,
+	// every live one and the oldest finished ones; one left out still
+	// gets its updates, which settle it.
 	Executions []InventoryEntry `json:"executions"`
 }
 

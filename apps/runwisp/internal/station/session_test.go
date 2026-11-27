@@ -5,8 +5,10 @@ package station
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -368,4 +370,19 @@ func TestGoodbye_SentOnShutdown(t *testing.T) {
 	h.stop()
 	bye := stationtest.Decode[protocol.Goodbye](t, st, "goodbye", nil)
 	assert.Equal(t, protocol.Goodbye{Code: protocol.GoodbyeCodeShutdown, Message: "daemon shutting down", Retry: true}, bye)
+}
+
+// A frame over the station's limit is refused before the station would close
+// the socket on it; a command's oversized result goes out as an error.
+func TestSession_RefusesFrameOverStationLimit(t *testing.T) {
+	s := &session{ctx: context.Background(), out: make(chan outFrame, 2), params: sessionParams{maxFrameBytes: 200}}
+	big := map[string]string{"a": strings.Repeat("x", 300)}
+	require.Error(t, s.send("x", "", "", big))
+
+	s.reply("c1", big, nil, false)
+	var env protocol.Envelope
+	require.NoError(t, json.Unmarshal((<-s.out).data, &env))
+	assert.Equal(t, "c1", env.ReplyTo)
+	require.NotNil(t, env.Error)
+	assert.Equal(t, protocol.ErrorCodeInternal, env.Error.Code)
 }

@@ -438,6 +438,9 @@ func (s *session) reply(id string, data any, err error, waitWritten bool) {
 		env.Error, data = errorInfo(err), nil
 	}
 	frame, encErr := encodeFrame(env, data)
+	if encErr == nil && len(frame) > s.params.maxFrameBytes {
+		encErr = fmt.Errorf("result is %d bytes, over the station's frame limit", len(frame))
+	}
 	if encErr != nil {
 		env.Error = errorInfo(newError(protocol.ErrorCodeInternal, "encode result: %v", encErr))
 		frame, _ = encodeFrame(env, nil)
@@ -459,6 +462,11 @@ func (s *session) send(typ, id, replyTo string, data any) error {
 // queue hands an encoded frame to the writer. waitWritten blocks until it is
 // on the wire.
 func (s *session) queue(frame []byte, waitWritten bool) error {
+	// The station closes the socket on a frame over its limit, and the same
+	// frame would go out again after every reconnect: refuse it here instead.
+	if len(frame) > s.params.maxFrameBytes {
+		return newError(protocol.ErrorCodeInternal, "frame is %d bytes, over the station's limit of %d", len(frame), s.params.maxFrameBytes)
+	}
 	f := outFrame{data: frame}
 	if waitWritten {
 		f.written = make(chan error, 1)
@@ -485,7 +493,7 @@ func (s *session) trySend(typ string, data any) bool {
 		return false
 	}
 	frame, err := encodeFrame(protocol.Envelope{Type: typ}, data)
-	if err != nil {
+	if err != nil || len(frame) > s.params.maxFrameBytes {
 		return false
 	}
 	select {
