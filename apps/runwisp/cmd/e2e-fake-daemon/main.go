@@ -92,7 +92,6 @@ func (d *fakeDaemon) handshake(ctx context.Context, instanceID string) error {
 		InstanceID: instanceID,
 		Agent:      &protocol.AgentInfo{Version: "0.0.0-e2e", Os: runtime.GOOS, Arch: runtime.GOARCH, Host: host},
 		Features:   map[string]*protocol.FeatureStatus{"exec.shell": {Available: true}},
-		Labels:     map[string]string{},
 		Executions: []protocol.InventoryEntry{},
 	}
 	if err := d.write(ctx, "hello", "", "", hello); err != nil {

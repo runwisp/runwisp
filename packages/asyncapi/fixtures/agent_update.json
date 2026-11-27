@@ -13,10 +13,6 @@
         "available": false,
         "reason": "no local tasks configured"
       }
-    },
-    "labels": {
-      "region": "eu"
-    },
-    "maxConcurrent": 4
+    }
   }
 }

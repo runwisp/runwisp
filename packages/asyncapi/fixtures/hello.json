@@ -35,8 +35,6 @@
         "reason": "station upgrades disabled (set RUNWISP_ALLOW=station-upgrade to enable)"
       }
     },
-    "labels": {},
-    "maxConcurrent": 0,
     "tasksHash": "9b1c4e7f20a3d5c8",
     "executions": [
       {

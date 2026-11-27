@@ -40,10 +40,6 @@ type Hello struct {
 	// exec.config, agent.restart, agent.upgrade. Everything else in this
 	// spec is baseline and has no feature name.
 	Features map[string]*FeatureStatus `json:"features"`
-	// Operator-set labels (`[daemon] labels`). May be empty.
-	Labels map[string]string `json:"labels"`
-	// Runs this daemon will hold at once. 0 = no local limit.
-	MaxConcurrent int `json:"maxConcurrent"`
 	// Hash of the task catalog the daemon would send in tasks:sync.
 	TasksHash string `json:"tasksHash"`
 	// Every execution the daemon still owns: accepted and not yet
@@ -165,10 +161,8 @@ type Cancel struct {
 
 // Fields set replace what hello said.
 type AgentUpdate struct {
-	Agent         *AgentInfo                `json:"agent,omitzero"`
-	Features      map[string]*FeatureStatus `json:"features,omitzero"`
-	Labels        map[string]string         `json:"labels,omitzero"`
-	MaxConcurrent *int                      `json:"maxConcurrent,omitzero"`
+	Agent    *AgentInfo                `json:"agent,omitzero"`
+	Features map[string]*FeatureStatus `json:"features,omitzero"`
 }
 
 type AgentStats struct {
@@ -216,7 +210,6 @@ type TaskDefinition struct {
 	Kind          TaskKind      `json:"kind"`
 	Group         string        `json:"group,omitzero"`
 	Description   string        `json:"description,omitzero"`
-	Enabled       bool          `json:"enabled"`
 	Spec          ExecutionSpec `json:"spec"`
 	TimeoutMs     int           `json:"timeoutMs,omitzero"`
 	Options       *RunOptions   `json:"options,omitzero"`

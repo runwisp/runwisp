@@ -32,7 +32,6 @@ func TestSession_HelloDescribesTheDaemon(t *testing.T) {
 	assert.Equal(t, "fp-1", hello.InstanceID)
 	assert.Equal(t, "1.2.3", hello.Agent.Version)
 	assert.NotEmpty(t, hello.Agent.Os)
-	assert.Equal(t, map[string]string{}, hello.Labels)
 	assert.Equal(t, []protocol.InventoryEntry{}, hello.Executions)
 	assert.NotEmpty(t, hello.TasksHash)
 	assert.Equal(t, &protocol.FeatureStatus{Available: true}, hello.Features["exec.shell"])

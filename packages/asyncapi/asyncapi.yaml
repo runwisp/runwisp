@@ -299,13 +299,6 @@ components:
             v1.0 names: exec.shell, exec.container, exec.compose, exec.http,
             exec.config, agent.restart, agent.upgrade. Everything else in this
             spec is baseline and has no feature name.
-        labels:
-          type: object
-          additionalProperties: { type: string }
-          description: Operator-set labels (`[daemon] labels`). May be empty.
-        maxConcurrent:
-          type: integer
-          description: Runs this daemon will hold at once. 0 = no local limit.
         tasksHash:
           type: string
           description: Hash of the task catalog the daemon would send in tasks:sync.
@@ -317,7 +310,7 @@ components:
             running, running, or finished with an update not yet acked. An
             execution the station believes active on this install and absent
             here was lost by the daemon.
-      required: [instanceId, agent, features, labels, maxConcurrent, tasksHash, executions]
+      required: [instanceId, agent, features, tasksHash, executions]
 
     AgentInfo:
       type: object
@@ -461,10 +454,6 @@ components:
         features:
           type: object
           additionalProperties: { $ref: "#/components/schemas/FeatureStatus" }
-        labels:
-          type: object
-          additionalProperties: { type: string }
-        maxConcurrent: { type: integer, nullable: true }
 
     AgentStats:
       type: object
@@ -524,7 +513,6 @@ components:
         kind: { $ref: "#/components/schemas/TaskKind" }
         group: { type: string }
         description: { type: string }
-        enabled: { type: boolean }
         spec: { $ref: "#/components/schemas/ExecutionSpec" }
         timeoutMs: { type: integer }
         options: { $ref: "#/components/schemas/RunOptions" }
@@ -548,7 +536,7 @@ components:
           additionalProperties: { $ref: "#/components/schemas/TaskParam" }
         service: { $ref: "#/components/schemas/ServiceSettings" }
         compose: { $ref: "#/components/schemas/ComposeRef" }
-      required: [name, kind, enabled, spec]
+      required: [name, kind, spec]
 
     TaskKind:
       $id: TaskKind

@@ -348,13 +348,11 @@ func (client *Client) probeAvailability(ctx context.Context) {
 func (client *Client) buildHello(ctx context.Context) protocol.Hello {
 	_, hash := client.taskCatalog()
 	return protocol.Hello{
-		InstanceID:    client.config.Fingerprint,
-		Agent:         client.agentInfo(),
-		Features:      client.features(),
-		Labels:        map[string]string{},
-		MaxConcurrent: 0,
-		TasksHash:     hash,
-		Executions:    client.tracker.Inventory(client.outbox.executions(ctx)),
+		InstanceID: client.config.Fingerprint,
+		Agent:      client.agentInfo(),
+		Features:   client.features(),
+		TasksHash:  hash,
+		Executions: client.tracker.Inventory(client.outbox.executions(ctx)),
 	}
 }
 

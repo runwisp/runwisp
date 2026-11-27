@@ -55,7 +55,6 @@ func buildTaskDefinition(t *model.Task, daemonTZ string) (protocol.TaskDefinitio
 		Kind:          kind,
 		Group:         t.Group,
 		Description:   t.Description,
-		Enabled:       true,
 		Spec:          spec,
 		TimeoutMs:     durationToMillis(t.TimeoutValue()),
 		Options:       runOptions(t),

@@ -9,7 +9,6 @@
         "kind": "task",
         "group": "db",
         "description": "Nightly dump",
-        "enabled": true,
         "spec": {
           "type": "shell",
           "script": "pg_dump app > /backups/app.sql",
@@ -61,7 +60,6 @@
       {
         "name": "web",
         "kind": "service",
-        "enabled": true,
         "spec": {
           "type": "shell",
           "script": "node server.js"
