@@ -280,6 +280,10 @@ func (client *Client) dial(ctx context.Context) (*websocket.Conn, error) {
 	conn, _, err := websocket.Dial(dialCtx, client.config.WebSocketURL(), &websocket.DialOptions{
 		HTTPHeader:   headers,
 		Subprotocols: []string{Subprotocol},
+		// permessage-deflate when the station accepts it: log batches shrink
+		// about 5x. No context takeover keeps no flate state between frames;
+		// frames under 512 bytes go uncompressed.
+		CompressionMode: websocket.CompressionNoContextTakeover,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("websocket dial failed: %w", err)

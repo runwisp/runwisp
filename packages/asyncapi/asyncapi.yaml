@@ -42,7 +42,9 @@ info:
     `Authorization: Bearer <runner token>` and
     `Sec-WebSocket-Protocol: runwisp.v1`. A station that answers without
     selecting `runwisp.v1` doesn't speak this protocol. Text frames carry one
-    JSON message each. Binary frames are reserved and ignored.
+    JSON message each. Binary frames are reserved and ignored. Both sides
+    offer `permessage-deflate` without context takeover; a peer may decline
+    it. Frame size limits count decompressed bytes.
 
     ## Envelope
 

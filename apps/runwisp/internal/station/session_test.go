@@ -28,6 +28,7 @@ func TestSession_HelloDescribesTheDaemon(t *testing.T) {
 
 	hello := stationtest.Decode[protocol.Hello](t, st, "hello", nil)
 	assert.Equal(t, []string{"Bearer tok"}, st.Tokens())
+	assert.Contains(t, st.Extensions(), "permessage-deflate")
 	assert.Equal(t, "fp-1", hello.InstanceID)
 	assert.Equal(t, "1.2.3", hello.Agent.Version)
 	assert.NotEmpty(t, hello.Agent.Os)

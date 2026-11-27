@@ -52,6 +52,7 @@ type Station struct {
 	consumed []bool
 	changed  chan struct{}
 	tokens   []string
+	offered  string // the last connection's Sec-WebSocket-Extensions
 	ids      int
 }
 
@@ -74,7 +75,7 @@ func New(t testing.TB) *Station {
 }
 
 func (s *Station) serve(w http.ResponseWriter, r *http.Request) {
-	opts := &websocket.AcceptOptions{}
+	opts := &websocket.AcceptOptions{CompressionMode: websocket.CompressionNoContextTakeover} // as Station does
 	if !s.NoSubprotocol {
 		opts.Subprotocols = []string{"runwisp.v1"}
 	}
@@ -85,6 +86,7 @@ func (s *Station) serve(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadLimit(64 << 20)
 	s.mu.Lock()
 	s.tokens = append(s.tokens, r.Header.Get("Authorization"))
+	s.offered = r.Header.Get("Sec-WebSocket-Extensions")
 	s.conn = conn
 	s.mu.Unlock()
 	defer conn.CloseNow()
@@ -306,6 +308,13 @@ func (s *Station) Tokens() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return slices.Clone(s.tokens)
+}
+
+// Extensions returns the WebSocket extensions the last connection offered.
+func (s *Station) Extensions() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.offered
 }
 
 // Drop closes the daemon's connection abruptly.
