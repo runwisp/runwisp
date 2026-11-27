@@ -1002,7 +1002,7 @@ components:
         stopped:
           type: string
           description: Open. Why the search ended.
-          enum: [done, maxHits, maxBytes, timeout, cancelled]
+          enum: [done, max_hits, max_bytes, timeout, cancelled]
         nextLine:
           type: integer
           format: int64

@@ -609,8 +609,8 @@ type Stopped string
 
 const (
 	StoppedDone      Stopped = "done"
-	StoppedMaxHits   Stopped = "maxHits"
-	StoppedMaxBytes  Stopped = "maxBytes"
+	StoppedMaxHits   Stopped = "max_hits"
+	StoppedMaxBytes  Stopped = "max_bytes"
 	StoppedTimeout   Stopped = "timeout"
 	StoppedCancelled Stopped = "cancelled"
 )
