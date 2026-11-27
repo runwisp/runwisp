@@ -56,23 +56,18 @@ func paramsFromWelcome(w protocol.Welcome) sessionParams {
 		statsInterval:     time.Duration(max(w.StatsIntervalMs, 0)) * time.Millisecond,
 		maxFrameBytes:     defaultMaxFrameBytes,
 	}
-	p.applyHeartbeat(w.Heartbeat)
+	if hb := w.Heartbeat; hb != nil {
+		if hb.IntervalMs > 0 {
+			p.heartbeatInterval = time.Duration(hb.IntervalMs) * time.Millisecond
+		}
+		if hb.TimeoutMs > 0 {
+			p.heartbeatTimeout = time.Duration(hb.TimeoutMs) * time.Millisecond
+		}
+	}
 	if w.MaxFrameBytes > 0 {
 		p.maxFrameBytes = max(w.MaxFrameBytes, minMaxFrameBytes)
 	}
 	return p
-}
-
-func (p *sessionParams) applyHeartbeat(hb *protocol.Heartbeat) {
-	if hb == nil {
-		return
-	}
-	if hb.IntervalMs > 0 {
-		p.heartbeatInterval = time.Duration(hb.IntervalMs) * time.Millisecond
-	}
-	if hb.TimeoutMs > 0 {
-		p.heartbeatTimeout = time.Duration(hb.TimeoutMs) * time.Millisecond
-	}
 }
 
 type outFrame struct {
@@ -88,13 +83,12 @@ type session struct {
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 	out    chan outFrame
-	// helloHash is the catalog hash hello reported.
-	helloHash    string
+	// params never change once the session starts.
+	params       sessionParams
 	lastReceived atomic.Int64
 	nextID       atomic.Uint64
 
 	mu          sync.Mutex
-	params      sessionParams
 	pending     map[string]chan protocol.Envelope // outgoing commands by id
 	subs        map[string]context.CancelFunc     // log subscriptions and greps by command id
 	advertised  advertisedAgent                   // what hello / agent:update last said
@@ -118,7 +112,6 @@ func newSession(parent context.Context, client *Client, conn *websocket.Conn, we
 		ctx:         ctx,
 		cancel:      cancel,
 		out:         make(chan outFrame, outboundQueueSize),
-		helloHash:   hello.TasksHash,
 		params:      paramsFromWelcome(welcome),
 		pending:     map[string]chan protocol.Envelope{},
 		subs:        map[string]context.CancelFunc{},
@@ -231,10 +224,7 @@ func (s *session) writeLoop() error {
 
 // timersLoop sends pings and agent:stats and closes a silent session.
 func (s *session) timersLoop() error {
-	return s.runTimers(s.currentParams())
-}
-
-func (s *session) runTimers(p sessionParams) error {
+	p := s.params
 	ping := time.NewTicker(p.heartbeatInterval)
 	defer ping.Stop()
 	watchdog := time.NewTicker(min(p.heartbeatTimeout/4, 2*time.Second))
@@ -276,7 +266,7 @@ func (s *session) outboxLoop() error {
 			slog.Warn("failed to read execution updates to send", "err", err)
 		}
 		for _, u := range updates {
-			if err := s.send(typeExecUpdate, "", "", u, false); err != nil {
+			if err := s.send(typeExecUpdate, "", "", u); err != nil {
 				return nil
 			}
 		}
@@ -317,7 +307,7 @@ func (s *session) servicesLoop() error {
 			if !ok {
 				continue
 			}
-			if err := s.send(typeServiceStatus, "", "", newServiceStatus(snapshot), false); err != nil {
+			if err := s.send(typeServiceStatus, "", "", newServiceStatus(snapshot)); err != nil {
 				return nil
 			}
 		}
@@ -332,16 +322,6 @@ func (s *session) serviceChanged(name string) {
 	case s.servicesDue <- struct{}{}:
 	default:
 	}
-}
-
-func (s *session) currentParams() sessionParams {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.params
-}
-
-func (s *session) maxFrameBytes() int {
-	return s.currentParams().maxFrameBytes
 }
 
 // handleFrame acts on one inbound frame. It is the funnel every peer frame
@@ -464,12 +444,12 @@ func (s *session) reply(id string, data any, err error, waitWritten bool) {
 }
 
 // send queues a frame, waiting while the outbound queue is full.
-func (s *session) send(typ, id, replyTo string, data any, waitWritten bool) error {
+func (s *session) send(typ, id, replyTo string, data any) error {
 	frame, err := encodeFrame(protocol.Envelope{Type: typ, ID: id, ReplyTo: replyTo}, data)
 	if err != nil {
 		return err
 	}
-	return s.queue(frame, waitWritten)
+	return s.queue(frame, false)
 }
 
 // queue hands an encoded frame to the writer. waitWritten blocks until it is
@@ -524,7 +504,7 @@ func (s *session) command(ctx context.Context, typ string, data any) (protocol.E
 		delete(s.pending, id)
 		s.mu.Unlock()
 	}()
-	if err := s.send(typ, id, "", data, false); err != nil {
+	if err := s.send(typ, id, "", data); err != nil {
 		return protocol.Envelope{}, err
 	}
 	select {
@@ -576,6 +556,6 @@ func (s *session) sendAgentUpdateIfChanged() {
 	s.advertised = now
 	s.mu.Unlock()
 	if changed {
-		_ = s.send(typeAgentUpdate, "", "", update, false)
+		_ = s.send(typeAgentUpdate, "", "", update)
 	}
 }

@@ -14,7 +14,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logsearch"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
@@ -63,18 +62,10 @@ func (s *session) searchLogs(ctx context.Context, id string, req protocol.LogSea
 			return nil, &StationError{Code: protocol.ErrorCodeBusy, Message: fmt.Sprintf("%d log searches are already running", grepConcurrency), Retryable: true}
 		}
 	}
-	// The scan runs on a goroutine of its own because lowerThreadPriority
-	// keeps that goroutine's thread for good.
-	var res any
-	scanned := make(chan struct{})
-	go func() {
-		defer close(scanned)
-		defer crashguard.Guard()
-		lowerThreadPriority()
-		res, err = s.grep(ctx, g, req)
-	}()
-	<-scanned
-	return res, err
+	// log:search is async, so this goroutine is the command's own and ends
+	// with its result: the lowered thread goes with it.
+	lowerThreadPriority()
+	return s.grep(ctx, g, req)
 }
 
 // grep runs scan g of log:search req.
@@ -207,7 +198,7 @@ func (s *session) newGrepScan(id string, req protocol.LogSearch) (*grepScan, err
 		context:   min(max(req.Context, 0), grepMaxContext),
 		maxHits:   req.MaxHits,
 		maxBytes:  max(req.MaxBytes, 0),
-		budget:    s.maxFrameBytes() - len(empty),
+		budget:    s.params.maxFrameBytes - len(empty),
 		lastFlush: time.Now(),
 		buf:       make([]byte, logutil.ScanBufferSize),
 		before:    grepRing{ring: make([]ringLine, min(max(req.Context, 0), grepMaxContext))},
@@ -364,7 +355,7 @@ func (g *grepScan) flush() {
 		hits = []protocol.LogSearchHit{}
 	}
 	progress := g.progress
-	if err := g.sess.send(typeLogSearchHits, "", g.replyTo, protocol.LogSearchHits{Hits: hits, Progress: &progress}, false); err != nil {
+	if err := g.sess.send(typeLogSearchHits, "", g.replyTo, protocol.LogSearchHits{Hits: hits, Progress: &progress}); err != nil {
 		g.closed = true
 	}
 	g.batch, g.batchBytes, g.reported = nil, 0, progress

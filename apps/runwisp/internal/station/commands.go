@@ -19,73 +19,45 @@ type command struct {
 	run   func(ctx context.Context, s *session, env protocol.Envelope) (any, error)
 }
 
+// handle builds a command whose data decodes into T; malformed data is
+// refused with invalid before fn runs. id is the command's id.
+func handle[T any](async bool, fn func(s *session, ctx context.Context, id string, req T) (any, error)) command {
+	return command{async: async, run: func(ctx context.Context, s *session, env protocol.Envelope) (any, error) {
+		req, err := decodeData[T](env)
+		if err != nil {
+			return nil, err
+		}
+		return fn(s, ctx, env.ID, req)
+	}}
+}
+
 // commands are the station commands this daemon understands. Anything else
 // with an id is answered unsupported.
 var commands = map[string]command{
-	typeExecDispatch: {run: func(ctx context.Context, s *session, env protocol.Envelope) (any, error) {
-		d, err := decodeData[protocol.ExecutionDispatch](env)
-		if err != nil {
-			return nil, err
-		}
+	typeExecDispatch: handle(false, func(s *session, ctx context.Context, _ string, d protocol.ExecutionDispatch) (any, error) {
 		return nil, s.client.handler.HandleExecutionDispatch(ctx, d)
-	}},
-	typeExecStop: {run: func(ctx context.Context, s *session, env protocol.Envelope) (any, error) {
-		stop, err := decodeData[protocol.ExecutionStop](env)
-		if err != nil {
-			return nil, err
-		}
+	}),
+	typeExecStop: handle(false, func(s *session, ctx context.Context, _ string, stop protocol.ExecutionStop) (any, error) {
 		return nil, s.client.handler.HandleExecutionStop(ctx, stop)
-	}},
-	typeServiceApply: {run: func(_ context.Context, s *session, env protocol.Envelope) (any, error) {
-		svc, err := decodeData[protocol.ServiceApply](env)
-		if err != nil {
-			return nil, err
-		}
+	}),
+	typeServiceApply: handle(false, func(s *session, _ context.Context, _ string, svc protocol.ServiceApply) (any, error) {
 		return nil, s.client.handler.HandleServiceApply(svc)
-	}},
-	typeServiceControl: {run: func(_ context.Context, s *session, env protocol.Envelope) (any, error) {
-		ctl, err := decodeData[protocol.ServiceControl](env)
-		if err != nil {
-			return nil, err
-		}
+	}),
+	typeServiceControl: handle(false, func(s *session, _ context.Context, _ string, ctl protocol.ServiceControl) (any, error) {
 		return nil, s.client.handler.HandleServiceControl(ctl)
-	}},
-	typeServiceRemove: {run: func(_ context.Context, s *session, env protocol.Envelope) (any, error) {
-		rm, err := decodeData[protocol.ServiceRemove](env)
-		if err != nil {
-			return nil, err
-		}
+	}),
+	typeServiceRemove: handle(false, func(s *session, _ context.Context, _ string, rm protocol.ServiceRemove) (any, error) {
 		return nil, s.client.handler.HandleServiceRemove(rm)
-	}},
-	typeLogSubscribe: {async: true, run: func(ctx context.Context, s *session, env protocol.Envelope) (any, error) {
-		sub, err := decodeData[protocol.LogSubscribe](env)
-		if err != nil {
-			return nil, err
-		}
-		return s.streamLog(ctx, env.ID, sub)
-	}},
-	typeLogSearch: {async: true, run: func(ctx context.Context, s *session, env protocol.Envelope) (any, error) {
-		q, err := decodeData[protocol.LogSearch](env)
-		if err != nil {
-			return nil, err
-		}
-		return s.searchLogs(ctx, env.ID, q)
-	}},
+	}),
+	typeLogSubscribe: handle(true, (*session).streamLog),
+	typeLogSearch:    handle(true, (*session).searchLogs),
 	typeAgentRestart: {run: func(_ context.Context, s *session, _ protocol.Envelope) (any, error) {
 		return s.client.restart()
 	}},
-	typeAgentUpgrade: {async: true, run: func(ctx context.Context, s *session, env protocol.Envelope) (any, error) {
-		u, err := decodeData[protocol.AgentUpgrade](env)
-		if err != nil {
-			return nil, err
-		}
+	typeAgentUpgrade: handle(true, func(s *session, ctx context.Context, _ string, u protocol.AgentUpgrade) (any, error) {
 		return s.client.upgrade(ctx, u.Version)
-	}},
-	typeAgentCredentials: {run: func(ctx context.Context, s *session, env protocol.Envelope) (any, error) {
-		c, err := decodeData[protocol.AgentCredentials](env)
-		if err != nil {
-			return nil, err
-		}
+	}),
+	typeAgentCredentials: handle(false, func(s *session, ctx context.Context, _ string, c protocol.AgentCredentials) (any, error) {
 		return nil, s.client.rotateToken(ctx, c.Token)
-	}},
+	}),
 }

@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"sync"
 
@@ -19,17 +20,16 @@ import (
 // haven't finished yet. Finished ones live on in the outbox until acked.
 type ExecutionTracker struct {
 	mu sync.Mutex
-	// reserved holds executions accepted for dispatch but not yet running. It
-	// closes the window between accepting a dispatch and the run reaching
-	// PhaseRunning: without it a duplicate dispatch arriving in that window
-	// would start a second run, because the run row is persisted
-	// asynchronously and carries no unique constraint.
-	reserved map[string]struct{}
-	running  map[string]struct{}
+	// live maps each execution to accepted or running. accepted closes the
+	// window between accepting a dispatch and the run reaching PhaseRunning:
+	// without it a duplicate dispatch arriving in that window would start a
+	// second run, because the run row is persisted asynchronously and carries
+	// no unique constraint.
+	live map[string]protocol.ExecutionStatus
 }
 
 func NewExecutionTracker() *ExecutionTracker {
-	return &ExecutionTracker{reserved: map[string]struct{}{}, running: map[string]struct{}{}}
+	return &ExecutionTracker{live: map[string]protocol.ExecutionStatus{}}
 }
 
 // Reserve atomically claims executionID for a dispatch about to start. It
@@ -39,13 +39,10 @@ func NewExecutionTracker() *ExecutionTracker {
 func (t *ExecutionTracker) Reserve(executionID string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if _, ok := t.running[executionID]; ok {
+	if _, ok := t.live[executionID]; ok {
 		return false
 	}
-	if _, ok := t.reserved[executionID]; ok {
-		return false
-	}
-	t.reserved[executionID] = struct{}{}
+	t.live[executionID] = protocol.ExecutionStatusAccepted
 	return true
 }
 
@@ -53,22 +50,23 @@ func (t *ExecutionTracker) Reserve(executionID string) bool {
 func (t *ExecutionTracker) Release(executionID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	delete(t.reserved, executionID)
+	if t.live[executionID] == protocol.ExecutionStatusAccepted {
+		delete(t.live, executionID)
+	}
 }
 
 func (t *ExecutionTracker) TrackRunning(executionID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.running[executionID] = struct{}{}
+	t.live[executionID] = protocol.ExecutionStatusRunning
 }
 
 // Known reports whether executionID is accepted or running.
 func (t *ExecutionTracker) Known(executionID string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	_, reserved := t.reserved[executionID]
-	_, running := t.running[executionID]
-	return reserved || running
+	_, ok := t.live[executionID]
+	return ok
 }
 
 // findExecutionRun returns the run of a station execution: the run dispatched
@@ -92,8 +90,7 @@ func findExecutionRun(ctx context.Context, runs ExternalRunGetter, id string, is
 func (t *ExecutionTracker) Remove(executionID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	delete(t.running, executionID)
-	delete(t.reserved, executionID)
+	delete(t.live, executionID)
 }
 
 // Inventory lists every execution the daemon still owns for hello: accepted,
@@ -101,13 +98,7 @@ func (t *ExecutionTracker) Remove(executionID string) {
 // Never nil, so it marshals as a JSON array.
 func (t *ExecutionTracker) Inventory(inOutbox []storage.OutboxExecution) []protocol.InventoryEntry {
 	t.mu.Lock()
-	byID := map[string]protocol.ExecutionStatus{}
-	for id := range t.reserved {
-		byID[id] = protocol.ExecutionStatusAccepted
-	}
-	for id := range t.running {
-		byID[id] = protocol.ExecutionStatusRunning
-	}
+	byID := maps.Clone(t.live)
 	t.mu.Unlock()
 	for _, e := range inOutbox {
 		if _, live := byID[e.ExecutionID]; !live {

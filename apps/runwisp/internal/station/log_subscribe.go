@@ -80,7 +80,7 @@ func (s *session) streamRun(ctx context.Context, id string, run *model.Run, from
 		path:    path,
 		next:    startLine(path, from),
 		limit:   limit,
-		budget:  s.maxFrameBytes() / 2,
+		budget:  s.params.maxFrameBytes / 2,
 	}
 
 	var live <-chan events.LogLineEvent
@@ -276,7 +276,7 @@ func (sub *logSubscription) gap(to int64) {
 	if !sub.flush() {
 		return
 	}
-	_ = sub.sess.send(typeLogLines, "", sub.replyTo, protocol.LogLines{Lines: []protocol.LogLine{}, Gap: &protocol.LogGap{From: sub.next, To: to}}, false)
+	_ = sub.sess.send(typeLogLines, "", sub.replyTo, protocol.LogLines{Lines: []protocol.LogLine{}, Gap: &protocol.LogGap{From: sub.next, To: to}})
 	sub.next = to
 }
 
@@ -284,8 +284,9 @@ func (sub *logSubscription) flush() bool {
 	if len(sub.batch) == 0 {
 		return true
 	}
-	err := sub.sess.send(typeLogLines, "", sub.replyTo, protocol.LogLines{Lines: sub.batch}, false)
-	sub.batch, sub.size = nil, 0
+	err := sub.sess.send(typeLogLines, "", sub.replyTo, protocol.LogLines{Lines: sub.batch})
+	// send encoded the batch already, so its array is free to reuse.
+	sub.batch, sub.size = sub.batch[:0], 0
 	return err == nil
 }
 
