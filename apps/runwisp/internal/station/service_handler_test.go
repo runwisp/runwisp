@@ -253,7 +253,7 @@ func TestHandleServiceApply_NameAndDefaults(t *testing.T) {
 		TaskID: " Fallback Svc ",
 		Spec:   shellScript(t, "sleep 1"),
 		// clamped to 1
-		Options:  &protocol.RunOptions{LogOnFull: logOnFull},
+		Options:  &protocol.RunOptions{LogOnFull: protocol.LogOnFull(logOnFull)},
 		Settings: &protocol.ServiceSettings{Instances: 0},
 	})
 	require.NoError(t, err)

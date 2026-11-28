@@ -242,25 +242,23 @@ type TasksSyncResult struct {
 }
 
 type TaskDefinition struct {
-	Name          string        `json:"name"`
-	Kind          TaskKind      `json:"kind"`
-	Group         string        `json:"group,omitzero"`
-	Description   string        `json:"description,omitzero"`
-	Spec          ExecutionSpec `json:"spec"`
-	TimeoutMs     int           `json:"timeoutMs,omitzero"`
-	Options       *RunOptions   `json:"options,omitzero"`
-	MaxConcurrent int           `json:"maxConcurrent,omitzero"`
-	OnOverlap     OverlapPolicy `json:"onOverlap,omitzero"`
-	// never, on_failure, always.
-	RestartPolicy string         `json:"restartPolicy,omitzero"`
+	Name          string         `json:"name"`
+	Kind          TaskKind       `json:"kind"`
+	Group         string         `json:"group,omitzero"`
+	Description   string         `json:"description,omitzero"`
+	Spec          ExecutionSpec  `json:"spec"`
+	TimeoutMs     int            `json:"timeoutMs,omitzero"`
+	Options       *RunOptions    `json:"options,omitzero"`
+	MaxConcurrent int            `json:"maxConcurrent,omitzero"`
+	OnOverlap     OverlapPolicy  `json:"onOverlap,omitzero"`
+	RestartPolicy RestartPolicy  `json:"restartPolicy,omitzero"`
 	MaxRetries    int            `json:"maxRetries,omitzero"`
 	RetryDelayMs  int            `json:"retryDelayMs,omitzero"`
 	RetryBackoff  Backoff        `json:"retryBackoff,omitzero"`
 	Schedules     []TaskSchedule `json:"schedules,omitzero"`
 	// null = not set locally; 0 = explicitly no jitter.
-	JitterMs *int `json:"jitterMs,omitzero"`
-	// skip, latest, all.
-	CatchUp        string                `json:"catchUp,omitzero"`
+	JitterMs       *int                  `json:"jitterMs,omitzero"`
+	CatchUp        CatchUp               `json:"catchUp,omitzero"`
 	MaxCatchUpRuns int                   `json:"maxCatchUpRuns,omitzero"`
 	Params         map[string]*TaskParam `json:"params,omitzero"`
 	Service        *ServiceSettings      `json:"service,omitzero"`
@@ -296,6 +294,100 @@ const (
 
 var BackoffValues = []Backoff{BackoffConstant, BackoffLinear, BackoffExponential}
 
+type RestartPolicy string
+
+const (
+	RestartPolicyNever     RestartPolicy = "never"
+	RestartPolicyOnFailure RestartPolicy = "on_failure"
+	RestartPolicyAlways    RestartPolicy = "always"
+)
+
+var RestartPolicyValues = []RestartPolicy{RestartPolicyNever, RestartPolicyOnFailure, RestartPolicyAlways}
+
+// Missed schedule ticks run: none, the latest one, or up to maxCatchUpRuns.
+type CatchUp string
+
+const (
+	CatchUpSkip   CatchUp = "skip"
+	CatchUpLatest CatchUp = "latest"
+	CatchUpAll    CatchUp = "all"
+)
+
+var CatchUpValues = []CatchUp{CatchUpSkip, CatchUpLatest, CatchUpAll}
+
+// How a param reaches the run. A flag is a boolean.
+type ParamKind string
+
+const (
+	ParamKindEnv    ParamKind = "env"
+	ParamKindArg    ParamKind = "arg"
+	ParamKindOption ParamKind = "option"
+	ParamKindFlag   ParamKind = "flag"
+)
+
+var ParamKindValues = []ParamKind{ParamKindEnv, ParamKindArg, ParamKindOption, ParamKindFlag}
+
+// A value type; a param with choices is an enum of them.
+type ParamType string
+
+const (
+	ParamTypeString ParamType = "string"
+	ParamTypeNumber ParamType = "number"
+)
+
+var ParamTypeValues = []ParamType{ParamTypeString, ParamTypeNumber}
+
+// The env a run starts from: the daemon's own, or crond's minimal set.
+type EnvBase string
+
+const (
+	EnvBaseInherit EnvBase = "inherit"
+	EnvBaseClean   EnvBase = "clean"
+)
+
+var EnvBaseValues = []EnvBase{EnvBaseInherit, EnvBaseClean}
+
+type ComposeMode string
+
+const (
+	ComposeModeRun   ComposeMode = "run"
+	ComposeModeStack ComposeMode = "stack"
+	ComposeModeExec  ComposeMode = "exec"
+)
+
+var ComposeModeValues = []ComposeMode{ComposeModeRun, ComposeModeStack, ComposeModeExec}
+
+type ComposePull string
+
+const (
+	ComposePullMissing ComposePull = "missing"
+	ComposePullAlways  ComposePull = "always"
+	ComposePullNever   ComposePull = "never"
+)
+
+var ComposePullValues = []ComposePull{ComposePullMissing, ComposePullAlways, ComposePullNever}
+
+// What a run does when its log reaches logMaxBytes.
+type LogOnFull string
+
+const (
+	LogOnFullDropNew LogOnFull = "drop_new"
+	LogOnFullDropOld LogOnFull = "drop_old"
+	LogOnFullKill    LogOnFull = "kill"
+)
+
+var LogOnFullValues = []LogOnFull{LogOnFullDropNew, LogOnFullDropOld, LogOnFullKill}
+
+type HTTPBodyKind string
+
+const (
+	HTTPBodyKindNone     HTTPBodyKind = "none"
+	HTTPBodyKindJson     HTTPBodyKind = "json"
+	HTTPBodyKindFormData HTTPBodyKind = "formData"
+)
+
+var HTTPBodyKindValues = []HTTPBodyKind{HTTPBodyKindNone, HTTPBodyKindJson, HTTPBodyKindFormData}
+
 type TaskSchedule struct {
 	Cron string `json:"cron"`
 	// IANA zone.
@@ -304,14 +396,13 @@ type TaskSchedule struct {
 }
 
 type TaskParam struct {
-	// env, arg, ...
-	Kind        string   `json:"kind,omitzero"`
-	Type        string   `json:"type,omitzero"`
-	Required    bool     `json:"required,omitzero"`
-	Default     *string  `json:"default,omitzero"`
-	Choices     []string `json:"choices,omitzero"`
-	AllowCustom bool     `json:"allowCustom,omitzero"`
-	Description string   `json:"description,omitzero"`
+	Kind        ParamKind `json:"kind,omitzero"`
+	Type        ParamType `json:"type,omitzero"`
+	Required    bool      `json:"required,omitzero"`
+	Default     *string   `json:"default,omitzero"`
+	Choices     []string  `json:"choices,omitzero"`
+	AllowCustom bool      `json:"allowCustom,omitzero"`
+	Description string    `json:"description,omitzero"`
 }
 
 type ServiceSettings struct {
@@ -341,8 +432,8 @@ type ShellSpec struct {
 	WorkingDir string `json:"workingDir,omitzero"`
 	// 3 or 4 octal digits.
 	Umask string `json:"umask,omitzero"`
-	// inherit (default) or clean.
-	EnvBase string `json:"envBase,omitzero"`
+	// Default inherit.
+	EnvBase EnvBase `json:"envBase,omitzero"`
 }
 
 type ContainerSpec struct {
@@ -381,20 +472,18 @@ type KeyValue struct {
 }
 
 type ComposeSpec struct {
-	Type        string `json:"type"`
-	File        string `json:"file"`
-	ProjectName string `json:"projectName"`
-	Service     string `json:"service,omitzero"`
-	// run, stack or exec.
-	Mode       string   `json:"mode"`
-	Profiles   []string `json:"profiles,omitzero"`
-	EnvFile    []string `json:"envFile,omitzero"`
-	WorkingDir string   `json:"workingDir,omitzero"`
-	WithDeps   bool     `json:"withDeps,omitzero"`
-	// missing, always or never.
-	Pull         string `json:"pull,omitzero"`
-	ServicePorts bool   `json:"servicePorts,omitzero"`
-	Command      string `json:"command,omitzero"`
+	Type         string      `json:"type"`
+	File         string      `json:"file"`
+	ProjectName  string      `json:"projectName"`
+	Service      string      `json:"service,omitzero"`
+	Mode         ComposeMode `json:"mode"`
+	Profiles     []string    `json:"profiles,omitzero"`
+	EnvFile      []string    `json:"envFile,omitzero"`
+	WorkingDir   string      `json:"workingDir,omitzero"`
+	WithDeps     bool        `json:"withDeps,omitzero"`
+	Pull         ComposePull `json:"pull,omitzero"`
+	ServicePorts bool        `json:"servicePorts,omitzero"`
+	Command      string      `json:"command,omitzero"`
 }
 
 type HTTPSpec struct {
@@ -406,9 +495,9 @@ type HTTPSpec struct {
 }
 
 type HTTPBody struct {
-	Kind   string     `json:"kind"`
-	Json   string     `json:"json,omitzero"`
-	Fields []KeyValue `json:"fields,omitzero"`
+	Kind   HTTPBodyKind `json:"kind"`
+	Json   string       `json:"json,omitzero"`
+	Fields []KeyValue   `json:"fields,omitzero"`
 }
 
 // Run the daemon's own task `taskName`. The dispatch's timeoutMs and
@@ -423,10 +512,9 @@ type ConfigSpec struct {
 type RunOptions struct {
 	Env map[string]string `json:"env,omitzero"`
 	// SIGTERM to SIGKILL window.
-	GracefulStopMs int   `json:"gracefulStopMs,omitzero"`
-	LogMaxBytes    int64 `json:"logMaxBytes,omitzero"`
-	// drop_new, drop_old or kill.
-	LogOnFull string `json:"logOnFull,omitzero"`
+	GracefulStopMs int       `json:"gracefulStopMs,omitzero"`
+	LogMaxBytes    int64     `json:"logMaxBytes,omitzero"`
+	LogOnFull      LogOnFull `json:"logOnFull,omitzero"`
 	// The task's `failures` policy in runwisp.toml syntax. Invalid = refused with `invalid`.
 	Failures []string `json:"failures,omitzero"`
 }

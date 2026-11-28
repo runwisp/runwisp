@@ -554,7 +554,7 @@ components:
         options: { $ref: "#/components/schemas/RunOptions" }
         maxConcurrent: { type: integer }
         onOverlap: { $ref: "#/components/schemas/OverlapPolicy" }
-        restartPolicy: { type: string, description: "never, on_failure, always." }
+        restartPolicy: { $ref: "#/components/schemas/RestartPolicy" }
         maxRetries: { type: integer }
         retryDelayMs: { type: integer }
         retryBackoff: { $ref: "#/components/schemas/Backoff" }
@@ -565,7 +565,7 @@ components:
           type: integer
           nullable: true
           description: null = not set locally; 0 = explicitly no jitter.
-        catchUp: { type: string, description: "skip, latest, all." }
+        catchUp: { $ref: "#/components/schemas/CatchUp" }
         maxCatchUpRuns: { type: integer }
         params:
           type: object
@@ -589,6 +589,56 @@ components:
       type: string
       enum: [constant, linear, exponential]
 
+    RestartPolicy:
+      $id: RestartPolicy
+      type: string
+      enum: [never, on_failure, always]
+
+    CatchUp:
+      $id: CatchUp
+      type: string
+      enum: [skip, latest, all]
+      description: "Missed schedule ticks run: none, the latest one, or up to maxCatchUpRuns."
+
+    ParamKind:
+      $id: ParamKind
+      type: string
+      enum: [env, arg, option, flag]
+      description: How a param reaches the run. A flag is a boolean.
+
+    ParamType:
+      $id: ParamType
+      type: string
+      enum: [string, number]
+      description: A value type; a param with choices is an enum of them.
+
+    EnvBase:
+      $id: EnvBase
+      type: string
+      enum: [inherit, clean]
+      description: "The env a run starts from: the daemon's own, or crond's minimal set."
+
+    ComposeMode:
+      $id: ComposeMode
+      type: string
+      enum: [run, stack, exec]
+
+    ComposePull:
+      $id: ComposePull
+      type: string
+      enum: [missing, always, never]
+
+    LogOnFull:
+      $id: LogOnFull
+      type: string
+      enum: [drop_new, drop_old, kill]
+      description: What a run does when its log reaches logMaxBytes.
+
+    HTTPBodyKind:
+      $id: HTTPBodyKind
+      type: string
+      enum: [none, json, formData]
+
     TaskSchedule:
       type: object
       properties:
@@ -600,8 +650,8 @@ components:
     TaskParam:
       type: object
       properties:
-        kind: { type: string, description: "env, arg, ..." }
-        type: { type: string }
+        kind: { $ref: "#/components/schemas/ParamKind" }
+        type: { $ref: "#/components/schemas/ParamType" }
         required: { type: boolean }
         default: { type: string, nullable: true }
         choices:
@@ -650,7 +700,7 @@ components:
         shell: { type: string, description: "Absolute interpreter path; empty = /bin/sh." }
         workingDir: { type: string }
         umask: { type: string, description: 3 or 4 octal digits. }
-        envBase: { type: string, description: "inherit (default) or clean." }
+        envBase: { $ref: "#/components/schemas/EnvBase", description: Default inherit. }
       required: [type, script]
 
     ContainerSpec:
@@ -712,7 +762,7 @@ components:
         file: { type: string }
         projectName: { type: string }
         service: { type: string }
-        mode: { type: string, description: "run, stack or exec." }
+        mode: { $ref: "#/components/schemas/ComposeMode" }
         profiles:
           type: array
           items: { type: string }
@@ -721,7 +771,7 @@ components:
           items: { type: string }
         workingDir: { type: string }
         withDeps: { type: boolean }
-        pull: { type: string, description: "missing, always or never." }
+        pull: { $ref: "#/components/schemas/ComposePull" }
         servicePorts: { type: boolean }
         command: { type: string }
       required: [type, file, projectName, mode]
@@ -741,7 +791,7 @@ components:
     HTTPBody:
       type: object
       properties:
-        kind: { type: string }
+        kind: { $ref: "#/components/schemas/HTTPBodyKind" }
         json: { type: string }
         fields:
           type: array
@@ -771,7 +821,7 @@ components:
           additionalProperties: { type: string }
         gracefulStopMs: { type: integer, description: SIGTERM to SIGKILL window. }
         logMaxBytes: { type: integer, format: int64 }
-        logOnFull: { type: string, description: "drop_new, drop_old or kill." }
+        logOnFull: { $ref: "#/components/schemas/LogOnFull" }
         failures:
           type: array
           items: { type: string }

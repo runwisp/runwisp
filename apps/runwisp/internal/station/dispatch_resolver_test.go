@@ -478,7 +478,7 @@ func TestBuildDynamicStationTask_AppliesTaskConfig(t *testing.T) {
 			Env:            map[string]string{"KEY": "val"},
 			GracefulStopMs: 3000,
 			LogMaxBytes:    2048,
-			LogOnFull:      logOnFull,
+			LogOnFull:      protocol.LogOnFull(logOnFull),
 		},
 	}, def)
 

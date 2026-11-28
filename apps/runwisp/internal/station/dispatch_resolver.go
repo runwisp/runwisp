@@ -235,7 +235,7 @@ func applyRunOptions(task *model.Task, cfg *protocol.RunOptions) error {
 		task.LogMaxSize = cfg.LogMaxBytes
 	}
 	if cfg.LogOnFull != "" {
-		task.LogOnFull = cfg.LogOnFull
+		task.LogOnFull = string(cfg.LogOnFull)
 	}
 	return nil
 }

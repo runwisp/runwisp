@@ -52,6 +52,23 @@ func TestProtocolEnumsMatchModel(t *testing.T) {
 		reasons = append(reasons, string(r))
 	}
 	assert.ElementsMatch(t, reasons, enumStrings(protocol.EndReasonValues))
+	assert.ElementsMatch(t,
+		[]string{string(model.RestartNever), string(model.RestartOnFailure), string(model.RestartAlways)},
+		enumStrings(protocol.RestartPolicyValues))
+	assert.ElementsMatch(t,
+		[]string{string(model.ParamEnv), string(model.ParamArg), string(model.ParamOption), string(model.ParamFlag)},
+		enumStrings(protocol.ParamKindValues))
+	assert.ElementsMatch(t, []string{model.ParamTypeString, model.ParamTypeNumber}, enumStrings(protocol.ParamTypeValues))
+	assert.ElementsMatch(t, []string{string(model.EnvBaseInherit), string(model.EnvBaseClean)}, enumStrings(protocol.EnvBaseValues))
+	assert.ElementsMatch(t,
+		[]string{model.LogOverflowDropNew, model.LogOverflowDropOld, model.LogOverflowKill},
+		enumStrings(protocol.LogOnFullValues))
+	assert.ElementsMatch(t,
+		[]string{model.ComposeModeRun, model.ComposeModeStack, model.ComposeModeExec},
+		enumStrings(protocol.ComposeModeValues))
+	assert.ElementsMatch(t,
+		[]string{model.ComposePullMissing, model.ComposePullAlways, model.ComposePullNever},
+		enumStrings(protocol.ComposePullValues))
 }
 
 func TestErrorInfo_CarriesCodeAndRetryable(t *testing.T) {

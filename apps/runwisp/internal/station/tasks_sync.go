@@ -60,7 +60,7 @@ func buildTaskDefinition(t *model.Task, daemonTZ string) (protocol.TaskDefinitio
 		Options:       runOptions(t),
 		MaxConcurrent: max(t.MaxConcurrent, 0),
 		OnOverlap:     protocol.OverlapPolicy(t.OnOverlap),
-		RestartPolicy: string(cmp.Or(t.Restart, model.RestartNever)),
+		RestartPolicy: protocol.RestartPolicy(cmp.Or(t.Restart, model.RestartNever)),
 		MaxRetries:    max(t.RetryAttempts, 0),
 		RetryDelayMs:  durationToMillis(t.RetryDelayValue()),
 		RetryBackoff:  protocol.Backoff(t.RetryBackoff),
@@ -82,7 +82,7 @@ func runOptions(t *model.Task) *protocol.RunOptions {
 		Env:            t.Env,
 		GracefulStopMs: durationToMillis(t.GracefulStopValue()),
 		LogMaxBytes:    max(t.LogMaxSize, 0),
-		LogOnFull:      t.LogOnFull,
+		LogOnFull:      protocol.LogOnFull(t.LogOnFull),
 	}
 	if len(opts.Env) == 0 && opts.GracefulStopMs == 0 && opts.LogMaxBytes == 0 && opts.LogOnFull == "" {
 		return nil
@@ -121,14 +121,14 @@ func applyScheduleFields(def *protocol.TaskDefinition, t *model.Task, daemonTZ s
 // catchUpPolicy maps the TOML catch_up count to the station's policy name:
 // 0 re-runs nothing, 1 only the most recent missed tick, N > 1 up to N of them
 // (the cap travels separately as maxCatchUpRuns).
-func catchUpPolicy(n int) string {
+func catchUpPolicy(n int) protocol.CatchUp {
 	switch {
 	case n <= 0:
-		return "skip"
+		return protocol.CatchUpSkip
 	case n == 1:
-		return "latest"
+		return protocol.CatchUpLatest
 	default:
-		return "all"
+		return protocol.CatchUpAll
 	}
 }
 
@@ -141,8 +141,8 @@ func taskParams(params []model.TaskParam) map[string]*protocol.TaskParam {
 	out := make(map[string]*protocol.TaskParam, len(params))
 	for _, p := range params {
 		out[p.Key] = &protocol.TaskParam{
-			Kind:        string(p.Kind),
-			Type:        p.Type,
+			Kind:        protocol.ParamKind(p.Kind),
+			Type:        protocol.ParamType(p.Type),
 			Required:    p.Required,
 			Default:     p.Default,
 			Choices:     p.Choices,
