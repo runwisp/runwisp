@@ -188,7 +188,7 @@ func TestLogSearch(t *testing.T) {
 	log.write(t, 0, 20, nil)
 	h.start(t)
 
-	literal := []protocol.LogSearchTerm{{Parts: []string{"line 1"}}}
+	literal := []protocol.LogSearchTerm{{Parts: []string{"line 1"}, Start: protocol.TermAnchorAny, End: protocol.TermAnchorAny}}
 	hits, res := grepResult(t, st, protocol.LogSearch{ExecutionID: "e1", Terms: literal, MaxHits: 3, TimeoutMs: 5000})
 	assert.Equal(t, []string{"e1:line 1", "e1:line 10", "e1:line 11"}, hitLines(hits))
 	assert.Equal(t, protocol.LogSearchStopMaxHits, res.Stopped)

@@ -368,10 +368,17 @@ components:
         maxFrameBytes:
           type: integer
           description: Largest frame the station accepts; at least 64 KiB. The daemon batches log lines and search hits to fit, and drops any other frame over it.
-        tasksHashKnown:
-          type: boolean
-          description: False means send tasks:sync now.
-      required: [connectionId, features, heartbeat, statsIntervalMs, maxFrameBytes, tasksHashKnown]
+        tasksSync: { $ref: "#/components/schemas/TasksSyncMode" }
+      required: [connectionId, features, heartbeat, statsIntervalMs, maxFrameBytes, tasksSync]
+
+    TasksSyncMode:
+      $id: TasksSyncMode
+      type: string
+      enum: [none, full]
+      description: |
+        What the daemon sends of its task catalog after welcome: `none` (the
+        station has the catalog hello's tasksHash names) or `full` (send
+        tasks:sync now). An unknown value is handled as `full`.
 
     Heartbeat:
       type: object
@@ -1012,9 +1019,18 @@ components:
           type: array
           items: { type: string }
           description: Non-empty literal pieces between the wildcards, in order.
-        wordStart: { type: boolean, description: The first part must begin at a word start. }
-        wordEnd: { type: boolean, description: The last part must end at a word end. }
-      required: [parts]
+        start: { $ref: "#/components/schemas/TermAnchor", description: Where the first part must begin. }
+        end: { $ref: "#/components/schemas/TermAnchor", description: Where the last part must end. }
+      required: [parts, start, end]
+
+    TermAnchor:
+      $id: TermAnchor
+      type: string
+      enum: [any, word]
+      description: |
+        Where a term's edge may sit: `any` position, or a `word` boundary.
+        A search with an anchor the daemon doesn't know is refused as
+        `invalid`.
 
     LogSearchHits:
       type: object

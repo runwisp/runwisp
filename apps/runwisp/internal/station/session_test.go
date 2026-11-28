@@ -127,7 +127,7 @@ func TestSession_DispatchIsIdempotent(t *testing.T) {
 
 func TestSession_TasksSyncWhenStationLacksTheCatalog(t *testing.T) {
 	st := stationtest.New(t)
-	st.Welcome.TasksHashKnown = false
+	st.Welcome.TasksSync = protocol.TasksSyncModeFull
 	h := newHarness(t, st, nil)
 	h.start(t)
 

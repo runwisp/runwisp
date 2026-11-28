@@ -212,9 +212,29 @@ func searchMatcher(req protocol.LogSearch) (logsearch.Matcher, error) {
 	}
 	terms := make([]logsearch.Term, len(req.Terms))
 	for i, t := range req.Terms {
-		terms[i] = logsearch.Term{Parts: t.Parts, WordStart: t.WordStart, WordEnd: t.WordEnd}
+		start, err := wordAnchor(t.Start)
+		if err != nil {
+			return nil, err
+		}
+		end, err := wordAnchor(t.End)
+		if err != nil {
+			return nil, err
+		}
+		terms[i] = logsearch.Term{Parts: t.Parts, WordStart: start, WordEnd: end}
 	}
 	return logsearch.NewTerms(terms, req.CaseSensitive)
+}
+
+// wordAnchor reports whether a term edge must sit on a word boundary. An
+// anchor this daemon doesn't know can't be matched right, so it refuses.
+func wordAnchor(a protocol.TermAnchor) (bool, error) {
+	switch a {
+	case protocol.TermAnchorAny:
+		return false, nil
+	case protocol.TermAnchorWord:
+		return true, nil
+	}
+	return false, fmt.Errorf("unknown term anchor %q", a)
 }
 
 // lookupRun finds the run of a station execution. One the daemon accepted

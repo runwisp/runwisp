@@ -7,14 +7,15 @@
         "parts": [
           "exception"
         ],
-        "wordEnd": true
+        "start": "any",
+        "end": "word"
       },
       {
         "parts": [
           "order 4711"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "tasks": [

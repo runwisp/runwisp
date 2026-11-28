@@ -60,11 +60,11 @@ type Station struct {
 func New(t testing.TB) *Station {
 	s := &Station{
 		Welcome: protocol.Welcome{
-			ConnectionID:   "conn-1",
-			Features:       []string{},
-			Heartbeat:      &protocol.Heartbeat{IntervalMs: 15000, TimeoutMs: 45000},
-			MaxFrameBytes:  4 << 20,
-			TasksHashKnown: true,
+			ConnectionID:  "conn-1",
+			Features:      []string{},
+			Heartbeat:     &protocol.Heartbeat{IntervalMs: 15000, TimeoutMs: 45000},
+			MaxFrameBytes: 4 << 20,
+			TasksSync:     protocol.TasksSyncModeNone,
 		},
 		changed: make(chan struct{}),
 	}

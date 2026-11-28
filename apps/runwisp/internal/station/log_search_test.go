@@ -48,7 +48,7 @@ func grepRunAt(t *testing.T, h *harness, executionID, task string, offset time.D
 
 // word is a whole-word, case-folded term.
 func word(w string) protocol.LogSearchTerm {
-	return protocol.LogSearchTerm{Parts: []string{w}, WordStart: true, WordEnd: true}
+	return protocol.LogSearchTerm{Parts: []string{w}, Start: protocol.TermAnchorWord, End: protocol.TermAnchorWord}
 }
 
 // grepResult runs log:search and returns its hits, in order, and its result.
@@ -193,10 +193,15 @@ func TestLogSearch_InvalidTerms(t *testing.T) {
 	h := newHarness(t, st, nil)
 	h.start(t)
 
-	id := st.Command(t, "log:search", protocol.LogSearch{Terms: []protocol.LogSearchTerm{{Parts: []string{""}}}, MaxHits: 1, TimeoutMs: 1000})
-	res := st.Result(t, id, nil)
-	require.NotNil(t, res.Error)
-	assert.Equal(t, protocol.ErrorCodeInvalid, res.Error.Code)
+	empty := word("")
+	unknownAnchor := word("error")
+	unknownAnchor.End = "line"
+	for _, term := range []protocol.LogSearchTerm{empty, unknownAnchor} {
+		id := st.Command(t, "log:search", protocol.LogSearch{Terms: []protocol.LogSearchTerm{term}, MaxHits: 1, TimeoutMs: 1000})
+		res := st.Result(t, id, nil)
+		require.NotNil(t, res.Error, "%+v", term)
+		assert.Equal(t, protocol.ErrorCodeInvalid, res.Error.Code, "%+v", term)
+	}
 }
 
 // endlessRun stores a run whose log is a FIFO fed lines until the reader goes

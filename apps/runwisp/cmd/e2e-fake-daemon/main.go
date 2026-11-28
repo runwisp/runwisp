@@ -104,7 +104,7 @@ func (d *fakeDaemon) handshake(ctx context.Context, instanceID string) error {
 	var welcome protocol.Welcome
 	_ = json.Unmarshal(welcomeEnv.Data, &welcome)
 	slog.Info("welcomed", "connectionId", welcome.ConnectionID)
-	if !welcome.TasksHashKnown {
+	if welcome.TasksSync != protocol.TasksSyncModeNone {
 		if err := d.write(ctx, "tasks:sync", d.nextID(), "", protocol.TasksSync{Tasks: []protocol.TaskDefinition{}}); err != nil {
 			return err
 		}

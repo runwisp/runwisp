@@ -260,7 +260,7 @@ func (client *Client) connectOnce(ctx context.Context) (stable bool, err error) 
 	}
 
 	client.syncMu.Lock()
-	if welcome.TasksHashKnown {
+	if welcome.TasksSync == protocol.TasksSyncModeNone {
 		client.syncedHash = hello.TasksHash
 	} else {
 		client.syncedHash = ""

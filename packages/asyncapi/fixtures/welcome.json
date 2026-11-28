@@ -9,6 +9,6 @@
     },
     "statsIntervalMs": 30000,
     "maxFrameBytes": 4194304,
-    "tasksHashKnown": false
+    "tasksSync": "full"
   }
 }

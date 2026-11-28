@@ -96,10 +96,21 @@ type Welcome struct {
 	// How often to send agent:stats. 0 = don't.
 	StatsIntervalMs int `json:"statsIntervalMs"`
 	// Largest frame the station accepts; at least 64 KiB. The daemon batches log lines and search hits to fit, and drops any other frame over it.
-	MaxFrameBytes int `json:"maxFrameBytes"`
-	// False means send tasks:sync now.
-	TasksHashKnown bool `json:"tasksHashKnown"`
+	MaxFrameBytes int           `json:"maxFrameBytes"`
+	TasksSync     TasksSyncMode `json:"tasksSync"`
 }
+
+// What the daemon sends of its task catalog after welcome: `none` (the
+// station has the catalog hello's tasksHash names) or `full` (send
+// tasks:sync now). An unknown value is handled as `full`.
+type TasksSyncMode string
+
+const (
+	TasksSyncModeNone TasksSyncMode = "none"
+	TasksSyncModeFull TasksSyncMode = "full"
+)
+
+var TasksSyncModeValues = []TasksSyncMode{TasksSyncModeNone, TasksSyncModeFull}
 
 type Heartbeat struct {
 	IntervalMs int `json:"intervalMs"`
@@ -643,11 +654,23 @@ type LogSearch struct {
 type LogSearchTerm struct {
 	// Non-empty literal pieces between the wildcards, in order.
 	Parts []string `json:"parts"`
-	// The first part must begin at a word start.
-	WordStart bool `json:"wordStart,omitzero"`
-	// The last part must end at a word end.
-	WordEnd bool `json:"wordEnd,omitzero"`
+	// Where the first part must begin.
+	Start TermAnchor `json:"start"`
+	// Where the last part must end.
+	End TermAnchor `json:"end"`
 }
+
+// Where a term's edge may sit: `any` position, or a `word` boundary.
+// A search with an anchor the daemon doesn't know is refused as
+// `invalid`.
+type TermAnchor string
+
+const (
+	TermAnchorAny  TermAnchor = "any"
+	TermAnchorWord TermAnchor = "word"
+)
+
+var TermAnchorValues = []TermAnchor{TermAnchorAny, TermAnchorWord}
 
 type LogSearchHits struct {
 	Hits     []LogSearchHit     `json:"hits"`

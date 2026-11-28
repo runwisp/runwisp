@@ -6,8 +6,8 @@
         "parts": [
           "exception"
         ],
-        "wordStart": false,
-        "wordEnd": true
+        "start": "any",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -21,8 +21,8 @@
         "parts": [
           "exception"
         ],
-        "wordStart": false,
-        "wordEnd": true
+        "start": "any",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -36,8 +36,8 @@
         "parts": [
           "errorexception"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -51,8 +51,8 @@
         "parts": [
           "errorexception"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -67,8 +67,8 @@
           "status",
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -83,8 +83,8 @@
           "status",
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -99,8 +99,8 @@
           "status",
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -115,8 +115,8 @@
           "status",
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -131,8 +131,8 @@
           "status",
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -147,8 +147,8 @@
           "status",
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -162,8 +162,8 @@
         "parts": [
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -177,8 +177,8 @@
         "parts": [
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -193,8 +193,8 @@
           "error",
           "code"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -208,8 +208,8 @@
         "parts": [
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -223,8 +223,8 @@
         "parts": [
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -238,8 +238,8 @@
         "parts": [
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -253,8 +253,8 @@
         "parts": [
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -268,8 +268,8 @@
         "parts": [
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -283,8 +283,8 @@
         "parts": [
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -298,8 +298,8 @@
         "parts": [
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -313,8 +313,8 @@
         "parts": [
           "3f2a9c1e-7b4d-4e8a-9c21-5d6e7f8a9b0c"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -328,8 +328,8 @@
         "parts": [
           "3f2a9c1e-7b4d-4e8a-9c21-5d6e7f8a9b0c"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -343,8 +343,8 @@
         "parts": [
           "3f2a9c1e-7b4d-4e8a-9c21-5d6e7f8a9b0c"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -358,8 +358,8 @@
         "parts": [
           "3f2a9c1e"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -373,8 +373,8 @@
         "parts": [
           "a1b2c3d"
         ],
-        "wordStart": true,
-        "wordEnd": false
+        "start": "word",
+        "end": "any"
       }
     ],
     "caseSensitive": false,
@@ -388,8 +388,8 @@
         "parts": [
           "a1b2c3d"
         ],
-        "wordStart": true,
-        "wordEnd": false
+        "start": "word",
+        "end": "any"
       }
     ],
     "caseSensitive": false,
@@ -403,8 +403,8 @@
         "parts": [
           "4711"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -418,8 +418,8 @@
         "parts": [
           "4711"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -433,8 +433,8 @@
         "parts": [
           "rror"
         ],
-        "wordStart": false,
-        "wordEnd": false
+        "start": "any",
+        "end": "any"
       }
     ],
     "caseSensitive": false,
@@ -448,8 +448,8 @@
         "parts": [
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -463,8 +463,8 @@
         "parts": [
           "ошибка"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -478,8 +478,8 @@
         "parts": [
           "σφαλμα"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -493,8 +493,8 @@
         "parts": [
           "über"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -508,8 +508,8 @@
         "parts": [
           "straße"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -523,8 +523,8 @@
         "parts": [
           "café"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -538,8 +538,8 @@
         "parts": [
           "café"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -553,8 +553,8 @@
         "parts": [
           "错误"
         ],
-        "wordStart": false,
-        "wordEnd": false
+        "start": "any",
+        "end": "any"
       }
     ],
     "caseSensitive": false,
@@ -568,8 +568,8 @@
         "parts": [
           "错误"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -583,8 +583,8 @@
         "parts": [
           "Error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": true,
@@ -598,8 +598,8 @@
         "parts": [
           "Error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": true,
@@ -613,8 +613,8 @@
         "parts": [
           "ERROR"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": true,
@@ -628,8 +628,8 @@
         "parts": [
           "Über"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": true,
@@ -643,8 +643,8 @@
         "parts": [
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -658,15 +658,15 @@
         "parts": [
           "timeout"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       },
       {
         "parts": [
           "db"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -680,15 +680,15 @@
         "parts": [
           "timeout"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       },
       {
         "parts": [
           "db"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -702,15 +702,15 @@
         "parts": [
           "timeout"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       },
       {
         "parts": [
           "connection"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -724,15 +724,15 @@
         "parts": [
           "error"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       },
       {
         "parts": [
           "fatal"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -746,8 +746,8 @@
         "parts": [
           "order not found"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -761,8 +761,8 @@
         "parts": [
           "order not found"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -777,8 +777,8 @@
           "connection ",
           " refused"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -793,8 +793,8 @@
           "connection ",
           " refused"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -810,8 +810,8 @@
           "id",
           "denied"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -827,8 +827,8 @@
           "id",
           "denied"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -843,8 +843,8 @@
           "ab",
           "ba"
         ],
-        "wordStart": false,
-        "wordEnd": false
+        "start": "any",
+        "end": "any"
       }
     ],
     "caseSensitive": false,
@@ -859,8 +859,8 @@
           "ab",
           "ba"
         ],
-        "wordStart": false,
-        "wordEnd": false
+        "start": "any",
+        "end": "any"
       }
     ],
     "caseSensitive": false,
@@ -874,8 +874,8 @@
         "parts": [
           "500"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -889,8 +889,8 @@
         "parts": [
           "500"
         ],
-        "wordStart": true,
-        "wordEnd": true
+        "start": "word",
+        "end": "word"
       }
     ],
     "caseSensitive": false,
@@ -905,8 +905,8 @@
           "Disk",
           "FULL"
         ],
-        "wordStart": false,
-        "wordEnd": false
+        "start": "any",
+        "end": "any"
       }
     ],
     "caseSensitive": false,

@@ -22,9 +22,9 @@ func TestTerms_Conformance(t *testing.T) {
 	var cases []struct {
 		Name  string `json:"name"`
 		Terms []struct {
-			Parts     []string `json:"parts"`
-			WordStart bool     `json:"wordStart"`
-			WordEnd   bool     `json:"wordEnd"`
+			Parts []string `json:"parts"`
+			Start string   `json:"start"`
+			End   string   `json:"end"`
 		} `json:"terms"`
 		CaseSensitive bool   `json:"caseSensitive"`
 		Line          string `json:"line"`
@@ -36,7 +36,7 @@ func TestTerms_Conformance(t *testing.T) {
 		t.Run(c.Name, func(t *testing.T) {
 			terms := make([]Term, len(c.Terms))
 			for i, term := range c.Terms {
-				terms[i] = Term{Parts: term.Parts, WordStart: term.WordStart, WordEnd: term.WordEnd}
+				terms[i] = Term{Parts: term.Parts, WordStart: term.Start == "word", WordEnd: term.End == "word"}
 			}
 			m, err := NewTerms(terms, c.CaseSensitive)
 			require.NoError(t, err)
