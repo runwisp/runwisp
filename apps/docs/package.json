@@ -22,7 +22,7 @@
         "@runwisp/eslint-config": "workspace:*",
         "cookie": "^2.0.2",
         "eslint": "^10.16.0",
-        "eslint-plugin-astro": "^3.2.2",
+        "eslint-plugin-astro": "^3.2.3",
         "eslint-plugin-svelte": "^3.24.1",
         "prettier": "^3.10.1",
         "prettier-plugin-astro": "^1.1.2",
