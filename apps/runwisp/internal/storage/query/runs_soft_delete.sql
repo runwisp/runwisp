@@ -1,23 +1,23 @@
 -- SPDX-FileCopyrightText: PoppyCake, s.r.o.
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
--- name: SelectExpiredSoftDeletes :many
--- Select-only: callers must remove the on-disk log files for the returned
--- refs before hard-deleting the rows (via DeleteRunsByIDs), so a crash
--- mid-purge leaves an orphan row rather than an orphan log file.
-SELECT id, task_name, created_at FROM runs
-WHERE deleted_at IS NOT NULL AND deleted_at <= ?;
+-- name: ClaimExpiredSoftDeletes :many
+-- Claim and select in one write. A restore that commits first clears
+-- deleted_at; a purge that claims first owns cleanup across retries.
+UPDATE runs SET purge_pending = 1
+WHERE deleted_at IS NOT NULL AND (purge_pending = 1 OR deleted_at <= ?)
+RETURNING id, task_name, created_at;
 
 -- name: SoftDeleteRunsByIDs :many
 UPDATE runs SET deleted_at = sqlc.arg(deleted_at)
-WHERE deleted_at IS NULL
+WHERE deleted_at IS NULL AND purge_pending = 0
   AND status = sqlc.arg(status_phase)
   AND id IN (sqlc.slice('ids'))
 RETURNING id, task_name, created_at;
 
 -- name: SoftDeleteRunsByFilter :many
 UPDATE runs SET deleted_at = sqlc.arg(deleted_at)
-WHERE deleted_at IS NULL
+WHERE deleted_at IS NULL AND purge_pending = 0
   AND status = sqlc.arg(status_phase)
   AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
@@ -36,16 +36,16 @@ RETURNING id, task_name, created_at;
 
 -- name: RestoreRunsByIDs :many
 UPDATE runs SET deleted_at = NULL
-WHERE deleted_at IS NOT NULL
+WHERE deleted_at IS NOT NULL AND purge_pending = 0
   AND id IN (sqlc.slice('ids'))
 RETURNING id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
   instance_index, params_json, deleted_at, is_failure, peak_memory_bytes,
-  cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start;
+  cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending;
 
 -- name: RestoreRunsByFilter :many
 UPDATE runs SET deleted_at = NULL
-WHERE deleted_at IS NOT NULL
+WHERE deleted_at IS NOT NULL AND purge_pending = 0
   AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
@@ -62,7 +62,7 @@ WHERE deleted_at IS NOT NULL
 RETURNING id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
   instance_index, params_json, deleted_at, is_failure, peak_memory_bytes,
-  cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start;
+  cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending;
 
 -- name: ResolveSelectorIDsByIDs :many
 -- Slice must come AFTER scalar args. sqlc emits `?N` for named scalars and

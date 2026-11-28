@@ -127,37 +127,6 @@ export class Runner {
         }
     };
 
-    /**
-     * Waits until fewer than maxConcurrent callbacks of task run, or the
-     * waiting run is stopped, or the runner closes. Returns the task's
-     * running list as it is then.
-     */
-    private async waitForTurn(
-        task: string,
-        maxConcurrent: number,
-        waiter: Pick<Execution, "session" | "run" | "abort">,
-    ): Promise<Execution[]> {
-        const { signal } = waiter.abort;
-        const aborted = new Promise<void>((resolve) => {
-            signal.addEventListener("abort", () => {
-                resolve();
-            });
-        });
-        let executions = this.running.get(task) ?? [];
-        this.waiting.add(waiter);
-        try {
-            while (executions.length >= maxConcurrent && !signal.aborted && !this.closing) {
-                await Promise.race([aborted, ...executions.map((e) => e.done)]);
-                // The last previous run removes the list when it ends, and a
-                // later run may have started a new one meanwhile.
-                executions = this.running.get(task) ?? [];
-            }
-        } finally {
-            this.waiting.delete(waiter);
-        }
-        return executions;
-    }
-
     /** Runs the callback and reports its exit code, before the run counts as done. */
     private async execute(
         session: Reporter,
@@ -182,21 +151,42 @@ export class Runner {
                 return;
             }
             say("waiting for the previous run, which ignored its stop signal, to finish");
-            executions = await this.waitForTurn(task, maxConcurrent, { session, run, abort });
-            if (abort.signal.aborted) {
-                say(
-                    "this run never started: the previous run ignored its stop signal and still runs",
-                );
-                exit(143);
-                return;
-            }
-            if (this.closing) {
-                say("the app is shutting down");
-                exit(1);
-                return;
+            const waiter = { session, run, abort };
+            let onAbort = () => {};
+            const aborted = new Promise<void>((resolve) => {
+                onAbort = () => {
+                    resolve();
+                };
+                abort.signal.addEventListener("abort", onAbort, { once: true });
+            });
+            this.waiting.add(waiter);
+            try {
+                while (
+                    executions.length >= maxConcurrent &&
+                    !abort.signal.aborted &&
+                    !this.closing
+                ) {
+                    await Promise.race([aborted, ...executions.map((e) => e.done)]);
+                    executions = this.running.get(task) ?? [];
+                }
+            } finally {
+                this.waiting.delete(waiter);
+                abort.signal.removeEventListener("abort", onAbort);
             }
         }
 
+        if (abort.signal.aborted) {
+            say("this run never started: the previous run ignored its stop signal and still runs");
+            exit(143);
+            return;
+        }
+        if (this.closing) {
+            say("the app is shutting down");
+            exit(1);
+            return;
+        }
+
+        // Register synchronously after checking capacity, before another waiter can wake.
         let finish: () => void = () => undefined;
         const done = new Promise<void>((resolve) => (finish = resolve));
         const kill = new AbortController();

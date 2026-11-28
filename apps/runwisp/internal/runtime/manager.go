@@ -606,7 +606,7 @@ func (m *defaultTaskManager) ScheduleJitteredRun(taskName string, tick, slot tim
 // re-acquires the manager lock beneath it.
 //
 // A fire can wait in the gate while the task becomes held, removed, or
-// paused. RefreshCronHolds and reloads cannot reach into the gate to cancel it,
+// paused. refreshCronHolds and reloads cannot reach into the gate to cancel it,
 // so it is refused here; otherwise a held task would run twice (once here, once
 // by the live system cron). Only this automatic path is guarded: manual/API
 // triggers of a held task are still allowed.

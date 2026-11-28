@@ -31,7 +31,7 @@ func TestRefreshCronHolds_ReleasedTaskGetsJitterPlan(t *testing.T) {
 	r, sched, _ := holdRefreshFixture(t, now, held)
 	require.Nil(t, sched.GetNextRun("backup"), "held to begin with, or this proves nothing")
 
-	change := r.RefreshCronHolds(cronprobe.State{}) // system cron is gone
+	change := r.refreshCronHolds(cronprobe.State{}) // system cron is gone
 	require.Equal(t, []string{"backup"}, change.Released)
 	require.NotNil(t, sched.GetNextRun("backup"), "cron is gone, so RunWisp must be firing this now")
 

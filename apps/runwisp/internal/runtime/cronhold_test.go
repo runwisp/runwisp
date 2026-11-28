@@ -4,6 +4,8 @@
 package runtime
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -57,7 +59,7 @@ func TestRefreshCronHoldsReleasesWhenCronRetires(t *testing.T) {
 	r, sched, db := holdRefreshFixture(t, now, heldCronTask("backup", "0 3 * * *"))
 	require.Nil(t, sched.GetNextRun("backup"), "held to begin with, or this proves nothing")
 
-	change := r.RefreshCronHolds(cronprobe.State{})
+	change := r.refreshCronHolds(cronprobe.State{})
 
 	assert.Equal(t, []string{"backup"}, change.Released)
 	assert.Empty(t, change.Held)
@@ -77,7 +79,7 @@ func TestRefreshCronHoldsStandsDownWhenCronReturns(t *testing.T) {
 	r, sched, db := holdRefreshFixture(t, now, ours)
 	require.NotNil(t, sched.GetNextRun("backup"))
 
-	change := r.RefreshCronHolds(cronLive)
+	change := r.refreshCronHolds(cronLive)
 
 	assert.Equal(t, []string{"backup"}, change.Held)
 	assert.Empty(t, change.Released)
@@ -96,7 +98,7 @@ func TestRefreshCronHoldsLeavesFilesCronDoesNotRead(t *testing.T) {
 		Source: model.SourceCron, SourceFile: "/opt/myapp/jobs.cron"}
 	r, sched, _ := holdRefreshFixture(t, now, mine)
 
-	assert.False(t, anyHold(r.RefreshCronHolds(cronLive)))
+	assert.False(t, anyHold(r.refreshCronHolds(cronLive)))
 	assert.NotNil(t, sched.GetNextRun("mine"))
 }
 
@@ -108,7 +110,7 @@ func TestRefreshCronHoldsLeavesNonCronTasksAlone(t *testing.T) {
 	native := &model.Task{Name: "native", Cron: "0 3 * * *", Run: "mine.sh"}
 	r, sched, _ := holdRefreshFixture(t, now, native)
 
-	assert.False(t, anyHold(r.RefreshCronHolds(cronLive)))
+	assert.False(t, anyHold(r.refreshCronHolds(cronLive)))
 	assert.NotNil(t, sched.GetNextRun("native"))
 }
 
@@ -119,8 +121,8 @@ func TestRefreshCronHoldsIsIdempotent(t *testing.T) {
 	now := time.Date(2026, 8, 3, 14, 2, 0, 0, time.UTC)
 	r, sched, _ := holdRefreshFixture(t, now, heldCronTask("backup", "0 3 * * *"))
 
-	require.True(t, anyHold(r.RefreshCronHolds(cronprobe.State{})))
-	assert.False(t, anyHold(r.RefreshCronHolds(cronprobe.State{})),
+	require.True(t, anyHold(r.refreshCronHolds(cronprobe.State{})))
+	assert.False(t, anyHold(r.refreshCronHolds(cronprobe.State{})),
 		"the same answer twice is not a second change")
 	assert.NotNil(t, sched.GetNextRun("backup"))
 }
@@ -133,7 +135,7 @@ func TestRefreshCronHoldsSkipsTasksRemovedSinceBaseline(t *testing.T) {
 	r, sched, db := holdRefreshFixture(t, now, heldCronTask("backup", "0 3 * * *"))
 	r.registry.Delete("backup")
 
-	assert.False(t, anyHold(r.RefreshCronHolds(cronprobe.State{})))
+	assert.False(t, anyHold(r.refreshCronHolds(cronprobe.State{})))
 	assert.Nil(t, sched.GetNextRun("backup"))
 	assert.NotContains(t, db.registered, "backup")
 }
@@ -250,4 +252,60 @@ func TestCronHoldWatcherStartsFromTheLoadedAnswer(t *testing.T) {
 	w.tick()
 
 	assert.Empty(t, prober.applied)
+}
+
+type cronReloadSource struct {
+	path string
+	cfg  *config.Config
+}
+
+func (s cronReloadSource) Path() string                  { return s.path }
+func (s cronReloadSource) Load() (*config.Config, error) { return s.cfg, nil }
+
+func TestCronWatcherDiscardsProbeThatOverlapsReload(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Chmod(dir, 0o700))
+	path := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(path, []byte("[daemon]\ninclude_cron = [\"backup.cron\"]\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "backup.cron"), []byte("0 3 * * * /bin/true\n"), 0o600))
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Tasks, 1)
+	cfg.Tasks[0].SourceFile = "/etc/cron.d/backup"
+	baseline, changed := config.WithCronHold(cfg, cronLive)
+	require.Len(t, changed, 1)
+
+	now := time.Date(2026, 8, 3, 14, 2, 0, 0, time.UTC)
+	r, sched, _ := holdRefreshFixture(t, now, &baseline.Tasks[0])
+	r.baseline = baseline
+	r.source = cronReloadSource{path: path, cfg: baseline}
+	r.snapshot = config.NewSnapshot(path, baseline, now)
+	name := baseline.Tasks[0].Name
+	require.Nil(t, sched.GetNextRun(name))
+
+	probing := make(chan struct{})
+	release := make(chan struct{})
+	stop := r.WatchCronHolds(func() cronprobe.State {
+		close(probing)
+		<-release
+		return cronprobe.State{}
+	})
+	defer stop()
+	oldWatcher := r.cronWatcher
+	require.NotNil(t, oldWatcher)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		oldWatcher.tick()
+	}()
+	<-probing
+	_, err = r.Reconcile()
+	close(release)
+	<-done
+	require.NoError(t, err)
+	require.NotSame(t, oldWatcher, r.cronWatcher)
+	task, ok := r.registry.Get(name)
+	require.True(t, ok)
+	assert.True(t, task.Held())
+	assert.Nil(t, sched.GetNextRun(name))
 }

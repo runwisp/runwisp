@@ -57,8 +57,14 @@ final class Lines
     private static function cut(string &$line, array &$out): void
     {
         while (strlen($line) > self::MAX_PIECE) {
-            $out[] = [substr($line, 0, self::MAX_PIECE), true];
-            $line = substr($line, self::MAX_PIECE);
+            $end = self::MAX_PIECE;
+            // If the next byte is a UTF-8 continuation, carry the whole character over.
+            // A valid character spans at most three continuation bytes.
+            while ($end > self::MAX_PIECE - 3 && (ord($line[$end]) & 0xc0) === 0x80) {
+                --$end;
+            }
+            $out[] = [substr($line, 0, $end), true];
+            $line = substr($line, $end);
         }
     }
 }

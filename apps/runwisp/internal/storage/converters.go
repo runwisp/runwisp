@@ -128,8 +128,8 @@ func utcPtr(t *time.Time) *time.Time {
 	return &u
 }
 
-// boolToInt64 encodes the is_failure classification bit for its INTEGER column
-// (SQLite has no native boolean); runFromRow decodes it with `!= 0`.
+// boolToInt64 encodes a flag for an INTEGER column (SQLite has no native
+// boolean); readers decode it with `!= 0`.
 func boolToInt64(b bool) int64 {
 	if b {
 		return 1

@@ -13,6 +13,12 @@ type Querier interface {
 	// Only moves forward: a backdated row (a missed tick, a jittered run) must not
 	// pull the anchor back behind a run already recorded.
 	BumpTaskLastRun(ctx context.Context, arg BumpTaskLastRunParams) error
+	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+	// SPDX-License-Identifier: GPL-3.0-or-later
+	// Claim and select in one write. A restore that commits first clears
+	// deleted_at; a purge that claims first owns cleanup across retries.
+	ClaimExpiredSoftDeletes(ctx context.Context, deletedAt *time.Time) ([]ClaimExpiredSoftDeletesRow, error)
+	ClaimRetentionDeletes(ctx context.Context, ids []string) ([]ClaimRetentionDeletesRow, error)
 	CountRunsFiltered(ctx context.Context, arg CountRunsFilteredParams) (int64, error)
 	CountUnreadNotifications(ctx context.Context) (int64, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
@@ -20,7 +26,6 @@ type Querier interface {
 	CreateRun(ctx context.Context, arg CreateRunParams) error
 	DeleteOutboxUpdatesThrough(ctx context.Context, seq int64) error
 	DeletePendingLogUpload(ctx context.Context, executionID string) error
-	DeleteRun(ctx context.Context, id string) error
 	DeleteRunsByIDs(ctx context.Context, ids []string) error
 	// Forgets every task that left the config (first-seen time, last run, pause),
 	// so one that comes back starts fresh. Its runs are kept.
@@ -57,6 +62,9 @@ type Querier interface {
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	InsertOutboxUpdate(ctx context.Context, arg InsertOutboxUpdateParams) (int64, error)
+	// Keep SQLite's stored timestamp as the cursor key, including its original
+	// precision and offset. A NULL key starts at a BLOB, which sorts above text.
+	ListLogSearchRuns(ctx context.Context, arg ListLogSearchRunsParams) ([]ListLogSearchRunsRow, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	ListNotifications(ctx context.Context, limit int64) ([]Notification, error)
@@ -65,6 +73,7 @@ type Querier interface {
 	ListOutboxUpdates(ctx context.Context, arg ListOutboxUpdatesParams) ([]StationOutbox, error)
 	ListPausedTaskSchedules(ctx context.Context) ([]ListPausedTaskSchedulesRow, error)
 	ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload, error)
+	ListPendingRetentionDeletes(ctx context.Context) ([]ListPendingRetentionDeletesRow, error)
 	MarkAllNotificationsRead(ctx context.Context, readAt *time.Time) error
 	// Boot-time crash recovery marks these orphans is_failure=1 using the default
 	// classification: a task that demoted 'crashed' from its `failures` would
@@ -104,12 +113,6 @@ type Querier interface {
 	RestoreRunsByIDs(ctx context.Context, ids []string) ([]Run, error)
 	ResumeTaskSchedule(ctx context.Context, arg ResumeTaskScheduleParams) error
 	SelectExistingForFingerprint(ctx context.Context, arg SelectExistingForFingerprintParams) (SelectExistingForFingerprintRow, error)
-	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
-	// SPDX-License-Identifier: GPL-3.0-or-later
-	// Select-only: callers must remove the on-disk log files for the returned
-	// refs before hard-deleting the rows (via DeleteRunsByIDs), so a crash
-	// mid-purge leaves an orphan row rather than an orphan log file.
-	SelectExpiredSoftDeletes(ctx context.Context, deletedAt *time.Time) ([]SelectExpiredSoftDeletesRow, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	// Only terminal (ended) runs are eligible for retention: a run that is still

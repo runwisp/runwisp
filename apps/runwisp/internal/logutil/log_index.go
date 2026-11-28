@@ -255,66 +255,68 @@ func collectLines(scanner *bufio.Scanner, startLineNum, limit int64) ([]LogLineR
 // only runs for reads reaching back into `.prev`, not the common current-
 // segment path, which still uses the sidecar index via CalculateLineOffset.
 func readSegmentRange(path string, segmentStart, startAt, limit int64) ([]LogLineRecord, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
+	f, start, err := openSegmentAt(path, nil, segmentStart, startAt)
+	if f == nil {
 		return nil, err
 	}
 	defer f.Close()
-
-	skip := int(startAt - segmentStart)
-	if skip < 0 {
-		skip = 0
-	}
-	offset, _, scanErr := ScanOffset(f, 0, skip)
-	if scanErr != nil && !errors.Is(scanErr, io.EOF) {
-		return nil, scanErr
-	}
-	if _, err := f.Seek(offset, io.SeekStart); err != nil {
-		return nil, err
-	}
-
-	scanner := newLineScanner(f)
-	return collectLines(scanner, segmentStart+int64(skip), limit)
+	return collectLines(newLineScanner(f), start, limit)
 }
 
-// ScanLines streams every on-disk line of a run in display order: the
-// rotated-away segment (`.log.prev`) first, then the current segment.
-// Each line is numbered with its absolute (cumulative) line index, matching
-// the numbering used by ReadLineRange and the SSE log wire.
-//
-// visit is invoked for every line; it returns false to stop the scan early
-// (treated as success — ScanLines returns nil). ctx.Err() is checked
-// between lines so a cancelled context aborts within one iteration.
-func ScanLines(ctx context.Context, logPath string, visit func(LogLineRecord) bool) error {
-	meta := ReadLogMeta(logPath)
+// openSegmentAt opens a segment whose first line is absolute line segmentStart
+// and seeks to absolute line max(line, segmentStart), returned as start.
+// indices is the segment's sidecar index, or nil to skip linearly. A missing
+// segment returns a nil file and nil error.
+func openSegmentAt(path string, indices []int64, segmentStart, line int64) (f *os.File, start int64, err error) {
+	f, err = os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			err = nil
+		}
+		return nil, 0, err
+	}
+	start = max(line, segmentStart)
+	if start > segmentStart {
+		offset, err := calculateLineOffset(f, indices, start-segmentStart)
+		if err == nil || errors.Is(err, io.EOF) {
+			_, err = f.Seek(offset, io.SeekStart)
+		}
+		if err != nil {
+			f.Close()
+			return nil, 0, err
+		}
+	}
+	return f, start, nil
+}
 
-	done, err := scanSegment(ctx, PrevPath(logPath), meta.PrevStart, visit)
-	if err != nil || done {
+// ScanLines streams a run's surviving lines starting at firstN, in display
+// order. Line numbers are absolute across both segments. A false return from
+// visit stops the scan successfully.
+func ScanLines(ctx context.Context, logPath string, firstN int64, visit func(LogLineRecord) bool) error {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err = scanSegment(ctx, logPath, meta.RotatedLines, visit)
+	sc := ReadSidecar(logPath)
+	meta := sc.Meta
+	if firstN < meta.RotatedLines {
+		done, err := scanSegment(ctx, PrevPath(logPath), nil, meta.PrevStart, firstN, visit)
+		if err != nil || done {
+			return err
+		}
+	}
+	_, err := scanSegment(ctx, logPath, sc.Index, meta.RotatedLines, firstN, visit)
 	return err
 }
 
-// scanSegment scans one segment file, numbering lines starting at startLine.
-// Returns (done=true, nil) when visit asked to stop, so the caller can
-// short-circuit subsequent segments. Returns (false, nil) if the file does
-// not exist — rotation may not have produced a .prev yet.
-func scanSegment(ctx context.Context, path string, startLine int64, visit func(LogLineRecord) bool) (bool, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
+// scanSegment returns done when visit asked to stop. A missing segment is
+// skipped, since there may be no .prev or the run may have been pruned.
+func scanSegment(ctx context.Context, path string, indices []int64, segmentStart, firstN int64, visit func(LogLineRecord) bool) (bool, error) {
+	f, current, err := openSegmentAt(path, indices, segmentStart, firstN)
+	if f == nil {
 		return false, err
 	}
 	defer f.Close()
-
 	scanner := newLineScanner(f)
-	current := startLine
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
 			return false, err
@@ -440,22 +442,18 @@ func CalculateTotalLines(rs io.ReadSeeker, indices []int64, fileSize int64, meta
 }
 
 func CalculateLineOffset(rs io.ReadSeeker, indices []int64, line int, meta LogMeta) int64 {
-	localLine := line - int(meta.RotatedLines)
-	if localLine < 0 {
-		localLine = 0
-	}
-
-	if len(indices) == 0 {
-		offset, _, _ := ScanOffset(rs, 0, localLine)
-		return offset
-	}
-
-	chunkIdx := localLine / LogIndexInterval
-	if chunkIdx >= len(indices) {
-		chunkIdx = len(indices) - 1
-	}
-	baseOffset := indices[chunkIdx]
-	skip := localLine - (chunkIdx * LogIndexInterval)
-	offset, _, _ := ScanOffset(rs, baseOffset, skip)
+	offset, _ := calculateLineOffset(rs, indices, max(0, int64(line)-meta.RotatedLines))
 	return offset
+}
+
+func calculateLineOffset(rs io.ReadSeeker, indices []int64, localLine int64) (int64, error) {
+	var baseOffset int64
+	skip := localLine
+	if len(indices) > 0 {
+		chunkIdx := min(localLine/LogIndexInterval, int64(len(indices)-1))
+		baseOffset = indices[chunkIdx]
+		skip -= chunkIdx * LogIndexInterval
+	}
+	offset, _, err := ScanOffset(rs, baseOffset, int(skip))
+	return offset, err
 }

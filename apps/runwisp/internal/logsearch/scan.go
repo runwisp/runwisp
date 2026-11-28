@@ -4,9 +4,7 @@
 package logsearch
 
 import (
-	"cmp"
 	"context"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -83,10 +81,7 @@ func ScanRun(ctx context.Context, run RunRef, m Matcher, maxHits int, firstN int
 	maxHits = clampMaxHits(maxHits)
 	tsMs := run.CreatedAt.UnixMilli()
 	hits = make([]Hit, 0, min(maxHits, 16))
-	err = logutil.ScanLines(ctx, run.LogPath, func(rec logutil.LogLineRecord) bool {
-		if rec.LineNum < firstN {
-			return true
-		}
+	err = logutil.ScanLines(ctx, run.LogPath, firstN, func(rec logutil.LogLineRecord) bool {
 		if !m.Match([]byte(VisibleText(rec.Text))) {
 			return true
 		}
@@ -149,7 +144,6 @@ func ScanTask(ctx context.Context, runs []RunRef, matcherFactory func() Matcher,
 	}
 
 	flat, cursor := flattenResults(results, pending, maxHits)
-	sortHits(flat)
 	return flat, cursor, scanned, nil
 }
 
@@ -267,17 +261,4 @@ func flattenResults(results []runResult, pending []RunRef, maxHits int) ([]Hit, 
 		return flat, &Cursor{RunID: pending[i].ID, NextN: r.hits[room-1].N + 1}
 	}
 	return flat, nil
-}
-
-// sortHits enforces a deterministic newest-first ordering by run timestamp,
-// then ascending line within a run. Workers complete out of order, so append
-// order alone cannot be trusted.
-func sortHits(flat []Hit) {
-	slices.SortStableFunc(flat, func(a, b Hit) int {
-		return cmp.Or(
-			cmp.Compare(b.TS, a.TS),
-			cmp.Compare(b.RunID, a.RunID),
-			cmp.Compare(a.N, b.N),
-		)
-	})
 }

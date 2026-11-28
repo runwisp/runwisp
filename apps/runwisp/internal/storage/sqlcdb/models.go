@@ -59,6 +59,7 @@ type Run struct {
 	StderrLines     *int64            `json:"stderr_lines"`
 	Pgid            int64             `json:"pgid"`
 	ProcessStart    string            `json:"process_start"`
+	PurgePending    int64             `json:"purge_pending"`
 }
 
 type StationOutbox struct {

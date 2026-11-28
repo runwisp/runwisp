@@ -9,13 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"slices"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logsearch"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
@@ -82,24 +80,33 @@ func (srv *Server) humaSearchLogs(ctx context.Context, input *LogSearchInput) (*
 		return nil, huma.Error400BadRequest("Invalid cursor")
 	}
 
-	baseOffset := 0
-	startAfterRunID := ""
-	var startAfterN int64
+	var boundary storage.LogSearchBoundary
+	var resumeRunID string
+	var firstN int64
 	if cursor != nil {
-		baseOffset = cursor.RunOffset
-		startAfterRunID = cursor.RunID
-		startAfterN = cursor.NextN
+		boundary = storage.LogSearchBoundary{CreationKey: cursor.CreationKey, ID: cursor.RunID, Include: !cursor.After}
+		if !cursor.After {
+			resumeRunID, firstN = cursor.RunID, cursor.NextN
+		}
 	}
 
-	runs, err := srv.resolveSearchRuns(ctx, input, baseOffset)
+	rows, err := srv.resolveSearchRuns(ctx, input, boundary)
 	if err != nil {
 		return nil, err
 	}
-	if len(runs) == 0 {
+	if len(rows) == 0 {
 		return &LogSearchOutput{Body: LogSearchBody{Items: []LogSearchHit{}, Exhausted: true}}, nil
 	}
 
-	hits, scanCursor, scanned, err := logsearch.ScanTask(ctx, runs, matcherFactory, logsearch.ScanOpts{MaxHits: input.Limit}, startAfterRunID, startAfterN)
+	runs := make([]logsearch.RunRef, 0, len(rows))
+	for _, row := range rows {
+		runs = append(runs, logsearch.RunRef{
+			ID: row.ID, CreatedAt: row.CreatedAt,
+			LogPath: logutil.ResolveRunLogPath(srv.logDir, row.TaskName, row.ID, row.CreatedAt),
+		})
+	}
+
+	hits, scanCursor, scanned, err := logsearch.ScanTask(ctx, runs, matcherFactory, logsearch.ScanOpts{MaxHits: input.Limit}, resumeRunID, firstN)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			// Client closed the connection mid-scan. huma will turn this
@@ -116,46 +123,34 @@ func (srv *Server) humaSearchLogs(ctx context.Context, input *LogSearchInput) (*
 		wire[i] = LogSearchHit(h)
 	}
 
-	// Build the continuation cursor:
-	//  1. The scan stopped mid-window (budget filled): resume at that run,
-	//     translating its window index into an absolute run offset.
-	//  2. The whole window was scanned but it was full: older runs may remain
-	//     beyond LogSearchRunPageSize, so advance to the next window.
-	//  3. The window was scanned and under-full: the task's runs are exhausted.
-	// Single-run search (run_id set) never advances the window.
-	var next *searchCursor
-	switch {
-	case scanCursor != nil:
-		next = &searchCursor{
-			// A run absent from the window dropped out between requests: resume
-			// from the window start.
-			RunOffset: baseOffset + max(0, slices.IndexFunc(runs, func(r logsearch.RunRef) bool { return r.ID == scanCursor.RunID })),
-			RunID:     scanCursor.RunID,
-			NextN:     scanCursor.NextN,
-		}
-	case input.RunID == "" && len(runs) == LogSearchRunPageSize:
-		next = &searchCursor{RunOffset: baseOffset + len(runs)}
-	}
-
-	encoded := ""
-	if next != nil {
-		encoded = encodeSearchCursor(*next)
-	}
+	next := searchContinuation(rows, scanCursor, input.RunID == "")
 
 	return &LogSearchOutput{Body: LogSearchBody{
 		Items:       wire,
-		NextCursor:  encoded,
-		Exhausted:   next == nil,
+		NextCursor:  next,
+		Exhausted:   next == "",
 		ScannedRuns: scanned,
 	}}, nil
 }
 
-// resolveSearchRuns returns the runs to scan in newest-first order. When
-// run_id is supplied, the slice has at most one element (filtered to ensure
-// the run belongs to the task — same 404 contract as the per-run log
-// endpoints). Otherwise it lists up to LogSearchRunPageSize runs starting at
-// offset, so the cursor can advance the window past the newest page.
-func (srv *Server) resolveSearchRuns(ctx context.Context, input *LogSearchInput, offset int) ([]logsearch.RunRef, error) {
+func searchContinuation(rows []storage.LogSearchRun, scanCursor *logsearch.Cursor, taskWide bool) string {
+	if scanCursor != nil {
+		for _, row := range rows {
+			if row.ID == scanCursor.RunID {
+				return encodeSearchCursor(searchCursor{RunID: row.ID, CreationKey: row.CreationKey, NextN: scanCursor.NextN})
+			}
+		}
+	}
+	if taskWide && len(rows) == LogSearchRunPageSize {
+		last := rows[len(rows)-1]
+		return encodeSearchCursor(searchCursor{RunID: last.ID, CreationKey: last.CreationKey, After: true})
+	}
+	return ""
+}
+
+// resolveSearchRuns returns a newest-first keyset window, or one run
+// belonging to the task when the request supplies a run ID.
+func (srv *Server) resolveSearchRuns(ctx context.Context, input *LogSearchInput, boundary storage.LogSearchBoundary) ([]storage.LogSearchRun, error) {
 	if input.RunID != "" {
 		run, err := srv.getRunByID(ctx, input.RunID)
 		if err != nil {
@@ -169,32 +164,16 @@ func (srv *Server) resolveSearchRuns(ctx context.Context, input *LogSearchInput,
 		if run.TaskName != input.TaskName {
 			return nil, huma.Error404NotFound("Run not found")
 		}
-		return []logsearch.RunRef{{
-			ID:        run.ID,
-			LogPath:   logutil.ResolveRunLogPath(srv.logDir, run.TaskName, run.ID, run.CreatedAt),
-			CreatedAt: run.CreatedAt,
-		}}, nil
+		return []storage.LogSearchRun{{RunRef: storage.RunRef{
+			ID: run.ID, TaskName: run.TaskName, CreatedAt: run.CreatedAt,
+		}}}, nil
 	}
 
-	runs, err := srv.db.QueryRuns(ctx, storage.RunQuery{
-		Filter:        model.RunFilter{TaskName: input.TaskName},
-		Limit:         LogSearchRunPageSize,
-		Offset:        offset,
-		SortField:     storage.SortColumnCreatedAt,
-		SortDirection: storage.SortDesc,
-	})
+	runs, err := srv.db.ListLogSearchRuns(ctx, input.TaskName, LogSearchRunPageSize, boundary)
 	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to list runs")
 	}
-	out := make([]logsearch.RunRef, 0, len(runs))
-	for _, r := range runs {
-		out = append(out, logsearch.RunRef{
-			ID:        r.ID,
-			LogPath:   logutil.ResolveRunLogPath(srv.logDir, r.TaskName, r.ID, r.CreatedAt),
-			CreatedAt: r.CreatedAt,
-		})
-	}
-	return out, nil
+	return runs, nil
 }
 
 // buildMatcherFactory returns a function that produces a fresh matcher per
@@ -212,13 +191,13 @@ func buildMatcherFactory(q string, regex, caseSensitive bool) (func() logsearch.
 	}, nil
 }
 
-// searchCursor is the server-side continuation token. RunOffset advances the
-// run window past the newest LogSearchRunPageSize runs; RunID/NextN resume
-// within (or at) a run in that window. It is opaque to the client.
+// searchCursor names either the next run and line to scan, or the last
+// run of a fully scanned window (After).
 type searchCursor struct {
-	RunOffset int    `json:"o,omitempty"`
-	RunID     string `json:"r,omitempty"`
-	NextN     int64  `json:"n,omitempty"`
+	CreationKey string `json:"c,omitempty"`
+	RunID       string `json:"r"`
+	NextN       int64  `json:"n,omitempty"`
+	After       bool   `json:"a,omitempty"`
 }
 
 // encodeSearchCursor / decodeSearchCursor round-trip the cursor as
@@ -241,8 +220,8 @@ func decodeSearchCursor(raw string) (*searchCursor, error) {
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, err
 	}
-	if c.RunOffset < 0 {
-		return nil, errors.New("negative run offset")
+	if c.RunID == "" || c.NextN < 0 {
+		return nil, errors.New("invalid search position")
 	}
 	return &c, nil
 }

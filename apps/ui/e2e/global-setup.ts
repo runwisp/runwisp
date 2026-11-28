@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { FullConfig } from "@playwright/test";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,8 +16,12 @@ async function globalSetup(_config: FullConfig): Promise<void> {
     const port = await runPort("E2E_PORT");
     const runnerRoot = resolve(__dirname, "../../runwisp");
     const binaryPath = join(runnerRoot, "runwisp");
-    const configPath = resolve(__dirname, "fixtures/runwisp.e2e.toml");
     const dataDir = await mkdtemp(join(tmpdir(), "runwisp-e2e-"));
+    const configPath = join(dataDir, "runwisp.e2e.toml");
+    await copyFile(resolve(__dirname, "fixtures/runwisp.e2e.toml"), configPath);
+    await cp(resolve(__dirname, "fixtures/runwisp.d"), join(dataDir, "runwisp.d"), {
+        recursive: true,
+    });
     const password = generatePassword();
 
     console.log(`[e2e] Starting daemon: ${binaryPath}`);

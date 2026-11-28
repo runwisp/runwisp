@@ -49,16 +49,17 @@ class SystemStore {
     #runOutputLines = $state<Record<string, number>>({});
 
     #subscribed = false;
+    #generation = 0;
+    #infoRequest = 0;
     #unsubscribes: (() => void)[] = [];
     readonly #logger = createLogger("SystemStore");
 
-    // Seeds the store once from REST, then rides the shared app-event stream
-    // for live updates instead of polling /api/system + /api/daemon.
+    // Subscribe before seeding so a reload during the initial fetch is observed.
     // Idempotent: the stream subscription is bound once and survives
     // re-entrant init() calls on auth.
     async init(): Promise<void> {
-        await this.#seed();
         this.#subscribe();
+        await this.#seed();
     }
 
     usageFor(task: Task): ResourceUsage | undefined {
@@ -80,33 +81,41 @@ class SystemStore {
     }
 
     disconnect(): void {
+        this.#generation++;
+        this.#infoRequest++;
         for (const off of this.#unsubscribes) off();
         this.#unsubscribes = [];
         this.#subscribed = false;
     }
 
-    // Pulls the one-shot snapshot: static identity (fingerprint, timezone,
-    // station/scheduling mode) that never changes for the daemon's lifetime,
-    // plus the initial cpu/mem/uptime so gauges aren't blank before the first
-    // pushed sample lands.
-    //
-    // Not gated on connectionStore.status: that is the event stream's state, and
-    // a seed skipped during a brief blip would leave the metrics chart without
-    // its history for good. A reconnect seeds again (see #subscribe), which also
-    // backfills the samples missed while the stream was down.
+    // A reconnect seeds again to backfill any metrics missed while disconnected.
     async #seed(): Promise<void> {
+        await Promise.all([this.#refreshStats(), this.#refreshInfo()]);
+    }
+
+    async #refreshStats(): Promise<void> {
+        const generation = this.#generation;
         try {
-            const [sys, info, history] = await Promise.all([
+            const [sys, history] = await Promise.all([
                 systemApi.getStats(),
-                systemApi.getInfo(),
-                // The chart is secondary: a failed backfill must not block the rest.
                 systemApi.getMetricsHistory().catch(() => []),
             ]);
+            if (generation !== this.#generation) return;
             this.version = sys.version;
             this.uptime = sys.uptime;
             this.cpuUsage = sys.cpuUsage;
             this.memUsage = sys.memUsage;
             this.metricsHistory = history;
+        } catch {
+            // System stats are secondary.
+        }
+    }
+
+    async #refreshInfo(): Promise<void> {
+        const request = ++this.#infoRequest;
+        try {
+            const info = await systemApi.getInfo();
+            if (request !== this.#infoRequest) return;
             this.fingerprint = info.fingerprint;
             this.name = info.name;
             this.timezone = info.resolvedTimezone;
@@ -121,7 +130,7 @@ class SystemStore {
             const started = Date.parse(info.startedAt);
             this.startedAt = Number.isNaN(started) ? 0 : started;
         } catch {
-            // silent, system stats are secondary
+            // Retry on the next reload or reconnect.
         }
     }
 
@@ -130,6 +139,7 @@ class SystemStore {
         this.#subscribed = true;
         this.#unsubscribes.push(
             connectionStore.onReconnect(() => void this.#seed()),
+            appEventStream.subscribe("tasks.changed", () => void this.#refreshInfo()),
             appEventStream.subscribe("system", (data) => {
                 const parsed = safeParseJSON(data, systemEventSchema);
                 if (!parsed.success) {

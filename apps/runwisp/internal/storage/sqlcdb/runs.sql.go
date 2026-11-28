@@ -120,15 +120,6 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) error {
 	return err
 }
 
-const deleteRun = `-- name: DeleteRun :exec
-DELETE FROM runs WHERE id = ?
-`
-
-func (q *Queries) DeleteRun(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, deleteRun, id)
-	return err
-}
-
 const deleteRunsByIDs = `-- name: DeleteRunsByIDs :exec
 DELETE FROM runs WHERE id IN (/*SLICE:ids*/?)
 `
@@ -149,7 +140,7 @@ func (q *Queries) DeleteRunsByIDs(ctx context.Context, ids []string) error {
 }
 
 const getLastRun = `-- name: GetLastRun :one
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs
 WHERE task_name = ? AND deleted_at IS NULL
   AND (started_at IS NOT NULL OR is_failure = 1)
 ORDER BY COALESCE(started_at, created_at) DESC, id DESC
@@ -185,12 +176,13 @@ func (q *Queries) GetLastRun(ctx context.Context, taskName string) (Run, error) 
 		&i.StderrLines,
 		&i.Pgid,
 		&i.ProcessStart,
+		&i.PurgePending,
 	)
 	return i, err
 }
 
 const getPendingRuns = `-- name: GetPendingRuns :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE status = 'pending' AND deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE status = 'pending' AND deleted_at IS NULL
 ORDER BY created_at ASC
 `
 
@@ -226,6 +218,7 @@ func (q *Queries) GetPendingRuns(ctx context.Context) ([]Run, error) {
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}
@@ -241,7 +234,7 @@ func (q *Queries) GetPendingRuns(ctx context.Context) ([]Run, error) {
 }
 
 const getRun = `-- name: GetRun :one
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE id = ? AND deleted_at IS NULL LIMIT 1
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE id = ? AND deleted_at IS NULL LIMIT 1
 `
 
 func (q *Queries) GetRun(ctx context.Context, id string) (Run, error) {
@@ -270,12 +263,13 @@ func (q *Queries) GetRun(ctx context.Context, id string) (Run, error) {
 		&i.StderrLines,
 		&i.Pgid,
 		&i.ProcessStart,
+		&i.PurgePending,
 	)
 	return i, err
 }
 
 const getRunByExecutionID = `-- name: GetRunByExecutionID :one
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE execution_id = ? AND deleted_at IS NULL LIMIT 1
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE execution_id = ? AND deleted_at IS NULL LIMIT 1
 `
 
 func (q *Queries) GetRunByExecutionID(ctx context.Context, executionID *string) (Run, error) {
@@ -304,6 +298,7 @@ func (q *Queries) GetRunByExecutionID(ctx context.Context, executionID *string) 
 		&i.StderrLines,
 		&i.Pgid,
 		&i.ProcessStart,
+		&i.PurgePending,
 	)
 	return i, err
 }
@@ -350,7 +345,7 @@ func (q *Queries) GetRunSummary(ctx context.Context) (GetRunSummaryRow, error) {
 }
 
 const getRunningRuns = `-- name: GetRunningRuns :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE status = 'running' AND ended_at IS NULL AND deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE status = 'running' AND ended_at IS NULL AND deleted_at IS NULL
 `
 
 func (q *Queries) GetRunningRuns(ctx context.Context) ([]Run, error) {
@@ -385,6 +380,68 @@ func (q *Queries) GetRunningRuns(ctx context.Context) ([]Run, error) {
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLogSearchRuns = `-- name: ListLogSearchRuns :many
+SELECT id, task_name, created_at, CAST(created_at AS TEXT) AS creation_key
+FROM runs
+WHERE task_name = ?1 AND deleted_at IS NULL
+  AND (created_at, id) <= (COALESCE(CAST(?2 AS TEXT), X'FF'), CAST(?3 AS TEXT))
+  AND (CAST(?4 AS INTEGER) = 1 OR id != ?3)
+ORDER BY created_at DESC, id DESC
+LIMIT ?5
+`
+
+type ListLogSearchRunsParams struct {
+	TaskName        string  `json:"task_name"`
+	CreationKey     *string `json:"creation_key"`
+	BoundaryID      string  `json:"boundary_id"`
+	IncludeBoundary int64   `json:"include_boundary"`
+	RowsLimit       int64   `json:"rows_limit"`
+}
+
+type ListLogSearchRunsRow struct {
+	ID          string    `json:"id"`
+	TaskName    string    `json:"task_name"`
+	CreatedAt   time.Time `json:"created_at"`
+	CreationKey string    `json:"creation_key"`
+}
+
+// Keep SQLite's stored timestamp as the cursor key, including its original
+// precision and offset. A NULL key starts at a BLOB, which sorts above text.
+func (q *Queries) ListLogSearchRuns(ctx context.Context, arg ListLogSearchRunsParams) ([]ListLogSearchRunsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLogSearchRuns,
+		arg.TaskName,
+		arg.CreationKey,
+		arg.BoundaryID,
+		arg.IncludeBoundary,
+		arg.RowsLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLogSearchRunsRow{}
+	for rows.Next() {
+		var i ListLogSearchRunsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskName,
+			&i.CreatedAt,
+			&i.CreationKey,
 		); err != nil {
 			return nil, err
 		}
@@ -439,7 +496,7 @@ func (q *Queries) PreviousRunIsFailure(ctx context.Context, arg PreviousRunIsFai
 }
 
 const queryRunsCreatedAtAsc = `-- name: QueryRunsCreatedAtAsc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
@@ -517,6 +574,7 @@ func (q *Queries) QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreate
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}
@@ -532,7 +590,7 @@ func (q *Queries) QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreate
 }
 
 const queryRunsCreatedAtDesc = `-- name: QueryRunsCreatedAtDesc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
@@ -610,6 +668,7 @@ func (q *Queries) QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreat
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}
@@ -625,7 +684,7 @@ func (q *Queries) QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreat
 }
 
 const queryRunsDurationAsc = `-- name: QueryRunsDurationAsc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
@@ -703,6 +762,7 @@ func (q *Queries) QueryRunsDurationAsc(ctx context.Context, arg QueryRunsDuratio
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}
@@ -718,7 +778,7 @@ func (q *Queries) QueryRunsDurationAsc(ctx context.Context, arg QueryRunsDuratio
 }
 
 const queryRunsDurationDesc = `-- name: QueryRunsDurationDesc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
@@ -796,6 +856,7 @@ func (q *Queries) QueryRunsDurationDesc(ctx context.Context, arg QueryRunsDurati
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}
@@ -811,7 +872,7 @@ func (q *Queries) QueryRunsDurationDesc(ctx context.Context, arg QueryRunsDurati
 }
 
 const queryRunsExitCodeAsc = `-- name: QueryRunsExitCodeAsc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
@@ -889,6 +950,7 @@ func (q *Queries) QueryRunsExitCodeAsc(ctx context.Context, arg QueryRunsExitCod
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}
@@ -904,7 +966,7 @@ func (q *Queries) QueryRunsExitCodeAsc(ctx context.Context, arg QueryRunsExitCod
 }
 
 const queryRunsExitCodeDesc = `-- name: QueryRunsExitCodeDesc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
@@ -982,6 +1044,7 @@ func (q *Queries) QueryRunsExitCodeDesc(ctx context.Context, arg QueryRunsExitCo
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}
@@ -997,7 +1060,7 @@ func (q *Queries) QueryRunsExitCodeDesc(ctx context.Context, arg QueryRunsExitCo
 }
 
 const queryRunsStartAtAsc = `-- name: QueryRunsStartAtAsc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
@@ -1075,6 +1138,7 @@ func (q *Queries) QueryRunsStartAtAsc(ctx context.Context, arg QueryRunsStartAtA
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}
@@ -1090,7 +1154,7 @@ func (q *Queries) QueryRunsStartAtAsc(ctx context.Context, arg QueryRunsStartAtA
 }
 
 const queryRunsStartAtDesc = `-- name: QueryRunsStartAtDesc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
@@ -1168,6 +1232,7 @@ func (q *Queries) QueryRunsStartAtDesc(ctx context.Context, arg QueryRunsStartAt
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}
@@ -1183,7 +1248,7 @@ func (q *Queries) QueryRunsStartAtDesc(ctx context.Context, arg QueryRunsStartAt
 }
 
 const queryRunsStatusAsc = `-- name: QueryRunsStatusAsc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
@@ -1261,6 +1326,7 @@ func (q *Queries) QueryRunsStatusAsc(ctx context.Context, arg QueryRunsStatusAsc
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}
@@ -1276,7 +1342,7 @@ func (q *Queries) QueryRunsStatusAsc(ctx context.Context, arg QueryRunsStatusAsc
 }
 
 const queryRunsStatusDesc = `-- name: QueryRunsStatusDesc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
@@ -1354,6 +1420,7 @@ func (q *Queries) QueryRunsStatusDesc(ctx context.Context, arg QueryRunsStatusDe
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}
@@ -1369,7 +1436,7 @@ func (q *Queries) QueryRunsStatusDesc(ctx context.Context, arg QueryRunsStatusDe
 }
 
 const queryRunsTaskNameAsc = `-- name: QueryRunsTaskNameAsc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
@@ -1447,6 +1514,7 @@ func (q *Queries) QueryRunsTaskNameAsc(ctx context.Context, arg QueryRunsTaskNam
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}
@@ -1462,7 +1530,7 @@ func (q *Queries) QueryRunsTaskNameAsc(ctx context.Context, arg QueryRunsTaskNam
 }
 
 const queryRunsTaskNameDesc = `-- name: QueryRunsTaskNameDesc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs WHERE deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
@@ -1540,6 +1608,7 @@ func (q *Queries) QueryRunsTaskNameDesc(ctx context.Context, arg QueryRunsTaskNa
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}

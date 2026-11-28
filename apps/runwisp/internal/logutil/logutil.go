@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"log/slog"
-
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
@@ -40,26 +38,40 @@ func PrevPath(logPath string) string {
 	return filepath.Join(filepath.Dir(logPath), "."+filepath.Base(logPath)+".prev")
 }
 
+// LogFiles lists every file a run's log owns: the rotated-away segment, the
+// log itself, then the sidecar. RemoveLogFiles deletes them in this order so
+// the sidecar stays available while any log segment remains.
+func LogFiles(logPath string) []string {
+	return []string{PrevPath(logPath), logPath, MetaPath(logPath)}
+}
+
 // RemoveLogFiles removes a log file and its associated sidecar/rotation
 // artifacts: the log itself, the consolidated container, and any rotated-away
 // segment.
-func RemoveLogFiles(logPath string) {
+func RemoveLogFiles(logPath string) error {
 	if logPath == "" {
-		return
+		return nil
 	}
-	for _, p := range []string{logPath, MetaPath(logPath), PrevPath(logPath)} {
+	for _, p := range LogFiles(logPath) {
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			slog.Warn("Failed to delete log file", "path", p, "err", err)
+			return err
 		}
 	}
+	return nil
 }
 
 // RemoveRunLogs removes a run's log files, then any task directories left
 // empty under logDir.
-func RemoveRunLogs(logDir, taskName, runID string, createdAt time.Time) {
+func RemoveRunLogs(logDir, taskName, runID string, createdAt time.Time) error {
+	if logDir == "" {
+		return nil
+	}
 	logPath := ResolveRunLogPath(logDir, taskName, runID, createdAt)
-	RemoveLogFiles(logPath)
+	if err := RemoveLogFiles(logPath); err != nil {
+		return err
+	}
 	RemoveEmptyParents(logPath, logDir)
+	return nil
 }
 
 // RemoveEmptyParents removes empty directories between path's parent and

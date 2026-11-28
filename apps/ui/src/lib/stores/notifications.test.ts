@@ -151,6 +151,33 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
 }
 
 describe("NotificationStore", () => {
+    it("does not subscribe when initialization finishes after disconnect", async () => {
+        const page = Promise.withResolvers<Response>();
+        const fakeES = new FakeEventSource();
+        const events = new EventManager({
+            path: "/api/events/stream",
+            createEventSource: () => fakeES,
+        });
+        const subscribe = vi.spyOn(events, "subscribe");
+        const store = createNotificationStore({
+            fetch: (input) =>
+                typeof input === "string" && input.endsWith("/unread-count")
+                    ? Promise.resolve(Response.json({ count: 0 }))
+                    : page.promise,
+            events,
+        });
+
+        const pending = store.init();
+        store.disconnect();
+        page.resolve(Response.json({ items: [makeNotification()] }));
+        await pending;
+
+        expect(subscribe).not.toHaveBeenCalled();
+        expect(store.loaded).toBe(false);
+        expect(store.items).toHaveLength(0);
+        store.disconnect();
+    });
+
     it("flags a failed init instead of loading forever, and init() retries", async () => {
         const { store, setPageFails } = setupHarness({ items: [], unread: 0 });
         setPageFails(true);

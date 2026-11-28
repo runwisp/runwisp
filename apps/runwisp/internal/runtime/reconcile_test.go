@@ -532,7 +532,7 @@ func TestReconcile_CronHoldWatcherFollowsIncludeCron(t *testing.T) {
 	watching := func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.stopCronWatcher != nil
+		return r.cronWatcher != nil
 	}
 
 	stop := r.WatchCronHolds(func() cronprobe.State { return cronprobe.State{} })
@@ -556,8 +556,8 @@ func TestReconcile_CronHoldWatcherFollowsIncludeCron(t *testing.T) {
 	// answer. One that kept its old remembered liveness would miss cron flipping
 	// back to it and never re-hold the tasks.
 	r.mu.Lock()
-	replaced, prev := false, r.stopCronWatcher
-	r.stopCronWatcher = func() { replaced = true; prev() }
+	replaced, prev := false, r.cronWatcher.stop
+	r.cronWatcher.stop = func() { replaced = true; prev() }
 	r.mu.Unlock()
 	_, err = r.Reconcile()
 	require.NoError(t, err)

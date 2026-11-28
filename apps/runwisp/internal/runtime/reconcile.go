@@ -45,10 +45,10 @@ type Reconciler struct {
 	mu       sync.Mutex // serialises reloads
 	baseline *config.Config
 
-	// cronProbe and stopCronWatcher drive the cron-hold watcher; see
+	// cronProbe and cronWatcher drive the cron-hold watcher; see
 	// WatchCronHolds. Guarded by mu.
-	cronProbe       func() cronprobe.State
-	stopCronWatcher context.CancelFunc
+	cronProbe   func() cronprobe.State
+	cronWatcher *cronHoldWatcher
 }
 
 // ReconcilerDeps wires a Reconciler. Baseline is the config the daemon booted
@@ -195,14 +195,22 @@ func (r *Reconciler) WatchCronHolds(probe func() cronprobe.State) (stop func()) 
 // reload re-probes cron, and a watcher still remembering the old answer would
 // see a later flip back to it as "no change" and never re-hold the tasks.
 func (r *Reconciler) syncCronWatcher() {
-	if r.stopCronWatcher != nil {
-		// Only cancels; a tick already waiting on r.mu runs once more with a fresh
-		// probe answer, which is still the right one to apply.
-		r.stopCronWatcher()
-		r.stopCronWatcher = nil
+	if r.cronWatcher != nil {
+		r.cronWatcher.stop()
+		r.cronWatcher = nil
 	}
 	if state, readsCron := config.CronHold(r.baseline); readsCron && r.cronProbe != nil {
-		r.stopCronWatcher = StartCronHoldWatcher(r.cronProbe, r.RefreshCronHolds, state)
+		w := &cronHoldWatcher{probe: r.cronProbe, last: state}
+		w.refresh = func(state cronprobe.State) CronHoldChange {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if r.cronWatcher != w {
+				return CronHoldChange{}
+			}
+			return r.refreshCronHolds(state)
+		}
+		w.start()
+		r.cronWatcher = w
 	}
 }
 
@@ -215,16 +223,14 @@ type CronHoldChange struct {
 	Held     []string
 }
 
-// RefreshCronHolds applies a fresh cron-liveness answer to the live task set.
+// refreshCronHolds applies a fresh cron-liveness answer to the live task set.
+// Called with r.mu held.
 //
 // It is not a reload: runwisp.toml is not re-read, so config reload stays
 // explicit. The only thing re-derived is the machine fact "does a live cron
 // daemon own this crontab". Without it, an operator who retires cron and
 // forgets to reload has jobs neither scheduler runs.
-func (r *Reconciler) RefreshCronHolds(state cronprobe.State) CronHoldChange {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
+func (r *Reconciler) refreshCronHolds(state cronprobe.State) CronHoldChange {
 	updated, changed := config.WithCronHold(r.baseline, state)
 	if len(changed) == 0 {
 		return CronHoldChange{}

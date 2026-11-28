@@ -33,6 +33,17 @@ func writeRunLog(t *testing.T, logDir string, run *model.Run, lines ...string) {
 	require.NoError(t, os.WriteFile(logPath, []byte(strings.Join(lines, "\n")+"\n"), 0o644))
 }
 
+func searchRows(runs ...model.Run) []storage.LogSearchRun {
+	rows := make([]storage.LogSearchRun, 0, len(runs))
+	for _, run := range runs {
+		rows = append(rows, storage.LogSearchRun{
+			RunRef:      storage.RunRef{ID: run.ID, TaskName: run.TaskName, CreatedAt: run.CreatedAt},
+			CreationKey: run.CreatedAt.Format(time.RFC3339Nano),
+		})
+	}
+	return rows
+}
+
 func TestSearchLogs_TaskWide(t *testing.T) {
 	s, repo, _, logDir := setupServer(t)
 
@@ -42,12 +53,7 @@ func TestSearchLogs_TaskWide(t *testing.T) {
 	writeRunLog(t, logDir, &run1, "hello", "connection refused: redis")
 	writeRunLog(t, logDir, &run2, "Connection Refused: db", "ok")
 
-	repo.On("QueryRuns", mock.Anything, storage.RunQuery{
-		Filter:        model.RunFilter{TaskName: "task1"},
-		Limit:         LogSearchRunPageSize,
-		SortField:     storage.SortColumnCreatedAt,
-		SortDirection: storage.SortDesc,
-	}).Return([]model.Run{run2, run1}, nil)
+	repo.On("ListLogSearchRuns", mock.Anything, "task1", LogSearchRunPageSize, storage.LogSearchBoundary{}).Return(searchRows(run2, run1), nil)
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/tasks/task1/log/search?q="+url.QueryEscape("connection refused"), nil)
@@ -74,12 +80,7 @@ func TestSearchLogs_CaseSensitiveMisses(t *testing.T) {
 	run := model.Run{ID: ulid.Make().String(), TaskName: "task1", CreatedAt: now}
 	writeRunLog(t, logDir, &run, "Hello", "WORLD")
 
-	repo.On("QueryRuns", mock.Anything, storage.RunQuery{
-		Filter:        model.RunFilter{TaskName: "task1"},
-		Limit:         LogSearchRunPageSize,
-		SortField:     storage.SortColumnCreatedAt,
-		SortDirection: storage.SortDesc,
-	}).Return([]model.Run{run}, nil)
+	repo.On("ListLogSearchRuns", mock.Anything, "task1", LogSearchRunPageSize, storage.LogSearchBoundary{}).Return(searchRows(run), nil)
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/tasks/task1/log/search?q=hello&case=true", nil)
@@ -172,12 +173,7 @@ func TestSearchLogs_RunLookupStorageErrorReturns500(t *testing.T) {
 func TestSearchLogs_QueryRunsErrorReturns500(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 
-	repo.On("QueryRuns", mock.Anything, storage.RunQuery{
-		Filter:        model.RunFilter{TaskName: "task1"},
-		Limit:         LogSearchRunPageSize,
-		SortField:     storage.SortColumnCreatedAt,
-		SortDirection: storage.SortDesc,
-	}).Return([]model.Run(nil), errors.New("disk read error"))
+	repo.On("ListLogSearchRuns", mock.Anything, "task1", LogSearchRunPageSize, storage.LogSearchBoundary{}).Return([]storage.LogSearchRun(nil), errors.New("disk read error"))
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/tasks/task1/log/search?q="+url.QueryEscape("connection refused"), nil)
@@ -203,12 +199,7 @@ func TestSearchLogs_BadCursor(t *testing.T) {
 func TestSearchLogs_NoRuns(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 
-	repo.On("QueryRuns", mock.Anything, storage.RunQuery{
-		Filter:        model.RunFilter{TaskName: "task1"},
-		Limit:         LogSearchRunPageSize,
-		SortField:     storage.SortColumnCreatedAt,
-		SortDirection: storage.SortDesc,
-	}).Return([]model.Run{}, nil)
+	repo.On("ListLogSearchRuns", mock.Anything, "task1", LogSearchRunPageSize, storage.LogSearchBoundary{}).Return(searchRows(), nil)
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/tasks/task1/log/search?q=anything", nil)
@@ -223,67 +214,56 @@ func TestSearchLogs_NoRuns(t *testing.T) {
 	assert.True(t, body.Exhausted)
 }
 
-// TestSearchLogs_AdvancesPastFirstPage guards the regression where search
-// never scanned beyond the newest LogSearchRunPageSize runs: a match in an
-// older run was unreachable and the terminal page lied about being exhausted.
-// The first (full) page must yield a cursor; resuming it must advance the run
-// window (Offset) and surface the older match.
-func TestSearchLogs_AdvancesPastFirstPage(t *testing.T) {
-	s, repo, _, logDir := setupServer(t)
+func TestSearchLogs_KeysetSurvivesHistoryChanges(t *testing.T) {
+	for _, change := range []string{"delete boundary", "insert newer"} {
+		t.Run(change, func(t *testing.T) {
+			db, err := storage.New(":memory:")
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, db.Close()) })
+			s, _, _, logDir := setupServerWithOpts(t, func(opts *Options) { opts.DB = db })
 
-	now := time.Now()
-	// A full first page of non-matching runs.
-	firstPage := make([]model.Run, LogSearchRunPageSize)
-	for i := range firstPage {
-		run := model.Run{ID: ulid.Make().String(), TaskName: "task1", CreatedAt: now.Add(-time.Duration(i) * time.Minute)}
-		writeRunLog(t, logDir, &run, "nothing to see here")
-		firstPage[i] = run
+			// Use one creation timestamp to exercise the ID tie-breaker.
+			now := time.Now().UTC()
+			addRun := func(createdAt time.Time) string {
+				run := model.Run{
+					ID: ulid.Make().String(), TaskName: "task1", CreatedAt: createdAt,
+					Status: model.PhaseEnded, TriggeredBy: model.TriggeredByAPI,
+				}
+				require.NoError(t, db.CreateRun(t.Context(), &run))
+				writeRunLog(t, logDir, &run, "needle")
+				return run.ID
+			}
+			oldest := addRun(now)
+			for range LogSearchRunPageSize {
+				addRun(now)
+			}
+
+			search := func(cursor string) LogSearchBody {
+				req := httptest.NewRequest(http.MethodGet,
+					"/api/tasks/task1/log/search?q=needle&cursor="+url.QueryEscape(cursor), nil)
+				w := httptest.NewRecorder()
+				addAuth(req, s)
+				s.router.ServeHTTP(w, req)
+				require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+				var body LogSearchBody
+				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+				return body
+			}
+
+			first := search("")
+			require.Len(t, first.Items, LogSearchRunPageSize)
+			require.NotEmpty(t, first.NextCursor)
+			if change == "delete boundary" {
+				require.NoError(t, db.DeleteRunsByIDs(t.Context(), []string{first.Items[len(first.Items)-1].RunID}))
+			} else {
+				addRun(now.Add(time.Hour))
+			}
+			second := search(first.NextCursor)
+			require.Len(t, second.Items, 1)
+			assert.Equal(t, oldest, second.Items[0].RunID)
+			assert.True(t, second.Exhausted)
+		})
 	}
-	// An older run (second page) that holds the match.
-	older := model.Run{ID: ulid.Make().String(), TaskName: "task1", CreatedAt: now.Add(-999 * time.Hour)}
-	writeRunLog(t, logDir, &older, "the needle is here")
-
-	repo.On("QueryRuns", mock.Anything, storage.RunQuery{
-		Filter:        model.RunFilter{TaskName: "task1"},
-		Limit:         LogSearchRunPageSize,
-		Offset:        0,
-		SortField:     storage.SortColumnCreatedAt,
-		SortDirection: storage.SortDesc,
-	}).Return(firstPage, nil)
-	repo.On("QueryRuns", mock.Anything, storage.RunQuery{
-		Filter:        model.RunFilter{TaskName: "task1"},
-		Limit:         LogSearchRunPageSize,
-		Offset:        LogSearchRunPageSize,
-		SortField:     storage.SortColumnCreatedAt,
-		SortDirection: storage.SortDesc,
-	}).Return([]model.Run{older}, nil)
-
-	// Page 1: no hits, but not exhausted — a cursor must advance the window.
-	req := httptest.NewRequest(http.MethodGet, "/api/tasks/task1/log/search?q=needle", nil)
-	w := httptest.NewRecorder()
-	addAuth(req, s)
-	s.router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
-
-	var body LogSearchBody
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Empty(t, body.Items)
-	assert.False(t, body.Exhausted, "a full page must not report exhausted")
-	require.NotEmpty(t, body.NextCursor, "expected a window-advance cursor")
-
-	// Page 2: resume advances to the older run and finds the match.
-	req2 := httptest.NewRequest(http.MethodGet,
-		"/api/tasks/task1/log/search?q=needle&cursor="+url.QueryEscape(body.NextCursor), nil)
-	w2 := httptest.NewRecorder()
-	addAuth(req2, s)
-	s.router.ServeHTTP(w2, req2)
-	require.Equal(t, http.StatusOK, w2.Code)
-
-	var body2 LogSearchBody
-	require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &body2))
-	require.Len(t, body2.Items, 1)
-	assert.Equal(t, older.ID, body2.Items[0].RunID)
-	assert.True(t, body2.Exhausted, "under-full second page is exhausted")
 }
 
 func TestSearchLogs_CursorResume(t *testing.T) {
@@ -293,12 +273,10 @@ func TestSearchLogs_CursorResume(t *testing.T) {
 	run := model.Run{ID: ulid.Make().String(), TaskName: "task1", CreatedAt: now}
 	writeRunLog(t, logDir, &run, "foo", "foo", "foo", "foo")
 
-	repo.On("QueryRuns", mock.Anything, storage.RunQuery{
-		Filter:        model.RunFilter{TaskName: "task1"},
-		Limit:         LogSearchRunPageSize,
-		SortField:     storage.SortColumnCreatedAt,
-		SortDirection: storage.SortDesc,
-	}).Return([]model.Run{run}, nil)
+	repo.On("ListLogSearchRuns", mock.Anything, "task1", LogSearchRunPageSize, storage.LogSearchBoundary{}).Return(searchRows(run), nil)
+	repo.On("ListLogSearchRuns", mock.Anything, "task1", LogSearchRunPageSize, storage.LogSearchBoundary{
+		CreationKey: now.Format(time.RFC3339Nano), ID: run.ID, Include: true,
+	}).Return(searchRows(run), nil)
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/tasks/task1/log/search?q=foo&limit=2", nil)
@@ -321,5 +299,7 @@ func TestSearchLogs_CursorResume(t *testing.T) {
 
 	var body2 LogSearchBody
 	require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &body2))
-	assert.Len(t, body2.Items, 2)
+	require.Len(t, body2.Items, 2)
+	assert.EqualValues(t, 2, body2.Items[0].N)
+	assert.EqualValues(t, 3, body2.Items[1].N)
 }

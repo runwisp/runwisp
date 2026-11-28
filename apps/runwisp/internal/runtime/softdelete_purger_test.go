@@ -135,27 +135,58 @@ func TestSoftDeletePurger_RemovesExpiredButKeepsFresh(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestPurge_LogFileRemovedBeforeRowOnDeleteFailure proves purge removes a
-// run's log file unconditionally before attempting the row delete: forcing
-// DeleteRunsByIDs to fail must still leave the log file gone, while the DB
-// row survives (soft-deleted, restorable) — the accepted failure mode is an
-// orphan row, never an orphan log file.
-func TestPurge_LogFileRemovedBeforeRowOnDeleteFailure(t *testing.T) {
+func TestPurgeRetriesFailedRowDeletion(t *testing.T) {
 	logDir := t.TempDir()
 	realDB, err := storage.New(":memory:")
 	require.NoError(t, err)
 	defer realDB.Close()
 
 	runID, logPath := makeRunWithLog(t, realDB, logDir, time.Now().Add(-time.Hour))
-
 	repo := &failingDeleteRepo{RunRepository: realDB, deleteErr: errors.New("delete boom")}
 	p := NewSoftDeletePurger(repo, logDir)
-	p.purge(context.Background(), time.Minute)
+	p.purge(t.Context(), time.Minute)
 
-	_, err = os.Stat(logPath)
-	assert.True(t, os.IsNotExist(err), "log file must be removed even though the row delete failed")
+	assert.NoFileExists(t, logPath)
+	restored, err := realDB.RestoreRuns(t.Context(), model.RunSelector{IDs: []string{runID}})
+	require.NoError(t, err)
+	require.Empty(t, restored)
+	claimed, err := realDB.ClaimExpiredSoftDeletes(t.Context(), time.Minute)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	assert.Equal(t, runID, claimed[0].ID)
 
-	restored, err := realDB.RestoreRuns(context.Background(), model.RunSelector{IDs: []string{runID}})
-	require.NoError(t, err, "row must survive a failed DeleteRunsByIDs — an orphan row, never an orphan log")
-	require.Len(t, restored, 1)
+	repo.deleteErr = nil
+	p.purge(t.Context(), time.Minute)
+	claimed, err = realDB.ClaimExpiredSoftDeletes(t.Context(), time.Minute)
+	require.NoError(t, err)
+	assert.Empty(t, claimed)
+}
+
+type beforePurgeClaimRepo struct {
+	storage.RunRepository
+	beforeClaim func()
+}
+
+func (r beforePurgeClaimRepo) ClaimExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]storage.RunRef, error) {
+	r.beforeClaim()
+	return r.RunRepository.ClaimExpiredSoftDeletes(ctx, ttl)
+}
+
+func TestRestoreWinsBeforePurgeClaim(t *testing.T) {
+	db, err := storage.New(":memory:")
+	require.NoError(t, err)
+	defer db.Close()
+	logDir := t.TempDir()
+	runID, logPath := makeRunWithLog(t, db, logDir, time.Now().Add(-time.Hour))
+	repo := beforePurgeClaimRepo{RunRepository: db, beforeClaim: func() {
+		restored, err := db.RestoreRuns(t.Context(), model.RunSelector{IDs: []string{runID}})
+		require.NoError(t, err)
+		require.Len(t, restored, 1)
+	}}
+
+	NewSoftDeletePurger(repo, logDir).purge(t.Context(), time.Minute)
+
+	_, err = db.GetRun(t.Context(), runID)
+	require.NoError(t, err)
+	assert.FileExists(t, logPath)
 }

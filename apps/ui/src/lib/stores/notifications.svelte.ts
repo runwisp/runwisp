@@ -72,6 +72,7 @@ class NotificationStore {
     #unread = $state(0);
     readonly #events: AppEventStream;
     #subscribed = false;
+    #generation = 0;
     #unsubscribes: (() => void)[] = [];
     #loaded = $state(false);
     #loadFailed = $state(false);
@@ -112,19 +113,22 @@ class NotificationStore {
             return Promise.resolve();
         }
         if (this.#initInFlight) return this.#initInFlight;
-        this.#initInFlight = this.#runInit().finally(() => {
-            this.#initInFlight = null;
+        const generation = this.#generation;
+        this.#initInFlight = this.#runInit(generation).finally(() => {
+            if (generation === this.#generation) this.#initInFlight = null;
         });
         return this.#initInFlight;
     }
 
-    async #runInit(): Promise<void> {
+    async #runInit(generation: number): Promise<void> {
         try {
-            await this.#loadFirstPage();
+            await this.#loadFirstPage(generation);
+            if (generation !== this.#generation) return;
             this.#loaded = true;
             this.#loadFailed = false;
             this.#connect();
         } catch (e) {
+            if (generation !== this.#generation) return;
             this.#loadFailed = true;
             this.#logger.error("Failed to initialize notifications", e);
         }
@@ -180,6 +184,8 @@ class NotificationStore {
     }
 
     disconnect(): void {
+        this.#generation++;
+        this.#initInFlight = null;
         for (const off of this.#unsubscribes) off();
         this.#unsubscribes = [];
         this.#subscribed = false;
@@ -229,18 +235,19 @@ class NotificationStore {
     /** Re-fetch the first page and unread count, replacing local state. */
     async #resync(): Promise<void> {
         try {
-            await this.#loadFirstPage();
+            await this.#loadFirstPage(this.#generation);
         } catch (e) {
             this.#logger.error("Failed to resync notifications after reconnect", e);
         }
     }
 
-    async #loadFirstPage(): Promise<void> {
-        const page = await this.#fetchPage();
+    async #loadFirstPage(generation: number): Promise<void> {
+        const [page, unread] = await Promise.all([this.#fetchPage(), this.#fetchUnread()]);
+        if (generation !== this.#generation) return;
         this.#items = [...page.items];
         this.#cursor = page.nextCursor ?? null;
         this.#hasMore = Boolean(page.nextCursor);
-        this.#unread = await this.#fetchUnread();
+        this.#unread = unread;
     }
 
     #applyUpdate(n: Notification): void {
