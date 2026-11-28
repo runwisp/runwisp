@@ -475,17 +475,35 @@ type ExecutionUpdate struct {
 	StartedAt int64 `json:"startedAt,omitzero"`
 	// Unix ms.
 	FinishedAt int64 `json:"finishedAt,omitzero"`
-	// Open. Set when finished: succeeded, failed, stopped, timeout,
-	// crashed, skipped, log_overflow, queue_full, dst_skipped,
-	// daemon_stopped, missed, start_failed, unhealthy, ... A receiver
-	// that doesn't know the value uses isFailure.
-	Reason string `json:"reason,omitzero"`
+	// Set when finished.
+	Reason EndReason `json:"reason,omitzero"`
 	// Set when finished. Whether the run counts as failed under its failures policy.
 	IsFailure *bool           `json:"isFailure,omitzero"`
 	ExitCode  *int            `json:"exitCode,omitzero"`
 	Usage     *ExecutionUsage `json:"usage,omitzero"`
 	Log       *LogArchive     `json:"log,omitzero"`
 }
+
+// Open. Why a run finished; a receiver that doesn't know the value uses isFailure.
+type EndReason string
+
+const (
+	EndReasonSucceeded     EndReason = "succeeded"
+	EndReasonFailed        EndReason = "failed"
+	EndReasonStopped       EndReason = "stopped"
+	EndReasonTimeout       EndReason = "timeout"
+	EndReasonCrashed       EndReason = "crashed"
+	EndReasonSkipped       EndReason = "skipped"
+	EndReasonLogOverflow   EndReason = "log_overflow"
+	EndReasonQueueFull     EndReason = "queue_full"
+	EndReasonDstSkipped    EndReason = "dst_skipped"
+	EndReasonDaemonStopped EndReason = "daemon_stopped"
+	EndReasonMissed        EndReason = "missed"
+	EndReasonStartFailed   EndReason = "start_failed"
+	EndReasonUnhealthy     EndReason = "unhealthy"
+)
+
+var EndReasonValues = []EndReason{EndReasonSucceeded, EndReasonFailed, EndReasonStopped, EndReasonTimeout, EndReasonCrashed, EndReasonSkipped, EndReasonLogOverflow, EndReasonQueueFull, EndReasonDstSkipped, EndReasonDaemonStopped, EndReasonMissed, EndReasonStartFailed, EndReasonUnhealthy}
 
 type ExecutionUsage struct {
 	PeakMemoryBytes *int64 `json:"peakMemoryBytes,omitzero"`

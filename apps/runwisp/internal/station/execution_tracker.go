@@ -168,7 +168,7 @@ func executionUpdate(run *model.Run) *protocol.ExecutionUpdate {
 	}
 	update.Status = protocol.ExecutionStatusFinished
 	update.FinishedAt = unixMs(run.EndedAt)
-	update.Reason = string(*run.EndReason)
+	update.Reason = protocol.EndReason(*run.EndReason)
 	update.IsFailure = new(run.IsFailure)
 	update.ExitCode = new(run.ExitCode)
 	if run.PeakMemoryBytes != nil || run.CPUTimeMs != nil {

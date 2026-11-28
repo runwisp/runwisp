@@ -832,12 +832,8 @@ components:
         startedAt: { type: integer, format: int64, description: Unix ms. }
         finishedAt: { type: integer, format: int64, description: Unix ms. }
         reason:
-          type: string
-          description: |
-            Open. Set when finished: succeeded, failed, stopped, timeout,
-            crashed, skipped, log_overflow, queue_full, dst_skipped,
-            daemon_stopped, missed, start_failed, unhealthy, ... A receiver
-            that doesn't know the value uses isFailure.
+          $ref: "#/components/schemas/EndReason"
+          description: Set when finished.
         isFailure:
           type: boolean
           nullable: true
@@ -846,6 +842,25 @@ components:
         usage: { $ref: "#/components/schemas/ExecutionUsage" }
         log: { $ref: "#/components/schemas/LogArchive" }
       required: [seq, executionId, status]
+
+    EndReason:
+      $id: EndReason
+      type: string
+      description: Open. Why a run finished; a receiver that doesn't know the value uses isFailure.
+      enum:
+        - succeeded
+        - failed
+        - stopped
+        - timeout
+        - crashed
+        - skipped
+        - log_overflow
+        - queue_full
+        - dst_skipped
+        - daemon_stopped
+        - missed
+        - start_failed
+        - unhealthy
 
     ExecutionUsage:
       type: object

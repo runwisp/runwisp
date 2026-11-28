@@ -46,6 +46,11 @@ func TestProtocolEnumsMatchModel(t *testing.T) {
 	assert.ElementsMatch(t,
 		[]string{logutil.StreamStdout, logutil.StreamStderr, logutil.StreamSystem},
 		enumStrings(protocol.LogStreamValues))
+	reasons := []string{}
+	for _, r := range model.AllEndReasons {
+		reasons = append(reasons, string(r))
+	}
+	assert.ElementsMatch(t, reasons, enumStrings(protocol.EndReasonValues))
 }
 
 func TestErrorInfo_CarriesCodeAndRetryable(t *testing.T) {
@@ -81,7 +86,7 @@ func TestExecutionUpdate_FinishedCarriesOutcome(t *testing.T) {
 	u := executionUpdate(run)
 	require.NotNil(t, u)
 	assert.Equal(t, protocol.ExecutionStatusFinished, u.Status)
-	assert.Equal(t, "timeout", u.Reason, "the reason goes out as the daemon's EndReason")
+	assert.Equal(t, protocol.EndReasonTimeout, u.Reason, "the reason goes out as the daemon's EndReason")
 	assert.Equal(t, new(true), u.IsFailure)
 	assert.Equal(t, new(-1), u.ExitCode)
 	assert.Equal(t, ended.UnixMilli(), u.FinishedAt)
