@@ -65,10 +65,23 @@ type AgentInfo struct {
 }
 
 type FeatureStatus struct {
-	Available bool `json:"available"`
-	// Why it's unavailable, for an operator to read.
+	State FeatureState `json:"state"`
+	// Why it can't be used, for an operator to read.
 	Reason string `json:"reason,omitzero"`
 }
+
+// Open; any state but available means the feature can't be used now.
+// available; disabled (the operator turned it off in the daemon's
+// config); unavailable (this host can't provide it, e.g. no Docker).
+type FeatureState string
+
+const (
+	FeatureStateAvailable   FeatureState = "available"
+	FeatureStateDisabled    FeatureState = "disabled"
+	FeatureStateUnavailable FeatureState = "unavailable"
+)
+
+var FeatureStateValues = []FeatureState{FeatureStateAvailable, FeatureStateDisabled, FeatureStateUnavailable}
 
 type InventoryEntry struct {
 	ExecutionID string          `json:"executionId"`
@@ -522,7 +535,8 @@ type LogArchive struct {
 // Streams log:lines (replyTo = this command's id) from fromLine on, then,
 // with follow, live lines with no gap or overlap. Ends with a result
 // (LogSubscribeResult): when limit lines were sent, when the run finished
-// and all lines were sent, or after `cancel`.
+// and all lines were sent, without follow once it caught up, or after
+// `cancel`. A log the daemon can't read ends it with an `internal` error.
 type LogSubscribe struct {
 	ExecutionID string `json:"executionId"`
 	// First absolute line; 0 = start; negative = the last -fromLine lines (a tail).
@@ -533,10 +547,24 @@ type LogSubscribe struct {
 }
 
 type LogSubscribeResult struct {
-	NextLine int64 `json:"nextLine,omitzero"`
-	// The run is finished and every line was sent.
-	Eof bool `json:"eof,omitzero"`
+	NextLine int64            `json:"nextLine"`
+	Stopped  LogSubscribeStop `json:"stopped"`
 }
+
+// Open. Why a log:subscribe ended: done (the run finished and every line
+// was sent), caught_up (no follow: every line written so far was sent;
+// the run goes on), limit, cancelled. Only done means there is nothing
+// more to read.
+type LogSubscribeStop string
+
+const (
+	LogSubscribeStopDone      LogSubscribeStop = "done"
+	LogSubscribeStopCaughtUp  LogSubscribeStop = "caught_up"
+	LogSubscribeStopLimit     LogSubscribeStop = "limit"
+	LogSubscribeStopCancelled LogSubscribeStop = "cancelled"
+)
+
+var LogSubscribeStopValues = []LogSubscribeStop{LogSubscribeStopDone, LogSubscribeStopCaughtUp, LogSubscribeStopLimit, LogSubscribeStopCancelled}
 
 type LogLines struct {
 	Lines []LogLine `json:"lines"`
@@ -640,27 +668,26 @@ type LogSearchProgress struct {
 	BytesScanned int64 `json:"bytesScanned"`
 }
 
-// Open. Why the search ended.
-type Stopped string
-
-const (
-	StoppedDone      Stopped = "done"
-	StoppedMaxHits   Stopped = "max_hits"
-	StoppedMaxBytes  Stopped = "max_bytes"
-	StoppedTimeout   Stopped = "timeout"
-	StoppedCancelled Stopped = "cancelled"
-)
-
-var StoppedValues = []Stopped{StoppedDone, StoppedMaxHits, StoppedMaxBytes, StoppedTimeout, StoppedCancelled}
-
 // Fields of the `result` answering log:search.
 type LogSearchResult struct {
 	Progress *LogSearchProgress `json:"progress"`
-	// Open. Why the search ended.
-	Stopped Stopped `json:"stopped"`
+	Stopped  LogSearchStop      `json:"stopped"`
 	// With executionId, when the search stopped before the log's end, the line after the last hit sent. 0 = nothing left.
 	NextLine int64 `json:"nextLine,omitzero"`
 }
+
+// Open. Why a log:search ended.
+type LogSearchStop string
+
+const (
+	LogSearchStopDone      LogSearchStop = "done"
+	LogSearchStopMaxHits   LogSearchStop = "max_hits"
+	LogSearchStopMaxBytes  LogSearchStop = "max_bytes"
+	LogSearchStopTimeout   LogSearchStop = "timeout"
+	LogSearchStopCancelled LogSearchStop = "cancelled"
+)
+
+var LogSearchStopValues = []LogSearchStop{LogSearchStopDone, LogSearchStopMaxHits, LogSearchStopMaxBytes, LogSearchStopTimeout, LogSearchStopCancelled}
 
 type UploadRequest struct {
 	ExecutionID string        `json:"executionId"`

@@ -36,10 +36,10 @@ func TestSession_HelloDescribesTheDaemon(t *testing.T) {
 	assert.NotEmpty(t, hello.Agent.Os)
 	assert.Equal(t, []protocol.InventoryEntry{}, hello.Executions)
 	assert.NotEmpty(t, hello.TasksHash)
-	assert.Equal(t, &protocol.FeatureStatus{Available: true}, hello.Features["exec.shell"])
-	assert.False(t, hello.Features["exec.container"].Available)
-	assert.False(t, hello.Features["agent.restart"].Available)
-	assert.False(t, hello.Features["agent.upgrade"].Available)
+	assert.Equal(t, &protocol.FeatureStatus{State: protocol.FeatureStateAvailable}, hello.Features["exec.shell"])
+	assert.Equal(t, protocol.FeatureStateUnavailable, hello.Features["exec.container"].State)
+	assert.Equal(t, protocol.FeatureStateUnavailable, hello.Features["agent.restart"].State)
+	assert.Equal(t, protocol.FeatureStateUnavailable, hello.Features["agent.upgrade"].State)
 	assert.Len(t, hello.Features, 7)
 }
 
@@ -58,8 +58,8 @@ func TestSession_HelloReportsProbedContainerEngines(t *testing.T) {
 	h.run(t)
 
 	hello := stationtest.Decode[protocol.Hello](t, st, "hello", nil)
-	assert.Equal(t, &protocol.FeatureStatus{Reason: "docker backend unavailable: no Docker or Podman daemon found"}, hello.Features["exec.container"])
-	assert.Equal(t, &protocol.FeatureStatus{Available: true}, hello.Features["exec.compose"])
+	assert.Equal(t, &protocol.FeatureStatus{State: protocol.FeatureStateUnavailable, Reason: "docker backend unavailable: no Docker or Podman daemon found"}, hello.Features["exec.container"])
+	assert.Equal(t, &protocol.FeatureStatus{State: protocol.FeatureStateAvailable}, hello.Features["exec.compose"])
 	assert.False(t, h.client.handler.liveAvailability().Container.Available)
 }
 
@@ -148,7 +148,7 @@ func TestSession_ReloadSendsAgentUpdateAndTasksSync(t *testing.T) {
 	h.bus.Publish(events.EventTasksChanged, nil)
 
 	update := stationtest.Decode[protocol.AgentUpdate](t, st, "agent:update", nil)
-	assert.True(t, update.Features["exec.config"].Available, "the first TOML task makes config dispatch available")
+	assert.Equal(t, protocol.FeatureStateAvailable, update.Features["exec.config"].State, "the first TOML task makes config dispatch available")
 	sync := stationtest.Decode[protocol.TasksSync](t, st, "tasks:sync", nil)
 	require.Len(t, sync.Tasks, 1)
 	assert.Equal(t, "backup", sync.Tasks[0].Name)

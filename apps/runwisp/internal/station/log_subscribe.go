@@ -5,6 +5,7 @@ package station
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
@@ -52,7 +53,7 @@ func (s *session) streamLog(ctx context.Context, id string, req protocol.LogSubs
 	}
 	ctx, done := s.track(ctx, id)
 	defer done()
-	return s.streamRun(ctx, id, run, req.FromLine, req.Limit, req.Follow), nil
+	return s.streamRun(ctx, id, run, req.FromLine, req.Limit, req.Follow)
 }
 
 // track registers command id (a log:subscribe or log:search) so
@@ -72,7 +73,7 @@ func (s *session) track(ctx context.Context, id string) (_ context.Context, done
 
 // streamRun streams one run's log for subscription id: from, limit and follow
 // as in log:subscribe.
-func (s *session) streamRun(ctx context.Context, id string, run *model.Run, from, limit int64, follow bool) protocol.LogSubscribeResult {
+func (s *session) streamRun(ctx context.Context, id string, run *model.Run, from, limit int64, follow bool) (protocol.LogSubscribeResult, error) {
 	path := logutil.ResolveRunLogPath(s.client.deps.LogDir, run.TaskName, run.ID, run.CreatedAt)
 	sub := &logSubscription{
 		sess:    s,
@@ -98,14 +99,15 @@ func (s *session) streamRun(ctx context.Context, id string, run *model.Run, from
 		}
 	}
 
-	caughtUp, err := sub.replay()
+	// replay stops short of the end only at the limit or on an error.
+	_, err := sub.replay()
 	switch {
 	case err != nil:
-		return sub.end(false)
-	case sub.full():
-		return sub.end(false)
-	case ended || !follow:
-		return sub.end(ended && caughtUp)
+		return sub.fail(err)
+	case sub.full(), ended:
+		return sub.end(protocol.LogSubscribeStopDone), nil
+	case !follow:
+		return sub.end(protocol.LogSubscribeStopCaughtUp), nil
 	}
 	return sub.tail(ctx, live, finished)
 }
@@ -153,24 +155,29 @@ func followRun(bus EventSubscriber, runID string) (<-chan events.LogLineEvent, <
 
 // tail sends live lines until the run ends, the limit is reached or the
 // subscription is cancelled.
-func (sub *logSubscription) tail(ctx context.Context, live <-chan events.LogLineEvent, finished <-chan struct{}) protocol.LogSubscribeResult {
+func (sub *logSubscription) tail(ctx context.Context, live <-chan events.LogLineEvent, finished <-chan struct{}) (protocol.LogSubscribeResult, error) {
 	ticker := time.NewTicker(logBatchWindow)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return sub.end(false)
+			return sub.end(protocol.LogSubscribeStopCancelled), nil
 		case <-finished:
 			// Every line is on disk before the run ends: read to the end.
-			caughtUp, err := sub.replay()
-			return sub.end(err == nil && caughtUp && !sub.full())
+			if _, err := sub.replay(); err != nil {
+				return sub.fail(err)
+			}
+			return sub.end(protocol.LogSubscribeStopDone), nil
 		case le := <-live:
-			if !sub.addLive(le) || sub.full() {
-				return sub.end(false)
+			if !sub.addLive(le) {
+				return sub.fail(errSessionClosed)
+			}
+			if sub.full() {
+				return sub.end(protocol.LogSubscribeStopDone), nil // stops at the limit
 			}
 		case <-ticker.C:
 			if !sub.flush() {
-				return sub.end(false)
+				return sub.fail(errSessionClosed)
 			}
 		}
 	}
@@ -294,8 +301,22 @@ func (sub *logSubscription) full() bool {
 	return sub.limit > 0 && sub.sent >= sub.limit
 }
 
-// end sends what is batched and returns the subscription's result.
-func (sub *logSubscription) end(eof bool) protocol.LogSubscribeResult {
+// end sends what is batched and returns the subscription's result. A
+// subscription that reached its limit stops at the limit, whatever else ended
+// it.
+func (sub *logSubscription) end(stopped protocol.LogSubscribeStop) protocol.LogSubscribeResult {
 	sub.flush()
-	return protocol.LogSubscribeResult{NextLine: sub.next, Eof: eof}
+	if sub.full() {
+		stopped = protocol.LogSubscribeStopLimit
+	}
+	return protocol.LogSubscribeResult{NextLine: sub.next, Stopped: stopped}
+}
+
+// fail ends the subscription on err. A closed session can't take a result,
+// so only a log the daemon couldn't read is reported, as internal.
+func (sub *logSubscription) fail(err error) (protocol.LogSubscribeResult, error) {
+	if !errors.Is(err, errSessionClosed) {
+		sub.flush()
+	}
+	return protocol.LogSubscribeResult{}, err
 }

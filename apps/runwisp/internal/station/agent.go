@@ -5,11 +5,13 @@ package station
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	goruntime "runtime"
 	"strings"
 
+	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/update"
 )
@@ -42,19 +44,39 @@ func (client *Client) features() map[string]*protocol.FeatureStatus {
 	out := make(map[string]*protocol.FeatureStatus, len(execTypes)+2)
 	avail := client.handler.liveAvailability()
 	for execType, name := range execTypes {
-		status := avail.ForType(execType)
-		out[name] = &protocol.FeatureStatus{Available: status.Available, Reason: status.Reason}
+		out[name] = backendFeature(avail.ForType(execType))
 	}
 	out[featureAgentRestart] = featureStatus(client.restartBlocker())
 	out[featureAgentUpgrade] = featureStatus(client.upgradeBlocker())
 	return out
 }
 
+// DisabledError is a feature the operator turned off in the daemon's
+// config, as opposed to one this host can't provide.
+type DisabledError struct{ Reason string }
+
+func (e DisabledError) Error() string { return e.Reason }
+
 func featureStatus(blocker error) *protocol.FeatureStatus {
-	if blocker != nil {
-		return &protocol.FeatureStatus{Reason: blocker.Error()}
+	switch {
+	case blocker == nil:
+		return &protocol.FeatureStatus{State: protocol.FeatureStateAvailable}
+	case errors.As(blocker, new(DisabledError)):
+		return &protocol.FeatureStatus{State: protocol.FeatureStateDisabled, Reason: blocker.Error()}
+	default:
+		return &protocol.FeatureStatus{State: protocol.FeatureStateUnavailable, Reason: blocker.Error()}
 	}
-	return &protocol.FeatureStatus{Available: true}
+}
+
+func backendFeature(s executor.BackendStatus) *protocol.FeatureStatus {
+	switch {
+	case s.Available:
+		return &protocol.FeatureStatus{State: protocol.FeatureStateAvailable}
+	case s.Policy:
+		return &protocol.FeatureStatus{State: protocol.FeatureStateDisabled, Reason: s.Reason}
+	default:
+		return &protocol.FeatureStatus{State: protocol.FeatureStateUnavailable, Reason: s.Reason}
+	}
 }
 
 // missingFeatures describes the required features this daemon lacks or can't
@@ -69,7 +91,7 @@ func (client *Client) missingFeatures(requires []string) string {
 		switch status, ok := have[name]; {
 		case !ok:
 			missing = append(missing, name+" (not supported by this daemon)")
-		case !status.Available:
+		case status.State != protocol.FeatureStateAvailable:
 			missing = append(missing, name+" ("+status.Reason+")")
 		}
 	}

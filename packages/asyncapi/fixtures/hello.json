@@ -11,27 +11,27 @@
     },
     "features": {
       "exec.shell": {
-        "available": true
+        "state": "available"
       },
       "exec.container": {
-        "available": false,
+        "state": "disabled",
         "reason": "station dispatch disabled (set RUNWISP_ALLOW=station-dispatch to enable)"
       },
       "exec.compose": {
-        "available": false,
+        "state": "unavailable",
         "reason": "docker compose not found"
       },
       "exec.http": {
-        "available": true
+        "state": "available"
       },
       "exec.config": {
-        "available": true
+        "state": "available"
       },
       "agent.restart": {
-        "available": true
+        "state": "available"
       },
       "agent.upgrade": {
-        "available": false,
+        "state": "disabled",
         "reason": "station upgrades disabled (set RUNWISP_ALLOW=station-upgrade to enable)"
       }
     },

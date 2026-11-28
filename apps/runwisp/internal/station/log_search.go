@@ -124,8 +124,8 @@ func (s *session) grepRun(ctx context.Context, g *grepScan, req protocol.LogSear
 	}
 	out := res.(protocol.LogSearchResult)
 	switch out.Stopped {
-	case protocol.StoppedDone:
-	case protocol.StoppedMaxHits, protocol.StoppedMaxBytes:
+	case protocol.LogSearchStopDone:
+	case protocol.LogSearchStopMaxHits, protocol.LogSearchStopMaxBytes:
 		out.NextLine = g.lastSent + 1
 	default:
 		out.NextLine = max(g.readTo, req.FromLine)
@@ -163,7 +163,7 @@ type grepScan struct {
 	lastSent int64 // line of the last hit queued
 	readTo   int64 // the line after the last one read
 	bytes    int   // text bytes of the hits sent
-	stop     protocol.Stopped
+	stop     protocol.LogSearchStop
 	closed   bool // the session ended
 
 	batch      []protocol.LogSearchHit
@@ -323,7 +323,7 @@ func (g *grepScan) add(h *protocol.LogSearchHit) {
 	g.lastSent = h.Line.N
 	g.bytes += hitTextBytes(h)
 	if g.maxBytes > 0 && g.bytes >= g.maxBytes {
-		g.stop = protocol.StoppedMaxBytes
+		g.stop = protocol.LogSearchStopMaxBytes
 	}
 }
 
@@ -367,18 +367,18 @@ func (g *grepScan) over() bool {
 	return g.stop != "" || g.closed
 }
 
-func (g *grepScan) stopReason(ctx context.Context) protocol.Stopped {
+func (g *grepScan) stopReason(ctx context.Context) protocol.LogSearchStop {
 	switch {
 	case g.stop != "":
 		return g.stop
 	case g.matched >= g.maxHits:
-		return protocol.StoppedMaxHits
+		return protocol.LogSearchStopMaxHits
 	case errors.Is(context.Cause(ctx), errGrepTimeout):
-		return protocol.StoppedTimeout
+		return protocol.LogSearchStopTimeout
 	case ctx.Err() != nil:
-		return protocol.StoppedCancelled
+		return protocol.LogSearchStopCancelled
 	default:
-		return protocol.StoppedDone
+		return protocol.LogSearchStopDone
 	}
 }
 

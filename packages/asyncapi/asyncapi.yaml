@@ -331,11 +331,20 @@ components:
     FeatureStatus:
       type: object
       properties:
-        available: { type: boolean }
+        state: { $ref: "#/components/schemas/FeatureState" }
         reason:
           type: string
-          description: Why it's unavailable, for an operator to read.
-      required: [available]
+          description: Why it can't be used, for an operator to read.
+      required: [state]
+
+    FeatureState:
+      $id: FeatureState
+      type: string
+      description: |
+        Open; any state but available means the feature can't be used now.
+        available; disabled (the operator turned it off in the daemon's
+        config); unavailable (this host can't provide it, e.g. no Docker).
+      enum: [available, disabled, unavailable]
 
     InventoryEntry:
       type: object
@@ -888,7 +897,8 @@ components:
         Streams log:lines (replyTo = this command's id) from fromLine on, then,
         with follow, live lines with no gap or overlap. Ends with a result
         (LogSubscribeResult): when limit lines were sent, when the run finished
-        and all lines were sent, or after `cancel`.
+        and all lines were sent, without follow once it caught up, or after
+        `cancel`. A log the daemon can't read ends it with an `internal` error.
       properties:
         executionId: { type: string }
         fromLine: { type: integer, format: int64, description: "First absolute line; 0 = start; negative = the last -fromLine lines (a tail)." }
@@ -900,7 +910,18 @@ components:
       type: object
       properties:
         nextLine: { type: integer, format: int64 }
-        eof: { type: boolean, description: The run is finished and every line was sent. }
+        stopped: { $ref: "#/components/schemas/LogSubscribeStop" }
+      required: [nextLine, stopped]
+
+    LogSubscribeStop:
+      $id: LogSubscribeStop
+      type: string
+      description: |
+        Open. Why a log:subscribe ended: done (the run finished and every line
+        was sent), caught_up (no follow: every line written so far was sent;
+        the run goes on), limit, cancelled. Only done means there is nothing
+        more to read.
+      enum: [done, caught_up, limit, cancelled]
 
     LogLines:
       type: object
@@ -1031,15 +1052,18 @@ components:
       description: Fields of the `result` answering log:search.
       properties:
         progress: { $ref: "#/components/schemas/LogSearchProgress" }
-        stopped:
-          type: string
-          description: Open. Why the search ended.
-          enum: [done, max_hits, max_bytes, timeout, cancelled]
+        stopped: { $ref: "#/components/schemas/LogSearchStop" }
         nextLine:
           type: integer
           format: int64
           description: With executionId, when the search stopped before the log's end, the line after the last hit sent. 0 = nothing left.
       required: [progress, stopped]
+
+    LogSearchStop:
+      $id: LogSearchStop
+      type: string
+      description: Open. Why a log:search ended.
+      enum: [done, max_hits, max_bytes, timeout, cancelled]
 
     UploadRequest:
       type: object

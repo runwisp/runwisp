@@ -10,7 +10,7 @@
     },
     "features": {
       "exec.config": {
-        "available": false,
+        "state": "unavailable",
         "reason": "no local tasks configured"
       }
     }

@@ -110,7 +110,7 @@ func TestLogSearch_FiltersRunsNewestFirstWithContext(t *testing.T) {
 	assert.Equal(t, int64(1), hits[1].Line.N)
 	assert.Equal(t, []protocol.LogLine{{N: 0, Stream: protocol.LogStreamStdout, Text: "boot"}}, hits[1].Before)
 	assert.Equal(t, []protocol.LogLine{{N: 2, Stream: protocol.LogStreamStdout, Text: "retry"}}, hits[1].After)
-	assert.Equal(t, protocol.StoppedDone, res.Stopped)
+	assert.Equal(t, protocol.LogSearchStopDone, res.Stopped)
 	// e5 has no log on disk: it counts as scanned, with no bytes.
 	assert.Equal(t, 3, res.Progress.RunsTotal)
 	assert.Equal(t, 3, res.Progress.RunsScanned)
@@ -154,7 +154,7 @@ func TestLogSearch_MaxHitsKeepsTheLastHitsContext(t *testing.T) {
 	hits, res := grepResult(t, st, protocol.LogSearch{Terms: []protocol.LogSearchTerm{word("hit")}, Context: 2, MaxHits: 3, TimeoutMs: 5000})
 	require.Equal(t, []string{"e1:hit 0", "e1:hit 1", "e1:hit 2"}, hitLines(hits))
 	assert.Equal(t, []string{"hit 3", "hit 4"}, []string{hits[2].After[0].Text, hits[2].After[1].Text})
-	assert.Equal(t, protocol.StoppedMaxHits, res.Stopped)
+	assert.Equal(t, protocol.LogSearchStopMaxHits, res.Stopped)
 	assert.Equal(t, 1, res.Progress.RunsScanned, "a cap ends the scan")
 }
 
@@ -166,7 +166,7 @@ func TestLogSearch_MaxBytes(t *testing.T) {
 
 	hits, res := grepResult(t, st, protocol.LogSearch{Terms: []protocol.LogSearchTerm{word("hit")}, MaxHits: 100, MaxBytes: 12, TimeoutMs: 5000})
 	assert.Len(t, hits, 3, "5 + 5 + 5 bytes reach 12")
-	assert.Equal(t, protocol.StoppedMaxBytes, res.Stopped)
+	assert.Equal(t, protocol.LogSearchStopMaxBytes, res.Stopped)
 }
 
 // Long lines are cut to 4 KiB, and a hit whose context would overflow the
@@ -233,7 +233,7 @@ func TestLogSearch_CancelStopsTheScan(t *testing.T) {
 	st.Send(t, "cancel", "", protocol.Cancel{Command: id})
 	var res protocol.LogSearchResult
 	require.True(t, st.Result(t, id, &res).Ok)
-	assert.Equal(t, protocol.StoppedCancelled, res.Stopped)
+	assert.Equal(t, protocol.LogSearchStopCancelled, res.Stopped)
 	assert.Equal(t, 1, res.Progress.RunsTotal)
 	assert.Positive(t, res.Progress.BytesScanned)
 }
@@ -247,7 +247,7 @@ func TestLogSearch_TimeoutStopsTheScan(t *testing.T) {
 	id := st.Command(t, "log:search", protocol.LogSearch{Terms: []protocol.LogSearchTerm{word("absent")}, MaxHits: 10, TimeoutMs: 100})
 	var res protocol.LogSearchResult
 	require.True(t, st.Result(t, id, &res).Ok)
-	assert.Equal(t, protocol.StoppedTimeout, res.Stopped)
+	assert.Equal(t, protocol.LogSearchStopTimeout, res.Stopped)
 }
 
 func TestGrepRing_KeepsTheLastLinesInOrder(t *testing.T) {
@@ -314,6 +314,6 @@ func TestLogSearch_BatchesHitsAcrossRuns(t *testing.T) {
 
 	hits, res := grepResult(t, st, protocol.LogSearch{Terms: []protocol.LogSearchTerm{word("hit")}, MaxHits: 100, TimeoutMs: 5000})
 	require.Len(t, hits, 50)
-	assert.Equal(t, protocol.StoppedDone, res.Stopped)
+	assert.Equal(t, protocol.LogSearchStopDone, res.Stopped)
 	assert.Less(t, st.Count("log:search:hits"), 5, "not a frame per run")
 }

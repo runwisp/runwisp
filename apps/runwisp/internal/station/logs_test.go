@@ -123,7 +123,7 @@ func TestLogSubscribe_ReplayThenLiveWithoutGapOrOverlap(t *testing.T) {
 
 	var res protocol.LogSubscribeResult
 	require.True(t, st.Result(t, id, &res).Ok)
-	assert.Equal(t, protocol.LogSubscribeResult{NextLine: 12, Eof: true}, res)
+	assert.Equal(t, protocol.LogSubscribeResult{NextLine: 12, Stopped: protocol.LogSubscribeStopDone}, res)
 }
 
 func TestLogSubscribe_LimitWithoutFollow(t *testing.T) {
@@ -137,7 +137,7 @@ func TestLogSubscribe_LimitWithoutFollow(t *testing.T) {
 	assert.Equal(t, []int64{2, 3}, lineNumbers(collectLines(t, st, id, 2)))
 	var res protocol.LogSubscribeResult
 	require.True(t, st.Result(t, id, &res).Ok)
-	assert.Equal(t, protocol.LogSubscribeResult{NextLine: 4}, res)
+	assert.Equal(t, protocol.LogSubscribeResult{NextLine: 4, Stopped: protocol.LogSubscribeStopLimit}, res)
 }
 
 // A negative fromLine asks for a tail: the last -fromLine lines on disk.
@@ -167,7 +167,7 @@ func TestLogSubscribe_CancelEndsWithResult(t *testing.T) {
 	st.Send(t, "cancel", "", protocol.Cancel{Command: id})
 	var res protocol.LogSubscribeResult
 	require.True(t, st.Result(t, id, &res).Ok)
-	assert.Equal(t, protocol.LogSubscribeResult{NextLine: 3}, res)
+	assert.Equal(t, protocol.LogSubscribeResult{NextLine: 3, Stopped: protocol.LogSubscribeStopCancelled}, res)
 }
 
 func TestLogSubscribe_UnknownExecution(t *testing.T) {
@@ -191,13 +191,13 @@ func TestLogSearch(t *testing.T) {
 	literal := []protocol.LogSearchTerm{{Parts: []string{"line 1"}}}
 	hits, res := grepResult(t, st, protocol.LogSearch{ExecutionID: "e1", Terms: literal, MaxHits: 3, TimeoutMs: 5000})
 	assert.Equal(t, []string{"e1:line 1", "e1:line 10", "e1:line 11"}, hitLines(hits))
-	assert.Equal(t, protocol.StoppedMaxHits, res.Stopped)
+	assert.Equal(t, protocol.LogSearchStopMaxHits, res.Stopped)
 	assert.Equal(t, int64(12), res.NextLine)
 
 	// Resuming at nextLine finds the rest; a regex matches instead of terms.
 	hits, res = grepResult(t, st, protocol.LogSearch{ExecutionID: "e1", Regex: `LINE 1\d`, FromLine: 12, MaxHits: 100, TimeoutMs: 5000})
 	assert.Equal(t, []string{"e1:line 12", "e1:line 13", "e1:line 14", "e1:line 15", "e1:line 16", "e1:line 17", "e1:line 18", "e1:line 19"}, hitLines(hits))
-	assert.Equal(t, protocol.StoppedDone, res.Stopped)
+	assert.Equal(t, protocol.LogSearchStopDone, res.Stopped)
 	assert.Zero(t, res.NextLine)
 	assert.Equal(t, protocol.LogSearchProgress{RunsScanned: 1, RunsTotal: 1, BytesScanned: res.Progress.BytesScanned}, *res.Progress)
 
