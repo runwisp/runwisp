@@ -26,6 +26,6 @@
         "+timeout"
       ]
     },
-    "logStream": true
+    "logUpload": "stream"
   }
 }

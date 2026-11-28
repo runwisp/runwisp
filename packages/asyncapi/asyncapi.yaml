@@ -776,10 +776,18 @@ components:
           additionalProperties: { type: string }
         timeoutMs: { type: integer, description: 0 = no timeout (config spec - the task's own). }
         options: { $ref: "#/components/schemas/RunOptions" }
-        logStream:
-          type: boolean
-          description: Upload the log in chunks while running (upload:request purpose log.chunk).
-      required: [executionId, taskId, spec]
+        logUpload: { $ref: "#/components/schemas/LogUpload" }
+      required: [executionId, taskId, spec, logUpload]
+
+    LogUpload:
+      $id: LogUpload
+      type: string
+      description: |
+        Open; an unknown value is treated as archive. What the daemon uploads
+        of a run's log: none (it stays on the daemon, read through log:subscribe
+        and log:search), archive (one log.archive upload when the run ends),
+        stream (as archive, plus log.chunk uploads while it runs).
+      enum: [none, archive, stream]
 
     ExecutionStop:
       type: object

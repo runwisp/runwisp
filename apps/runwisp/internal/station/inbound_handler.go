@@ -95,9 +95,12 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, d protocol
 	}
 
 	// Record the pending archive BEFORE the run starts: a crash after the
-	// trigger would otherwise leave a log nobody uploads.
-	if err := h.uploader.RegisterDispatch(ctx, executionID, d.LogStream); err != nil {
-		slog.Warn("failed to record the execution's log for archival", "executionId", executionID, "err", err)
+	// trigger would otherwise leave a log nobody uploads. With logUpload none
+	// the log stays here and nothing is recorded.
+	if d.LogUpload != protocol.LogUploadNone {
+		if err := h.uploader.RegisterDispatch(ctx, executionID, d.LogUpload == protocol.LogUploadStream); err != nil {
+			slog.Warn("failed to record the execution's log for archival", "executionId", executionID, "err", err)
+		}
 	}
 
 	taskName, overlay, err := h.resolveDispatchTask(d)

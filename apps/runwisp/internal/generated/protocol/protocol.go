@@ -419,9 +419,22 @@ type ExecutionDispatch struct {
 	// 0 = no timeout (config spec - the task's own).
 	TimeoutMs int         `json:"timeoutMs,omitzero"`
 	Options   *RunOptions `json:"options,omitzero"`
-	// Upload the log in chunks while running (upload:request purpose log.chunk).
-	LogStream bool `json:"logStream,omitzero"`
+	LogUpload LogUpload   `json:"logUpload"`
 }
+
+// Open; an unknown value is treated as archive. What the daemon uploads
+// of a run's log: none (it stays on the daemon, read through log:subscribe
+// and log:search), archive (one log.archive upload when the run ends),
+// stream (as archive, plus log.chunk uploads while it runs).
+type LogUpload string
+
+const (
+	LogUploadNone    LogUpload = "none"
+	LogUploadArchive LogUpload = "archive"
+	LogUploadStream  LogUpload = "stream"
+)
+
+var LogUploadValues = []LogUpload{LogUploadNone, LogUploadArchive, LogUploadStream}
 
 // Stops a running execution, or one accepted and still waiting to start;
 // either finishes with reason stopped. Stopping a finished execution

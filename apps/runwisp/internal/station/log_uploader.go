@@ -45,7 +45,7 @@ type LogUploader struct {
 
 	mu sync.Mutex
 	// pending maps each execution awaiting its archive to whether its
-	// dispatch asked for logStream. The flag isn't persisted: a run a daemon
+	// dispatch asked for logUpload stream. The flag isn't persisted: a run a daemon
 	// restart interrupted has nothing left to stream.
 	pending   map[string]bool
 	archiving map[string]bool // archives in flight, so two never race

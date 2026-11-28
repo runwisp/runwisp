@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	// logStreamInterval is how often a logStream run's new output is shipped.
+	// logStreamInterval is how often a streaming run's new output is shipped.
 	// A run that ends sooner never streams: its archive covers it.
 	logStreamInterval = 5 * time.Second
 	// logChunkMaxBytes caps one chunk's raw size; a firehose ships several
@@ -32,7 +32,7 @@ const (
 	logChunkPutTimeout   = 30 * time.Second
 )
 
-// chunkStream is one logStream run's incremental upload. It is owned by its
+// chunkStream is one streaming run's incremental upload. It is owned by its
 // stream goroutine, and by StopStream once that goroutine is gone.
 type chunkStream struct {
 	executionID string
@@ -49,7 +49,7 @@ type chunkStream struct {
 }
 
 // StartStream begins shipping a running execution's log in chunks when its
-// dispatch asked for logStream. A no-op otherwise, or when already streaming.
+// dispatch asked for logUpload stream. A no-op otherwise, or when already streaming.
 func (u *LogUploader) StartStream(ctx context.Context, executionID, logFilePath string) {
 	if !u.wantsStream(executionID) {
 		return

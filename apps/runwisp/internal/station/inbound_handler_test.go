@@ -66,6 +66,25 @@ func TestDispatch_TriggerErrors(t *testing.T) {
 	assert.True(t, h.tracker.Reserve("e2"))
 }
 
+func TestDispatch_LogUpload(t *testing.T) {
+	h, runner, _, _ := newTestHandler(t)
+	runner.trigRun = &model.Run{ID: "r1"}
+	for id, mode := range map[string]protocol.LogUpload{
+		"none": protocol.LogUploadNone, "archive": protocol.LogUploadArchive,
+		"stream": protocol.LogUploadStream, "unknown": "teleport",
+	} {
+		d := shellDispatch(id)
+		d.LogUpload = mode
+		require.NoError(t, h.HandleExecutionDispatch(t.Context(), d))
+	}
+	assert.False(t, h.uploader.isPending("none"), "none keeps the log here")
+	assert.True(t, h.uploader.isPending("archive"))
+	assert.False(t, h.uploader.wantsStream("archive"))
+	assert.True(t, h.uploader.wantsStream("stream"))
+	assert.True(t, h.uploader.isPending("unknown"), "an unknown mode is archive")
+	assert.False(t, h.uploader.wantsStream("unknown"))
+}
+
 func TestDispatch_UnknownExecTypeIsUnsupported(t *testing.T) {
 	h, _, _, _ := newTestHandler(t)
 	d := shellDispatch("e1")
