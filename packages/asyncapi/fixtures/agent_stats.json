@@ -1,10 +1,14 @@
 {
   "type": "agent:stats",
   "data": {
-    "load1": 0.5,
-    "memTotalBytes": 8589934592,
-    "memUsedBytes": 3539053052,
-    "cpuCores": 4,
-    "uptimeMs": 86400000
+    "host": {
+      "load1": 0.5,
+      "memTotalBytes": 8589934592,
+      "memUsedBytes": 3539053052,
+      "cpuCores": 4
+    },
+    "daemon": {
+      "uptimeMs": 86400000
+    }
   }
 }

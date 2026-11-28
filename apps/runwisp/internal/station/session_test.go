@@ -196,10 +196,12 @@ func TestSession_StatsFollowWelcome(t *testing.T) {
 	h.start(t)
 
 	stats := stationtest.Decode[protocol.AgentStats](t, st, "agent:stats", nil)
-	assert.Equal(t, 4, stats.CpuCores)
+	require.NotNil(t, stats.Host)
+	require.NotNil(t, stats.Daemon)
+	assert.Equal(t, 4, stats.Host.CpuCores)
 	// No host backend: the memory is the daemon's heap, so none is sent.
-	assert.Nil(t, stats.Load1)
-	assert.Zero(t, stats.MemTotalBytes)
+	assert.Nil(t, stats.Host.Load1)
+	assert.Zero(t, stats.Host.MemTotalBytes)
 }
 
 // The outbox survives a daemon restart: an update the station never acked is

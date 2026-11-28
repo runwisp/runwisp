@@ -118,10 +118,10 @@ func unixMs(t *time.Time) int64 {
 // toAgentStats maps the daemon's host snapshot onto agent:stats.
 // Without a host backend the memory is the daemon's own heap, so it's left out.
 func toAgentStats(s model.SystemStats, uptime time.Duration) protocol.AgentStats {
-	out := protocol.AgentStats{CpuCores: s.CPUCores, UptimeMs: uptime.Milliseconds()}
+	host := &protocol.HostStats{CpuCores: s.CPUCores}
 	if s.HostMetrics {
-		out.Load1 = &s.Load1
-		out.MemTotalBytes, out.MemUsedBytes = int64(s.MemTotal), int64(s.MemUsed)
+		host.Load1 = &s.Load1
+		host.MemTotalBytes, host.MemUsedBytes = int64(s.MemTotal), int64(s.MemUsed)
 	}
-	return out
+	return protocol.AgentStats{Host: host, Daemon: &protocol.DaemonStats{UptimeMs: uptime.Milliseconds()}}
 }

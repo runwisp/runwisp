@@ -194,7 +194,10 @@ func TestServiceTaskID(t *testing.T) {
 
 func TestToAgentStats_HostMetricsOnly(t *testing.T) {
 	stats := toAgentStats(model.SystemStats{HostMetrics: true, Load1: 2.5, MemTotal: 100, MemUsed: 40, CPUCores: 2}, time.Second)
-	assert.Equal(t, protocol.AgentStats{Load1: new(2.5), MemTotalBytes: 100, MemUsedBytes: 40, CpuCores: 2, UptimeMs: 1000}, stats)
+	assert.Equal(t, protocol.AgentStats{
+		Host:   &protocol.HostStats{Load1: new(2.5), MemTotalBytes: 100, MemUsedBytes: 40, CpuCores: 2},
+		Daemon: &protocol.DaemonStats{UptimeMs: 1000},
+	}, stats)
 }
 
 // A feature the operator turned off reads disabled; one the host can't

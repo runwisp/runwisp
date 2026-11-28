@@ -191,18 +191,26 @@ type AgentUpdate struct {
 	Features map[string]*FeatureStatus `json:"features,omitzero"`
 }
 
-// The daemon's host, sampled when sent. A value the daemon can't
-// measure on its platform is absent, never a stand-in.
+// Sampled when sent. A value the daemon can't measure on its platform
+// is absent, never a stand-in.
 type AgentStats struct {
-	// The host's 1-minute load average, as the OS reports it (not a percent).
-	Load1 *float64 `json:"load1,omitzero"`
-	// Host memory.
-	MemTotalBytes int64 `json:"memTotalBytes,omitzero"`
-	// Host memory in use (total minus available).
+	Host   *HostStats   `json:"host"`
+	Daemon *DaemonStats `json:"daemon"`
+}
+
+// The machine the daemon runs on.
+type HostStats struct {
+	// 1-minute load average, as the OS reports it (not a percent).
+	Load1         *float64 `json:"load1,omitzero"`
+	MemTotalBytes int64    `json:"memTotalBytes,omitzero"`
+	// Total minus available.
 	MemUsedBytes int64 `json:"memUsedBytes,omitzero"`
 	CpuCores     int   `json:"cpuCores,omitzero"`
-	// Daemon process uptime.
-	UptimeMs int64 `json:"uptimeMs,omitzero"`
+}
+
+// The daemon process itself.
+type DaemonStats struct {
+	UptimeMs int64 `json:"uptimeMs"`
 }
 
 // Install release `version` from the daemon's own built-in release source
@@ -461,10 +469,21 @@ type VolumeMount struct {
 }
 
 type PortMapping struct {
-	Host      int    `json:"host"`
-	Container int    `json:"container"`
-	Protocol  string `json:"protocol,omitzero"`
+	Host      int          `json:"host"`
+	Container int          `json:"container"`
+	Protocol  PortProtocol `json:"protocol,omitzero"`
 }
+
+// Absent = tcp.
+type PortProtocol string
+
+const (
+	PortProtocolTcp  PortProtocol = "tcp"
+	PortProtocolUdp  PortProtocol = "udp"
+	PortProtocolSctp PortProtocol = "sctp"
+)
+
+var PortProtocolValues = []PortProtocol{PortProtocolTcp, PortProtocolUdp, PortProtocolSctp}
 
 type KeyValue struct {
 	Key   string `json:"key"`
@@ -706,9 +725,11 @@ var LogStreamValues = []LogStream{LogStreamStdout, LogStreamStderr, LogStreamSys
 // is reached, or after `cancel`. With executionId, an unknown execution
 // is refused with not_found and one not started yet with unavailable.
 type LogSearch struct {
-	// A line matches when it matches every term. Compiled by the station from the user's query.
+	// A line matches when it matches every term. Compiled by the station
+	// from the user's query. Exactly one of terms and regex is set; a
+	// search with both or neither is refused as `invalid`.
 	Terms []LogSearchTerm `json:"terms,omitzero"`
-	// RE2. When set, a line matches when it matches regex, and terms is ignored.
+	// RE2. A line matches when it matches regex.
 	Regex string `json:"regex,omitzero"`
 	// False: terms and regex ignore case (terms' parts and the line are
 	// both lowercased, as Go's strings.ToLower does).

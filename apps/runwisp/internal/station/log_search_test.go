@@ -196,11 +196,17 @@ func TestLogSearch_InvalidTerms(t *testing.T) {
 	empty := word("")
 	unknownAnchor := word("error")
 	unknownAnchor.End = "line"
-	for _, term := range []protocol.LogSearchTerm{empty, unknownAnchor} {
-		id := st.Command(t, "log:search", protocol.LogSearch{Terms: []protocol.LogSearchTerm{term}, MaxHits: 1, TimeoutMs: 1000})
+	for _, req := range []protocol.LogSearch{
+		{Terms: []protocol.LogSearchTerm{empty}},
+		{Terms: []protocol.LogSearchTerm{unknownAnchor}},
+		{Terms: []protocol.LogSearchTerm{word("error")}, Regex: "err"}, // both
+		{}, // neither
+	} {
+		req.MaxHits, req.TimeoutMs = 1, 1000
+		id := st.Command(t, "log:search", req)
 		res := st.Result(t, id, nil)
-		require.NotNil(t, res.Error, "%+v", term)
-		assert.Equal(t, protocol.ErrorCodeInvalid, res.Error.Code, "%+v", term)
+		require.NotNil(t, res.Error, "%+v", req)
+		assert.Equal(t, protocol.ErrorCodeInvalid, res.Error.Code, "%+v", req)
 	}
 }
 

@@ -68,7 +68,7 @@ info:
     2. station -> `welcome`, or `goodbye` and close
     3. daemon resends every unacknowledged `execution:update`, sends
        `service:status` for each service, and `tasks:sync` when
-       `welcome.tasksHashKnown` is false.
+       `welcome.tasksSync` is `full`.
 
     Either side may send `goodbye` and close at any time. Liveness: the daemon
     sends `ping` every `welcome.heartbeat.intervalMs`; the station answers
@@ -480,17 +480,31 @@ components:
     AgentStats:
       type: object
       description: |
-        The daemon's host, sampled when sent. A value the daemon can't
-        measure on its platform is absent, never a stand-in.
+        Sampled when sent. A value the daemon can't measure on its platform
+        is absent, never a stand-in.
+      properties:
+        host: { $ref: "#/components/schemas/HostStats" }
+        daemon: { $ref: "#/components/schemas/DaemonStats" }
+      required: [host, daemon]
+
+    HostStats:
+      type: object
+      description: The machine the daemon runs on.
       properties:
         load1:
           type: number
           nullable: true
-          description: The host's 1-minute load average, as the OS reports it (not a percent).
-        memTotalBytes: { type: integer, format: int64, description: Host memory. }
-        memUsedBytes: { type: integer, format: int64, description: Host memory in use (total minus available). }
+          description: 1-minute load average, as the OS reports it (not a percent).
+        memTotalBytes: { type: integer, format: int64 }
+        memUsedBytes: { type: integer, format: int64, description: Total minus available. }
         cpuCores: { type: integer }
-        uptimeMs: { type: integer, format: int64, description: Daemon process uptime. }
+
+    DaemonStats:
+      type: object
+      description: The daemon process itself.
+      properties:
+        uptimeMs: { type: integer, format: int64 }
+      required: [uptimeMs]
 
     AgentUpgrade:
       type: object
@@ -745,8 +759,14 @@ components:
       properties:
         host: { type: integer }
         container: { type: integer }
-        protocol: { type: string }
+        protocol: { $ref: "#/components/schemas/PortProtocol" }
       required: [host, container]
+
+    PortProtocol:
+      $id: PortProtocol
+      type: string
+      enum: [tcp, udp, sctp]
+      description: Absent = tcp.
 
     KeyValue:
       type: object
@@ -1026,10 +1046,13 @@ components:
         terms:
           type: array
           items: { $ref: "#/components/schemas/LogSearchTerm" }
-          description: A line matches when it matches every term. Compiled by the station from the user's query.
+          description: |
+            A line matches when it matches every term. Compiled by the station
+            from the user's query. Exactly one of terms and regex is set; a
+            search with both or neither is refused as `invalid`.
         regex:
           type: string
-          description: RE2. When set, a line matches when it matches regex, and terms is ignored.
+          description: RE2. A line matches when it matches regex.
         caseSensitive:
           type: boolean
           description: |
@@ -1053,9 +1076,9 @@ components:
         since: { type: integer, format: int64, description: "Unix ms; only runs that overlap [since, until]: still running, or ended at or after since. 0 = no bound." }
         until: { type: integer, format: int64, description: "Unix ms; only runs that overlap [since, until]: started at or before until. 0 = no bound." }
         context: { type: integer, description: "Lines before and after each hit, 0-5." }
-        maxHits: { type: integer, description: Stop after this many hits. }
+        maxHits: { type: integer, minimum: 1, description: Stop after this many hits. }
         maxBytes: { type: integer, description: "Stop after this many bytes of hit text (lines and context). 0 = no limit." }
-        timeoutMs: { type: integer, description: The daemon stops on its own after this long. }
+        timeoutMs: { type: integer, minimum: 1, description: The daemon stops on its own after this long. }
       required: [maxHits, timeoutMs]
 
     LogSearchTerm:

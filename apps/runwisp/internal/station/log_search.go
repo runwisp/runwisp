@@ -207,6 +207,9 @@ func (s *session) newGrepScan(id string, req protocol.LogSearch) (*grepScan, err
 
 // searchMatcher is req's matcher: its regex when set, else its terms.
 func searchMatcher(req protocol.LogSearch) (logsearch.Matcher, error) {
+	if req.Regex != "" && len(req.Terms) > 0 {
+		return nil, errors.New("set terms or regex, not both")
+	}
 	if req.Regex != "" {
 		return logsearch.NewMatcher(req.Regex, true, req.CaseSensitive)
 	}
