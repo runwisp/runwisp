@@ -1696,7 +1696,7 @@ func TestUpsertTask_PolicyChangeAwayFromQueueFinalizesQueuedRuns(t *testing.T) {
 // jitter-gate/cron-hold interaction that could double-run a task. A jittered
 // fire submitted to the gate can sit pending behind another in-flight jittered
 // run; in that window a system cron daemon can come back live and reclaim the
-// task (HeldBy set via UpsertTask, exactly what RefreshCronHolds does). The
+// task (HeldBy set via UpsertTask, exactly what refreshCronHolds does). The
 // stale fire must never start once the gate frees up — a live system cron
 // daemon owns this tick now, so RunWisp starting its own run for it would be
 // exactly the double-execution the hold exists to prevent.
@@ -1722,7 +1722,7 @@ func TestScheduleJitteredRun_HeldTaskFireDroppedNotDoubleRun(t *testing.T) {
 	jm.ScheduleJitteredRun("b", tick, tick.Add(time.Hour), time.Hour)
 
 	// A system cron daemon reclaims "b" while its fire still sits in the gate —
-	// this is exactly what RefreshCronHolds does to the live task set.
+	// this is exactly what refreshCronHolds does to the live task set.
 	held := testTask("b", model.PolicySkip, 1)
 	held.HeldBy = model.HeldByCron
 	jm.UpsertTask(held)

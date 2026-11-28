@@ -29,12 +29,36 @@ func TestScanLines_PrevStartAfterMultipleRotations(t *testing.T) {
 	writeContainer(t, logPath, MetaRecord(LogMeta{RotatedLines: 5, PrevStart: 3}))
 
 	var got []int64
-	err := ScanLines(context.Background(), logPath, func(r LogLineRecord) bool {
+	err := ScanLines(context.Background(), logPath, 0, func(r LogLineRecord) bool {
 		got = append(got, r.LineNum)
 		return true
 	})
 	require.NoError(t, err)
 	assert.Equal(t, []int64{3, 4, 5, 6}, got)
+}
+
+func TestScanLinesSeeksIntoIndexedSegment(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "run.log")
+	const rotated = 7
+	const start = rotated + LogIndexInterval + 1
+	// An oversized first line would make a scan from the start fail. The
+	// index lands in the second chunk, one line before the requested line.
+	prefix := strings.Repeat("x", maxLogLineSize+1) + "\n" + strings.Repeat("prefix\n", LogIndexInterval-1)
+	require.NoError(t, os.WriteFile(logPath, []byte(prefix+"skip\n[ERR] hit\nlast\n"), 0o644))
+	// Opening this .prev as a log would fail, and a current-segment resume
+	// must skip it entirely.
+	require.NoError(t, os.Mkdir(PrevPath(logPath), 0o755))
+	writeContainer(t, logPath, MetaRecord(LogMeta{RotatedLines: rotated}), IndexRecord(0), IndexRecord(int64(len(prefix))))
+
+	var got []LogLineRecord
+	require.NoError(t, ScanLines(t.Context(), logPath, start, func(line LogLineRecord) bool {
+		got = append(got, line)
+		return true
+	}))
+	assert.Equal(t, []LogLineRecord{
+		{LineNum: start, Stream: StreamStderr, Text: "hit"},
+		{LineNum: start + 1, Stream: StreamStdout, Text: "last"},
+	}, got)
 }
 
 // TestReadLineRange_PrevStartAfterMultipleRotations mirrors

@@ -29,4 +29,12 @@ final class LinesTest extends TestCase
         self::assertSame([[str_repeat('b', Lines::MAX_PIECE), true]], $lines->push(str_repeat('b', Lines::MAX_PIECE + 1)));
         self::assertSame([['b', true]], $lines->flush());
     }
+
+    public function testKeepsUtf8CharactersIntactAcrossPieceAndReadBoundaries(): void
+    {
+        $lines = new Lines();
+        $prefix = str_repeat('a', Lines::MAX_PIECE - 1);
+        self::assertSame([], $lines->push($prefix . "\xe2"));
+        self::assertSame([[$prefix, true], ['€', false]], $lines->push("\x82\xac\n"));
+    }
 }

@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Fold task groups in the web UI sidebar.** Click a group's name to fold it; the browser remembers it, and a folded group still shows how many of its tasks failed. The overview's task list can show one group at a time, and the pick stays in the address bar (`/?group=Backups`). ([#504](https://github.com/runwisp/runwisp/issues/504), thanks [@marckilgore-beep](https://github.com/marckilgore-beep))
 
+### Fixed
+
+- When you undo a run deletion, the restored run and its logs stay available even if cleanup was about to remove them.
+- If automatic cleanup fails to remove a run or its logs, RunWisp retries later. Cleanup messages count only the runs it successfully removed.
+- Queued JavaScript SDK tasks respect the limit you set on how many runs can be active at once.
+- Accented letters, emoji, and other characters stay intact in long lines of PHP SDK output.
+- Reloading while RunWisp checks whether system cron is running no longer causes imported jobs to be missed or run twice.
+- The dashboard shows the new timezone and next-run times after a timezone change and reload, even while the page stays open.
+- Signing out stops live system and notification updates, even while the dashboard is still loading.
+- Log search keeps your place as new runs appear or old ones are deleted. Later pages of results load faster when searching a large log.
+
 ## [1.11.0] - 2026-11-25
 
 ### Added

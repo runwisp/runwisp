@@ -52,7 +52,7 @@ type RunRepository interface {
 	LastRuns(ctx context.Context, taskNames []string) (map[string]model.Run, error)
 	CountRunsFiltered(ctx context.Context, filter model.RunFilter) (int64, error)
 	QueryRuns(ctx context.Context, q RunQuery) ([]model.Run, error)
-	DeleteRun(ctx context.Context, id string) error
+	ListLogSearchRuns(ctx context.Context, task string, limit int, boundary LogSearchBoundary) ([]LogSearchRun, error)
 	SelectOldRuns(ctx context.Context, task *model.Task) ([]model.Run, error)
 	DeleteRunsByIDs(ctx context.Context, ids []string) error
 	// GetRunningRuns returns the runs still marked running. At boot, before
@@ -78,7 +78,9 @@ type RunRepository interface {
 	SoftDeleteRuns(ctx context.Context, sel model.RunSelector, deletedAt time.Time) ([]RunRef, error)
 	RestoreRuns(ctx context.Context, sel model.RunSelector) ([]model.Run, error)
 	ResolveSelectorIDs(ctx context.Context, sel model.RunSelector, statusFilter string) ([]RunRef, error)
-	SelectExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]RunRef, error)
+	ClaimExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]RunRef, error)
+	ClaimRetentionDeletes(ctx context.Context, ids []string) ([]RunRef, error)
+	ListPendingRetentionDeletes(ctx context.Context) ([]RunRef, error)
 	Close() error
 }
 
@@ -268,11 +270,37 @@ func (db *SQLiteDatabase) QueryRuns(ctx context.Context, q RunQuery) ([]model.Ru
 	return dispatchQueryRuns(ctx, db.q, q.SortField, q.SortDirection, params)
 }
 
-// DeleteRun hard-deletes a single run by id, bypassing the soft-delete
-// window. Used by retention sweeps; soft-delete-aware paths go through
-// SoftDeleteRuns instead.
-func (db *SQLiteDatabase) DeleteRun(ctx context.Context, id string) error {
-	return db.q.DeleteRun(ctx, id)
+// LogSearchBoundary is the newest key allowed in the next log-search window.
+type LogSearchBoundary struct {
+	CreationKey string
+	ID          string
+	Include     bool
+}
+
+type LogSearchRun struct {
+	RunRef
+	CreationKey string
+}
+
+func (db *SQLiteDatabase) ListLogSearchRuns(ctx context.Context, task string, limit int, boundary LogSearchBoundary) ([]LogSearchRun, error) {
+	var key *string
+	if boundary.ID != "" {
+		key = &boundary.CreationKey
+	}
+	rows, err := db.q.ListLogSearchRuns(ctx, sqlcdb.ListLogSearchRunsParams{
+		TaskName: task, CreationKey: key, BoundaryID: boundary.ID, IncludeBoundary: boolToInt64(boundary.Include), RowsLimit: int64(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	runs := make([]LogSearchRun, 0, len(rows))
+	for _, row := range rows {
+		runs = append(runs, LogSearchRun{
+			RunRef:      RunRef{ID: row.ID, TaskName: row.TaskName, CreatedAt: row.CreatedAt},
+			CreationKey: row.CreationKey,
+		})
+	}
+	return runs, nil
 }
 
 // deleteRunsChunk is how many ids one DELETE ... IN (...) binds. SQLite caps
@@ -281,26 +309,38 @@ func (db *SQLiteDatabase) DeleteRun(ctx context.Context, id string) error {
 const deleteRunsChunk = 10000
 
 // DeleteRunsByIDs hard-deletes the given rows in a single transaction. Used by
-// retention/purge callers as the second half of a select-then-delete
-// sequence: they must remove the on-disk log files for these rows first, so
-// a crash between the two steps leaves an orphan row (harmless) rather than
-// an orphan log file (a permanent disk leak). A no-op for an empty slice.
+// cleanup after removing the owned log files. A no-op for an empty slice.
 func (db *SQLiteDatabase) DeleteRunsByIDs(ctx context.Context, ids []string) error {
+	_, err := db.refsInChunkedTx(ctx, ids, func(q *sqlcdb.Queries, chunk []string) ([]RunRef, error) {
+		return nil, q.DeleteRunsByIDs(ctx, chunk)
+	})
+	return err
+}
+
+// refsInChunkedTx runs fn over ids in deleteRunsChunk-sized slices inside one
+// transaction, so the batch is all or nothing. A no-op for an empty slice.
+func (db *SQLiteDatabase) refsInChunkedTx(ctx context.Context, ids []string, fn func(q *sqlcdb.Queries, chunk []string) ([]RunRef, error)) ([]RunRef, error) {
 	if len(ids) == 0 {
-		return nil
+		return nil, nil
 	}
 	tx, err := db.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	qtx := db.q.WithTx(tx)
+	var refs []RunRef
 	for chunk := range slices.Chunk(ids, deleteRunsChunk) {
-		if err := qtx.DeleteRunsByIDs(ctx, chunk); err != nil {
-			return err
+		rows, err := fn(qtx, chunk)
+		if err != nil {
+			return nil, err
 		}
+		refs = append(refs, rows...)
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return refs, nil
 }
 
 // RunRef is the minimum identifying tuple needed to resolve a run's log path
@@ -355,29 +395,14 @@ func (db *SQLiteDatabase) SoftDeleteRuns(ctx context.Context, sel model.RunSelec
 		}
 		return runRefsFrom(rows), nil
 	}
-	// Chunked like DeleteRunsByIDs, in one transaction so the batch is all or nothing.
-	tx, err := db.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	qtx := db.q.WithTx(tx)
-	var refs []RunRef
-	for chunk := range slices.Chunk(sel.IDs, deleteRunsChunk) {
-		rows, err := qtx.SoftDeleteRunsByIDs(ctx, sqlcdb.SoftDeleteRunsByIDsParams{
+	return db.refsInChunkedTx(ctx, sel.IDs, func(q *sqlcdb.Queries, chunk []string) ([]RunRef, error) {
+		rows, err := q.SoftDeleteRunsByIDs(ctx, sqlcdb.SoftDeleteRunsByIDsParams{
 			DeletedAt:   &deletedAt,
 			StatusPhase: model.PhaseEnded,
 			Ids:         chunk,
 		})
-		if err != nil {
-			return nil, err
-		}
-		refs = append(refs, runRefsFrom(rows)...)
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return refs, nil
+		return runRefsFrom(rows), err
+	})
 }
 
 // RestoreRuns clears deleted_at for every soft-deleted run matched by sel
@@ -448,24 +473,29 @@ func (db *SQLiteDatabase) ResolveSelectorIDs(ctx context.Context, sel model.RunS
 	return runRefsFrom(rows), nil
 }
 
-// SelectExpiredSoftDeletes returns refs for every soft-deleted row whose
-// deleted_at is older than ttl ago (use ttl=0 to select everything currently
-// soft-deleted, for the boot-time drain) without deleting anything. Callers
-// must remove the referenced log files before hard-deleting the rows via
-// DeleteRunsByIDs — see the SQL query's comment for why the order matters.
-func (db *SQLiteDatabase) SelectExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]RunRef, error) {
+// ClaimExpiredSoftDeletes claims expired runs before any filesystem changes.
+// Already claimed rows are returned again so interrupted cleanup can finish.
+func (db *SQLiteDatabase) ClaimExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]RunRef, error) {
 	cutoff := time.Now().UTC().Add(-ttl)
-	rows, err := db.q.SelectExpiredSoftDeletes(ctx, &cutoff)
-	if err != nil {
-		return nil, err
-	}
-	return runRefsFrom(rows), nil
+	rows, err := db.q.ClaimExpiredSoftDeletes(ctx, &cutoff)
+	return runRefsFrom(rows), err
 }
 
-// SelectOldRuns returns the runs that KeepFor/KeepRuns retention would evict
-// for task, without deleting anything. Callers must remove the runs' log
-// files before hard-deleting the rows via DeleteRunsByIDs — see
-// SelectExpiredSoftDeletes for why the order matters.
+// ClaimRetentionDeletes reserves selected runs for cleanup, provided the
+// operator hasn't soft-deleted them since selection.
+func (db *SQLiteDatabase) ClaimRetentionDeletes(ctx context.Context, ids []string) ([]RunRef, error) {
+	return db.refsInChunkedTx(ctx, ids, func(q *sqlcdb.Queries, chunk []string) ([]RunRef, error) {
+		rows, err := q.ClaimRetentionDeletes(ctx, chunk)
+		return runRefsFrom(rows), err
+	})
+}
+
+func (db *SQLiteDatabase) ListPendingRetentionDeletes(ctx context.Context) ([]RunRef, error) {
+	rows, err := db.q.ListPendingRetentionDeletes(ctx)
+	return runRefsFrom(rows), err
+}
+
+// SelectOldRuns returns unclaimed runs eligible for age or count retention.
 func (db *SQLiteDatabase) SelectOldRuns(ctx context.Context, task *model.Task) ([]model.Run, error) {
 	uniqueRuns := make(map[string]model.Run)
 

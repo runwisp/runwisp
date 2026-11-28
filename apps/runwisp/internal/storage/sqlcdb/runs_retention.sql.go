@@ -7,13 +7,94 @@ package sqlcdb
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
+const claimRetentionDeletes = `-- name: ClaimRetentionDeletes :many
+UPDATE runs SET purge_pending = 1
+WHERE deleted_at IS NULL AND purge_pending = 0 AND status = 'ended'
+  AND id IN (/*SLICE:ids*/?)
+RETURNING id, task_name, created_at
+`
+
+type ClaimRetentionDeletesRow struct {
+	ID        string    `json:"id"`
+	TaskName  string    `json:"task_name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (q *Queries) ClaimRetentionDeletes(ctx context.Context, ids []string) ([]ClaimRetentionDeletesRow, error) {
+	query := claimRetentionDeletes
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ClaimRetentionDeletesRow{}
+	for rows.Next() {
+		var i ClaimRetentionDeletesRow
+		if err := rows.Scan(&i.ID, &i.TaskName, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingRetentionDeletes = `-- name: ListPendingRetentionDeletes :many
+SELECT id, task_name, created_at FROM runs
+WHERE purge_pending = 1 AND deleted_at IS NULL
+`
+
+type ListPendingRetentionDeletesRow struct {
+	ID        string    `json:"id"`
+	TaskName  string    `json:"task_name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (q *Queries) ListPendingRetentionDeletes(ctx context.Context) ([]ListPendingRetentionDeletesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPendingRetentionDeletes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPendingRetentionDeletesRow{}
+	for rows.Next() {
+		var i ListPendingRetentionDeletesRow
+		if err := rows.Scan(&i.ID, &i.TaskName, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectOldRunsByAge = `-- name: SelectOldRunsByAge :many
 
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs
-WHERE task_name = ? AND created_at < ? AND status = 'ended' AND deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs
+WHERE task_name = ? AND created_at < ? AND status = 'ended' AND deleted_at IS NULL AND purge_pending = 0
 ORDER BY created_at ASC
 LIMIT ?
 `
@@ -62,6 +143,7 @@ func (q *Queries) SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAge
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}
@@ -77,8 +159,8 @@ func (q *Queries) SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAge
 }
 
 const selectOldRunsByCount = `-- name: SelectOldRunsByCount :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start FROM runs
-WHERE task_name = ? AND status = 'ended' AND deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending FROM runs
+WHERE task_name = ? AND status = 'ended' AND deleted_at IS NULL AND purge_pending = 0
 ORDER BY created_at DESC
 LIMIT ? OFFSET ?
 `
@@ -123,6 +205,7 @@ func (q *Queries) SelectOldRunsByCount(ctx context.Context, arg SelectOldRunsByC
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}

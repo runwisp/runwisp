@@ -71,14 +71,24 @@ func (m *MockRunRepository) QueryRuns(ctx context.Context, q storage.RunQuery) (
 	return args.Get(0).([]model.Run), args.Error(1)
 }
 
-func (m *MockRunRepository) DeleteRun(ctx context.Context, id string) error {
-	args := m.Called(ctx, id)
-	return args.Error(0)
-}
-
 func (m *MockRunRepository) SelectOldRuns(ctx context.Context, task *model.Task) ([]model.Run, error) {
 	args := m.Called(ctx, task)
 	return args.Get(0).([]model.Run), args.Error(1)
+}
+
+func (m *MockRunRepository) ListLogSearchRuns(ctx context.Context, task string, limit int, boundary storage.LogSearchBoundary) ([]storage.LogSearchRun, error) {
+	args := m.Called(ctx, task, limit, boundary)
+	return args.Get(0).([]storage.LogSearchRun), args.Error(1)
+}
+
+func (m *MockRunRepository) ClaimRetentionDeletes(ctx context.Context, ids []string) ([]storage.RunRef, error) {
+	args := m.Called(ctx, ids)
+	return args.Get(0).([]storage.RunRef), args.Error(1)
+}
+
+func (m *MockRunRepository) ListPendingRetentionDeletes(ctx context.Context) ([]storage.RunRef, error) {
+	args := m.Called(ctx)
+	return args.Get(0).([]storage.RunRef), args.Error(1)
 }
 
 func (m *MockRunRepository) DeleteRunsByIDs(ctx context.Context, ids []string) error {
@@ -161,7 +171,7 @@ func (m *MockRunRepository) ResolveSelectorIDs(ctx context.Context, sel model.Ru
 	return args.Get(0).([]storage.RunRef), args.Error(1)
 }
 
-func (m *MockRunRepository) SelectExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]storage.RunRef, error) {
+func (m *MockRunRepository) ClaimExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]storage.RunRef, error) {
 	args := m.Called(ctx, ttl)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

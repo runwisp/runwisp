@@ -7,7 +7,7 @@
 -- ORDER BY created_at ASC so a backlog larger than the retention batch size
 -- evicts the oldest runs first, rather than an arbitrary LIMIT slice.
 SELECT * FROM runs
-WHERE task_name = ? AND created_at < ? AND status = 'ended' AND deleted_at IS NULL
+WHERE task_name = ? AND created_at < ? AND status = 'ended' AND deleted_at IS NULL AND purge_pending = 0
 ORDER BY created_at ASC
 LIMIT ?;
 
@@ -15,6 +15,16 @@ LIMIT ?;
 -- Count-based retention likewise ranges over ended runs only, so in-flight
 -- runs neither count against the cap nor get purged.
 SELECT * FROM runs
-WHERE task_name = ? AND status = 'ended' AND deleted_at IS NULL
+WHERE task_name = ? AND status = 'ended' AND deleted_at IS NULL AND purge_pending = 0
 ORDER BY created_at DESC
 LIMIT ? OFFSET ?;
+
+-- name: ListPendingRetentionDeletes :many
+SELECT id, task_name, created_at FROM runs
+WHERE purge_pending = 1 AND deleted_at IS NULL;
+
+-- name: ClaimRetentionDeletes :many
+UPDATE runs SET purge_pending = 1
+WHERE deleted_at IS NULL AND purge_pending = 0 AND status = 'ended'
+  AND id IN (sqlc.slice('ids'))
+RETURNING id, task_name, created_at;

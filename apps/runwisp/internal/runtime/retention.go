@@ -69,16 +69,40 @@ func (cleaner *RetentionCleaner) publishDeleted(runID, taskName string) {
 	})
 }
 
-// deleteAndPublish removes the given run rows and, only once that succeeds,
-// fans out run.deleted for each.
-func (cleaner *RetentionCleaner) deleteAndPublish(ctx context.Context, ids []string, refs []storage.RunRef) {
-	if err := cleaner.db.DeleteRunsByIDs(ctx, ids); err != nil {
-		slog.Error("Failed to delete old run rows", "count", len(ids), "err", err)
-		return
-	}
+// deleteClaimedRuns finishes durable cleanup claims. Files come off disk
+// first so a failed delete or a crash leaves a claim the next sweep can retry.
+func deleteClaimedRuns(ctx context.Context, db storage.RunRepository, logDir string, refs []storage.RunRef) []storage.RunRef {
+	var ids []string
+	var removed []storage.RunRef
 	for _, ref := range refs {
-		cleaner.publishDeleted(ref.ID, ref.TaskName)
+		if ctx.Err() != nil {
+			break
+		}
+		if err := logutil.RemoveRunLogs(logDir, ref.TaskName, ref.ID, ref.CreatedAt); err != nil {
+			slog.Warn("Failed to remove run logs", "id", ref.ID, "err", err)
+			continue
+		}
+		ids = append(ids, ref.ID)
+		removed = append(removed, ref)
 	}
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := db.DeleteRunsByIDs(ctx, ids); err != nil {
+		slog.Error("Failed to delete run rows", "count", len(ids), "err", err)
+		return nil
+	}
+	return removed
+}
+
+func (cleaner *RetentionCleaner) deleteAndPublish(ctx context.Context, refs []storage.RunRef) []storage.RunRef {
+	deleted := deleteClaimedRuns(ctx, cleaner.db, cleaner.logDir, refs)
+	if cleaner.eventBus != nil {
+		for _, ref := range deleted {
+			cleaner.publishDeleted(ref.ID, ref.TaskName)
+		}
+	}
+	return deleted
 }
 
 func (cleaner *RetentionCleaner) Start() {
@@ -98,9 +122,51 @@ func (cleaner *RetentionCleaner) Stop() {
 func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {
 	slog.Debug("Running retention cleanup")
 
-	totalDeleted := 0
+	pending, err := cleaner.db.ListPendingRetentionDeletes(ctx)
+	if err != nil {
+		slog.Warn("Could not list pending retention deletes", "err", err)
+		return
+	}
+	allIDs := cleaner.selectRetentionCandidates(ctx)
+
+	var claimed []storage.RunRef
+	if len(allIDs) > 0 {
+		claimed, err = cleaner.db.ClaimRetentionDeletes(ctx, allIDs)
+		if err != nil {
+			slog.Error("Could not claim runs for retention", "err", err)
+		}
+	}
+	deleted := cleaner.deleteAndPublish(ctx, append(pending, claimed...))
+	counts := make(map[string]int)
+	for _, ref := range deleted {
+		counts[ref.TaskName]++
+	}
+	for task, count := range counts {
+		slog.Info("Retention cleaned runs", "count", count, "task", task)
+	}
+
+	totalDeleted := len(deleted)
+	if totalDeleted > 0 {
+		slog.Info("Retention cleanup complete", "deleted", totalDeleted)
+	}
+
+	sizeDeleted := 0
+	// Finish outstanding removals before choosing more runs for the size cap.
+	if err == nil && totalDeleted == len(pending)+len(claimed) {
+		sizeDeleted = cleaner.enforceMaxTotalSize(ctx)
+	}
+
+	// Return freed pages to the OS only after an actual cleanup, so RSS drops
+	// from the high-water mark a large batch left behind. Routine idle reclaim
+	// lives in runtime.MemoryReclaimer — no point forcing a full GC on every
+	// empty pass.
+	if totalDeleted > 0 || sizeDeleted > 0 {
+		rdebug.FreeOSMemory()
+	}
+}
+
+func (cleaner *RetentionCleaner) selectRetentionCandidates(ctx context.Context) []string {
 	var allIDs []string
-	var deletedRefs []storage.RunRef
 	cleaner.tasks.Range(func(_ string, task *model.Task) bool {
 		// KeepRuns: nil = no cap; 0 = keep no completed runs; >0 = cap.
 		// KeepFor:  0 = no cap; >0 = cap. Either a set KeepRuns or a positive
@@ -115,39 +181,13 @@ func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {
 			return true
 		}
 
-		// Log files come off disk before the row is deleted (batched below): a
-		// crash in between leaves a harmless log-less row rather than an
-		// unreclaimable orphan log file — same policy as deleteRunBatch.
 		for _, run := range oldRuns {
-			logutil.RemoveRunLogs(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
 			allIDs = append(allIDs, run.ID)
-			deletedRefs = append(deletedRefs, storage.RunRef{ID: run.ID, TaskName: run.TaskName})
-		}
-
-		if len(oldRuns) > 0 {
-			slog.Info("Retention cleaned runs", "count", len(oldRuns), "task", task.Name)
-			totalDeleted += len(oldRuns)
 		}
 		return true
 	})
 
-	if len(allIDs) > 0 {
-		cleaner.deleteAndPublish(ctx, allIDs, deletedRefs)
-	}
-
-	if totalDeleted > 0 {
-		slog.Info("Retention cleanup complete", "deleted", totalDeleted)
-	}
-
-	sizeDeleted := cleaner.enforceMaxTotalSize(ctx)
-
-	// Return freed pages to the OS only after an actual cleanup, so RSS drops
-	// from the high-water mark a large batch left behind. Routine idle reclaim
-	// lives in runtime.MemoryReclaimer — no point forcing a full GC on every
-	// empty pass.
-	if totalDeleted > 0 || sizeDeleted > 0 {
-		rdebug.FreeOSMemory()
-	}
+	return allIDs
 }
 
 // enforceMaxTotalSize deletes the oldest completed runs when the log directory
@@ -184,20 +224,39 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize(ctx context.Context) int {
 	slog.Warn("Log storage exceeds storage.max_size, purging oldest runs",
 		"current", config.FormatByteSize(totalSize), "limit", config.FormatByteSize(limit))
 
-	deleted := cleaner.deleteRunBatch(ctx, deletable, &totalSize, limit)
+	// Take the shortest oldest-first prefix that gets under the cap.
+	var ids []string
+	for _, run := range deletable {
+		if totalSize <= limit {
+			break
+		}
+		ids = append(ids, run.id)
+		totalSize -= run.bytes
+	}
+	claimed, err := cleaner.db.ClaimRetentionDeletes(ctx, ids)
+	if err != nil {
+		slog.Warn("Could not claim runs during size enforcement", "err", err)
+		return 0
+	}
+	deleted := len(cleaner.deleteAndPublish(ctx, claimed))
 	if deleted > 0 {
 		slog.Info("Purged runs to enforce storage.max_size", "deleted", deleted)
 	}
 	return deleted
 }
 
+// sizedRun is a completed run's id and the bytes its log files take.
+type sizedRun struct {
+	id    string
+	bytes int64
+}
+
 // deletableRuns lists the completed runs that still have log files on disk,
-// oldest first, and the bytes deleting all of them would free. Only the fields
-// deleteRunBatch reads are kept, so a long history stays cheap to hold.
-func (cleaner *RetentionCleaner) deletableRuns(ctx context.Context) ([]model.Run, int64, error) {
+// oldest first, and the bytes deleting all of them would free.
+func (cleaner *RetentionCleaner) deletableRuns(ctx context.Context) ([]sizedRun, int64, error) {
 	const pageSize = 100
 	var (
-		runs  []model.Run
+		runs  []sizedRun
 		bytes int64
 	)
 	for offset := 0; ; offset += pageSize {
@@ -215,7 +274,7 @@ func (cleaner *RetentionCleaner) deletableRuns(ctx context.Context) ([]model.Run
 				continue
 			}
 			if size := cleaner.runLogBytes(run); size > 0 {
-				runs = append(runs, model.Run{ID: run.ID, TaskName: run.TaskName, CreatedAt: run.CreatedAt, Status: run.Status})
+				runs = append(runs, sizedRun{id: run.ID, bytes: size})
 				bytes += size
 			}
 		}
@@ -225,40 +284,16 @@ func (cleaner *RetentionCleaner) deletableRuns(ctx context.Context) ([]model.Run
 	}
 }
 
-// runLogBytes is the size of a run's log, its meta file and the rotated-away
-// .prev segment: everything RemoveRunLogs deletes, and dirSize counted.
+// runLogBytes is the size of a run's log files: everything RemoveRunLogs
+// deletes, and dirSize counted.
 func (cleaner *RetentionCleaner) runLogBytes(run model.Run) int64 {
-	logPath := logutil.ResolveRunLogPath(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
 	var total int64
-	for _, p := range []string{logPath, logutil.MetaPath(logPath), logutil.PrevPath(logPath)} {
-		if info, err := os.Stat(p); err == nil {
+	for _, p := range logutil.LogFiles(logutil.ResolveRunLogPath(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)) {
+		if info, err := os.Lstat(p); err == nil && !info.IsDir() {
 			total += info.Size()
 		}
 	}
 	return total
-}
-
-// deleteRunBatch deletes terminal runs from runs until totalSize drops to or
-// below limit. Updates *totalSize in place. Returns the number deleted.
-func (cleaner *RetentionCleaner) deleteRunBatch(ctx context.Context, runs []model.Run, totalSize *int64, limit int64) int {
-	deleted := 0
-	for _, run := range runs {
-		if !run.Status.IsTerminal() {
-			continue
-		}
-		*totalSize -= cleaner.runLogBytes(run)
-		logutil.RemoveRunLogs(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
-		if err := cleaner.db.DeleteRun(ctx, run.ID); err != nil {
-			slog.Warn("Failed to delete run during size enforcement", "id", run.ID, "err", err)
-			continue
-		}
-		cleaner.publishDeleted(run.ID, run.TaskName)
-		deleted++
-		if *totalSize <= limit {
-			break
-		}
-	}
-	return deleted
 }
 
 // dirSize returns the total size in bytes of all files under dir (recursive).

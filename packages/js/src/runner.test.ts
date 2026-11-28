@@ -96,6 +96,32 @@ describe("Runner", () => {
         expect(calls).toBe(2);
     });
 
+    it("starts only one waiter when one of two slots opens", async () => {
+        const { session, exited } = reporter();
+        const runs = ["first", "second", "third", "fourth"];
+        const gates = new Map(runs.map((run) => [run, deferred()]));
+        const started: string[] = [];
+        const runner = new Runner(
+            (req) => {
+                started.push(req.run);
+                return gates.get(req.run)?.promise ?? Promise.resolve(1);
+            },
+            () => ({ onOverlap: "queue", maxConcurrent: 2 }),
+        );
+        for (const run of runs) runner.start(session, request(run));
+        expect(started).toEqual(["first", "second"]);
+
+        gates.get("first")?.resolve(0);
+        // Let both waiters handle the one completion.
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        expect(started).toEqual(["first", "second", "third"]);
+        expect(runner.size).toBe(2);
+
+        for (const gate of gates.values()) gate.resolve(0);
+        expect(await exited("fourth")).toBe(0);
+        await runner.close();
+    });
+
     it("doesn't start a queued run once the runner is closing", async () => {
         const { session, exited } = reporter();
         const stubborn = deferred();

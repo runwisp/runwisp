@@ -21,9 +21,9 @@ import (
 // config.
 const cronHoldPollInterval = time.Minute
 
-// StartCronHoldWatcher re-asks the machine whether a system cron daemon is live
+// start re-asks the machine whether a system cron daemon is live
 // and hands the answer to refresh, so a hold releases itself when cron retires
-// and comes back if cron does. It returns the func that stops the loop.
+// and comes back if cron does. w.stop ends the loop.
 //
 // Without it, stopping cron without a `runwisp reload` would leave the jobs held
 // by RunWisp and fired by nobody, with no run record to show it.
@@ -31,24 +31,18 @@ const cronHoldPollInterval = time.Minute
 // It never reads runwisp.toml. Config reload stays explicit; this only refreshes
 // a fact about the machine.
 //
-// initial is the liveness answer the loaded config already holds, so the first
-// tick only reports a change if the machine has moved since boot. There is no
-// boot pass: it would only re-learn what Config.cronDaemon already says.
-func StartCronHoldWatcher(
-	probe func() cronprobe.State,
-	refresh func(cronprobe.State) CronHoldChange,
-	initial cronprobe.State,
-) context.CancelFunc {
-	w := &cronHoldWatcher{probe: probe, refresh: refresh, last: initial}
+// The first tick only reports a change from the liveness answer loaded with the config.
+func (w *cronHoldWatcher) start() {
 	ctx, cancel := context.WithCancel(context.Background())
+	w.stop = cancel
 	startTicker(ctx, cronHoldPollInterval, "Stopping cron hold watcher", func(context.Context) { w.tick() })
-	return cancel
 }
 
 type cronHoldWatcher struct {
 	probe   func() cronprobe.State
 	refresh func(cronprobe.State) CronHoldChange
 	last    cronprobe.State
+	stop    context.CancelFunc
 }
 
 // tick performs one probe and applies it if the answer moved.

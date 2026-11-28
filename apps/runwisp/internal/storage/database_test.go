@@ -226,21 +226,6 @@ func TestQueryAllRuns(t *testing.T) {
 	assert.Equal(t, "task1", runs[0].TaskName)
 }
 
-func TestDeleteRun(t *testing.T) {
-	ctx := t.Context()
-	db := setupTestDB(t)
-	defer db.Close()
-
-	id := ulid.Make().String()
-	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: id, TaskName: "task1", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}))
-
-	err := db.DeleteRun(ctx, id)
-	require.NoError(t, err)
-
-	_, err = db.GetRun(ctx, id)
-	assert.Error(t, err)
-}
-
 func TestDeleteOldRuns(t *testing.T) {
 	ctx := t.Context()
 	db := setupTestDB(t)
@@ -1145,8 +1130,6 @@ func TestSQLiteDatabase_ErrorPathsAfterClose(t *testing.T) {
 	})
 	assert.Error(t, err)
 
-	assert.Error(t, db.DeleteRun(ctx, "any-id"))
-
 	_, err = db.SelectOldRuns(ctx, &model.Task{Name: "t", KeepFor: 24 * time.Hour})
 	assert.Error(t, err)
 
@@ -1187,7 +1170,7 @@ func TestSQLiteDatabase_ErrorPathsAfterClose(t *testing.T) {
 	_, err = db.ResolveSelectorIDs(ctx, model.RunSelector{MatchAll: true}, "")
 	assert.Error(t, err)
 
-	_, err = db.SelectExpiredSoftDeletes(ctx, time.Hour)
+	_, err = db.ClaimExpiredSoftDeletes(ctx, time.Hour)
 	assert.Error(t, err)
 
 	_, _, err = db.GetConfigValue(ctx, "k")

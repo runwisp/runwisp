@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { test, expect } from "./fixtures/test-base";
 import { triggerRunViaAPI, waitForRunEnded } from "./fixtures/api";
 
@@ -10,6 +12,33 @@ test.describe("dashboard", () => {
 
         await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
         await expect(page.getByText("Healthy tasks")).toBeVisible();
+    });
+
+    test("updates the dashboard timezone after a timezone-only reload", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        const config = join(daemonState.dataDir, "runwisp.e2e.toml");
+        const original = await readFile(config, "utf8");
+        const reload = () =>
+            page.request.post("/api/daemon/reload", {
+                headers: { Authorization: `Bearer ${daemonState.token}` },
+            });
+
+        await page.goto("/");
+        const zone = page.locator('[title*="under [daemon] timezone"]');
+        await expect(zone).toHaveText("UTC");
+        try {
+            await writeFile(
+                config,
+                original.replace('timezone = "UTC"', 'timezone = "Asia/Tokyo"'),
+            );
+            await expect(await reload()).toBeOK();
+            await expect(zone).toHaveText("Asia/Tokyo");
+        } finally {
+            await writeFile(config, original);
+            await expect(await reload()).toBeOK();
+        }
     });
 
     test("shows a card for every task in the config", async ({ authenticatedPage: page }) => {

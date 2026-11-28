@@ -13,6 +13,46 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
+const claimExpiredSoftDeletes = `-- name: ClaimExpiredSoftDeletes :many
+
+UPDATE runs SET purge_pending = 1
+WHERE deleted_at IS NOT NULL AND (purge_pending = 1 OR deleted_at <= ?)
+RETURNING id, task_name, created_at
+`
+
+type ClaimExpiredSoftDeletesRow struct {
+	ID        string    `json:"id"`
+	TaskName  string    `json:"task_name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Claim and select in one write. A restore that commits first clears
+// deleted_at; a purge that claims first owns cleanup across retries.
+func (q *Queries) ClaimExpiredSoftDeletes(ctx context.Context, deletedAt *time.Time) ([]ClaimExpiredSoftDeletesRow, error) {
+	rows, err := q.db.QueryContext(ctx, claimExpiredSoftDeletes, deletedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ClaimExpiredSoftDeletesRow{}
+	for rows.Next() {
+		var i ClaimExpiredSoftDeletesRow
+		if err := rows.Scan(&i.ID, &i.TaskName, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const resolveSelectorIDsByFilter = `-- name: ResolveSelectorIDsByFilter :many
 SELECT id, task_name, created_at FROM runs
 WHERE deleted_at IS NULL
@@ -157,7 +197,7 @@ func (q *Queries) ResolveSelectorIDsByIDs(ctx context.Context, arg ResolveSelect
 
 const restoreRunsByFilter = `-- name: RestoreRunsByFilter :many
 UPDATE runs SET deleted_at = NULL
-WHERE deleted_at IS NOT NULL
+WHERE deleted_at IS NOT NULL AND purge_pending = 0
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
@@ -174,7 +214,7 @@ WHERE deleted_at IS NOT NULL
 RETURNING id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
   instance_index, params_json, deleted_at, is_failure, peak_memory_bytes,
-  cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start
+  cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending
 `
 
 type RestoreRunsByFilterParams struct {
@@ -245,6 +285,7 @@ func (q *Queries) RestoreRunsByFilter(ctx context.Context, arg RestoreRunsByFilt
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
 			return nil, err
 		}
@@ -261,12 +302,12 @@ func (q *Queries) RestoreRunsByFilter(ctx context.Context, arg RestoreRunsByFilt
 
 const restoreRunsByIDs = `-- name: RestoreRunsByIDs :many
 UPDATE runs SET deleted_at = NULL
-WHERE deleted_at IS NOT NULL
+WHERE deleted_at IS NOT NULL AND purge_pending = 0
   AND id IN (/*SLICE:ids*/?)
 RETURNING id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
   instance_index, params_json, deleted_at, is_failure, peak_memory_bytes,
-  cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start
+  cpu_time_ms, stdout_lines, stderr_lines, pgid, process_start, purge_pending
 `
 
 func (q *Queries) RestoreRunsByIDs(ctx context.Context, ids []string) ([]Run, error) {
@@ -311,47 +352,8 @@ func (q *Queries) RestoreRunsByIDs(ctx context.Context, ids []string) ([]Run, er
 			&i.StderrLines,
 			&i.Pgid,
 			&i.ProcessStart,
+			&i.PurgePending,
 		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectExpiredSoftDeletes = `-- name: SelectExpiredSoftDeletes :many
-
-SELECT id, task_name, created_at FROM runs
-WHERE deleted_at IS NOT NULL AND deleted_at <= ?
-`
-
-type SelectExpiredSoftDeletesRow struct {
-	ID        string    `json:"id"`
-	TaskName  string    `json:"task_name"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Select-only: callers must remove the on-disk log files for the returned
-// refs before hard-deleting the rows (via DeleteRunsByIDs), so a crash
-// mid-purge leaves an orphan row rather than an orphan log file.
-func (q *Queries) SelectExpiredSoftDeletes(ctx context.Context, deletedAt *time.Time) ([]SelectExpiredSoftDeletesRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectExpiredSoftDeletes, deletedAt)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []SelectExpiredSoftDeletesRow{}
-	for rows.Next() {
-		var i SelectExpiredSoftDeletesRow
-		if err := rows.Scan(&i.ID, &i.TaskName, &i.CreatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -367,7 +369,7 @@ func (q *Queries) SelectExpiredSoftDeletes(ctx context.Context, deletedAt *time.
 
 const softDeleteRunsByFilter = `-- name: SoftDeleteRunsByFilter :many
 UPDATE runs SET deleted_at = ?1
-WHERE deleted_at IS NULL
+WHERE deleted_at IS NULL AND purge_pending = 0
   AND status = ?2
   AND ((?3 IS NULL AND ?4 = 0)
        OR instr(?3, '|' || status || '|') > 0
@@ -456,7 +458,7 @@ func (q *Queries) SoftDeleteRunsByFilter(ctx context.Context, arg SoftDeleteRuns
 
 const softDeleteRunsByIDs = `-- name: SoftDeleteRunsByIDs :many
 UPDATE runs SET deleted_at = ?1
-WHERE deleted_at IS NULL
+WHERE deleted_at IS NULL AND purge_pending = 0
   AND status = ?2
   AND id IN (/*SLICE:ids*/?)
 RETURNING id, task_name, created_at

@@ -9,7 +9,6 @@ import (
 
 	"log/slog"
 
-	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
@@ -58,27 +57,14 @@ func (p *SoftDeletePurger) Stop() {
 }
 
 func (p *SoftDeletePurger) purge(ctx context.Context, ttl time.Duration) {
-	refs, err := p.db.SelectExpiredSoftDeletes(ctx, ttl)
+	refs, err := p.db.ClaimExpiredSoftDeletes(ctx, ttl)
 	if err != nil {
-		slog.Warn("Soft-delete purge failed", "err", err)
-		return
-	}
-	if len(refs) == 0 {
+		slog.Warn("Could not claim soft-deleted runs", "err", err)
 		return
 	}
 
-	// Log files come off disk before the rows are hard-deleted: a crash in
-	// between leaves a harmless log-less row rather than an unreclaimable
-	// orphan log file.
-	ids := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		logutil.RemoveRunLogs(p.logDir, ref.TaskName, ref.ID, ref.CreatedAt)
-		ids = append(ids, ref.ID)
+	deleted := deleteClaimedRuns(ctx, p.db, p.logDir, refs)
+	if len(deleted) > 0 {
+		slog.Debug("Purged soft-deleted runs", "count", len(deleted))
 	}
-
-	if err := p.db.DeleteRunsByIDs(ctx, ids); err != nil {
-		slog.Warn("Failed to delete soft-deleted run rows", "count", len(ids), "err", err)
-		return
-	}
-	slog.Debug("Purged soft-deleted runs", "count", len(refs))
 }

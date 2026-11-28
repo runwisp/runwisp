@@ -282,8 +282,16 @@ WHERE status = 'running' AND ended_at IS NULL AND deleted_at IS NULL;
 SELECT * FROM runs WHERE status = 'pending' AND deleted_at IS NULL
 ORDER BY created_at ASC;
 
--- name: DeleteRun :exec
-DELETE FROM runs WHERE id = ?;
-
 -- name: DeleteRunsByIDs :exec
 DELETE FROM runs WHERE id IN (sqlc.slice('ids'));
+
+-- name: ListLogSearchRuns :many
+-- Keep SQLite's stored timestamp as the cursor key, including its original
+-- precision and offset. A NULL key starts at a BLOB, which sorts above text.
+SELECT id, task_name, created_at, CAST(created_at AS TEXT) AS creation_key
+FROM runs
+WHERE task_name = sqlc.arg(task_name) AND deleted_at IS NULL
+  AND (created_at, id) <= (COALESCE(CAST(sqlc.narg(creation_key) AS TEXT), X'FF'), CAST(sqlc.arg(boundary_id) AS TEXT))
+  AND (CAST(sqlc.arg(include_boundary) AS INTEGER) = 1 OR id != sqlc.arg(boundary_id))
+ORDER BY created_at DESC, id DESC
+LIMIT sqlc.arg(rows_limit);
