@@ -101,11 +101,9 @@ func newServiceStatus(taskID string, snapshot model.ServiceSnapshot) protocol.Se
 		instances = append(instances, item)
 	}
 	return protocol.ServiceStatus{
-		TaskID:           taskID,
-		State:            protocol.ServiceState(snapshot.State),
-		DesiredInstances: snapshot.DesiredInstances,
-		RunningInstances: snapshot.RunningInstances,
-		Instances:        instances,
+		TaskID:    taskID,
+		State:     protocol.ServiceState(snapshot.State),
+		Instances: instances,
 	}
 }
 

@@ -3,8 +3,6 @@
   "data": {
     "taskId": "01JC8Y7W5K3M9P2Q4R6S8T0V1X",
     "state": "degraded",
-    "desiredInstances": 2,
-    "runningInstances": 1,
     "instances": [
       {
         "index": 0,

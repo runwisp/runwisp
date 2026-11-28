@@ -873,11 +873,10 @@ type ServiceRemove struct {
 // forgets it.
 type ServiceStatus struct {
 	// The taskId of service:apply for a service the station declared, else the daemon's own task name.
-	TaskID           string            `json:"taskId"`
-	State            ServiceState      `json:"state"`
-	DesiredInstances int               `json:"desiredInstances"`
-	RunningInstances int               `json:"runningInstances"`
-	Instances        []ServiceInstance `json:"instances"`
+	TaskID string       `json:"taskId"`
+	State  ServiceState `json:"state"`
+	// One per desired instance, by index.
+	Instances []ServiceInstance `json:"instances"`
 }
 
 // Open. running, degraded, stopped, fatal, removed (the service is gone).

@@ -1222,12 +1222,11 @@ components:
           type: string
           description: The taskId of service:apply for a service the station declared, else the daemon's own task name.
         state: { $ref: "#/components/schemas/ServiceState" }
-        desiredInstances: { type: integer }
-        runningInstances: { type: integer }
         instances:
           type: array
           items: { $ref: "#/components/schemas/ServiceInstance" }
-      required: [taskId, state, desiredInstances, runningInstances, instances]
+          description: One per desired instance, by index.
+      required: [taskId, state, instances]
 
     ServiceState:
       $id: ServiceState
